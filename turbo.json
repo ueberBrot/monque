@@ -7,6 +7,10 @@
 			"outputs": ["dist/**"]
 		},
 		"test": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
+		"@monque/tsed#test": {
 			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]

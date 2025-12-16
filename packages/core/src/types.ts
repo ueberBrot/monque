@@ -1,30 +1,36 @@
 import type { ObjectId } from 'mongodb';
 
 /**
- * Job status constants using `as const` pattern for type safety and tree-shaking.
+ * Represents the lifecycle states of a job in the queue.
+ *
+ * Jobs transition through states as follows:
+ * - PENDING → PROCESSING (when picked up by a worker)
+ * - PROCESSING → COMPLETED (on success)
+ * - PROCESSING → PENDING (on failure, if retries remain)
+ * - PROCESSING → FAILED (on failure, after max retries exhausted)
  *
  * @example
  * ```typescript
  * if (job.status === JobStatus.PENDING) {
- *   // job is ready to process
+ *   // job is waiting to be picked up
  * }
  * ```
  */
 export const JobStatus = {
-	/** Job is waiting to be processed */
+	/** Job is waiting to be picked up by a worker */
 	PENDING: 'pending',
 	/** Job is currently being executed by a worker */
 	PROCESSING: 'processing',
-	/** Job finished successfully */
+	/** Job completed successfully */
 	COMPLETED: 'completed',
-	/** Job permanently failed after max retries */
+	/** Job permanently failed after exhausting all retry attempts */
 	FAILED: 'failed',
 } as const;
 
 /**
- * Union type of all possible job statuses.
+ * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed'`
  */
-export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus];
+export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
 
 /**
  * Represents a job in the Monque queue.
@@ -61,7 +67,7 @@ export interface Job<T = unknown> {
 	data: T;
 
 	/** Current lifecycle state */
-	status: JobStatus;
+	status: JobStatusType;
 
 	/** When the job should be processed */
 	nextRunAt: Date;
@@ -125,26 +131,6 @@ export interface EnqueueOptions {
  * ```
  */
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
-
-/**
- * Signature for the `now()` convenience method.
- * Enqueues a job for immediate processing (syntactic sugar for enqueue without options).
- *
- * @template T - The type of the job's data payload
- *
- * @example
- * ```typescript
- * // Trigger immediate job execution
- * const job = await monque.now('send-email', {
- *   to: 'user@example.com',
- *   subject: 'Welcome!',
- * });
- *
- * // Equivalent to:
- * await monque.enqueue('send-email', data, { runAt: new Date() });
- * ```
- */
-export type NowMethod = <T>(name: string, data: T) => Promise<Job<T>>;
 
 /**
  * Configuration options for the Monque scheduler.
@@ -215,6 +201,24 @@ export interface MonqueOptions {
 }
 
 /**
+ * Options for registering a worker.
+ *
+ * @example
+ * ```typescript
+ * monque.worker('send-email', emailHandler, {
+ *   concurrency: 3,
+ * });
+ * ```
+ */
+export interface WorkerOptions {
+	/**
+	 * Number of concurrent jobs this worker can process.
+	 * @default 5 (uses defaultConcurrency from MonqueOptions)
+	 */
+	concurrency?: number;
+}
+
+/**
  * Event payloads for Monque lifecycle events.
  */
 export interface MonqueEventMap {
@@ -249,72 +253,6 @@ export interface MonqueEventMap {
 		error: Error;
 		job?: Job;
 	};
-}
-
-/**
- * Options for the @Job decorator in @monque/tsed.
- *
- * @example
- * ```typescript
- * @Job({ name: 'send-email' })
- * class SendEmailJob {
- *   async handle(job: Job<EmailJobData>) {
- *     // ...
- *   }
- * }
- * ```
- */
-export interface JobDecoratorOptions {
-	/** Job type identifier - must match when enqueueing */
-	name: string;
-
-	/**
-	 * Number of concurrent jobs this worker can process.
-	 * @default 5
-	 */
-	concurrency?: number;
-}
-
-/**
- * Configuration options for MonqueModule in @monque/tsed.
- *
- * @example
- * ```typescript
- * // With Mongoose
- * MonqueModule.forRoot({
- *   connection: mongooseConnection,
- * });
- *
- * // With native MongoDB
- * MonqueModule.forRoot({
- *   connection: mongoDb,
- *   collectionName: 'custom_jobs',
- * });
- * ```
- */
-export interface MonqueModuleOptions extends MonqueOptions {
-	/**
-	 * MongoDB connection - can be either a Mongoose Connection or native MongoDB Db instance.
-	 */
-	connection: unknown;
-}
-
-/**
- * Options for registering a worker.
- *
- * @example
- * ```typescript
- * monque.worker('send-email', emailHandler, {
- *   concurrency: 3,
- * });
- * ```
- */
-export interface WorkerOptions {
-	/**
-	 * Number of concurrent jobs this worker can process.
-	 * @default 5 (uses defaultConcurrency from MonqueOptions)
-	 */
-	concurrency?: number;
 }
 
 /**
@@ -388,99 +326,4 @@ export interface MonquePublicAPI {
 	 * @returns true if scheduler is running and database connection is active
 	 */
 	isHealthy(): boolean;
-}
-
-// ============================================================================
-// Error Classes
-// ============================================================================
-
-/**
- * Base error class for all Monque-related errors.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof MonqueError) {
- *     console.error('Monque error:', error.message);
- *   }
- * }
- * ```
- */
-export class MonqueError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'MonqueError';
-	}
-}
-
-/**
- * Error thrown when an invalid cron expression is provided.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.schedule('invalid cron', 'job', data);
- * } catch (error) {
- *   if (error instanceof InvalidCronError) {
- *     console.error('Invalid expression:', error.expression);
- *   }
- * }
- * ```
- */
-export class InvalidCronError extends MonqueError {
-	constructor(
-		public readonly expression: string,
-		message: string,
-	) {
-		super(message);
-		this.name = 'InvalidCronError';
-	}
-}
-
-/**
- * Error thrown when there's a database connection issue.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof ConnectionError) {
- *     console.error('Database connection lost');
- *   }
- * }
- * ```
- */
-export class ConnectionError extends MonqueError {
-	constructor(message: string) {
-		super(message);
-		this.name = 'ConnectionError';
-	}
-}
-
-/**
- * Error thrown when graceful shutdown times out.
- * Includes information about jobs that were still in progress.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.stop();
- * } catch (error) {
- *   if (error instanceof ShutdownTimeoutError) {
- *     console.error('Incomplete jobs:', error.incompleteJobs.length);
- *   }
- * }
- * ```
- */
-export class ShutdownTimeoutError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly incompleteJobs: Job[],
-	) {
-		super(message);
-		this.name = 'ShutdownTimeoutError';
-	}
 }

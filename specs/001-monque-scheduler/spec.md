@@ -84,7 +84,7 @@ As a developer, I want to gracefully shutdown the scheduler so that in-progress 
 
 1. **Given** the scheduler is running with jobs in progress, **When** stop() is called, **Then** no new jobs are picked up for processing
 2. **Given** stop() has been called, **When** all in-progress jobs complete, **Then** the stop() promise resolves
-3. **Given** stop() has been called and timeout is configured, **When** jobs don't complete within timeout, **Then** the stop() promise resolves and a 'job:error' event is emitted with `{ error: TimeoutError, incompleteJobs: IJob[] }`
+3. **Given** stop() has been called and timeout is configured, **When** jobs don't complete within timeout, **Then** the stop() promise resolves and a 'job:error' event is emitted with `{ error: TimeoutError, incompleteJobs: Job[] }`
 
 ---
 
@@ -220,8 +220,8 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 
 **Core Package (`@monque/core`)**
 
-- **FR-001**: System MUST support enqueueing one-off jobs via `enqueue<T>(name, data, options)` method, returning the full IJob object
-- **FR-001a**: System MUST support `now<T>(name, data)` as syntactic sugar for immediate job enqueueing, returning the full IJob object
+- **FR-001**: System MUST support enqueueing one-off jobs via `enqueue<T>(name, data, options)` method, returning the full Job object
+- **FR-001a**: System MUST support `now<T>(name, data)` as syntactic sugar for immediate job enqueueing, returning the full Job object
 - **FR-002**: System MUST support a `uniqueKey` option to prevent duplicate pending/processing jobs
 - **FR-003**: System MUST support scheduling recurring jobs via `schedule(cronExpression, name, data)` method
 - **FR-004**: System MUST support registering job handlers via `worker(name, handler)` method
@@ -296,14 +296,14 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - Q: What should the default concurrency limit be for how many jobs a single scheduler instance processes simultaneously? → A: 5 (moderate parallelism, conservative default)
 - Q: Should @monque/core include built-in logging or remain log-agnostic? → A: Event-only, no built-in logging (consumers wire events to their logger)
 - Q: What explicit items should be declared out of scope for v1.0? → A: Job priorities, rate limiting, distributed locking, web dashboard
-- Q: Should enqueue() return a job ID or the full job object? → A: Return full IJob object
+- Q: Should enqueue() return a job ID or the full job object? → A: Return full Job object
 - Q: What collection name should Monque use by default for storing jobs? → A: "monque_jobs" (configurable via collectionName option)
 
 ### Scope & Architecture Clarifications
 
 - **Job Name Scope**: Job names are identifiers matching job types to worker handlers. Names are scoped to the Monque instance/collection. Multiple schedulers sharing a collection must register the same workers for consistent processing
 - **Namespace Boundary**: Single namespace means all jobs in one collection. Different Monque instances on the same database/collection share the job pool. Use separate databases or collectionName option for isolation
-- **Data Handling**: Handlers receive the full IJob object. The `data` property is deserialized from MongoDB (deep copy, not reference to stored document)
+- **Data Handling**: Handlers receive the full Job object. The `data` property is deserialized from MongoDB (deep copy, not reference to stored document)
 - **Multiple Workers**: Multiple workers can be registered for different job names. Each worker maintains its own concurrency limit independently
 - **Logging Strategy**: Core package emits events only; no built-in logging. Consumers subscribe to events and wire to their preferred logging framework
 - **Collection Name**: Default collection is `monque_jobs`; configurable via `collectionName` option in scheduler configuration
@@ -350,7 +350,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 
 - The library does not include built-in logging. Use event subscriptions (job:start, job:complete, job:fail, job:error) to integrate with your logging infrastructure
 - Built-in metrics are out of scope. Event payloads include duration (job:complete) for custom metrics collection
-- Job tracing is via event subscription. Each event includes the full IJob document for correlation with application tracing systems
+- Job tracing is via event subscription. Each event includes the full Job document for correlation with application tracing systems
 - Performance targets are not specified for v1.0. The library is designed for moderate throughput (hundreds of jobs/minute). High-throughput scenarios (10K+ jobs/second) should evaluate dedicated queue systems
 - Memory usage is proportional to defaultConcurrency × number of workers. Job data is not held in memory beyond active processing
 - Each poll cycle executes one findOneAndUpdate per available concurrency slot. No batch fetching in v1.0
@@ -375,6 +375,6 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **Job**: A unit of work stored in MongoDB, containing name, data payload, and lifecycle state. Transitions through pending → processing → completed/failed states
 - **Worker**: A handler function registered to process jobs of a specific name. Each worker can have its own concurrency limit
 - **Scheduler**: The orchestrating component that polls for jobs, manages locking, dispatches to workers, handles failures, and emits lifecycle events
-- **Handler**: The async function that executes job business logic. Receives the full IJob object and should resolve on success or reject on failure
+- **Handler**: The async function that executes job business logic. Receives the full Job object and should resolve on success or reject on failure
 - **Lock**: A status='processing' + lockedAt timestamp combination that claims a job for a specific scheduler instance, preventing duplicate processing
 - **Stale Job**: A job in 'processing' status with lockedAt older than lockTimeout, indicating the processing scheduler may have crashed

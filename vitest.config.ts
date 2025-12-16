@@ -1,15 +1,31 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Shared vitest configuration for the monorepo.
+ * Package-level configs extend this with their own include/exclude paths.
+ *
+ * Usage:
+ * - `bun test` - Run tests via turbo
+ * - `bun test:ui` - Open Vitest UI in browser
+ * - `bun test:coverage` - Run tests with coverage report
+ */
 export default defineConfig({
 	test: {
 		globals: true,
 		environment: 'node',
-		include: ['packages/*/tests/**/*.test.ts'],
 		coverage: {
+			enabled: true,
 			provider: 'v8',
-			reporter: ['text', 'json', 'html'],
-			include: ['packages/*/src/**/*.ts'],
-			exclude: ['**/node_modules/**', '**/dist/**', '**/*.d.ts'],
+			reporter: ['text', 'json', 'html', 'lcov'],
+			reportsDirectory: './coverage',
+			exclude: [
+				'**/node_modules/**',
+				'**/dist/**',
+				'**/*.d.ts',
+				'**/tests/**',
+				'**/*.config.ts',
+				'**/*.config.js',
+			],
 			thresholds: {
 				lines: 100,
 				functions: 100,

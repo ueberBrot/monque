@@ -49,22 +49,22 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T015 Create packages/core/src/types.ts with JobStatus const (as const pattern), IJob<T> interface from contracts/job-schema.ts
-- [ ] T016 [P] Add EnqueueOptions, MonqueOptions, WorkerOptions interfaces to packages/core/src/types.ts
-- [ ] T017 [P] Add MonqueEventMap, JobHandler type, MonquePublicAPI interface to packages/core/src/types.ts
-- [ ] T018 Create packages/core/src/errors.ts with MonqueError base class
-- [ ] T019 [P] Add InvalidCronError class (with expression property) to packages/core/src/errors.ts
-- [ ] T020 [P] Add ConnectionError class to packages/core/src/errors.ts
-- [ ] T021 [P] Add ShutdownTimeoutError class (with incompleteJobs property) to packages/core/src/errors.ts
-- [ ] T022 Create packages/core/src/utils/backoff.ts with calculateBackoff function: `nextRunAt = now + (2^failCount × baseInterval)`
-- [ ] T023 [P] Create packages/core/src/utils/cron.ts with parseExpression wrapper using cron-parser
-- [ ] T024 Create packages/core/tests/backoff.test.ts with unit tests for backoff calculation
-- [ ] T025 [P] Create packages/core/tests/cron.test.ts with unit tests for cron parsing
-- [ ] T026 [P] Create packages/core/tests/errors.test.ts with unit tests for error classes
-- [ ] T027 Create packages/core/src/monque.ts with Monque class skeleton extending EventEmitter, implementing MonquePublicAPI
-- [ ] T028 Implement MongoDB collection setup and index creation in Monque constructor (status+nextRunAt, uniqueKey sparse, lockedAt+status)
-- [ ] T029 Create packages/core/src/index.ts with public exports (types, errors, Monque class)
-- [ ] T030 Run tests to verify foundational setup passes
+- [X] T015 Create packages/core/src/types.ts with JobStatus const (as const pattern), Job<T> interface from contracts/job-schema.ts
+- [X] T016 [P] Add EnqueueOptions, MonqueOptions, WorkerOptions interfaces to packages/core/src/types.ts
+- [X] T017 [P] Add MonqueEventMap, JobHandler type, MonquePublicAPI interface to packages/core/src/types.ts
+- [X] T018 Create packages/core/src/errors.ts with MonqueError base class
+- [X] T019 [P] Add InvalidCronError class (with expression property) to packages/core/src/errors.ts
+- [X] T020 [P] Add ConnectionError class to packages/core/src/errors.ts
+- [X] T021 [P] Add ShutdownTimeoutError class (with incompleteJobs property) to packages/core/src/errors.ts
+- [X] T022 Create packages/core/src/utils/backoff.ts with calculateBackoff function: `nextRunAt = now + (2^failCount × baseInterval)`
+- [X] T023 [P] Create packages/core/src/utils/cron.ts with parseExpression wrapper using cron-parser
+- [X] T024 Create packages/core/tests/backoff.test.ts with unit tests for backoff calculation
+- [X] T025 [P] Create packages/core/tests/cron.test.ts with unit tests for cron parsing
+- [X] T026 [P] Create packages/core/tests/errors.test.ts with unit tests for error classes
+- [X] T027 Create packages/core/src/monque.ts with Monque class skeleton extending EventEmitter, implementing MonquePublicAPI
+- [X] T028 Implement MongoDB collection setup and index creation in Monque constructor (status+nextRunAt, uniqueKey sparse, lockedAt+status)
+- [X] T029 Create packages/core/src/index.ts with public exports (types, errors, Monque class)
+- [X] T030 Run tests to verify foundational setup passes
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -80,7 +80,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 > **Write tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T031 [P] [US1] Create packages/core/tests/enqueue.test.ts with tests for enqueue() method (basic enqueue, runAt option, return IJob, data integrity)
+- [ ] T031 [P] [US1] Create packages/core/tests/enqueue.test.ts with tests for enqueue() method (basic enqueue, runAt option, return Job, data integrity)
 - [ ] T032 [P] [US1] Create packages/core/tests/worker.test.ts with tests for worker() registration and job processing
 - [ ] T033 [P] [US1] Create packages/core/tests/locking.test.ts with tests for atomic job locking (concurrent workers, no duplicate processing)
 - [ ] T034 [P] [US1] Add concurrency limit tests in packages/core/tests/worker.test.ts (respect defaultConcurrency option)
@@ -197,9 +197,9 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 6
 
-- [ ] T068 [P] [US6] Create packages/core/tests/events.test.ts with tests for job:start event (fires when processing begins, includes IJob)
-- [ ] T069 [P] [US6] Add tests for job:complete event (includes IJob and duration in ms) in packages/core/tests/events.test.ts
-- [ ] T070 [P] [US6] Add tests for job:fail event (includes IJob, error, willRetry boolean) in packages/core/tests/events.test.ts
+- [ ] T068 [P] [US6] Create packages/core/tests/events.test.ts with tests for job:start event (fires when processing begins, includes Job)
+- [ ] T069 [P] [US6] Add tests for job:complete event (includes Job and duration in ms) in packages/core/tests/events.test.ts
+- [ ] T070 [P] [US6] Add tests for job:fail event (includes Job, error, willRetry boolean) in packages/core/tests/events.test.ts
 - [ ] T071 [P] [US6] Add tests for job:error event (unexpected errors, includes error and optional job) in packages/core/tests/events.test.ts
 
 ### Implementation for User Story 6
@@ -306,7 +306,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [ ] T110 [P] Create packages/docs/guides/graceful-shutdown.md documenting stop() and timeout behavior
 - [ ] T111 [P] Create packages/docs/guides/tsed-integration.md for Ts.ED users
 - [ ] T112 [P] Create packages/docs/api/monque-class.md with full MonquePublicAPI reference
-- [ ] T113 [P] Create packages/docs/api/job-interface.md documenting IJob<T> fields
+- [ ] T113 [P] Create packages/docs/api/job-interface.md documenting Job<T> fields
 - [ ] T114 [P] Create packages/docs/api/events.md documenting MonqueEventMap events
 - [ ] T115 [P] Create packages/docs/api/decorators.md documenting @Job decorator options
 - [ ] T116 [P] Create packages/docs/examples/basic-usage.md

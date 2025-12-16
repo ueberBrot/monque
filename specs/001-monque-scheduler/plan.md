@@ -28,7 +28,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | Principle                                    | Status | Evidence                                                                                               |
 | -------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
 | **I. Code Quality - Type Safety First**      | ✅ PASS | All code strictly typed, `unknown` over `any`, interfaces for object shapes, custom error classes      |
-| **I. Code Quality - Interfaces Over Types**  | ✅ PASS | `IJob<T>`, `MonquePublicAPI`, `MonqueEventMap`, `MonqueOptions`, `WorkerOptions` interfaces defined    |
+| **I. Code Quality - Interfaces Over Types**  | ✅ PASS | `Job<T>`, `MonquePublicAPI`, `MonqueEventMap`, `MonqueOptions`, `WorkerOptions` interfaces defined    |
 | **I. Code Quality - 100% Test Coverage**     | ✅ PASS | Spec requires happy path, edge cases, error handling, race conditions, backoff tests                   |
 | **I. Code Quality - No Enums**               | ✅ PASS | `JobStatus` uses `as const` pattern                                                                    |
 | **II. Architecture - Event-Driven Design**   | ✅ PASS | `Monque` extends `EventEmitter`, emits job:start/complete/fail/error                                   |
@@ -53,8 +53,8 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 
 | Principle                 | Status | Post-Design Evidence                                                                                                   |
 | ------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **Type Safety**           | ✅ PASS | `IJob<T>` with generic payload, `JobStatus` as const, all options typed, custom error classes                          |
-| **Interfaces Over Types** | ✅ PASS | `IJob`, `EnqueueOptions`, `MonqueOptions`, `MonquePublicAPI`, `MonqueEventMap`, `WorkerOptions`, `JobDecoratorOptions` |
+| **Type Safety**           | ✅ PASS | `Job<T>` with generic payload, `JobStatus` as const, all options typed, custom error classes                          |
+| **Interfaces Over Types** | ✅ PASS | `Job`, `EnqueueOptions`, `MonqueOptions`, `MonquePublicAPI`, `MonqueEventMap`, `WorkerOptions`, `JobDecoratorOptions` |
 | **100% Coverage Plan**    | ✅ PASS | Test files for all components: locking, backoff, shutdown, enqueue, worker, errors, stale recovery                     |
 | **Event-Driven**          | ✅ PASS | `MonqueEventMap` defines typed events for all lifecycle states including shutdown timeout                              |
 | **Native Driver**         | ✅ PASS | Only `mongodb` ^6.0.0 as core dependency, no ORM                                                                       |
@@ -101,7 +101,7 @@ specs/001-monque-scheduler/
     │   ├── src/
     │   │   ├── index.ts      # Public exports
     │   │   ├── monque.ts     # Main Monque class implementing MonquePublicAPI
-    │   │   ├── types.ts      # Type definitions (IJob, MonqueOptions, etc.)
+    │   │   ├── types.ts      # Type definitions (Job, MonqueOptions, etc.)
     │   │   ├── errors.ts     # Custom error classes (MonqueError, InvalidCronError, etc.)
     │   │   └── utils/
     │   │       ├── backoff.ts    # Exponential backoff calculation
@@ -181,10 +181,10 @@ specs/001-monque-scheduler/
 
 | Event          | Payload                                           | When Emitted                                |
 | -------------- | ------------------------------------------------- | ------------------------------------------- |
-| `job:start`    | `IJob`                                            | Job begins processing                       |
-| `job:complete` | `{ job: IJob, duration: number }`                 | Job finishes successfully                   |
-| `job:fail`     | `{ job: IJob, error: Error, willRetry: boolean }` | Job fails (may retry)                       |
-| `job:error`    | `{ error: Error, job?: IJob }`                    | Unexpected error including shutdown timeout |
+| `job:start`    | `Job`                                            | Job begins processing                       |
+| `job:complete` | `{ job: Job, duration: number }`                 | Job finishes successfully                   |
+| `job:fail`     | `{ job: Job, error: Error, willRetry: boolean }` | Job fails (may retry)                       |
+| `job:error`    | `{ error: Error, job?: Job }`                    | Unexpected error including shutdown timeout |
 
 ### MongoDB Indexes (required)
 

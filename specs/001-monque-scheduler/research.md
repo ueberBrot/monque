@@ -100,10 +100,10 @@ const job = await collection.findOneAndUpdate(
 **Type safety approach**:
 ```typescript
 interface MonqueEvents {
-  'job:start': (job: IJob) => void;
-  'job:complete': (job: IJob, duration: number) => void;
-  'job:fail': (job: IJob, error: Error) => void;
-  'job:error': (error: Error, job?: IJob) => void;
+  'job:start': (job: Job) => void;
+  'job:complete': (job: Job, duration: number) => void;
+  'job:fail': (job: Job, error: Error) => void;
+  'job:error': (error: Error, job?: Job) => void;
 }
 ```
 
