@@ -1,0 +1,29 @@
+# monque Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2025-12-16
+
+## Active Technologies
+
+- TypeScript 5.x, Node.js 22+ + mongodb (native driver), cron-parser, @tsed/common, @tsed/di (001-monque-scheduler)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+npm test && npm run lint
+
+## Code Style
+
+TypeScript 5.x, Node.js 18+: Follow standard conventions
+
+## Recent Changes
+
+- 001-monque-scheduler: Added TypeScript 5.x, Node.js 22+ + mongodb (native driver), cron-parser, @tsed/common, @tsed/di
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

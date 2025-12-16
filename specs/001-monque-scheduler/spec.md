@@ -219,7 +219,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 ## Assumptions
 
 - MongoDB 4.0+ is used (required for atomic findAndModify operations)
-- Node.js 18+ runtime environment
+- Node.js 22+ runtime environment
 - Base retry interval defaults to 1 second (configurable)
 - Default polling interval is 1 second (configurable) - balances job responsiveness with database load
 - Default concurrency limit is 5 jobs per worker (configurable)
