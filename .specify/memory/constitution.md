@@ -1,50 +1,127 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: N/A → 1.0.0 (Initial ratification)
+
+Modified principles: N/A (initial version)
+
+Added sections:
+- Core Principles (5 principles)
+- API Design Principles
+- Governance
+
+Removed sections: N/A
+
+Templates requiring updates:
+- .specify/templates/plan-template.md ✅ Compatible (Constitution Check section present)
+- .specify/templates/spec-template.md ✅ Compatible (Requirements align with principles)
+- .specify/templates/tasks-template.md ✅ Compatible (Test phases align with coverage requirement)
+
+Follow-up TODOs: None
+-->
+
+# Monque Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Code Quality Standards
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+All code MUST adhere to strict quality standards ensuring maintainability and reliability:
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- **Type Safety First**: All code MUST be strictly typed. Use `unknown` instead of `any` for
+  values of uncertain types, forcing explicit type narrowing.
+- **Interfaces Over Types**: Prefer `interface` for object shapes. Use `type` only for
+  TypeScript-specific features (unions, intersections, mapped types, conditional types).
+- **100% Test Coverage**: The project MUST aim for complete test coverage including:
+  - Happy path scenarios
+  - Edge cases (e.g., duplicate unique keys)
+  - Error handling (e.g., database connection failures, worker errors)
+  - Race conditions (e.g., locking conflicts)
+  - Backoff logic verification
+- **No Enums**: Do NOT use language-specific Enums. Use the `as const` pattern to ensure
+  better tree-shaking and compatibility.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+**Rationale**: Strict typing and comprehensive testing prevent runtime errors and ensure
+code behaves predictably across all scenarios.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### II. Architecture Guidelines
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+Core architectural decisions MUST follow these non-negotiable patterns:
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- **Event-Driven Design**: Core components MUST extend event emitter patterns for observability.
+- **Native Driver Usage**: Prefer native database drivers over ORMs for the core package
+  to minimize dependencies.
+- **Graceful Degradation**: All components MUST handle failures gracefully with proper cleanup.
+- **Atomic Operations**: Use atomic database operations for critical state changes
+  (locking, status updates).
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+**Rationale**: Event-driven architecture enables extensibility and monitoring; native drivers
+reduce dependency surface; graceful degradation ensures system resilience.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### III. Development Workflow
+
+Development practices MUST follow these standards:
+
+- **Monorepo Structure**: Organize code in a monorepo with clear package boundaries.
+- **Workspace Management**: Use workspace-aware package managers for dependency management.
+- **Consistent Tooling**: Use unified linting and formatting across all packages.
+- **Semantic Versioning**: Follow semantic versioning with changesets for release management.
+
+**Rationale**: Monorepo structure with consistent tooling enables efficient cross-package
+development and maintains code quality standards uniformly.
+
+### IV. API Design Principles
+
+Public APIs MUST adhere to these design principles:
+
+- **Simplicity**: APIs MUST be intuitive and require minimal configuration for basic use cases.
+- **Extensibility**: Support advanced configuration for complex scenarios without breaking
+  simple use cases.
+- **Framework Agnostic Core**: The core library MUST work independently without framework
+  dependencies.
+- **Framework Integrations**: Provide separate packages for framework-specific integrations.
+
+**Rationale**: Simple defaults with extensible options maximize adoption; framework-agnostic
+core ensures broad compatibility.
+
+### V. Resilience Patterns
+
+All job processing and background tasks MUST implement resilience patterns:
+
+- **Exponential Backoff**: Failed jobs MUST implement backoff strategies, NOT immediate retries.
+- **Graceful Shutdown**: All components MUST support graceful shutdown with configurable timeouts.
+- **Idempotency**: Support unique keys to prevent duplicate job creation.
+- **Observability**: Emit events for ALL significant lifecycle moments (start, complete, fail, error).
+
+**Rationale**: Resilience patterns prevent cascade failures and ensure system stability under
+adverse conditions.
+
+## API Design Principles
+
+APIs exposed by Monque packages MUST follow these extended guidelines:
+
+- Prefer builder patterns or options objects over long parameter lists.
+- All public methods MUST have JSDoc documentation with usage examples.
+- Breaking changes MUST be documented in changelogs with migration guides.
+- Default behaviors MUST be safe and conservative (e.g., no auto-deletion of failed jobs).
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other development practices for the Monque project.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Amendment Process**:
+1. Proposed changes MUST be documented with rationale.
+2. Changes MUST be reviewed and approved before implementation.
+3. Breaking changes to principles require migration plans for existing code.
+
+**Compliance**:
+- All PRs and code reviews MUST verify compliance with this constitution.
+- Any complexity beyond these principles MUST be explicitly justified.
+- The constitution version MUST be referenced in release documentation.
+
+**Versioning Policy**:
+- MAJOR: Backward-incompatible governance/principle removals or redefinitions.
+- MINOR: New principle/section added or materially expanded guidance.
+- PATCH: Clarifications, wording fixes, non-semantic refinements.
+
+**Version**: 1.0.0 | **Ratified**: 2025-12-16 | **Last Amended**: 2025-12-16
