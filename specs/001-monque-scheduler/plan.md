@@ -38,7 +38,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | **III. Development - Monorepo Structure**    | ✅ PASS | Turborepo + Bun workspaces, packages/* structure                                     |
 | **III. Development - Consistent Tooling**    | ✅ PASS | Biome for linting/formatting across all packages                                     |
 | **III. Development - Semantic Versioning**   | ✅ PASS | Changesets for release management                                                    |
-| **IV. API Design - Simplicity**              | ✅ PASS | Simple `enqueue()`, `schedule()`, `worker()` API                                     |
+| **IV. API Design - Simplicity**              | ✅ PASS | Simple `now()`, `enqueue()`, `schedule()`, `worker()` API                            |
 | **IV. API Design - Framework Agnostic Core** | ✅ PASS | `@monque/core` has no framework dependencies                                         |
 | **IV. API Design - Framework Integrations**  | ✅ PASS | `@monque/tsed` as separate package                                                   |
 | **V. Resilience - Exponential Backoff**      | ✅ PASS | Formula: `now + (2^failCount × baseInterval)`                                        |
@@ -57,7 +57,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | **100% Coverage Plan**    | ✅ PASS | Test files for all components: locking, backoff, shutdown, enqueue, worker  |
 | **Event-Driven**          | ✅ PASS | `MonqueEventMap` defines typed events for all lifecycle states              |
 | **Native Driver**         | ✅ PASS | Only `mongodb` as core dependency, no ORM                                   |
-| **API Simplicity**        | ✅ PASS | 3 main methods: `enqueue()`, `schedule()`, `worker()`                       |
+| **API Simplicity**        | ✅ PASS | 4 main methods: `now()`, `enqueue()`, `schedule()`, `worker()`              |
 | **JSDoc Documentation**   | ✅ PASS | All interfaces documented with examples in contracts                        |
 
 **Post-Design Gate**: ✅ DESIGN COMPLIANT

@@ -61,7 +61,14 @@ monque.worker<EmailJobData>('send-email', async (job) => {
 ### 3. Enqueue Jobs
 
 ```typescript
-// Enqueue a simple job
+// Enqueue a simple job (immediate execution)
+await monque.now('send-email', {
+  to: 'user@example.com',
+  subject: 'Welcome!',
+  body: 'Thanks for signing up.',
+});
+
+// Or use enqueue() for more options
 await monque.enqueue('send-email', {
   to: 'user@example.com',
   subject: 'Welcome!',

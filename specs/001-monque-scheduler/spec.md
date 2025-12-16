@@ -161,6 +161,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 **Core Package (`@monque/core`)**
 
 - **FR-001**: System MUST support enqueueing one-off jobs via `enqueue<T>(name, data, options)` method
+- **FR-001a**: System MUST support `now<T>(name, data)` as syntactic sugar for immediate job enqueueing
 - **FR-002**: System MUST support a `uniqueKey` option to prevent duplicate pending/processing jobs
 - **FR-003**: System MUST support scheduling recurring jobs via `schedule(cronExpression, name, data)` method
 - **FR-004**: System MUST support registering job handlers via `worker(name, handler)` method

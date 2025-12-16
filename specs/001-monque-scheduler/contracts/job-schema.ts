@@ -127,6 +127,26 @@ export interface EnqueueOptions {
 export type JobHandler<T = unknown> = (job: IJob<T>) => Promise<void> | void;
 
 /**
+ * Signature for the `now()` convenience method.
+ * Enqueues a job for immediate processing (syntactic sugar for enqueue without options).
+ * 
+ * @template T - The type of the job's data payload
+ * 
+ * @example
+ * ```typescript
+ * // Trigger immediate job execution
+ * const job = await monque.now('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Welcome!',
+ * });
+ * 
+ * // Equivalent to:
+ * await monque.enqueue('send-email', data, { runAt: new Date() });
+ * ```
+ */
+export type NowMethod = <T>(name: string, data: T) => Promise<IJob<T>>;
+
+/**
  * Configuration options for the Monque scheduler.
  * 
  * @example
