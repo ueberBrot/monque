@@ -84,8 +84,8 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [ ] T029 [US1] Implement atomic job locking using findOneAndUpdate in packages/core/src/monque.ts (status=pending, nextRunAt<=now → status=processing, lockedAt=now)
 - [ ] T030 [US1] Implement job execution and completion logic in packages/core/src/monque.ts (call handler, set status=completed on success)
 - [ ] T031 [US1] Implement concurrency control in packages/core/src/monque.ts (track activeJobs per worker, respect defaultConcurrency)
-- [ ] T032 [US1] Emit job:start event when job begins processing in packages/core/src/monque.ts
-- [ ] T033 [US1] Emit job:complete event with duration when job finishes in packages/core/src/monque.ts
+- [ ] T032 [US1] Add placeholder comments for job:start event emission (implemented in US6) in packages/core/src/monque.ts
+- [ ] T033 [US1] Add placeholder comments for job:complete event emission (implemented in US6) in packages/core/src/monque.ts
 - [ ] T034 [US1] Run tests for US1 to verify all pass
 
 **Checkpoint**: User Story 1 complete - basic job enqueueing and processing works

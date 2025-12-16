@@ -170,6 +170,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - **FR-007**: System MUST query jobs where status is "pending" and nextRunAt is at or before current time
 - **FR-008**: System MUST set status to "processing" and lockedAt timestamp when locking a job
 - **FR-009**: System MUST implement exponential backoff for failed jobs: `nextRunAt = now + (2^failCount × baseInterval)`
+- **FR-009a**: System MUST use a configurable `baseInterval` option with default value of 1000ms (1 second)
 - **FR-010**: System MUST track failCount and failReason for each job failure
 - **FR-011**: System MUST provide a `stop()` method that stops polling and waits for in-progress jobs
 - **FR-012**: System MUST support configurable timeout for graceful shutdown
@@ -178,6 +179,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - **FR-015**: System MUST emit "job:fail" event when a job fails
 - **FR-016**: System MUST emit "job:error" event when an unexpected error occurs
 - **FR-017**: System MUST mark jobs as permanently "failed" after reaching maximum retry attempts
+- **FR-017a**: System MUST use a configurable `maxRetries` option with default value of 10 attempts
 
 **Framework Integration Package (`@monque/tsed`)**
 
