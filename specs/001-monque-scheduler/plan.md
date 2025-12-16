@@ -59,6 +59,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | **Native Driver**         | ✅ PASS | Only `mongodb` as core dependency, no ORM                                   |
 | **API Simplicity**        | ✅ PASS | 4 main methods: `now()`, `enqueue()`, `schedule()`, `worker()`              |
 | **JSDoc Documentation**   | ✅ PASS | All interfaces documented with examples in contracts                        |
+| **Markdown Docs**         | ✅ PASS | `packages/docs/` for portable developer documentation                       |
 
 **Post-Design Gate**: ✅ DESIGN COMPLIANT
 
@@ -108,18 +109,40 @@ specs/001-monque-scheduler/
     │       ├── locking.test.ts
     │       ├── backoff.test.ts
     │       └── shutdown.test.ts
-    └── tsed/                 # @monque/tsed package
-        ├── package.json
-        ├── tsconfig.json
-        ├── tsdown.config.ts
-        ├── src/
-        │   ├── index.ts      # Public exports
-        │   ├── module.ts     # MonqueModule
-        │   └── decorators/
-        │       └── job.ts    # @Job decorator
-        └── tests/
-            ├── module.test.ts
-            └── decorator.test.ts
+    ├── tsed/                 # @monque/tsed package
+    │   ├── package.json
+    │   ├── tsconfig.json
+    │   ├── tsdown.config.ts
+    │   ├── src/
+    │   │   ├── index.ts      # Public exports
+    │   │   ├── module.ts     # MonqueModule
+    │   │   └── decorators/
+    │   │       └── job.ts    # @Job decorator
+    │   └── tests/
+    │       ├── module.test.ts
+    │       └── decorator.test.ts
+    └── docs/                 # Developer documentation (markdown)
+        ├── package.json      # Minimal package for workspace inclusion
+        ├── README.md         # Documentation index
+        ├── getting-started/
+        │   ├── installation.md
+        │   ├── quickstart.md
+        │   └── configuration.md
+        ├── guides/
+        │   ├── job-scheduling.md
+        │   ├── error-handling.md
+        │   ├── graceful-shutdown.md
+        │   └── tsed-integration.md
+        ├── api/
+        │   ├── monque-class.md
+        │   ├── job-interface.md
+        │   ├── events.md
+        │   └── decorators.md
+        └── examples/
+            ├── basic-usage.md
+            ├── unique-jobs.md
+            ├── recurring-jobs.md
+            └── error-retry.md
 ```
 
 **Structure Decision**: Monorepo structure with two packages under `packages/`. This aligns with Constitution Principle III (Monorepo Structure) and enables clear package boundaries between framework-agnostic core and framework-specific integrations.

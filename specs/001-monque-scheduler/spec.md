@@ -188,6 +188,13 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - **FR-022**: System MUST provide full access to Ts.ED's DI container within job handler classes
 - **FR-023**: System MUST auto-discover and register all decorated job handlers on application startup
 
+**Documentation Requirements**
+
+- **FR-024**: All public APIs MUST have JSDoc documentation with description, parameter types, return types, and usage examples
+- **FR-025**: Code documentation MUST be explicit but not overly verbose - clear and actionable
+- **FR-026**: Project MUST maintain markdown documentation files suitable for later conversion to hosted developer docs
+- **FR-027**: Documentation MUST include quickstart guide, API reference, configuration options, and common patterns
+
 ### Key Entities
 
 - **Job**: Represents a unit of work to be processed. Contains name (identifies handler), data (payload), status (lifecycle state), scheduling information (nextRunAt, repeatInterval), and failure tracking (failCount, failReason). May have a uniqueKey to prevent duplicates.
