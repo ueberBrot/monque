@@ -198,6 +198,20 @@ export interface MonqueOptions {
    * @default 5
    */
   defaultConcurrency?: number;
+
+  /**
+   * Maximum time in milliseconds a job can be in 'processing' status before
+   * being considered stale and eligible for re-acquisition by other workers.
+   * @default 1800000 (30 minutes)
+   */
+  lockTimeout?: number;
+
+  /**
+   * Whether to recover stale processing jobs on scheduler startup.
+   * When true, jobs with lockedAt older than lockTimeout will be reset to pending.
+   * @default true
+   */
+  recoverStaleJobs?: boolean;
 }
 
 /**
@@ -283,4 +297,190 @@ export interface MonqueModuleOptions extends MonqueOptions {
    * MongoDB connection - can be either a Mongoose Connection or native MongoDB Db instance.
    */
   connection: unknown;
+}
+
+/**
+ * Options for registering a worker.
+ * 
+ * @example
+ * ```typescript
+ * monque.worker('send-email', emailHandler, {
+ *   concurrency: 3,
+ * });
+ * ```
+ */
+export interface WorkerOptions {
+  /**
+   * Number of concurrent jobs this worker can process.
+   * @default 5 (uses defaultConcurrency from MonqueOptions)
+   */
+  concurrency?: number;
+}
+
+/**
+ * Public API interface for the Monque scheduler.
+ * Defines all public methods available on a Monque instance.
+ * 
+ * @example
+ * ```typescript
+ * const monque: MonquePublicAPI = new Monque(db, options);
+ * 
+ * // Enqueue a job
+ * const job = await monque.enqueue('send-email', { to: 'user@example.com' });
+ * 
+ * // Register a worker
+ * monque.worker('send-email', async (job) => {
+ *   await sendEmail(job.data.to);
+ * });
+ * 
+ * // Start processing
+ * monque.start();
+ * ```
+ */
+export interface MonquePublicAPI {
+  /**
+   * Enqueue a job for processing.
+   * @param name - Job type identifier
+   * @param data - Job payload data
+   * @param options - Enqueueing options
+   * @returns The created job document
+   */
+  enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<IJob<T>>;
+
+  /**
+   * Enqueue a job for immediate processing (syntactic sugar).
+   * @param name - Job type identifier
+   * @param data - Job payload data
+   * @returns The created job document
+   */
+  now<T>(name: string, data: T): Promise<IJob<T>>;
+
+  /**
+   * Schedule a recurring job with a cron expression.
+   * @param cron - Cron expression (5-field format)
+   * @param name - Job type identifier
+   * @param data - Job payload data
+   * @returns The created job document
+   */
+  schedule<T>(cron: string, name: string, data: T): Promise<IJob<T>>;
+
+  /**
+   * Register a worker to process jobs of a specific type.
+   * @param name - Job type identifier to handle
+   * @param handler - Function to process jobs
+   * @param options - Worker configuration options
+   */
+  worker<T>(name: string, handler: JobHandler<T>, options?: WorkerOptions): void;
+
+  /**
+   * Start polling for and processing jobs.
+   */
+  start(): void;
+
+  /**
+   * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
+   * @returns Promise that resolves when shutdown is complete
+   */
+  stop(): Promise<void>;
+
+  /**
+   * Check if the scheduler is healthy (running and connected).
+   * @returns true if scheduler is running and database connection is active
+   */
+  isHealthy(): boolean;
+}
+
+// ============================================================================
+// Error Classes
+// ============================================================================
+
+/**
+ * Base error class for all Monque-related errors.
+ * 
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof MonqueError) {
+ *     console.error('Monque error:', error.message);
+ *   }
+ * }
+ * ```
+ */
+export class MonqueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MonqueError';
+  }
+}
+
+/**
+ * Error thrown when an invalid cron expression is provided.
+ * 
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.schedule('invalid cron', 'job', data);
+ * } catch (error) {
+ *   if (error instanceof InvalidCronError) {
+ *     console.error('Invalid expression:', error.expression);
+ *   }
+ * }
+ * ```
+ */
+export class InvalidCronError extends MonqueError {
+  constructor(
+    public readonly expression: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'InvalidCronError';
+  }
+}
+
+/**
+ * Error thrown when there's a database connection issue.
+ * 
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof ConnectionError) {
+ *     console.error('Database connection lost');
+ *   }
+ * }
+ * ```
+ */
+export class ConnectionError extends MonqueError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConnectionError';
+  }
+}
+
+/**
+ * Error thrown when graceful shutdown times out.
+ * Includes information about jobs that were still in progress.
+ * 
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.stop();
+ * } catch (error) {
+ *   if (error instanceof ShutdownTimeoutError) {
+ *     console.error('Incomplete jobs:', error.incompleteJobs.length);
+ *   }
+ * }
+ * ```
+ */
+export class ShutdownTimeoutError extends MonqueError {
+  constructor(
+    message: string,
+    public readonly incompleteJobs: IJob[],
+  ) {
+    super(message);
+    this.name = 'ShutdownTimeoutError';
+  }
 }

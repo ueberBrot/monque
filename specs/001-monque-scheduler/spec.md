@@ -84,7 +84,7 @@ As a developer, I want to gracefully shutdown the scheduler so that in-progress 
 
 1. **Given** the scheduler is running with jobs in progress, **When** stop() is called, **Then** no new jobs are picked up for processing
 2. **Given** stop() has been called, **When** all in-progress jobs complete, **Then** the stop() promise resolves
-3. **Given** stop() has been called and timeout is configured, **When** jobs don't complete within timeout, **Then** the stop() promise resolves with a warning about incomplete jobs
+3. **Given** stop() has been called and timeout is configured, **When** jobs don't complete within timeout, **Then** the stop() promise resolves and a 'job:error' event is emitted with `{ error: TimeoutError, incompleteJobs: IJob[] }`
 
 ---
 
@@ -139,33 +139,93 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 
 ### Edge Cases
 
+**Connection & Infrastructure**
+
 - What happens when the database connection is lost during job processing?
   - Jobs in progress should continue until completion or failure; new job pickup is paused until reconnection
+- What happens when the database connection is lost during enqueue()?
+  - enqueue() throws an error; the caller is responsible for retry logic
+- What happens after MongoDB failover?
+  - Jobs that were 'processing' may need manual intervention or lockTimeout recovery. The scheduler resumes polling automatically when connection restores
+- What happens when MongoDB index creation fails during initialization?
+  - An error is thrown; the scheduler does not start
+- What happens if the configured collection has existing documents with incompatible schemas?
+  - The configured collection is assumed to be dedicated to Monque. Existing documents with incompatible schemas may cause undefined behavior
+
+**Job Processing**
+
 - How does the system handle when a job handler throws an unhandled exception?
   - The job should be marked as failed, failCount incremented, and scheduled for retry
+- How does the system handle synchronous throws vs rejected promises from handlers?
+  - Both synchronous throws and rejected promises from handlers are treated identically: job fails, failCount increments, retry scheduled
+- What happens when a job handler hangs indefinitely (never resolves)?
+  - Jobs processing longer than lockTimeout (default: 30 minutes) are considered stale and can be re-acquired by other workers
 - What happens when multiple scheduler instances try to lock the same job?
   - Atomic locking ensures only one instance can claim the job; others continue to the next available job
 - How does the system handle jobs with extremely large data payloads?
   - Job data is limited to reasonable sizes (configurable max, default 16MB per MongoDB document limit)
-- What happens when the cron expression is invalid?
-  - Validation should occur at schedule time, throwing an error before the job is created
-- How does the system handle clock drift between scheduler instances?
-  - All instances use the database server's time for consistency via server-side timestamps
 - What happens to permanently failed jobs?
   - Jobs exceeding max retries are retained with "failed" status indefinitely for inspection and debugging; no automatic cleanup (developers implement their own retention policies)
 
+**Scheduling & Timing**
+
+- What happens when the cron expression is invalid?
+  - Validation should occur at schedule time, throwing an error before the job is created. Error message includes: the invalid expression, the position of error, and example of valid format
+- What happens when jobs are enqueued with runAt in the past?
+  - Jobs with runAt in the past are immediately eligible for processing on the next poll cycle
+- What happens when scheduling cron jobs that should have already triggered?
+  - When scheduling a cron job, nextRunAt is calculated from the current time. Past occurrences are not retroactively queued
+- How does the system handle clock drift between scheduler instances?
+  - All instances use the database server's time for consistency via server-side timestamps
+
+**Lifecycle & Registration**
+
+- What happens when enqueueing jobs while the scheduler is stopped?
+  - Enqueueing jobs does not require the scheduler to be running. Jobs are stored in MongoDB and processed when any scheduler starts
+- Can workers be registered after scheduler.start() is called?
+  - Yes, workers can be registered before or after start(). Workers registered after start() begin processing on the next poll cycle
+- What happens when re-registering a worker for the same job name?
+  - Later worker() registration for the same name replaces the previous handler. This is not thread-safe; register workers during initialization
+- What happens when a job is enqueued with a name that has no registered worker?
+  - Jobs enqueued with unregistered names remain pending until a worker is registered. This allows worker deployment independent of job enqueueing
+- What happens when multiple concurrent stop() calls are made?
+  - Multiple concurrent stop() calls are safe. All calls receive the same promise that resolves when shutdown completes
+
+**Recovery**
+
+- What happens to jobs stuck in "processing" after a scheduler crash?
+  - On startup, the scheduler checks for stale processing jobs (lockedAt older than lockTimeout) and resets them to pending (if recoverStaleJobs option is enabled, which is the default)
+- What happens when the scheduler restarts with in-flight jobs?
+  - When scheduler restarts (process restart), any jobs it had 'processing' remain in that state until lockTimeout expires, then are recovered
+
+**Ts.ED Integration**
+
+- What happens if auto-discovery finds a @Job class that cannot be instantiated?
+  - A startup error is thrown
+- What happens if MonqueModule.forRoot() is called with invalid configuration?
+  - MonqueModule.forRoot() validates that connection is provided. Invalid configuration throws during module initialization
+
 ## Requirements *(mandatory)*
+
+### Out of Scope (v1.0)
+
+The following features are explicitly excluded from v1.0 to maintain focus and reduce complexity:
+
+- **Job Priorities**: All jobs are processed in FIFO order based on nextRunAt; no priority queue support
+- **Rate Limiting**: No built-in rate limiting for job processing throughput
+- **Distributed Locking**: No external lock coordination (Redis, etc.); relies solely on MongoDB atomic operations
+- **Web Dashboard**: No admin UI; monitoring via events and external tools only
 
 ### Functional Requirements
 
 **Core Package (`@monque/core`)**
 
-- **FR-001**: System MUST support enqueueing one-off jobs via `enqueue<T>(name, data, options)` method
-- **FR-001a**: System MUST support `now<T>(name, data)` as syntactic sugar for immediate job enqueueing
+- **FR-001**: System MUST support enqueueing one-off jobs via `enqueue<T>(name, data, options)` method, returning the full IJob object
+- **FR-001a**: System MUST support `now<T>(name, data)` as syntactic sugar for immediate job enqueueing, returning the full IJob object
 - **FR-002**: System MUST support a `uniqueKey` option to prevent duplicate pending/processing jobs
 - **FR-003**: System MUST support scheduling recurring jobs via `schedule(cronExpression, name, data)` method
 - **FR-004**: System MUST support registering job handlers via `worker(name, handler)` method
-- **FR-005**: System MUST process jobs concurrently with configurable concurrency limit
+- **FR-005**: System MUST process jobs concurrently with configurable concurrency limit (default: 5)
 - **FR-006**: System MUST implement atomic job locking using database operations
 - **FR-007**: System MUST query jobs where status is "pending" and nextRunAt is at or before current time
 - **FR-008**: System MUST set status to "processing" and lockedAt timestamp when locking a job
@@ -189,13 +249,21 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - **FR-021**: System MUST provide a `@Job({ name: string, ... })` decorator for registering worker classes
 - **FR-022**: System MUST provide full access to Ts.ED's DI container within job handler classes
 - **FR-023**: System MUST auto-discover and register all decorated job handlers on application startup
+- **FR-024**: MonqueModule MUST call monque.start() on application initialization (OnInit)
+- **FR-025**: MonqueModule MUST call monque.stop() on application shutdown (OnDestroy)
+
+**Reliability & Recovery (v1.0)**
+
+- **FR-026**: System MUST support optional `lockTimeout` configuration (default: 30 minutes). Jobs processing longer than lockTimeout may be re-acquired by other workers
+- **FR-027**: On startup, scheduler SHOULD check for stale processing jobs (lockedAt older than lockTimeout) and reset them to pending
+- **FR-028**: System MUST expose `isHealthy()` method returning boolean indicating scheduler is running and connected
 
 **Documentation Requirements**
 
-- **FR-024**: All public APIs MUST have JSDoc documentation with description, parameter types, return types, and usage examples
-- **FR-025**: Code documentation MUST be explicit but not overly verbose - clear and actionable
-- **FR-026**: Project MUST maintain markdown documentation files suitable for later conversion to hosted developer docs
-- **FR-027**: Documentation MUST include quickstart guide, API reference, configuration options, and common patterns
+- **FR-029**: All public APIs MUST have JSDoc documentation with description, parameter types, return types, and usage examples
+- **FR-030**: Code documentation MUST be explicit but not overly verbose - clear and actionable
+- **FR-031**: Project MUST maintain markdown documentation files suitable for later conversion to hosted developer docs
+- **FR-032**: Documentation MUST include quickstart guide, API reference, configuration options, and common patterns
 
 ### Key Entities
 
@@ -209,13 +277,13 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 
 ### Measurable Outcomes
 
-- **SC-001**: Developers can enqueue and process a simple job in under 5 minutes from library installation
-- **SC-002**: Jobs with unique keys correctly prevent duplicates 100% of the time (no race conditions)
-- **SC-003**: Failed jobs retry automatically with correct exponential timing within 1% margin of calculated delay
+- **SC-001**: A developer with Node.js and MongoDB installed can enqueue and process a job by following quickstart.md, completing all steps in under 5 minutes
+- **SC-002**: Jobs with unique keys correctly prevent duplicates: 1000 concurrent enqueue attempts with same uniqueKey result in exactly 1 job
+- **SC-003**: Failed jobs retry automatically. The actual nextRunAt MUST be within ±50ms of the calculated backoff time
 - **SC-004**: Graceful shutdown completes all in-progress jobs within the configured timeout period
 - **SC-005**: All job lifecycle events fire within 100ms of the corresponding state change
 - **SC-006**: Multiple scheduler instances can process jobs concurrently without duplicate processing
-- **SC-007**: Ts.ED developers can define a job handler with 3 lines of code (decorator + class + method)
+- **SC-007**: Ts.ED developers can define a job handler with minimal boilerplate: one decorator, one class declaration, one handler method
 - **SC-008**: Both Mongoose and native MongoDB connections work identically without code changes in job handlers
 
 ## Clarifications
@@ -225,16 +293,88 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - Q: What should the default polling interval be for the scheduler to check for pending jobs? → A: 1 second (balanced responsiveness and efficiency)
 - Q: What should happen to permanently failed jobs (those exceeding max retries)? → A: Retain with "failed" status indefinitely for inspection
 - Q: Should the library support job isolation between different tenants/contexts sharing the same database? → A: No multi-tenancy; single namespace per database
+- Q: What should the default concurrency limit be for how many jobs a single scheduler instance processes simultaneously? → A: 5 (moderate parallelism, conservative default)
+- Q: Should @monque/core include built-in logging or remain log-agnostic? → A: Event-only, no built-in logging (consumers wire events to their logger)
+- Q: What explicit items should be declared out of scope for v1.0? → A: Job priorities, rate limiting, distributed locking, web dashboard
+- Q: Should enqueue() return a job ID or the full job object? → A: Return full IJob object
+- Q: What collection name should Monque use by default for storing jobs? → A: "monque_jobs" (configurable via collectionName option)
+
+### Scope & Architecture Clarifications
+
+- **Job Name Scope**: Job names are identifiers matching job types to worker handlers. Names are scoped to the Monque instance/collection. Multiple schedulers sharing a collection must register the same workers for consistent processing
+- **Namespace Boundary**: Single namespace means all jobs in one collection. Different Monque instances on the same database/collection share the job pool. Use separate databases or collectionName option for isolation
+- **Data Handling**: Handlers receive the full IJob object. The `data` property is deserialized from MongoDB (deep copy, not reference to stored document)
+- **Multiple Workers**: Multiple workers can be registered for different job names. Each worker maintains its own concurrency limit independently
+- **Logging Strategy**: Core package emits events only; no built-in logging. Consumers subscribe to events and wire to their preferred logging framework
+- **Collection Name**: Default collection is `monque_jobs`; configurable via `collectionName` option in scheduler configuration
 
 ## Assumptions
 
+### Environment Requirements
+
 - MongoDB 4.0+ is used (required for atomic findAndModify operations)
-- Node.js 22+ runtime environment
+- Node.js 22+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)
+- mongodb driver ^6.0.0 required for modern TypeScript types and Connection handling
+- @monque/tsed targets Ts.ED v7.x. Compatibility with v6.x is not guaranteed
+
+### Configuration Defaults
+
 - Base retry interval defaults to 1 second (configurable)
 - Default polling interval is 1 second (configurable) - balances job responsiveness with database load
 - Default concurrency limit is 5 jobs per worker (configurable)
 - Default graceful shutdown timeout is 30 seconds (configurable)
-- No built-in multi-tenancy; single namespace per database (consumers can use separate databases or job name prefixes for isolation)
+- Default lock timeout is 30 minutes (configurable)
 - Maximum retry attempts defaults to 10 (configurable)
 - Jobs collection is named "monque_jobs" by default (configurable)
 - Cron expressions follow standard 5-field format (minute, hour, day of month, month, day of week)
+- Stale job recovery is enabled by default (recoverStaleJobs: true)
+
+### Scope Boundaries (v1.0)
+
+- No built-in multi-tenancy; single namespace per database (consumers can use separate databases or job name prefixes for isolation)
+- Job cancellation is out of scope for v1.0. Jobs can only be removed directly from MongoDB
+- Jobs with identical nextRunAt are processed in insertion order (_id). Priority queuing is out of scope for v1.0
+- Bulk enqueueing is out of scope for v1.0. Use Promise.all with individual enqueue() calls
+- Job progress tracking is out of scope. Jobs are atomic: complete or fail. For long-running tasks, break into multiple jobs
+- MongoDB sharding is not tested or supported in v1.0. The jobs collection should remain on a single shard
+- Testing utilities are out of scope for v1.0. Consumers can mock the Monque class directly or use MongoDB memory server
+
+### Security
+
+- Job data validation is the caller's responsibility. The library stores data as-is. Sensitive data should be encrypted by the application before enqueueing
+- Job data is stored as BSON, not interpolated into queries, mitigating injection attacks by design
+- Access control is delegated to MongoDB authentication/authorization. The library does not implement additional access control
+- The configured collection is assumed to be dedicated to Monque. Existing documents with incompatible schemas may cause undefined behavior
+
+### Performance & Observability
+
+- The library does not include built-in logging. Use event subscriptions (job:start, job:complete, job:fail, job:error) to integrate with your logging infrastructure
+- Built-in metrics are out of scope. Event payloads include duration (job:complete) for custom metrics collection
+- Job tracing is via event subscription. Each event includes the full IJob document for correlation with application tracing systems
+- Performance targets are not specified for v1.0. The library is designed for moderate throughput (hundreds of jobs/minute). High-throughput scenarios (10K+ jobs/second) should evaluate dedicated queue systems
+- Memory usage is proportional to defaultConcurrency × number of workers. Job data is not held in memory beyond active processing
+- Each poll cycle executes one findOneAndUpdate per available concurrency slot. No batch fetching in v1.0
+- No hard limit on job volume. Practical limits depend on MongoDB capacity and polling interval
+
+## Future Considerations
+
+### v1.x Minor Releases
+
+- `getStats()` method returning queue depth, processing count, and failure rate
+- `enqueueBulk<T>()` for batch job insertion with single database round-trip
+
+### v2.0+
+
+- `cancel(jobId)` method to set status='cancelled' for pending jobs
+- Optional `priority` field (1-10) for job ordering within same nextRunAt window
+- Job progress tracking for long-running tasks
+- MongoDB sharding support with shard key recommendations
+
+## Glossary
+
+- **Job**: A unit of work stored in MongoDB, containing name, data payload, and lifecycle state. Transitions through pending → processing → completed/failed states
+- **Worker**: A handler function registered to process jobs of a specific name. Each worker can have its own concurrency limit
+- **Scheduler**: The orchestrating component that polls for jobs, manages locking, dispatches to workers, handles failures, and emits lifecycle events
+- **Handler**: The async function that executes job business logic. Receives the full IJob object and should resolve on success or reject on failure
+- **Lock**: A status='processing' + lockedAt timestamp combination that claims a job for a specific scheduler instance, preventing duplicate processing
+- **Stale Job**: A job in 'processing' status with lockedAt older than lockTimeout, indicating the processing scheduler may have crashed
