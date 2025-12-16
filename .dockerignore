@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+out
+*.tgz
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# IDE
+.idea
+.vscode
+
+# Coverage and logs
+coverage
+*.log
+*.lcov
+
+# Environment
+.env*
+!.env.example
+
+# Turbo cache
+.turbo
+
+# Specs and docs (not needed in container)
+specs
+starting-files
+.specify
+.github
+
+# OS
+.DS_Store
+Thumbs.db

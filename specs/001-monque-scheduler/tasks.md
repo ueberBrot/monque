@@ -26,20 +26,20 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 **Purpose**: Project initialization and monorepo structure
 
-- [ ] T001 Run `bun init` at repo root, configure workspaces in package.json for packages/*
-- [ ] T002 Run `bunx turbo init` to scaffold turbo.json, configure build/test/lint pipelines
-- [ ] T003 [P] Run `bunx @biomejs/biome init` to scaffold biome.json with recommended rules
-- [ ] T004 [P] Create docker-compose.yml with MongoDB 4.0+ service for local development
-- [ ] T005 [P] Run `bunx changeset init` to scaffold .changeset/ directory and config.json
-- [ ] T006 Run `cd packages/core && bun init` then add mongodb ^6.0.0, cron-parser dependencies
-- [ ] T007 Run `bunx tsdown --init` in packages/core/ to scaffold tsdown.config.ts (ESM + CJS dual output)
-- [ ] T008 [P] Create packages/core/tsconfig.json with strict TypeScript 5.x configuration
-- [ ] T009 Run `cd packages/tsed && bun init` then add @tsed/common, @tsed/di peer dependencies
-- [ ] T010 Run `bunx tsdown --init` in packages/tsed/ to scaffold tsdown.config.ts (ESM + CJS dual output)
-- [ ] T011 [P] Create packages/tsed/tsconfig.json with strict TypeScript 5.x configuration
-- [ ] T012 [P] Run `cd packages/docs && bun init` for minimal workspace placeholder
-- [ ] T013 Run `bunx vitest init` at root, configure workspace and coverage settings targeting 100%
-- [ ] T014 Run `bun install` to install all dependencies
+- [X] T001 Run `bun init` at repo root, configure workspaces in package.json for packages/*
+- [X] T002 Run `bunx turbo init` to scaffold turbo.json, configure build/test/lint pipelines
+- [X] T003 [P] Run `bunx @biomejs/biome init` to scaffold biome.json with recommended rules
+- [X] T004 [P] Create docker-compose.yml with MongoDB 4.0+ service for local development
+- [X] T005 [P] Run `bunx changeset init` to scaffold .changeset/ directory and config.json
+- [X] T006 Run `cd packages/core && bun init` then add mongodb ^6.0.0, cron-parser dependencies
+- [X] T007 Run `bunx tsdown --init` in packages/core/ to scaffold tsdown.config.ts (ESM + CJS dual output)
+- [X] T008 [P] Create packages/core/tsconfig.json with strict TypeScript 5.x configuration
+- [X] T009 Run `cd packages/tsed && bun init` then add @tsed/common, @tsed/di peer dependencies
+- [X] T010 Run `bunx tsdown --init` in packages/tsed/ to scaffold tsdown.config.ts (ESM + CJS dual output)
+- [X] T011 [P] Create packages/tsed/tsconfig.json with strict TypeScript 5.x configuration
+- [X] T012 [P] Run `cd packages/docs && bun init` for minimal workspace placeholder
+- [X] T013 Run `bunx vitest init` at root, configure workspace and coverage settings targeting 100%
+- [X] T014 Run `bun install` to install all dependencies
 
 ---
 

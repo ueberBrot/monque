@@ -1,0 +1,50 @@
+{
+	"name": "@monque/core",
+	"version": "0.0.0",
+	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"lint": "biome check src/"
+	},
+	"keywords": [
+		"job",
+		"queue",
+		"scheduler",
+		"mongodb",
+		"cron",
+		"background-jobs"
+	],
+	"license": "MIT",
+	"dependencies": {
+		"cron-parser": "^4.9.0",
+		"mongodb": "^6.0.0"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"tsdown": "^0.18.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	}
+}

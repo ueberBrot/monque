@@ -1,0 +1,6 @@
+{
+	"name": "@monque/docs",
+	"version": "0.0.0",
+	"description": "Documentation for Monque job scheduler",
+	"private": true
+}
