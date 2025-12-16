@@ -1,6 +1,6 @@
 services:
   mongodb:
-    image: mongo:7.0
+    image: mongo:8.0.16
     container_name: monque-mongodb
     ports:
       - "27017:27017"
