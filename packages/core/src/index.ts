@@ -1,26 +1,25 @@
 // Types
-export {
-	JobStatus,
-	type JobStatusType,
-	type Job,
-	type EnqueueOptions,
-	type JobHandler,
-	type MonqueOptions,
-	type WorkerOptions,
-	type MonqueEventMap,
-	type MonquePublicAPI,
-} from './types.js';
 
 // Errors
 export {
-	MonqueError,
-	InvalidCronError,
 	ConnectionError,
+	InvalidCronError,
+	MonqueError,
 	ShutdownTimeoutError,
 } from './errors.js';
-
 // Main class
 export { Monque } from './monque.js';
+export {
+	type EnqueueOptions,
+	type Job,
+	type JobHandler,
+	JobStatus,
+	type JobStatusType,
+	type MonqueEventMap,
+	type MonqueOptions,
+	type MonquePublicAPI,
+	type WorkerOptions,
+} from './types.js';
 
 // Utilities (for advanced use cases)
 export {

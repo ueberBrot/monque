@@ -1,19 +1,19 @@
 import { EventEmitter } from 'node:events';
-import type { Collection, Db, WithId, Document } from 'mongodb';
+import type { Collection, Db, Document, WithId } from 'mongodb';
+import { ConnectionError } from './errors.js';
 import type {
+	EnqueueOptions,
 	Job,
 	JobHandler,
-	MonqueOptions,
-	WorkerOptions,
-	MonquePublicAPI,
-	EnqueueOptions,
-	MonqueEventMap,
 	JobStatusType,
+	MonqueEventMap,
+	MonqueOptions,
+	MonquePublicAPI,
+	WorkerOptions,
 } from './types.js';
 import { JobStatus } from './types.js';
-import { ConnectionError } from './errors.js';
-import { getNextCronDate } from './utils/cron.js';
 import { calculateBackoff } from './utils/backoff.js';
+import { getNextCronDate } from './utils/cron.js';
 
 /**
  * Default configuration values
@@ -89,8 +89,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,
 			baseRetryInterval: options.baseRetryInterval ?? DEFAULTS.baseRetryInterval,
 			shutdownTimeout: options.shutdownTimeout ?? DEFAULTS.shutdownTimeout,
-			defaultConcurrency:
-				options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
+			defaultConcurrency: options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 		};
@@ -135,10 +134,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		}
 
 		// Compound index for job polling - status + nextRunAt for efficient queries
-		await this.collection.createIndex(
-			{ status: 1, nextRunAt: 1 },
-			{ background: true },
-		);
+		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
 
 		// Unique sparse index for deduplication - only where uniqueKey exists
 		await this.collection.createIndex(
@@ -155,16 +151,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		);
 
 		// Index for stale job recovery - lockedAt for timeout queries
-		await this.collection.createIndex(
-			{ lockedAt: 1, status: 1 },
-			{ background: true },
-		);
+		await this.collection.createIndex({ lockedAt: 1, status: 1 }, { background: true });
 
 		// Index for job lookup by name
-		await this.collection.createIndex(
-			{ name: 1, status: 1 },
-			{ background: true },
-		);
+		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
 	}
 
 	/**
@@ -204,11 +194,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Enqueue a job for processing.
 	 */
-	async enqueue<T>(
-		name: string,
-		data: T,
-		options: EnqueueOptions = {},
-	): Promise<Job<T>> {
+	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<Job<T>> {
 		this.ensureInitialized();
 
 		const now = new Date();
@@ -229,7 +215,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		try {
 			if (options.uniqueKey) {
 				// Use upsert with $setOnInsert for deduplication
-				const result = await this.collection!.findOneAndUpdate(
+				const result = await this.collection?.findOneAndUpdate(
 					{
 						uniqueKey: options.uniqueKey,
 						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
@@ -246,11 +232,16 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				return this.documentToJob<T>(result as WithId<Document>);
 			}
 
-			const result = await this.collection!.insertOne(job as Document);
+			const result = await this.collection?.insertOne(job as Document);
+			
+			if (!result) {
+				throw new ConnectionError('Failed to enqueue job: collection not available');
+			}
+			
 			return { ...job, _id: result.insertedId } as Job<T>;
 		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : 'Unknown error during enqueue';
+			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
+			
 			throw new ConnectionError(`Failed to enqueue job: ${message}`);
 		}
 	}
@@ -284,11 +275,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		};
 
 		try {
-			const result = await this.collection!.insertOne(job as Document);
+			const result = await this.collection?.insertOne(job as Document);
+			
+			if (!result) {
+				throw new ConnectionError('Failed to schedule job: collection not available');
+			}
+
 			return { ...job, _id: result.insertedId } as Job<T>;
 		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : 'Unknown error during schedule';
+			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
 			throw new ConnectionError(`Failed to schedule job: ${message}`);
 		}
 	}
@@ -296,11 +291,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Register a worker to process jobs of a specific type.
 	 */
-	worker<T>(
-		name: string,
-		handler: JobHandler<T>,
-		options: WorkerOptions = {},
-	): void {
+	worker<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
 		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
 
 		this.workers.set(name, {
@@ -319,9 +310,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		}
 
 		if (!this.isInitialized) {
-			throw new ConnectionError(
-				'Monque not initialized. Call initialize() before start().',
-			);
+			throw new ConnectionError('Monque not initialized. Call initialize() before start().');
 		}
 
 		this.isRunning = true;
@@ -405,6 +394,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		for (const [name, worker] of this.workers) {
 			// Check if worker has capacity
 			const availableSlots = worker.concurrency - worker.activeJobs.size;
+			
 			if (availableSlots <= 0) {
 				continue;
 			}
@@ -412,6 +402,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			// Try to acquire jobs up to available slots
 			for (let i = 0; i < availableSlots; i++) {
 				const job = await this.acquireJob(name);
+			
 				if (job) {
 					this.processJob(job, worker).catch((error) => {
 						this.emit('job:error', { error, job });
@@ -469,10 +460,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * @param job - The job to process
 	 * @param worker - The worker registration containing the handler
 	 */
-	private async processJob(
-		job: Job,
-		worker: WorkerRegistration,
-	): Promise<void> {
+	private async processJob(job: Job, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id?.toString() ?? '';
 		worker.activeJobs.add(jobId);
 
@@ -504,7 +492,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * @param job - The job that completed successfully
 	 */
 	private async completeJob(job: Job): Promise<void> {
-		if (!this.collection) {
+		if (!this.collection || !job._id) {
 			return;
 		}
 
@@ -512,7 +500,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			// Recurring job - schedule next run
 			const nextRunAt = getNextCronDate(job.repeatInterval);
 			await this.collection.updateOne(
-				{ _id: job._id! },
+				{ _id: job._id },
 				{
 					$set: {
 						status: JobStatus.PENDING,
@@ -527,7 +515,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		} else {
 			// One-time job - mark as completed
 			await this.collection.updateOne(
-				{ _id: job._id! },
+				{ _id: job._id },
 				{
 					$set: {
 						status: JobStatus.COMPLETED,
@@ -546,7 +534,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * @param error - The error that caused the failure
 	 */
 	private async failJob(job: Job, error: Error): Promise<void> {
-		if (!this.collection) {
+		if (!this.collection || !job._id) {
 			return;
 		}
 
@@ -555,7 +543,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		if (newFailCount >= this.options.maxRetries) {
 			// Permanent failure
 			await this.collection.updateOne(
-				{ _id: job._id! },
+				{ _id: job._id },
 				{
 					$set: {
 						status: JobStatus.FAILED,
@@ -568,13 +556,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			);
 		} else {
 			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(
-				newFailCount,
-				this.options.baseRetryInterval,
-			);
+			const nextRunAt = calculateBackoff(newFailCount, this.options.baseRetryInterval);
 
 			await this.collection.updateOne(
-				{ _id: job._id! },
+				{ _id: job._id },
 				{
 					$set: {
 						status: JobStatus.PENDING,
@@ -594,9 +579,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 */
 	private ensureInitialized(): void {
 		if (!this.isInitialized || !this.collection) {
-			throw new ConnectionError(
-				'Monque not initialized. Call initialize() first.',
-			);
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
 		}
 	}
 
@@ -659,10 +642,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Type-safe event emitter methods
 	 */
-	override emit<K extends keyof MonqueEventMap>(
-		event: K,
-		payload: MonqueEventMap[K],
-	): boolean {
+	override emit<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]): boolean {
 		return super.emit(event, payload);
 	}
 

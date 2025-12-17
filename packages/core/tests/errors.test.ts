@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-	MonqueError,
-	InvalidCronError,
 	ConnectionError,
+	InvalidCronError,
+	MonqueError,
 	ShutdownTimeoutError,
 } from '../src/errors.js';
-import { JobStatus, type Job } from '../src/types.js';
+import { type Job, JobStatus } from '../src/types.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {
@@ -110,10 +110,7 @@ describe('errors', () => {
 
 		it('should create an error with message and incomplete jobs', () => {
 			const incompleteJobs = [createMockJob('job1'), createMockJob('job2')];
-			const error = new ShutdownTimeoutError(
-				'Shutdown timed out',
-				incompleteJobs,
-			);
+			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
 
 			expect(error.message).toBe('Shutdown timed out');
 			expect(error.incompleteJobs).toEqual(incompleteJobs);

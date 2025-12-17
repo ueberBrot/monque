@@ -29,7 +29,7 @@ export function calculateBackoff(
 	failCount: number,
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
 ): Date {
-	const delay = Math.pow(2, failCount) * baseInterval;
+	const delay = 2 ** failCount * baseInterval;
 	return new Date(Date.now() + delay);
 }
 
@@ -44,5 +44,5 @@ export function calculateBackoffDelay(
 	failCount: number,
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
 ): number {
-	return Math.pow(2, failCount) * baseInterval;
+	return 2 ** failCount * baseInterval;
 }

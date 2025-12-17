@@ -29,8 +29,7 @@ export function getNextCronDate(expression: string, currentDate?: Date): Date {
 		return interval.next().toDate();
 	} catch (error) {
 		/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
-		const errorMessage =
-			error instanceof Error ? error.message : 'Unknown parsing error';
+		const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
 		throw new InvalidCronError(
 			expression,
 			`Invalid cron expression "${expression}": ${errorMessage}. ` +
@@ -60,8 +59,7 @@ export function validateCronExpression(expression: string): boolean {
 		return true;
 	} catch (error) {
 		/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
-		const errorMessage =
-			error instanceof Error ? error.message : 'Unknown parsing error';
+		const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
 		throw new InvalidCronError(
 			expression,
 			`Invalid cron expression "${expression}": ${errorMessage}. ` +
