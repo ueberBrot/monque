@@ -29,7 +29,7 @@ tests/
 - Completed job with `uniqueKey` -> Enqueue again -> New job is created.
 
 ### Backoff
-- Job fails -> `nextRunAt` is set to `now + 2^failCount * 60s`.
+- Job fails -> `nextRunAt` is set to `now + 2^failCount * baseRetryInterval` (default 1s).
 - Job fails `maxRetries` times -> Status becomes `failed`.
 
 ### Race Conditions
