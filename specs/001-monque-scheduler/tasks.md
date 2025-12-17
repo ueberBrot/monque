@@ -43,6 +43,43 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
+## Phase 1b: Test Infrastructure (Integration Test Setup)
+
+**Purpose**: Set up MongoDB Testcontainers for integration tests (Phase 3+)
+
+**Why Testcontainers**: Automatic container lifecycle management, isolated test environments, no manual `docker-compose up` required before running tests.
+
+- [X] T014a Run `bun add -d @testcontainers/mongodb` in packages/core/ to add MongoDB Testcontainers
+- [X] T014b Create packages/core/tests/setup/mongodb.ts with singleton MongoDBContainer manager:
+  - Export `getMongoDb()` async function that starts container on first call, reuses for subsequent calls
+  - Export `closeMongoDb()` async function for cleanup
+  - Store container instance and MongoClient in module-level variables
+  - Container should be shared across all tests in a single test run for performance
+- [X] T014c Create packages/core/tests/setup/global-setup.ts for Vitest globalSetup (returns teardown function)
+- [X] T014d ~~Create packages/core/tests/setup/global-teardown.ts~~ (merged into T014c - Vitest uses returned function from globalSetup)
+- [X] T014e Update packages/core/vitest.config.ts to configure globalSetup hooks and timeouts
+- [X] T014f [P] Create packages/core/tests/setup/test-utils.ts with helper functions:
+  - `getTestDb(testName)` - returns isolated database per test file
+  - `cleanupTestDb(db)` - drops test database after test suite
+
+**Usage Pattern**:
+```typescript
+// In test files (Phase 3+):
+import { getMongoDb, closeMongoDb } from './setup/mongodb';
+
+let db: Db;
+
+beforeAll(async () => {
+  db = await getMongoDb();
+});
+
+afterAll(async () => {
+  // Container stays running, shared across test files
+});
+```
+
+---
+
 ## Phase 2: Foundational (Blocking Prerequisites)
 
 **Purpose**: Core types, error classes, and utilities that ALL user stories depend on
@@ -400,16 +437,17 @@ Task T034: "Add concurrency limit tests"
 ### MVP First (User Stories 1-3 Only)
 
 1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-3. Complete Phase 3: User Story 1 (basic enqueue/process)
-4. Complete Phase 4: User Story 2 (unique keys)
-5. Complete Phase 5: User Story 3 (retry/backoff)
-6. **STOP and VALIDATE**: Test all P1 stories independently
-7. Deploy/demo if ready - this is a functional job queue!
+2. Complete Phase 1b: Test Infrastructure (Testcontainers setup)
+3. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+4. Complete Phase 3: User Story 1 (basic enqueue/process)
+5. Complete Phase 4: User Story 2 (unique keys)
+6. Complete Phase 5: User Story 3 (retry/backoff)
+7. **STOP and VALIDATE**: Test all P1 stories independently
+8. Deploy/demo if ready - this is a functional job queue!
 
 ### Incremental Delivery
 
-1. Setup + Foundational → Foundation ready
+1. Setup + Test Infrastructure + Foundational → Foundation ready
 2. Add US1 → Basic job processing works (minimal MVP)
 3. Add US2 → Deduplication works
 4. Add US3 → Reliability works (P1 complete!)
@@ -441,5 +479,6 @@ Task T034: "Add concurrency limit tests"
 - Verify tests fail before implementing (TDD approach per Constitution)
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- MongoDB must be running for integration tests (docker-compose up)
+- Integration tests (Phase 3+) use Testcontainers - no manual `docker-compose up` required
+- Docker Compose remains available for local development and debugging
 - Constitution requires 100% test coverage - all test tasks are mandatory

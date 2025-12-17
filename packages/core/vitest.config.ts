@@ -9,6 +9,11 @@ export default mergeConfig(
 			coverage: {
 				include: ['src/**/*.ts'],
 			},
+			// Global setup for MongoDB Testcontainers (returns teardown function)
+			globalSetup: ['./tests/setup/global-setup.ts'],
+			// Increase timeout for integration tests (container startup can be slow)
+			testTimeout: 30000,
+			hookTimeout: 60000,
 		},
 	}),
 );

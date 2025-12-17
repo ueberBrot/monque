@@ -41,6 +41,7 @@
 		"mongodb": "^6.0.0"
 	},
 	"devDependencies": {
+		"@testcontainers/mongodb": "^11.10.0",
 		"@types/bun": "latest",
 		"tsdown": "^0.18.0"
 	},
