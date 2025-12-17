@@ -136,12 +136,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		// Compound index for job polling - status + nextRunAt for efficient queries
 		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
 
-		// Unique sparse index for deduplication - only where uniqueKey exists
+		// Partial unique index for deduplication - only where uniqueKey exists and status is pending/processing
+		// Note: Cannot use both 'sparse' and 'partialFilterExpression' together
 		await this.collection.createIndex(
 			{ uniqueKey: 1 },
 			{
 				unique: true,
-				sparse: true,
 				partialFilterExpression: {
 					uniqueKey: { $exists: true },
 					status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },

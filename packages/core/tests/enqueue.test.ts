@@ -1,0 +1,365 @@
+/**
+ * Tests for the enqueue() method of the Monque scheduler.
+ *
+ * These tests verify:
+ * - Basic job enqueueing functionality
+ * - runAt option for delayed jobs
+ * - Correct Job document structure returned
+ * - Data integrity (payload preserved correctly)
+ *
+ * @see {@link ../src/monque.ts}
+ */
+
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { Db } from 'mongodb';
+import { Monque } from '../src/monque.js';
+import { JobStatus } from '../src/types.js';
+import { getTestDb, cleanupTestDb, clearCollection, uniqueCollectionName } from './setup/test-utils.js';
+
+describe('enqueue()', () => {
+	let db: Db;
+	let collectionName: string;
+
+	beforeAll(async () => {
+		db = await getTestDb('enqueue');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('basic enqueueing', () => {
+		it('should enqueue a job with name and data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('test-job', { foo: 'bar' });
+
+			expect(job).toBeDefined();
+			expect(job._id).toBeDefined();
+			expect(job.name).toBe('test-job');
+			expect(job.data).toEqual({ foo: 'bar' });
+		});
+
+		it('should set status to pending', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('test-job', { value: 123 });
+
+			expect(job.status).toBe(JobStatus.PENDING);
+		});
+
+		it('should set failCount to 0', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('test-job', {});
+
+			expect(job.failCount).toBe(0);
+		});
+
+		it('should set createdAt and updatedAt timestamps', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const beforeEnqueue = new Date();
+			const job = await monque.enqueue('test-job', {});
+			const afterEnqueue = new Date();
+
+			expect(job.createdAt).toBeInstanceOf(Date);
+			expect(job.updatedAt).toBeInstanceOf(Date);
+			expect(job.createdAt.getTime()).toBeGreaterThanOrEqual(beforeEnqueue.getTime());
+			expect(job.createdAt.getTime()).toBeLessThanOrEqual(afterEnqueue.getTime());
+		});
+
+		it('should set nextRunAt to now by default', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const beforeEnqueue = new Date();
+			const job = await monque.enqueue('test-job', {});
+			const afterEnqueue = new Date();
+
+			expect(job.nextRunAt).toBeInstanceOf(Date);
+			expect(job.nextRunAt.getTime()).toBeGreaterThanOrEqual(beforeEnqueue.getTime());
+			expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(afterEnqueue.getTime());
+		});
+	});
+
+	describe('runAt option', () => {
+		it('should schedule job for future execution with runAt', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const futureDate = new Date(Date.now() + 60000); // 1 minute in future
+			const job = await monque.enqueue('delayed-job', { task: 'later' }, { runAt: futureDate });
+
+			expect(job.nextRunAt.getTime()).toBe(futureDate.getTime());
+		});
+
+		it('should accept runAt in the past', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const pastDate = new Date(Date.now() - 60000); // 1 minute in past
+			const job = await monque.enqueue('past-job', {}, { runAt: pastDate });
+
+			expect(job.nextRunAt.getTime()).toBe(pastDate.getTime());
+		});
+	});
+
+	describe('data integrity', () => {
+		it('should preserve string data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = { message: 'Hello, World!' };
+			const job = await monque.enqueue('string-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+
+		it('should preserve numeric data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = { count: 42, price: 19.99 };
+			const job = await monque.enqueue('number-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+
+		it('should preserve nested object data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = {
+				user: {
+					id: '123',
+					profile: {
+						name: 'John',
+						email: 'john@example.com',
+					},
+				},
+				settings: {
+					enabled: true,
+					options: ['a', 'b', 'c'],
+				},
+			};
+			const job = await monque.enqueue('nested-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+
+		it('should preserve array data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = { items: [1, 2, 3, 4, 5] };
+			const job = await monque.enqueue('array-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+
+		it('should preserve null values in data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = { value: null, other: 'present' };
+			const job = await monque.enqueue('null-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+
+		it('should preserve boolean values in data', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const data = { active: true, deleted: false };
+			const job = await monque.enqueue('boolean-job', data);
+
+			expect(job.data).toEqual(data);
+		});
+	});
+
+	describe('return value', () => {
+		it('should return Job with all required fields', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('complete-job', { test: true });
+
+			// Required fields
+			expect(job._id).toBeDefined();
+			expect(job.name).toBeDefined();
+			expect(job.data).toBeDefined();
+			expect(job.status).toBeDefined();
+			expect(job.nextRunAt).toBeDefined();
+			expect(job.failCount).toBeDefined();
+			expect(job.createdAt).toBeDefined();
+			expect(job.updatedAt).toBeDefined();
+		});
+
+		it('should not include optional fields when not set', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('minimal-job', {});
+
+			// Optional fields should not be set
+			expect(job.uniqueKey).toBeUndefined();
+			expect(job.repeatInterval).toBeUndefined();
+			expect(job.failReason).toBeUndefined();
+		});
+
+		it('should include uniqueKey when provided', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('unique-job', {}, { uniqueKey: 'test-key-123' });
+
+			expect(job.uniqueKey).toBe('test-key-123');
+		});
+	});
+
+	describe('persistence', () => {
+		it('should persist job to MongoDB collection', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job = await monque.enqueue('persisted-job', { stored: true });
+
+			// Verify job exists in collection
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id! });
+
+			expect(doc).not.toBeNull();
+			expect(doc?.['name']).toBe('persisted-job');
+			expect(doc?.['data']).toEqual({ stored: true });
+		});
+
+		it('should allow enqueueing multiple jobs', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job1 = await monque.enqueue('job-1', { index: 1 });
+			const job2 = await monque.enqueue('job-2', { index: 2 });
+			const job3 = await monque.enqueue('job-3', { index: 3 });
+
+			expect(job1._id).not.toEqual(job2._id);
+			expect(job2._id).not.toEqual(job3._id);
+
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments();
+			expect(count).toBe(3);
+		});
+	});
+
+	describe('error handling', () => {
+		it('should throw if not initialized', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			// Do NOT call initialize()
+
+			await expect(monque.enqueue('test', {})).rejects.toThrow('not initialized');
+		});
+	});
+});
+
+describe('now()', () => {
+	let db: Db;
+	let collectionName: string;
+
+	beforeAll(async () => {
+		db = await getTestDb('now');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	it('should enqueue a job for immediate processing', async () => {
+		collectionName = uniqueCollectionName('monque_jobs');
+		const monque = new Monque(db, { collectionName });
+		await monque.initialize();
+
+		const beforeNow = new Date();
+		const job = await monque.now('immediate-job', { urgent: true });
+		const afterNow = new Date();
+
+		expect(job.nextRunAt.getTime()).toBeGreaterThanOrEqual(beforeNow.getTime());
+		expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(afterNow.getTime());
+	});
+
+	it('should be equivalent to enqueue with runAt: new Date()', async () => {
+		collectionName = uniqueCollectionName('monque_jobs');
+		const monque = new Monque(db, { collectionName });
+		await monque.initialize();
+
+		const nowJob = await monque.now('now-job', { method: 'now' });
+		const enqueueJob = await monque.enqueue('enqueue-job', { method: 'enqueue' }, { runAt: new Date() });
+
+		// Both should have similar structure
+		expect(nowJob.status).toBe(enqueueJob.status);
+		expect(nowJob.failCount).toBe(enqueueJob.failCount);
+		
+		// nextRunAt should be close (within 100ms)
+		const timeDiff = Math.abs(nowJob.nextRunAt.getTime() - enqueueJob.nextRunAt.getTime());
+		expect(timeDiff).toBeLessThan(100);
+	});
+
+	it('should preserve data payload', async () => {
+		collectionName = uniqueCollectionName('monque_jobs');
+		const monque = new Monque(db, { collectionName });
+		await monque.initialize();
+
+		const data = { email: 'test@example.com', subject: 'Hello' };
+		const job = await monque.now('email-job', data);
+
+		expect(job.data).toEqual(data);
+	});
+
+	it('should return a valid Job document', async () => {
+		collectionName = uniqueCollectionName('monque_jobs');
+		const monque = new Monque(db, { collectionName });
+		await monque.initialize();
+
+		const job = await monque.now('job', {});
+
+		expect(job._id).toBeDefined();
+		expect(job.name).toBe('job');
+		expect(job.status).toBe(JobStatus.PENDING);
+		expect(job.failCount).toBe(0);
+	});
+});

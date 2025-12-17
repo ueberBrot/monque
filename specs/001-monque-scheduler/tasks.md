@@ -62,22 +62,6 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
   - `getTestDb(testName)` - returns isolated database per test file
   - `cleanupTestDb(db)` - drops test database after test suite
 
-**Usage Pattern**:
-```typescript
-// In test files (Phase 3+):
-import { getMongoDb, closeMongoDb } from './setup/mongodb';
-
-let db: Db;
-
-beforeAll(async () => {
-  db = await getMongoDb();
-});
-
-afterAll(async () => {
-  // Container stays running, shared across test files
-});
-```
-
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
@@ -117,21 +101,21 @@ afterAll(async () => {
 
 > **Write tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T031 [P] [US1] Create packages/core/tests/enqueue.test.ts with tests for enqueue() method (basic enqueue, runAt option, return Job, data integrity)
-- [ ] T032 [P] [US1] Create packages/core/tests/worker.test.ts with tests for worker() registration and job processing
-- [ ] T033 [P] [US1] Create packages/core/tests/locking.test.ts with tests for atomic job locking (concurrent workers, no duplicate processing)
-- [ ] T034 [P] [US1] Add concurrency limit tests in packages/core/tests/worker.test.ts (respect defaultConcurrency option)
+- [X] T031 [P] [US1] Create packages/core/tests/enqueue.test.ts with tests for enqueue() method (basic enqueue, runAt option, return Job, data integrity)
+- [X] T032 [P] [US1] Create packages/core/tests/worker.test.ts with tests for worker() registration and job processing
+- [X] T033 [P] [US1] Create packages/core/tests/locking.test.ts with tests for atomic job locking (concurrent workers, no duplicate processing)
+- [X] T034 [P] [US1] Add concurrency limit tests in packages/core/tests/worker.test.ts (respect defaultConcurrency option)
 
 ### Implementation for User Story 1
 
-- [ ] T035 [US1] Implement enqueue<T>(name, data, options) method in packages/core/src/monque.ts (insert job document with status=pending, nextRunAt)
-- [ ] T036 [US1] Implement now<T>(name, data) method in packages/core/src/monque.ts (syntactic sugar calling enqueue with runAt=now)
-- [ ] T037 [US1] Implement worker<T>(name, handler, options?) method in packages/core/src/monque.ts (store handler in workers Map)
-- [ ] T038 [US1] Implement start() method with polling loop in packages/core/src/monque.ts (setInterval based on pollInterval option, default 1000ms)
-- [ ] T039 [US1] Implement atomic job locking using findOneAndUpdate in packages/core/src/monque.ts (status=pending, nextRunAt<=now → status=processing, lockedAt=now)
-- [ ] T040 [US1] Implement job execution and completion logic in packages/core/src/monque.ts (call handler, set status=completed, updatedAt on success)
-- [ ] T041 [US1] Implement concurrency control in packages/core/src/monque.ts (track activeJobs per worker, respect defaultConcurrency=5)
-- [ ] T042 [US1] Run tests for US1 to verify all pass
+- [X] T035 [US1] Implement enqueue<T>(name, data, options) method in packages/core/src/monque.ts (insert job document with status=pending, nextRunAt)
+- [X] T036 [US1] Implement now<T>(name, data) method in packages/core/src/monque.ts (syntactic sugar calling enqueue with runAt=now)
+- [X] T037 [US1] Implement worker<T>(name, handler, options?) method in packages/core/src/monque.ts (store handler in workers Map)
+- [X] T038 [US1] Implement start() method with polling loop in packages/core/src/monque.ts (setInterval based on pollInterval option, default 1000ms)
+- [X] T039 [US1] Implement atomic job locking using findOneAndUpdate in packages/core/src/monque.ts (status=pending, nextRunAt<=now → status=processing, lockedAt=now)
+- [X] T040 [US1] Implement job execution and completion logic in packages/core/src/monque.ts (call handler, set status=completed, updatedAt on success)
+- [X] T041 [US1] Implement concurrency control in packages/core/src/monque.ts (track activeJobs per worker, respect defaultConcurrency=5)
+- [X] T042 [US1] Run tests for US1 to verify all pass
 
 **Checkpoint**: User Story 1 complete - basic job enqueueing and processing works
 
