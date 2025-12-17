@@ -149,16 +149,16 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 3
 
-- [ ] T047 [P] [US3] Create packages/core/tests/retry.test.ts with tests for retry logic (backoff timing within ±50ms per SC-003)
-- [ ] T048 [P] [US3] Add tests for failCount increment, failReason storage in packages/core/tests/retry.test.ts
-- [ ] T049 [P] [US3] Add tests for max retries → permanent failed status in packages/core/tests/retry.test.ts
+- [X] T047 [P] [US3] Create packages/core/tests/retry.test.ts with tests for retry logic (backoff timing within ±50ms per SC-003)
+- [X] T048 [P] [US3] Add tests for failCount increment, failReason storage in packages/core/tests/retry.test.ts
+- [X] T049 [P] [US3] Add tests for max retries → permanent failed status in packages/core/tests/retry.test.ts
 
 ### Implementation for User Story 3
 
-- [ ] T050 [US3] Implement job failure handling in packages/core/src/monque.ts (catch handler errors/rejections, increment failCount, store failReason)
-- [ ] T051 [US3] Integrate backoff calculation in failure handling in packages/core/src/monque.ts (use utils/backoff.ts to set nextRunAt, reset status to pending)
-- [ ] T052 [US3] Implement max retry check in packages/core/src/monque.ts (if failCount >= maxRetries, set status=failed permanently)
-- [ ] T053 [US3] Run tests for US3 to verify retry and backoff behavior
+- [X] T050 [US3] Implement job failure handling in packages/core/src/monque.ts (catch handler errors/rejections, increment failCount, store failReason)
+- [X] T051 [US3] Integrate backoff calculation in failure handling in packages/core/src/monque.ts (use utils/backoff.ts to set nextRunAt, reset status to pending)
+- [X] T052 [US3] Implement max retry check in packages/core/src/monque.ts (if failCount >= maxRetries, set status=failed permanently)
+- [X] T053 [US3] Run tests for US3 to verify retry and backoff behavior
 
 **Checkpoint**: User Story 3 complete - retry with backoff works independently
 

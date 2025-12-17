@@ -95,6 +95,14 @@ export interface Job<T = unknown> {
 }
 
 /**
+ * A job that has been persisted to MongoDB and has a guaranteed `_id`.
+ * This is returned by `enqueue()`, `now()`, and `schedule()` methods.
+ *
+ * @template T - The type of the job's data payload
+ */
+export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
+
+/**
  * Options for enqueueing a job.
  *
  * @example
@@ -281,26 +289,26 @@ export interface MonquePublicAPI {
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
 	 * @param options - Enqueueing options
-	 * @returns The created job document
+	 * @returns The created job document with guaranteed _id
 	 */
-	enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<Job<T>>;
+	enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>>;
 
 	/**
 	 * Enqueue a job for immediate processing (syntactic sugar).
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
-	 * @returns The created job document
+	 * @returns The created job document with guaranteed _id
 	 */
-	now<T>(name: string, data: T): Promise<Job<T>>;
+	now<T>(name: string, data: T): Promise<PersistedJob<T>>;
 
 	/**
 	 * Schedule a recurring job with a cron expression.
 	 * @param cron - Cron expression (5-field format)
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
-	 * @returns The created job document
+	 * @returns The created job document with guaranteed _id
 	 */
-	schedule<T>(cron: string, name: string, data: T): Promise<Job<T>>;
+	schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>>;
 
 	/**
 	 * Register a worker to process jobs of a specific type.

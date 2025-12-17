@@ -10,14 +10,14 @@
  * @see {@link ../src/monque.ts}
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Monque } from '../src/monque.js';
-import { JobStatus, type Job } from '../src/types.js';
+import { type Job, JobStatus } from '../src/types.js';
 import {
-	getTestDb,
 	cleanupTestDb,
 	clearCollection,
+	getTestDb,
 	uniqueCollectionName,
 	waitFor,
 } from './setup/test-utils.js';
@@ -62,7 +62,7 @@ describe('atomic job locking', () => {
 
 			// Check database state while processing
 			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id! });
+			const doc = await collection.findOne({ _id: job._id });
 
 			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
 			expect(doc?.['lockedAt']).toBeInstanceOf(Date);
@@ -86,7 +86,7 @@ describe('atomic job locking', () => {
 
 			// Verify initial state
 			let collection = db.collection(collectionName);
-			let doc = await collection.findOne({ _id: job._id! });
+			let doc = await collection.findOne({ _id: job._id });
 			expect(doc?.['status']).toBe(JobStatus.PENDING);
 
 			monque.start();
@@ -96,7 +96,7 @@ describe('atomic job locking', () => {
 
 			// Verify processing state
 			collection = db.collection(collectionName);
-			doc = await collection.findOne({ _id: job._id! });
+			doc = await collection.findOne({ _id: job._id });
 			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
 
 			await monque.stop();
@@ -118,14 +118,14 @@ describe('atomic job locking', () => {
 			const processedJobIds = new Set<string>();
 
 			const handler1 = vi.fn(async (job: Job) => {
-				const jobId = job._id!.toString();
+				const jobId = job._id.toString();
 				processedJobs.push(`instance1:${jobId}`);
 				processedJobIds.add(jobId);
 				await new Promise((r) => setTimeout(r, 100));
 			});
 
 			const handler2 = vi.fn(async (job: Job) => {
-				const jobId = job._id!.toString();
+				const jobId = job._id.toString();
 				processedJobs.push(`instance2:${jobId}`);
 				processedJobIds.add(jobId);
 				await new Promise((r) => setTimeout(r, 100));
@@ -139,7 +139,7 @@ describe('atomic job locking', () => {
 			const enqueuedJobIds: string[] = [];
 			for (let i = 0; i < jobCount; i++) {
 				const job = await monque1.enqueue('shared-job', { index: i });
-				enqueuedJobIds.push(job._id!.toString());
+				enqueuedJobIds.push(job._id.toString());
 			}
 
 			// Start both instances
@@ -147,10 +147,7 @@ describe('atomic job locking', () => {
 			monque2.start();
 
 			// Wait for all jobs to be processed
-			await waitFor(
-				async () => processedJobIds.size === jobCount,
-				{ timeout: 10000 },
-			);
+			await waitFor(async () => processedJobIds.size === jobCount, { timeout: 10000 });
 
 			await monque1.stop();
 			await monque2.stop();
@@ -201,10 +198,9 @@ describe('atomic job locking', () => {
 			monque1.start();
 			monque2.start();
 
-			await waitFor(
-				async () => instance1Jobs.length + instance2Jobs.length === jobCount,
-				{ timeout: 10000 },
-			);
+			await waitFor(async () => instance1Jobs.length + instance2Jobs.length === jobCount, {
+				timeout: 10000,
+			});
 
 			await monque1.stop();
 			await monque2.stop();
@@ -236,7 +232,7 @@ describe('atomic job locking', () => {
 
 			const createHandler = () =>
 				vi.fn(async (job: Job) => {
-					const jobId = job._id!.toString();
+					const jobId = job._id.toString();
 					if (processedJobIds.has(jobId)) {
 						duplicates.push(jobId);
 					}
@@ -262,10 +258,7 @@ describe('atomic job locking', () => {
 			monque2.start();
 			monque3.start();
 
-			await waitFor(
-				async () => processedJobIds.size === jobCount,
-				{ timeout: 15000 },
-			);
+			await waitFor(async () => processedJobIds.size === jobCount, { timeout: 15000 });
 
 			await monque1.stop();
 			await monque2.stop();
@@ -296,7 +289,7 @@ describe('atomic job locking', () => {
 			const collection = db.collection(collectionName);
 
 			// Check initial status
-			let doc = await collection.findOne({ _id: job._id! });
+			let doc = await collection.findOne({ _id: job._id });
 			statusHistory.push(doc?.['status'] as string);
 
 			monque.start();
@@ -305,26 +298,22 @@ describe('atomic job locking', () => {
 			await waitFor(async () => checkDuringProcessing);
 
 			// Check processing status
-			doc = await collection.findOne({ _id: job._id! });
+			doc = await collection.findOne({ _id: job._id });
 			statusHistory.push(doc?.['status'] as string);
 
 			// Wait for completion
 			await waitFor(async () => {
-				const d = await collection.findOne({ _id: job._id! });
+				const d = await collection.findOne({ _id: job._id });
 				return d?.['status'] === JobStatus.COMPLETED;
 			});
 
 			// Check completed status
-			doc = await collection.findOne({ _id: job._id! });
+			doc = await collection.findOne({ _id: job._id });
 			statusHistory.push(doc?.['status'] as string);
 
 			await monque.stop();
 
-			expect(statusHistory).toEqual([
-				JobStatus.PENDING,
-				JobStatus.PROCESSING,
-				JobStatus.COMPLETED,
-			]);
+			expect(statusHistory).toEqual([JobStatus.PENDING, JobStatus.PROCESSING, JobStatus.COMPLETED]);
 		});
 
 		it('should clear lockedAt after job completion', async () => {
@@ -340,14 +329,14 @@ describe('atomic job locking', () => {
 
 			await waitFor(async () => {
 				const collection = db.collection(collectionName);
-				const doc = await collection.findOne({ _id: job._id! });
+				const doc = await collection.findOne({ _id: job._id });
 				return doc?.['status'] === JobStatus.COMPLETED;
 			});
 
 			await monque.stop();
 
 			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id! });
+			const doc = await collection.findOne({ _id: job._id });
 			expect(doc?.['lockedAt']).toBeNull();
 		});
 
@@ -365,20 +354,20 @@ describe('atomic job locking', () => {
 			const collection = db.collection(collectionName);
 
 			// Get initial updatedAt
-			let doc = await collection.findOne({ _id: job._id! });
+			let doc = await collection.findOne({ _id: job._id });
 			const initialUpdatedAt = doc?.['updatedAt'] as Date;
 
 			monque.start();
 
 			await waitFor(async () => {
-				const d = await collection.findOne({ _id: job._id! });
+				const d = await collection.findOne({ _id: job._id });
 				return d?.['status'] === JobStatus.COMPLETED;
 			});
 
 			await monque.stop();
 
 			// Get final updatedAt
-			doc = await collection.findOne({ _id: job._id! });
+			doc = await collection.findOne({ _id: job._id });
 			const finalUpdatedAt = doc?.['updatedAt'] as Date;
 
 			expect(finalUpdatedAt.getTime()).toBeGreaterThan(initialUpdatedAt.getTime());

@@ -10,11 +10,16 @@
  * @see {@link ../src/monque.ts}
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Monque } from '../src/monque.js';
 import { JobStatus } from '../src/types.js';
-import { getTestDb, cleanupTestDb, clearCollection, uniqueCollectionName } from './setup/test-utils.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	uniqueCollectionName,
+} from './setup/test-utils.js';
 
 describe('enqueue()', () => {
 	let db: Db;
@@ -255,7 +260,7 @@ describe('enqueue()', () => {
 
 			// Verify job exists in collection
 			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id! });
+			const doc = await collection.findOne({ _id: job._id });
 
 			expect(doc).not.toBeNull();
 			expect(doc?.['name']).toBe('persisted-job');
@@ -328,12 +333,16 @@ describe('now()', () => {
 		await monque.initialize();
 
 		const nowJob = await monque.now('now-job', { method: 'now' });
-		const enqueueJob = await monque.enqueue('enqueue-job', { method: 'enqueue' }, { runAt: new Date() });
+		const enqueueJob = await monque.enqueue(
+			'enqueue-job',
+			{ method: 'enqueue' },
+			{ runAt: new Date() },
+		);
 
 		// Both should have similar structure
 		expect(nowJob.status).toBe(enqueueJob.status);
 		expect(nowJob.failCount).toBe(enqueueJob.failCount);
-		
+
 		// nextRunAt should be close (within 100ms)
 		const timeDiff = Math.abs(nowJob.nextRunAt.getTime() - enqueueJob.nextRunAt.getTime());
 		expect(timeDiff).toBeLessThan(100);
@@ -400,10 +409,18 @@ describe('uniqueKey deduplication', () => {
 			await monque.initialize();
 
 			// Create first job with uniqueKey
-			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Try to create duplicate with same uniqueKey
-			const job2 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Should return the existing job (same _id)
 			expect(job2._id?.toString()).toBe(job1._id?.toString());
@@ -420,10 +437,18 @@ describe('uniqueKey deduplication', () => {
 			await monque.initialize();
 
 			// Create first job with uniqueKey
-			const job1 = await monque.enqueue('sync-user', { userId: '123', first: true }, { uniqueKey: 'sync-user-123' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123', first: true },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Try to create duplicate with different data
-			const job2 = await monque.enqueue('sync-user', { userId: '123', second: true }, { uniqueKey: 'sync-user-123' });
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123', second: true },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Should return existing job with original data
 			expect(job2.data).toEqual({ userId: '123', first: true });
@@ -438,18 +463,26 @@ describe('uniqueKey deduplication', () => {
 			await monque.initialize();
 
 			// Create a job with uniqueKey
-			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 			expect(job1._id).toBeDefined();
 
 			// Manually update job status to processing (simulating worker pickup)
 			const collection = db.collection(collectionName);
 			await collection.updateOne(
-				{ _id: job1._id! },
-				{ $set: { status: JobStatus.PROCESSING, lockedAt: new Date() } }
+				{ _id: job1._id },
+				{ $set: { status: JobStatus.PROCESSING, lockedAt: new Date() } },
 			);
 
 			// Try to create another job with same uniqueKey
-			const job2 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Should return the existing job (same _id)
 			expect(job2._id?.toString()).toBe(job1._id?.toString());
@@ -467,18 +500,26 @@ describe('uniqueKey deduplication', () => {
 			await monque.initialize();
 
 			// Create a job with uniqueKey
-			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 			expect(job1._id).toBeDefined();
 
 			// Manually update job status to completed
 			const collection = db.collection(collectionName);
 			await collection.updateOne(
-				{ _id: job1._id! },
-				{ $set: { status: JobStatus.COMPLETED, lockedAt: null } }
+				{ _id: job1._id },
+				{ $set: { status: JobStatus.COMPLETED, lockedAt: null } },
 			);
 
 			// Create another job with same uniqueKey
-			const job2 = await monque.enqueue('sync-user', { userId: '123', retry: true }, { uniqueKey: 'sync-user-123' });
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123', retry: true },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Should create a NEW job (different _id)
 			expect(job2._id?.toString()).not.toBe(job1._id?.toString());
@@ -489,9 +530,9 @@ describe('uniqueKey deduplication', () => {
 			const totalCount = await collection.countDocuments({ uniqueKey: 'sync-user-123' });
 			expect(totalCount).toBe(2);
 
-			const pendingCount = await collection.countDocuments({ 
-				uniqueKey: 'sync-user-123', 
-				status: JobStatus.PENDING 
+			const pendingCount = await collection.countDocuments({
+				uniqueKey: 'sync-user-123',
+				status: JobStatus.PENDING,
 			});
 			expect(pendingCount).toBe(1);
 		});
@@ -504,25 +545,33 @@ describe('uniqueKey deduplication', () => {
 			await monque.initialize();
 
 			// Create a job with uniqueKey
-			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123' },
+				{ uniqueKey: 'sync-user-123' },
+			);
 			expect(job1._id).toBeDefined();
 
 			// Manually update job status to failed (permanent failure after max retries)
 			const collection = db.collection(collectionName);
 			await collection.updateOne(
-				{ _id: job1._id! },
-				{ 
-					$set: { 
-						status: JobStatus.FAILED, 
-						lockedAt: null, 
-						failCount: 10, 
-						failReason: 'Max retries exceeded' 
-					} 
-				}
+				{ _id: job1._id },
+				{
+					$set: {
+						status: JobStatus.FAILED,
+						lockedAt: null,
+						failCount: 10,
+						failReason: 'Max retries exceeded',
+					},
+				},
 			);
 
 			// Create another job with same uniqueKey
-			const job2 = await monque.enqueue('sync-user', { userId: '123', retry: true }, { uniqueKey: 'sync-user-123' });
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '123', retry: true },
+				{ uniqueKey: 'sync-user-123' },
+			);
 
 			// Should create a NEW job (different _id)
 			expect(job2._id?.toString()).not.toBe(job1._id?.toString());
@@ -542,21 +591,21 @@ describe('uniqueKey deduplication', () => {
 
 			// Create 10 concurrent enqueue attempts with same uniqueKey
 			const enqueuePromises = Array.from({ length: 10 }, (_, i) =>
-				monque.enqueue('sync-user', { attempt: i }, { uniqueKey: 'concurrent-test' })
+				monque.enqueue('sync-user', { attempt: i }, { uniqueKey: 'concurrent-test' }),
 			);
 
 			const results = await Promise.all(enqueuePromises);
 
 			// All results should be defined
 			expect(results.length).toBe(10);
-			
+
 			// Get first result and verify it exists
-			const firstResult = results[0] as NonNullable<typeof results[0]>;
+			const firstResult = results[0] as NonNullable<(typeof results)[0]>;
 			expect(firstResult._id).toBeDefined();
 
 			// All should return the same job (same _id)
-			const firstId = firstResult._id!.toString();
-			expect(results.every(job => job._id?.toString() === firstId)).toBe(true);
+			const firstId = firstResult._id.toString();
+			expect(results.every((job) => job._id?.toString() === firstId)).toBe(true);
 
 			// Should only be one job in the collection
 			const collection = db.collection(collectionName);
@@ -571,9 +620,21 @@ describe('uniqueKey deduplication', () => {
 			const monque = new Monque(db, { collectionName });
 			await monque.initialize();
 
-			const job1 = await monque.enqueue('sync-user', { userId: '111' }, { uniqueKey: 'sync-user-111' });
-			const job2 = await monque.enqueue('sync-user', { userId: '222' }, { uniqueKey: 'sync-user-222' });
-			const job3 = await monque.enqueue('sync-user', { userId: '333' }, { uniqueKey: 'sync-user-333' });
+			const job1 = await monque.enqueue(
+				'sync-user',
+				{ userId: '111' },
+				{ uniqueKey: 'sync-user-111' },
+			);
+			const job2 = await monque.enqueue(
+				'sync-user',
+				{ userId: '222' },
+				{ uniqueKey: 'sync-user-222' },
+			);
+			const job3 = await monque.enqueue(
+				'sync-user',
+				{ userId: '333' },
+				{ uniqueKey: 'sync-user-333' },
+			);
 
 			// All should have different _ids
 			expect(job1._id?.toString()).not.toBe(job2._id?.toString());

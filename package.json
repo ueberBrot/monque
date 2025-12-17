@@ -9,6 +9,8 @@
 	"scripts": {
 		"build": "turbo build",
 		"test": "turbo test",
+		"test:core": "turbo test --filter=@monque/core",
+		"test:tsed": "turbo test --filter=@monque/tsed",
 		"test:ui": "vitest --ui",
 		"test:coverage": "vitest run --coverage",
 		"lint": "turbo lint",

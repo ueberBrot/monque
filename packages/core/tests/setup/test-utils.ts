@@ -56,10 +56,7 @@ export async function cleanupTestDb(db: Db): Promise<void> {
  * @param db - The database instance
  * @param collectionName - Name of the collection to clear
  */
-export async function clearCollection(
-	db: Db,
-	collectionName: string,
-): Promise<void> {
+export async function clearCollection(db: Db, collectionName: string): Promise<void> {
 	await db.collection(collectionName).deleteMany({});
 }
 
@@ -72,7 +69,7 @@ export async function clearCollection(
  */
 export function uniqueCollectionName(baseName: string): string {
 	const suffix = Math.random().toString(36).substring(2, 8);
-  
+
 	return `${baseName}_${suffix}`;
 }
 

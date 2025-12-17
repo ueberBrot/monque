@@ -18,6 +18,7 @@ export {
 	type MonqueEventMap,
 	type MonqueOptions,
 	type MonquePublicAPI,
+	type PersistedJob,
 	type WorkerOptions,
 } from './types.js';
 

@@ -11,14 +11,14 @@
  * @see {@link ../src/monque.ts}
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Monque } from '../src/monque.js';
-import { JobStatus, type Job } from '../src/types.js';
+import { type Job, JobStatus } from '../src/types.js';
 import {
-	getTestDb,
 	cleanupTestDb,
 	clearCollection,
+	getTestDb,
 	uniqueCollectionName,
 	waitFor,
 } from './setup/test-utils.js';
@@ -131,9 +131,9 @@ describe('worker()', () => {
 			monque = new Monque(db, { collectionName, pollInterval: 100 });
 			await monque.initialize();
 
-			let receivedJob: Job | null = null;
+			const receivedJobs: Job[] = [];
 			const handler = vi.fn((job: Job) => {
-				receivedJob = job;
+				receivedJobs.push(job);
 			});
 			monque.worker('data-job', handler);
 
@@ -143,9 +143,14 @@ describe('worker()', () => {
 
 			await waitFor(async () => handler.mock.calls.length > 0);
 
-			expect(receivedJob).not.toBeNull();
-			expect(receivedJob!.name).toBe('data-job');
-			expect(receivedJob!.data).toEqual(enqueuedData);
+			expect(receivedJobs).toHaveLength(1);
+
+			const receivedJob = receivedJobs[0];
+
+			if (!receivedJob) throw new Error('Expected receivedJob to be defined');
+
+			expect(receivedJob.name).toBe('data-job');
+			expect(receivedJob.data).toEqual(enqueuedData);
 		});
 
 		it('should process jobs in order of nextRunAt', async () => {
@@ -224,12 +229,12 @@ describe('worker()', () => {
 
 			await waitFor(async () => {
 				const collection = db.collection(collectionName);
-				const doc = await collection.findOne({ _id: job._id! });
+				const doc = await collection.findOne({ _id: job._id });
 				return doc?.['status'] === JobStatus.COMPLETED;
 			});
 
 			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id! });
+			const doc = await collection.findOne({ _id: job._id });
 			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
 		});
 
@@ -246,12 +251,12 @@ describe('worker()', () => {
 
 			await waitFor(async () => {
 				const collection = db.collection(collectionName);
-				const doc = await collection.findOne({ _id: job._id! });
+				const doc = await collection.findOne({ _id: job._id });
 				return doc?.['status'] === JobStatus.COMPLETED;
 			});
 
 			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id! });
+			const doc = await collection.findOne({ _id: job._id });
 			expect(doc?.['lockedAt']).toBeNull();
 		});
 	});
@@ -363,7 +368,11 @@ describe('worker()', () => {
 		it('should process more jobs as slots become available', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const concurrency = 2;
-			monque = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: concurrency });
+			monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				defaultConcurrency: concurrency,
+			});
 			await monque.initialize();
 
 			const processedOrder: number[] = [];

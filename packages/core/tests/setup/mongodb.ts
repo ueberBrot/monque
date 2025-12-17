@@ -17,8 +17,8 @@
  * ```
  */
 
-import { MongoClient, type Db } from 'mongodb';
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
+import { type Db, MongoClient } from 'mongodb';
 
 // Module-level singleton instances
 let container: StartedMongoDBContainer | null = null;
@@ -60,7 +60,7 @@ export async function getMongoUri(): Promise<string> {
 		// Start container if not already running
 		container = await new MongoDBContainer('mongo:7').start();
 	}
-  
+
 	return container.getConnectionString();
 }
 
@@ -74,7 +74,11 @@ export async function getMongoClient(): Promise<MongoClient> {
 	// Ensure container and client are initialized
 	await getMongoDb();
 
-	return client!;
+	if (!client) {
+		throw new Error('MongoClient not initialized');
+	}
+
+	return client;
 }
 
 /**

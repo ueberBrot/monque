@@ -9,6 +9,7 @@ import type {
 	MonqueEventMap,
 	MonqueOptions,
 	MonquePublicAPI,
+	PersistedJob,
 	WorkerOptions,
 } from './types.js';
 import { JobStatus } from './types.js';
@@ -194,7 +195,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Enqueue a job for processing.
 	 */
-	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<Job<T>> {
+	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 
 		const now = new Date();
@@ -229,19 +230,19 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					},
 				);
 
-				return this.documentToJob<T>(result as WithId<Document>);
+				return this.documentToPersistedJob<T>(result as WithId<Document>);
 			}
 
 			const result = await this.collection?.insertOne(job as Document);
-			
+
 			if (!result) {
 				throw new ConnectionError('Failed to enqueue job: collection not available');
 			}
-			
-			return { ...job, _id: result.insertedId } as Job<T>;
+
+			return { ...job, _id: result.insertedId } as PersistedJob<T>;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			
+
 			throw new ConnectionError(`Failed to enqueue job: ${message}`);
 		}
 	}
@@ -249,14 +250,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Enqueue a job for immediate processing (syntactic sugar).
 	 */
-	async now<T>(name: string, data: T): Promise<Job<T>> {
+	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		return this.enqueue(name, data, { runAt: new Date() });
 	}
 
 	/**
 	 * Schedule a recurring job with a cron expression.
 	 */
-	async schedule<T>(cron: string, name: string, data: T): Promise<Job<T>> {
+	async schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 
 		// Validate cron and get next run date (throws InvalidCronError if invalid)
@@ -276,12 +277,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		try {
 			const result = await this.collection?.insertOne(job as Document);
-			
+
 			if (!result) {
 				throw new ConnectionError('Failed to schedule job: collection not available');
 			}
 
-			return { ...job, _id: result.insertedId } as Job<T>;
+			return { ...job, _id: result.insertedId } as PersistedJob<T>;
 		} catch (error) {
 			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
 			throw new ConnectionError(`Failed to schedule job: ${message}`);
@@ -394,7 +395,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		for (const [name, worker] of this.workers) {
 			// Check if worker has capacity
 			const availableSlots = worker.concurrency - worker.activeJobs.size;
-			
+
 			if (availableSlots <= 0) {
 				continue;
 			}
@@ -402,7 +403,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			// Try to acquire jobs up to available slots
 			for (let i = 0; i < availableSlots; i++) {
 				const job = await this.acquireJob(name);
-			
+
 				if (job) {
 					this.processJob(job, worker).catch((error) => {
 						this.emit('job:error', { error, job });
@@ -451,7 +452,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			return null;
 		}
 
-		return this.documentToJob(result as WithId<Document>);
+		return this.documentToPersistedJob(result as WithId<Document>);
 	}
 
 	/**
@@ -606,12 +607,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	}
 
 	/**
-	 * Convert a MongoDB document to a typed Job object.
+	 * Convert a MongoDB document to a typed PersistedJob object.
 	 * @param doc - The raw MongoDB document
-	 * @returns A strongly-typed Job object
+	 * @returns A strongly-typed PersistedJob object with guaranteed _id
 	 */
-	private documentToJob<T>(doc: WithId<Document>): Job<T> {
-		const job: Job<T> = {
+	private documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
+		const job: PersistedJob<T> = {
 			_id: doc._id,
 			name: doc['name'] as string,
 			data: doc['data'] as T,
