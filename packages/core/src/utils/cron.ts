@@ -1,4 +1,4 @@
-import { parseExpression } from 'cron-parser';
+import { CronExpressionParser } from 'cron-parser';
 import { InvalidCronError } from '../errors.js';
 
 /**
@@ -23,7 +23,7 @@ import { InvalidCronError } from '../errors.js';
  */
 export function getNextCronDate(expression: string, currentDate?: Date): Date {
 	try {
-		const interval = parseExpression(expression, {
+		const interval = CronExpressionParser.parse(expression, {
 			currentDate: currentDate ?? new Date(),
 		});
 		return interval.next().toDate();
@@ -55,7 +55,7 @@ export function getNextCronDate(expression: string, currentDate?: Date): Date {
  */
 export function validateCronExpression(expression: string): boolean {
 	try {
-		parseExpression(expression);
+		CronExpressionParser.parse(expression);
 		return true;
 	} catch (error) {
 		/* istanbul ignore next -- @preserve cron-parser always throws Error objects */

@@ -37,7 +37,7 @@
 	],
 	"license": "MIT",
 	"dependencies": {
-		"cron-parser": "^4.9.0",
+		"cron-parser": "^5.4.0",
 		"mongodb": "^7.0.0"
 	},
 	"devDependencies": {
