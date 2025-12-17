@@ -363,3 +363,248 @@ describe('now()', () => {
 		expect(job.failCount).toBe(0);
 	});
 });
+
+/**
+ * Tests for uniqueKey deduplication behavior.
+ *
+ * These tests verify User Story 2 - Prevent Duplicate Jobs with Unique Keys:
+ * - pending jobs block new jobs with same uniqueKey
+ * - processing jobs block new jobs with same uniqueKey
+ * - completed jobs allow new jobs with same uniqueKey
+ * - failed jobs allow new jobs with same uniqueKey
+ *
+ * @see {@link ../src/monque.ts}
+ */
+describe('uniqueKey deduplication', () => {
+	let db: Db;
+	let collectionName: string;
+
+	beforeAll(async () => {
+		db = await getTestDb('uniqueKey');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('pending job blocks new job with same uniqueKey', () => {
+		it('should not create duplicate when pending job exists with same uniqueKey', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create first job with uniqueKey
+			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+
+			// Try to create duplicate with same uniqueKey
+			const job2 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+
+			// Should return the existing job (same _id)
+			expect(job2._id?.toString()).toBe(job1._id?.toString());
+
+			// Should only be one job in the collection
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments({ uniqueKey: 'sync-user-123' });
+			expect(count).toBe(1);
+		});
+
+		it('should return the original job document when deduped', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create first job with uniqueKey
+			const job1 = await monque.enqueue('sync-user', { userId: '123', first: true }, { uniqueKey: 'sync-user-123' });
+
+			// Try to create duplicate with different data
+			const job2 = await monque.enqueue('sync-user', { userId: '123', second: true }, { uniqueKey: 'sync-user-123' });
+
+			// Should return existing job with original data
+			expect(job2.data).toEqual({ userId: '123', first: true });
+			expect(job2._id?.toString()).toBe(job1._id?.toString());
+		});
+	});
+
+	describe('processing job blocks new job with same uniqueKey', () => {
+		it('should not create duplicate when processing job exists with same uniqueKey', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create a job with uniqueKey
+			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			expect(job1._id).toBeDefined();
+
+			// Manually update job status to processing (simulating worker pickup)
+			const collection = db.collection(collectionName);
+			await collection.updateOne(
+				{ _id: job1._id! },
+				{ $set: { status: JobStatus.PROCESSING, lockedAt: new Date() } }
+			);
+
+			// Try to create another job with same uniqueKey
+			const job2 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+
+			// Should return the existing job (same _id)
+			expect(job2._id?.toString()).toBe(job1._id?.toString());
+
+			// Should only be one job in the collection
+			const count = await collection.countDocuments({ uniqueKey: 'sync-user-123' });
+			expect(count).toBe(1);
+		});
+	});
+
+	describe('completed job allows new job with same uniqueKey', () => {
+		it('should create new job when completed job exists with same uniqueKey', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create a job with uniqueKey
+			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			expect(job1._id).toBeDefined();
+
+			// Manually update job status to completed
+			const collection = db.collection(collectionName);
+			await collection.updateOne(
+				{ _id: job1._id! },
+				{ $set: { status: JobStatus.COMPLETED, lockedAt: null } }
+			);
+
+			// Create another job with same uniqueKey
+			const job2 = await monque.enqueue('sync-user', { userId: '123', retry: true }, { uniqueKey: 'sync-user-123' });
+
+			// Should create a NEW job (different _id)
+			expect(job2._id?.toString()).not.toBe(job1._id?.toString());
+			expect(job2.status).toBe(JobStatus.PENDING);
+			expect(job2.data).toEqual({ userId: '123', retry: true });
+
+			// Should have two jobs in the collection (one completed, one pending)
+			const totalCount = await collection.countDocuments({ uniqueKey: 'sync-user-123' });
+			expect(totalCount).toBe(2);
+
+			const pendingCount = await collection.countDocuments({ 
+				uniqueKey: 'sync-user-123', 
+				status: JobStatus.PENDING 
+			});
+			expect(pendingCount).toBe(1);
+		});
+	});
+
+	describe('failed job allows new job with same uniqueKey', () => {
+		it('should create new job when failed job exists with same uniqueKey', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create a job with uniqueKey
+			const job1 = await monque.enqueue('sync-user', { userId: '123' }, { uniqueKey: 'sync-user-123' });
+			expect(job1._id).toBeDefined();
+
+			// Manually update job status to failed (permanent failure after max retries)
+			const collection = db.collection(collectionName);
+			await collection.updateOne(
+				{ _id: job1._id! },
+				{ 
+					$set: { 
+						status: JobStatus.FAILED, 
+						lockedAt: null, 
+						failCount: 10, 
+						failReason: 'Max retries exceeded' 
+					} 
+				}
+			);
+
+			// Create another job with same uniqueKey
+			const job2 = await monque.enqueue('sync-user', { userId: '123', retry: true }, { uniqueKey: 'sync-user-123' });
+
+			// Should create a NEW job (different _id)
+			expect(job2._id?.toString()).not.toBe(job1._id?.toString());
+			expect(job2.status).toBe(JobStatus.PENDING);
+
+			// Should have two jobs in the collection (one failed, one pending)
+			const totalCount = await collection.countDocuments({ uniqueKey: 'sync-user-123' });
+			expect(totalCount).toBe(2);
+		});
+	});
+
+	describe('concurrent enqueue with same uniqueKey', () => {
+		it('should handle concurrent enqueue attempts atomically', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create 10 concurrent enqueue attempts with same uniqueKey
+			const enqueuePromises = Array.from({ length: 10 }, (_, i) =>
+				monque.enqueue('sync-user', { attempt: i }, { uniqueKey: 'concurrent-test' })
+			);
+
+			const results = await Promise.all(enqueuePromises);
+
+			// All results should be defined
+			expect(results.length).toBe(10);
+			
+			// Get first result and verify it exists
+			const firstResult = results[0] as NonNullable<typeof results[0]>;
+			expect(firstResult._id).toBeDefined();
+
+			// All should return the same job (same _id)
+			const firstId = firstResult._id!.toString();
+			expect(results.every(job => job._id?.toString() === firstId)).toBe(true);
+
+			// Should only be one job in the collection
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments({ uniqueKey: 'concurrent-test' });
+			expect(count).toBe(1);
+		});
+	});
+
+	describe('different uniqueKeys create separate jobs', () => {
+		it('should create separate jobs for different uniqueKeys', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			const job1 = await monque.enqueue('sync-user', { userId: '111' }, { uniqueKey: 'sync-user-111' });
+			const job2 = await monque.enqueue('sync-user', { userId: '222' }, { uniqueKey: 'sync-user-222' });
+			const job3 = await monque.enqueue('sync-user', { userId: '333' }, { uniqueKey: 'sync-user-333' });
+
+			// All should have different _ids
+			expect(job1._id?.toString()).not.toBe(job2._id?.toString());
+			expect(job2._id?.toString()).not.toBe(job3._id?.toString());
+
+			// Should have three jobs in the collection
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments({});
+			expect(count).toBe(3);
+		});
+	});
+
+	describe('jobs without uniqueKey are not deduplicated', () => {
+		it('should create multiple jobs when no uniqueKey is provided', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName });
+			await monque.initialize();
+
+			// Create multiple jobs without uniqueKey
+			const job1 = await monque.enqueue('send-email', { to: 'user@example.com' });
+			const job2 = await monque.enqueue('send-email', { to: 'user@example.com' });
+			const job3 = await monque.enqueue('send-email', { to: 'user@example.com' });
+
+			// All should have different _ids
+			expect(job1._id?.toString()).not.toBe(job2._id?.toString());
+			expect(job2._id?.toString()).not.toBe(job3._id?.toString());
+
+			// Should have three jobs in the collection
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments({});
+			expect(count).toBe(3);
+		});
+	});
+});

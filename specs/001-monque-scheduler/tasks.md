@@ -129,13 +129,13 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 2
 
-- [ ] T043 [P] [US2] Add tests in packages/core/tests/enqueue.test.ts for uniqueKey deduplication (pending blocks new, processing blocks new, completed allows new)
+- [X] T043 [P] [US2] Add tests in packages/core/tests/enqueue.test.ts for uniqueKey deduplication (pending blocks new, processing blocks new, completed allows new)
 
 ### Implementation for User Story 2
 
-- [ ] T044 [US2] Implement uniqueKey handling in enqueue() in packages/core/src/monque.ts (upsert with $setOnInsert pattern for pending/processing status check)
-- [ ] T045 [US2] Add partial unique index enforcement for uniqueKey (sparse index where uniqueKey exists) in packages/core/src/monque.ts
-- [ ] T046 [US2] Run tests for US2 to verify deduplication works correctly
+- [X] T044 [US2] Implement uniqueKey handling in enqueue() in packages/core/src/monque.ts (upsert with $setOnInsert pattern for pending/processing status check)
+- [X] T045 [US2] Add partial unique index enforcement for uniqueKey (sparse index where uniqueKey exists) in packages/core/src/monque.ts
+- [X] T046 [US2] Run tests for US2 to verify deduplication works correctly
 
 **Checkpoint**: User Story 2 complete - duplicate prevention works independently
 
