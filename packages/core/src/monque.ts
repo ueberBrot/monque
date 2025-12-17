@@ -350,10 +350,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		}
 
 		// Create a promise that resolves when all jobs are done
+		let checkInterval: ReturnType<typeof setInterval> | undefined;
 		const waitForJobs = new Promise<void>((resolve) => {
-			const checkInterval = setInterval(() => {
+			checkInterval = setInterval(() => {
 				if (this.getActiveJobs().length === 0) {
-					clearInterval(checkInterval);
 					resolve();
 				}
 			}, 100);
@@ -364,7 +364,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
 		});
 
-		const result = await Promise.race([waitForJobs, timeout]);
+		let result: void | 'timeout';
+
+		try {
+			result = await Promise.race([waitForJobs, timeout]);
+		} finally {
+			if (checkInterval) {
+				clearInterval(checkInterval);
+			}
+		}
 
 		if (result === 'timeout') {
 			const incompleteJobs = this.getActiveJobsList();
