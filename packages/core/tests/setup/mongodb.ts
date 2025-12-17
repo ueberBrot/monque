@@ -20,6 +20,8 @@
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
 import { type Db, MongoClient } from 'mongodb';
 
+const mongoContainerImage = 'mongo:8';
+
 // Module-level singleton instances
 let container: StartedMongoDBContainer | null = null;
 let client: MongoClient | null = null;
@@ -33,7 +35,7 @@ let client: MongoClient | null = null;
 export async function getMongoDb(): Promise<Db> {
 	if (!container) {
 		// Start container on first call
-		container = await new MongoDBContainer('mongo:8').start();
+		container = await new MongoDBContainer(mongoContainerImage).start();
 	}
 
 	if (!client) {
@@ -58,7 +60,7 @@ export async function getMongoDb(): Promise<Db> {
 export async function getMongoUri(): Promise<string> {
 	if (!container) {
 		// Start container if not already running
-		container = await new MongoDBContainer('mongo:7').start();
+		container = await new MongoDBContainer(mongoContainerImage).start();
 	}
 
 	return container.getConnectionString();
