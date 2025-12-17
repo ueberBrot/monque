@@ -15,11 +15,11 @@ tests/
 
 ## Commands
 
-npm test && npm run lint
+use bun to run commands
 
 ## Code Style
 
-TypeScript 5.x, Node.js 18+: Follow standard conventions
+TypeScript 5.x, Node.js 22+: Follow standard conventions
 
 ## Recent Changes
 
