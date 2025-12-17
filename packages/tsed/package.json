@@ -40,7 +40,7 @@
 		"@monque/core": "workspace:*"
 	},
 	"devDependencies": {
-		"@types/bun": "latest",
+		"@types/bun": "^1.3.4",
 		"tsdown": "^0.18.0"
 	},
 	"peerDependencies": {

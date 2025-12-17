@@ -38,11 +38,11 @@
 	"license": "MIT",
 	"dependencies": {
 		"cron-parser": "^4.9.0",
-		"mongodb": "^6.0.0"
+		"mongodb": "^7.0.0"
 	},
 	"devDependencies": {
 		"@testcontainers/mongodb": "^11.10.0",
-		"@types/bun": "latest",
+		"@types/bun": "^1.3.4",
 		"tsdown": "^0.18.0"
 	},
 	"peerDependencies": {
