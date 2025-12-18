@@ -5,10 +5,8 @@ export {
 	MonqueError,
 	ShutdownTimeoutError,
 } from '@/errors.js';
-
 // Main class
 export { Monque } from '@/monque.js';
-
 // Types
 export {
 	type EnqueueOptions,
@@ -22,7 +20,6 @@ export {
 	type PersistedJob,
 	type WorkerOptions,
 } from '@/types.js';
-
 // Utilities (for advanced use cases)
 export {
 	calculateBackoff,

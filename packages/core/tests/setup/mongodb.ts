@@ -32,6 +32,36 @@ const isReuseEnabled = process.env['TESTCONTAINERS_REUSE_ENABLE'] === 'true';
 // Module-level singleton instances
 let container: StartedMongoDBContainer | null = null;
 let client: MongoClient | null = null;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Ensures the MongoDB container is initialized.
+ * Handles concurrent calls by reusing the same initialization promise.
+ */
+async function ensureInitialized(): Promise<void> {
+	if (initPromise) {
+		// Initialization in progress or complete, wait for it
+		return initPromise;
+	}
+
+	if (container) {
+		// Already initialized
+		return;
+	}
+
+	initPromise = (async () => {
+		try {
+			const mongoContainer = new MongoDBContainer(mongoContainerImage);
+			container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
+		} catch (error) {
+			initPromise = null;
+			container = null;
+			throw new Error(`Failed to start MongoDB container: ${error}`);
+		}
+	})();
+
+	return initPromise;
+}
 
 /**
  * Gets or creates a MongoDB connection from the shared Testcontainer.
@@ -41,19 +71,31 @@ let client: MongoClient | null = null;
  * @returns A MongoDB Db instance connected to the test container
  */
 export async function getMongoDb(): Promise<Db> {
+	await ensureInitialized();
+
 	if (!container) {
-		// Start container on first call, with optional reuse for faster local dev
-		const mongoContainer = new MongoDBContainer(mongoContainerImage);
-		container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
+		throw new Error('MongoDB container not initialized');
 	}
 
 	if (!client) {
-		const uri = container.getConnectionString();
-		client = new MongoClient(uri, {
-			// Use directConnection for container
-			directConnection: true,
-		});
-		await client.connect();
+		try {
+			const uri = container.getConnectionString();
+			client = new MongoClient(uri, {
+				// Use directConnection for container
+				directConnection: true,
+			});
+			await client.connect();
+		} catch (error) {
+			// Clean up container if client connection fails
+			if (container) {
+				await container.stop().catch(() => {
+					// Ignore stop errors, we're already in error state
+				});
+				container = null;
+			}
+			client = null;
+			throw new Error(`Failed to connect MongoDB client: ${error}`);
+		}
 	}
 
 	return client.db('monque_test');
@@ -67,10 +109,10 @@ export async function getMongoDb(): Promise<Db> {
  * @throws If container has not been started
  */
 export async function getMongoUri(): Promise<string> {
+	await ensureInitialized();
+
 	if (!container) {
-		// Start container if not already running, with optional reuse
-		const mongoContainer = new MongoDBContainer(mongoContainerImage);
-		container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
+		throw new Error('MongoDB container not initialized');
 	}
 
 	return container.getConnectionString();

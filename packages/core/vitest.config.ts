@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, mergeConfig } from 'vitest/config';
+
 import rootConfig from '../../vitest.config.ts';
 
 export default mergeConfig(

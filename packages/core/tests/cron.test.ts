@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { InvalidCronError } from '@/errors.js';
 import { getNextCronDate, validateCronExpression } from '@/utils/cron.js';
 

@@ -21,8 +21,8 @@
  * ```
  */
 
-import type { Db } from 'mongodb';
 import { getMongoClient } from '@tests/setup/mongodb.js';
+import type { Db } from 'mongodb';
 
 /**
  * Gets an isolated test database.

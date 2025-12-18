@@ -1,8 +1,9 @@
 import { faker } from '@faker-js/faker';
+import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import { Factory } from 'fishery';
 import { ObjectId } from 'mongodb';
+
 import { JobStatus, type PersistedJob } from '@/types.js';
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 
 /**
  * Transient parameters for JobFactory.

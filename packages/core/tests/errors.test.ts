@@ -11,14 +11,10 @@
  * @see {@link ../src/errors.ts}
  */
 
-import { describe, expect, it } from 'vitest';
-import {
-	ConnectionError,
-	InvalidCronError,
-	MonqueError,
-	ShutdownTimeoutError,
-} from '@/errors.js';
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { describe, expect, it } from 'vitest';
+
+import { ConnectionError, InvalidCronError, MonqueError, ShutdownTimeoutError } from '@/errors.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {

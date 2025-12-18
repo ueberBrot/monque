@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Collection, Db, Document, WithId } from 'mongodb';
+
 import { ConnectionError } from '@/errors.js';
 import type {
 	EnqueueOptions,

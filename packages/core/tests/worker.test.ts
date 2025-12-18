@@ -11,10 +11,6 @@
  * @see {@link ../src/monque.ts}
  */
 
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
 import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import {
 	cleanupTestDb,
@@ -24,6 +20,11 @@ import {
 	uniqueCollectionName,
 	waitFor,
 } from '@tests/setup/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { Monque } from '@/monque.js';
+import { type Job, JobStatus } from '@/types.js';
 
 describe('worker()', () => {
 	let db: Db;
