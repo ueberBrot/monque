@@ -22,7 +22,6 @@
  */
 
 import type { Db } from 'mongodb';
-import { type Job, JobStatus } from '../../src/types.js';
 import { getMongoClient } from './mongodb.js';
 
 /**
@@ -99,25 +98,6 @@ export async function waitFor(
 	}
 
 	throw new Error(`waitFor condition not met within ${timeout}ms`);
-}
-
-/**
- * Creates a mock job object for testing.
- *
- * @param overrides - Partial job properties to override defaults
- * @returns A complete Job object
- */
-export function createMockJob<T = unknown>(overrides: Partial<Job<T>> = {}): Job<T> {
-	return {
-		name: 'mock-job',
-		data: {} as T,
-		status: JobStatus.PENDING,
-		nextRunAt: new Date(),
-		failCount: 0,
-		createdAt: new Date(),
-		updatedAt: new Date(),
-		...overrides,
-	};
 }
 
 /**

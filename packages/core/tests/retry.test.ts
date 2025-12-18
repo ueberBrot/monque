@@ -2,9 +2,9 @@
  * Tests for retry logic with exponential backoff in the Monque scheduler.
  *
  * These tests verify:
- * - T047: Backoff timing within ±50ms per SC-003 specification
- * - T048: failCount increment and failReason storage on job failure
- * - T049: Permanent failure after maxRetries is exceeded
+ * - Backoff timing within ±50ms
+ * - failCount increment and failReason storage on job failure
+ * - Permanent failure after maxRetries is exceeded
  *
  * @see {@link ../src/monque.ts}
  * @see {@link ../src/utils/backoff.ts}
@@ -15,17 +15,18 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { Monque } from '../src/monque.js';
 import { type Job, JobStatus } from '../src/types.js';
 import { calculateBackoffDelay } from '../src/utils/backoff.js';
+import { JobFactoryHelpers } from './factories/job.factory.js';
+import { TEST_CONSTANTS } from './setup/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
-	createMockJob,
 	getTestDb,
 	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
 } from './setup/test-utils.js';
 
-describe('Retry Logic (US3)', () => {
+describe('Retry Logic', () => {
 	let db: Db;
 	let collectionName: string;
 	let monque: Monque;
@@ -46,15 +47,15 @@ describe('Retry Logic (US3)', () => {
 		}
 	});
 
-	describe('T047: Backoff timing (SC-003)', () => {
+	describe('Backoff timing (SC-003)', () => {
 		/**
-		 * SC-003: Failed jobs retry automatically. The actual nextRunAt MUST be within ±50ms
+		 * Failed jobs retry automatically. The actual nextRunAt MUST be within ±50ms
 		 * of the calculated backoff time.
 		 *
 		 * Formula: nextRunAt = now + (2^failCount × baseInterval)
 		 */
 		it('should schedule first retry with correct backoff timing (2^1 * 1000 = 2000ms)', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 100,
@@ -66,7 +67,7 @@ describe('Retry Logic (US3)', () => {
 			// Handler that fails once
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>('backoff-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				if (callCount === 1) {
 					failureTime = Date.now();
@@ -74,7 +75,7 @@ describe('Retry Logic (US3)', () => {
 				}
 			});
 
-			const job = await monque.enqueue('backoff-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for the job to fail and be rescheduled
@@ -107,7 +108,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should schedule second retry with correct backoff timing (2^2 * 1000 = 4000ms)', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -119,25 +120,22 @@ describe('Retry Logic (US3)', () => {
 			// Handler that always fails
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>('backoff-job-2', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				failureTime = Date.now();
 				throw new Error(`Attempt ${callCount} fails`);
 			});
 
 			// Insert a job that already has failCount=1
-			const now = new Date();
 			const collection = db.collection(collectionName);
 			const result = await collection.insertOne(
-				createMockJob({
-					name: 'backoff-job-2',
-					data: { test: true },
-					status: JobStatus.PENDING,
-					nextRunAt: now,
-					failCount: 1,
-					createdAt: now,
-					updatedAt: now,
-				}),
+				JobFactoryHelpers.withData(
+					{ test: true },
+					{
+						name: TEST_CONSTANTS.JOB_NAME,
+						failCount: 1,
+					},
+				),
 			);
 
 			monque.start();
@@ -167,7 +165,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should use configurable baseRetryInterval for backoff calculation', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const customBaseInterval = 500; // 500ms instead of default 1000ms
 			monque = new Monque(db, {
 				collectionName,
@@ -178,12 +176,12 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>('custom-interval-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failureTime = Date.now();
 				throw new Error('Always fails');
 			});
 
-			const job = await monque.enqueue('custom-interval-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			await waitFor(async () => {
@@ -208,9 +206,9 @@ describe('Retry Logic (US3)', () => {
 		});
 	});
 
-	describe('T048: failCount increment and failReason storage', () => {
+	describe('failCount increment and failReason storage', () => {
 		it('should increment failCount on job failure', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -218,11 +216,11 @@ describe('Retry Logic (US3)', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>('fail-count-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Always fails');
 			});
 
-			const job = await monque.enqueue('fail-count-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for first failure
@@ -243,7 +241,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should store failReason from error message', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -252,11 +250,11 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			const errorMessage = 'Connection timeout to external API';
-			monque.worker<{ test: boolean }>('fail-reason-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error(errorMessage);
 			});
 
-			const job = await monque.enqueue('fail-reason-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			await waitFor(async () => {
@@ -276,7 +274,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should update failReason on subsequent failures', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -286,12 +284,12 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			let callCount = 0;
-			monque.worker<{ test: boolean }>('multiple-fails-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				throw new Error(`Failure #${callCount}`);
 			});
 
-			const job = await monque.enqueue('multiple-fails-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for second failure
@@ -317,7 +315,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should handle both sync throws and async rejections identically', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -326,14 +324,14 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			// Sync throw handler
-			monque.worker<{ type: string }>('sync-throw-job', (job) => {
+			monque.worker<{ type: string }>(TEST_CONSTANTS.JOB_NAME, (job) => {
 				if (job.data.type === 'sync') {
 					throw new Error('Sync error');
 				}
 				return Promise.reject(new Error('Async error'));
 			});
 
-			const syncJob = await monque.enqueue('sync-throw-job', { type: 'sync' });
+			const syncJob = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { type: 'sync' });
 			monque.start();
 
 			await waitFor(async () => {
@@ -355,7 +353,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should set status back to pending after failure (if retries remain)', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -364,11 +362,11 @@ describe('Retry Logic (US3)', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>('status-reset-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
-			const job = await monque.enqueue('status-reset-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			await waitFor(async () => {
@@ -389,9 +387,9 @@ describe('Retry Logic (US3)', () => {
 		});
 	});
 
-	describe('T049: Max retries → permanent failure', () => {
+	describe('Max retries → permanent failure', () => {
 		it('should mark job as permanently failed after maxRetries (default: 10)', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -401,11 +399,11 @@ describe('Retry Logic (US3)', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>('max-retry-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Persistent failure');
 			});
 
-			const job = await monque.enqueue('max-retry-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for permanent failure (failCount >= maxRetries)
@@ -431,7 +429,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should respect custom maxRetries configuration', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const customMaxRetries = 2;
 			monque = new Monque(db, {
 				collectionName,
@@ -443,12 +441,12 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			let failCount = 0;
-			monque.worker<{ test: boolean }>('custom-max-retry-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failCount++;
 				throw new Error(`Failure ${failCount}`);
 			});
 
-			const job = await monque.enqueue('custom-max-retry-job', { test: true });
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			await waitFor(
@@ -472,7 +470,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should not process permanently failed jobs', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -481,23 +479,16 @@ describe('Retry Logic (US3)', () => {
 			await monque.initialize();
 
 			let handlerCalls = 0;
-			monque.worker<{ test: boolean }>('failed-job-test', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				handlerCalls++;
 			});
 
 			// Insert a permanently failed job
-			const now = new Date();
 			const collection = db.collection(collectionName);
 			await collection.insertOne(
-				createMockJob({
-					name: 'failed-job-test',
+				JobFactoryHelpers.failed({
+					name: TEST_CONSTANTS.JOB_NAME,
 					data: { test: true },
-					status: JobStatus.FAILED,
-					nextRunAt: now,
-					failCount: 10,
-					failReason: 'Max retries exceeded',
-					createdAt: now,
-					updatedAt: now,
 				}),
 			);
 
@@ -512,7 +503,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should preserve job data on permanent failure', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -528,11 +519,11 @@ describe('Retry Logic (US3)', () => {
 				metadata: { key: 'value' },
 			};
 
-			monque.worker<typeof jobData>('preserve-data-job', async () => {
+			monque.worker<typeof jobData>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Failure');
 			});
 
-			const job = await monque.enqueue('preserve-data-job', jobData);
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, jobData);
 			monque.start();
 
 			await waitFor(
@@ -553,13 +544,13 @@ describe('Retry Logic (US3)', () => {
 
 			// Verify all original data is preserved
 			expect(doc['data']).toEqual(jobData);
-			expect(doc['name']).toBe('preserve-data-job');
+			expect(doc['name']).toBe(TEST_CONSTANTS.JOB_NAME);
 		});
 	});
 
 	describe('Events during retry', () => {
 		it('should emit job:fail event with willRetry=true when retries remain', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -573,11 +564,11 @@ describe('Retry Logic (US3)', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>('retry-event-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
-			await monque.enqueue('retry-event-job', { test: true });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			await waitFor(async () => failEvents.length >= 1);
@@ -592,7 +583,7 @@ describe('Retry Logic (US3)', () => {
 		});
 
 		it('should emit job:fail event with willRetry=false on final failure', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50,
@@ -607,11 +598,11 @@ describe('Retry Logic (US3)', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>('final-fail-event-job', async () => {
+			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Final failure');
 			});
 
-			await monque.enqueue('final-fail-event-job', { test: true });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for the job to reach failed status

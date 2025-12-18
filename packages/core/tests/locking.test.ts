@@ -14,10 +14,11 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Monque } from '../src/monque.js';
 import { type Job, JobStatus } from '../src/types.js';
+import { JobFactoryHelpers } from './factories/job.factory.js';
+import { TEST_CONSTANTS } from './setup/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
-	createMockJob,
 	getTestDb,
 	stopMonqueInstances,
 	uniqueCollectionName,
@@ -47,7 +48,7 @@ describe('atomic job locking', () => {
 
 	describe('single job acquisition', () => {
 		it('should set lockedAt when acquiring a job', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -58,9 +59,9 @@ describe('atomic job locking', () => {
 				// Hold the job for a moment to inspect state
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker('lock-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue('lock-job', {});
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
 
 			// Wait for job to be picked up
@@ -77,7 +78,7 @@ describe('atomic job locking', () => {
 		});
 
 		it('should update status to processing when job is acquired', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -87,9 +88,9 @@ describe('atomic job locking', () => {
 				jobAcquired = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker('status-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue('status-job', {});
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 
 			// Verify initial state
 			let collection = db.collection(collectionName);
@@ -112,7 +113,7 @@ describe('atomic job locking', () => {
 
 	describe('concurrent workers - no duplicate processing', () => {
 		it('should not process the same job twice with multiple scheduler instances', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
 			// Create two scheduler instances pointing to same collection
 			const monque1 = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: 5 });
@@ -142,14 +143,14 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
 
-			monque1.worker('shared-job', handler1);
-			monque2.worker('shared-job', handler2);
+			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue multiple jobs
 			const jobCount = 10;
 			const enqueuedJobIds: string[] = [];
 			for (let i = 0; i < jobCount; i++) {
-				const job = await monque1.enqueue('shared-job', { index: i });
+				const job = await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { index: i });
 				enqueuedJobIds.push(job._id.toString());
 			}
 
@@ -176,7 +177,7 @@ describe('atomic job locking', () => {
 		});
 
 		it('should distribute jobs between concurrent workers', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
 			const monque1 = new Monque(db, { collectionName, pollInterval: 30, defaultConcurrency: 2 });
 			monqueInstances.push(monque1);
@@ -199,13 +200,13 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 80));
 			});
 
-			monque1.worker('distributed-job', handler1);
-			monque2.worker('distributed-job', handler2);
+			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue jobs
 			const jobCount = 8;
 			for (let i = 0; i < jobCount; i++) {
-				await monque1.enqueue('distributed-job', { index: i });
+				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { index: i });
 			}
 
 			monque1.start();
@@ -229,7 +230,7 @@ describe('atomic job locking', () => {
 		});
 
 		it('should handle rapid polling without duplicate acquisition', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
 			// Very short poll interval to increase contention
 			const monque1 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
@@ -261,14 +262,14 @@ describe('atomic job locking', () => {
 			const handler2 = createHandler();
 			const handler3 = createHandler();
 
-			monque1.worker('rapid-job', handler1);
-			monque2.worker('rapid-job', handler2);
-			monque3.worker('rapid-job', handler3);
+			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque3.worker(TEST_CONSTANTS.JOB_NAME, handler3);
 
 			// Enqueue jobs
 			const jobCount = 15;
 			for (let i = 0; i < jobCount; i++) {
-				await monque1.enqueue('rapid-job', { index: i });
+				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { index: i });
 			}
 
 			monque1.start();
@@ -289,7 +290,7 @@ describe('atomic job locking', () => {
 
 	describe('lock state transitions', () => {
 		it('should transition pending → processing → completed', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -301,9 +302,9 @@ describe('atomic job locking', () => {
 				checkDuringProcessing = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker('transition-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue('transition-job', {});
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
 
 			// Check initial status
@@ -335,15 +336,15 @@ describe('atomic job locking', () => {
 		});
 
 		it('should clear lockedAt after job completion', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker('clear-lock-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue('clear-lock-job', {});
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
 
 			await waitFor(async () => {
@@ -360,7 +361,7 @@ describe('atomic job locking', () => {
 		});
 
 		it('should update updatedAt timestamp on state changes', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -368,9 +369,9 @@ describe('atomic job locking', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
-			monque.worker('timestamp-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue('timestamp-job', {});
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
 
 			// Get initial updatedAt
@@ -396,27 +397,22 @@ describe('atomic job locking', () => {
 
 	describe('only pending jobs are acquired', () => {
 		it('should not acquire jobs in processing status', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Manually insert a job already in processing status
 			const collection = db.collection(collectionName);
-			const now = new Date();
 			await collection.insertOne(
-				createMockJob({
-					name: 'processing-job',
-					status: JobStatus.PROCESSING,
-					nextRunAt: new Date(now.getTime() - 1000), // In the past
-					lockedAt: now,
-					createdAt: now,
-					updatedAt: now,
+				JobFactoryHelpers.processing({
+					name: TEST_CONSTANTS.JOB_NAME,
+					nextRunAt: new Date(Date.now() - 1000), // In the past
 				}),
 			);
 
 			const handler = vi.fn();
-			monque.worker('processing-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -430,26 +426,21 @@ describe('atomic job locking', () => {
 		});
 
 		it('should not acquire jobs in completed status', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const collection = db.collection(collectionName);
-			const now = new Date();
 			await collection.insertOne(
-				createMockJob({
-					name: 'completed-job',
-					status: JobStatus.COMPLETED,
-					nextRunAt: new Date(now.getTime() - 1000),
-					lockedAt: null,
-					createdAt: now,
-					updatedAt: now,
+				JobFactoryHelpers.completed({
+					name: TEST_CONSTANTS.JOB_NAME,
+					nextRunAt: new Date(Date.now() - 1000),
 				}),
 			);
 
 			const handler = vi.fn();
-			monque.worker('completed-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -459,28 +450,21 @@ describe('atomic job locking', () => {
 		});
 
 		it('should not acquire jobs in failed status', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const collection = db.collection(collectionName);
-			const now = new Date();
 			await collection.insertOne(
-				createMockJob({
-					name: 'failed-job',
-					status: JobStatus.FAILED,
-					nextRunAt: new Date(now.getTime() - 1000),
-					lockedAt: null,
-					failCount: 10,
-					failReason: 'Too many failures',
-					createdAt: now,
-					updatedAt: now,
+				JobFactoryHelpers.failed({
+					name: TEST_CONSTANTS.JOB_NAME,
+					nextRunAt: new Date(Date.now() - 1000),
 				}),
 			);
 
 			const handler = vi.fn();
-			monque.worker('failed-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -490,17 +474,17 @@ describe('atomic job locking', () => {
 		});
 
 		it('should not acquire jobs with nextRunAt in the future', async () => {
-			collectionName = uniqueCollectionName('monque_jobs');
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Enqueue job scheduled for future
 			const futureDate = new Date(Date.now() + 60000); // 1 minute from now
-			await monque.enqueue('future-job', {}, { runAt: futureDate });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {}, { runAt: futureDate });
 
 			const handler = vi.fn();
-			monque.worker('future-job', handler);
+			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));

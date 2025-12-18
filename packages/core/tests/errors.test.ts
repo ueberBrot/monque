@@ -1,3 +1,16 @@
+/**
+ * Tests for custom error classes in the Monque scheduler.
+ *
+ * These tests verify:
+ * - MonqueError base class functionality
+ * - InvalidCronError with expression storage
+ * - ConnectionError for database issues
+ * - ShutdownTimeoutError with incomplete jobs tracking
+ * - Error inheritance chain (all catchable as Error/MonqueError)
+ *
+ * @see {@link ../src/errors.ts}
+ */
+
 import { describe, expect, it } from 'vitest';
 import {
 	ConnectionError,
@@ -5,8 +18,7 @@ import {
 	MonqueError,
 	ShutdownTimeoutError,
 } from '../src/errors.js';
-import { JobStatus } from '../src/types.js';
-import { createMockJob } from './setup/test-utils.js';
+import { JobFactoryHelpers } from './factories/job.factory.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {
@@ -101,8 +113,8 @@ describe('errors', () => {
 	describe('ShutdownTimeoutError', () => {
 		it('should create an error with message and incomplete jobs', () => {
 			const incompleteJobs = [
-				createMockJob({ name: 'job1', status: JobStatus.PROCESSING }),
-				createMockJob({ name: 'job2', status: JobStatus.PROCESSING }),
+				JobFactoryHelpers.processing({ name: 'job1' }),
+				JobFactoryHelpers.processing({ name: 'job2' }),
 			];
 			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
 
@@ -126,10 +138,10 @@ describe('errors', () => {
 		});
 
 		it('should expose incompleteJobs array', () => {
-			const jobs = [createMockJob({ name: 'job1', status: JobStatus.PROCESSING })];
-			const error = new ShutdownTimeoutError('Timeout', jobs);
+			const job = JobFactoryHelpers.processing({ name: 'job1' });
+			const error = new ShutdownTimeoutError('Timeout', [job]);
 			expect(error.incompleteJobs).toHaveLength(1);
-			expect(error.incompleteJobs[0]?.name).toBe('job1');
+			expect(error.incompleteJobs[0]?.name).toBe(job.name);
 		});
 
 		it('should handle empty incompleteJobs array', () => {
@@ -138,17 +150,10 @@ describe('errors', () => {
 		});
 
 		it('should preserve job data in incompleteJobs', () => {
-			const job = createMockJob({
-				name: 'email-job',
-				status: JobStatus.PROCESSING,
-				data: { to: 'test@example.com', subject: 'Test' },
-			});
+			const job = JobFactoryHelpers.processing();
 			const error = new ShutdownTimeoutError('Timeout', [job]);
 
-			expect(error.incompleteJobs[0]?.data).toEqual({
-				to: 'test@example.com',
-				subject: 'Test',
-			});
+			expect(error.incompleteJobs[0]?.data).toEqual(job.data);
 		});
 
 		it('should have a stack trace', () => {
