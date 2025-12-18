@@ -16,7 +16,7 @@
 		"test:coverage": "vitest run --coverage",
 		"lint": "turbo lint",
 		"format": "biome format --write .",
-		"format:check": "biome format --check .",
+		"format:check": "biome format .",
 		"check": "biome check --write ."
 	},
 	"devDependencies": {
