@@ -1,5 +1,7 @@
 # Monque
 
+[![CI](https://github.com/debruyn/monque/actions/workflows/ci.yml/badge.svg)](https://github.com/debruyn/monque/actions/workflows/ci.yml)
+
 A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and Ts.ED integration.
 
 ## Packages
