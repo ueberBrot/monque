@@ -217,8 +217,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		try {
 			if (options.uniqueKey) {
+				if (!this.collection) {
+					throw new ConnectionError('Failed to enqueue job: collection not available');
+				}
+
 				// Use upsert with $setOnInsert for deduplication
-				const result = await this.collection?.findOneAndUpdate(
+				const result = await this.collection.findOneAndUpdate(
 					{
 						uniqueKey: options.uniqueKey,
 						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
@@ -231,6 +235,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 						returnDocument: 'after',
 					},
 				);
+
+				if (!result) {
+					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
+				}
 
 				return this.documentToPersistedJob<T>(result as WithId<Document>);
 			}

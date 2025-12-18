@@ -22,6 +22,13 @@ import { type Db, MongoClient } from 'mongodb';
 
 const mongoContainerImage = 'mongo:8';
 
+/**
+ * Check if container reuse is enabled via environment variable.
+ * When enabled, containers persist between test runs for faster iteration.
+ * Ryuk (the cleanup container) is kept enabled as a safety net for orphans.
+ */
+const isReuseEnabled = process.env['TESTCONTAINERS_REUSE_ENABLE'] === 'true';
+
 // Module-level singleton instances
 let container: StartedMongoDBContainer | null = null;
 let client: MongoClient | null = null;
@@ -29,13 +36,15 @@ let client: MongoClient | null = null;
 /**
  * Gets or creates a MongoDB connection from the shared Testcontainer.
  * Container is started on first call and reused for subsequent calls.
+ * When TESTCONTAINERS_REUSE_ENABLE=true, the container persists between test runs.
  *
  * @returns A MongoDB Db instance connected to the test container
  */
 export async function getMongoDb(): Promise<Db> {
 	if (!container) {
-		// Start container on first call
-		container = await new MongoDBContainer(mongoContainerImage).start();
+		// Start container on first call, with optional reuse for faster local dev
+		const mongoContainer = new MongoDBContainer(mongoContainerImage);
+		container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
 	}
 
 	if (!client) {
@@ -59,8 +68,9 @@ export async function getMongoDb(): Promise<Db> {
  */
 export async function getMongoUri(): Promise<string> {
 	if (!container) {
-		// Start container if not already running
-		container = await new MongoDBContainer(mongoContainerImage).start();
+		// Start container if not already running, with optional reuse
+		const mongoContainer = new MongoDBContainer(mongoContainerImage);
+		container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
 	}
 
 	return container.getConnectionString();
@@ -84,8 +94,9 @@ export async function getMongoClient(): Promise<MongoClient> {
 }
 
 /**
- * Closes the MongoDB connection and stops the container.
- * Should be called in globalTeardown to clean up resources.
+ * Closes the MongoDB connection and optionally stops the container.
+ * When TESTCONTAINERS_REUSE_ENABLE=true, the container is kept running
+ * for faster subsequent test runs. Should be called in globalTeardown.
  */
 export async function closeMongoDb(): Promise<void> {
 	if (client) {
@@ -94,7 +105,11 @@ export async function closeMongoDb(): Promise<void> {
 	}
 
 	if (container) {
-		await container.stop();
+		// Only stop the container if reuse is disabled
+		// When reuse is enabled, keep it running for faster subsequent runs
+		if (!isReuseEnabled) {
+			await container.stop();
+		}
 		container = null;
 	}
 }

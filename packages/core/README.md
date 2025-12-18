@@ -81,6 +81,29 @@ monque.on('job:error', ({ error, job? }) => { /* unexpected error */ });
 monque.on('stale:recovered', ({ count }) => { /* stale jobs recovered */ });
 ```
 
+## Development
+
+### Running Tests
+
+```bash
+# Run tests once (fresh container each time)
+bun run test
+
+# Run tests in watch mode with container reuse (faster iteration)
+bun run test:dev
+
+# Or enable reuse globally in your shell profile
+export TESTCONTAINERS_REUSE_ENABLE=true
+bun run test:watch
+```
+
+When `TESTCONTAINERS_REUSE_ENABLE=true`, the MongoDB testcontainer persists between test runs, significantly speeding up local development. Ryuk (the testcontainers cleanup daemon) remains enabled as a safety net for orphaned containers.
+
+To manually clean up reusable containers:
+```bash
+docker stop $(docker ps -q --filter label=org.testcontainers=true)
+```
+
 ## License
 
 ISC

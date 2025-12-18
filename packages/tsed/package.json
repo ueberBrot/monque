@@ -24,6 +24,7 @@
 	"scripts": {
 		"build": "tsdown",
 		"test": "vitest run",
+		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
 		"test:watch": "vitest",
 		"lint": "biome check src/"
 	},

@@ -10,6 +10,11 @@
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
 		},
+		"test:dev": {
+			"cache": false,
+			"persistent": true,
+			"inputs": ["src/**", "tests/**"]
+		},
 		"@monque/tsed#test": {
 			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"],
