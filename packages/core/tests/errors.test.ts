@@ -17,8 +17,8 @@ import {
 	InvalidCronError,
 	MonqueError,
 	ShutdownTimeoutError,
-} from '../src/errors.js';
-import { JobFactoryHelpers } from './factories/job.factory.js';
+} from '@/errors.js';
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {

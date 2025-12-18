@@ -22,7 +22,7 @@
  */
 
 import type { Db } from 'mongodb';
-import { getMongoClient } from './mongodb.js';
+import { getMongoClient } from '@tests/setup/mongodb.js';
 
 /**
  * Gets an isolated test database.

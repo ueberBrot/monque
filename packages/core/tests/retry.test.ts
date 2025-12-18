@@ -12,11 +12,11 @@
 
 import type { Db, Document, WithId } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { Monque } from '../src/monque.js';
-import { type Job, JobStatus } from '../src/types.js';
-import { calculateBackoffDelay } from '../src/utils/backoff.js';
-import { JobFactoryHelpers } from './factories/job.factory.js';
-import { TEST_CONSTANTS } from './setup/constants.js';
+import { Monque } from '@/monque.js';
+import { type Job, JobStatus } from '@/types.js';
+import { calculateBackoffDelay } from '@/utils/backoff.js';
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,

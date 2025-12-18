@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Collection, Db, Document, WithId } from 'mongodb';
-import { ConnectionError } from './errors.js';
+import { ConnectionError } from '@/errors.js';
 import type {
 	EnqueueOptions,
 	Job,
@@ -11,10 +11,10 @@ import type {
 	MonquePublicAPI,
 	PersistedJob,
 	WorkerOptions,
-} from './types.js';
-import { JobStatus } from './types.js';
-import { calculateBackoff } from './utils/backoff.js';
-import { getNextCronDate } from './utils/cron.js';
+} from '@/types.js';
+import { JobStatus } from '@/types.js';
+import { calculateBackoff } from '@/utils/backoff.js';
+import { getNextCronDate } from '@/utils/cron.js';
 
 /**
  * Default configuration values

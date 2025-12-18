@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidCronError } from '../src/errors.js';
-import { getNextCronDate, validateCronExpression } from '../src/utils/cron.js';
+import { InvalidCronError } from '@/errors.js';
+import { getNextCronDate, validateCronExpression } from '@/utils/cron.js';
 
 // Test fixtures - shared reference dates
 const TEST_DATE_MID_MORNING = new Date('2025-01-01T10:30:00.000Z');

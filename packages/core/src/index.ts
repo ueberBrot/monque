@@ -4,10 +4,10 @@ export {
 	InvalidCronError,
 	MonqueError,
 	ShutdownTimeoutError,
-} from './errors.js';
+} from '@/errors.js';
 
 // Main class
-export { Monque } from './monque.js';
+export { Monque } from '@/monque.js';
 
 // Types
 export {
@@ -21,12 +21,12 @@ export {
 	type MonquePublicAPI,
 	type PersistedJob,
 	type WorkerOptions,
-} from './types.js';
+} from '@/types.js';
 
 // Utilities (for advanced use cases)
 export {
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
-} from './utils/backoff.js';
-export { getNextCronDate, validateCronExpression } from './utils/cron.js';
+} from '@/utils/backoff.js';
+export { getNextCronDate, validateCronExpression } from '@/utils/cron.js';

@@ -10,7 +10,7 @@
  * if not started here, so this is optional but improves test startup experience.
  */
 
-import { closeMongoDb, getMongoDb, getMongoUri, isMongoDbRunning } from './mongodb.js';
+import { closeMongoDb, getMongoDb, getMongoUri, isMongoDbRunning } from '@tests/setup/mongodb.js';
 
 // Track if cleanup has already been performed
 let cleanedUp = false;

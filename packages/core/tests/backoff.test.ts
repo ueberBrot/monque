@@ -3,7 +3,7 @@ import {
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
-} from '../src/utils/backoff.js';
+} from '@/utils/backoff.js';
 
 describe('backoff', () => {
 	beforeEach(() => {
