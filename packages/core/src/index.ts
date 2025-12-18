@@ -1,5 +1,3 @@
-// Types
-
 // Errors
 export {
 	ConnectionError,
@@ -7,8 +5,11 @@ export {
 	MonqueError,
 	ShutdownTimeoutError,
 } from './errors.js';
+
 // Main class
 export { Monque } from './monque.js';
+
+// Types
 export {
 	type EnqueueOptions,
 	type Job,

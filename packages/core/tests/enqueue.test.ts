@@ -18,12 +18,14 @@ import {
 	cleanupTestDb,
 	clearCollection,
 	getTestDb,
+	stopMonqueInstances,
 	uniqueCollectionName,
 } from './setup/test-utils.js';
 
 describe('enqueue()', () => {
 	let db: Db;
 	let collectionName: string;
+	const monqueInstances: Monque[] = [];
 
 	beforeAll(async () => {
 		db = await getTestDb('enqueue');
@@ -34,6 +36,8 @@ describe('enqueue()', () => {
 	});
 
 	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
@@ -43,6 +47,7 @@ describe('enqueue()', () => {
 		it('should enqueue a job with name and data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('test-job', { foo: 'bar' });
@@ -56,6 +61,7 @@ describe('enqueue()', () => {
 		it('should set status to pending', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('test-job', { value: 123 });
@@ -66,6 +72,7 @@ describe('enqueue()', () => {
 		it('should set failCount to 0', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('test-job', {});
@@ -76,6 +83,7 @@ describe('enqueue()', () => {
 		it('should set createdAt and updatedAt timestamps', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const beforeEnqueue = new Date();
@@ -91,6 +99,7 @@ describe('enqueue()', () => {
 		it('should set nextRunAt to now by default', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const beforeEnqueue = new Date();
@@ -107,6 +116,7 @@ describe('enqueue()', () => {
 		it('should schedule job for future execution with runAt', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const futureDate = new Date(Date.now() + 60000); // 1 minute in future
@@ -118,6 +128,7 @@ describe('enqueue()', () => {
 		it('should accept runAt in the past', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const pastDate = new Date(Date.now() - 60000); // 1 minute in past
@@ -131,6 +142,7 @@ describe('enqueue()', () => {
 		it('should preserve string data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = { message: 'Hello, World!' };
@@ -142,6 +154,7 @@ describe('enqueue()', () => {
 		it('should preserve numeric data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = { count: 42, price: 19.99 };
@@ -153,6 +166,7 @@ describe('enqueue()', () => {
 		it('should preserve nested object data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = {
@@ -176,6 +190,7 @@ describe('enqueue()', () => {
 		it('should preserve array data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = { items: [1, 2, 3, 4, 5] };
@@ -187,6 +202,7 @@ describe('enqueue()', () => {
 		it('should preserve null values in data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = { value: null, other: 'present' };
@@ -198,6 +214,7 @@ describe('enqueue()', () => {
 		it('should preserve boolean values in data', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const data = { active: true, deleted: false };
@@ -211,6 +228,7 @@ describe('enqueue()', () => {
 		it('should return Job with all required fields', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('complete-job', { test: true });
@@ -229,6 +247,7 @@ describe('enqueue()', () => {
 		it('should not include optional fields when not set', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('minimal-job', {});
@@ -242,6 +261,7 @@ describe('enqueue()', () => {
 		it('should include uniqueKey when provided', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('unique-job', {}, { uniqueKey: 'test-key-123' });
@@ -254,6 +274,7 @@ describe('enqueue()', () => {
 		it('should persist job to MongoDB collection', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job = await monque.enqueue('persisted-job', { stored: true });
@@ -270,6 +291,7 @@ describe('enqueue()', () => {
 		it('should allow enqueueing multiple jobs', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job1 = await monque.enqueue('job-1', { index: 1 });
@@ -289,6 +311,7 @@ describe('enqueue()', () => {
 		it('should throw if not initialized', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			// Do NOT call initialize()
 
 			await expect(monque.enqueue('test', {})).rejects.toThrow('not initialized');
@@ -299,6 +322,7 @@ describe('enqueue()', () => {
 describe('now()', () => {
 	let db: Db;
 	let collectionName: string;
+	const monqueInstances: Monque[] = [];
 
 	beforeAll(async () => {
 		db = await getTestDb('now');
@@ -309,6 +333,7 @@ describe('now()', () => {
 	});
 
 	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
@@ -317,6 +342,7 @@ describe('now()', () => {
 	it('should enqueue a job for immediate processing', async () => {
 		collectionName = uniqueCollectionName('monque_jobs');
 		const monque = new Monque(db, { collectionName });
+		monqueInstances.push(monque);
 		await monque.initialize();
 
 		const beforeNow = new Date();
@@ -330,6 +356,7 @@ describe('now()', () => {
 	it('should be equivalent to enqueue with runAt: new Date()', async () => {
 		collectionName = uniqueCollectionName('monque_jobs');
 		const monque = new Monque(db, { collectionName });
+		monqueInstances.push(monque);
 		await monque.initialize();
 
 		const nowJob = await monque.now('now-job', { method: 'now' });
@@ -351,6 +378,7 @@ describe('now()', () => {
 	it('should preserve data payload', async () => {
 		collectionName = uniqueCollectionName('monque_jobs');
 		const monque = new Monque(db, { collectionName });
+		monqueInstances.push(monque);
 		await monque.initialize();
 
 		const data = { email: 'test@example.com', subject: 'Hello' };
@@ -362,6 +390,7 @@ describe('now()', () => {
 	it('should return a valid Job document', async () => {
 		collectionName = uniqueCollectionName('monque_jobs');
 		const monque = new Monque(db, { collectionName });
+		monqueInstances.push(monque);
 		await monque.initialize();
 
 		const job = await monque.now('job', {});
@@ -387,6 +416,7 @@ describe('now()', () => {
 describe('uniqueKey deduplication', () => {
 	let db: Db;
 	let collectionName: string;
+	const monqueInstances: Monque[] = [];
 
 	beforeAll(async () => {
 		db = await getTestDb('uniqueKey');
@@ -397,6 +427,7 @@ describe('uniqueKey deduplication', () => {
 	});
 
 	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
@@ -406,6 +437,7 @@ describe('uniqueKey deduplication', () => {
 		it('should not create duplicate when pending job exists with same uniqueKey', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create first job with uniqueKey
@@ -434,6 +466,7 @@ describe('uniqueKey deduplication', () => {
 		it('should return the original job document when deduped', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create first job with uniqueKey
@@ -460,6 +493,7 @@ describe('uniqueKey deduplication', () => {
 		it('should not create duplicate when processing job exists with same uniqueKey', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create a job with uniqueKey
@@ -497,6 +531,7 @@ describe('uniqueKey deduplication', () => {
 		it('should create new job when completed job exists with same uniqueKey', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create a job with uniqueKey
@@ -542,6 +577,7 @@ describe('uniqueKey deduplication', () => {
 		it('should create new job when failed job exists with same uniqueKey', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create a job with uniqueKey
@@ -587,6 +623,7 @@ describe('uniqueKey deduplication', () => {
 		it('should handle concurrent enqueue attempts atomically', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create 10 concurrent enqueue attempts with same uniqueKey
@@ -618,6 +655,7 @@ describe('uniqueKey deduplication', () => {
 		it('should create separate jobs for different uniqueKeys', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const job1 = await monque.enqueue(
@@ -651,6 +689,7 @@ describe('uniqueKey deduplication', () => {
 		it('should create multiple jobs when no uniqueKey is provided', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Create multiple jobs without uniqueKey

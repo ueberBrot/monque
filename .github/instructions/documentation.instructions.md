@@ -31,6 +31,15 @@ Package READMEs should include:
 3. **API Reference** - Key methods and options.
 4. **Events** - List of emitted events.
 
+## Package Manager
+
+Explicitly mention `bun` as the package manager in documentation where applicable.
+
+```bash
+bun install
+bun run test
+```
+
 ## Spec Documents
 
 Follow the existing structure in `specs/`:

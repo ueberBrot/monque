@@ -78,6 +78,7 @@ monque.on('job:start', (job) => { /* job started */ });
 monque.on('job:complete', ({ job, duration }) => { /* job completed */ });
 monque.on('job:fail', ({ job, error, willRetry }) => { /* job failed */ });
 monque.on('job:error', ({ error, job? }) => { /* unexpected error */ });
+monque.on('stale:recovered', ({ count }) => { /* stale jobs recovered */ });
 ```
 
 ## License

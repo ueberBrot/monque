@@ -5,6 +5,18 @@ applyTo: "**/*.test.ts"
 
 This project requires **100% test coverage**. Use Vitest.
 
+## Running Tests
+
+Use `bun` to run tests.
+
+```bash
+# Run all tests (uses vitest via package.json script)
+bun run test
+
+# Run specific test file (uses vitest directly)
+bunx vitest packages/core/tests/enqueue.test.ts
+```
+
 ## Test Structure
 
 Organize tests by feature:

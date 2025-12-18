@@ -182,6 +182,13 @@ export interface MonqueOptions {
 	baseRetryInterval?: number;
 
 	/**
+	 * Maximum delay in milliseconds for exponential backoff.
+	 * If calculated delay exceeds this value, it will be capped.
+	 * @default undefined (no cap)
+	 */
+	maxBackoffDelay?: number | undefined;
+
+	/**
 	 * Timeout in milliseconds for graceful shutdown.
 	 * @default 30000
 	 */
@@ -260,6 +267,13 @@ export interface MonqueEventMap {
 	'job:error': {
 		error: Error;
 		job?: Job;
+	};
+
+	/**
+	 * Emitted when stale jobs are recovered on startup.
+	 */
+	'stale:recovered': {
+		count: number;
 	};
 }
 

@@ -51,6 +51,11 @@ describe('backoff', () => {
 		it('should handle zero base interval', () => {
 			expect(calculateBackoffDelay(5, 0)).toBe(0);
 		});
+
+		it('should cap delay at maxDelay when provided', () => {
+			expect(calculateBackoffDelay(10, 1000, 60000)).toBe(60000); // 1024000 > 60000
+			expect(calculateBackoffDelay(1, 1000, 60000)).toBe(2000); // 2000 < 60000
+		});
 	});
 
 	describe('calculateBackoff', () => {
@@ -118,6 +123,14 @@ describe('backoff', () => {
 			const now = Date.now();
 			const result = calculateBackoff(15);
 			const expectedDelay = 32768000; // 2^15 * 1000 = ~32768 seconds
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should cap delay at maxDelay when provided', () => {
+			const now = Date.now();
+			const result = calculateBackoff(10, 1000, 60000);
+			const expectedDelay = 60000; // Capped at 60000ms
 
 			expect(result.getTime()).toBe(now + expectedDelay);
 		});

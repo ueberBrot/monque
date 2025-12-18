@@ -2,14 +2,16 @@
 
 ## Tech Stack & Constraints
 
-| Category        | Technology | Purpose                                        |
-| --------------- | ---------- | ---------------------------------------------- |
-| Monorepo        | Turborepo  | Build orchestration and caching                |
-| Package Manager | Bun        | Workspace management and dependency resolution |
-| Bundler         | tsdown     | ESM/CJS generation and type definitions        |
-| Testing         | Vitest     | Unit testing with UI and coverage              |  | Local Services | Docker Compose | Local MongoDB instance for testing |  | Linting | Biome | Fast linting and formatting |
-| Versioning      | Changesets | Semantic versioning with GitHub Actions        |
-| Language        | TypeScript | Strict type safety                             |
+| Category        | Technology     | Purpose                                        |
+| --------------- | -------------- | ---------------------------------------------- |
+| Monorepo        | Turborepo      | Build orchestration and caching                |
+| Package Manager | Bun            | Workspace management and dependency resolution |
+| Bundler         | tsdown         | ESM/CJS generation and type definitions        |
+| Testing         | Vitest         | Unit testing with UI and coverage              |
+| Local Services  | Docker Compose | Local MongoDB instance for testing             |
+| Linting         | Biome          | Fast linting and formatting                    |
+| Versioning      | Changesets     | Semantic versioning with GitHub Actions        |
+| Language        | TypeScript     | Strict type safety                             |
 
 ---
 

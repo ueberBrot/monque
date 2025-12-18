@@ -18,7 +18,9 @@ import { calculateBackoffDelay } from '../src/utils/backoff.js';
 import {
 	cleanupTestDb,
 	clearCollection,
+	createMockJob,
 	getTestDb,
+	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
 } from './setup/test-utils.js';
@@ -27,6 +29,7 @@ describe('Retry Logic (US3)', () => {
 	let db: Db;
 	let collectionName: string;
 	let monque: Monque;
+	const monqueInstances: Monque[] = [];
 
 	beforeAll(async () => {
 		db = await getTestDb('retry');
@@ -37,9 +40,7 @@ describe('Retry Logic (US3)', () => {
 	});
 
 	afterEach(async () => {
-		if (monque) {
-			await monque.stop();
-		}
+		await stopMonqueInstances(monqueInstances);
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
@@ -59,18 +60,20 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 100,
 				baseRetryInterval: 1000,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Handler that fails once
 			let callCount = 0;
+			let failureTime = 0;
 			monque.worker<{ test: boolean }>('backoff-job', async () => {
 				callCount++;
 				if (callCount === 1) {
+					failureTime = Date.now();
 					throw new Error('First attempt fails');
 				}
 			});
 
-			const beforeEnqueue = Date.now();
 			const job = await monque.enqueue('backoff-job', { test: true });
 			monque.start();
 
@@ -96,7 +99,7 @@ describe('Retry Logic (US3)', () => {
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
 			const expectedDelay = calculateBackoffDelay(1, 1000); // 2^1 * 1000 = 2000ms
-			const expectedNextRunAt = beforeEnqueue + expectedDelay;
+			const expectedNextRunAt = failureTime + expectedDelay;
 
 			// Verify timing is within ±50ms tolerance (SC-003)
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
@@ -110,29 +113,33 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 50,
 				baseRetryInterval: 1000,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Handler that always fails
 			let callCount = 0;
+			let failureTime = 0;
 			monque.worker<{ test: boolean }>('backoff-job-2', async () => {
 				callCount++;
+				failureTime = Date.now();
 				throw new Error(`Attempt ${callCount} fails`);
 			});
 
 			// Insert a job that already has failCount=1
 			const now = new Date();
 			const collection = db.collection(collectionName);
-			const result = await collection.insertOne({
-				name: 'backoff-job-2',
-				data: { test: true },
-				status: JobStatus.PENDING,
-				nextRunAt: now,
-				failCount: 1,
-				createdAt: now,
-				updatedAt: now,
-			});
+			const result = await collection.insertOne(
+				createMockJob({
+					name: 'backoff-job-2',
+					data: { test: true },
+					status: JobStatus.PENDING,
+					nextRunAt: now,
+					failCount: 1,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			);
 
-			const beforeStart = Date.now();
 			monque.start();
 
 			// Wait for the job to fail again
@@ -152,7 +159,7 @@ describe('Retry Logic (US3)', () => {
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
 			const expectedDelay = calculateBackoffDelay(2, 1000); // 2^2 * 1000 = 4000ms
-			const expectedNextRunAt = beforeStart + expectedDelay;
+			const expectedNextRunAt = failureTime + expectedDelay;
 
 			// Verify timing is within ±50ms tolerance (SC-003)
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
@@ -167,13 +174,15 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 50,
 				baseRetryInterval: customBaseInterval,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
+			let failureTime = 0;
 			monque.worker<{ test: boolean }>('custom-interval-job', async () => {
+				failureTime = Date.now();
 				throw new Error('Always fails');
 			});
 
-			const beforeEnqueue = Date.now();
 			const job = await monque.enqueue('custom-interval-job', { test: true });
 			monque.start();
 
@@ -192,7 +201,7 @@ describe('Retry Logic (US3)', () => {
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
 			const expectedDelay = calculateBackoffDelay(1, customBaseInterval); // 2^1 * 500 = 1000ms
-			const expectedNextRunAt = beforeEnqueue + expectedDelay;
+			const expectedNextRunAt = failureTime + expectedDelay;
 
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
 			expect(timingDiff).toBeLessThanOrEqual(200);
@@ -206,6 +215,7 @@ describe('Retry Logic (US3)', () => {
 				collectionName,
 				pollInterval: 50,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			monque.worker<{ test: boolean }>('fail-count-job', async () => {
@@ -238,6 +248,7 @@ describe('Retry Logic (US3)', () => {
 				collectionName,
 				pollInterval: 50,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const errorMessage = 'Connection timeout to external API';
@@ -271,6 +282,7 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 50,
 				baseRetryInterval: 10, // Fast retries for testing
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			let callCount = 0;
@@ -310,6 +322,7 @@ describe('Retry Logic (US3)', () => {
 				collectionName,
 				pollInterval: 50,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Sync throw handler
@@ -348,6 +361,7 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 50,
 				maxRetries: 5,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			monque.worker<{ test: boolean }>('status-reset-job', async () => {
@@ -384,6 +398,7 @@ describe('Retry Logic (US3)', () => {
 				maxRetries: 3, // Lower for faster testing
 				baseRetryInterval: 10, // Fast retries
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			monque.worker<{ test: boolean }>('max-retry-job', async () => {
@@ -424,6 +439,7 @@ describe('Retry Logic (US3)', () => {
 				maxRetries: customMaxRetries,
 				baseRetryInterval: 10,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			let failCount = 0;
@@ -461,6 +477,7 @@ describe('Retry Logic (US3)', () => {
 				collectionName,
 				pollInterval: 50,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			let handlerCalls = 0;
@@ -471,16 +488,18 @@ describe('Retry Logic (US3)', () => {
 			// Insert a permanently failed job
 			const now = new Date();
 			const collection = db.collection(collectionName);
-			await collection.insertOne({
-				name: 'failed-job-test',
-				data: { test: true },
-				status: JobStatus.FAILED,
-				nextRunAt: now,
-				failCount: 10,
-				failReason: 'Max retries exceeded',
-				createdAt: now,
-				updatedAt: now,
-			});
+			await collection.insertOne(
+				createMockJob({
+					name: 'failed-job-test',
+					data: { test: true },
+					status: JobStatus.FAILED,
+					nextRunAt: now,
+					failCount: 10,
+					failReason: 'Max retries exceeded',
+					createdAt: now,
+					updatedAt: now,
+				}),
+			);
 
 			monque.start();
 
@@ -500,6 +519,7 @@ describe('Retry Logic (US3)', () => {
 				maxRetries: 1,
 				baseRetryInterval: 10,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const jobData = {
@@ -545,6 +565,7 @@ describe('Retry Logic (US3)', () => {
 				pollInterval: 50,
 				maxRetries: 5,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const failEvents: Array<{ job: Job; error: Error; willRetry: boolean }> = [];
@@ -578,6 +599,7 @@ describe('Retry Logic (US3)', () => {
 				maxRetries: 1,
 				baseRetryInterval: 10,
 			});
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const failEvents: Array<{ job: Job; error: Error; willRetry: boolean }> = [];

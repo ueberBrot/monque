@@ -1,0 +1,212 @@
+/**
+ * Tests for job recovery and cleanup in the Monque scheduler.
+ *
+ * These tests verify:
+ * - Stale job recovery on initialization
+ * - Emission of stale:recovered event
+ * - Cleanup of failReason on successful completion
+ *
+ * @see {@link ../src/monque.ts}
+ */
+
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Monque } from '../src/monque.js';
+import { JobStatus } from '../src/types.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	createMockJob,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from './setup/test-utils.js';
+
+describe('recovery and cleanup', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('recovery');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('stale job recovery', () => {
+		it('should recover stale jobs and emit stale:recovered event', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			// Use a short lock timeout for testing
+			const monque = new Monque(db, { 
+				collectionName, 
+				lockTimeout: 1000,
+				recoverStaleJobs: true 
+			});
+			monqueInstances.push(monque);
+			
+			// We need to initialize the collection first to insert data
+			// But we want to test recovery during initialize(), so we'll use a separate instance or direct DB access
+			// Since initialize() creates indexes, we can just use direct DB access to insert data
+			const collection = db.collection(collectionName);
+			
+			const now = new Date();
+			const staleTime = new Date(now.getTime() - 2000); // Older than lockTimeout (1000ms)
+			
+			await collection.insertOne(
+				createMockJob({
+					name: 'stale-job',
+					status: JobStatus.PROCESSING,
+					nextRunAt: staleTime,
+					lockedAt: staleTime,
+					createdAt: staleTime,
+					updatedAt: staleTime,
+				}),
+			);
+
+			const staleRecoveredSpy = vi.fn();
+			monque.on('stale:recovered', staleRecoveredSpy);
+
+			await monque.initialize();
+
+			expect(staleRecoveredSpy).toHaveBeenCalledTimes(1);
+			expect(staleRecoveredSpy).toHaveBeenCalledWith({ count: 1 });
+
+			// Verify job is reset to pending
+			const job = await collection.findOne({ name: 'stale-job' });
+			expect(job?.['status']).toBe(JobStatus.PENDING);
+			expect(job?.['lockedAt']).toBeNull();
+		});
+
+		it('should not recover non-stale jobs', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { 
+				collectionName, 
+				lockTimeout: 5000,
+				recoverStaleJobs: true 
+			});
+			monqueInstances.push(monque);
+			
+			const collection = db.collection(collectionName);
+			
+			const now = new Date();
+			const activeTime = new Date(now.getTime() - 1000); // Newer than lockTimeout (5000ms)
+			
+			await collection.insertOne(
+				createMockJob({
+					name: 'active-job',
+					status: JobStatus.PROCESSING,
+					nextRunAt: activeTime,
+					lockedAt: activeTime,
+					createdAt: activeTime,
+					updatedAt: activeTime,
+				}),
+			);
+
+			const staleRecoveredSpy = vi.fn();
+			monque.on('stale:recovered', staleRecoveredSpy);
+
+			await monque.initialize();
+
+			expect(staleRecoveredSpy).not.toHaveBeenCalled();
+
+			// Verify job remains processing
+			const job = await collection.findOne({ name: 'active-job' });
+			expect(job?.['status']).toBe(JobStatus.PROCESSING);
+			expect(job?.['lockedAt']).not.toBeNull();
+		});
+	});
+
+	describe('failReason cleanup', () => {
+		it('should remove failReason on successful completion', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const collection = db.collection(collectionName);
+			
+			// Insert a job that has failed previously
+			const result = await collection.insertOne(
+				createMockJob({
+					name: 'retry-job',
+					status: JobStatus.PENDING,
+					nextRunAt: new Date(),
+					failCount: 1,
+					failReason: 'Previous error',
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				}),
+			);
+			const jobId = result.insertedId;
+
+			const handler = vi.fn();
+			monque.worker('retry-job', handler);
+
+			monque.start();
+
+			await waitFor(async () => {
+				const doc = await collection.findOne({ _id: jobId });
+				return doc?.['status'] === JobStatus.COMPLETED;
+			});
+
+			const job = await collection.findOne({ _id: jobId });
+			expect(job?.['status']).toBe(JobStatus.COMPLETED);
+			// Fail count is preserved for one-time jobs to show history of failures before success
+			expect(job?.['failCount']).toBe(1);
+			
+			expect(job).not.toHaveProperty('failReason');
+		});
+
+		it('should remove failReason on successful completion of recurring job', async () => {
+			collectionName = uniqueCollectionName('monque_jobs');
+			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const collection = db.collection(collectionName);
+			
+			// Insert a recurring job that has failed previously
+			const result = await collection.insertOne(
+				createMockJob({
+					name: 'recurring-job',
+					status: JobStatus.PENDING,
+					nextRunAt: new Date(),
+					repeatInterval: '* * * * *', // Every minute
+					failCount: 1,
+					failReason: 'Previous error',
+					createdAt: new Date(),
+					updatedAt: new Date(),
+				}),
+			);
+			const jobId = result.insertedId;
+
+			const handler = vi.fn();
+			monque.worker('recurring-job', handler);
+
+			monque.start();
+
+			await waitFor(async () => {
+				const doc = await collection.findOne({ _id: jobId });
+				// For recurring jobs, status goes back to PENDING
+				// We can check if failCount is reset to 0
+				return doc?.['status'] === JobStatus.PENDING && doc?.['failCount'] === 0;
+			});
+
+			const job = await collection.findOne({ _id: jobId });
+			expect(job?.['status']).toBe(JobStatus.PENDING);
+			expect(job?.['failCount']).toBe(0);
+			expect(job).not.toHaveProperty('failReason');
+		});
+	});
+});

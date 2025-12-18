@@ -28,14 +28,7 @@ export function getNextCronDate(expression: string, currentDate?: Date): Date {
 		});
 		return interval.next().toDate();
 	} catch (error) {
-		/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
-		const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
-		throw new InvalidCronError(
-			expression,
-			`Invalid cron expression "${expression}": ${errorMessage}. ` +
-				'Expected 5-field format: "minute hour day-of-month month day-of-week". ' +
-				'Example: "0 9 * * 1" (every Monday at 9am)',
-		);
+		handleCronParseError(expression, error);
 	}
 }
 
@@ -58,13 +51,17 @@ export function validateCronExpression(expression: string): boolean {
 		CronExpressionParser.parse(expression);
 		return true;
 	} catch (error) {
-		/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
-		const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
-		throw new InvalidCronError(
-			expression,
-			`Invalid cron expression "${expression}": ${errorMessage}. ` +
-				'Expected 5-field format: "minute hour day-of-month month day-of-week". ' +
-				'Example: "0 9 * * 1" (every Monday at 9am)',
-		);
+		handleCronParseError(expression, error);
 	}
+}
+
+function handleCronParseError(expression: string, error: unknown): never {
+	/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
+	const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
+	throw new InvalidCronError(
+		expression,
+		`Invalid cron expression "${expression}": ${errorMessage}. ` +
+			'Expected 5-field format: "minute hour day-of-month month day-of-week". ' +
+			'Example: "0 9 * * 1" (every Monday at 9am)',
+	);
 }

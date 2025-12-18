@@ -5,7 +5,8 @@ import {
 	MonqueError,
 	ShutdownTimeoutError,
 } from '../src/errors.js';
-import { type Job, JobStatus } from '../src/types.js';
+import { JobStatus } from '../src/types.js';
+import { createMockJob } from './setup/test-utils.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {
@@ -98,18 +99,11 @@ describe('errors', () => {
 	});
 
 	describe('ShutdownTimeoutError', () => {
-		const createMockJob = (name: string): Job => ({
-			name,
-			data: {},
-			status: JobStatus.PROCESSING,
-			nextRunAt: new Date(),
-			failCount: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		});
-
 		it('should create an error with message and incomplete jobs', () => {
-			const incompleteJobs = [createMockJob('job1'), createMockJob('job2')];
+			const incompleteJobs = [
+				createMockJob({ name: 'job1', status: JobStatus.PROCESSING }),
+				createMockJob({ name: 'job2', status: JobStatus.PROCESSING }),
+			];
 			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
 
 			expect(error.message).toBe('Shutdown timed out');
@@ -132,7 +126,7 @@ describe('errors', () => {
 		});
 
 		it('should expose incompleteJobs array', () => {
-			const jobs = [createMockJob('job1')];
+			const jobs = [createMockJob({ name: 'job1', status: JobStatus.PROCESSING })];
 			const error = new ShutdownTimeoutError('Timeout', jobs);
 			expect(error.incompleteJobs).toHaveLength(1);
 			expect(error.incompleteJobs[0]?.name).toBe('job1');
@@ -144,8 +138,11 @@ describe('errors', () => {
 		});
 
 		it('should preserve job data in incompleteJobs', () => {
-			const job = createMockJob('email-job');
-			job.data = { to: 'test@example.com', subject: 'Test' };
+			const job = createMockJob({
+				name: 'email-job',
+				status: JobStatus.PROCESSING,
+				data: { to: 'test@example.com', subject: 'Test' },
+			});
 			const error = new ShutdownTimeoutError('Timeout', [job]);
 
 			expect(error.incompleteJobs[0]?.data).toEqual({

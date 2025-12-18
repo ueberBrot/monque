@@ -12,6 +12,20 @@ You are working on `@monque/core`, a MongoDB-backed job scheduler.
 - Use `JobStatus` as an `as const` object, NOT an enum.
 - The `Job<T>` interface MUST be generic for the `data` payload.
 
+## Package Manager
+
+Use `bun` for all package management and script execution tasks.
+
+```bash
+# Install dependencies
+bun install
+
+# Run scripts
+bun run build
+bun run test
+bun run lint
+```
+
 ## Atomic Locking
 
 When picking up jobs, use `findOneAndUpdate` with these exact semantics:

@@ -22,6 +22,7 @@
  */
 
 import type { Db } from 'mongodb';
+import { type Job, JobStatus } from '../../src/types.js';
 import { getMongoClient } from './mongodb.js';
 
 /**
@@ -93,8 +94,42 @@ export async function waitFor(
 		if (await condition()) {
 			return;
 		}
+
 		await new Promise((resolve) => setTimeout(resolve, interval));
 	}
 
 	throw new Error(`waitFor condition not met within ${timeout}ms`);
+}
+
+/**
+ * Creates a mock job object for testing.
+ *
+ * @param overrides - Partial job properties to override defaults
+ * @returns A complete Job object
+ */
+export function createMockJob<T = unknown>(overrides: Partial<Job<T>> = {}): Job<T> {
+	return {
+		name: 'mock-job',
+		data: {} as T,
+		status: JobStatus.PENDING,
+		nextRunAt: new Date(),
+		failCount: 0,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides,
+	};
+}
+
+/**
+ * Stops multiple Monque instances in parallel.
+ * Useful for cleaning up in afterEach/afterAll.
+ *
+ * @param instances - Array of Monque instances or objects with a stop method
+ */
+export async function stopMonqueInstances(
+	instances: { stop: () => Promise<void> }[],
+): Promise<void> {
+	await Promise.all(instances.map((i) => i.stop()));
+	// Clear the array in place
+	instances.length = 0;
 }

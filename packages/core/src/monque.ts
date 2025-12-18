@@ -74,7 +74,8 @@ interface WorkerRegistration<T = unknown> {
  */
 export class Monque extends EventEmitter implements MonquePublicAPI {
 	private readonly db: Db;
-	private readonly options: Required<MonqueOptions>;
+	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay'>> &
+		Pick<MonqueOptions, 'maxBackoffDelay'>;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
 	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -93,6 +94,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			defaultConcurrency: options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
+			maxBackoffDelay: options.maxBackoffDelay,
 		};
 	}
 
@@ -186,8 +188,8 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		if (result.modifiedCount > 0) {
 			// Emit event for recovered jobs (informational)
-			this.emit('job:error', {
-				error: new Error(`Recovered ${result.modifiedCount} stale jobs on startup`),
+			this.emit('stale:recovered', {
+				count: result.modifiedCount,
 			});
 		}
 	}
@@ -351,10 +353,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		// Create a promise that resolves when all jobs are done
 		let checkInterval: ReturnType<typeof setInterval> | undefined;
-		const waitForJobs = new Promise<void>((resolve) => {
+		const waitForJobs = new Promise<undefined>((resolve) => {
 			checkInterval = setInterval(() => {
 				if (this.getActiveJobs().length === 0) {
-					resolve();
+					resolve(undefined);
 				}
 			}, 100);
 		});
@@ -364,7 +366,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
 		});
 
-		let result: void | 'timeout';
+		let result: undefined | 'timeout';
 
 		try {
 			result = await Promise.race([waitForJobs, timeout]);
@@ -516,8 +518,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 						nextRunAt,
 						lockedAt: null,
 						failCount: 0, // Reset fail count on successful completion
-						failReason: undefined,
 						updatedAt: new Date(),
+					},
+					$unset: {
+						failReason: '',
 					},
 				},
 			);
@@ -530,6 +534,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 						status: JobStatus.COMPLETED,
 						lockedAt: null,
 						updatedAt: new Date(),
+					},
+					$unset: {
+						failReason: '',
 					},
 				},
 			);
@@ -565,7 +572,11 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			);
 		} else {
 			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(newFailCount, this.options.baseRetryInterval);
+			const nextRunAt = calculateBackoff(
+				newFailCount,
+				this.options.baseRetryInterval,
+				this.options.maxBackoffDelay,
+			);
 
 			await this.collection.updateOne(
 				{ _id: job._id },

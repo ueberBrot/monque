@@ -11,6 +11,20 @@ You are working on `@monque/tsed`, a Ts.ED framework integration for the core sc
 - Use Ts.ED decorators (`@Module`, `@Injectable`, `@Inject`).
 - Workers MUST be resolved via Ts.ED's DI container.
 
+## Package Manager
+
+Use `bun` for all package management and script execution tasks.
+
+```bash
+# Install dependencies
+bun install
+
+# Run scripts
+bun run build
+bun run test
+bun run lint
+```
+
 ## Module Setup
 
 `MonqueModule` registers the `Monque` instance as a provider:

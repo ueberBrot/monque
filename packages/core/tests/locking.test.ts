@@ -17,7 +17,9 @@ import { type Job, JobStatus } from '../src/types.js';
 import {
 	cleanupTestDb,
 	clearCollection,
+	createMockJob,
 	getTestDb,
+	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
 } from './setup/test-utils.js';
@@ -25,6 +27,7 @@ import {
 describe('atomic job locking', () => {
 	let db: Db;
 	let collectionName: string;
+	const monqueInstances: Monque[] = [];
 
 	beforeAll(async () => {
 		db = await getTestDb('locking');
@@ -35,6 +38,8 @@ describe('atomic job locking', () => {
 	});
 
 	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
@@ -44,6 +49,7 @@ describe('atomic job locking', () => {
 		it('should set lockedAt when acquiring a job', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			let processingJob: Job | null = null;
@@ -73,6 +79,7 @@ describe('atomic job locking', () => {
 		it('should update status to processing when job is acquired', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			let jobAcquired = false;
@@ -109,7 +116,9 @@ describe('atomic job locking', () => {
 
 			// Create two scheduler instances pointing to same collection
 			const monque1 = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: 5 });
+			monqueInstances.push(monque1);
 			const monque2 = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: 5 });
+			monqueInstances.push(monque2);
 
 			await monque1.initialize();
 			await monque2.initialize();
@@ -118,14 +127,16 @@ describe('atomic job locking', () => {
 			const processedJobIds = new Set<string>();
 
 			const handler1 = vi.fn(async (job: Job) => {
-				const jobId = job._id.toString();
+				const jobId = job._id?.toString() ?? '';
+				if (!job._id) throw new Error('Expected job._id to be defined');
 				processedJobs.push(`instance1:${jobId}`);
 				processedJobIds.add(jobId);
 				await new Promise((r) => setTimeout(r, 100));
 			});
 
 			const handler2 = vi.fn(async (job: Job) => {
-				const jobId = job._id.toString();
+				const jobId = job._id?.toString() ?? '';
+				if (!job._id) throw new Error('Expected job._id to be defined');
 				processedJobs.push(`instance2:${jobId}`);
 				processedJobIds.add(jobId);
 				await new Promise((r) => setTimeout(r, 100));
@@ -168,7 +179,9 @@ describe('atomic job locking', () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 
 			const monque1 = new Monque(db, { collectionName, pollInterval: 30, defaultConcurrency: 2 });
+			monqueInstances.push(monque1);
 			const monque2 = new Monque(db, { collectionName, pollInterval: 30, defaultConcurrency: 2 });
+			monqueInstances.push(monque2);
 
 			await monque1.initialize();
 			await monque2.initialize();
@@ -220,8 +233,11 @@ describe('atomic job locking', () => {
 
 			// Very short poll interval to increase contention
 			const monque1 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			monqueInstances.push(monque1);
 			const monque2 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			monqueInstances.push(monque2);
 			const monque3 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			monqueInstances.push(monque3);
 
 			await monque1.initialize();
 			await monque2.initialize();
@@ -232,7 +248,8 @@ describe('atomic job locking', () => {
 
 			const createHandler = () =>
 				vi.fn(async (job: Job) => {
-					const jobId = job._id.toString();
+					const jobId = job._id?.toString() ?? '';
+					if (!job._id) throw new Error('Expected job._id to be defined');
 					if (processedJobIds.has(jobId)) {
 						duplicates.push(jobId);
 					}
@@ -274,6 +291,7 @@ describe('atomic job locking', () => {
 		it('should transition pending → processing → completed', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const statusHistory: string[] = [];
@@ -319,6 +337,7 @@ describe('atomic job locking', () => {
 		it('should clear lockedAt after job completion', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const handler = vi.fn();
@@ -343,6 +362,7 @@ describe('atomic job locking', () => {
 		it('should update updatedAt timestamp on state changes', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const handler = vi.fn(async () => {
@@ -378,21 +398,22 @@ describe('atomic job locking', () => {
 		it('should not acquire jobs in processing status', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Manually insert a job already in processing status
 			const collection = db.collection(collectionName);
 			const now = new Date();
-			await collection.insertOne({
-				name: 'processing-job',
-				data: {},
-				status: JobStatus.PROCESSING,
-				nextRunAt: new Date(now.getTime() - 1000), // In the past
-				lockedAt: now,
-				failCount: 0,
-				createdAt: now,
-				updatedAt: now,
-			});
+			await collection.insertOne(
+				createMockJob({
+					name: 'processing-job',
+					status: JobStatus.PROCESSING,
+					nextRunAt: new Date(now.getTime() - 1000), // In the past
+					lockedAt: now,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			);
 
 			const handler = vi.fn();
 			monque.worker('processing-job', handler);
@@ -411,20 +432,21 @@ describe('atomic job locking', () => {
 		it('should not acquire jobs in completed status', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const collection = db.collection(collectionName);
 			const now = new Date();
-			await collection.insertOne({
-				name: 'completed-job',
-				data: {},
-				status: JobStatus.COMPLETED,
-				nextRunAt: new Date(now.getTime() - 1000),
-				lockedAt: null,
-				failCount: 0,
-				createdAt: now,
-				updatedAt: now,
-			});
+			await collection.insertOne(
+				createMockJob({
+					name: 'completed-job',
+					status: JobStatus.COMPLETED,
+					nextRunAt: new Date(now.getTime() - 1000),
+					lockedAt: null,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			);
 
 			const handler = vi.fn();
 			monque.worker('completed-job', handler);
@@ -439,21 +461,23 @@ describe('atomic job locking', () => {
 		it('should not acquire jobs in failed status', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			const collection = db.collection(collectionName);
 			const now = new Date();
-			await collection.insertOne({
-				name: 'failed-job',
-				data: {},
-				status: JobStatus.FAILED,
-				nextRunAt: new Date(now.getTime() - 1000),
-				lockedAt: null,
-				failCount: 10,
-				failReason: 'Too many failures',
-				createdAt: now,
-				updatedAt: now,
-			});
+			await collection.insertOne(
+				createMockJob({
+					name: 'failed-job',
+					status: JobStatus.FAILED,
+					nextRunAt: new Date(now.getTime() - 1000),
+					lockedAt: null,
+					failCount: 10,
+					failReason: 'Too many failures',
+					createdAt: now,
+					updatedAt: now,
+				}),
+			);
 
 			const handler = vi.fn();
 			monque.worker('failed-job', handler);
@@ -468,6 +492,7 @@ describe('atomic job locking', () => {
 		it('should not acquire jobs with nextRunAt in the future', async () => {
 			collectionName = uniqueCollectionName('monque_jobs');
 			const monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
 			await monque.initialize();
 
 			// Enqueue job scheduled for future

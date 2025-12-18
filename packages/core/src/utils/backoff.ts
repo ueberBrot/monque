@@ -11,6 +11,7 @@ export const DEFAULT_BASE_INTERVAL = 1000;
  *
  * @param failCount - Number of previous failed attempts
  * @param baseInterval - Base interval in milliseconds (default: 1000ms)
+ * @param maxDelay - Maximum delay in milliseconds (optional)
  * @returns The next run date
  *
  * @example
@@ -23,13 +24,22 @@ export const DEFAULT_BASE_INTERVAL = 1000;
  *
  * // With custom base interval
  * const nextRun = calculateBackoff(3, 500); // 2^3 * 500 = 4000ms delay
+ *
+ * // With max delay
+ * const nextRun = calculateBackoff(10, 1000, 60000); // capped at 60000ms
  * ```
  */
 export function calculateBackoff(
 	failCount: number,
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
+	maxDelay?: number,
 ): Date {
-	const delay = 2 ** failCount * baseInterval;
+	let delay = 2 ** failCount * baseInterval;
+
+	if (maxDelay !== undefined && delay > maxDelay) {
+		delay = maxDelay;
+	}
+
 	return new Date(Date.now() + delay);
 }
 
@@ -38,11 +48,19 @@ export function calculateBackoff(
  *
  * @param failCount - Number of previous failed attempts
  * @param baseInterval - Base interval in milliseconds (default: 1000ms)
+ * @param maxDelay - Maximum delay in milliseconds (optional)
  * @returns The delay in milliseconds
  */
 export function calculateBackoffDelay(
 	failCount: number,
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
+	maxDelay?: number,
 ): number {
-	return 2 ** failCount * baseInterval;
+	let delay = 2 ** failCount * baseInterval;
+
+	if (maxDelay !== undefined && delay > maxDelay) {
+		delay = maxDelay;
+	}
+
+	return delay;
 }
