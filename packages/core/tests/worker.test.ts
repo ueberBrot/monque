@@ -6,7 +6,7 @@
  * - Job processing by registered workers
  * - Correct handler invocation with job data
  * - Job status transitions during processing
- * - Concurrency limits per worker (T034)
+ * - Concurrency limits per worker
  *
  * @see {@link ../src/monque.ts}
  */

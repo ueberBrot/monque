@@ -1,5 +1,5 @@
 /**
- * Tests for graceful shutdown behavior in the Monque scheduler (User Story 5).
+ * Tests for graceful shutdown behavior in the Monque scheduler.
  *
  * These tests verify:
  * - stop() method stops the polling loop

@@ -2,15 +2,14 @@
  * Tests for the schedule() method of the Monque scheduler.
  *
  * These tests verify:
- * - Basic cron job scheduling functionality (T054)
+ * - Basic cron job scheduling functionality
  * - nextRunAt calculation from cron expressions
  * - repeatInterval storage
- * - Invalid cron expression handling with helpful messages (T055)
- * - Recurring job completion and auto-rescheduling (T056)
+ * - Invalid cron expression handling with helpful messages
+ * - Recurring job completion and auto-rescheduling
  * - Cron timing after retries
  *
  * @see {@link ../src/monque.ts}
- * @see User Story 4 - Schedule Recurring Jobs with Cron
  */
 
 import type { Db } from 'mongodb';
@@ -50,7 +49,7 @@ describe('schedule()', () => {
 		}
 	});
 
-	// T054: Tests for schedule() method (cron parsing, nextRunAt calculation)
+	// Tests for schedule() method (cron parsing, nextRunAt calculation)
 	describe('basic cron scheduling', () => {
 		it('should schedule a job with a cron expression', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
@@ -189,7 +188,7 @@ describe('schedule()', () => {
 		});
 	});
 
-	// T055: Tests for invalid cron expression (throws InvalidCronError with helpful message)
+	// Tests for invalid cron expression (throws InvalidCronError with helpful message)
 	describe('invalid cron expressions', () => {
 		it('should throw InvalidCronError for invalid expression', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
@@ -275,7 +274,7 @@ describe('schedule()', () => {
 		});
 	});
 
-	// T056: Tests for recurring job completion (auto-reschedule after success, uses original cron timing after retries)
+	// Tests for recurring job completion (auto-reschedule after success, uses original cron timing after retries)
 	describe('recurring job completion and rescheduling', () => {
 		it('should reschedule job after successful completion', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
