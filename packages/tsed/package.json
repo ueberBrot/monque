@@ -23,6 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
+		"clean": "rimraf dist coverage .turbo",
 		"test": "vitest run",
 		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
 		"test:watch": "vitest",
