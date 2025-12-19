@@ -172,16 +172,16 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 4
 
-- [ ] T054 [P] [US4] Create packages/core/tests/schedule.test.ts with tests for schedule() method (cron parsing, nextRunAt calculation)
-- [ ] T055 [P] [US4] Add tests for invalid cron expression (throws InvalidCronError with helpful message) in packages/core/tests/schedule.test.ts
-- [ ] T056 [P] [US4] Add tests for recurring job completion (auto-reschedule after success, uses original cron timing after retries) in packages/core/tests/schedule.test.ts
+- [X] T054 [P] [US4] Create packages/core/tests/schedule.test.ts with tests for schedule() method (cron parsing, nextRunAt calculation)
+- [X] T055 [P] [US4] Add tests for invalid cron expression (throws InvalidCronError with helpful message) in packages/core/tests/schedule.test.ts
+- [X] T056 [P] [US4] Add tests for recurring job completion (auto-reschedule after success, uses original cron timing after retries) in packages/core/tests/schedule.test.ts
 
 ### Implementation for User Story 4
 
-- [ ] T057 [US4] Implement schedule(cronExpression, name, data) method in packages/core/src/monque.ts (validate cron with utils/cron.ts, calculate nextRunAt, store repeatInterval)
-- [ ] T058 [US4] Implement re-scheduling logic in job completion handler in packages/core/src/monque.ts (if repeatInterval exists, calculate next run and update job to pending)
-- [ ] T059 [US4] Add cron validation with helpful error messages (invalid expression, position of error, valid format example) in packages/core/src/monque.ts
-- [ ] T060 [US4] Run tests for US4 to verify recurring job scheduling works
+- [X] T057 [US4] Implement schedule(cronExpression, name, data) method in packages/core/src/monque.ts (validate cron with utils/cron.ts, calculate nextRunAt, store repeatInterval)
+- [X] T058 [US4] Implement re-scheduling logic in job completion handler in packages/core/src/monque.ts (if repeatInterval exists, calculate next run and update job to pending)
+- [X] T059 [US4] Add cron validation with helpful error messages (invalid expression, position of error, valid format example) in packages/core/src/monque.ts
+- [X] T060 [US4] Run tests for US4 to verify recurring job scheduling works
 
 **Checkpoint**: User Story 4 complete - cron scheduling works independently
 
