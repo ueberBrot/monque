@@ -44,9 +44,9 @@
 						"groups": [
 							":URL:",
 							[":BUN:", ":NODE:", ":PACKAGE_WITH_PROTOCOL:"],
-							":PACKAGE:",
+							[":PACKAGE:", "!@/**", "!@tests/**"],
 							":BLANK_LINE:",
-							["@tests/**", "@/**"],
+							["@/**", "@tests/**"],
 							":BLANK_LINE:",
 							":PATH:"
 						],

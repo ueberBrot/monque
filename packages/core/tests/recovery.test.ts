@@ -9,11 +9,11 @@
  * @see {@link ../src/monque.ts}
  */
 
-import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import { Monque } from '@/monque.js';
 import { JobStatus } from '@/types.js';
 

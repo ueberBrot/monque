@@ -13,6 +13,9 @@
  * @see User Story 4 - Schedule Recurring Jobs with Cron
  */
 
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
 import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import {
 	cleanupTestDb,
@@ -22,9 +25,6 @@ import {
 	uniqueCollectionName,
 	waitFor,
 } from '@tests/setup/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
 import { InvalidCronError } from '@/errors.js';
 import { Monque } from '@/monque.js';
 import { type Job, JobStatus } from '@/types.js';
