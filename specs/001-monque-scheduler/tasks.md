@@ -195,18 +195,18 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 5
 
-- [ ] T061 [P] [US5] Create packages/core/tests/shutdown.test.ts with tests for stop() method (stops polling, no new jobs picked up)
-- [ ] T062 [P] [US5] Add tests for in-progress job completion waiting in packages/core/tests/shutdown.test.ts
-- [ ] T063 [P] [US5] Add tests for shutdown timeout behavior (emit job:error with ShutdownTimeoutError, incompleteJobs array) in packages/core/tests/shutdown.test.ts
+- [X] T061 [P] [US5] Create packages/core/tests/shutdown.test.ts with tests for stop() method (stops polling, no new jobs picked up)
+- [X] T062 [P] [US5] Add tests for in-progress job completion waiting in packages/core/tests/shutdown.test.ts
+- [X] T063 [P] [US5] Add tests for shutdown timeout behavior (emit job:error with ShutdownTimeoutError, incompleteJobs array) in packages/core/tests/shutdown.test.ts
 
 ### Implementation for User Story 5
 
-- [ ] T064 [US5] Implement stop() method in packages/core/src/monque.ts (clear polling interval, set isRunning=false)
-- [ ] T065 [US5] Implement in-progress job tracking and waiting in packages/core/src/monque.ts (track activeJobs Set, wait for all to complete)
-- [ ] T066 [US5] Implement shutdown timeout logic with ShutdownTimeoutError emission in packages/core/src/monque.ts (Promise.race with timeout, emit job:error)
-- [ ] T067 [US5] Run tests for US5 to verify graceful shutdown works
+- [X] T064 [US5] Implement stop() method in packages/core/src/monque.ts (clear polling interval, set isRunning=false)
+- [X] T065 [US5] Implement in-progress job tracking and waiting in packages/core/src/monque.ts (track activeJobs Set, wait for all to complete)
+- [X] T066 [US5] Implement shutdown timeout logic with ShutdownTimeoutError emission in packages/core/src/monque.ts (Promise.race with timeout, emit job:error)
+- [X] T067 [US5] Run tests for US5 to verify graceful shutdown works
 
-**Checkpoint**: User Story 5 complete - graceful shutdown works independently
+**Checkpoint**: User Story 5 complete - graceful shutdown works independently ✅
 
 ---
 
