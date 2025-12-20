@@ -379,9 +379,10 @@ describe('stop() - Graceful Shutdown', () => {
 			await monque.stop();
 			const elapsed = Date.now() - startTime;
 
-			// Should timeout within the custom timeout + some margin
+			// Should timeout within the custom timeout + margin for processing overhead
+			// Margin accounts for: polling interval, test runner variance, and event emission time
 			expect(errorEmitted).toBe(true);
-			expect(elapsed).toBeLessThan(customTimeout + 200);
+			expect(elapsed).toBeLessThan(customTimeout + 300);
 		});
 
 		it('should default to 30s shutdown timeout', async () => {

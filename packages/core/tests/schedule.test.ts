@@ -21,6 +21,7 @@ import {
 	clearCollection,
 	getTestDb,
 	stopMonqueInstances,
+	triggerJobImmediately,
 	uniqueCollectionName,
 	waitFor,
 } from '@tests/setup/test-utils.js';
@@ -297,7 +298,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately for testing
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -332,7 +333,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately for testing
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -373,7 +374,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -387,7 +388,7 @@ describe('schedule()', () => {
 			);
 
 			// Update nextRunAt to now to trigger retry immediately
-			await collection.updateOne({ _id: originalJobId }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, originalJobId);
 
 			// Wait for successful completion
 			await waitFor(
@@ -422,7 +423,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -469,7 +470,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -483,7 +484,7 @@ describe('schedule()', () => {
 			);
 
 			// Update nextRunAt to now to trigger retry immediately
-			await collection.updateOne({ _id: originalJobId }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, originalJobId);
 
 			// Wait for successful completion
 			await waitFor(
@@ -555,7 +556,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -594,7 +595,7 @@ describe('schedule()', () => {
 
 			// Update the job to run immediately
 			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, job._id);
 
 			monque.start();
 
@@ -608,7 +609,7 @@ describe('schedule()', () => {
 			);
 
 			// Update nextRunAt to now to trigger retry immediately
-			await collection.updateOne({ _id: originalJobId }, { $set: { nextRunAt: new Date() } });
+			await triggerJobImmediately(collection, originalJobId);
 
 			// Wait for successful completion (failCount reset, failReason cleared)
 			await waitFor(

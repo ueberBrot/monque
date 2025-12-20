@@ -76,13 +76,6 @@ describe('worker()', () => {
 			monque.worker(jobType1Name, handler1);
 			monque.worker(jobType2Name, handler2);
 			monque.worker(jobType3Name, handler3);
-
-			// All registrations should succeed
-			expect(() => {
-				monque.worker(jobType1Name, handler1);
-				monque.worker(jobType2Name, handler2);
-				monque.worker(jobType3Name, handler3);
-			}).not.toThrow();
 		});
 
 		it('should replace handler when registering same job name twice', async () => {
@@ -296,12 +289,16 @@ describe('worker()', () => {
 
 			let maxConcurrent = 0;
 			let currentConcurrent = 0;
+			const timestamps: { start: number; end: number }[] = [];
 
 			const handler = vi.fn(async () => {
+				const start = Date.now();
 				currentConcurrent++;
 				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
 				await new Promise((r) => setTimeout(r, 200));
 				currentConcurrent--;
+				const end = Date.now();
+				timestamps.push({ start, end });
 			});
 			monque.worker(concurrencyJobName, handler);
 
@@ -316,6 +313,12 @@ describe('worker()', () => {
 
 			expect(maxConcurrent).toBeLessThanOrEqual(defaultConcurrency);
 			expect(maxConcurrent).toBeGreaterThan(0);
+
+			// Verify actual concurrency by checking overlapping execution windows
+			const overlaps = timestamps.some((t1, i) =>
+				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlaps).toBe(true);
 		});
 
 		it('should respect worker-specific concurrency option', async () => {
@@ -328,12 +331,16 @@ describe('worker()', () => {
 			let maxConcurrent = 0;
 			let currentConcurrent = 0;
 			const workerConcurrency = 1; // Override to 1
+			const timestamps: { start: number; end: number }[] = [];
 
 			const handler = vi.fn(async () => {
+				const start = Date.now();
 				currentConcurrent++;
 				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
 				await new Promise((r) => setTimeout(r, 100));
 				currentConcurrent--;
+				const end = Date.now();
+				timestamps.push({ start, end });
 			});
 			monque.worker(limitedJobName, handler, { concurrency: workerConcurrency });
 
@@ -347,6 +354,12 @@ describe('worker()', () => {
 			await waitFor(async () => handler.mock.calls.length === 3, { timeout: 5000 });
 
 			expect(maxConcurrent).toBe(workerConcurrency);
+
+			// Verify no overlapping execution (concurrency of 1 means sequential)
+			const overlaps = timestamps.some((t1, i) =>
+				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlaps).toBe(false);
 		});
 
 		it('should allow different concurrency per worker type', async () => {
@@ -361,19 +374,27 @@ describe('worker()', () => {
 			let currentConcurrentA = 0;
 			let maxConcurrentB = 0;
 			let currentConcurrentB = 0;
+			const timestampsA: { start: number; end: number }[] = [];
+			const timestampsB: { start: number; end: number }[] = [];
 
 			const handlerA = vi.fn(async () => {
+				const start = Date.now();
 				currentConcurrentA++;
 				maxConcurrentA = Math.max(maxConcurrentA, currentConcurrentA);
 				await new Promise((r) => setTimeout(r, 150));
 				currentConcurrentA--;
+				const end = Date.now();
+				timestampsA.push({ start, end });
 			});
 
 			const handlerB = vi.fn(async () => {
+				const start = Date.now();
 				currentConcurrentB++;
 				maxConcurrentB = Math.max(maxConcurrentB, currentConcurrentB);
 				await new Promise((r) => setTimeout(r, 150));
 				currentConcurrentB--;
+				const end = Date.now();
+				timestampsB.push({ start, end });
 			});
 
 			monque.worker(jobTypeAName, handlerA, { concurrency: 2 });
@@ -394,6 +415,16 @@ describe('worker()', () => {
 
 			expect(maxConcurrentA).toBeLessThanOrEqual(2);
 			expect(maxConcurrentB).toBeLessThanOrEqual(4);
+
+			// Verify actual concurrency by checking overlapping execution windows
+			const overlapsA = timestampsA.some((t1, i) =>
+				timestampsA.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			const overlapsB = timestampsB.some((t1, i) =>
+				timestampsB.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlapsA).toBe(true);
+			expect(overlapsB).toBe(true);
 		});
 
 		it('should process more jobs as slots become available', async () => {
@@ -427,7 +458,7 @@ describe('worker()', () => {
 
 			// All jobs should have been processed
 			expect(processedOrder).toHaveLength(4);
-			expect(processedOrder.sort()).toEqual([0, 1, 2, 3]);
+			expect([...processedOrder].sort()).toEqual([0, 1, 2, 3]);
 		});
 	});
 

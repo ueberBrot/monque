@@ -303,7 +303,7 @@ export interface MonquePublicAPI {
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
 	 * @param options - Enqueueing options
-	 * @returns The created job document with guaranteed _id
+	 * @returns The created job document
 	 */
 	enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>>;
 
@@ -311,7 +311,7 @@ export interface MonquePublicAPI {
 	 * Enqueue a job for immediate processing (syntactic sugar).
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
-	 * @returns The created job document with guaranteed _id
+	 * @returns The created job document
 	 */
 	now<T>(name: string, data: T): Promise<PersistedJob<T>>;
 
@@ -320,7 +320,7 @@ export interface MonquePublicAPI {
 	 * @param cron - Cron expression (5-field format)
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
-	 * @returns The created job document with guaranteed _id
+	 * @returns The created job document
 	 */
 	schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>>;
 

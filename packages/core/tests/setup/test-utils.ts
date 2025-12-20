@@ -21,7 +21,7 @@
  * ```
  */
 
-import type { Db } from 'mongodb';
+import type { Collection, Db, ObjectId } from 'mongodb';
 
 import { getMongoClient } from '@tests/setup/mongodb.js';
 
@@ -98,7 +98,11 @@ export async function waitFor(
 		await new Promise((resolve) => setTimeout(resolve, interval));
 	}
 
-	throw new Error(`waitFor condition not met within ${timeout}ms`);
+	const elapsed = Date.now() - startTime;
+	throw new Error(
+		`waitFor condition not met within ${timeout}ms (elapsed: ${elapsed}ms). ` +
+			`Consider increasing timeout or checking test conditions.`,
+	);
 }
 
 /**
@@ -113,4 +117,18 @@ export async function stopMonqueInstances(
 	await Promise.all(instances.map((i) => i.stop()));
 	// Clear the array in place
 	instances.length = 0;
+}
+
+/**
+ * Updates a job's nextRunAt to now for immediate execution in tests.
+ * Useful for triggering scheduled jobs immediately without waiting for their scheduled time.
+ *
+ * @param collection - The MongoDB collection containing the job
+ * @param jobId - The ObjectId of the job to trigger
+ */
+export async function triggerJobImmediately(
+	collection: Collection,
+	jobId: ObjectId,
+): Promise<void> {
+	await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
 }
