@@ -218,20 +218,20 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 6
 
-- [ ] T068 [P] [US6] Create packages/core/tests/events.test.ts with tests for job:start event (fires when processing begins, includes Job)
-- [ ] T069 [P] [US6] Add tests for job:complete event (includes Job and duration in ms) in packages/core/tests/events.test.ts
-- [ ] T070 [P] [US6] Add tests for job:fail event (includes Job, error, willRetry boolean) in packages/core/tests/events.test.ts
-- [ ] T071 [P] [US6] Add tests for job:error event (unexpected errors, includes error and optional job) in packages/core/tests/events.test.ts
+- [X] T068 [P] [US6] Create packages/core/tests/events.test.ts with tests for job:start event (fires when processing begins, includes Job)
+- [X] T069 [P] [US6] Add tests for job:complete event (includes Job and duration in ms) in packages/core/tests/events.test.ts
+- [X] T070 [P] [US6] Add tests for job:fail event (includes Job, error, willRetry boolean) in packages/core/tests/events.test.ts
+- [X] T071 [P] [US6] Add tests for job:error event (unexpected errors, includes error and optional job) in packages/core/tests/events.test.ts
 
 ### Implementation for User Story 6
 
-- [ ] T072 [US6] Emit job:start event when job begins processing in packages/core/src/monque.ts
-- [ ] T073 [US6] Emit job:complete event with duration calculation on success in packages/core/src/monque.ts
-- [ ] T074 [US6] Emit job:fail event with error and willRetry flag on failure in packages/core/src/monque.ts
-- [ ] T075 [US6] Emit job:error event for unexpected errors (catch unhandled exceptions) in packages/core/src/monque.ts
-- [ ] T076 [US6] Implement isHealthy() method returning boolean in packages/core/src/monque.ts (isRunning && db connection active)
-- [ ] T076a [P] [US6] Add tests for isHealthy() in packages/core/tests/events.test.ts (returns true when running and connected, false when stopped, false when connection lost)
-- [ ] T077 [US6] Run tests for US6 to verify event emission is complete
+- [X] T072 [US6] Emit job:start event when job begins processing in packages/core/src/monque.ts
+- [X] T073 [US6] Emit job:complete event with duration calculation on success in packages/core/src/monque.ts
+- [X] T074 [US6] Emit job:fail event with error and willRetry flag on failure in packages/core/src/monque.ts
+- [X] T075 [US6] Emit job:error event for unexpected errors (catch unhandled exceptions) in packages/core/src/monque.ts
+- [X] T076 [US6] Implement isHealthy() method returning boolean in packages/core/src/monque.ts (isRunning && db connection active)
+- [X] T076a [P] [US6] Add tests for isHealthy() in packages/core/tests/events.test.ts (returns true when running and connected, false when stopped, false when connection lost)
+- [X] T077 [US6] Run tests for US6 to verify event emission is complete
 
 **Checkpoint**: User Story 6 complete - event monitoring works independently
 
@@ -245,16 +245,16 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for Stale Recovery
 
-- [ ] T078 [P] Create packages/core/tests/stale-recovery.test.ts with tests for stale job detection (lockedAt > lockTimeout)
-- [ ] T079 [P] Add tests for stale job recovery on startup (recoverStaleJobs=true resets to pending) in packages/core/tests/stale-recovery.test.ts
-- [ ] T080 [P] Add tests for recoverStaleJobs=false option (stale jobs not recovered) in packages/core/tests/stale-recovery.test.ts
+- [X] T078 [P] Create packages/core/tests/stale-recovery.test.ts with tests for stale job detection (lockedAt > lockTimeout)
+- [X] T079 [P] Add tests for stale job recovery on startup (recoverStaleJobs=true resets to pending) in packages/core/tests/stale-recovery.test.ts
+- [X] T080 [P] Add tests for recoverStaleJobs=false option (stale jobs not recovered) in packages/core/tests/stale-recovery.test.ts
 
 ### Implementation for Stale Recovery
 
-- [ ] T081 Implement stale job detection query in packages/core/src/monque.ts (status=processing, lockedAt < now - lockTimeout)
-- [ ] T082 Implement stale job recovery on start() when recoverStaleJobs=true in packages/core/src/monque.ts (updateMany to reset status=pending, lockedAt=null)
-- [ ] T083 Run tests for stale recovery to verify behavior
-- [ ] T083a [P] Add integration test for SC-006: multiple scheduler instances processing jobs concurrently without duplicate execution (1000 jobs, 2+ instances, verify each job processed exactly once)
+- [X] T081 Implement stale job detection query in packages/core/src/monque.ts (status=processing, lockedAt < now - lockTimeout)
+- [X] T082 Implement stale job recovery on start() when recoverStaleJobs=true in packages/core/src/monque.ts (updateMany to reset status=pending, lockedAt=null)
+- [X] T083 Run tests for stale recovery to verify behavior
+- [X] T083a [P] Add integration test for SC-006: multiple scheduler instances processing jobs concurrently without duplicate execution (1000 jobs, 2+ instances, verify each job processed exactly once)
 
 **Checkpoint**: Stale recovery complete - System recovers from scheduler crashes
 
