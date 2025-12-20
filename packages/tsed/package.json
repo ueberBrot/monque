@@ -44,8 +44,8 @@
 		"@monque/core": "workspace:*"
 	},
 	"devDependencies": {
-		"@types/bun": "^1.3.4",
-		"tsdown": "^0.18.0"
+		"@types/bun": "^1.3.5",
+		"tsdown": "^0.18.1"
 	},
 	"peerDependencies": {
 		"@tsed/common": ">=7.0.0",

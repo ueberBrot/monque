@@ -47,9 +47,9 @@
 	"devDependencies": {
 		"@faker-js/faker": "^10.1.0",
 		"@testcontainers/mongodb": "^11.10.0",
-		"@types/bun": "^1.3.4",
+		"@types/bun": "^1.3.5",
 		"fishery": "^2.4.0",
-		"tsdown": "^0.18.0"
+		"tsdown": "^0.18.1"
 	},
 	"peerDependencies": {
 		"typescript": "^5"
