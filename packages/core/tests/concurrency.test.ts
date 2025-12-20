@@ -38,7 +38,6 @@ describe('Concurrency & Scalability', () => {
 
 	afterEach(async () => {
 		await stopMonqueInstances(monqueInstances);
-		monqueInstances.length = 0; // Clear the array
 
 		if (collectionName) {
 			await clearCollection(db, collectionName);

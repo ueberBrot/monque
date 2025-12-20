@@ -21,9 +21,10 @@
  * ```
  */
 
-import type { Collection, Db, ObjectId } from 'mongodb';
+import type { Collection, Db, Document, ObjectId } from 'mongodb';
 
 import { getMongoClient } from '@tests/setup/mongodb.js';
+import type { Job } from '@/types.js';
 
 /**
  * Gets an isolated test database.
@@ -131,4 +132,27 @@ export async function triggerJobImmediately(
 	jobId: ObjectId,
 ): Promise<void> {
 	await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
+}
+
+/**
+ * Finds a job by a custom query and returns it typed as Job.
+ * This helper eliminates the need for unsafe double-casting (as unknown as Job)
+ * when querying jobs directly from the collection in tests.
+ *
+ * @param collection - The MongoDB collection containing jobs
+ * @param query - MongoDB query to find the job
+ * @returns The job if found, null otherwise
+ *
+ * @example
+ * ```typescript
+ * const job = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+ * expect(job?.status).toBe(JobStatus.PENDING);
+ * ```
+ */
+export async function findJobByQuery<T = unknown>(
+	collection: Collection,
+	query: Document,
+): Promise<Job<T> | null> {
+	const doc = await collection.findOne(query);
+	return doc as Job<T> | null;
 }

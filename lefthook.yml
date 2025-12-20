@@ -9,4 +9,4 @@ pre-commit:
 
     - name: lockfile-verify
       glob: "package.json"
-      run: bun install && git diff --exit-code bun.lock
+      run: bun install --frozen-lockfile

@@ -17,12 +17,13 @@ import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
+	findJobByQuery,
 	getTestDb,
 	stopMonqueInstances,
 	uniqueCollectionName,
 } from '@tests/setup/test-utils.js';
 import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
+import { JobStatus } from '@/types.js';
 
 describe('Stale Job Recovery', () => {
 	let db: Db;
@@ -85,8 +86,8 @@ describe('Stale Job Recovery', () => {
 		await monque.initialize();
 
 		// Check jobs
-		const staleJob = (await collection.findOne({ 'data.id': 1 })) as unknown as Job;
-		const freshJob = (await collection.findOne({ 'data.id': 2 })) as unknown as Job;
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+		const freshJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
 
 		// Stale job should be reset to pending
 		expect(staleJob).not.toBeNull();
@@ -126,7 +127,7 @@ describe('Stale Job Recovery', () => {
 		await monque.initialize();
 
 		// Check job
-		const staleJob = (await collection.findOne({ 'data.id': 1 })) as unknown as Job;
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
 
 		// Stale job should remain processing
 		expect(staleJob).not.toBeNull();
@@ -175,8 +176,8 @@ describe('Stale Job Recovery', () => {
 		await monque.initialize();
 
 		// Check jobs
-		const staleJob = (await collection.findOne({ 'data.id': 1 })) as unknown as Job;
-		const notStaleJob = (await collection.findOne({ 'data.id': 2 })) as unknown as Job;
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+		const notStaleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
 
 		// Stale job should be reset
 		expect(staleJob?.status).toBe(JobStatus.PENDING);
