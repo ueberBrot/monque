@@ -10,6 +10,7 @@
 		"packages/*"
 	],
 	"scripts": {
+		"prepare": "lefthook install",
 		"build": "turbo build",
 		"test": "turbo test",
 		"test:dev": "turbo test:dev",
@@ -33,6 +34,7 @@
 		"@types/bun": "^1.3.4",
 		"@vitest/coverage-v8": "^4.0.16",
 		"@vitest/ui": "^4.0.16",
+		"lefthook": "^2.0.12",
 		"rimraf": "^6.1.2",
 		"turbo": "^2.6.3",
 		"vitest": "^4.0.16"
