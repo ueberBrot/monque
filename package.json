@@ -12,6 +12,7 @@
 	"scripts": {
 		"prepare": "lefthook install",
 		"build": "turbo build",
+		"type-check": "turbo type-check",
 		"test": "turbo test",
 		"test:dev": "turbo test:dev",
 		"test:core": "turbo test --filter=@monque/core",

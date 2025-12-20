@@ -24,6 +24,8 @@
 	"scripts": {
 		"build": "tsdown",
 		"clean": "rimraf dist coverage .turbo",
+		"type-check": "tsc --noEmit",
+		"pretest": "bun run type-check",
 		"test": "vitest run",
 		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
 		"test:watch": "vitest",

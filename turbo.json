@@ -6,6 +6,10 @@
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**"]
 		},
+		"type-check": {
+			"outputs": [],
+			"inputs": ["src/**", "tests/**", "tsconfig.json"]
+		},
 		"test": {
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
