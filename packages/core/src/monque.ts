@@ -548,14 +548,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		this.isRunning = true;
 		this.pollIntervalId = setInterval(() => {
-			this.poll().catch((error) => {
-				this.emit('job:error', { error });
+			this.poll().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
 			});
 		}, this.options.pollInterval);
 
 		// Run initial poll immediately
-		this.poll().catch((error) => {
-			this.emit('job:error', { error });
+		this.poll().catch((error: unknown) => {
+			this.emit('job:error', { error: error as Error });
 		});
 	}
 
@@ -737,8 +737,8 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				const job = await this.acquireJob(name);
 
 				if (job) {
-					this.processJob(job, worker).catch((error) => {
-						this.emit('job:error', { error, job });
+					this.processJob(job, worker).catch((error: unknown) => {
+						this.emit('job:error', { error: error as Error, job });
 					});
 				} else {
 					// No more jobs available for this worker

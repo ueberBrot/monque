@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/knip@next/schema.json",
+	"ignore": ["**/dist/**", "**/coverage/**", "**/.turbo/**", "packages/docs/**", "specs/**"],
+	"ignoreBinaries": ["tsc"],
+	"ignoreDependencies": ["@monque/core"],
+	"workspaces": {
+		"packages/*": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts", "tests/**/*.ts"]
+		}
+	}
+}

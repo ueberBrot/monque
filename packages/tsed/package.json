@@ -23,6 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
+		"check:exports": "publint && attw --pack .",
 		"clean": "rimraf dist coverage .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
@@ -44,6 +45,7 @@
 		"@monque/core": "workspace:*"
 	},
 	"devDependencies": {
+		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/bun": "^1.3.5",
 		"tsdown": "^0.18.1"
 	},

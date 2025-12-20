@@ -6,6 +6,10 @@
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**"]
 		},
+		"check:exports": {
+			"dependsOn": ["build"],
+			"outputs": []
+		},
 		"type-check": {
 			"outputs": [],
 			"inputs": ["src/**", "tests/**", "tsconfig.json"]

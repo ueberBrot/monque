@@ -23,6 +23,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
+		"check:exports": "publint && attw --pack .",
 		"clean": "rimraf dist coverage .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
@@ -47,6 +48,7 @@
 	"devDependencies": {
 		"@faker-js/faker": "^10.1.0",
 		"@testcontainers/mongodb": "^11.10.0",
+		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/bun": "^1.3.5",
 		"fishery": "^2.4.0",
 		"tsdown": "^0.18.1"
