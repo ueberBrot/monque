@@ -43,10 +43,10 @@ interface WorkerRegistration<T = unknown> {
 /**
  * Monque - MongoDB-backed job scheduler
  *
- * A job scheduler with atomic locking, exponential backoff, cron scheduling,
- * stale job recovery, and event-driven observability.
+ * A type-safe job scheduler with atomic locking, exponential backoff, cron scheduling,
+ * stale job recovery, and event-driven observability. Built on native MongoDB driver.
  *
- * @example
+ * @example Complete lifecycle
  * ```typescript
  * import { Monque } from '@monque/core';
  * import { MongoClient } from 'mongodb';
@@ -55,22 +55,53 @@ interface WorkerRegistration<T = unknown> {
  * await client.connect();
  * const db = client.db('myapp');
  *
+ * // Create instance with options
  * const monque = new Monque(db, {
  *   collectionName: 'jobs',
  *   pollInterval: 1000,
+ *   maxRetries: 10,
+ *   shutdownTimeout: 30000,
  * });
  *
- * // Register a worker
- * monque.worker('send-email', async (job) => {
- *   await sendEmail(job.data.to, job.data.subject);
+ * // Initialize (sets up indexes and recovers stale jobs)
+ * await monque.initialize();
+ *
+ * // Register workers with type safety
+ * interface EmailJob {
+ *   to: string;
+ *   subject: string;
+ *   body: string;
+ * }
+ *
+ * monque.worker<EmailJob>('send-email', async (job) => {
+ *   await emailService.send(job.data.to, job.data.subject, job.data.body);
+ * });
+ *
+ * // Monitor events for observability
+ * monque.on('job:complete', ({ job, duration }) => {
+ *   logger.info(`Job ${job.name} completed in ${duration}ms`);
+ * });
+ *
+ * monque.on('job:fail', ({ job, error, willRetry }) => {
+ *   logger.error(`Job ${job.name} failed:`, error);
  * });
  *
  * // Start processing
- * await monque.initialize();
  * monque.start();
  *
- * // Enqueue a job
- * await monque.enqueue('send-email', { to: 'user@example.com', subject: 'Hello' });
+ * // Enqueue jobs
+ * await monque.enqueue('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Welcome!',
+ *   body: 'Thanks for signing up.'
+ * });
+ *
+ * // Graceful shutdown
+ * process.on('SIGTERM', async () => {
+ *   await monque.stop();
+ *   await client.close();
+ *   process.exit(0);
+ * });
  * ```
  */
 export class Monque extends EventEmitter implements MonquePublicAPI {
@@ -197,6 +228,47 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Enqueue a job for processing.
+	 *
+	 * Jobs are stored in MongoDB and processed by registered workers. Supports
+	 * delayed execution via `runAt` and deduplication via `uniqueKey`.
+	 *
+	 * When a `uniqueKey` is provided, only one pending or processing job with that key
+	 * can exist. Completed or failed jobs don't block new jobs with the same key.
+	 *
+	 * Failed jobs are automatically retried with exponential backoff up to `maxRetries`
+	 * (default: 10 attempts). The delay between retries is calculated as `2^failCount × baseRetryInterval`.
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler
+	 * @param options - Scheduling and deduplication options
+	 * @returns Promise resolving to the created or existing job document
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Basic job enqueueing
+	 * ```typescript
+	 * await monque.enqueue('send-email', {
+	 *   to: 'user@example.com',
+	 *   subject: 'Welcome!',
+	 *   body: 'Thanks for signing up.'
+	 * });
+	 * ```
+	 *
+	 * @example Delayed execution
+	 * ```typescript
+	 * const oneHourLater = new Date(Date.now() + 3600000);
+	 * await monque.enqueue('reminder', { message: 'Check in!' }, {
+	 *   runAt: oneHourLater
+	 * });
+	 * ```
+	 *
+	 * @example Prevent duplicates with unique key
+	 * ```typescript
+	 * await monque.enqueue('sync-user', { userId: '123' }, {
+	 *   uniqueKey: 'sync-user-123'
+	 * });
+	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
+	 * ```
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
@@ -259,7 +331,32 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	}
 
 	/**
-	 * Enqueue a job for immediate processing (syntactic sugar).
+	 * Enqueue a job for immediate processing.
+	 *
+	 * Convenience method equivalent to `enqueue(name, data, { runAt: new Date() })`.
+	 * Jobs are picked up on the next poll cycle (typically within 1 second based on `pollInterval`).
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler
+	 * @returns Promise resolving to the created job document
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Send email immediately
+	 * ```typescript
+	 * await monque.now('send-email', {
+	 *   to: 'admin@example.com',
+	 *   subject: 'Alert',
+	 *   body: 'Immediate attention required'
+	 * });
+	 * ```
+	 *
+	 * @example Process order in background
+	 * ```typescript
+	 * const order = await createOrder(data);
+	 * await monque.now('process-order', { orderId: order.id });
+	 * return order; // Return immediately, processing happens async
+	 * ```
 	 */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		return this.enqueue(name, data, { runAt: new Date() });
@@ -267,6 +364,41 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Schedule a recurring job with a cron expression.
+	 *
+	 * Creates a job that automatically re-schedules itself based on the cron pattern.
+	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
+	 * After successful completion, the job is reset to `pending` status and scheduled
+	 * for its next run based on the cron expression.
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param cron - Cron expression (5 fields: minute hour day month weekday)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler on each run
+	 * @returns Promise resolving to the created job document with `repeatInterval` set
+	 * @throws {InvalidCronError} If cron expression is invalid
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Hourly cleanup job
+	 * ```typescript
+	 * await monque.schedule('0 * * * *', 'cleanup-temp-files', {
+	 *   directory: '/tmp/uploads'
+	 * });
+	 * ```
+	 *
+	 * @example Daily report at midnight
+	 * ```typescript
+	 * await monque.schedule('0 0 * * *', 'daily-report', {
+	 *   reportType: 'sales',
+	 *   recipients: ['analytics@example.com']
+	 * });
+	 * ```
+	 *
+	 * @example Every 30 minutes during business hours (9am-5pm, Mon-Fri)
+	 * ```typescript
+	 * await monque.schedule('0,30 9-17 * * 1-5', 'sync-inventory', {
+	 *   source: 'warehouse-api'
+	 * });
+	 * ```
 	 */
 	async schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
@@ -302,6 +434,54 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Register a worker to process jobs of a specific type.
+	 *
+	 * Workers can be registered before or after calling `start()`. Each worker
+	 * processes jobs concurrently up to its configured concurrency limit (default: 5).
+	 *
+	 * The handler function receives the full job object including metadata (`_id`, `status`,
+	 * `failCount`, etc.). If the handler throws an error, the job is retried with exponential
+	 * backoff up to `maxRetries` times. After exhausting retries, the job is marked as `failed`.
+	 *
+	 * Events are emitted during job processing: `job:start`, `job:complete`, `job:fail`, and `job:error`.
+	 *
+	 * @template T - The job data payload type for type-safe access to `job.data`
+	 * @param name - Job type identifier to handle
+	 * @param handler - Async function to execute for each job
+	 * @param options - Worker configuration (concurrency limit)
+	 *
+	 * @example Basic email worker
+	 * ```typescript
+	 * interface EmailJob {
+	 *   to: string;
+	 *   subject: string;
+	 *   body: string;
+	 * }
+	 *
+	 * monque.worker<EmailJob>('send-email', async (job) => {
+	 *   await emailService.send(job.data.to, job.data.subject, job.data.body);
+	 * });
+	 * ```
+	 *
+	 * @example Worker with custom concurrency
+	 * ```typescript
+	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
+	 * monque.worker('process-video', async (job) => {
+	 *   await videoProcessor.transcode(job.data.videoId);
+	 * }, { concurrency: 2 });
+	 * ```
+	 *
+	 * @example Worker with error handling
+	 * ```typescript
+	 * monque.worker('sync-user', async (job) => {
+	 *   try {
+	 *     await externalApi.syncUser(job.data.userId);
+	 *   } catch (error) {
+	 *     // Job will retry with exponential backoff
+	 *     // Delay = 2^failCount × baseRetryInterval (default: 1000ms)
+	 *     throw new Error(`Sync failed: ${error.message}`);
+	 *   }
+	 * });
+	 * ```
 	 */
 	worker<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
 		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
@@ -315,6 +495,46 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Start polling for and processing jobs.
+	 *
+	 * Begins polling MongoDB at the configured interval (default: 1 second) to pick up
+	 * pending jobs and dispatch them to registered workers. Must call `initialize()` first.
+	 * Workers can be registered before or after calling `start()`.
+	 *
+	 * Jobs are processed concurrently up to each worker's configured concurrency limit.
+	 * The scheduler continues running until `stop()` is called.
+	 *
+	 * @example Basic startup
+	 * ```typescript
+	 * const monque = new Monque(db);
+	 * await monque.initialize();
+	 *
+	 * monque.worker('send-email', emailHandler);
+	 * monque.worker('process-order', orderHandler);
+	 *
+	 * monque.start(); // Begin processing jobs
+	 * ```
+	 *
+	 * @example With event monitoring
+	 * ```typescript
+	 * monque.on('job:start', (job) => {
+	 *   logger.info(`Starting job ${job.name}`);
+	 * });
+	 *
+	 * monque.on('job:complete', ({ job, duration }) => {
+	 *   metrics.recordJobDuration(job.name, duration);
+	 * });
+	 *
+	 * monque.on('job:fail', ({ job, error, willRetry }) => {
+	 *   logger.error(`Job ${job.name} failed:`, error);
+	 *   if (!willRetry) {
+	 *     alerting.sendAlert(`Job permanently failed: ${job.name}`);
+	 *   }
+	 * });
+	 *
+	 * monque.start();
+	 * ```
+	 *
+	 * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
 	 */
 	start(): void {
 		if (this.isRunning) {
@@ -340,6 +560,49 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
+	 *
+	 * Stops polling for new jobs and waits for all active jobs to finish processing.
+	 * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
+	 * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
+	 *
+	 * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
+	 *
+	 * @returns Promise that resolves when all jobs complete or timeout is reached
+	 *
+	 * @example Graceful application shutdown
+	 * ```typescript
+	 * process.on('SIGTERM', async () => {
+	 *   console.log('Shutting down gracefully...');
+	 *   await monque.stop(); // Wait for jobs to complete
+	 *   await mongoClient.close();
+	 *   process.exit(0);
+	 * });
+	 * ```
+	 *
+	 * @example With timeout handling
+	 * ```typescript
+	 * monque.on('job:error', ({ error }) => {
+	 *   if (error.name === 'ShutdownTimeoutError') {
+	 *     logger.warn('Forced shutdown after timeout:', error.incompleteJobs);
+	 *   }
+	 * });
+	 *
+	 * await monque.stop();
+	 * ```
+	 *
+	 * @example Kubernetes preStop hook
+	 * ```typescript
+	 * // In your Kubernetes pod spec:
+	 * // lifecycle:
+	 * //   preStop:
+	 * //     exec:
+	 * //       command: ["/bin/sh", "-c", "kill -TERM 1"]
+	 *
+	 * process.on('SIGTERM', async () => {
+	 *   await monque.stop(); // Graceful shutdown
+	 *   process.exit(0);
+	 * });
+	 * ```
 	 */
 	async stop(): Promise<void> {
 		if (!this.isRunning) {
@@ -398,6 +661,49 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Check if the scheduler is healthy (running and connected).
+	 *
+	 * Returns `true` when the scheduler is started, initialized, and has an active
+	 * MongoDB collection reference. Useful for health check endpoints and monitoring.
+	 *
+	 * A healthy scheduler:
+	 * - Has called `initialize()` successfully
+	 * - Has called `start()` and is actively polling
+	 * - Has a valid MongoDB collection reference
+	 *
+	 * @returns `true` if scheduler is running and connected, `false` otherwise
+	 *
+	 * @example Express health check endpoint
+	 * ```typescript
+	 * app.get('/health', (req, res) => {
+	 *   const healthy = monque.isHealthy();
+	 *   res.status(healthy ? 200 : 503).json({
+	 *     status: healthy ? 'ok' : 'unavailable',
+	 *     scheduler: healthy,
+	 *     timestamp: new Date().toISOString()
+	 *   });
+	 * });
+	 * ```
+	 *
+	 * @example Kubernetes readiness probe
+	 * ```typescript
+	 * app.get('/readyz', (req, res) => {
+	 *   if (monque.isHealthy() && dbConnected) {
+	 *     res.status(200).send('ready');
+	 *   } else {
+	 *     res.status(503).send('not ready');
+	 *   }
+	 * });
+	 * ```
+	 *
+	 * @example Periodic health monitoring
+	 * ```typescript
+	 * setInterval(() => {
+	 *   if (!monque.isHealthy()) {
+	 *     logger.error('Scheduler unhealthy');
+	 *     metrics.increment('scheduler.unhealthy');
+	 *   }
+	 * }, 60000); // Check every minute
+	 * ```
 	 */
 	isHealthy(): boolean {
 		return this.isRunning && this.isInitialized && this.collection !== null;
@@ -405,6 +711,11 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Poll for available jobs and process them.
+	 *
+	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
+	 * attempts to acquire jobs up to the worker's available concurrency slots.
+	 *
+	 * @private
 	 */
 	private async poll(): Promise<void> {
 		if (!this.isRunning || !this.collection) {
@@ -437,9 +748,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Atomically acquire a pending job for processing.
-	 * Uses MongoDB's `findOneAndUpdate` to ensure only one worker can claim a job.
+	 *
+	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one worker
+	 * can claim a job, preventing duplicate processing. Queries for pending jobs with
+	 * `nextRunAt` <= now, sorted by `nextRunAt` (oldest first).
+	 *
+	 * @private
 	 * @param name - The job type to acquire
-	 * @returns The acquired job, or null if no jobs are available
+	 * @returns The acquired job with updated status and lock timestamp, or `null` if no jobs available
 	 */
 	private async acquireJob(name: string): Promise<Job | null> {
 		if (!this.collection) {
@@ -476,9 +792,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Execute a job using its registered worker handler.
-	 * Emits lifecycle events (`job:start`, `job:complete`, `job:fail`) during processing.
+	 *
+	 * Tracks the job as active during processing, emits lifecycle events, and handles
+	 * both success and failure cases. On success, calls `completeJob()`. On failure,
+	 * calls `failJob()` which implements exponential backoff retry logic.
+	 *
+	 * @private
 	 * @param job - The job to process
-	 * @param worker - The worker registration containing the handler
+	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
 	private async processJob(job: Job, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id?.toString() ?? '';
@@ -508,7 +829,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Mark a job as completed successfully.
-	 * For recurring jobs (with `repeatInterval`), schedules the next run instead of marking as completed.
+	 *
+	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
+	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
+	 * Clears `lockedAt` and `failReason` fields in both cases.
+	 *
+	 * @private
 	 * @param job - The job that completed successfully
 	 */
 	private async completeJob(job: Job): Promise<void> {
@@ -554,7 +880,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Handle job failure with exponential backoff retry logic.
-	 * If max retries are exhausted, the job is marked as permanently failed.
+	 *
+	 * Increments `failCount` and calculates next retry time using exponential backoff:
+	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
+	 *
+	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
+	 * to `pending` status for retry. Stores error message in `failReason` field.
+	 *
+	 * @private
 	 * @param job - The job that failed
 	 * @param error - The error that caused the failure
 	 */
@@ -605,6 +938,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Ensure the scheduler is initialized before operations.
+	 *
+	 * @private
+	 * @throws {ConnectionError} If scheduler not initialized or collection unavailable
 	 */
 	private ensureInitialized(): void {
 		if (!this.isInitialized || !this.collection) {
@@ -613,7 +949,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	}
 
 	/**
-	 * Get count of active jobs across all workers.
+	 * Get array of active job IDs across all workers.
+	 *
+	 * @private
+	 * @returns Array of job ID strings currently being processed
 	 */
 	private getActiveJobs(): string[] {
 		const activeJobs: string[] = [];
@@ -625,6 +964,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Get list of active job documents (for shutdown timeout error).
+	 *
+	 * Note: Currently returns empty array as only job IDs are tracked, not full documents.
+	 * A more complete implementation would track the full job objects for better error reporting.
+	 *
+	 * @private
+	 * @returns Array of active Job objects (currently empty)
 	 */
 	private getActiveJobsList(): Job[] {
 		// Note: In a real implementation, we'd track the actual job objects.
@@ -636,8 +981,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Convert a MongoDB document to a typed PersistedJob object.
-	 * @param doc - The raw MongoDB document
-	 * @returns A strongly-typed PersistedJob object with guaranteed _id
+	 *
+	 * Maps raw MongoDB document fields to the strongly-typed `PersistedJob<T>` interface,
+	 * ensuring type safety and handling optional fields (`lockedAt`, `failReason`, etc.).
+	 *
+	 * @private
+	 * @template T - The job data payload type
+	 * @param doc - The raw MongoDB document with `_id`
+	 * @returns A strongly-typed PersistedJob object with guaranteed `_id`
 	 */
 	private documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
 		const job: PersistedJob<T> = {
