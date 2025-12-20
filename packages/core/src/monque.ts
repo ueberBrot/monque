@@ -367,11 +367,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 *
 	 * Creates a job that automatically re-schedules itself based on the cron pattern.
 	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
+	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
 	 * After successful completion, the job is reset to `pending` status and scheduled
 	 * for its next run based on the cron expression.
 	 *
 	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param cron - Cron expression (5 fields: minute hour day month weekday)
+	 * @param cron - Cron expression (5 fields or predefined expression)
 	 * @param name - Job type identifier, must match a registered worker
 	 * @param data - Job payload, will be passed to the worker handler on each run
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
@@ -385,9 +386,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * });
 	 * ```
 	 *
-	 * @example Daily report at midnight
+	 * @example Daily report at midnight (using predefined expression)
 	 * ```typescript
-	 * await monque.schedule('0 0 * * *', 'daily-report', {
+	 * await monque.schedule('@daily', 'daily-report', {
 	 *   reportType: 'sales',
 	 *   recipients: ['analytics@example.com']
 	 * });
@@ -628,6 +629,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		const waitForJobs = new Promise<undefined>((resolve) => {
 			checkInterval = setInterval(() => {
 				if (this.getActiveJobs().length === 0) {
+					clearInterval(checkInterval);
 					resolve(undefined);
 				}
 			}, 100);
@@ -757,7 +759,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * @param name - The job type to acquire
 	 * @returns The acquired job with updated status and lock timestamp, or `null` if no jobs available
 	 */
-	private async acquireJob(name: string): Promise<Job | null> {
+	private async acquireJob(name: string): Promise<PersistedJob | null> {
 		if (!this.collection) {
 			return null;
 		}
@@ -801,8 +803,8 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * @param job - The job to process
 	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
-	private async processJob(job: Job, worker: WorkerRegistration): Promise<void> {
-		const jobId = job._id?.toString() ?? '';
+	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
+		const jobId = job._id.toString();
 		worker.activeJobs.add(jobId);
 
 		const startTime = Date.now();

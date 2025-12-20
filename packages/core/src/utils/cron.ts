@@ -5,7 +5,7 @@ import { InvalidCronError } from '@/errors.js';
 /**
  * Parse a cron expression and return the next scheduled run date.
  *
- * @param expression - A 5-field cron expression (minute hour day-of-month month day-of-week)
+ * @param expression - A 5-field cron expression (minute hour day-of-month month day-of-week) or a predefined expression
  * @param currentDate - The reference date for calculating next run (default: now)
  * @returns The next scheduled run date
  * @throws {InvalidCronError} If the cron expression is invalid
@@ -17,6 +17,9 @@ import { InvalidCronError } from '@/errors.js';
  *
  * // Every day at midnight
  * const nextRun = getNextCronDate('0 0 * * *');
+ *
+ * // Using predefined expression
+ * const nextRun = getNextCronDate('@daily');
  *
  * // Every Monday at 9am
  * const nextRun = getNextCronDate('0 9 * * 1');
@@ -62,7 +65,7 @@ function handleCronParseError(expression: string, error: unknown): never {
 	throw new InvalidCronError(
 		expression,
 		`Invalid cron expression "${expression}": ${errorMessage}. ` +
-			'Expected 5-field format: "minute hour day-of-month month day-of-week". ' +
+			'Expected 5-field format: "minute hour day-of-month month day-of-week" or predefined expression (e.g. @daily). ' +
 			'Example: "0 9 * * 1" (every Monday at 9am)',
 	);
 }

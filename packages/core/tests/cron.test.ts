@@ -33,6 +33,14 @@ describe('cron', () => {
 			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
 		});
 
+		it('should parse predefined expressions like @daily', () => {
+			const result = getNextCronDate('@daily', TEST_DATE_MID_MORNING);
+			// Next run should be at 00:00
+			expect(result.getHours()).toBe(0);
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
 		it('should parse "30 9 * * 1" (every Monday at 9:30am)', () => {
 			// Jan 1, 2025 is a Wednesday
 			const result = getNextCronDate('30 9 * * 1', TEST_DATE_MID_MORNING);
@@ -83,6 +91,7 @@ describe('cron', () => {
 				expect(message).toContain('Invalid cron expression');
 				expect(message).toContain('"bad"');
 				expect(message).toContain('minute hour day-of-month month day-of-week');
+				expect(message).toContain('predefined expression');
 				expect(message).toContain('Example:');
 			}
 		});
