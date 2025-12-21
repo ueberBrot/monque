@@ -50,9 +50,9 @@
 		"tsdown": "^0.18.1"
 	},
 	"peerDependencies": {
-		"@tsed/common": ">=7.0.0",
-		"@tsed/di": ">=7.0.0",
-		"reflect-metadata": ">=0.2.2",
+		"@tsed/common": "^8.0.0",
+		"@tsed/di": "^8.0.0",
+		"reflect-metadata": "^0.2.2",
 		"typescript": "^5"
 	}
 }

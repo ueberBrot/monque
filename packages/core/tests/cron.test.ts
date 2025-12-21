@@ -121,12 +121,12 @@ describe('cron', () => {
 	});
 
 	describe('validateCronExpression', () => {
-		it('should return true for valid expressions', () => {
-			expect(validateCronExpression('* * * * *')).toBe(true);
-			expect(validateCronExpression('0 0 * * *')).toBe(true);
-			expect(validateCronExpression('30 9 1 * 1')).toBe(true);
-			expect(validateCronExpression('*/5 * * * *')).toBe(true);
-			expect(validateCronExpression('0 9-17 * * 1-5')).toBe(true);
+		it('should not throw for valid expressions', () => {
+			expect(() => validateCronExpression('* * * * *')).not.toThrow();
+			expect(() => validateCronExpression('0 0 * * *')).not.toThrow();
+			expect(() => validateCronExpression('30 9 1 * 1')).not.toThrow();
+			expect(() => validateCronExpression('*/5 * * * *')).not.toThrow();
+			expect(() => validateCronExpression('0 9-17 * * 1-5')).not.toThrow();
 		});
 
 		it('should throw InvalidCronError for invalid expressions', () => {

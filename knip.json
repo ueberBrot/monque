@@ -1,5 +1,5 @@
 {
-	"$schema": "https://unpkg.com/knip@next/schema.json",
+	"$schema": "https://unpkg.com/knip@5.76.0/schema.json",
 	"ignore": ["**/dist/**", "**/coverage/**", "**/.turbo/**", "packages/docs/**", "specs/**"],
 	"ignoreBinaries": ["tsc"],
 	"ignoreDependencies": ["@monque/core"],

@@ -40,20 +40,16 @@ export function getNextCronDate(expression: string, currentDate?: Date): Date {
  * Validate a cron expression without calculating the next run date.
  *
  * @param expression - A 5-field cron expression
- * @returns true if valid
  * @throws {InvalidCronError} If the cron expression is invalid
  *
  * @example
  * ```typescript
- * if (validateCronExpression('0 9 * * 1')) {
- *   // Expression is valid
- * }
+ * validateCronExpression('0 9 * * 1'); // Throws if invalid
  * ```
  */
-export function validateCronExpression(expression: string): boolean {
+export function validateCronExpression(expression: string): void {
 	try {
 		CronExpressionParser.parse(expression);
-		return true;
 	} catch (error) {
 		handleCronParseError(expression, error);
 	}
