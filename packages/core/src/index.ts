@@ -4,6 +4,7 @@ export {
 	InvalidCronError,
 	MonqueError,
 	ShutdownTimeoutError,
+	WorkerRegistrationError,
 } from '@/errors.js';
 // Main class
 export { Monque } from '@/monque.js';
@@ -18,6 +19,7 @@ export {
 	type MonqueOptions,
 	type MonquePublicAPI,
 	type PersistedJob,
+	type ScheduleOptions,
 	type WorkerOptions,
 } from '@/types.js';
 // Utilities (for advanced use cases)

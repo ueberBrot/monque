@@ -340,6 +340,8 @@ describe('stop() - Graceful Shutdown', () => {
 			expect(shutdownError).toBeInstanceOf(ShutdownTimeoutError);
 			expect(shutdownError?.incompleteJobs).toBeDefined();
 			expect(Array.isArray(shutdownError?.incompleteJobs)).toBe(true);
+			expect(shutdownError?.incompleteJobs.length).toBe(1);
+			expect(shutdownError?.incompleteJobs[0]?.data).toEqual({ data: 'incomplete' });
 		});
 
 		it('should use configurable shutdownTimeout', async () => {

@@ -23,6 +23,7 @@ import {
 	uniqueCollectionName,
 	waitFor,
 } from '@tests/setup/test-utils.js';
+import { WorkerRegistrationError } from '@/errors.js';
 import { Monque } from '@/monque.js';
 import { type Job, JobStatus } from '@/types.js';
 
@@ -78,9 +79,28 @@ describe('worker()', () => {
 			monque.worker(jobType3Name, handler3);
 		});
 
-		it('should replace handler when registering same job name twice', async () => {
+		it('should throw WorkerRegistrationError when registering same job name twice without replace', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const sameJobName = 'same-job';
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+
+			monque.worker(sameJobName, handler1);
+
+			// Second registration should throw
+			expect(() => monque.worker(sameJobName, handler2)).toThrow(WorkerRegistrationError);
+			expect(() => monque.worker(sameJobName, handler2)).toThrow(
+				`Worker already registered for job name "${sameJobName}"`,
+			);
+		});
+
+		it('should replace handler when registering same job name with { replace: true }', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const sameJobName = 'same-job-replace';
 			monque = new Monque(db, { collectionName, pollInterval: 100 });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -89,7 +109,7 @@ describe('worker()', () => {
 			const handler2 = vi.fn();
 
 			monque.worker(sameJobName, handler1);
-			monque.worker(sameJobName, handler2);
+			monque.worker(sameJobName, handler2, { replace: true });
 
 			// Enqueue a job and verify only handler2 is called
 			await monque.enqueue(sameJobName, {});
@@ -99,6 +119,27 @@ describe('worker()', () => {
 
 			expect(handler1).not.toHaveBeenCalled();
 			expect(handler2).toHaveBeenCalledTimes(1);
+		});
+
+		it('should include job name in WorkerRegistrationError', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const jobName = 'error-job-name';
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+
+			monque.worker(jobName, handler1);
+
+			try {
+				monque.worker(jobName, handler2);
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(WorkerRegistrationError);
+				expect((error as WorkerRegistrationError).jobName).toBe(jobName);
+			}
 		});
 
 		it('should accept concurrency option', async () => {

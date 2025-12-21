@@ -275,6 +275,155 @@ describe('schedule()', () => {
 		});
 	});
 
+	// Tests for uniqueKey deduplication in schedule()
+	describe('uniqueKey deduplication', () => {
+		it('should create a new job when uniqueKey is not provided', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const job1 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{ v: 1 },
+			);
+			const job2 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{ v: 2 },
+			);
+
+			expect(job1._id).not.toEqual(job2._id);
+		});
+
+		it('should create a new job when uniqueKey is provided for the first time', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			const uniqueKey = 'unique-schedule-1';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const job = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{ value: 1 },
+				{ uniqueKey },
+			);
+
+			expect(job).toBeDefined();
+			expect(job._id).toBeDefined();
+			expect(job.uniqueKey).toBe(uniqueKey);
+		});
+
+		it('should return existing job when duplicate uniqueKey already exists for same name', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const uniqueKey = 'duplicate-schedule-key';
+			const job1 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{ value: 1 },
+				{ uniqueKey },
+			);
+			const job2 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{ value: 2 },
+				{ uniqueKey },
+			);
+
+			// Should return the existing job (same _id)
+			expect(job2._id.toString()).toBe(job1._id.toString());
+
+			// Should only be one job in the collection
+			const collection = db.collection(collectionName);
+			const count = await collection.countDocuments({ uniqueKey });
+			expect(count).toBe(1);
+		});
+
+		it('should allow same uniqueKey for different job names', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const uniqueKey = 'shared-unique-key';
+			const job1 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				'job-name-1',
+				{ value: 1 },
+				{ uniqueKey },
+			);
+			const job2 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				'job-name-2',
+				{ value: 2 },
+				{ uniqueKey },
+			);
+
+			// Different job names should create different jobs even with same uniqueKey
+			expect(job1._id.toString()).not.toEqual(job2._id.toString());
+		});
+
+		it('should not update existing job data when duplicate uniqueKey is scheduled', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const uniqueKey = 'no-update-key';
+			const originalData = { original: true };
+			const newData = { original: false, extra: 'field' };
+
+			await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				originalData,
+				{ uniqueKey },
+			);
+			const job2 = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				newData,
+				{ uniqueKey },
+			);
+
+			// Returned job should have original data
+			expect(job2.data).toEqual(originalData);
+
+			// Verify the original data is preserved in DB
+			const collection = db.collection(collectionName);
+			const job = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME, uniqueKey });
+			expect(job?.['data']).toEqual(originalData);
+		});
+
+		it('should preserve uniqueKey in the persisted job', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const uniqueKey = 'preserved-key';
+			const job = await monque.schedule(
+				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				TEST_CONSTANTS.JOB_NAME,
+				{},
+				{ uniqueKey },
+			);
+
+			expect(job._id).toBeDefined();
+			expect(job.uniqueKey).toBe(uniqueKey);
+
+			const collection = db.collection(collectionName);
+			const persistedJob = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME, uniqueKey });
+			expect(persistedJob?.['uniqueKey']).toBe(uniqueKey);
+		});
+	});
+
 	// Tests for recurring job completion (auto-reschedule after success, uses original cron timing after retries)
 	describe('recurring job completion and rescheduling', () => {
 		it('should reschedule job after successful completion', async () => {

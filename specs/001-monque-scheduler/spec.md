@@ -185,11 +185,13 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - Can workers be registered after scheduler.start() is called?
   - Yes, workers can be registered before or after start(). Workers registered after start() begin processing on the next poll cycle
 - What happens when re-registering a worker for the same job name?
-  - Later worker() registration for the same name replaces the previous handler. This is not thread-safe; register workers during initialization
+  - By default, calling `worker()` for a name that already has a registered worker throws a `WorkerRegistrationError`. This fail-fast behavior prevents accidental replacement of handlers. To explicitly replace a worker, pass `{ replace: true }` in the options.
 - What happens when a job is enqueued with a name that has no registered worker?
   - Jobs enqueued with unregistered names remain pending until a worker is registered. This allows worker deployment independent of job enqueueing
 - What happens when multiple concurrent stop() calls are made?
   - Multiple concurrent stop() calls are safe. All calls receive the same promise that resolves when shutdown completes
+- How does `schedule()` handle duplicate scheduled jobs?
+  - When `uniqueKey` is provided in options, `schedule()` uses an upsert operation. If a job with the same `name` and `uniqueKey` already exists (pending or processing), no new job is created and the existing job is returned. If no matching job exists, a new job is created and returned.
 
 **Recovery**
 

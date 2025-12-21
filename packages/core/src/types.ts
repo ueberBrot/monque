@@ -127,6 +127,24 @@ export interface EnqueueOptions {
 }
 
 /**
+ * Options for scheduling a recurring job.
+ *
+ * @example
+ * ```typescript
+ * await monque.schedule('0 * * * *', 'hourly-cleanup', { dir: '/tmp' }, {
+ *   uniqueKey: 'hourly-cleanup-job',
+ * });
+ * ```
+ */
+export interface ScheduleOptions {
+	/**
+	 * Deduplication key. If a job with this key is already pending or processing,
+	 * the schedule operation will not create a duplicate.
+	 */
+	uniqueKey?: string;
+}
+
+/**
  * Handler function signature for processing jobs.
  *
  * @template T - The type of the job's data payload
@@ -231,6 +249,13 @@ export interface WorkerOptions {
 	 * @default 5 (uses defaultConcurrency from MonqueOptions)
 	 */
 	concurrency?: number;
+
+	/**
+	 * Allow replacing an existing worker for the same job name.
+	 * If false (default) and a worker already exists, throws WorkerRegistrationError.
+	 * @default false
+	 */
+	replace?: boolean;
 }
 
 /**
@@ -303,7 +328,7 @@ export interface MonquePublicAPI {
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
 	 * @param options - Enqueueing options
-	 * @returns The created job document
+	 * @returns The created job document, or existing job if duplicate uniqueKey
 	 */
 	enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>>;
 
@@ -320,9 +345,15 @@ export interface MonquePublicAPI {
 	 * @param cron - Cron expression (5-field format)
 	 * @param name - Job type identifier
 	 * @param data - Job payload data
-	 * @returns The created job document
+	 * @param options - Scheduling options (uniqueKey for deduplication)
+	 * @returns The created job document, or existing job if duplicate uniqueKey
 	 */
-	schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>>;
+	schedule<T>(
+		cron: string,
+		name: string,
+		data: T,
+		options?: ScheduleOptions,
+	): Promise<PersistedJob<T>>;
 
 	/**
 	 * Register a worker to process jobs of a specific type.

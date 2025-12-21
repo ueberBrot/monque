@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Collection, Db, Document, WithId } from 'mongodb';
 
-import { ConnectionError } from '@/errors.js';
+import { ConnectionError, WorkerRegistrationError } from '@/errors.js';
 import type {
 	EnqueueOptions,
 	Job,
@@ -11,6 +11,7 @@ import type {
 	MonqueOptions,
 	MonquePublicAPI,
 	PersistedJob,
+	ScheduleOptions,
 	WorkerOptions,
 } from '@/types.js';
 import { JobStatus } from '@/types.js';
@@ -37,7 +38,7 @@ const DEFAULTS = {
 interface WorkerRegistration<T = unknown> {
 	handler: JobHandler<T>;
 	concurrency: number;
-	activeJobs: Set<string>; // Track active job IDs
+	activeJobs: Map<string, PersistedJob<T>>; // Track active jobs
 }
 
 /**
@@ -171,10 +172,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		// Compound index for job polling - status + nextRunAt for efficient queries
 		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
 
-		// Partial unique index for deduplication - only where uniqueKey exists and status is pending/processing
-		// Note: Cannot use both 'sparse' and 'partialFilterExpression' together
+		// Partial unique index for deduplication - scoped by name + uniqueKey
+		// Only enforced where uniqueKey exists and status is pending/processing
 		await this.collection.createIndex(
-			{ uniqueKey: 1 },
+			{ name: 1, uniqueKey: 1 },
 			{
 				unique: true,
 				partialFilterExpression: {
@@ -294,9 +295,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					throw new ConnectionError('Failed to enqueue job: collection not available');
 				}
 
-				// Use upsert with $setOnInsert for deduplication
+				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
 				const result = await this.collection.findOneAndUpdate(
 					{
+						name,
 						uniqueKey: options.uniqueKey,
 						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
 					},
@@ -371,10 +373,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * After successful completion, the job is reset to `pending` status and scheduled
 	 * for its next run based on the cron expression.
 	 *
+	 * When a `uniqueKey` is provided, only one pending or processing job with that key
+	 * can exist. This prevents duplicate scheduled jobs on application restart.
+	 *
 	 * @template T - The job data payload type (must be JSON-serializable)
 	 * @param cron - Cron expression (5 fields or predefined expression)
 	 * @param name - Job type identifier, must match a registered worker
 	 * @param data - Job payload, will be passed to the worker handler on each run
+	 * @param options - Scheduling options (uniqueKey for deduplication)
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
 	 * @throws {InvalidCronError} If cron expression is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
@@ -386,6 +392,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * });
 	 * ```
 	 *
+	 * @example Prevent duplicate scheduled jobs with unique key
+	 * ```typescript
+	 * await monque.schedule('0 * * * *', 'hourly-report', { type: 'sales' }, {
+	 *   uniqueKey: 'hourly-report-sales'
+	 * });
+	 * // Subsequent calls with same uniqueKey return existing pending/processing job
+	 * ```
+	 *
 	 * @example Daily report at midnight (using predefined expression)
 	 * ```typescript
 	 * await monque.schedule('@daily', 'daily-report', {
@@ -393,15 +407,13 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 *   recipients: ['analytics@example.com']
 	 * });
 	 * ```
-	 *
-	 * @example Every 30 minutes during business hours (9am-5pm, Mon-Fri)
-	 * ```typescript
-	 * await monque.schedule('0,30 9-17 * * 1-5', 'sync-inventory', {
-	 *   source: 'warehouse-api'
-	 * });
-	 * ```
 	 */
-	async schedule<T>(cron: string, name: string, data: T): Promise<PersistedJob<T>> {
+	async schedule<T>(
+		cron: string,
+		name: string,
+		data: T,
+		options: ScheduleOptions = {},
+	): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 
 		// Validate cron and get next run date (throws InvalidCronError if invalid)
@@ -419,7 +431,41 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			updatedAt: now,
 		};
 
+		if (options.uniqueKey) {
+			job.uniqueKey = options.uniqueKey;
+		}
+
 		try {
+			if (options.uniqueKey) {
+				if (!this.collection) {
+					throw new ConnectionError('Failed to schedule job: collection not available');
+				}
+
+				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
+				const result = await this.collection.findOneAndUpdate(
+					{
+						name,
+						uniqueKey: options.uniqueKey,
+						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+					},
+					{
+						$setOnInsert: job,
+					},
+					{
+						upsert: true,
+						returnDocument: 'after',
+					},
+				);
+
+				if (!result) {
+					throw new ConnectionError(
+						'Failed to schedule job: findOneAndUpdate returned no document',
+					);
+				}
+
+				return this.documentToPersistedJob<T>(result as WithId<Document>);
+			}
+
 			const result = await this.collection?.insertOne(job as Document);
 
 			if (!result) {
@@ -445,10 +491,17 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 *
 	 * Events are emitted during job processing: `job:start`, `job:complete`, `job:fail`, and `job:error`.
 	 *
+	 * **Duplicate Registration**: By default, registering a worker for a job name that already has
+	 * a worker will throw a `WorkerRegistrationError`. This fail-fast behavior prevents accidental
+	 * replacement of handlers. To explicitly replace a worker, pass `{ replace: true }`.
+	 *
 	 * @template T - The job data payload type for type-safe access to `job.data`
 	 * @param name - Job type identifier to handle
 	 * @param handler - Async function to execute for each job
-	 * @param options - Worker configuration (concurrency limit)
+	 * @param options - Worker configuration
+	 * @param options.concurrency - Maximum concurrent jobs for this worker (default: `defaultConcurrency`)
+	 * @param options.replace - When `true`, replace existing worker instead of throwing error
+	 * @throws {WorkerRegistrationError} When a worker is already registered for `name` and `replace` is not `true`
 	 *
 	 * @example Basic email worker
 	 * ```typescript
@@ -471,6 +524,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 * }, { concurrency: 2 });
 	 * ```
 	 *
+	 * @example Replacing an existing worker
+	 * ```typescript
+	 * // Replace the existing handler for 'send-email'
+	 * monque.worker('send-email', newEmailHandler, { replace: true });
+	 * ```
+	 *
 	 * @example Worker with error handling
 	 * ```typescript
 	 * monque.worker('sync-user', async (job) => {
@@ -487,10 +546,18 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	worker<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
 		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
 
+		// Check for existing worker and throw unless replace is explicitly true
+		if (this.workers.has(name) && options.replace !== true) {
+			throw new WorkerRegistrationError(
+				`Worker already registered for job name "${name}". Use { replace: true } to replace.`,
+				name,
+			);
+		}
+
 		this.workers.set(name, {
 			handler: handler as JobHandler,
 			concurrency,
-			activeJobs: new Set(),
+			activeJobs: new Map(),
 		});
 	}
 
@@ -805,7 +872,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 */
 	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id.toString();
-		worker.activeJobs.add(jobId);
+		worker.activeJobs.set(jobId, job);
 
 		const startTime = Date.now();
 		this.emit('job:start', job);
@@ -959,7 +1026,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	private getActiveJobs(): string[] {
 		const activeJobs: string[] = [];
 		for (const worker of this.workers.values()) {
-			activeJobs.push(...worker.activeJobs);
+			activeJobs.push(...worker.activeJobs.keys());
 		}
 		return activeJobs;
 	}
@@ -967,18 +1034,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	/**
 	 * Get list of active job documents (for shutdown timeout error).
 	 *
-	 * Note: Currently returns empty array as only job IDs are tracked, not full documents.
-	 * A more complete implementation would track the full job objects for better error reporting.
-	 *
 	 * @private
-	 * @returns Array of active Job objects (currently empty)
+	 * @returns Array of active Job objects
 	 */
 	private getActiveJobsList(): Job[] {
-		// Note: In a real implementation, we'd track the actual job objects.
-		// For now, return empty as we only track job IDs.
-		// The job IDs are tracked in worker.activeJobs but not the full job documents.
-		// A more complete implementation would track the full job objects.
-		return [];
+		const activeJobs: Job[] = [];
+		for (const worker of this.workers.values()) {
+			activeJobs.push(...worker.activeJobs.values());
+		}
+		return activeJobs;
 	}
 
 	/**

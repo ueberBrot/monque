@@ -107,3 +107,36 @@ export class ShutdownTimeoutError extends MonqueError {
 		}
 	}
 }
+
+/**
+ * Error thrown when attempting to register a worker for a job name
+ * that already has a registered worker, without explicitly allowing replacement.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   monque.worker('send-email', handler1);
+ *   monque.worker('send-email', handler2); // throws
+ * } catch (error) {
+ *   if (error instanceof WorkerRegistrationError) {
+ *     console.error('Worker already registered for:', error.jobName);
+ *   }
+ * }
+ *
+ * // To intentionally replace a worker:
+ * monque.worker('send-email', handler2, { replace: true });
+ * ```
+ */
+export class WorkerRegistrationError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly jobName: string,
+	) {
+		super(message);
+		this.name = 'WorkerRegistrationError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, WorkerRegistrationError);
+		}
+	}
+}
