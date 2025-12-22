@@ -146,7 +146,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - What happens when the database connection is lost during enqueue()?
   - enqueue() throws an error; the caller is responsible for retry logic
 - What happens after MongoDB failover?
-  - Jobs that were 'processing' may need manual intervention or lockTimeout recovery. The scheduler resumes polling automatically when connection restores
+  - Jobs that were 'processing' may need manual intervention or zombie takeover recovery. The scheduler reconnects the Change Stream automatically when connection restores
 - What happens when MongoDB index creation fails during initialization?
   - An error is thrown; the scheduler does not start
 - What happens if the configured collection has existing documents with incompatible schemas?
@@ -159,13 +159,15 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - How does the system handle synchronous throws vs rejected promises from handlers?
   - Both synchronous throws and rejected promises from handlers are treated identically: job fails, failCount increments, retry scheduled
 - What happens when a job handler hangs indefinitely (never resolves)?
-  - Jobs processing longer than lockTimeout (default: 30 minutes) are considered stale and can be re-acquired by other workers
+  - Jobs failing to send heartbeats within tolerance (default: 90s) are considered zombies and will be taken over by other workers
 - What happens when multiple scheduler instances try to lock the same job?
   - Atomic locking ensures only one instance can claim the job; others continue to the next available job
 - How does the system handle jobs with extremely large data payloads?
   - Job data is limited to reasonable sizes (configurable max, default 16MB per MongoDB document limit)
 - What happens to permanently failed jobs?
   - Jobs exceeding max retries are retained with "failed" status indefinitely for inspection and debugging; no automatic cleanup (developers implement their own retention policies)
+- What happens to completed jobs?
+  - Jobs are retained with "completed" status indefinitely; no automatic cleanup (developers implement their own retention policies)
 
 **Scheduling & Timing**
 
@@ -177,6 +179,8 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
   - When scheduling a cron job, nextRunAt is calculated from the current time. Past occurrences are not retroactively queued
 - How does the system handle clock drift between scheduler instances?
   - All instances use the database server's time for consistency via server-side timestamps
+- How are timestamps stored?
+  - All time-related fields (`nextRunAt`, `lockedAt`, `lastHeartbeat`, `createdAt`, `updatedAt`) are stored as native BSON Date objects to support efficient range queries and TTL indexes.
 
 **Lifecycle & Registration**
 
@@ -191,7 +195,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - What happens when multiple concurrent stop() calls are made?
   - Multiple concurrent stop() calls are safe. All calls receive the same promise that resolves when shutdown completes
 - How does `schedule()` handle duplicate scheduled jobs?
-  - When `uniqueKey` is provided in options, `schedule()` uses an upsert operation. If a job with the same `name` and `uniqueKey` already exists (pending or processing), no new job is created and the existing job is returned. If no matching job exists, a new job is created and returned.
+  - `schedule()` is idempotent by default. If `uniqueKey` is provided, it is used. If omitted, the job `name` serves as the unique key. The operation uses an upsert: if a job with the matching key already exists (pending or processing), no new job is created and the existing job is returned.
 
 **Recovery**
 
@@ -230,11 +234,12 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **FR-005**: System MUST process jobs concurrently with configurable concurrency limit (default: 5)
 - **FR-006**: System MUST implement atomic job locking using database operations
 - **FR-007**: System MUST query jobs where status is "pending" and nextRunAt is at or before current time
-- **FR-008**: System MUST set status to "processing" and lockedAt timestamp when locking a job
+- **FR-008**: System MUST set status to "processing", `lockedAt` timestamp, and `lastHeartbeat` timestamp when locking a job
+- **FR-008a**: System MUST update `lastHeartbeat` on processing jobs at a configurable interval (default: 30s)
 - **FR-009**: System MUST implement exponential backoff for failed jobs: `nextRunAt = now + (2^failCount × baseInterval)`
 - **FR-009a**: System MUST use a configurable `baseInterval` option with default value of 1000ms (1 second)
 - **FR-010**: System MUST track failCount and failReason for each job failure
-- **FR-011**: System MUST provide a `stop()` method that stops polling and waits for in-progress jobs
+- **FR-011**: System MUST provide a `stop()` method that closes the Change Stream, stops heartbeat timers, and waits for in-progress jobs
 - **FR-012**: System MUST support configurable timeout for graceful shutdown
 - **FR-013**: System MUST emit "job:start" event when a job begins processing
 - **FR-014**: System MUST emit "job:complete" event when a job finishes successfully
@@ -256,9 +261,12 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 
 **Reliability & Recovery (v1.0)**
 
-- **FR-026**: System MUST support optional `lockTimeout` configuration (default: 30 minutes). Jobs processing longer than lockTimeout may be re-acquired by other workers
-- **FR-027**: On startup, scheduler SHOULD check for stale processing jobs (lockedAt older than lockTimeout) and reset them to pending
+- **FR-026**: System MUST support configurable `heartbeatInterval` (default: 30s) and `heartbeatTolerance` (default: 90s)
+- **FR-027**: System MUST implement "Zombie Takeover" to continuously detect and reset jobs where `lastHeartbeat` is older than tolerance
 - **FR-028**: System MUST expose `isHealthy()` method returning boolean indicating scheduler is running and connected
+- **FR-033**: System MUST use MongoDB Change Streams (`.watch()`) to detect new jobs immediately without polling
+- **FR-034**: System MUST implement a fallback polling mechanism (default: 5m) to ensure no jobs are missed if Change Stream events are lost
+- **FR-035**: System MUST use ESR (Equal, Sort, Range) indexing strategy for performance: `{ status: 1, nextRunAt: 1 }` and `{ status: 1, lastHeartbeat: 1 }`
 
 **Documentation Requirements**
 
@@ -269,7 +277,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 
 ### Key Entities
 
-- **Job**: Represents a unit of work to be processed. Contains name (identifies handler), data (payload), status (lifecycle state), scheduling information (nextRunAt, repeatInterval), and failure tracking (failCount, failReason). May have a uniqueKey to prevent duplicates.
+- **Job<T>**: Represents a unit of work to be processed. Contains name (identifies handler), data (payload of type T), status (lifecycle state), scheduling information (nextRunAt, repeatInterval), and failure tracking (failCount, failReason). May have a uniqueKey to prevent duplicates.
 
 - **Worker**: A registered handler function or class that processes jobs of a specific name. Receives job data and executes the business logic.
 
@@ -301,6 +309,23 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - Q: Should enqueue() return a job ID or the full job object? → A: Return full Job object
 - Q: What collection name should Monque use by default for storing jobs? → A: "monque_jobs" (configurable via collectionName option)
 
+### Session 2025-12-22
+
+- Q: What happens to completed jobs? → A: Retain indefinitely (default behavior).
+- Q: What is the default unique key behavior for `schedule()`? → A: Use job `name` as default unique key (ensures idempotency).
+- Q: How should timestamps be stored in MongoDB? → A: Native BSON Date objects (via JavaScript `Date` type).
+- Q: How is job data typed? → A: `Job<T>` is generic, allowing type-safe data payloads.
+- Q: How is JobStatus implemented? → A: `const` object with `as const` assertion (better tree-shaking than enums, type-safe).
+- Q: What happens when registering a duplicate worker? → A: Throw `WorkerRegistrationError` (fail-fast).
+- Q: What is the default collection name? → A: "monque_jobs" (configurable via `collectionName` option).
+- Q: How is the scheduler lifecycle managed? → A: Explicit `start()` and `stop()` methods (allows precise control during startup/shutdown).
+- Q: How are events handled? → A: `Monque` extends `EventEmitter` (standard Node.js pattern).
+- Q: What is the main entry point? → A: `Monque` class (encapsulates state, allows multiple instances).
+- Q: How is the Ts.ED module configured? → A: `MonqueModule.forRoot()` (standard Ts.ED pattern).
+- Q: What decorator is used for Ts.ED workers? → A: `@Job({ name: '...' })` (declarative, consistent with framework).
+- Q: What method must Ts.ED worker classes implement? → A: `handle(job: Job<T>): Promise<void>` (consistent with "handler" terminology).
+- Q: What is the Ts.ED module name? → A: `MonqueModule` (standard naming).
+
 ### Scope & Architecture Clarifications
 
 - **Job Name Scope**: Job names are identifiers matching job types to worker handlers. Names are scoped to the Monque instance/collection. Multiple schedulers sharing a collection must register the same workers for consistent processing
@@ -322,14 +347,15 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 ### Configuration Defaults
 
 - Base retry interval defaults to 1 second (configurable)
-- Default polling interval is 1 second (configurable) - balances job responsiveness with database load
+- Default architecture uses Change Streams for real-time processing with fallback polling every 5 minutes
 - Default concurrency limit is 5 jobs per worker (configurable)
 - Default graceful shutdown timeout is 30 seconds (configurable)
-- Default lock timeout is 30 minutes (configurable)
+- Default heartbeat interval is 30 seconds (configurable)
+- Default heartbeat tolerance is 90 seconds (configurable)
 - Maximum retry attempts defaults to 10 (configurable)
 - Jobs collection is named "monque_jobs" by default (configurable)
 - Cron expressions follow standard 5-field format (minute, hour, day of month, month, day of week)
-- Stale job recovery is enabled by default (recoverStaleJobs: true)
+- Zombie job takeover is enabled by default (enableZombieTakeover: true)
 
 ### Scope Boundaries (v1.0)
 
@@ -379,4 +405,5 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **Scheduler**: The orchestrating component that polls for jobs, manages locking, dispatches to workers, handles failures, and emits lifecycle events
 - **Handler**: The async function that executes job business logic. Receives the full Job object and should resolve on success or reject on failure
 - **Lock**: A status='processing' + lockedAt timestamp combination that claims a job for a specific scheduler instance, preventing duplicate processing
-- **Stale Job**: A job in 'processing' status with lockedAt older than lockTimeout, indicating the processing scheduler may have crashed
+- **Heartbeat**: A periodic update to the `lastHeartbeat` field by a processing worker to indicate it is still alive and working
+- **Zombie Job**: A job in 'processing' status with `lastHeartbeat` older than tolerance, indicating the processing scheduler may have crashed or hung

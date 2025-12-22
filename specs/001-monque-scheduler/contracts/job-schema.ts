@@ -69,6 +69,9 @@ export interface Job<T = unknown> {
 	/** Timestamp when job was locked for processing */
 	lockedAt?: Date | null;
 
+	/** Timestamp of last worker heartbeat */
+	lastHeartbeat?: Date | null;
+
 	/** Number of failed attempts */
 	failCount: number;
 
@@ -198,6 +201,24 @@ export interface MonqueOptions {
 	 * @default 5
 	 */
 	defaultConcurrency?: number;
+
+	/**
+	 * Interval in milliseconds for updating job heartbeats.
+	 * @default 30000
+	 */
+	heartbeatInterval?: number;
+
+	/**
+	 * Tolerance in milliseconds before a job is considered a zombie.
+	 * @default 90000
+	 */
+	heartbeatTolerance?: number;
+
+	/**
+	 * Whether to enable zombie job takeover.
+	 * @default true
+	 */
+	enableZombieTakeover?: boolean;
 
 	/**
 	 * Maximum time in milliseconds a job can be in 'processing' status before

@@ -18,6 +18,7 @@ The primary entity representing a unit of work to be processed.
 | `status`         | `JobStatus`    | Yes      | Current lifecycle state                          |
 | `nextRunAt`      | `Date`         | Yes      | When the job should be processed                 |
 | `lockedAt`       | `Date \| null` | No       | Timestamp when job was locked for processing     |
+| `lastHeartbeat`  | `Date \| null` | No       | Timestamp of last worker heartbeat               |
 | `failCount`      | `number`       | Yes      | Number of failed attempts (default: 0)           |
 | `failReason`     | `string`       | No       | Last failure error message                       |
 | `repeatInterval` | `string`       | No       | Cron expression for recurring jobs               |
@@ -89,8 +90,11 @@ When `uniqueKey` is provided:
 ## Indexes
 
 ```javascript
-// Primary query index for job pickup
+// Primary query index for job pickup (ESR: Equality, Sort, Range)
 { status: 1, nextRunAt: 1 }
+
+// Zombie detection index (ESR: Equality, Sort, Range)
+{ status: 1, lastHeartbeat: 1 }
 
 // Unique constraint for deduplication
 { uniqueKey: 1, status: 1 }  // Partial index where uniqueKey exists and status in ['pending', 'processing']

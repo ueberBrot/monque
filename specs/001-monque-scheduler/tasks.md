@@ -22,7 +22,9 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 1: Setup (Shared Infrastructure)
+## Legacy/Completed Phases (Phases 1-9) ✅
+
+### Phase 1: Setup (Shared Infrastructure) ✅ COMPLETED
 
 **Purpose**: Project initialization and monorepo structure
 
@@ -91,7 +93,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 3: User Story 1 - Enqueue and Process One-off Jobs (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - Enqueue and Process One-off Jobs (Priority: P1) 🎯 MVP (COMPLETED)
 
 **Goal**: Enqueue one-off jobs via `enqueue()` and `now()`, process with registered workers up to concurrency limit
 
@@ -141,7 +143,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 5: User Story 3 - Retry Failed Jobs with Exponential Backoff (Priority: P1)
+## Phase 5: User Story 3 - Retry Failed Jobs with Exponential Backoff (Priority: P1) (COMPLETED)
 
 **Goal**: Failed jobs automatically retry with exponential backoff formula: `nextRunAt = now + (2^failCount × baseInterval)`; permanent failure after maxRetries
 
@@ -187,7 +189,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 7: User Story 5 - Graceful Shutdown (Priority: P2)
+## Phase 7: User Story 5 - Graceful Shutdown (Priority: P3) (COMPLETED)
 
 **Goal**: stop() method stops polling, waits for in-progress jobs, respects shutdownTimeout (default: 30s)
 
@@ -210,7 +212,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 8: User Story 6 - Monitor Job Lifecycle Events (Priority: P2)
+## Phase 8: User Story 6 - Monitor Job Lifecycle Events (Priority: P2) (COMPLETED)
 
 **Goal**: Subscribe to job:start, job:complete (with duration), job:fail (with willRetry), job:error events for observability
 
@@ -237,7 +239,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ---
 
-## Phase 9: Stale Job Recovery (Cross-Cutting - FR-026, FR-027)
+## Phase 9: Stale Job Recovery (Cross-Cutting - FR-026, FR-027) (COMPLETED)
 
 **Goal**: Recover jobs stuck in "processing" after scheduler crash via lockTimeout (default: 30 minutes)
 
@@ -259,8 +261,220 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 **Checkpoint**: Stale recovery complete - System recovers from scheduler crashes
 
 ---
+## NEW DEVELOPMENT PHASES (Phase 10+)
 
-## Phase 10: User Story 7 - Use Decorators for Ts.ED Job Handlers (Priority: P3)
+The following phases represent the refactor to atomic claim pattern with MongoDB Change Streams.
+
+---
+
+## Phase 10: Types & Interfaces Refactor
+
+**Goal**: Update type definitions to support atomic claim pattern with heartbeat and change streams
+
+**Independent Test**: TypeScript compilation passes with updated types, all existing tests still pass
+
+### Implementation for Phase 10
+
+- [ ] T084 [P] Update JobDocument interface in packages/core/src/types.ts to add claimedBy field (scheduler instance ID)
+- [ ] T085 [P] Update JobDocument interface in packages/core/src/types.ts to add lastHeartbeat field (timestamp)
+- [ ] T086 [P] Update JobDocument interface in packages/core/src/types.ts to add heartbeatInterval field (milliseconds)
+- [ ] T087 [P] Update MonqueOptions interface in packages/core/src/types.ts to add schedulerInstanceId option (defaults to UUID)
+- [ ] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 5000ms)
+- [ ] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30000ms)
+- [ ] T090 [P] Update MonqueOptions interface in packages/core/src/types.ts to add useChangeStreams option (defaults to false for backward compatibility)
+- [ ] T091 Add TSDoc comments to all new fields in packages/core/src/types.ts explaining atomic claim pattern
+- [ ] T092 Run TypeScript compiler to verify types are correct
+- [ ] T093 Run existing test suite to ensure types are backward compatible
+
+**Checkpoint**: Type system updated for atomic claim pattern
+
+---
+
+## Phase 11: Indexing Migration
+
+**Goal**: Add indexes to support atomic claim pattern and change stream efficiency
+
+**Independent Test**: Index creation succeeds, query performance tests pass with new indexes
+
+### Tests for Phase 11
+
+- [ ] T094 [P] Create packages/core/tests/indexes.test.ts with tests for new index creation
+- [ ] T095 [P] Add tests for query performance with claimedBy+status index in packages/core/tests/indexes.test.ts
+- [ ] T096 [P] Add tests for heartbeat query performance with lastHeartbeat+status index in packages/core/tests/indexes.test.ts
+
+### Implementation for Phase 11
+
+- [ ] T097 Add compound index on {claimedBy: 1, status: 1} in packages/core/src/monque.ts constructor
+- [ ] T098 Add compound index on {lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
+- [ ] T099 Add compound index on {status: 1, nextRunAt: 1, claimedBy: 1} for atomic claim queries in packages/core/src/monque.ts constructor
+- [ ] T100 Update existing lockedAt index to include heartbeat: {lockedAt: 1, lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
+- [ ] T101 Add TSDoc comments explaining index purposes for atomic claim and heartbeat in packages/core/src/monque.ts
+- [ ] T102 Run tests to verify indexes are created correctly
+
+**Checkpoint**: Database indexes optimized for atomic claim pattern
+
+---
+
+## Phase 12: Worker Refactor - Atomic Claim + Heartbeat
+
+**Goal**: Replace polling with atomic claim pattern using findOneAndUpdate, add heartbeat mechanism for liveness tracking
+
+**Independent Test**: Jobs are claimed atomically (no duplicate processing), heartbeat updates every interval, stale jobs detected by missing heartbeat
+
+### Tests for Phase 12
+
+- [ ] T103 [P] Create packages/core/tests/atomic-claim.test.ts with tests for atomic claim using claimedBy field
+- [ ] T104 [P] Add tests for concurrent claim attempts (multiple instances, verify only one succeeds) in packages/core/tests/atomic-claim.test.ts
+- [ ] T105 [P] Create packages/core/tests/heartbeat.test.ts with tests for heartbeat updates during job processing
+- [ ] T106 [P] Add tests for heartbeat interval configuration in packages/core/tests/heartbeat.test.ts
+- [ ] T107 [P] Add tests for stale job detection using lastHeartbeat in packages/core/tests/heartbeat.test.ts
+- [ ] T108 [P] Update packages/core/tests/concurrency.test.ts to verify atomic claim respects concurrency limits
+- [ ] T109 [P] Update packages/core/tests/locking.test.ts to test atomic claim instead of polling-based locking
+
+### Implementation for Phase 12
+
+- [ ] T110 Add schedulerInstanceId generation (UUID v4) in packages/core/src/monque.ts constructor
+- [ ] T111 Refactor atomic job claim in packages/core/src/monque.ts to use claimedBy field instead of lockedAt:
+  - Query: {status: 'pending', nextRunAt: {$lte: now}, $or: [{claimedBy: null}, {claimedBy: this.instanceId}]}
+  - Update: {$set: {status: 'processing', claimedBy: this.instanceId, lockedAt: now, lastHeartbeat: now}}
+- [ ] T112 Implement heartbeat mechanism in packages/core/src/monque.ts:
+  - Create heartbeat interval that runs every heartbeatInterval (default 5s)
+  - Update lastHeartbeat for all jobs where claimedBy matches this instance
+  - Query: {claimedBy: this.instanceId, status: 'processing'}
+  - Update: {$set: {lastHeartbeat: now}}
+- [ ] T113 Update stale job detection in packages/core/src/monque.ts to use lastHeartbeat:
+  - Query: {status: 'processing', lastHeartbeat: {$lt: now - lockTimeout}}
+  - Recovery: {$set: {status: 'pending', claimedBy: null, lockedAt: null}}
+- [ ] T114 Add cleanup on job completion in packages/core/src/monque.ts:
+  - Clear claimedBy and lastHeartbeat when job completes/fails
+- [ ] T115 Add heartbeat cleanup on stop() in packages/core/src/monque.ts:
+  - Clear interval, update all claimed jobs to release claim
+- [ ] T116 Update concurrency control to use claimedBy count instead of activeJobs tracking
+- [ ] T117 Add TSDoc comments explaining atomic claim pattern and heartbeat mechanism
+- [ ] T118 Run tests to verify atomic claim and heartbeat work correctly
+- [ ] T119 Run integration test SC-006 to verify no duplicate processing with multiple instances
+
+**Checkpoint**: Atomic claim with heartbeat mechanism fully implemented
+
+---
+
+## Phase 13: Change Stream Integration
+
+**Goal**: Replace polling with MongoDB Change Streams for real-time job notifications
+
+**Independent Test**: Jobs trigger via change streams (no polling delay), system gracefully falls back to polling if change streams unavailable
+
+### Tests for Phase 13
+
+- [ ] T120 [P] Create packages/core/tests/change-streams.test.ts with tests for change stream initialization
+- [ ] T121 [P] Add tests for job notification via change stream insert events in packages/core/tests/change-streams.test.ts
+- [ ] T122 [P] Add tests for job notification via change stream update events (status change) in packages/core/tests/change-streams.test.ts
+- [ ] T123 [P] Add tests for change stream error handling and reconnection in packages/core/tests/change-streams.test.ts
+- [ ] T124 [P] Add tests for graceful fallback to polling when change streams fail in packages/core/tests/change-streams.test.ts
+- [ ] T125 [P] Add tests for change stream cleanup on shutdown in packages/core/tests/change-streams.test.ts
+- [ ] T126 [P] Update packages/core/tests/enqueue.test.ts to verify instant processing with change streams (no poll delay)
+
+### Implementation for Phase 13
+
+- [ ] T127 Add change stream setup in packages/core/src/monque.ts start() method:
+  - Only if useChangeStreams option is true
+  - Watch for insert and update operations on jobs collection
+  - Filter: {$or: [{operationType: 'insert'}, {operationType: 'update', 'updateDescription.updatedFields.status': {$exists: true}}]}
+- [ ] T128 Implement change stream event handler in packages/core/src/monque.ts:
+  - On insert: Trigger immediate claim attempt for new jobs
+  - On update to pending: Trigger claim attempt for released jobs
+  - Debounce handler to avoid claim storms (100ms window)
+- [ ] T129 Add change stream error handling in packages/core/src/monque.ts:
+  - On error: Log error, emit 'changestream:error' event
+  - Auto-reconnect with exponential backoff
+  - Fallback to polling if reconnection fails after 3 attempts
+- [ ] T130 Update start() method to support hybrid mode:
+  - If useChangeStreams: Use change streams as primary, keep polling as backup (slower interval)
+  - If not useChangeStreams: Use polling only (existing behavior)
+- [ ] T131 Add change stream cleanup in stop() method:
+  - Close change stream cursor
+  - Emit 'changestream:closed' event
+- [ ] T132 Add MonqueOptions.pollInterval adjustment when using change streams (default to 10000ms instead of 1000ms)
+- [ ] T133 Add TSDoc comments explaining change stream pattern and fallback behavior
+- [ ] T134 Add new events: 'changestream:connected', 'changestream:error', 'changestream:closed', 'changestream:fallback'
+- [ ] T135 Run tests to verify change stream integration works correctly
+- [ ] T136 Run performance comparison tests: change stream vs polling latency
+- [ ] T137 Add integration test for change stream + atomic claim with multiple instances
+
+**Checkpoint**: Change stream integration complete with fallback to polling
+
+---
+
+## Phase 14: Test Utils Export for Testing
+
+**Goal**: Export test utilities from core package for use in tsed package and user testing
+
+**Independent Test**: Test utils can be imported from @monque/core/testing and work correctly
+
+### Implementation for Phase 14
+
+- [ ] T138 Create packages/core/src/testing/index.ts to re-export test utilities
+- [ ] T139 Export test utilities from packages/core/tests/setup/test-utils.ts (setupTestDatabase, cleanupTestDatabase, createTestJob, etc.)
+- [ ] T140 Update packages/core/tsdown.config.ts to add './testing' export entry
+- [ ] T141 Update packages/core/package.json to add './testing' to exports field:
+  ```json
+  {
+    "./testing": {
+      "import": "./dist/testing/index.mjs",
+      "require": "./dist/testing/index.cjs"
+    }
+  }
+  ```
+- [ ] T142 Add TSDoc comments to exported test utilities explaining usage
+- [ ] T143 Create packages/core/tests/exports.test.ts to verify './testing' export works
+- [ ] T144 Update packages/core/README.md to document test utilities export
+
+**Checkpoint**: Test utilities exported and available for external use
+
+---
+
+## Phase 15: Ts.ED Integration Updates
+
+**Goal**: Update Ts.ED integration package with correct dependencies and imports
+
+**Independent Test**: Ts.ED package compiles, tests pass, decorators work with dependency injection
+
+### Tests for Phase 15
+
+- [ ] T145 [P] Update packages/tsed/tests/decorator.test.ts to use PlatformTest from @tsed/platform-http/testing
+- [ ] T146 [P] Update packages/tsed/tests/decorator.test.ts to import test utils from @monque/core/testing
+- [ ] T147 [P] Add tests for @Job decorator with full DI container in packages/tsed/tests/decorator.test.ts
+- [ ] T148 [P] Add tests for MonqueModule configuration and registration in packages/tsed/tests/module.test.ts
+
+### Implementation for Phase 15
+
+- [ ] T149 Update packages/tsed/package.json to move all @tsed/* packages to devDependencies:
+  ```json
+  {
+    "devDependencies": {
+      "@tsed/core": "^8.0.0",
+      "@tsed/di": "^8.0.0",
+      "@tsed/platform-http": "^8.0.0",
+      "reflect-metadata": "^0.2.0"
+    }
+  }
+  ```
+- [ ] T150 Update packages/tsed/src/decorators/job.ts to import from correct @tsed packages:
+  - useDecorators from @tsed/core
+  - StoreSet from @tsed/core
+  - Injectable from @tsed/di
+- [ ] T151 Remove reflect-metadata dependency from packages/tsed/package.json (comes from @tsed packages)
+- [ ] T152 Update packages/tsed/tests/ files to import PlatformTest from @tsed/platform-http/testing
+- [ ] T153 Update packages/tsed/src/module.ts to properly configure MonqueModule with Ts.ED module system
+- [ ] T154 Add TSDoc comments to all Ts.ED decorators and module explaining usage with DI
+- [ ] T155 Run tests to verify Ts.ED integration works with updated dependencies
+- [ ] T156 Update packages/tsed/README.md with correct import examples and dependency info
+
+**Checkpoint**: Ts.ED integration updated with correct dependencies
+
+---
+
+## Phase 16: User Story 7 - Use Decorators for Ts.ED Job Handlers (Priority: P3)
 
 **Goal**: @Job decorator for Ts.ED that auto-registers workers with full DI access
 
@@ -268,23 +482,23 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 7
 
-- [ ] T084 [P] [US7] Create packages/tsed/tests/decorator.test.ts with tests for @Job decorator (metadata storage, class decoration)
-- [ ] T085 [P] [US7] Add tests for auto-discovery and registration of decorated handlers in packages/tsed/tests/decorator.test.ts
-- [ ] T086 [P] [US7] Add tests for DI injection in job handler classes in packages/tsed/tests/decorator.test.ts
+- [ ] T157 [P] [US7] Create packages/tsed/tests/decorator.test.ts with tests for @Job decorator (metadata storage, class decoration)
+- [ ] T158 [P] [US7] Add tests for auto-discovery and registration of decorated handlers in packages/tsed/tests/decorator.test.ts
+- [ ] T159 [P] [US7] Add tests for DI injection in job handler classes in packages/tsed/tests/decorator.test.ts
 
 ### Implementation for User Story 7
 
-- [ ] T087 [US7] Refactor packages/tsed/src/decorators/job.ts to use `useDecorators`, `StoreSet`, and `Injectable` from @tsed/core and @tsed/di
-- [ ] T088 [US7] Create packages/tsed/src/constants.ts with JOB_METADATA_KEY symbol
-- [ ] T089 [US7] Update metadata storage to use `StoreSet` instead of direct `Reflect` in packages/tsed/src/decorators/job.ts
-- [ ] T089a [US7] Update packages/tsed/package.json: move `reflect-metadata` to devDependencies, add `@tsed/core` & `@tsed/di` to peerDependencies
-- [ ] T090 [US7] Run tests for US7 decorator to verify metadata storage works
+- [ ] T160 [US7] Refactor packages/tsed/src/decorators/job.ts to use `useDecorators`, `StoreSet`, and `Injectable` from @tsed/core and @tsed/di
+- [ ] T161 [US7] Create packages/tsed/src/constants.ts with JOB_METADATA_KEY symbol
+- [ ] T162 [US7] Update metadata storage to use `StoreSet` instead of direct `Reflect` in packages/tsed/src/decorators/job.ts
+- [ ] T163 [US7] Update packages/tsed/package.json: move `reflect-metadata` to devDependencies (already from @tsed packages), add `@tsed/core` & `@tsed/di` to peerDependencies
+- [ ] T164 [US7] Run tests for US7 decorator to verify metadata storage works
 
 **Checkpoint**: User Story 7 partially complete - Decorator works, module integration in US8
 
 ---
 
-## Phase 11: User Story 8 - Configure Ts.ED Module with Different Connection Types (Priority: P3)
+## Phase 17: User Story 8 - Configure Ts.ED Module with Different Connection Types (Priority: P3)
 
 **Goal**: MonqueModule.forRoot() accepts Mongoose Connection or native MongoDB Db; auto-start/stop on lifecycle
 
@@ -292,59 +506,91 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Tests for User Story 8
 
-- [ ] T091 [P] [US8] Create packages/tsed/tests/module.test.ts with tests for MonqueModule.forRoot() configuration
-- [ ] T092 [P] [US8] Add tests for Mongoose Connection extraction (connection.db property) in packages/tsed/tests/module.test.ts
-- [ ] T093 [P] [US8] Add tests for native Db instance direct usage in packages/tsed/tests/module.test.ts
-- [ ] T094 [P] [US8] Add tests for lifecycle hooks (start on init, stop on destroy) in packages/tsed/tests/module.test.ts
+- [ ] T165 [P] [US8] Create packages/tsed/tests/module.test.ts with tests for MonqueModule.forRoot() configuration
+- [ ] T166 [P] [US8] Add tests for Mongoose Connection extraction (connection.db property) in packages/tsed/tests/module.test.ts
+- [ ] T167 [P] [US8] Add tests for native Db instance direct usage in packages/tsed/tests/module.test.ts
+- [ ] T168 [P] [US8] Add tests for lifecycle hooks (start on init, stop on destroy) in packages/tsed/tests/module.test.ts
+- [ ] T169 [P] [US8] Update tests to use PlatformTest from @tsed/platform-http/testing
 
 ### Implementation for User Story 8
 
-- [ ] T095 [US8] Create packages/tsed/src/module.ts with MonqueModuleOptions interface (extends MonqueOptions, adds connection)
-- [ ] T096 [US8] Implement connection type detection in packages/tsed/src/module.ts (check for Mongoose Connection.db vs native Db instance)
-- [ ] T097 [US8] Implement MonqueModule class with @Module decorator in packages/tsed/src/module.ts
-- [ ] T098 [US8] Implement forRoot() static method with DI provider configuration in packages/tsed/src/module.ts
-- [ ] T099 [US8] Implement OnInit lifecycle hook calling monque.start() in packages/tsed/src/module.ts (FR-024)
-- [ ] T100 [US8] Implement OnDestroy lifecycle hook calling monque.stop() in packages/tsed/src/module.ts (FR-025)
-- [ ] T101 [US8] Implement job handler discovery using `InjectorService` in packages/tsed/src/module.ts
-- [ ] T102 [US8] Create packages/tsed/src/index.ts with public exports (MonqueModule, @Job, re-export core types)
-- [ ] T103 [US8] Run tests for US8 to verify module configuration and lifecycle hooks
+- [ ] T170 [US8] Create packages/tsed/src/module.ts with MonqueModuleOptions interface (extends MonqueOptions, adds connection)
+- [ ] T171 [US8] Implement connection type detection in packages/tsed/src/module.ts (check for Mongoose Connection.db vs native Db instance)
+- [ ] T172 [US8] Implement MonqueModule class with @Module decorator in packages/tsed/src/module.ts
+- [ ] T173 [US8] Implement forRoot() static method with DI provider configuration in packages/tsed/src/module.ts
+- [ ] T174 [US8] Implement OnInit lifecycle hook calling monque.start() in packages/tsed/src/module.ts (FR-024)
+- [ ] T175 [US8] Implement OnDestroy lifecycle hook calling monque.stop() in packages/tsed/src/module.ts (FR-025)
+- [ ] T176 [US8] Implement job handler discovery using `InjectorService` in packages/tsed/src/module.ts
+- [ ] T177 [US8] Create packages/tsed/src/index.ts with public exports (MonqueModule, @Job, re-export core types)
+- [ ] T178 [US8] Run tests for US8 to verify module configuration and lifecycle hooks
 
 **Checkpoint**: User Story 8 complete - Ts.ED integration fully functional
 
 ---
 
-## Phase 12: Polish & Documentation
+## Phase 18: Documentation with Starlight
 
-**Purpose**: Documentation, JSDoc, cleanup, and final validation
+**Goal**: Create comprehensive documentation website using Starlight (Astro framework)
 
-### Documentation Tasks
+**Independent Test**: Documentation site builds successfully, all pages render correctly, examples work
 
-- [ ] T104 [P] Create packages/docs/README.md with documentation index
-- [ ] T105 [P] Create packages/docs/getting-started/installation.md based on quickstart.md
-- [ ] T106 [P] Create packages/docs/getting-started/quickstart.md with basic usage examples
-- [ ] T107 [P] Create packages/docs/getting-started/configuration.md documenting all MonqueOptions
-- [ ] T108 [P] Create packages/docs/guides/job-scheduling.md covering one-off, delayed, and cron jobs
-- [ ] T109 [P] Create packages/docs/guides/error-handling.md covering custom errors and retry behavior
-- [ ] T110 [P] Create packages/docs/guides/graceful-shutdown.md documenting stop() and timeout behavior
-- [ ] T111 [P] Create packages/docs/guides/tsed-integration.md for Ts.ED users
-- [ ] T112 [P] Create packages/docs/api/monque-class.md with full MonquePublicAPI reference
-- [ ] T113 [P] Create packages/docs/api/job-interface.md documenting Job<T> fields
-- [ ] T114 [P] Create packages/docs/api/events.md documenting MonqueEventMap events
-- [ ] T115 [P] Create packages/docs/api/decorators.md documenting @Job decorator options
-- [ ] T116 [P] Create packages/docs/examples/basic-usage.md
-- [ ] T117 [P] Create packages/docs/examples/unique-jobs.md
-- [ ] T118 [P] Create packages/docs/examples/recurring-jobs.md
-- [ ] T119 [P] Create packages/docs/examples/error-retry.md
+### Implementation for Phase 18
+
+- [ ] T179 Create packages/docs/ directory structure
+- [ ] T180 Initialize Starlight project in packages/docs/:
+  ```bash
+  npm create astro@latest packages/docs -- --template starlight
+  ```
+- [ ] T181 Configure packages/docs/astro.config.mjs with Monque branding and navigation
+- [ ] T182 Create packages/docs/src/content/docs/index.mdx as documentation home page
+- [ ] T183 Create packages/docs/src/content/docs/getting-started/installation.md
+- [ ] T184 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
+- [ ] T185 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
+- [ ] T186 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
+- [ ] T187 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
+- [ ] T188 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
+- [ ] T189 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
+- [ ] T190 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
+- [ ] T191 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
+- [ ] T192 Create packages/docs/src/content/docs/integrations/tsed.md with Ts.ED integration guide
+- [ ] T193 Create packages/docs/src/content/docs/api/core.md with core API reference
+- [ ] T194 Create packages/docs/src/content/docs/api/tsed.md with Ts.ED API reference
+- [ ] T195 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
+- [ ] T196 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
+- [ ] T197 Add code examples to all documentation pages with syntax highlighting
+- [ ] T198 Configure packages/docs/package.json with build and dev scripts
+- [ ] T199 Add packages/docs to turbo.json pipeline
+- [ ] T200 Update root README.md to link to documentation site
+- [ ] T201 Add documentation deployment configuration (Vercel/Netlify)
+- [ ] T202 Build and verify documentation site locally
+
+**Checkpoint**: Documentation site complete and ready for deployment
+
+---
+
+## Phase 19: TSDoc Comments & Final Polish
+
+**Purpose**: Add comprehensive TSDoc comments, final documentation, and validation
+
+### TSDoc Tasks
+
+- [ ] T203 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (MonquePublicAPI methods, constructor options)
+- [ ] T204 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
+- [ ] T205 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
+- [ ] T206 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts
+- [ ] T207 [P] Add TSDoc comments to utility functions in packages/core/src/utils/cron.ts
+- [ ] T208 [P] Add TSDoc comments to all Ts.ED decorators in packages/tsed/src/decorators/job.ts
+- [ ] T209 [P] Add TSDoc comments to MonqueModule in packages/tsed/src/module.ts
+- [ ] T210 [P] Add TSDoc examples to key methods showing usage patterns
 
 ### Finalization Tasks
 
-- [ ] T120 Add JSDoc documentation to all public APIs in packages/core/src/ (FR-029)
-- [ ] T121 [P] Add JSDoc documentation to all public APIs in packages/tsed/src/ (FR-029)
-- [ ] T122 Create .github/workflows/release.yml with GitHub Actions release pipeline
-- [ ] T123 Run biome lint and format on entire codebase
-- [ ] T124 Run full test suite with coverage report (target: 100%)
-- [ ] T125 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
-- [ ] T126 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
+- [ ] T211 Run biome lint and format on entire codebase
+- [ ] T212 Run full test suite with coverage report (target: 100%)
+- [ ] T213 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
+- [ ] T214 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
+- [ ] T215 Create .github/workflows/release.yml with GitHub Actions release pipeline
+- [ ] T216 Update root README.md with badges, quick start, and links to documentation site
 
 ---
 
@@ -352,28 +598,38 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - can start immediately
+### Phase Dependencies
+
+- **Setup (Phase 1)**: No dependencies - can start immediately  
 - **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
-- **User Stories (Phase 3-11)**: All depend on Foundational phase completion
+- **User Stories (Phase 3-9)**: All depend on Foundational phase completion (COMPLETED)
   - US1-US3 (P1): Sequential dependency (US2, US3 build on US1's enqueue/worker)
   - US4-US6 (P2): Can start after US1 completion (build on basic processing)
   - Stale Recovery (Phase 9): Can start after US1 completion
-  - US7-US8 (P3): Can start after US1 worker method exists
-- **Polish (Phase 12)**: Can start docs after US6 for core; after US8 for Ts.ED
+- **Types Refactor (Phase 10)**: No dependencies - can start immediately
+- **Indexing Migration (Phase 11)**: Depends on Phase 10
+- **Worker Refactor (Phase 12)**: Depends on Phase 11
+- **Change Streams (Phase 13)**: Depends on Phase 12
+- **Test Utils Export (Phase 14)**: No dependencies - can run in parallel with Phases 10-13
+- **Ts.ED Updates (Phase 15)**: Depends on Phase 14
+- **US7 (Phase 16)**: Depends on Phase 15
+- **US8 (Phase 17)**: Depends on Phase 16
+- **Documentation (Phase 18)**: Depends on Phases 10-13 completion - can run in parallel with Phases 14-17
+- **Final Polish (Phase 19)**: Depends on all previous phases
 
 ### User Story Dependencies
 
 | Story          | Priority | Depends On                 | Can Start After |
 | -------------- | -------- | -------------------------- | --------------- |
-| US1            | P1       | Foundational               | T030            |
-| US2            | P1       | US1 (enqueue method)       | T035            |
-| US3            | P1       | US1 (job execution)        | T040            |
-| US4            | P2       | US1 (enqueue, completion)  | T040            |
-| US5            | P2       | US1 (polling, activeJobs)  | T041            |
-| US6            | P2       | US1 (event infrastructure) | T040            |
-| Stale Recovery | -        | US1 (start method)         | T038            |
-| US7            | P3       | US1 (worker method)        | T037            |
-| US8            | P3       | US7 (decorator complete)   | T090            |
+| US1            | P1       | Foundational               | T030 (COMPLETE) |
+| US2            | P1       | US1 (enqueue method)       | T035 (COMPLETE) |
+| US3            | P1       | US1 (job execution)        | T040 (COMPLETE) |
+| US4            | P2       | US1 (enqueue, completion)  | T040 (COMPLETE) |
+| US5            | P2       | US1 (polling, activeJobs)  | T041 (COMPLETE) |
+| US6            | P2       | US1 (event infrastructure) | T040 (COMPLETE) |
+| Stale Recovery | -        | US1 (start method)         | T038 (COMPLETE) |
+| US7            | P3       | Ts.ED Updates (Phase 15)   | T156            |
+| US8            | P3       | US7 (decorator complete)   | T164            |
 
 ### Within Each User Story
 
@@ -383,75 +639,148 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Parallel Opportunities
 
-**Phase 1 (Setup):**
+**Phase 1 (Setup) - COMPLETED:**
 - T003, T004, T005 can run in parallel
 - T008, T011, T012 can run in parallel (after respective package init)
 
-**Phase 2 (Foundational):**
+**Phase 2 (Foundational) - COMPLETED:**
 - T016, T017 can run in parallel (different interfaces)
 - T019, T020, T021 can run in parallel (different error classes)
 - T023 can run in parallel with T022 (different utility files)
 - T024, T025, T026 can run in parallel (different test files)
 
-**User Stories:**
-- All tests marked [P] within a story can run in parallel
-- US4, US5, US6 can run in parallel with each other after US1
-- US7 can run in parallel with US4-US6
+**Phase 10 (Types Refactor):**
+- T084-T090 can ALL run in parallel (different type definitions)
 
-**Phase 12 (Documentation):**
-- T104-T119 can ALL run in parallel (different files)
-- T120, T121 can run in parallel (different packages)
+**Phase 11 (Indexing Migration):**
+- T094, T095, T096 can run in parallel (different test files)
+- T097-T100 can run sequentially or together (index creation)
+
+**Phase 12 (Worker Refactor):**
+- T103-T109 can ALL run in parallel (different test files)
+- Implementation tasks (T110-T119) should run sequentially due to dependencies
+
+**Phase 13 (Change Streams):**
+- T120-T126 can ALL run in parallel (different test files)
+- Implementation tasks benefit from sequential execution
+
+**Phase 14 (Test Utils Export):**
+- T138-T144 can run in some parallel (separate concerns)
+
+**Phase 15 (Ts.ED Updates):**
+- T145-T148 can ALL run in parallel (different test files)
+- T149-T151 can run in parallel (package.json updates)
+
+**Phase 18 (Documentation):**
+- T179-T202 can MOSTLY run in parallel (different doc pages)
+- Initialize project first (T179-T181), then parallelize content creation
+
+**Phase 19 (Final Polish):**
+- T203-T210 can ALL run in parallel (different files)
+- T211-T216 should run sequentially (validation steps)
 
 ---
 
-## Parallel Example: User Story 1
+## Parallel Example: Phase 10 Types Refactor
 
 ```bash
-# Launch all tests for User Story 1 together:
-Task T031: "Create packages/core/tests/enqueue.test.ts"
-Task T032: "Create packages/core/tests/worker.test.ts"
-Task T033: "Create packages/core/tests/locking.test.ts"
-Task T034: "Add concurrency limit tests"
-# Wait for tests to be written, then implement sequentially
+# Launch all type updates in parallel:
+Task T084: "Update JobDocument interface - add claimedBy field"
+Task T085: "Update JobDocument interface - add lastHeartbeat field"
+Task T086: "Update JobDocument interface - add heartbeatInterval field"
+Task T087: "Update MonqueOptions - add schedulerInstanceId"
+Task T088: "Update MonqueOptions - add heartbeatInterval"
+Task T089: "Update MonqueOptions - add lockTimeout"
+Task T090: "Update MonqueOptions - add useChangeStreams"
+# All can run simultaneously, then verify with T091-T093
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (User Stories 1-3 Only)
+### Phases 1-9: COMPLETED ✅
 
-1. Complete Phase 1: Setup
-2. Complete Phase 1b: Test Infrastructure (Testcontainers setup)
-3. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
-4. Complete Phase 3: User Story 1 (basic enqueue/process)
-5. Complete Phase 4: User Story 2 (unique keys)
-6. Complete Phase 5: User Story 3 (retry/backoff)
-7. **STOP and VALIDATE**: Test all P1 stories independently
-8. Deploy/demo if ready - this is a functional job queue!
+The MVP and all P1-P3 user stories have been completed. The system is fully functional with:
+- ✅ Job enqueuing and processing
+- ✅ Unique key deduplication
+- ✅ Retry with exponential backoff
+- ✅ Cron scheduling
+- ✅ Graceful shutdown
+- ✅ Event lifecycle hooks
+- ✅ Stale job recovery
 
-### Incremental Delivery
+### Current Phase: Refactoring to Atomic Claim Pattern
 
-1. Setup + Test Infrastructure + Foundational → Foundation ready
-2. Add US1 → Basic job processing works (minimal MVP)
-3. Add US2 → Deduplication works
-4. Add US3 → Reliability works (P1 complete!)
-5. Add Stale Recovery → Crash resilience
-6. Add US4 → Cron scheduling works
-7. Add US5 → Production-ready shutdown
-8. Add US6 → Observability complete (P2 complete!)
-9. Add US7 + US8 → Ts.ED integration (P3 complete!)
-10. Polish → Production ready
+**Goal**: Replace polling-based job claiming with atomic claim pattern using MongoDB Change Streams for real-time notifications
 
-### Parallel Team Strategy (2+ developers)
+1. **Phase 10: Types & Interfaces** - Update type system for new fields
+2. **Phase 11: Indexing Migration** - Add indexes for atomic claim queries
+3. **Phase 12: Worker Refactor** - Implement atomic claim + heartbeat mechanism
+4. **Phase 13: Change Streams** - Add MongoDB Change Streams for instant job notifications
+5. **Phase 14: Test Utils Export** - Make test utilities available for external use
+6. **Phase 15: Ts.ED Updates** - Fix Ts.ED package dependencies and imports
+7. **Phase 16-17: Ts.ED Integration** - Complete decorator and module implementation
+8. **Phase 18: Documentation** - Create comprehensive Starlight documentation site
+9. **Phase 19: Final Polish** - TSDoc comments and final validation
 
-1. Team completes Setup + Foundational together
-2. Once Foundational is done:
-   - **Developer A**: US1 → US2 → US3 → Stale Recovery (P1 core path)
-   - **Developer B**: US7 (after T037) → US8 (P3 Ts.ED path)
-3. After P1 complete:
-   - **Developer A**: US4, US5, US6 (P2 features)
-   - **Developer B**: Documentation (Phase 12)
+### Incremental Delivery (Refactor)
+
+1. Phase 10 → Type system supports atomic claim pattern
+2. Phase 11 → Database indexes optimized for new queries
+3. Phase 12 → Atomic claim with heartbeat replaces polling locks
+4. Phase 13 → Change streams provide instant job notifications
+5. Phase 14-15 → Ts.ED package properly configured
+6. Phase 16-17 → Ts.ED decorators work with full DI
+7. Phase 18 → Beautiful Starlight documentation deployed
+8. Phase 19 → Production-ready with comprehensive docs
+
+### Parallel Team Strategy (Refactor Phase)
+
+1. **Developer A**: Phases 10-13 (Core refactor - atomic claim + change streams)
+2. **Developer B**: Phase 14-15 (Test utils export + Ts.ED fixes)
+3. **Developer C**: Phase 16-17 (Ts.ED US7 + US8 integration)
+4. After core refactor complete:
+   - **Developer A**: Phase 18 (Starlight documentation site)
+   - **Developer B**: Phase 19 (TSDoc comments and polish)
+   - **Developer C**: Continue Phase 18 (complete all documentation pages)
+
+---
+
+## Summary
+
+**Total Tasks**: 216 tasks across 19 phases
+
+**Task Breakdown by Phase**:
+- Phases 1-9 (Legacy/Completed): T001-T083a (84 tasks) ✅
+- Phase 10 (Types Refactor): T084-T093 (10 tasks)
+- Phase 11 (Indexing): T094-T102 (9 tasks)
+- Phase 12 (Worker Refactor): T103-T119 (17 tasks)
+- Phase 13 (Change Streams): T120-T137 (18 tasks)
+- Phase 14 (Test Utils): T138-T144 (7 tasks)
+- Phase 15 (Ts.ED Updates): T145-T156 (12 tasks)
+- Phase 16 (US7 - Decorators): T157-T164 (8 tasks)
+- Phase 17 (US8 - Module): T165-T178 (14 tasks)
+- Phase 18 (Documentation): T179-T202 (24 tasks)
+- Phase 19 (Final Polish): T203-T216 (14 tasks)
+
+**MVP Scope (COMPLETED)**: Phases 1-5 (User Stories 1-3)
+
+**Current Focus**: Phases 10-13 (Atomic Claim Refactor)
+
+**Next Milestone**: Phase 16-17 (Ts.ED Integration Complete)
+
+**Parallel Opportunities**: 
+- Phase 10: 7 tasks can run in parallel
+- Phase 11: 3 test tasks in parallel
+- Phase 12: 7 test tasks in parallel
+- Phase 13: 7 test tasks in parallel
+- Phase 14: Most tasks can run in parallel
+- Phase 15: 4 test tasks, 3 implementation tasks in parallel
+- Phase 18: 20+ documentation pages can be created in parallel
+- Phase 19: 8 TSDoc tasks in parallel
+
+**Independent Test Criteria**: Each phase includes specific tests to verify completion independently
 
 ---
 

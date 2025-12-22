@@ -246,6 +246,71 @@ export default {
 
 ---
 
+### 9. Real-time Job Detection (Change Streams)
+
+**Task**: Research efficient real-time job detection to minimize polling latency.
+
+**Decision**: Use MongoDB Change Streams (`.watch()`) with fallback polling.
+
+**Rationale**: Change Streams allow the application to react immediately to new job insertions, providing near-zero latency. However, Change Streams can be interrupted (network issues, failover). A fallback polling mechanism ensures reliability if the stream is disconnected or events are missed.
+
+**Implementation details**:
+- Watch for `insert` events on the jobs collection
+- On event: Trigger immediate poll cycle
+- Fallback: Poll every 5 minutes (configurable) to catch missed jobs
+- Reconnection: Automatically recreate stream on error/close
+
+**Alternatives considered**:
+- Aggressive polling (e.g., every 100ms): High database load
+- Redis Pub/Sub: Adds external dependency
+- Tailing Oplog: Deprecated/complex compared to Change Streams
+
+---
+
+### 10. Zombie Job Detection (Heartbeats)
+
+**Task**: Research robust failure detection for crashed workers or hung processes.
+
+**Decision**: Implement Heartbeat pattern with "Zombie Takeover".
+
+**Rationale**: Relying solely on `lockedAt` is insufficient because a worker might be slow but still processing. Heartbeats provide a positive signal of liveness. If a worker crashes, it stops sending heartbeats. Other workers can then safely "take over" the job after a tolerance period.
+
+**Implementation details**:
+- **Heartbeat**: Processing workers update `lastHeartbeat` field every 30s
+- **Zombie Detection**: Scheduler periodically queries for jobs where `status: 'processing'` AND `lastHeartbeat < (now - tolerance)`
+- **Takeover**: Reset zombie jobs to `pending` status (increment failCount if desired, or just retry)
+
+**Alternatives considered**:
+- TCP Keepalive: Only detects connection loss, not application hang
+- External Health Checks: Complex coordination
+- TTL Indexes: Deletes documents, not suitable for job recovery
+
+---
+
+### 11. Indexing Strategy (ESR)
+
+**Task**: Research optimal indexing strategy for job queries.
+
+**Decision**: Use ESR (Equality, Sort, Range) pattern.
+
+**Rationale**: The primary query for picking up jobs is: `status: 'pending'` (Equality) AND `nextRunAt <= now` (Range), sorted by `nextRunAt` (Sort). The ESR rule dictates the index order should be Equality fields first, then Sort fields, then Range fields.
+
+**Index Definition**:
+```javascript
+{ status: 1, nextRunAt: 1 }
+```
+*Note: In this specific case, Sort and Range are on the same field (`nextRunAt`), so the index supports both efficiently.*
+
+**Additional Indexes**:
+- For Zombie Detection: `{ status: 1, lastHeartbeat: 1 }`
+- For Deduplication: `{ uniqueKey: 1, status: 1 }` (Partial Filter: `status in ['pending', 'processing']`)
+
+**Alternatives considered**:
+- `{ nextRunAt: 1, status: 1 }`: Less efficient because `status` equality filter is applied after range scan
+- Single field indexes: Requires intersection, slower
+
+---
+
 ## Summary
 
 All technical unknowns have been resolved. The implementation can proceed with:
@@ -258,3 +323,6 @@ All technical unknowns have been resolved. The implementation can proceed with:
 6. **Connection flexibility**: Runtime detection supporting Mongoose and native driver
 7. **Shutdown**: Promise-based with timeout and active job tracking
 8. **Build**: tsdown for dual ESM/CJS with TypeScript declarations
+9. **Real-time**: Change Streams for low latency
+10. **Reliability**: Heartbeats and Zombie Takeover for crash recovery
+11. **Performance**: ESR indexing strategy

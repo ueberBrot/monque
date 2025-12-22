@@ -221,6 +221,15 @@ const monque = new Monque(db, {
   
   // Default concurrent jobs per worker
   defaultConcurrency: 5, // default
+
+  // Heartbeat interval for processing jobs (ms)
+  heartbeatInterval: 30000, // default
+
+  // Tolerance for zombie job detection (ms)
+  heartbeatTolerance: 90000, // default
+
+  // Enable zombie job takeover
+  enableZombieTakeover: true, // default
 });
 ```
 

@@ -7,18 +7,18 @@
 
 ## Summary
 
-Implement a TypeScript monorepo containing two packages: `@monque/core` (a MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, stale job recovery, and event-driven observability) and `@monque/tsed` (Ts.ED framework integration via decorators and DI). The core uses native MongoDB driver for atomic operations, extends EventEmitter for lifecycle events, and provides custom error classes for proper error handling.
+Implement a TypeScript monorepo containing two packages: `@monque/core` (a MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, stale job recovery via heartbeats/zombie takeover, real-time processing via Change Streams, and event-driven observability) and `@monque/tsed` (Ts.ED framework integration via decorators and DI). The core uses native MongoDB driver for atomic operations, extends EventEmitter for lifecycle events, and provides custom error classes for proper error handling.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x, Node.js 22+  
 **Primary Dependencies**: mongodb ^6.0.0 (native driver), cron-parser, @tsed/common, @tsed/di  
-**Storage**: MongoDB 4.0+ (required for atomic findAndModify operations)  
+**Storage**: MongoDB 4.0+ (required for atomic findAndModify operations and Change Streams)  
 **Testing**: Vitest with UI and coverage, targeting 100% coverage  
 **Target Platform**: Node.js server runtime (ESM + CJS dual output)  
 **Project Type**: Monorepo (Turborepo with Bun workspaces)  
-**Performance Goals**: Sub-second job pickup latency (1s default polling interval)  
-**Constraints**: Default 5 concurrent jobs per worker, 30s graceful shutdown timeout, 30min lock timeout, 16MB max job data (MongoDB document limit)  
+**Performance Goals**: Sub-second job pickup latency (Change Streams + 1s default polling interval)  
+**Constraints**: Default 5 concurrent jobs per worker, 30s graceful shutdown timeout, 90s heartbeat tolerance, 16MB max job data (MongoDB document limit)  
 **Scale/Scope**: Single namespace per database, multiple scheduler instances supported with atomic locking, stale job recovery on startup (configurable)
 
 ## Constitution Check
