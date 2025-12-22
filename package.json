@@ -24,7 +24,7 @@
 		"clean:core": "turbo clean --filter=@monque/core",
 		"clean:tsed": "turbo clean --filter=@monque/tsed",
 		"clean:docs": "turbo clean --filter=@monque/docs",
-		"reset": "rimraf node_modules **/node_modules dist **/dist coverage **/coverage .turbo **/.turbo",
+		"reset": "rimraf --glob '**/node_modules' '**/dist' '**/coverage' '**/.turbo'",
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"check": "biome check --write .",
@@ -43,9 +43,7 @@
 		"publint": "^0.3.16",
 		"rimraf": "^6.1.2",
 		"turbo": "^2.7.0",
+		"typescript": "^5.7.3",
 		"vitest": "^4.0.16"
-	},
-	"peerDependencies": {
-		"typescript": "^5"
 	}
 }
