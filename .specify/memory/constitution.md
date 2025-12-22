@@ -1,21 +1,20 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: N/A → 1.0.0 (Initial ratification)
+Version change: 1.0.0 → 1.1.0
 
-Modified principles: N/A (initial version)
+Modified principles:
+- Architecture Guidelines (Atomic Locking specificity, Reactive Architecture addition)
 
 Added sections:
-- Core Principles (5 principles)
-- API Design Principles
-- Governance
+- Reactive Architecture (under Architecture Guidelines)
 
 Removed sections: N/A
 
 Templates requiring updates:
-- .specify/templates/plan-template.md ✅ Compatible (Constitution Check section present)
-- .specify/templates/spec-template.md ✅ Compatible (Requirements align with principles)
-- .specify/templates/tasks-template.md ✅ Compatible (Test phases align with coverage requirement)
+- .specify/templates/plan-template.md ✅ Compatible
+- .specify/templates/spec-template.md ✅ Compatible
+- .specify/templates/tasks-template.md ✅ Compatible
 
 Follow-up TODOs: None
 -->
@@ -52,11 +51,13 @@ Core architectural decisions MUST follow these non-negotiable patterns:
 - **Native Driver Usage**: Prefer native database drivers over ORMs for the core package
   to minimize dependencies.
 - **Graceful Degradation**: All components MUST handle failures gracefully with proper cleanup.
-- **Atomic Operations**: Use atomic database operations for critical state changes
-  (locking, status updates).
+- **Atomic Locking**: All job claiming MUST be atomic via `findOneAndUpdate` to ensure consistency.
+- **Reactive Architecture**: Implement a reactive Change Stream listener for low-latency job pickup,
+  with a 60s polling fallback for reliability.
 
 **Rationale**: Event-driven architecture enables extensibility and monitoring; native drivers
-reduce dependency surface; graceful degradation ensures system resilience.
+reduce dependency surface; graceful degradation ensures system resilience; atomic locking and
+reactive patterns ensure data integrity and performance.
 
 ### III. Development Workflow
 
@@ -124,4 +125,4 @@ This constitution supersedes all other development practices for the Monque proj
 - MINOR: New principle/section added or materially expanded guidance.
 - PATCH: Clarifications, wording fixes, non-semantic refinements.
 
-**Version**: 1.0.0 | **Ratified**: 2025-12-16 | **Last Amended**: 2025-12-16
+**Version**: 1.1.0 | **Ratified**: 2025-12-16 | **Last Amended**: 2025-12-22
