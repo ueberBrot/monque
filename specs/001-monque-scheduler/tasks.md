@@ -274,9 +274,10 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 ### Implementation for User Story 7
 
-- [ ] T087 [US7] Create packages/tsed/src/decorators/job.ts with JobDecoratorOptions interface and @Job decorator implementation
+- [ ] T087 [US7] Refactor packages/tsed/src/decorators/job.ts to use `useDecorators`, `StoreSet`, and `Injectable` from @tsed/core and @tsed/di
 - [ ] T088 [US7] Create packages/tsed/src/constants.ts with JOB_METADATA_KEY symbol
-- [ ] T089 [US7] Implement metadata storage using Reflect.defineMetadata in @Job decorator in packages/tsed/src/decorators/job.ts
+- [ ] T089 [US7] Update metadata storage to use `StoreSet` instead of direct `Reflect` in packages/tsed/src/decorators/job.ts
+- [ ] T089a [US7] Update packages/tsed/package.json: move `reflect-metadata` to devDependencies, add `@tsed/core` & `@tsed/di` to peerDependencies
 - [ ] T090 [US7] Run tests for US7 decorator to verify metadata storage works
 
 **Checkpoint**: User Story 7 partially complete - Decorator works, module integration in US8
@@ -304,7 +305,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [ ] T098 [US8] Implement forRoot() static method with DI provider configuration in packages/tsed/src/module.ts
 - [ ] T099 [US8] Implement OnInit lifecycle hook calling monque.start() in packages/tsed/src/module.ts (FR-024)
 - [ ] T100 [US8] Implement OnDestroy lifecycle hook calling monque.stop() in packages/tsed/src/module.ts (FR-025)
-- [ ] T101 [US8] Implement job handler discovery and registration from decorated classes in packages/tsed/src/module.ts
+- [ ] T101 [US8] Implement job handler discovery using `InjectorService` in packages/tsed/src/module.ts
 - [ ] T102 [US8] Create packages/tsed/src/index.ts with public exports (MonqueModule, @Job, re-export core types)
 - [ ] T103 [US8] Run tests for US8 to verify module configuration and lifecycle hooks
 
