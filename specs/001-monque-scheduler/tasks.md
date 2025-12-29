@@ -375,40 +375,40 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Tests for Phase 13
 
-- [ ] T120 [P] Create packages/core/tests/change-streams.test.ts with tests for change stream initialization
-- [ ] T121 [P] Add tests for job notification via change stream insert events in packages/core/tests/change-streams.test.ts
-- [ ] T122 [P] Add tests for job notification via change stream update events (status change) in packages/core/tests/change-streams.test.ts
-- [ ] T123 [P] Add tests for change stream error handling and reconnection in packages/core/tests/change-streams.test.ts
-- [ ] T124 [P] Add tests for graceful fallback to polling when change streams fail in packages/core/tests/change-streams.test.ts
-- [ ] T125 [P] Add tests for change stream cleanup on shutdown in packages/core/tests/change-streams.test.ts
-- [ ] T126 [P] Update packages/core/tests/enqueue.test.ts to verify instant processing with change streams (no poll delay)
+- [x] T120 [P] Create packages/core/tests/change-streams.test.ts with tests for change stream initialization
+- [x] T121 [P] Add tests for job notification via change stream insert events in packages/core/tests/change-streams.test.ts
+- [x] T122 [P] Add tests for job notification via change stream update events (status change) in packages/core/tests/change-streams.test.ts
+- [x] T123 [P] Add tests for change stream error handling and reconnection in packages/core/tests/change-streams.test.ts
+- [x] T124 [P] Add tests for graceful fallback to polling when change streams fail in packages/core/tests/change-streams.test.ts
+- [x] T125 [P] Add tests for change stream cleanup on shutdown in packages/core/tests/change-streams.test.ts
+- [x] T126 [P] Update packages/core/tests/enqueue.test.ts to verify instant processing with change streams (no poll delay)
 
 ### Implementation for Phase 13
 
-- [ ] T127 Add change stream setup in packages/core/src/monque.ts start() method:
+- [x] T127 Add change stream setup in packages/core/src/monque.ts start() method:
   - Change streams are the default mechanism for job notifications
   - Watch for insert and update operations on jobs collection
   - Filter: {$or: [{operationType: 'insert'}, {operationType: 'update', 'updateDescription.updatedFields.status': {$exists: true}}]}
-- [ ] T128 Implement change stream event handler in packages/core/src/monque.ts:
+- [x] T128 Implement change stream event handler in packages/core/src/monque.ts:
   - On insert: Trigger immediate claim attempt for new jobs
   - On update to pending: Trigger claim attempt for released jobs
   - Debounce handler to avoid claim storms (100ms window)
-- [ ] T129 Add change stream error handling in packages/core/src/monque.ts:
+- [x] T129 Add change stream error handling in packages/core/src/monque.ts:
   - On error: Log error, emit 'changestream:error' event
   - Auto-reconnect with exponential backoff
   - Fallback to polling if reconnection fails after 3 attempts
-- [ ] T130 Update start() method to use change streams as primary with polling as backup:
+- [x] T130 Update start() method to use change streams as primary with polling as backup:
   - Use change streams for real-time job notifications
   - Keep polling as backup (slower interval, e.g., 10s) for resilience
-- [ ] T131 Add change stream cleanup in stop() method:
+- [x] T131 Add change stream cleanup in stop() method:
   - Close change stream cursor
   - Emit 'changestream:closed' event
-- [ ] T132 Adjust pollInterval when using change streams (default to 10000ms instead of 1000ms for backup polling)
-- [ ] T133 Add TSDoc comments explaining change stream pattern and fallback behavior
-- [ ] T134 Add new events: 'changestream:connected', 'changestream:error', 'changestream:closed', 'changestream:fallback'
-- [ ] T135 Run tests to verify change stream integration works correctly
-- [ ] T136 Run performance comparison tests: change stream vs polling latency
-- [ ] T137 Add integration test for change stream + atomic claim with multiple instances
+- [x] T132 Adjust pollInterval when using change streams (default to 10000ms instead of 1000ms for backup polling)
+- [x] T133 Add TSDoc comments explaining change stream pattern and fallback behavior
+- [x] T134 Add new events: 'changestream:connected', 'changestream:error', 'changestream:closed', 'changestream:fallback'
+- [x] T135 Run tests to verify change stream integration works correctly
+- [x] T136 Run performance comparison tests: change stream vs polling latency
+- [x] T137 Add integration test for change stream + atomic claim with multiple instances
 
 **Checkpoint**: Change stream integration complete with fallback to polling
 

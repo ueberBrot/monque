@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { Collection, Db, Document, WithId } from 'mongodb';
+import type { ChangeStream, ChangeStreamDocument, Collection, Db, Document, WithId } from 'mongodb';
 
 import { ConnectionError, WorkerRegistrationError } from '@/errors.js';
 import type {
@@ -117,6 +117,40 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
 	private isInitialized = false;
+
+	/**
+	 * MongoDB Change Stream for real-time job notifications.
+	 * When available, provides instant job processing without polling delay.
+	 */
+	private changeStream: ChangeStream | null = null;
+
+	/**
+	 * Number of consecutive reconnection attempts for change stream.
+	 * Used for exponential backoff during reconnection.
+	 */
+	private changeStreamReconnectAttempts = 0;
+
+	/**
+	 * Maximum reconnection attempts before falling back to polling-only mode.
+	 */
+	private readonly maxChangeStreamReconnectAttempts = 3;
+
+	/**
+	 * Debounce timer for change stream event processing.
+	 * Prevents claim storms when multiple events arrive in quick succession.
+	 */
+	private changeStreamDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * Whether the scheduler is currently using change streams for notifications.
+	 */
+	private usingChangeStreams = false;
+
+	/**
+	 * Timer ID for change stream reconnection with exponential backoff.
+	 * Tracked to allow cancellation during shutdown.
+	 */
+	private changeStreamReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
@@ -652,6 +686,11 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		}
 
 		this.isRunning = true;
+
+		// Set up change streams as the primary notification mechanism
+		this.setupChangeStream();
+
+		// Set up polling as backup (runs at configured interval)
 		this.pollIntervalId = setInterval(() => {
 			this.poll().catch((error: unknown) => {
 				this.emit('job:error', { error: error as Error });
@@ -665,7 +704,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			});
 		}, this.options.heartbeatInterval);
 
-		// Run initial poll immediately
+		// Run initial poll immediately to pick up any existing jobs
 		this.poll().catch((error: unknown) => {
 			this.emit('job:error', { error: error as Error });
 		});
@@ -709,6 +748,21 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		}
 
 		this.isRunning = false;
+
+		// Close change stream
+		await this.closeChangeStream();
+
+		// Clear debounce timer
+		if (this.changeStreamDebounceTimer) {
+			clearTimeout(this.changeStreamDebounceTimer);
+			this.changeStreamDebounceTimer = null;
+		}
+
+		// Clear reconnection timer
+		if (this.changeStreamReconnectTimer) {
+			clearTimeout(this.changeStreamReconnectTimer);
+			this.changeStreamReconnectTimer = null;
+		}
 
 		// Clear polling interval
 		if (this.pollIntervalId) {
@@ -1104,6 +1158,176 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				},
 			},
 		);
+	}
+
+	/**
+	 * Set up MongoDB Change Stream for real-time job notifications.
+	 *
+	 * Change streams provide instant notifications when jobs are inserted or when
+	 * job status changes to pending (e.g., after a retry). This eliminates the
+	 * polling delay for reactive job processing.
+	 *
+	 * The change stream watches for:
+	 * - Insert operations (new jobs)
+	 * - Update operations where status field changes
+	 *
+	 * If change streams are unavailable (e.g., standalone MongoDB), the system
+	 * gracefully falls back to polling-only mode.
+	 *
+	 * @private
+	 */
+	private setupChangeStream(): void {
+		if (!this.collection || !this.isRunning) {
+			return;
+		}
+
+		try {
+			// Create change stream with pipeline to filter relevant events
+			const pipeline = [
+				{
+					$match: {
+						$or: [
+							{ operationType: 'insert' },
+							{
+								operationType: 'update',
+								'updateDescription.updatedFields.status': { $exists: true },
+							},
+						],
+					},
+				},
+			];
+
+			this.changeStream = this.collection.watch(pipeline, {
+				fullDocument: 'updateLookup',
+			});
+
+			// Handle change events
+			this.changeStream.on('change', (change) => {
+				this.handleChangeStreamEvent(change);
+			});
+
+			// Handle errors with reconnection
+			this.changeStream.on('error', (error: Error) => {
+				this.emit('changestream:error', { error });
+				this.handleChangeStreamError(error);
+			});
+
+			// Mark as connected
+			this.usingChangeStreams = true;
+			this.changeStreamReconnectAttempts = 0;
+			this.emit('changestream:connected', undefined);
+		} catch (error) {
+			// Change streams not available (e.g., standalone MongoDB)
+			this.usingChangeStreams = false;
+			const reason = error instanceof Error ? error.message : 'Unknown error';
+			this.emit('changestream:fallback', { reason });
+		}
+	}
+
+	/**
+	 * Handle a change stream event by triggering a debounced poll.
+	 *
+	 * Events are debounced to prevent "claim storms" when multiple changes arrive
+	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
+	 * collects multiple events and triggers a single poll.
+	 *
+	 * @private
+	 * @param change - The change stream event document
+	 */
+	private handleChangeStreamEvent(change: ChangeStreamDocument<Document>): void {
+		if (!this.isRunning) {
+			return;
+		}
+
+		// Trigger poll on insert (new job) or update where status changes
+		const isInsert = change.operationType === 'insert';
+		const isUpdate = change.operationType === 'update';
+
+		// Get fullDocument if available (for insert or with updateLookup option)
+		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
+		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
+
+		// For inserts: always trigger since new pending jobs need processing
+		// For updates: trigger if status changed to pending (retry/release scenario)
+		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
+
+		if (shouldTrigger) {
+			// Debounce poll triggers to avoid claim storms
+			if (this.changeStreamDebounceTimer) {
+				clearTimeout(this.changeStreamDebounceTimer);
+			}
+
+			this.changeStreamDebounceTimer = setTimeout(() => {
+				this.changeStreamDebounceTimer = null;
+				this.poll().catch((error: unknown) => {
+					this.emit('job:error', { error: error as Error });
+				});
+			}, 100);
+		}
+	}
+
+	/**
+	 * Handle change stream errors with exponential backoff reconnection.
+	 *
+	 * Attempts to reconnect up to `maxChangeStreamReconnectAttempts` times with
+	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
+	 * polling-only mode.
+	 *
+	 * @private
+	 * @param error - The error that caused the change stream failure
+	 */
+	private handleChangeStreamError(error: Error): void {
+		if (!this.isRunning) {
+			return;
+		}
+
+		this.changeStreamReconnectAttempts++;
+
+		if (this.changeStreamReconnectAttempts > this.maxChangeStreamReconnectAttempts) {
+			// Fall back to polling-only mode
+			this.usingChangeStreams = false;
+			this.emit('changestream:fallback', {
+				reason: `Exhausted ${this.maxChangeStreamReconnectAttempts} reconnection attempts: ${error.message}`,
+			});
+			return;
+		}
+
+		// Exponential backoff: 1s, 2s, 4s
+		const delay = 2 ** (this.changeStreamReconnectAttempts - 1) * 1000;
+
+		setTimeout(() => {
+			if (this.isRunning) {
+				// Close existing change stream before reconnecting
+				if (this.changeStream) {
+					this.changeStream.close().catch(() => {});
+					this.changeStream = null;
+				}
+				this.setupChangeStream();
+			}
+		}, delay);
+	}
+
+	/**
+	 * Close the change stream cursor and emit closed event.
+	 *
+	 * @private
+	 */
+	private async closeChangeStream(): Promise<void> {
+		if (this.changeStream) {
+			try {
+				await this.changeStream.close();
+			} catch {
+				// Ignore close errors during shutdown
+			}
+			this.changeStream = null;
+
+			if (this.usingChangeStreams) {
+				this.emit('changestream:closed', undefined);
+			}
+		}
+
+		this.usingChangeStreams = false;
+		this.changeStreamReconnectAttempts = 0;
 	}
 
 	/**
