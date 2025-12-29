@@ -114,6 +114,7 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
 	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
+	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -249,12 +250,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				},
 				$unset: {
 					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+					heartbeatInterval: '',
 				},
 			},
 		);
 
 		if (result.modifiedCount > 0) {
-			// Emit event for recovered jobs (informational)
+			// Emit event for recovered jobs
 			this.emit('stale:recovered', {
 				count: result.modifiedCount,
 			});
@@ -654,6 +658,13 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			});
 		}, this.options.pollInterval);
 
+		// Start heartbeat interval for claimed jobs
+		this.heartbeatIntervalId = setInterval(() => {
+			this.updateHeartbeats().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
+			});
+		}, this.options.heartbeatInterval);
+
 		// Run initial poll immediately
 		this.poll().catch((error: unknown) => {
 			this.emit('job:error', { error: error as Error });
@@ -691,20 +702,6 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	 *
 	 * await monque.stop();
 	 * ```
-	 *
-	 * @example Kubernetes preStop hook
-	 * ```typescript
-	 * // In your Kubernetes pod spec:
-	 * // lifecycle:
-	 * //   preStop:
-	 * //     exec:
-	 * //       command: ["/bin/sh", "-c", "kill -TERM 1"]
-	 *
-	 * process.on('SIGTERM', async () => {
-	 *   await monque.stop(); // Graceful shutdown
-	 *   process.exit(0);
-	 * });
-	 * ```
 	 */
 	async stop(): Promise<void> {
 		if (!this.isRunning) {
@@ -717,6 +714,12 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		if (this.pollIntervalId) {
 			clearInterval(this.pollIntervalId);
 			this.pollIntervalId = null;
+		}
+
+		// Clear heartbeat interval
+		if (this.heartbeatIntervalId) {
+			clearInterval(this.heartbeatIntervalId);
+			this.heartbeatIntervalId = null;
 		}
 
 		// Wait for all active jobs to complete (with timeout)
@@ -850,15 +853,17 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 	}
 
 	/**
-	 * Atomically acquire a pending job for processing.
+	 * Atomically acquire a pending job for processing using the claimedBy pattern.
 	 *
-	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one worker
-	 * can claim a job, preventing duplicate processing. Queries for pending jobs with
-	 * `nextRunAt` <= now, sorted by `nextRunAt` (oldest first).
+	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
+	 * instance can claim a job. The query ensures the job is:
+	 * - In pending status
+	 * - Has nextRunAt <= now
+	 * - Is not claimed by another instance (claimedBy is null/undefined)
 	 *
 	 * @private
 	 * @param name - The job type to acquire
-	 * @returns The acquired job with updated status and lock timestamp, or `null` if no jobs available
+	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
 	 */
 	private async acquireJob(name: string): Promise<PersistedJob | null> {
 		if (!this.collection) {
@@ -872,11 +877,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				name,
 				status: JobStatus.PENDING,
 				nextRunAt: { $lte: now },
+				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
 			},
 			{
 				$set: {
 					status: JobStatus.PROCESSING,
+					claimedBy: this.options.schedulerInstanceId,
 					lockedAt: now,
+					lastHeartbeat: now,
+					heartbeatInterval: this.options.heartbeatInterval,
 					updatedAt: now,
 				},
 			},
@@ -954,11 +963,14 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					$set: {
 						status: JobStatus.PENDING,
 						nextRunAt,
-						failCount: 0, // Reset fail count on successful completion
+						failCount: 0,
 						updatedAt: new Date(),
 					},
 					$unset: {
 						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
 						failReason: '',
 					},
 				},
@@ -974,6 +986,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					},
 					$unset: {
 						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
 						failReason: '',
 					},
 				},
@@ -1014,6 +1029,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					},
 					$unset: {
 						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
 					},
 				},
 			);
@@ -1037,6 +1055,9 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					},
 					$unset: {
 						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
 					},
 				},
 			);
@@ -1053,6 +1074,36 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		if (!this.isInitialized || !this.collection) {
 			throw new ConnectionError('Monque not initialized. Call initialize() first.');
 		}
+	}
+
+	/**
+	 * Update heartbeats for all jobs claimed by this scheduler instance.
+	 *
+	 * This method runs periodically while the scheduler is running to indicate
+	 * that jobs are still being actively processed. Other instances use the
+	 * lastHeartbeat timestamp to detect stale jobs from crashed schedulers.
+	 *
+	 * @private
+	 */
+	private async updateHeartbeats(): Promise<void> {
+		if (!this.collection || !this.isRunning) {
+			return;
+		}
+
+		const now = new Date();
+
+		await this.collection.updateMany(
+			{
+				claimedBy: this.options.schedulerInstanceId,
+				status: JobStatus.PROCESSING,
+			},
+			{
+				$set: {
+					lastHeartbeat: now,
+					updatedAt: now,
+				},
+			},
+		);
 	}
 
 	/**
@@ -1109,6 +1160,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		// Only set optional properties if they exist
 		if (doc['lockedAt'] !== undefined) {
 			job.lockedAt = doc['lockedAt'] as Date | null;
+		}
+		if (doc['claimedBy'] !== undefined) {
+			job.claimedBy = doc['claimedBy'] as string | null;
+		}
+		if (doc['lastHeartbeat'] !== undefined) {
+			job.lastHeartbeat = doc['lastHeartbeat'] as Date | null;
+		}
+		if (doc['heartbeatInterval'] !== undefined) {
+			job.heartbeatInterval = doc['heartbeatInterval'] as number;
 		}
 		if (doc['failReason'] !== undefined) {
 			job.failReason = doc['failReason'] as string;

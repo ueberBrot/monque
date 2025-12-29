@@ -332,36 +332,36 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Tests for Phase 12
 
-- [ ] T103 [P] Create packages/core/tests/atomic-claim.test.ts with tests for atomic claim using claimedBy field
-- [ ] T104 [P] Add tests for concurrent claim attempts (multiple instances, verify only one succeeds) in packages/core/tests/atomic-claim.test.ts
-- [ ] T105 [P] Create packages/core/tests/heartbeat.test.ts with tests for heartbeat updates during job processing
-- [ ] T106 [P] Add tests for heartbeat interval configuration in packages/core/tests/heartbeat.test.ts
-- [ ] T107 [P] Add tests for stale job detection using lastHeartbeat in packages/core/tests/heartbeat.test.ts
-- [ ] T108 [P] Update packages/core/tests/concurrency.test.ts to verify atomic claim respects concurrency limits
-- [ ] T109 [P] Update packages/core/tests/locking.test.ts to test atomic claim instead of polling-based locking
+- [X] T103 [P] Create packages/core/tests/atomic-claim.test.ts with tests for atomic claim using claimedBy field
+- [X] T104 [P] Add tests for concurrent claim attempts (multiple instances, verify only one succeeds) in packages/core/tests/atomic-claim.test.ts
+- [X] T105 [P] Create packages/core/tests/heartbeat.test.ts with tests for heartbeat updates during job processing
+- [X] T106 [P] Add tests for heartbeat interval configuration in packages/core/tests/heartbeat.test.ts
+- [X] T107 [P] Add tests for stale job detection using lastHeartbeat in packages/core/tests/heartbeat.test.ts
+- [X] T108 [P] Update packages/core/tests/concurrency.test.ts to verify atomic claim respects concurrency limits
+- [X] T109 [P] Update packages/core/tests/locking.test.ts to test atomic claim instead of polling-based locking
 
 ### Implementation for Phase 12
 
-- [ ] T110 Add schedulerInstanceId generation (UUID v4) in packages/core/src/monque.ts constructor
-- [ ] T111 Refactor atomic job claim in packages/core/src/monque.ts to use claimedBy field instead of lockedAt:
+- [X] T110 Add schedulerInstanceId generation (UUID v4) in packages/core/src/monque.ts constructor
+- [X] T111 Refactor atomic job claim in packages/core/src/monque.ts to use claimedBy field instead of lockedAt:
   - Query: {status: 'pending', nextRunAt: {$lte: now}, $or: [{claimedBy: null}, {claimedBy: this.instanceId}]}
   - Update: {$set: {status: 'processing', claimedBy: this.instanceId, lockedAt: now, lastHeartbeat: now}}
-- [ ] T112 Implement heartbeat mechanism in packages/core/src/monque.ts:
+- [X] T112 Implement heartbeat mechanism in packages/core/src/monque.ts:
   - Create heartbeat interval that runs every heartbeatInterval (default 5s)
   - Update lastHeartbeat for all jobs where claimedBy matches this instance
   - Query: {claimedBy: this.instanceId, status: 'processing'}
   - Update: {$set: {lastHeartbeat: now}}
-- [ ] T113 Update stale job detection in packages/core/src/monque.ts to use lastHeartbeat:
+- [X] T113 Update stale job detection in packages/core/src/monque.ts to use lastHeartbeat:
   - Query: {status: 'processing', lastHeartbeat: {$lt: now - lockTimeout}}
   - Recovery: {$set: {status: 'pending', claimedBy: null, lockedAt: null}}
-- [ ] T114 Add cleanup on job completion in packages/core/src/monque.ts:
+- [X] T114 Add cleanup on job completion in packages/core/src/monque.ts:
   - Clear claimedBy and lastHeartbeat when job completes/fails
-- [ ] T115 Add heartbeat cleanup on stop() in packages/core/src/monque.ts:
+- [X] T115 Add heartbeat cleanup on stop() in packages/core/src/monque.ts:
   - Clear interval, update all claimed jobs to release claim
-- [ ] T116 Update concurrency control to use claimedBy count instead of activeJobs tracking
-- [ ] T117 Add TSDoc comments explaining atomic claim pattern and heartbeat mechanism
-- [ ] T118 Run tests to verify atomic claim and heartbeat work correctly
-- [ ] T119 Run integration test SC-006 to verify no duplicate processing with multiple instances
+- [X] T116 Update concurrency control to use claimedBy count instead of activeJobs tracking
+- [X] T117 Add TSDoc comments explaining atomic claim pattern and heartbeat mechanism
+- [X] T118 Run tests to verify atomic claim and heartbeat work correctly
+- [X] T119 Run integration test SC-006 to verify no duplicate processing with multiple instances
 
 **Checkpoint**: Atomic claim with heartbeat mechanism fully implemented
 

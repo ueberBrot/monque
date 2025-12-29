@@ -405,7 +405,7 @@ describe('worker()', () => {
 
 		it('should allow different concurrency per worker type', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monque = new Monque(db, { collectionName, pollInterval: 50, heartbeatInterval: 1000 });
 			const jobTypeAName = 'type-a';
 			const jobTypeBName = 'type-b';
 			monqueInstances.push(monque);
@@ -422,7 +422,7 @@ describe('worker()', () => {
 				const start = Date.now();
 				currentConcurrentA++;
 				maxConcurrentA = Math.max(maxConcurrentA, currentConcurrentA);
-				await new Promise((r) => setTimeout(r, 150));
+				await new Promise((r) => setTimeout(r, 200));
 				currentConcurrentA--;
 				const end = Date.now();
 				timestampsA.push({ start, end });
@@ -432,7 +432,7 @@ describe('worker()', () => {
 				const start = Date.now();
 				currentConcurrentB++;
 				maxConcurrentB = Math.max(maxConcurrentB, currentConcurrentB);
-				await new Promise((r) => setTimeout(r, 150));
+				await new Promise((r) => setTimeout(r, 200));
 				currentConcurrentB--;
 				const end = Date.now();
 				timestampsB.push({ start, end });
