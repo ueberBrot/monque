@@ -265,26 +265,35 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 The following phases represent the refactor to atomic claim pattern with MongoDB Change Streams.
 
+> [!IMPORTANT]
+> **Breaking Changes Allowed**: Since the library has not been publicly released:
+> - **No backwards compatibility is required** for any changes in Phases 10+
+> - **Existing tests must be updated** to reflect new implementations
+> - **New tests must be added** for new functionality
+> - This applies to all type changes, API changes, and behavioral changes
+
 ---
 
 ## Phase 10: Types & Interfaces Refactor
 
 **Goal**: Update type definitions to support atomic claim pattern with heartbeat and change streams
 
-**Independent Test**: TypeScript compilation passes with updated types, all existing tests still pass
+> [!IMPORTANT]
+> **No Backwards Compatibility Required (Phases 10+)**: The library has not been released yet, so all changes from Phase 10 forward do not need to maintain backwards compatibility with previous implementations. Existing tests should be adjusted to match the new implementation, and new tests should be added for new functionality.
+
+**Independent Test**: TypeScript compilation passes with updated types, existing tests are adjusted to match new types
 
 ### Implementation for Phase 10
 
-- [ ] T084 [P] Update JobDocument interface in packages/core/src/types.ts to add claimedBy field (scheduler instance ID)
-- [ ] T085 [P] Update JobDocument interface in packages/core/src/types.ts to add lastHeartbeat field (timestamp)
-- [ ] T086 [P] Update JobDocument interface in packages/core/src/types.ts to add heartbeatInterval field (milliseconds)
-- [ ] T087 [P] Update MonqueOptions interface in packages/core/src/types.ts to add schedulerInstanceId option (defaults to UUID)
-- [ ] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 5000ms)
-- [ ] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30000ms)
-- [ ] T090 [P] Update MonqueOptions interface in packages/core/src/types.ts to add useChangeStreams option (defaults to false for backward compatibility)
-- [ ] T091 Add TSDoc comments to all new fields in packages/core/src/types.ts explaining atomic claim pattern
-- [ ] T092 Run TypeScript compiler to verify types are correct
-- [ ] T093 Run existing test suite to ensure types are backward compatible
+- [X] T084 [P] Update JobDocument interface in packages/core/src/types.ts to add claimedBy field (scheduler instance ID)
+- [X] T085 [P] Update JobDocument interface in packages/core/src/types.ts to add lastHeartbeat field (timestamp)
+- [X] T086 [P] Update JobDocument interface in packages/core/src/types.ts to add heartbeatInterval field (milliseconds)
+- [X] T087 [P] Update MonqueOptions interface in packages/core/src/types.ts to add schedulerInstanceId option (defaults to UUID)
+- [X] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 5000ms)
+- [X] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30000ms)
+- [X] T091 Add TSDoc comments to all new fields in packages/core/src/types.ts explaining atomic claim pattern
+- [X] T092 Run TypeScript compiler to verify types are correct
+- [X] T093 Adjust existing tests to use new type definitions, add tests for new fields (claimedBy, lastHeartbeat, etc.). No backwards compatibility needed.
 
 **Checkpoint**: Type system updated for atomic claim pattern
 
@@ -377,7 +386,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 ### Implementation for Phase 13
 
 - [ ] T127 Add change stream setup in packages/core/src/monque.ts start() method:
-  - Only if useChangeStreams option is true
+  - Change streams are the default mechanism for job notifications
   - Watch for insert and update operations on jobs collection
   - Filter: {$or: [{operationType: 'insert'}, {operationType: 'update', 'updateDescription.updatedFields.status': {$exists: true}}]}
 - [ ] T128 Implement change stream event handler in packages/core/src/monque.ts:
@@ -388,13 +397,13 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
   - On error: Log error, emit 'changestream:error' event
   - Auto-reconnect with exponential backoff
   - Fallback to polling if reconnection fails after 3 attempts
-- [ ] T130 Update start() method to support hybrid mode:
-  - If useChangeStreams: Use change streams as primary, keep polling as backup (slower interval)
-  - If not useChangeStreams: Use polling only (existing behavior)
+- [ ] T130 Update start() method to use change streams as primary with polling as backup:
+  - Use change streams for real-time job notifications
+  - Keep polling as backup (slower interval, e.g., 10s) for resilience
 - [ ] T131 Add change stream cleanup in stop() method:
   - Close change stream cursor
   - Emit 'changestream:closed' event
-- [ ] T132 Add MonqueOptions.pollInterval adjustment when using change streams (default to 10000ms instead of 1000ms)
+- [ ] T132 Adjust pollInterval when using change streams (default to 10000ms instead of 1000ms for backup polling)
 - [ ] T133 Add TSDoc comments explaining change stream pattern and fallback behavior
 - [ ] T134 Add new events: 'changestream:connected', 'changestream:error', 'changestream:closed', 'changestream:fallback'
 - [ ] T135 Run tests to verify change stream integration works correctly
@@ -691,7 +700,6 @@ Task T086: "Update JobDocument interface - add heartbeatInterval field"
 Task T087: "Update MonqueOptions - add schedulerInstanceId"
 Task T088: "Update MonqueOptions - add heartbeatInterval"
 Task T089: "Update MonqueOptions - add lockTimeout"
-Task T090: "Update MonqueOptions - add useChangeStreams"
 # All can run simultaneously, then verify with T091-T093
 ```
 

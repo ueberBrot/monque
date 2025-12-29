@@ -60,6 +60,8 @@ export const JobFactoryHelpers = {
 		JobFactory.build({
 			status: JobStatus.PROCESSING,
 			lockedAt: new Date(),
+			claimedBy: overrides?.claimedBy ?? 'test-instance-id',
+			lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
 			...overrides,
 		}),
 

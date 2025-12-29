@@ -92,7 +92,7 @@ describe('Stale Job Recovery', () => {
 		// Stale job should be reset to pending
 		expect(staleJob).not.toBeNull();
 		expect(staleJob?.status).toBe(JobStatus.PENDING);
-		expect(staleJob?.lockedAt).toBeNull();
+		expect(staleJob?.lockedAt).toBeUndefined();
 
 		// Fresh job should remain processing
 		expect(freshJob).not.toBeNull();

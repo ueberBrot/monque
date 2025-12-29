@@ -75,6 +75,26 @@ export interface Job<T = unknown> {
 	/** Timestamp when job was locked for processing */
 	lockedAt?: Date | null;
 
+	/**
+	 * Unique identifier of the scheduler instance that claimed this job.
+	 * Used for atomic claim pattern - ensures only one instance processes each job.
+	 * Set when a job is claimed, cleared when job completes or fails.
+	 */
+	claimedBy?: string | null;
+
+	/**
+	 * Timestamp of the last heartbeat update for this job.
+	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
+	 * Updated periodically while job is being processed.
+	 */
+	lastHeartbeat?: Date | null;
+
+	/**
+	 * Heartbeat interval in milliseconds for this job.
+	 * Stored on the job to allow recovery logic to use the correct timeout.
+	 */
+	heartbeatInterval?: number;
+
 	/** Number of failed attempts */
 	failCount: number;
 
@@ -221,9 +241,26 @@ export interface MonqueOptions {
 	/**
 	 * Maximum time in milliseconds a job can be in 'processing' status before
 	 * being considered stale and eligible for re-acquisition by other workers.
-	 * @default 1800000 (30 minutes)
+	 * When using heartbeat-based detection, this should be at least 2-3x the heartbeatInterval.
+	 * @default 30000 (30 seconds, aligned with heartbeat timing)
 	 */
 	lockTimeout?: number;
+
+	/**
+	 * Unique identifier for this scheduler instance.
+	 * Used for atomic job claiming - each instance uses this ID to claim jobs.
+	 * Defaults to a randomly generated UUID v4.
+	 * @default crypto.randomUUID()
+	 */
+	schedulerInstanceId?: string;
+
+	/**
+	 * Interval in milliseconds for heartbeat updates during job processing.
+	 * The scheduler periodically updates lastHeartbeat for all jobs it is processing
+	 * to indicate liveness. Other instances use this to detect stale jobs.
+	 * @default 5000 (5 seconds)
+	 */
+	heartbeatInterval?: number;
 
 	/**
 	 * Whether to recover stale processing jobs on scheduler startup.

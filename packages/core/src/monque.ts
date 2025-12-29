@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { Collection, Db, Document, WithId } from 'mongodb';
 
@@ -28,8 +29,9 @@ const DEFAULTS = {
 	baseRetryInterval: 1000,
 	shutdownTimeout: 30000,
 	defaultConcurrency: 5,
-	lockTimeout: 1800000, // 30 minutes
+	lockTimeout: 30000, // 30 seconds (aligned with heartbeat timing)
 	recoverStaleJobs: true,
+	heartbeatInterval: 5000, // 5 seconds
 } as const;
 
 /**
@@ -128,6 +130,8 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 			maxBackoffDelay: options.maxBackoffDelay,
+			schedulerInstanceId: options.schedulerInstanceId ?? crypto.randomUUID(),
+			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 		};
 	}
 

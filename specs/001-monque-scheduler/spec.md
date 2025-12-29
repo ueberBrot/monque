@@ -335,6 +335,12 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **Logging Strategy**: Core package emits events only; no built-in logging. Consumers subscribe to events and wire to their preferred logging framework
 - **Collection Name**: Default collection is `monque_jobs`; configurable via `collectionName` option in scheduler configuration
 
+### Pre-Release Development Policy
+
+- **Breaking Changes Allowed**: Since the library has not been publicly released, no backwards compatibility is required for the atomic claim pattern refactor (Phases 10+)
+- **Test Adjustments Required**: Existing tests must be updated to reflect new implementations, and new tests must be added for new functionality
+- **No Migration Path**: There is no need to provide migration strategies or deprecation warnings for internal API changes
+
 ## Assumptions
 
 ### Environment Requirements

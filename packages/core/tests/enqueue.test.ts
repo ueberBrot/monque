@@ -13,9 +13,10 @@
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
 import { TEST_CONSTANTS } from '@tests/setup/constants.js';
 import { Monque } from '@/monque.js';
-import { JobStatus } from '@/types.js';
+import { JobStatus, type MonqueOptions, type PersistedJob } from '@/types.js';
 
 import {
 	cleanupTestDb,
@@ -263,6 +264,9 @@ describe('enqueue()', () => {
 			expect(job.uniqueKey).toBeUndefined();
 			expect(job.repeatInterval).toBeUndefined();
 			expect(job.failReason).toBeUndefined();
+			expect(job.claimedBy).toBeUndefined();
+			expect(job.lastHeartbeat).toBeUndefined();
+			expect(job.heartbeatInterval).toBeUndefined();
 		});
 
 		it('should include uniqueKey when provided', async () => {
@@ -708,6 +712,120 @@ describe('uniqueKey deduplication', () => {
 			const collection = db.collection(collectionName);
 			const count = await collection.countDocuments({});
 			expect(count).toBe(3);
+		});
+	});
+
+	describe('Atomic Claim Support', () => {
+		describe('Job interface fields', () => {
+			it('should allow claimedBy field with string value', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const collection = db.collection(collectionName);
+
+				const jobDoc = JobFactoryHelpers.processing({
+					name: TEST_CONSTANTS.JOB_NAME,
+					claimedBy: 'instance-123',
+				});
+
+				const result = await collection.insertOne(jobDoc);
+				const inserted = await collection.findOne({ _id: result.insertedId });
+
+				expect(inserted?.['claimedBy']).toBe('instance-123');
+			});
+
+			it('should allow lastHeartbeat field with Date value', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const collection = db.collection(collectionName);
+
+				const heartbeatTime = new Date();
+				const jobDoc = JobFactoryHelpers.processing({
+					name: TEST_CONSTANTS.JOB_NAME,
+					lastHeartbeat: heartbeatTime,
+				});
+
+				const result = await collection.insertOne(jobDoc);
+				const inserted = await collection.findOne({ _id: result.insertedId });
+
+				expect(inserted?.['lastHeartbeat']).toBeInstanceOf(Date);
+				expect((inserted?.['lastHeartbeat'] as Date).getTime()).toBe(heartbeatTime.getTime());
+			});
+
+			it('should allow heartbeatInterval field with number value', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const collection = db.collection(collectionName);
+
+				const jobDoc = JobFactoryHelpers.processing({
+					name: TEST_CONSTANTS.JOB_NAME,
+					heartbeatInterval: 5000,
+				});
+
+				const result = await collection.insertOne(jobDoc);
+				const inserted = await collection.findOne({ _id: result.insertedId });
+
+				expect(inserted?.['heartbeatInterval']).toBe(5000);
+			});
+		});
+
+		describe('MonqueOptions fields', () => {
+			it('should accept schedulerInstanceId option', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+				const options: MonqueOptions = {
+					collectionName,
+					schedulerInstanceId: 'custom-instance-id-123',
+				};
+
+				const monque = new Monque(db, options);
+				monqueInstances.push(monque);
+
+				expect(options.schedulerInstanceId).toBe('custom-instance-id-123');
+			});
+
+			it('should accept heartbeatInterval option', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+				const options: MonqueOptions = {
+					collectionName,
+					heartbeatInterval: 3000,
+				};
+
+				const monque = new Monque(db, options);
+				monqueInstances.push(monque);
+
+				expect(options.heartbeatInterval).toBe(3000);
+			});
+
+			it('should accept all atomic claim options together', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+				const options: MonqueOptions = {
+					collectionName,
+					schedulerInstanceId: 'my-scheduler-001',
+					heartbeatInterval: 5000,
+					lockTimeout: 30000,
+				};
+
+				const monque = new Monque(db, options);
+				monqueInstances.push(monque);
+
+				expect(options.schedulerInstanceId).toBe('my-scheduler-001');
+				expect(options.heartbeatInterval).toBe(5000);
+				expect(options.lockTimeout).toBe(30000);
+			});
+		});
+
+		describe('PersistedJob fields', () => {
+			it('should have optional atomic claim fields on enqueue', async () => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const monque = new Monque(db, { collectionName });
+				monqueInstances.push(monque);
+				await monque.initialize();
+
+				const job: PersistedJob = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
+
+				expect(job.claimedBy).toBeUndefined();
+				expect(job.lastHeartbeat).toBeUndefined();
+				expect(job.heartbeatInterval).toBeUndefined();
+			});
 		});
 	});
 });

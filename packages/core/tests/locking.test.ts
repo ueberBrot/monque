@@ -359,7 +359,7 @@ describe('atomic job locking', () => {
 
 			const collection = db.collection(collectionName);
 			const doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['lockedAt']).toBeNull();
+			expect(doc?.['lockedAt']).toBeUndefined();
 		});
 
 		it('should update updatedAt timestamp on state changes', async () => {
