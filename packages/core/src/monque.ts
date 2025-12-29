@@ -213,8 +213,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			{
 				$set: {
 					status: JobStatus.PENDING,
-					lockedAt: null,
 					updatedAt: new Date(),
+				},
+				$unset: {
+					lockedAt: '',
 				},
 			},
 		);
@@ -920,11 +922,11 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 					$set: {
 						status: JobStatus.PENDING,
 						nextRunAt,
-						lockedAt: null,
 						failCount: 0, // Reset fail count on successful completion
 						updatedAt: new Date(),
 					},
 					$unset: {
+						lockedAt: '',
 						failReason: '',
 					},
 				},
@@ -936,10 +938,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 				{
 					$set: {
 						status: JobStatus.COMPLETED,
-						lockedAt: null,
 						updatedAt: new Date(),
 					},
 					$unset: {
+						lockedAt: '',
 						failReason: '',
 					},
 				},
@@ -976,8 +978,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 						status: JobStatus.FAILED,
 						failCount: newFailCount,
 						failReason: error.message,
-						lockedAt: null,
 						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
 					},
 				},
 			);
@@ -997,8 +1001,10 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 						failCount: newFailCount,
 						failReason: error.message,
 						nextRunAt,
-						lockedAt: null,
 						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
 					},
 				},
 			);

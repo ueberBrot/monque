@@ -551,10 +551,7 @@ describe('uniqueKey deduplication', () => {
 
 			// Manually update job status to completed
 			const collection = db.collection(collectionName);
-			await collection.updateOne(
-				{ _id: job1._id },
-				{ $set: { status: JobStatus.COMPLETED, lockedAt: null } },
-			);
+			await collection.updateOne({ _id: job1._id }, { $set: { status: JobStatus.COMPLETED } });
 
 			// Create another job with same uniqueKey
 			const job2 = await monque.enqueue(
@@ -602,7 +599,6 @@ describe('uniqueKey deduplication', () => {
 				{
 					$set: {
 						status: JobStatus.FAILED,
-						lockedAt: null,
 						failCount: 10,
 						failReason: 'Max retries exceeded',
 					},

@@ -150,7 +150,6 @@ When `uniqueKey` is provided:
   },
   "status": "pending",
   "nextRunAt": { "$date": "2025-12-16T10:30:00.000Z" },
-  "lockedAt": null,
   "failCount": 0,
   "createdAt": { "$date": "2025-12-16T10:29:55.000Z" },
   "updatedAt": { "$date": "2025-12-16T10:29:55.000Z" }
@@ -166,7 +165,6 @@ When `uniqueKey` is provided:
   "data": { "reportType": "sales" },
   "status": "pending",
   "nextRunAt": { "$date": "2025-12-17T00:00:00.000Z" },
-  "lockedAt": null,
   "failCount": 0,
   "repeatInterval": "0 0 * * *",
   "createdAt": { "$date": "2025-12-16T08:00:00.000Z" },
@@ -200,7 +198,6 @@ When `uniqueKey` is provided:
   "data": { "orderId": "order-456", "amount": 99.99 },
   "status": "failed",
   "nextRunAt": { "$date": "2025-12-16T11:00:00.000Z" },
-  "lockedAt": null,
   "failCount": 10,
   "failReason": "Payment gateway timeout after 10 attempts",
   "createdAt": { "$date": "2025-12-16T09:00:00.000Z" },

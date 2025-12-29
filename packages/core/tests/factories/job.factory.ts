@@ -67,7 +67,6 @@ export const JobFactoryHelpers = {
 	completed: (overrides?: Partial<PersistedJob<unknown>>) =>
 		JobFactory.build({
 			status: JobStatus.COMPLETED,
-			lockedAt: null,
 			...overrides,
 		}),
 
@@ -77,7 +76,6 @@ export const JobFactoryHelpers = {
 			status: JobStatus.FAILED,
 			failCount: 10,
 			failReason: 'Max retries exceeded',
-			lockedAt: null,
 			...overrides,
 		}),
 
