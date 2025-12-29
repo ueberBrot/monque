@@ -463,8 +463,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
     "devDependencies": {
       "@tsed/core": "^8.0.0",
       "@tsed/di": "^8.0.0",
-      "@tsed/platform-http": "^8.0.0",
-      "reflect-metadata": "^0.2.0"
+      "@tsed/platform-http": "^8.0.0"
     }
   }
   ```
@@ -472,7 +471,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
   - useDecorators from @tsed/core
   - StoreSet from @tsed/core
   - Injectable from @tsed/di
-- [ ] T151 Remove reflect-metadata dependency from packages/tsed/package.json (comes from @tsed packages)
+- [X] T151 Remove reflect-metadata dependency from packages/tsed/package.json (comes from @tsed packages)
 - [ ] T152 Update packages/tsed/tests/ files to import PlatformTest from @tsed/platform-http/testing
 - [ ] T153 Update packages/tsed/src/module.ts to properly configure MonqueModule with Ts.ED module system
 - [ ] T154 Add TSDoc comments to all Ts.ED decorators and module explaining usage with DI
@@ -500,7 +499,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - [ ] T160 [US7] Refactor packages/tsed/src/decorators/job.ts to use `useDecorators`, `StoreSet`, and `Injectable` from @tsed/core and @tsed/di
 - [ ] T161 [US7] Create packages/tsed/src/constants.ts with JOB_METADATA_KEY symbol
 - [ ] T162 [US7] Update metadata storage to use `StoreSet` instead of direct `Reflect` in packages/tsed/src/decorators/job.ts
-- [ ] T163 [US7] Update packages/tsed/package.json: move `reflect-metadata` to devDependencies (already from @tsed packages), add `@tsed/core` & `@tsed/di` to peerDependencies
+- [ ] T163 [US7] Update packages/tsed/package.json: add `@tsed/core` & `@tsed/di` to peerDependencies
 - [ ] T164 [US7] Run tests for US7 decorator to verify metadata storage works
 
 **Checkpoint**: User Story 7 partially complete - Decorator works, module integration in US8

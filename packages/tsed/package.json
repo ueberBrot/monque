@@ -52,7 +52,6 @@
 	},
 	"peerDependencies": {
 		"@tsed/common": "^8.0.0",
-		"@tsed/di": "^8.0.0",
-		"reflect-metadata": "^0.2.2"
+		"@tsed/di": "^8.0.0"
 	}
 }
