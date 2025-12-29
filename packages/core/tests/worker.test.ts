@@ -315,7 +315,7 @@ describe('worker()', () => {
 
 			const collection = db.collection(collectionName);
 			const doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['lockedAt']).toBeNull();
+			expect(doc?.['lockedAt']).toBeUndefined();
 		});
 	});
 

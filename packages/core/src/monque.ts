@@ -167,6 +167,15 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 	/**
 	 * Create required MongoDB indexes for efficient job processing.
+	 *
+	 * The following indexes are created:
+	 * - `{status, nextRunAt}` - For efficient job polling queries
+	 * - `{name, uniqueKey}` - Partial unique index for deduplication (pending/processing only)
+	 * - `{name, status}` - For job lookup by type
+	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
+	 * - `{lastHeartbeat, status}` - For detecting stale jobs via heartbeat timeout
+	 * - `{status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs)
+	 * - `{lockedAt, lastHeartbeat, status}` - For stale job recovery combining lock time and heartbeat
 	 */
 	private async createIndexes(): Promise<void> {
 		if (!this.collection) {
@@ -190,11 +199,30 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 			},
 		);
 
-		// Index for stale job recovery - lockedAt for timeout queries
-		await this.collection.createIndex({ lockedAt: 1, status: 1 }, { background: true });
-
 		// Index for job lookup by name
 		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
+
+		// Compound index for finding jobs claimed by a specific scheduler instance.
+		// Used for heartbeat updates and cleanup on shutdown.
+		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
+
+		// Compound index for detecting stale jobs via heartbeat timeout.
+		// Used to find processing jobs that have stopped sending heartbeats.
+		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
+
+		// Compound index for atomic claim queries.
+		// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
+		await this.collection.createIndex(
+			{ status: 1, nextRunAt: 1, claimedBy: 1 },
+			{ background: true },
+		);
+
+		// Expanded index for stale job recovery combining lock time and heartbeat.
+		// Supports recovery queries that check both lockedAt and lastHeartbeat.
+		await this.collection.createIndex(
+			{ lockedAt: 1, lastHeartbeat: 1, status: 1 },
+			{ background: true },
+		);
 	}
 
 	/**

@@ -87,7 +87,7 @@ describe('recovery and cleanup', () => {
 			// Verify job is reset to pending
 			const job = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 			expect(job?.['status']).toBe(JobStatus.PENDING);
-			expect(job?.['lockedAt']).toBeNull();
+			expect(job?.['lockedAt']).toBeUndefined();
 		});
 
 		it('should not recover non-stale jobs', async () => {

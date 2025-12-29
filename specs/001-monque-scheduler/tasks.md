@@ -307,18 +307,18 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Tests for Phase 11
 
-- [ ] T094 [P] Create packages/core/tests/indexes.test.ts with tests for new index creation
-- [ ] T095 [P] Add tests for query performance with claimedBy+status index in packages/core/tests/indexes.test.ts
-- [ ] T096 [P] Add tests for heartbeat query performance with lastHeartbeat+status index in packages/core/tests/indexes.test.ts
+- [X] T094 [P] Create packages/core/tests/indexes.test.ts with tests for new index creation
+- [X] T095 [P] Add tests for query performance with claimedBy+status index in packages/core/tests/indexes.test.ts
+- [X] T096 [P] Add tests for heartbeat query performance with lastHeartbeat+status index in packages/core/tests/indexes.test.ts
 
 ### Implementation for Phase 11
 
-- [ ] T097 Add compound index on {claimedBy: 1, status: 1} in packages/core/src/monque.ts constructor
-- [ ] T098 Add compound index on {lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
-- [ ] T099 Add compound index on {status: 1, nextRunAt: 1, claimedBy: 1} for atomic claim queries in packages/core/src/monque.ts constructor
-- [ ] T100 Update existing lockedAt index to include heartbeat: {lockedAt: 1, lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
-- [ ] T101 Add TSDoc comments explaining index purposes for atomic claim and heartbeat in packages/core/src/monque.ts
-- [ ] T102 Run tests to verify indexes are created correctly
+- [X] T097 Add compound index on {claimedBy: 1, status: 1} in packages/core/src/monque.ts constructor
+- [X] T098 Add compound index on {lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
+- [X] T099 Add compound index on {status: 1, nextRunAt: 1, claimedBy: 1} for atomic claim queries in packages/core/src/monque.ts constructor
+- [X] T100 Update existing lockedAt index to include heartbeat: {lockedAt: 1, lastHeartbeat: 1, status: 1} in packages/core/src/monque.ts constructor
+- [X] T101 Add TSDoc comments explaining index purposes for atomic claim and heartbeat in packages/core/src/monque.ts
+- [X] T102 Run tests to verify indexes are created correctly
 
 **Checkpoint**: Database indexes optimized for atomic claim pattern
 

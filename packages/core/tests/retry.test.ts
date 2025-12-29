@@ -385,7 +385,7 @@ describe('Retry Logic', () => {
 				.findOne({ _id: job._id })) as WithId<Document>;
 
 			expect(doc['status']).toBe(JobStatus.PENDING);
-			expect(doc['lockedAt']).toBeNull();
+			expect(doc['lockedAt']).toBeUndefined();
 		});
 	});
 
