@@ -442,97 +442,90 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ---
 
-## Phase 15: Ts.ED Integration Updates
+## Phase 15: Ts.ED Integration Foundations
 
-**Goal**: Update Ts.ED integration package with correct dependencies and imports
+**Goal**: Prepare Ts.ED package structure with necessary constants, types, and dependencies
 
-**Independent Test**: Ts.ED package compiles, tests pass, decorators work with dependency injection
+**Independent Test**: Package compiles with new types and constants
 
 ### Tests for Phase 15
 
-- [ ] T145 [P] Update packages/tsed/tests/decorator.test.ts to use PlatformTest from @tsed/platform-http/testing
-- [ ] T146 [P] Update packages/tsed/tests/decorator.test.ts to import test utils from @monque/core/testing
-- [ ] T147 [P] Add tests for @Job decorator with full DI container in packages/tsed/tests/decorator.test.ts
-- [ ] T148 [P] Add tests for MonqueModule configuration and registration in packages/tsed/tests/module.test.ts
+- [X] T145 Create packages/tsed/tests/constants.test.ts to verify MonqueTypes
+- [X] T146 Update packages/tsed/tests/decorator.test.ts to setup for DI injection testing using test utils from `@monque/core/testing`
 
 ### Implementation for Phase 15
 
-- [ ] T149 Update packages/tsed/package.json to move all @tsed/* packages to devDependencies:
-  ```json
-  {
-    "devDependencies": {
-      "@tsed/core": "^8.0.0",
-      "@tsed/di": "^8.0.0",
-      "@tsed/platform-http": "^8.0.0"
-    }
+- [X] T149 Update packages/tsed/package.json: move @tsed/* to dev/peerDependencies, remove reflect-metadata (handled by @tsed)
+- [X] T150 Create packages/tsed/src/constants/MonqueTypes.ts with `MonqueTypes` enum (JOB = "monque:job")
+- [X] T151 Create packages/tsed/src/constants/constants.ts with `MONQUE_METADATA` constant
+- [X] T152 Create packages/tsed/src/contracts/JobMethods.ts interface:
+  ```typescript
+  export interface JobMethods<T = unknown> {
+    handle(data: T, job: Job<T>): Promise<void> | void;
   }
   ```
-- [ ] T150 Update packages/tsed/src/decorators/job.ts to import from correct @tsed packages:
-  - useDecorators from @tsed/core
-  - StoreSet from @tsed/core
-  - Injectable from @tsed/di
-- [X] T151 Remove reflect-metadata dependency from packages/tsed/package.json (comes from @tsed packages)
-- [ ] T152 Update packages/tsed/tests/ files to import PlatformTest from @tsed/platform-http/testing
-- [ ] T153 Update packages/tsed/src/module.ts to properly configure MonqueModule with Ts.ED module system
-- [ ] T154 Add TSDoc comments to all Ts.ED decorators and module explaining usage with DI
-- [ ] T155 Run tests to verify Ts.ED integration works with updated dependencies
-- [ ] T156 Update packages/tsed/README.md with correct import examples and dependency info
+- [X] T153 Update packages/tsed/src/index.ts to export new types and constants
+- [X] T154 Run tests to verify foundational setup
+- [X] T155 Update packages/tsed/README.md with installation instructions
 
-**Checkpoint**: Ts.ED integration updated with correct dependencies
+**Checkpoint**: Foundations laid for robust Ts.ED integration
 
 ---
 
-## Phase 16: User Story 7 - Use Decorators for Ts.ED Job Handlers (Priority: P3)
+## Phase 16: User Story 7 - Job Decorator & Discovery (Priority: P3)
 
-**Goal**: @Job decorator for Ts.ED that auto-registers workers with full DI access
+**Goal**: Implement @Job decorator that registers classes as custom providers for auto-discovery
 
-**Independent Test**: Create class with @Job decorator, verify auto-registered when module loads with injected dependencies
+**Independent Test**: Decorator correctly sets ProviderType and registers with DI container
 
 ### Tests for User Story 7
 
-- [ ] T157 [P] [US7] Create packages/tsed/tests/decorator.test.ts with tests for @Job decorator (metadata storage, class decoration)
-- [ ] T158 [P] [US7] Add tests for auto-discovery and registration of decorated handlers in packages/tsed/tests/decorator.test.ts
-- [ ] T159 [P] [US7] Add tests for DI injection in job handler classes in packages/tsed/tests/decorator.test.ts
+- [ ] T157 [P] [US7] Create packages/tsed/tests/decorators/job.test.ts verifying @Job sets correct `type` (MonqueTypes.JOB) and metadata
+- [ ] T158 [P] [US7] Verify @Job uses `registerProvider` or `Injectable` correctly
+- [ ] T159 [P] [US7] Test unique token generation for jobs sharing same class name but different queues (if applicable)
 
 ### Implementation for User Story 7
 
-- [ ] T160 [US7] Refactor packages/tsed/src/decorators/job.ts to use `useDecorators`, `StoreSet`, and `Injectable` from @tsed/core and @tsed/di
-- [ ] T161 [US7] Create packages/tsed/src/constants.ts with JOB_METADATA_KEY symbol
-- [ ] T162 [US7] Update metadata storage to use `StoreSet` instead of direct `Reflect` in packages/tsed/src/decorators/job.ts
-- [ ] T163 [US7] Update packages/tsed/package.json: add `@tsed/core` & `@tsed/di` to peerDependencies
-- [ ] T164 [US7] Run tests for US7 decorator to verify metadata storage works
+- [ ] T160 [US7] Create packages/tsed/src/utils/getJobToken.ts to generate consistent DI tokens (e.g., `monque:job:${name}`)
+- [ ] T161 [US7] Implement `@Job(name, options?)` in packages/tsed/src/decorators/job.ts:
+  - Use `useDecorators`, `StoreMerge` (from @tsed/core), and `Injectable` (from @tsed/di)
+  - Set `type: MonqueTypes.JOB` in `Injectable` options
+  - Store metadata (options) via `StoreMerge`
+- [ ] T162 [US7] Run tests to verify decorator registration
 
-**Checkpoint**: User Story 7 partially complete - Decorator works, module integration in US8
+**Checkpoint**: @Job decorator correctly registers providers in the DI container
 
 ---
 
-## Phase 17: User Story 8 - Configure Ts.ED Module with Different Connection Types (Priority: P3)
+## Phase 17: User Story 8 - Module & Dispatcher (Priority: P3)
 
-**Goal**: MonqueModule.forRoot() accepts Mongoose Connection or native MongoDB Db; auto-start/stop on lifecycle
+**Goal**: Implement MonqueModule and JobDispatcher to manage job execution within DI contexts
 
-**Independent Test**: Configure module with each connection type, verify jobs can be enqueued and processed with auto-start
+**Independent Test**: Jobs are processed with full dependency injection support; request-scoped services work within job handlers.
 
 ### Tests for User Story 8
 
-- [ ] T165 [P] [US8] Create packages/tsed/tests/module.test.ts with tests for MonqueModule.forRoot() configuration
-- [ ] T166 [P] [US8] Add tests for Mongoose Connection extraction (connection.db property) in packages/tsed/tests/module.test.ts
-- [ ] T167 [P] [US8] Add tests for native Db instance direct usage in packages/tsed/tests/module.test.ts
-- [ ] T168 [P] [US8] Add tests for lifecycle hooks (start on init, stop on destroy) in packages/tsed/tests/module.test.ts
-- [ ] T169 [P] [US8] Update tests to use PlatformTest from @tsed/platform-http/testing
+- [ ] T165 [P] [US8] Create packages/tsed/tests/dispatchers/JobDispatcher.test.ts testing `runInContext` usage (use `JobFactory` from @monque/core/testing)
+- [ ] T166 [P] [US8] Create packages/tsed/tests/MonqueModule.test.ts testing `$onInit` discovery of job providers
+- [ ] T167 [P] [US8] Integration test: Job handler injecting a service, verifying service is instantiated per job (use `getTestDb`, `waitFor` from @monque/core/testing)
 
 ### Implementation for User Story 8
 
-- [ ] T170 [US8] Create packages/tsed/src/module.ts with MonqueModuleOptions interface (extends MonqueOptions, adds connection)
-- [ ] T171 [US8] Implement connection type detection in packages/tsed/src/module.ts (check for Mongoose Connection.db vs native Db instance)
-- [ ] T172 [US8] Implement MonqueModule class with @Module decorator in packages/tsed/src/module.ts
-- [ ] T173 [US8] Implement forRoot() static method with DI provider configuration in packages/tsed/src/module.ts
-- [ ] T174 [US8] Implement OnInit lifecycle hook calling monque.start() in packages/tsed/src/module.ts (FR-024)
-- [ ] T175 [US8] Implement OnDestroy lifecycle hook calling monque.stop() in packages/tsed/src/module.ts (FR-025)
-- [ ] T176 [US8] Implement job handler discovery using `InjectorService` in packages/tsed/src/module.ts
-- [ ] T177 [US8] Create packages/tsed/src/index.ts with public exports (MonqueModule, @Job, re-export core types)
-- [ ] T178 [US8] Run tests for US8 to verify module configuration and lifecycle hooks
+- [ ] T170 [US8] Create packages/tsed/src/dispatchers/JobDispatcher.ts service:
+  - Import `InjectorService` and `Monque` core instance
+  - Implement `dispatch(provider)`: registers worker with `monque.worker(name, handler)`
+  - Implement `handler` wrapper:
+    - Create new `DIContext` (request scope)
+    - Bind job data to context
+    - Execute `provider.instance.handle(data, job)` via `runInContext`
+    - Destroy context after execution
+- [ ] T171 [US8] Create packages/tsed/src/MonqueModule.ts:
+  - Implement `$onInit`: `injector.getProviders(MonqueTypes.JOB).forEach(p => dispatcher.dispatch(p))`
+  - Implement `$onDestroy`: call `monque.stop()`
+- [ ] T172 [US8] Implement `forRoot` or configuration integration in MonqueModule to accept `MonqueOptions`
+- [ ] T177 [US8] Run integration tests (US8) verifying end-to-end DI support in jobs
 
-**Checkpoint**: User Story 8 complete - Ts.ED integration fully functional
+**Checkpoint**: Full Ts.ED integration with Request Scoping support
 
 ---
 
@@ -617,9 +610,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - **Worker Refactor (Phase 12)**: Depends on Phase 11
 - **Change Streams (Phase 13)**: Depends on Phase 12
 - **Test Utils Export (Phase 14)**: No dependencies - can run in parallel with Phases 10-13
-- **Ts.ED Updates (Phase 15)**: Depends on Phase 14
-- **US7 (Phase 16)**: Depends on Phase 15
-- **US8 (Phase 17)**: Depends on Phase 16
+- **Ts.ED Integration (Phase 15-17)**: Depends on Phase 14
 - **Documentation (Phase 18)**: Depends on Phases 10-13 completion - can run in parallel with Phases 14-17
 - **Final Polish (Phase 19)**: Depends on all previous phases
 
@@ -634,8 +625,8 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 | US5            | P2       | US1 (polling, activeJobs)  | T041 (COMPLETE) |
 | US6            | P2       | US1 (event infrastructure) | T040 (COMPLETE) |
 | Stale Recovery | -        | US1 (start method)         | T038 (COMPLETE) |
-| US7            | P3       | Ts.ED Updates (Phase 15)   | T156            |
-| US8            | P3       | US7 (decorator complete)   | T164            |
+| US7            | P3       | Ts.ED Foundations (Phase 15) | T154          |
+| US8            | P3       | US7 (decorator complete)   | T162            |
 
 ### Within Each User Story
 
@@ -673,9 +664,9 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 **Phase 14 (Test Utils Export):**
 - T138-T144 can run in some parallel (separate concerns)
 
-**Phase 15 (Ts.ED Updates):**
-- T145-T148 can ALL run in parallel (different test files)
-- T149-T151 can run in parallel (package.json updates)
+**Phase 15 (Ts.ED Foundations):**
+- T145-T146 can run in parallel
+- T150-T152 can run in parallel
 
 **Phase 18 (Documentation):**
 - T179-T202 can MOSTLY run in parallel (different doc pages)
@@ -724,10 +715,11 @@ The MVP and all P1-P3 user stories have been completed. The system is fully func
 3. **Phase 12: Worker Refactor** - Implement atomic claim + heartbeat mechanism
 4. **Phase 13: Change Streams** - Add MongoDB Change Streams for instant job notifications
 5. **Phase 14: Test Utils Export** - Make test utilities available for external use
-6. **Phase 15: Ts.ED Updates** - Fix Ts.ED package dependencies and imports
-7. **Phase 16-17: Ts.ED Integration** - Complete decorator and module implementation
-8. **Phase 18: Documentation** - Create comprehensive Starlight documentation site
-9. **Phase 19: Final Polish** - TSDoc comments and final validation
+6. **Phase 15: Ts.ED Foundations** - Foundation types and interfaces
+7. **Phase 16: Ts.ED Decorators** - Discovery and Metadata
+8. **Phase 17: Ts.ED Module & Dispatcher** - DI Context integration
+9. **Phase 18: Documentation** - Create comprehensive Starlight documentation site
+10. **Phase 19: Final Polish** - TSDoc comments and final validation
 
 ### Incremental Delivery (Refactor)
 
@@ -735,57 +727,17 @@ The MVP and all P1-P3 user stories have been completed. The system is fully func
 2. Phase 11 → Database indexes optimized for new queries
 3. Phase 12 → Atomic claim with heartbeat replaces polling locks
 4. Phase 13 → Change streams provide instant job notifications
-5. Phase 14-15 → Ts.ED package properly configured
-6. Phase 16-17 → Ts.ED decorators work with full DI
-7. Phase 18 → Beautiful Starlight documentation deployed
-8. Phase 19 → Production-ready with comprehensive docs
+5. Phase 14-17 → Ts.ED integration fully robust and DI-aware
+6. Phase 18 → Beautiful Starlight documentation deployed
+7. Phase 19 → Production-ready with comprehensive docs
 
 ### Parallel Team Strategy (Refactor Phase)
 
 1. **Developer A**: Phases 10-13 (Core refactor - atomic claim + change streams)
-2. **Developer B**: Phase 14-15 (Test utils export + Ts.ED fixes)
-3. **Developer C**: Phase 16-17 (Ts.ED US7 + US8 integration)
+2. **Developer B**: Phase 14-17 (Ts.ED integration)
+3. **Developer C**: Phase 18 (Starlight documentation)
 4. After core refactor complete:
-   - **Developer A**: Phase 18 (Starlight documentation site)
-   - **Developer B**: Phase 19 (TSDoc comments and polish)
-   - **Developer C**: Continue Phase 18 (complete all documentation pages)
-
----
-
-## Summary
-
-**Total Tasks**: 216 tasks across 19 phases
-
-**Task Breakdown by Phase**:
-- Phases 1-9 (Legacy/Completed): T001-T083a (84 tasks) ✅
-- Phase 10 (Types Refactor): T084-T093 (10 tasks)
-- Phase 11 (Indexing): T094-T102 (9 tasks)
-- Phase 12 (Worker Refactor): T103-T119 (17 tasks)
-- Phase 13 (Change Streams): T120-T137 (18 tasks)
-- Phase 14 (Test Utils): T138-T144 (7 tasks)
-- Phase 15 (Ts.ED Updates): T145-T156 (12 tasks)
-- Phase 16 (US7 - Decorators): T157-T164 (8 tasks)
-- Phase 17 (US8 - Module): T165-T178 (14 tasks)
-- Phase 18 (Documentation): T179-T202 (24 tasks)
-- Phase 19 (Final Polish): T203-T216 (14 tasks)
-
-**MVP Scope (COMPLETED)**: Phases 1-5 (User Stories 1-3)
-
-**Current Focus**: Phases 10-13 (Atomic Claim Refactor)
-
-**Next Milestone**: Phase 16-17 (Ts.ED Integration Complete)
-
-**Parallel Opportunities**: 
-- Phase 10: 7 tasks can run in parallel
-- Phase 11: 3 test tasks in parallel
-- Phase 12: 7 test tasks in parallel
-- Phase 13: 7 test tasks in parallel
-- Phase 14: Most tasks can run in parallel
-- Phase 15: 4 test tasks, 3 implementation tasks in parallel
-- Phase 18: 20+ documentation pages can be created in parallel
-- Phase 19: 8 TSDoc tasks in parallel
-
-**Independent Test Criteria**: Each phase includes specific tests to verify completion independently
+   - **Developer A**: Phase 19 (Checklist & Polish)
 
 ---
 
