@@ -1,5 +1,5 @@
 ---
-description: Identify underspecified areas in the current feature spec by asking up to 5 highly targeted clarification questions and encoding answers back into the spec.
+description: Identify underspecified areas in the current feature spec by asking up to 5 questions per generation (maximum 10 per session) and encoding answers back into the spec.
 ---
 
 ## Outline
@@ -73,8 +73,8 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
    - Clarification would not materially change implementation or validation strategy
    - Information is better deferred to planning phase (note internally)
 
-3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5). Do NOT output them all at once. Apply these constraints:
-    - Maximum of 10 total questions across the whole session.
+3. Generate (internally) a prioritized queue of candidate clarification questions (maximum 5 per generation). Do NOT output them all at once. Apply these constraints:
+    - Up to 5 questions per generation, not exceeding 10 questions in total per session. Batches accumulate toward this session total across multiple invocations.
     - Each question must be answerable with EITHER:
        - A short multiple‑choice selection (2–5 distinct, mutually exclusive options), OR
        - A one-word / short‑phrase answer (explicitly constrain: "Answer in <=5 words").
@@ -116,7 +116,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
     - Stop asking further questions when:
        - All critical ambiguities resolved early (remaining queued items become unnecessary), OR
        - User signals completion ("done", "good", "no more"), OR
-       - You reach 5 asked questions.
+       - You reach the per-generation limit of 5 asked questions (or session limit of 10).
     - Never reveal future queued questions in advance.
     - If no valid questions exist at start, immediately report no critical ambiguities.
 
@@ -140,7 +140,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 6. Validation (performed after EACH write plus final pass):
    - Clarifications session contains exactly one bullet per accepted answer (no duplicates).
-   - Total asked (accepted) questions ≤ 5.
+   - Total asked (accepted) questions in this generation ≤ 5, and total session-wide ≤ 10.
    - Updated sections contain no lingering vague placeholders the new answer was meant to resolve.
    - No contradictory earlier statement remains (scan for now-invalid alternative choices removed).
    - Markdown structure valid; only allowed new headings: `## Clarifications`, `### Session YYYY-MM-DD`.
@@ -160,7 +160,7 @@ Note: This clarification workflow is expected to run (and be completed) BEFORE i
 
 - If no meaningful ambiguities found (or all potential questions would be low-impact), respond: "No critical ambiguities detected worth formal clarification." and suggest proceeding.
 - If spec file missing, instruct user to run `/speckit_specify` first (do not create a new spec here).
-- Never exceed 5 total asked questions (clarification retries for a single question do not count as new questions).
+- Never exceed 5 questions per generation, and stay within the 10-question session cap (clarification retries for a single question do not count as new questions).
 - Avoid speculative tech stack questions unless the absence blocks functional clarity.
 - Respect user early termination signals ("stop", "done", "proceed").
 - If no questions asked due to full coverage, output a compact coverage summary (all categories Clear) then suggest advancing.

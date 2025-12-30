@@ -289,7 +289,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - [X] T085 [P] Update JobDocument interface in packages/core/src/types.ts to add lastHeartbeat field (timestamp)
 - [X] T086 [P] Update JobDocument interface in packages/core/src/types.ts to add heartbeatInterval field (milliseconds)
 - [X] T087 [P] Update MonqueOptions interface in packages/core/src/types.ts to add schedulerInstanceId option (defaults to UUID)
-- [X] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 5000ms)
+- [X] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 30000ms)
 - [X] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30000ms)
 - [X] T091 Add TSDoc comments to all new fields in packages/core/src/types.ts explaining atomic claim pattern
 - [X] T092 Run TypeScript compiler to verify types are correct
@@ -347,7 +347,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
   - Query: {status: 'pending', nextRunAt: {$lte: now}, $or: [{claimedBy: null}, {claimedBy: this.instanceId}]}
   - Update: {$set: {status: 'processing', claimedBy: this.instanceId, lockedAt: now, lastHeartbeat: now}}
 - [X] T112 Implement heartbeat mechanism in packages/core/src/monque.ts:
-  - Create heartbeat interval that runs every heartbeatInterval (default 5s)
+  - Create heartbeat interval that runs every heartbeatInterval (default 30s)
   - Update lastHeartbeat for all jobs where claimedBy matches this instance
   - Query: {claimedBy: this.instanceId, status: 'processing'}
   - Update: {$set: {lastHeartbeat: now}}

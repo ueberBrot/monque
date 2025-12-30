@@ -258,7 +258,7 @@ export interface MonqueOptions {
 	 * Interval in milliseconds for heartbeat updates during job processing.
 	 * The scheduler periodically updates lastHeartbeat for all jobs it is processing
 	 * to indicate liveness. Other instances use this to detect stale jobs.
-	 * @default 5000 (5 seconds)
+	 * @default 30000 (30 seconds)
 	 */
 	heartbeatInterval?: number;
 

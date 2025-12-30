@@ -336,6 +336,13 @@ export interface WorkerOptions {
 	 * @default 5 (uses defaultConcurrency from MonqueOptions)
 	 */
 	concurrency?: number;
+
+	/**
+	 * Allow replacing an existing worker for the same job name.
+	 * If false (default) and a worker already exists, throws WorkerRegistrationError.
+	 * @default false
+	 */
+	replace?: boolean;
 }
 
 /**

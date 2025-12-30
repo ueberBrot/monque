@@ -109,6 +109,16 @@ describe('Concurrency & Scalability', () => {
 		expect(processingErrors).toHaveLength(0);
 
 		// Verify in DB that all are completed
+		await waitFor(
+			async () => {
+				const count = await db
+					.collection(collectionName)
+					.countDocuments({ status: JobStatus.COMPLETED });
+				return count === jobCount;
+			},
+			{ timeout: 10000 },
+		);
+
 		const count = await db
 			.collection(collectionName)
 			.countDocuments({ status: JobStatus.COMPLETED });

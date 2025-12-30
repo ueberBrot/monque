@@ -41,6 +41,7 @@ describe('Monitor Job Lifecycle Events', () => {
 	});
 
 	afterEach(async () => {
+		vi.restoreAllMocks();
 		await stopMonqueInstances(monqueInstances);
 
 		if (collectionName) {
@@ -171,18 +172,22 @@ describe('Monitor Job Lifecycle Events', () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			monque = new Monque(db, { collectionName, pollInterval: 50 });
 			monqueInstances.push(monque);
-			await monque.initialize();
+
+			// Register a worker so poll() has something to do and reaches the database
+			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			const errorEvents: MonqueEventMap['job:error'][] = [];
 			monque.on('job:error', (payload) => {
 				errorEvents.push(payload);
 			});
 
-			// Mock poll to throw an error
-			vi.spyOn(monque as unknown as { poll: () => Promise<void> }, 'poll').mockRejectedValue(
-				new Error('Poll error'),
-			);
+			// Mock findOneAndUpdate to throw an error during polling
+			// This avoids mocking private methods and couples the test to the data layer dependency instead
+			const collection = db.collection(collectionName);
+			vi.spyOn(collection, 'findOneAndUpdate').mockRejectedValue(new Error('Poll error'));
+			vi.spyOn(db, 'collection').mockReturnValue(collection);
 
+			await monque.initialize();
 			monque.start();
 
 			await waitFor(async () => errorEvents.length > 0);

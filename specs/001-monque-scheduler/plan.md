@@ -203,7 +203,7 @@ specs/001-monque-scheduler/
 
 - **Duplicate Prevention**: Jobs with same `uniqueKey` in pending/processing state are not duplicated; completed jobs allow new enqueue
 - **Stale Recovery**: On startup, jobs with `status: 'processing'` and `lockedAt` older than `lockTimeout` are reset to pending (if `recoverStaleJobs: true`)
-- **Worker Registration**: Workers can be registered before or after `start()`; later registration for same name replaces previous handler
+- **Worker Registration**: Workers can be registered before or after `start()`; attempting to re-register the same name throws `WorkerRegistrationError` (unless `replace: true` option is provided)
 - **Shutdown Timeout**: When `stop()` times out, emits `job:error` with `ShutdownTimeoutError` containing incomplete jobs list
 - **Clock Drift**: All timestamp comparisons use MongoDB server time via `$$NOW` or server-side `$currentDate`
 

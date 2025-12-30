@@ -39,7 +39,7 @@ Enumeration of job lifecycle states using `as const` pattern.
 
 ## State Transitions
 
-```
+```text
                     ┌─────────────┐
                     │   pending   │
                     └──────┬──────┘

@@ -195,7 +195,7 @@ describe('heartbeat mechanism', () => {
 			expect(doc?.['heartbeatInterval']).toBe(customInterval);
 		});
 
-		it('should use default heartbeat interval of 5000ms', async () => {
+		it('should use default heartbeat interval of 30000ms', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, {
 				collectionName,
@@ -219,7 +219,7 @@ describe('heartbeat mechanism', () => {
 			const collection = db.collection(collectionName);
 			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 
-			expect(doc?.['heartbeatInterval']).toBe(5000);
+			expect(doc?.['heartbeatInterval']).toBe(30000);
 		});
 	});
 

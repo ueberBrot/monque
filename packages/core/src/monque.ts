@@ -31,7 +31,7 @@ const DEFAULTS = {
 	defaultConcurrency: 5,
 	lockTimeout: 30000, // 30 seconds (aligned with heartbeat timing)
 	recoverStaleJobs: true,
-	heartbeatInterval: 5000, // 5 seconds
+	heartbeatInterval: 30000, // 30 seconds
 } as const;
 
 /**
@@ -1295,7 +1295,13 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 		// Exponential backoff: 1s, 2s, 4s
 		const delay = 2 ** (this.changeStreamReconnectAttempts - 1) * 1000;
 
-		setTimeout(() => {
+		// Clear any existing reconnect timer before scheduling a new one
+		if (this.changeStreamReconnectTimer) {
+			clearTimeout(this.changeStreamReconnectTimer);
+		}
+
+		this.changeStreamReconnectTimer = setTimeout(() => {
+			this.changeStreamReconnectTimer = null;
 			if (this.isRunning) {
 				// Close existing change stream before reconnecting
 				if (this.changeStream) {
