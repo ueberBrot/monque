@@ -25,7 +25,6 @@
       "version": "0.0.0",
       "dependencies": {
         "cron-parser": "^5.4.0",
-        "mongodb": "^7.0.0",
       },
       "devDependencies": {
         "@faker-js/faker": "^10.1.0",
@@ -33,9 +32,21 @@
         "@total-typescript/ts-reset": "^0.6.1",
         "@types/bun": "^1.3.5",
         "fishery": "^2.4.0",
+        "mongodb": "^7.0.0",
         "tsdown": "^0.18.1",
         "typescript": "^5.7.3",
       },
+      "peerDependencies": {
+        "@faker-js/faker": "^10.1.0",
+        "@testcontainers/mongodb": "^11.10.0",
+        "fishery": "^2.4.0",
+        "mongodb": "^7.0.0",
+      },
+      "optionalPeers": [
+        "@faker-js/faker",
+        "@testcontainers/mongodb",
+        "fishery",
+      ],
     },
     "packages/docs": {
       "name": "@monque/docs",
@@ -48,14 +59,22 @@
         "@monque/core": "workspace:*",
       },
       "devDependencies": {
+        "@faker-js/faker": "^10.1.0",
+        "@monque/core": "workspace:*",
+        "@testcontainers/mongodb": "^11.10.0",
         "@total-typescript/ts-reset": "^0.6.1",
+        "@tsed/common": "^8.0.0",
+        "@tsed/di": "^8.0.0",
         "@types/bun": "^1.3.5",
+        "fishery": "^2.4.0",
+        "mongodb": "^7.0.0",
         "tsdown": "^0.18.1",
         "typescript": "^5.7.3",
       },
       "peerDependencies": {
         "@tsed/common": "^8.0.0",
         "@tsed/di": "^8.0.0",
+        "mongodb": "^7.0.0",
       },
     },
   },
