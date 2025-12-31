@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { MONQUE_METADATA } from '../src/constants/constants';
-import { MonqueTypes } from '../src/constants/MonqueTypes';
+import { MONQUE_METADATA } from '@/constants/constants';
+import { MonqueTypes } from '@/constants/MonqueTypes';
 
 describe('MonqueTypes', () => {
 	it('should have correct JOB token', () => {

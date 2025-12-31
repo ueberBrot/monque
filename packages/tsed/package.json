@@ -46,6 +46,7 @@
 	},
 	"peerDependencies": {
 		"@tsed/common": "^8.0.0",
+		"@tsed/core": "^8.0.0",
 		"@tsed/di": "^8.0.0",
 		"mongodb": "^7.0.0"
 	},
@@ -55,6 +56,7 @@
 		"@testcontainers/mongodb": "^11.10.0",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@tsed/common": "^8.0.0",
+		"@tsed/core": "^8.0.0",
 		"@tsed/di": "^8.0.0",
 		"@types/bun": "^1.3.5",
 		"fishery": "^2.4.0",

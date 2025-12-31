@@ -480,18 +480,18 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Tests for User Story 7
 
-- [ ] T157 [P] [US7] Create packages/tsed/tests/decorators/job.test.ts verifying @Job sets correct `type` (MonqueTypes.JOB) and metadata
-- [ ] T158 [P] [US7] Verify @Job uses `registerProvider` or `Injectable` correctly
-- [ ] T159 [P] [US7] Test unique token generation for jobs sharing same class name but different queues (if applicable)
+- [X] T157 [P] [US7] Create packages/tsed/tests/decorators/job.test.ts verifying @Job sets correct `type` (MonqueTypes.JOB) and metadata
+- [X] T158 [P] [US7] Verify @Job uses `registerProvider` or `Injectable` correctly
+- [X] T159 [P] [US7] Test unique token generation for jobs sharing same class name but different queues (if applicable)
 
 ### Implementation for User Story 7
 
-- [ ] T160 [US7] Create packages/tsed/src/utils/getJobToken.ts to generate consistent DI tokens (e.g., `monque:job:${name}`)
-- [ ] T161 [US7] Implement `@Job(name, options?)` in packages/tsed/src/decorators/job.ts:
+- [X] T160 [US7] Create packages/tsed/src/utils/getJobToken.ts to generate consistent DI tokens (e.g., `monque:job:${name}`)
+- [X] T161 [US7] Implement `@Job(name, options?)` in packages/tsed/src/decorators/job.ts:
   - Use `useDecorators`, `StoreMerge` (from @tsed/core), and `Injectable` (from @tsed/di)
   - Set `type: MonqueTypes.JOB` in `Injectable` options
   - Store metadata (options) via `StoreMerge`
-- [ ] T162 [US7] Run tests to verify decorator registration
+- [X] T162 [US7] Run tests to verify decorator registration
 
 **Checkpoint**: @Job decorator correctly registers providers in the DI container
 

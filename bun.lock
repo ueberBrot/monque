@@ -64,6 +64,7 @@
         "@testcontainers/mongodb": "^11.10.0",
         "@total-typescript/ts-reset": "^0.6.1",
         "@tsed/common": "^8.0.0",
+        "@tsed/core": "^8.0.0",
         "@tsed/di": "^8.0.0",
         "@types/bun": "^1.3.5",
         "fishery": "^2.4.0",
@@ -73,6 +74,7 @@
       },
       "peerDependencies": {
         "@tsed/common": "^8.0.0",
+        "@tsed/core": "^8.0.0",
         "@tsed/di": "^8.0.0",
         "mongodb": "^7.0.0",
       },
@@ -413,7 +415,7 @@
 
     "@tsed/common": ["@tsed/common@8.19.5", "", { "dependencies": { "@tsed/logger-file": ">=8.0.0", "@tsed/logger-std": ">=8.0.0", "@tsed/platform-http": "8.19.5", "tslib": "2.7.0" }, "peerDependencies": { "@tsed/logger": ">=8.0.0" } }, "sha512-LY9E6lYvyg9zHCq3wszS+coGWprBrM9kpNhBTz/vFW0MpvWNqJb665akHi1Yo+hMO4fgE15Sy5FrYlDEG2Pasg=="],
 
-    "@tsed/core": ["@tsed/core@8.19.5", "", { "dependencies": { "reflect-metadata": "^0.2.2", "tslib": "2.7.0" } }, "sha512-aMUTMePOJgFGasMosJBi+JAMBZRDPA0RR+b9h9ogLhb7s5yrt4VjEBgK+xABKn7wk7I0eF4OOvR++ld7mS0VBA=="],
+    "@tsed/core": ["@tsed/core@8.21.0", "", { "dependencies": { "reflect-metadata": "^0.2.2", "tslib": "2.7.0" } }, "sha512-xFkdrmLJVufdoIc+y1HokNP/lPwJqmtaJNMdFron7Ae44/jOrW5yIGlCly5WiYr6jnJLRz418kL62O+mwoDdjQ=="],
 
     "@tsed/di": ["@tsed/di@8.19.5", "", { "dependencies": { "tslib": "2.7.0", "uuid": "^10.0.0" }, "peerDependencies": { "@tsed/core": ">=8.0.0", "@tsed/hooks": ">=8.0.0", "@tsed/logger": ">=8.0.0" } }, "sha512-GTmlXv7l8TgQiF/7PGxv93Igl7fwj1UD/76VPetbPRY8DfGl56v6FkPH3wXKdGc1wa3N9Mr/wOncU72u63qkTw=="],
 
@@ -1218,6 +1220,8 @@
     "@tsed/logger-file/tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@tsed/logger-std/tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
+
+    "@tsed/platform-http/@tsed/core": ["@tsed/core@8.19.5", "", { "dependencies": { "reflect-metadata": "^0.2.2", "tslib": "2.7.0" } }, "sha512-aMUTMePOJgFGasMosJBi+JAMBZRDPA0RR+b9h9ogLhb7s5yrt4VjEBgK+xABKn7wk7I0eF4OOvR++ld7mS0VBA=="],
 
     "@tsed/schema/picomatch": ["picomatch@4.0.2", "", {}, "sha512-M7BAV6Rlcy5u+m6oPhAPFgJTzAioX/6B0DxyvDlo9l8+T3nLKbrczg2WLUyzd45L8RqfUMyGPzekbMvX2Ldkwg=="],
 
