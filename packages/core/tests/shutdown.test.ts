@@ -10,10 +10,7 @@
  * @see {@link ../src/monque.ts}
  */
 
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
@@ -21,7 +18,10 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
-} from '@tests/setup/test-utils.js';
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
 import { ShutdownTimeoutError } from '@/errors.js';
 import { Monque } from '@/monque.js';
 import type { Job, MonqueEventMap } from '@/types.js';

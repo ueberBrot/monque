@@ -1,5 +1,5 @@
 import type { Monque } from '@monque/core';
-import { JobFactory } from '@monque/core/testing';
+import { JobFactory } from '@test-utils/factories/job.factory.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MonqueService } from '@/services/MonqueService';

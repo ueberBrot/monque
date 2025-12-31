@@ -1,5 +1,5 @@
 import type { Job as JobType } from '@monque/core';
-import { cleanupTestDb, getTestDb } from '@monque/core/testing';
+import { cleanupTestDb, getTestDb } from '@test-utils/index.js';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';

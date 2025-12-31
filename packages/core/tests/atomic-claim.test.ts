@@ -9,14 +9,7 @@
  * - claimedBy is cleared when job completes or fails
  */
 
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
-
-import { JobFactoryHelpers } from './factories/job.factory.js';
-import { TEST_CONSTANTS } from './setup/constants.js';
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
@@ -24,7 +17,14 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
-} from './setup/test-utils.js';
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { Monque } from '@/monque.js';
+import { type Job, JobStatus } from '@/types.js';
+
+import { JobFactoryHelpers } from './factories/job.factory.js';
 
 describe('atomic job claiming', () => {
 	let db: Db;

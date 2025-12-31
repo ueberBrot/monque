@@ -10,21 +10,20 @@
  * @see {@link ../src/monque.ts}
  */
 
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
-import { Monque } from '@/monque.js';
-import { JobStatus } from '@/types.js';
-
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
 	getTestDb,
 	stopMonqueInstances,
 	uniqueCollectionName,
-} from './setup/test-utils.js';
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { Monque } from '@/monque.js';
+import { JobStatus } from '@/types.js';
 
 describe('Index creation', () => {
 	let db: Db;

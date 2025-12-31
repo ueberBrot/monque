@@ -1,16 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import { type Job, Monque, type MonqueOptions } from '@monque/core';
 import { Store, type Type } from '@tsed/core';
 import {
 	constant,
-	DIContext,
 	inject,
 	injectable,
 	injector,
 	type OnDestroy,
 	type OnInit,
 	ProviderType,
-	runInContext,
 } from '@tsed/di';
 import type { Db } from 'mongodb';
 
@@ -18,6 +15,7 @@ import { MONQUE_METADATA } from '@/constants/constants.js';
 import { MonqueTypes } from '@/constants/MonqueTypes.js';
 import { MonqueService } from '@/services/MonqueService.js';
 import type { ControllerStore } from '@/types.js';
+import { runInJobContext } from '@/utils/runInJobContext.js';
 
 /**
  * Configuration interface for MonqueModule.
@@ -243,7 +241,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 
 				monque.worker(
 					fullJobName,
-					async (job: Job) => {
+					async (job: Job<unknown>) => {
 						await this.executeControllerMethod(ControllerClass, methodName, job);
 					},
 					workerOptions,
@@ -269,7 +267,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 				// Register the worker
 				monque.worker(
 					fullJobName,
-					async (job: Job) => {
+					async (job: Job<unknown>) => {
 						await this.executeControllerMethod(ControllerClass, methodName, job);
 					},
 					workerOptions,
@@ -294,27 +292,14 @@ export class MonqueModule implements OnInit, OnDestroy {
 		methodName: string,
 		job: Job<T>,
 	): Promise<void> {
-		const $ctx = new DIContext({
-			id: job._id?.toString() ?? randomUUID(),
-			additionalProps: {
-				jobName: job.name,
-				jobId: job._id?.toString(),
-			},
+		await runInJobContext(job, async () => {
+			const instance = inject(ControllerClass);
+			const method = instance[methodName];
+			if (typeof method !== 'function') {
+				throw new Error(`Method "${methodName}" not found on ${ControllerClass.name}`);
+			}
+			await method.call(instance, job.data, job);
 		});
-
-		$ctx.set('MONQUE_JOB', job);
-
-		try {
-			await runInContext($ctx, async () => {
-				const instance = inject(ControllerClass);
-				const method = instance[methodName];
-				if (typeof method === 'function') {
-					await method.call(instance, job.data, job);
-				}
-			});
-		} finally {
-			await $ctx.destroy();
-		}
 	}
 }
 

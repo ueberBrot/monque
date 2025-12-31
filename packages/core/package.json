@@ -16,16 +16,6 @@
 				"types": "./dist/index.d.cts",
 				"default": "./dist/index.cjs"
 			}
-		},
-		"./testing": {
-			"import": {
-				"types": "./dist/testing/index.d.mts",
-				"default": "./dist/testing/index.mjs"
-			},
-			"require": {
-				"types": "./dist/testing/index.d.cts",
-				"default": "./dist/testing/index.cjs"
-			}
 		}
 	},
 	"files": [
@@ -53,23 +43,6 @@
 	"license": "MIT",
 	"dependencies": {
 		"cron-parser": "^5.4.0"
-	},
-	"peerDependencies": {
-		"mongodb": "^7.0.0",
-		"@faker-js/faker": "^10.1.0",
-		"@testcontainers/mongodb": "^11.10.0",
-		"fishery": "^2.4.0"
-	},
-	"peerDependenciesMeta": {
-		"@faker-js/faker": {
-			"optional": true
-		},
-		"@testcontainers/mongodb": {
-			"optional": true
-		},
-		"fishery": {
-			"optional": true
-		}
 	},
 	"devDependencies": {
 		"@faker-js/faker": "^10.1.0",

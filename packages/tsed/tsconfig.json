@@ -36,7 +36,8 @@
 		"baseUrl": ".",
 		"paths": {
 			"@/*": ["src/*"],
-			"@tests/*": ["tests/*"]
+			"@tests/*": ["tests/*"],
+			"@test-utils/*": ["tests/test-utils/*"]
 		}
 	},
 	"include": ["src/**/*", "tests/**/*"],

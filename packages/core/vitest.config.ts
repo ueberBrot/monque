@@ -10,6 +10,7 @@ export default mergeConfig(
 			alias: {
 				'@': fileURLToPath(new URL('./src', import.meta.url)),
 				'@tests': fileURLToPath(new URL('./tests', import.meta.url)),
+				'@test-utils': fileURLToPath(new URL('./tests/setup', import.meta.url)),
 			},
 		},
 		test: {

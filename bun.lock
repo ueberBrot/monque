@@ -36,17 +36,6 @@
         "tsdown": "^0.18.1",
         "typescript": "^5.7.3",
       },
-      "peerDependencies": {
-        "@faker-js/faker": "^10.1.0",
-        "@testcontainers/mongodb": "^11.10.0",
-        "fishery": "^2.4.0",
-        "mongodb": "^7.0.0",
-      },
-      "optionalPeers": [
-        "@faker-js/faker",
-        "@testcontainers/mongodb",
-        "fishery",
-      ],
     },
     "packages/docs": {
       "name": "@monque/docs",
@@ -69,7 +58,6 @@
         "@tsed/platform-http": "^8.0.0",
         "@types/bun": "^1.3.5",
         "cookie": "^1.1.1",
-        "encodeurl": "^2.0.0",
         "fishery": "^2.4.0",
         "mongodb": "^7.0.0",
         "tsdown": "^0.18.1",
@@ -686,8 +674,6 @@
     "emojilib": ["emojilib@2.4.0", "", {}, "sha512-5U0rVMU5Y2n2+ykNLQqMoqklN9ICBT/KsvC1Gz6vqHbz2AXXGkG+Pm5rMWk/8Vjrr/mY9985Hi8DYzn1F09Nyw=="],
 
     "empathic": ["empathic@2.0.0", "", {}, "sha512-i6UzDscO/XfAcNYD75CfICkmfLedpyPDdozrLMmQc5ORaQcdMoc21OnlEylMIqI7U8eniKrPMxxtj8k0vhmJhA=="],
-
-    "encodeurl": ["encodeurl@2.0.0", "", {}, "sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg=="],
 
     "end-of-stream": ["end-of-stream@1.4.5", "", { "dependencies": { "once": "^1.4.0" } }, "sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg=="],
 

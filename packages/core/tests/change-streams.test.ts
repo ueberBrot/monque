@@ -10,13 +10,7 @@
  * - Change stream cleanup on shutdown
  */
 
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { Monque } from '@/monque.js';
-import type { Job } from '@/types.js';
-
-import { TEST_CONSTANTS } from './setup/constants.js';
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
@@ -24,7 +18,12 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
-} from './setup/test-utils.js';
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { Monque } from '@/monque.js';
+import type { Job } from '@/types.js';
 
 describe('change streams', () => {
 	let db: Db;

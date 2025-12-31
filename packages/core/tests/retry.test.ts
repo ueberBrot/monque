@@ -10,15 +10,7 @@
  * @see {@link ../src/utils/backoff.ts}
  */
 
-import type { Db, Document, WithId } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
-import { calculateBackoffDelay } from '@/utils/backoff.js';
-
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
 	clearCollection,
@@ -26,7 +18,14 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 	waitFor,
-} from './setup/test-utils.js';
+} from '@test-utils/test-utils.js';
+import type { Db, Document, WithId } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { Monque } from '@/monque.js';
+import { type Job, JobStatus } from '@/types.js';
+import { calculateBackoffDelay } from '@/utils/backoff.js';
 
 describe('Retry Logic', () => {
 	let db: Db;

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type {
 	EnqueueOptions,
 	Job,
@@ -9,7 +8,9 @@ import type {
 	ScheduleOptions,
 	WorkerOptions,
 } from '@monque/core';
-import { DIContext, injectable, runInContext } from '@tsed/di';
+import { injectable } from '@tsed/di';
+
+import { runInJobContext } from '@/utils/runInJobContext.js';
 
 /**
  * Ts.ED-aware wrapper around the Monque scheduler.
@@ -188,23 +189,9 @@ export class MonqueService implements MonquePublicAPI {
 	 * @internal
 	 */
 	private async executeInContext<T>(job: Job<T>, handler: JobHandler<T>): Promise<void> {
-		const $ctx = new DIContext({
-			id: job._id?.toString() ?? randomUUID(),
-			additionalProps: {
-				jobName: job.name,
-				jobId: job._id?.toString(),
-			},
+		await runInJobContext(job, async () => {
+			await handler(job);
 		});
-
-		$ctx.set('MONQUE_JOB', job);
-
-		try {
-			await runInContext($ctx, async () => {
-				await handler(job);
-			});
-		} finally {
-			await $ctx.destroy();
-		}
 	}
 
 	/**
