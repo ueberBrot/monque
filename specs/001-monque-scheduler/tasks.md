@@ -456,14 +456,8 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 ### Implementation for Phase 15
 
 - [X] T149 Update packages/tsed/package.json: move @tsed/* to dev/peerDependencies, remove reflect-metadata (handled by @tsed)
-- [X] T150 Create packages/tsed/src/constants/MonqueTypes.ts with `MonqueTypes` enum (JOB = "monque:job")
+- [X] T150 Create packages/tsed/src/constants/MonqueTypes.ts with `MonqueTypes` enum (JOB, CONTROLLER)
 - [X] T151 Create packages/tsed/src/constants/constants.ts with `MONQUE_METADATA` constant
-- [X] T152 Create packages/tsed/src/contracts/JobMethods.ts interface:
-  ```typescript
-  export interface JobMethods<T = unknown> {
-    handle(data: T, job: Job<T>): Promise<void> | void;
-  }
-  ```
 - [X] T153 Update packages/tsed/src/index.ts to export new types and constants
 - [X] T154 Run tests to verify foundational setup
 - [X] T155 Update packages/tsed/README.md with installation instructions
@@ -472,62 +466,62 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ---
 
-## Phase 16: User Story 7 - Job Decorator & Discovery (Priority: P3)
+## ~~Phase 16: User Story 7 - Job Decorator & Discovery~~ SUPERSEDED BY 17b
 
-**Goal**: Implement @Job decorator that registers classes as custom providers for auto-discovery
-
-**Independent Test**: Decorator correctly sets ProviderType and registers with DI container
-
-### Tests for User Story 7
-
-- [X] T157 [P] [US7] Create packages/tsed/tests/decorators/job.test.ts verifying @Job sets correct `type` (MonqueTypes.JOB) and metadata
-- [X] T158 [P] [US7] Verify @Job uses `registerProvider` or `Injectable` correctly
-- [X] T159 [P] [US7] Test unique token generation for jobs sharing same class name but different queues (if applicable)
-
-### Implementation for User Story 7
-
-- [X] T160 [US7] Create packages/tsed/src/utils/getJobToken.ts to generate consistent DI tokens (e.g., `monque:job:${name}`)
-- [X] T161 [US7] Implement `@Job(name, options?)` in packages/tsed/src/decorators/job.ts:
-  - Use `useDecorators`, `StoreMerge` (from @tsed/core), and `Injectable` (from @tsed/di)
-  - Set `type: MonqueTypes.JOB` in `Injectable` options
-  - Store metadata (options) via `StoreMerge`
-- [X] T162 [US7] Run tests to verify decorator registration
-
-**Checkpoint**: @Job decorator correctly registers providers in the DI container
+> [!NOTE]
+> Phase 16 (class-based `@Job` decorator) was superseded by Phase 17b (controller pattern).
+> The controller pattern provides better DX with method decorators and cron support.
 
 ---
 
-## Phase 17: User Story 8 - Module & Dispatcher (Priority: P3)
+## ~~Phase 17: User Story 8 - Module & Dispatcher~~ SUPERSEDED BY 17b
 
-**Goal**: Implement MonqueModule and JobDispatcher to manage job execution within DI contexts
-
-**Independent Test**: Jobs are processed with full dependency injection support; request-scoped services work within job handlers.
-
-### Tests for User Story 8
-
-- [ ] T165 [P] [US8] Create packages/tsed/tests/dispatchers/JobDispatcher.test.ts testing `runInContext` usage (use `JobFactory` from @monque/core/testing)
-- [ ] T166 [P] [US8] Create packages/tsed/tests/MonqueModule.test.ts testing `$onInit` discovery of job providers
-- [ ] T167 [P] [US8] Integration test: Job handler injecting a service, verifying service is instantiated per job (use `getTestDb`, `waitFor` from @monque/core/testing)
-
-### Implementation for User Story 8
-
-- [ ] T170 [US8] Create packages/tsed/src/dispatchers/JobDispatcher.ts service:
-  - Import `InjectorService` and `Monque` core instance
-  - Implement `dispatch(provider)`: registers worker with `monque.worker(name, handler)`
-  - Implement `handler` wrapper:
-    - Create new `DIContext` (request scope)
-    - Bind job data to context
-    - Execute `provider.instance.handle(data, job)` via `runInContext`
-    - Destroy context after execution
-- [ ] T171 [US8] Create packages/tsed/src/MonqueModule.ts:
-  - Implement `$onInit`: `injector.getProviders(MonqueTypes.JOB).forEach(p => dispatcher.dispatch(p))`
-  - Implement `$onDestroy`: call `monque.stop()`
-- [ ] T172 [US8] Implement `forRoot` or configuration integration in MonqueModule to accept `MonqueOptions`
-- [ ] T177 [US8] Run integration tests (US8) verifying end-to-end DI support in jobs
-
-**Checkpoint**: Full Ts.ED integration with Request Scoping support
+> [!NOTE]
+> Phase 17 (class-based JobDispatcher) was superseded by Phase 17b (controller pattern).
+> `MonqueModule` now directly handles controller discovery without a separate dispatcher.
 
 ---
+
+## Phase 17b: Ts.ED Integration (Controller Pattern) ✅ COMPLETED
+
+**Goal**: Implement controller-based job handlers inspired by `@tsed/pulse` for better DX
+
+**Independent Test**: Can define jobs using Controller pattern, method decorators, and cron schedules.
+
+### Tests for Phase 17b
+
+- [X] T180 [P] Create `packages/tsed/tests/decorators/controller.test.ts` verifying `@JobController`
+- [X] T181 [P] Create `packages/tsed/tests/decorators/cron.test.ts` verifying `@Cron` decorator storage
+- [X] T182 [P] Create `packages/tsed/tests/services/MonqueService.test.ts` verifying wrapper for `runInContext`
+- [X] T183 [P] Create `packages/tsed/tests/MonqueModule.test.ts` testing controller discovery
+
+### Implementation for Phase 17b
+
+- [X] T184 Create `packages/tsed/src/decorators/controller.ts`:
+  - Implement `@JobController(namespace?)` class decorator
+  - Registers `MonqueTypes.CONTROLLER`
+- [X] T185 Create `packages/tsed/src/decorators/method.ts`:
+  - Implement `@Job(name, options?)` method decorator
+  - Implement `@Cron(expression, options?)` method decorator
+  - **Flexible Signatures**: Decorators work on any method signature `(data: T, job: Job<T>) => Promise<void> | void`
+  - Store metadata in `Store` (key: `monque`)
+- [X] T186 Create `packages/tsed/src/services/MonqueService.ts`:
+  - Implement `MonqueService` token provider
+  - Wraps `Monque` with automatic `runInContext` for all `worker()` handlers
+  - Provides type-safe access to enqueue, schedule, and other Monque methods
+- [X] T187 Update `MonqueModule` to scan for `MonqueTypes.CONTROLLER`:
+  - Iterate methods decorated with `@Job` and call `monque.worker()` using the method reference
+  - Iterate methods decorated with `@Cron` and call `monque.schedule()` + `monque.worker()`
+  - Support arbitrary method names
+  - Default `uniqueKey` for `@Cron` to prevent duplicates (e.g. `${controller}.${method}`)
+- [X] T188 Clean up unused files:
+  - Removed class-based `@Job` decorator (`decorators/job.ts`)
+  - Removed `JobDispatcher` (`dispatchers/`)
+  - Removed `JobMethods` interface (`contracts/`)
+  - Removed `JobMetadata`, `JobOptions` types (`types/`)
+  - Removed `getJobToken` utility (`utils/`)
+
+**Checkpoint**: Full Ts.ED integration with Controller pattern and Cron support
 
 ## Phase 18: Documentation with Starlight
 
@@ -537,33 +531,33 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Implementation for Phase 18
 
-- [ ] T179 Create packages/docs/ directory structure
-- [ ] T180 Initialize Starlight project in packages/docs/:
+- [ ] T200 Create packages/docs/ directory structure
+- [ ] T201 Initialize Starlight project in packages/docs/:
   ```bash
   npm create astro@latest packages/docs -- --template starlight
   ```
-- [ ] T181 Configure packages/docs/astro.config.mjs with Monque branding and navigation
-- [ ] T182 Create packages/docs/src/content/docs/index.mdx as documentation home page
-- [ ] T183 Create packages/docs/src/content/docs/getting-started/installation.md
-- [ ] T184 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
-- [ ] T185 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
-- [ ] T186 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
-- [ ] T187 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
-- [ ] T188 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
-- [ ] T189 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
-- [ ] T190 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
-- [ ] T191 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
-- [ ] T192 Create packages/docs/src/content/docs/integrations/tsed.md with Ts.ED integration guide
-- [ ] T193 Create packages/docs/src/content/docs/api/core.md with core API reference
-- [ ] T194 Create packages/docs/src/content/docs/api/tsed.md with Ts.ED API reference
-- [ ] T195 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
-- [ ] T196 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
-- [ ] T197 Add code examples to all documentation pages with syntax highlighting
-- [ ] T198 Configure packages/docs/package.json with build and dev scripts
-- [ ] T199 Add packages/docs to turbo.json pipeline
-- [ ] T200 Update root README.md to link to documentation site
-- [ ] T201 Add documentation deployment configuration (Vercel/Netlify)
-- [ ] T202 Build and verify documentation site locally
+- [ ] T202 Configure packages/docs/astro.config.mjs with Monque branding and navigation
+- [ ] T203 Create packages/docs/src/content/docs/index.mdx as documentation home page
+- [ ] T204 Create packages/docs/src/content/docs/getting-started/installation.md
+- [ ] T205 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
+- [ ] T206 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
+- [ ] T207 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
+- [ ] T208 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
+- [ ] T209 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
+- [ ] T210 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
+- [ ] T211 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
+- [ ] T212 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
+- [ ] T213 Create packages/docs/src/content/docs/integrations/tsed.md with Ts.ED integration guide
+- [ ] T214 Create packages/docs/src/content/docs/api/core.md with core API reference
+- [ ] T215 Create packages/docs/src/content/docs/api/tsed.md with Ts.ED API reference
+- [ ] T216 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
+- [ ] T217 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
+- [ ] T218 Add code examples to all documentation pages with syntax highlighting
+- [ ] T219 Configure packages/docs/package.json with build and dev scripts
+- [ ] T220 Add packages/docs to turbo.json pipeline
+- [ ] T221 Update root README.md to link to documentation site
+- [ ] T222 Add documentation deployment configuration (Vercel/Netlify)
+- [ ] T223 Build and verify documentation site locally
 
 **Checkpoint**: Documentation site complete and ready for deployment
 
@@ -575,23 +569,23 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### TSDoc Tasks
 
-- [ ] T203 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (MonquePublicAPI methods, constructor options)
-- [ ] T204 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
-- [ ] T205 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
-- [ ] T206 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts
-- [ ] T207 [P] Add TSDoc comments to utility functions in packages/core/src/utils/cron.ts
-- [ ] T208 [P] Add TSDoc comments to all Ts.ED decorators in packages/tsed/src/decorators/job.ts
-- [ ] T209 [P] Add TSDoc comments to MonqueModule in packages/tsed/src/module.ts
-- [ ] T210 [P] Add TSDoc examples to key methods showing usage patterns
+- [ ] T230 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (MonquePublicAPI methods, constructor options)
+- [ ] T231 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
+- [ ] T232 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
+- [ ] T233 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts
+- [ ] T234 [P] Add TSDoc comments to utility functions in packages/core/src/utils/cron.ts
+- [ ] T235 [P] Add TSDoc comments to all Ts.ED decorators in packages/tsed/src/decorators/job.ts
+- [ ] T236 [P] Add TSDoc comments to MonqueModule in packages/tsed/src/module.ts
+- [ ] T237 [P] Add TSDoc examples to key methods showing usage patterns
 
 ### Finalization Tasks
 
-- [ ] T211 Run biome lint and format on entire codebase
-- [ ] T212 Run full test suite with coverage report (target: 100%)
-- [ ] T213 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
-- [ ] T214 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
-- [ ] T215 Create .github/workflows/release.yml with GitHub Actions release pipeline
-- [ ] T216 Update root README.md with badges, quick start, and links to documentation site
+- [ ] T238 Run biome lint and format on entire codebase
+- [ ] T239 Run full test suite with coverage report (target: 100%)
+- [ ] T240 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
+- [ ] T241 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
+- [ ] T242 Create .github/workflows/release.yml with GitHub Actions release pipeline
+- [ ] T243 Update root README.md with badges, quick start, and links to documentation site
 
 ---
 
@@ -611,6 +605,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - **Change Streams (Phase 13)**: Depends on Phase 12
 - **Test Utils Export (Phase 14)**: No dependencies - can run in parallel with Phases 10-13
 - **Ts.ED Integration (Phase 15-17)**: Depends on Phase 14
+- **Ts.ED Advanced (Phase 17b)**: Depends on Phase 17
 - **Documentation (Phase 18)**: Depends on Phases 10-13 completion - can run in parallel with Phases 14-17
 - **Final Polish (Phase 19)**: Depends on all previous phases
 
@@ -673,8 +668,8 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - Initialize project first (T179-T181), then parallelize content creation
 
 **Phase 19 (Final Polish):**
-- T203-T210 can ALL run in parallel (different files)
-- T211-T216 should run sequentially (validation steps)
+- [ ] T250-T260 can ALL run in parallel (different files)
+- [ ] T261-T266 should run sequentially (validation steps)
 
 ---
 
@@ -728,7 +723,8 @@ The MVP and all P1-P3 user stories have been completed. The system is fully func
 3. Phase 12 → Atomic claim with heartbeat replaces polling locks
 4. Phase 13 → Change streams provide instant job notifications
 5. Phase 14-17 → Ts.ED integration fully robust and DI-aware
-6. Phase 18 → Beautiful Starlight documentation deployed
+6. Phase 17b → Advanced Controller pattern and Cron support
+7. Phase 18 → Beautiful Starlight documentation deployed
 7. Phase 19 → Production-ready with comprehensive docs
 
 ### Parallel Team Strategy (Refactor Phase)
