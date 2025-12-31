@@ -44,6 +44,9 @@
 	"dependencies": {
 		"cron-parser": "^5.4.0"
 	},
+	"peerDependencies": {
+		"mongodb": "^7.0.0"
+	},
 	"devDependencies": {
 		"@faker-js/faker": "^10.1.0",
 		"@testcontainers/mongodb": "^11.10.0",
