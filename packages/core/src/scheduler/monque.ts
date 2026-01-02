@@ -2,22 +2,21 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { ChangeStream, ChangeStreamDocument, Collection, Db, Document, WithId } from 'mongodb';
 
-import { ConnectionError, WorkerRegistrationError } from '@/errors.js';
-import type {
-	EnqueueOptions,
-	Job,
-	JobHandler,
-	JobStatusType,
-	MonqueEventMap,
-	MonqueOptions,
-	MonquePublicAPI,
-	PersistedJob,
-	ScheduleOptions,
-	WorkerOptions,
-} from '@/types.js';
-import { JobStatus } from '@/types.js';
-import { calculateBackoff } from '@/utils/backoff.js';
-import { getNextCronDate } from '@/utils/cron.js';
+import type { MonqueEventMap } from '@/events/types.js';
+import {
+	type EnqueueOptions,
+	type Job,
+	type JobHandler,
+	JobStatus,
+	type JobStatusType,
+	type PersistedJob,
+	type ScheduleOptions,
+} from '@/jobs/types.js';
+import type { MonqueOptions } from '@/scheduler/types.js';
+import { ConnectionError, WorkerRegistrationError } from '@/shared/errors.js';
+import { calculateBackoff } from '@/shared/utils/backoff.js';
+import { getNextCronDate } from '@/shared/utils/cron.js';
+import type { WorkerOptions, WorkerRegistration } from '@/workers/index.js';
 
 /**
  * Default configuration values
@@ -35,58 +34,68 @@ const DEFAULTS = {
 } as const;
 
 /**
- * Internal worker registration with handler and options
- */
-interface WorkerRegistration<T = unknown> {
-	handler: JobHandler<T>;
-	concurrency: number;
-	activeJobs: Map<string, PersistedJob<T>>; // Track active jobs
-}
-
-/**
  * Monque - MongoDB-backed job scheduler
  *
  * A type-safe job scheduler with atomic locking, exponential backoff, cron scheduling,
  * stale job recovery, and event-driven observability. Built on native MongoDB driver.
  *
  * @example Complete lifecycle
- * ```typescript
- * import { Monque } from '@monque/core';
- * import { MongoClient } from 'mongodb';
+ * ```;
+typescript
  *
- * const client = new MongoClient('mongodb://localhost:27017');
- * await client.connect();
- * const db = client.db('myapp');
+
+import { Monque } from '@monque/core';
+
+*
+
+import { MongoClient } from 'mongodb';
+
+*
  *
+const client = new MongoClient('mongodb://localhost:27017');
+* await client.connect()
+*
+const db = client.db('myapp');
+*
  * // Create instance with options
- * const monque = new Monque(db, {
+ *
+const monque = new Monque(db, {
  *   collectionName: 'jobs',
  *   pollInterval: 1000,
  *   maxRetries: 10,
  *   shutdownTimeout: 30000,
  * });
- *
+*
  * // Initialize (sets up indexes and recovers stale jobs)
- * await monque.initialize();
- *
+ * await monque.initialize()
+*
  * // Register workers with type safety
- * interface EmailJob {
- *   to: string;
- *   subject: string;
- *   body: string;
- * }
  *
- * monque.worker<EmailJob>('send-email', async (job) => {
- *   await emailService.send(job.data.to, job.data.subject, job.data.body);
- * });
+type EmailJob = {};
+*   to: string
+*   subject: string
+*   body: string
+* }
  *
+ * monque.worker<EmailJob>('send-email', async (job) =>
+{
+	*   await emailService.send(job.data.to, job.data.subject, job.data.body)
+	*
+}
+)
+*
  * // Monitor events for observability
- * monque.on('job:complete', ({ job, duration }) => {
- *   logger.info(`Job ${job.name} completed in ${duration}ms`);
+ * monque.on('job:complete', (
+{
+	job, duration;
+}
+) =>
+{
+ *   logger.info(`Job $job.namecompleted in $durationms`);
  * });
  *
  * monque.on('job:fail', ({ job, error, willRetry }) => {
- *   logger.error(`Job ${job.name} failed:`, error);
+ *   logger.error(`Job $job.namefailed:`, error);
  * });
  *
  * // Start processing
@@ -107,7 +116,7 @@ interface WorkerRegistration<T = unknown> {
  * });
  * ```
  */
-export class Monque extends EventEmitter implements MonquePublicAPI {
+export class Monque extends EventEmitter {
 	private readonly db: Db;
 	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay'>> &
 		Pick<MonqueOptions, 'maxBackoffDelay'>;
@@ -810,7 +819,8 @@ export class Monque extends EventEmitter implements MonquePublicAPI {
 
 		if (result === 'timeout') {
 			const incompleteJobs = this.getActiveJobsList();
-			const { ShutdownTimeoutError } = await import('./errors.js');
+			const { ShutdownTimeoutError } = await import('@/shared/errors.js');
+
 			const error = new ShutdownTimeoutError(
 				`Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
 				incompleteJobs,

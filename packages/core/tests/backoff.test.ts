@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { calculateBackoff, calculateBackoffDelay, DEFAULT_BASE_INTERVAL } from '@/utils/backoff.js';
+import {
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+} from '@/shared/utils/backoff.js';
 
 describe('backoff', () => {
 	beforeEach(() => {

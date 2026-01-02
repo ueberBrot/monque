@@ -23,8 +23,8 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
+import { type Job, JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
 
 describe('atomic job locking', () => {
 	let db: Db;

@@ -3,7 +3,6 @@ import type {
 	Job,
 	JobHandler,
 	Monque,
-	MonquePublicAPI,
 	PersistedJob,
 	ScheduleOptions,
 	WorkerOptions,
@@ -64,7 +63,7 @@ import { runInJobContext } from '@/utils/runInJobContext.js';
  * }
  * ```
  */
-export class MonqueService implements MonquePublicAPI {
+export class MonqueService {
 	private monque: Monque | null = null;
 
 	/**

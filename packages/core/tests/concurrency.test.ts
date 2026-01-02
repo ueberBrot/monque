@@ -20,8 +20,8 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
+import { type Job, JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
 
 describe('Concurrency & Scalability', () => {
 	let db: Db;

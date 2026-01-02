@@ -74,7 +74,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 
 - [X] T015 Create packages/core/src/types.ts with JobStatus const (as const pattern), Job<T> interface from contracts/job-schema.ts
 - [X] T016 [P] Add EnqueueOptions, MonqueOptions, WorkerOptions interfaces to packages/core/src/types.ts
-- [X] T017 [P] Add MonqueEventMap, JobHandler type, MonquePublicAPI interface to packages/core/src/types.ts
+- [X] T017 [P] Add MonqueEventMap, JobHandler type to packages/core/src/types.ts
 - [X] T018 Create packages/core/src/errors.ts with MonqueError base class
 - [X] T019 [P] Add InvalidCronError class (with expression property) to packages/core/src/errors.ts
 - [X] T020 [P] Add ConnectionError class to packages/core/src/errors.ts

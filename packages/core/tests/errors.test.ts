@@ -14,7 +14,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { ConnectionError, InvalidCronError, MonqueError, ShutdownTimeoutError } from '@/errors.js';
+import {
+	ConnectionError,
+	InvalidCronError,
+	MonqueError,
+	ShutdownTimeoutError,
+} from '@/shared/errors.js';
 
 describe('errors', () => {
 	describe('MonqueError', () => {

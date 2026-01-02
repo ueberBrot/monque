@@ -54,7 +54,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | Principle                 | Status | Post-Design Evidence                                                                                                   |
 | ------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
 | **Type Safety**           | ✅ PASS | `Job<T>` with generic payload, `JobStatus` as const, all options typed, custom error classes                          |
-| **Interfaces Over Types** | ✅ PASS | `Job`, `EnqueueOptions`, `MonqueOptions`, `MonquePublicAPI`, `MonqueEventMap`, `WorkerOptions`, `JobDecoratorOptions` |
+| **Interfaces Over Types** | ✅ PASS | `Job`, `EnqueueOptions`, `MonqueOptions`, `MonqueEventMap`, `WorkerOptions`, `JobDecoratorOptions` |
 | **100% Coverage Plan**    | ✅ PASS | Test files for all components: locking, backoff, shutdown, enqueue, worker, errors, stale recovery                     |
 | **Event-Driven**          | ✅ PASS | `MonqueEventMap` defines typed events for all lifecycle states including shutdown timeout                              |
 | **Native Driver**         | ✅ PASS | Only `mongodb` ^6.0.0 as core dependency, no ORM                                                                       |

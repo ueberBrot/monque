@@ -24,7 +24,7 @@
 import type { Collection, Db, Document, ObjectId } from 'mongodb';
 
 import { getMongoClient } from '@tests/setup/mongodb.js';
-import type { Job } from '@/types.js';
+import type { Job } from '@/jobs/types.js';
 
 /**
  * Gets an isolated test database.

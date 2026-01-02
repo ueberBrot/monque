@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser';
 
-import { InvalidCronError } from '@/errors.js';
+import { InvalidCronError } from '@/shared/errors.js';
 
 /**
  * Parse a cron expression and return the next scheduled run date.

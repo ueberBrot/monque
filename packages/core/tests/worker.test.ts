@@ -23,9 +23,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { WorkerRegistrationError } from '@/errors.js';
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
+import { type Job, JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
+import { WorkerRegistrationError } from '@/shared/errors.js';
 
 describe('worker()', () => {
 	let db: Db;

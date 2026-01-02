@@ -23,9 +23,9 @@ import type { Db, Document, WithId } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus } from '@/types.js';
-import { calculateBackoffDelay } from '@/utils/backoff.js';
+import { type Job, JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
+import { calculateBackoffDelay } from '@/shared/utils/backoff.js';
 
 describe('Retry Logic', () => {
 	let db: Db;

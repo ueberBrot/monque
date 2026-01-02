@@ -395,7 +395,7 @@ Definitions for: Job, Worker, Scheduler, Handler, Lock, Stale Job
 ### Contracts Updated (`contracts/job-schema.ts`):
 
 - `MonqueOptions`: Added `lockTimeout`, `recoverStaleJobs`
-- `MonquePublicAPI`: Full interface with all public methods and return types
+
 - Error classes: `MonqueError`, `InvalidCronError`, `ConnectionError`, `ShutdownTimeoutError`
 
 ---

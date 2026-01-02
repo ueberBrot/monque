@@ -23,8 +23,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { Monque } from '@/monque.js';
-import { type Job, JobStatus, type MonqueEventMap } from '@/types.js';
+import type { MonqueEventMap } from '@/events/types.js';
+import { type Job, JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
 
 describe('Monitor Job Lifecycle Events', () => {
 	let db: Db;

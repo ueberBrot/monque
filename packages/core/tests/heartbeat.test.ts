@@ -21,8 +21,8 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { Monque } from '@/monque.js';
-import { JobStatus } from '@/types.js';
+import { JobStatus } from '@/jobs/types.js';
+import { Monque } from '@/scheduler/monque.js';
 
 import { JobFactoryHelpers } from './factories/job.factory.js';
 

@@ -360,64 +360,6 @@ export interface WorkerOptions {
  * monque.worker('send-email', async (job) => {
  *   await sendEmail(job.data.to);
  * });
- *
- * // Start processing
- * monque.start();
- * ```
- */
-export interface MonquePublicAPI {
-	/**
-	 * Enqueue a job for processing.
-	 * @param name - Job type identifier
-	 * @param data - Job payload data
-	 * @param options - Enqueueing options
-	 * @returns The created job document
-	 */
-	enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<Job<T>>;
-
-	/**
-	 * Enqueue a job for immediate processing (syntactic sugar).
-	 * @param name - Job type identifier
-	 * @param data - Job payload data
-	 * @returns The created job document
-	 */
-	now<T>(name: string, data: T): Promise<Job<T>>;
-
-	/**
-	 * Schedule a recurring job with a cron expression.
-	 * @param cron - Cron expression (5-field format)
-	 * @param name - Job type identifier
-	 * @param data - Job payload data
-	 * @returns The created job document
-	 */
-	schedule<T>(cron: string, name: string, data: T): Promise<Job<T>>;
-
-	/**
-	 * Register a worker to process jobs of a specific type.
-	 * @param name - Job type identifier to handle
-	 * @param handler - Function to process jobs
-	 * @param options - Worker configuration options
-	 */
-	worker<T>(name: string, handler: JobHandler<T>, options?: WorkerOptions): void;
-
-	/**
-	 * Start polling for and processing jobs.
-	 */
-	start(): void;
-
-	/**
-	 * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
-	 * @returns Promise that resolves when shutdown is complete
-	 */
-	stop(): Promise<void>;
-
-	/**
-	 * Check if the scheduler is healthy (running and connected).
-	 * @returns true if scheduler is running and database connection is active
-	 */
-	isHealthy(): boolean;
-}
-
 // ============================================================================
 // Error Classes
 // ============================================================================
