@@ -9,7 +9,7 @@ import type {
 } from '@monque/core';
 import { injectable } from '@tsed/di';
 
-import { runInJobContext } from '@/utils/runInJobContext.js';
+import { runInJobContext } from '@/dispatch/index.js';
 
 /**
  * Ts.ED-aware wrapper around the Monque scheduler.

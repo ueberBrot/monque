@@ -11,11 +11,10 @@ import {
 } from '@tsed/di';
 import type { Db } from 'mongodb';
 
-import { MONQUE_METADATA } from '@/constants/constants.js';
-import { MonqueTypes } from '@/constants/MonqueTypes.js';
-import { MonqueService } from '@/services/MonqueService.js';
-import type { ControllerStore } from '@/types.js';
-import { runInJobContext } from '@/utils/runInJobContext.js';
+import { runInJobContext } from '@/dispatch/index.js';
+import type { ControllerStore } from '@/jobs/index.js';
+import { MonqueService } from '@/services/index.js';
+import { MONQUE_METADATA, MonqueTypes } from '@/shared/index.js';
 
 /**
  * Configuration interface for MonqueModule.

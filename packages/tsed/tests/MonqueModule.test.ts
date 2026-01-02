@@ -4,9 +4,8 @@ import { PlatformTest } from '@tsed/platform-http/testing';
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { JobController } from '@/decorators/controller';
-import { Job } from '@/decorators/method';
-import { MonqueModule } from '@/MonqueModule';
+import { Job, JobController } from '@/jobs';
+import { MonqueModule } from '@/module';
 
 interface TestPayload {
 	value: string;

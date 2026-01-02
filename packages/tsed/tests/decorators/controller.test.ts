@@ -2,7 +2,7 @@ import { Store } from '@tsed/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { JobController } from '@/decorators/controller';
+import { JobController } from '@/jobs';
 
 // Define test controllers at module level so they're registered when the file is loaded
 @JobController()

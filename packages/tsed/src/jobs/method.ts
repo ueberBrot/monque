@@ -1,7 +1,8 @@
 import { Store } from '@tsed/core';
 
-import { MONQUE_METADATA } from '@/constants/constants.js';
-import type { ControllerStore, CronOptions, MethodJobOptions } from '@/types.js';
+import { MONQUE_METADATA } from '@/shared/index.js';
+
+import type { ControllerStore, CronOptions, MethodJobOptions } from './types.js';
 
 /**
  * Method decorator that registers a controller method as a Monque job handler.

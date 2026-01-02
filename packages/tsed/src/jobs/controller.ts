@@ -1,8 +1,9 @@
 import { StoreMerge, useDecorators } from '@tsed/core';
 import { Injectable } from '@tsed/di';
 
-import { MonqueTypes } from '@/constants/MonqueTypes.js';
-import type { JobControllerOptions } from '@/types.js';
+import { MonqueTypes } from '@/shared/index.js';
+
+import type { JobControllerOptions } from './types.js';
 
 /**
  * Class decorator that registers a class as a Monque job controller.

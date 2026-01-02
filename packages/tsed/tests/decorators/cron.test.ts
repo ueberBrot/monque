@@ -1,9 +1,8 @@
 import { Store } from '@tsed/core';
 import { describe, expect, it } from 'vitest';
 
-import { MONQUE_METADATA } from '@/constants/constants';
-import { Cron } from '@/decorators/method';
-import type { ControllerStore } from '@/types';
+import { type ControllerStore, Cron } from '@/jobs';
+import { MONQUE_METADATA } from '@/shared';
 
 describe('Cron method decorator', () => {
 	it('should store cron expression in metadata', () => {

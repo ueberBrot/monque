@@ -2,7 +2,7 @@ import type { Monque } from '@monque/core';
 import { JobFactory } from '@test-utils/factories/job.factory.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MonqueService } from '@/services/MonqueService';
+import { MonqueService } from '@/services';
 
 // Create a typed mock that satisfies Monque interface
 function createMockMonque() {
