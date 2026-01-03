@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { Job, JobController } from '@/jobs';
 import { MonqueModule } from '@/module';
+import { MonqueService } from '@/services';
 
 interface TestPayload {
 	value: string;
@@ -38,6 +39,13 @@ describe('MonqueModule', () => {
 		await PlatformTest.reset();
 	});
 
+	describe('isEnabled', () => {
+		it('should return false when not configured', () => {
+			const module = new MonqueModule();
+			expect(module.isEnabled()).toBe(false);
+		});
+	});
+
 	describe('$onInit', () => {
 		it('should discover job controller providers', async () => {
 			const controller = PlatformTest.get<TestModuleJobs>(TestModuleJobs);
@@ -48,27 +56,22 @@ describe('MonqueModule', () => {
 
 		it('should skip initialization when config is not provided', async () => {
 			const module = new MonqueModule();
+			const service = new MonqueService();
 
 			expect(module.isEnabled()).toBe(false);
 			await module.$onInit();
-			expect(module.getMonque()).toBeNull();
+
+			// MonqueService should not be initialized either
+			expect(service.getMonque()).toBeNull();
 		});
 	});
 
 	describe('$onDestroy', () => {
-		it('should stop monque on destroy', async () => {
+		it('should not throw when destroying uninitialized module', async () => {
 			const module = new MonqueModule();
 
-			await module.$onDestroy();
-			expect(module.getMonque()).toBeNull();
-		});
-	});
-
-	describe('getMonque', () => {
-		it('should return null when not initialized', () => {
-			const module = new MonqueModule();
-
-			expect(module.getMonque()).toBeNull();
+			// Should not throw
+			await expect(module.$onDestroy()).resolves.toBeUndefined();
 		});
 	});
 });

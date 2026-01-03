@@ -191,27 +191,6 @@ export class MonqueModule implements OnInit, OnDestroy {
 	}
 
 	/**
-	 * Returns the Monque instance for direct access.
-	 *
-	 * Use this to enqueue jobs programmatically from controllers or services.
-	 * Returns `null` if the module is not configured or not yet initialized.
-	 *
-	 * @returns The Monque scheduler instance, or `null` if not initialized
-	 * @deprecated Use `MonqueService` instead for DI-aware job handling
-	 *
-	 * @example
-	 * ```typescript
-	 * const monque = this.monqueModule.getMonque();
-	 * if (monque) {
-	 *   await monque.enqueue('send-notification', { userId: '123' });
-	 * }
-	 * ```
-	 */
-	getMonque(): Monque | null {
-		return this.monque;
-	}
-
-	/**
 	 * Registers all job handlers from a controller class.
 	 *
 	 * Scans the controller for `@Job` and `@Cron` decorated methods and
