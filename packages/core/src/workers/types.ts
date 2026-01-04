@@ -1,4 +1,4 @@
-import type { JobHandler, PersistedJob } from '@/jobs/types.js';
+import type { JobHandler, PersistedJob } from '@/jobs';
 
 /**
  * Options for registering a worker.

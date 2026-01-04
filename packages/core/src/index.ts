@@ -1,7 +1,7 @@
 // Main class
 
 // Types - Events
-export type { MonqueEventMap } from '@/events/index.js';
+export type { MonqueEventMap } from '@/events';
 // Types - Jobs
 export {
 	type EnqueueOptions,
@@ -11,24 +11,23 @@ export {
 	type JobStatusType,
 	type PersistedJob,
 	type ScheduleOptions,
-} from '@/jobs/index.js';
+} from '@/jobs';
 // Types - Scheduler
-export type { MonqueOptions } from '@/scheduler/index.js';
-export { Monque } from '@/scheduler/monque.js';
+export type { MonqueOptions } from '@/scheduler';
+export { Monque } from '@/scheduler';
 // Errors
-export {
-	ConnectionError,
-	InvalidCronError,
-	MonqueError,
-	ShutdownTimeoutError,
-	WorkerRegistrationError,
-} from '@/shared/errors.js';
 // Utilities (for advanced use cases)
 export {
+	ConnectionError,
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
-} from '@/shared/utils/backoff.js';
-export { getNextCronDate, validateCronExpression } from '@/shared/utils/cron.js';
+	getNextCronDate,
+	InvalidCronError,
+	MonqueError,
+	ShutdownTimeoutError,
+	validateCronExpression,
+	WorkerRegistrationError,
+} from '@/shared';
 // Types - Workers
-export type { WorkerOptions } from '@/workers/index.js';
+export type { WorkerOptions } from '@/workers';

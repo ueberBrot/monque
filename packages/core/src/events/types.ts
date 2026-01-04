@@ -1,4 +1,4 @@
-import type { Job } from '@/jobs/types.js';
+import type { Job } from '@/jobs';
 
 /**
  * Event payloads for Monque lifecycle events.

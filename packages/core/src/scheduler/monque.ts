@@ -1,8 +1,8 @@
-import crypto from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { ChangeStream, ChangeStreamDocument, Collection, Db, Document, WithId } from 'mongodb';
 
-import type { MonqueEventMap } from '@/events/types.js';
+import type { MonqueEventMap } from '@/events';
 import {
 	type EnqueueOptions,
 	type Job,
@@ -11,12 +11,16 @@ import {
 	type JobStatusType,
 	type PersistedJob,
 	type ScheduleOptions,
-} from '@/jobs/types.js';
-import type { MonqueOptions } from '@/scheduler/types.js';
-import { ConnectionError, WorkerRegistrationError } from '@/shared/errors.js';
-import { calculateBackoff } from '@/shared/utils/backoff.js';
-import { getNextCronDate } from '@/shared/utils/cron.js';
-import type { WorkerOptions, WorkerRegistration } from '@/workers/index.js';
+} from '@/jobs';
+import {
+	ConnectionError,
+	calculateBackoff,
+	getNextCronDate,
+	WorkerRegistrationError,
+} from '@/shared';
+import type { WorkerOptions, WorkerRegistration } from '@/workers';
+
+import type { MonqueOptions } from './types.js';
 
 /**
  * Default configuration values
@@ -174,7 +178,7 @@ export class Monque extends EventEmitter {
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 			maxBackoffDelay: options.maxBackoffDelay,
-			schedulerInstanceId: options.schedulerInstanceId ?? crypto.randomUUID(),
+			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 		};
 	}

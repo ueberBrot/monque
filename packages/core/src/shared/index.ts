@@ -5,5 +5,9 @@ export {
 	ShutdownTimeoutError,
 	WorkerRegistrationError,
 } from './errors.js';
-export { calculateBackoff } from './utils/backoff.js';
-export { getNextCronDate } from './utils/cron.js';
+export {
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+} from './utils/backoff.js';
+export { getNextCronDate, validateCronExpression } from './utils/cron.js';

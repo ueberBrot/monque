@@ -1,4 +1,4 @@
-import type { Job } from '@/jobs/types.js';
+import type { Job } from '@/jobs';
 
 /**
  * Base error class for all Monque-related errors.
