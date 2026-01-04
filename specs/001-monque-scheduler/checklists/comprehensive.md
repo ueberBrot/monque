@@ -107,108 +107,107 @@
   > ✅ US1 scenarios 1-2 cover this fully
 - [x] CHK035 - Are requirements complete for the schedule → trigger → complete → reschedule flow? [Coverage, Spec §US4]
   > ✅ US4 scenarios 1-3 cover this including retry re-scheduling
-- [x] CHK036 - Are requirements complete for the Ts.ED module init → decorator discovery → worker registration flow? [Coverage, Spec §US7-8]
-  > ✅ FR-021/FR-023 + US7 scenarios cover discovery and registration
-- [x] CHK037 - Are requirements specified for multiple workers processing different job types simultaneously? [Coverage, Gap]
+
+- [x] CHK036 - Are requirements specified for multiple workers processing different job types simultaneously? [Coverage, Gap]
   > ✅ Clarifications §Multiple Workers: "Multiple workers can be registered for different job names. Each worker maintains its own concurrency limit independently."
 
 ## Scenario Coverage - Alternate Flows
 
-- [x] CHK038 - Are requirements defined for enqueueing jobs when scheduler is stopped? [Alternate Flow, Gap]
+- [x] CHK037 - Are requirements defined for enqueueing jobs when scheduler is stopped? [Alternate Flow, Gap]
   > ✅ Edge Cases §Lifecycle & Registration: "Enqueueing jobs does not require the scheduler to be running. Jobs are stored in MongoDB and processed when any scheduler starts."
-- [x] CHK039 - Are requirements specified for worker registration after scheduler.start() is called? [Alternate Flow, Gap]
+- [x] CHK038 - Are requirements specified for worker registration after scheduler.start() is called? [Alternate Flow, Gap]
   > ✅ Edge Cases §Lifecycle & Registration: "Workers can be registered before or after start(). Workers registered after start() begin processing on the next poll cycle."
-- [x] CHK040 - Are requirements defined for re-registering a worker for the same job name? [Alternate Flow, Gap]
+- [x] CHK039 - Are requirements defined for re-registering a worker for the same job name? [Alternate Flow, Gap]
   > ✅ Edge Cases §Lifecycle & Registration: "Later worker() registration for the same name replaces the previous handler. This is not thread-safe; register workers during initialization."
-- [x] CHK041 - Are requirements specified for enqueueing with `runAt` in the past? [Alternate Flow, Gap]
+- [x] CHK040 - Are requirements specified for enqueueing with `runAt` in the past? [Alternate Flow, Gap]
   > ✅ Edge Cases §Scheduling & Timing: "Jobs with runAt in the past are immediately eligible for processing on the next poll cycle."
-- [x] CHK042 - Are requirements defined for scheduling cron jobs that should have already triggered? [Alternate Flow, Gap]
+- [x] CHK041 - Are requirements defined for scheduling cron jobs that should have already triggered? [Alternate Flow, Gap]
   > ✅ Edge Cases §Scheduling & Timing: "When scheduling a cron job, nextRunAt is calculated from the current time. Past occurrences are not retroactively queued."
 
 ## Scenario Coverage - Exception/Error Flows
 
-- [x] CHK043 - Are requirements complete for database connection loss during job processing? [Exception Flow, Spec §Edge Cases]
+- [x] CHK042 - Are requirements complete for database connection loss during job processing? [Exception Flow, Spec §Edge Cases]
   > ✅ Edge Cases: "Jobs in progress continue; new pickup paused until reconnection"
-- [x] CHK044 - Are requirements defined for database connection loss during job enqueueing? [Exception Flow, Gap]
+- [x] CHK043 - Are requirements defined for database connection loss during job enqueueing? [Exception Flow, Gap]
   > ✅ Edge Cases §Connection & Infrastructure: "enqueue() throws an error; the caller is responsible for retry logic."
-- [x] CHK045 - Are requirements specified for handler throwing synchronous vs asynchronous errors? [Exception Flow, Gap]
+- [x] CHK044 - Are requirements specified for handler throwing synchronous vs asynchronous errors? [Exception Flow, Gap]
   > ✅ Edge Cases §Job Processing: "Both synchronous throws and rejected promises from handlers are treated identically: job fails, failCount increments, retry scheduled."
-- [x] CHK046 - Are requirements defined for handler returning rejected promise vs throwing? [Exception Flow, Gap]
-  > ✅ Covered by Edge Cases §Job Processing (same as CHK045)
-- [x] CHK047 - Are requirements specified for invalid cron expression handling? [Exception Flow, Spec §Edge Cases]
+- [x] CHK045 - Are requirements defined for handler returning rejected promise vs throwing? [Exception Flow, Gap]
+  > ✅ Covered by Edge Cases §Job Processing (same as CHK044)
+- [x] CHK046 - Are requirements specified for invalid cron expression handling? [Exception Flow, Spec §Edge Cases]
   > ✅ Edge Cases: "Validation should occur at schedule time, throwing an error before the job is created"
-- [x] CHK048 - Are requirements defined for job handler that never resolves (hangs indefinitely)? [Exception Flow, Gap]
+- [x] CHK047 - Are requirements defined for job handler that never resolves (hangs indefinitely)? [Exception Flow, Gap]
   > ✅ Edge Cases §Job Processing: "Jobs processing longer than lockTimeout (default: 30 minutes) are considered stale and can be re-acquired by other workers."
   > ✅ FR-026 specifies lockTimeout configuration
-- [x] CHK049 - Are requirements specified for MongoDB index creation failure? [Exception Flow, Gap]
+- [x] CHK048 - Are requirements specified for MongoDB index creation failure? [Exception Flow, Gap]
   > ✅ Edge Cases §Connection & Infrastructure: "An error is thrown; the scheduler does not start."
-- [x] CHK050 - Are requirements defined for collection name conflicts with existing collections? [Exception Flow, Gap]
+- [x] CHK049 - Are requirements defined for collection name conflicts with existing collections? [Exception Flow, Gap]
   > ✅ Edge Cases §Connection & Infrastructure & Assumptions §Security: "The configured collection is assumed to be dedicated to Monque. Existing documents with incompatible schemas may cause undefined behavior."
 
 ## Scenario Coverage - Recovery Flows
 
-- [x] CHK051 - Are requirements defined for recovering jobs stuck in "processing" after scheduler crash? [Recovery Flow, Gap]
+- [x] CHK050 - Are requirements defined for recovering jobs stuck in "processing" after scheduler crash? [Recovery Flow, Gap]
   > ✅ FR-027: "On startup, scheduler SHOULD check for stale processing jobs (lockedAt older than lockTimeout) and reset them to pending."
   > ✅ MonqueOptions includes `recoverStaleJobs?: boolean; // @default true`
   > ✅ Edge Cases §Recovery addresses this scenario
-- [x] CHK052 - Are requirements specified for handling orphaned locks from crashed instances? [Recovery Flow, Gap]
+- [x] CHK051 - Are requirements specified for handling orphaned locks from crashed instances? [Recovery Flow, Gap]
   > ✅ Covered by FR-026 (lockTimeout) and FR-027 (recoverStaleJobs) - stale locks are detected and recovered
-- [x] CHK053 - Are requirements defined for re-processing jobs after MongoDB failover? [Recovery Flow, Gap]
+- [x] CHK052 - Are requirements defined for re-processing jobs after MongoDB failover? [Recovery Flow, Gap]
   > ✅ Edge Cases §Connection & Infrastructure: "Jobs that were 'processing' may need manual intervention or lockTimeout recovery. The scheduler resumes polling automatically when connection restores."
-- [x] CHK054 - Are requirements specified for scheduler restart behavior with in-flight jobs? [Recovery Flow, Gap]
+- [x] CHK053 - Are requirements specified for scheduler restart behavior with in-flight jobs? [Recovery Flow, Gap]
   > ✅ Edge Cases §Recovery: "When scheduler restarts (process restart), any jobs it had 'processing' remain in that state until lockTimeout expires, then are recovered."
 
 ## Non-Functional Requirements - Performance
 
-- [x] CHK055 - Are performance requirements quantified for maximum jobs processed per second? [NFR-Performance, Gap]
+- [x] CHK054 - Are performance requirements quantified for maximum jobs processed per second? [NFR-Performance, Gap]
   > ✅ Assumptions §Performance & Observability: "Performance targets are not specified for v1.0. The library is designed for moderate throughput (hundreds of jobs/minute). High-throughput scenarios (10K+ jobs/second) should evaluate dedicated queue systems."
-- [x] CHK056 - Are memory consumption requirements defined for high job volume scenarios? [NFR-Performance, Gap]
+- [x] CHK055 - Are memory consumption requirements defined for high job volume scenarios? [NFR-Performance, Gap]
   > ✅ Assumptions §Performance & Observability: "Memory usage is proportional to defaultConcurrency × number of workers. Job data is not held in memory beyond active processing."
-- [x] CHK057 - Are database query performance requirements specified (index usage, query patterns)? [NFR-Performance, Gap]
+- [x] CHK056 - Are database query performance requirements specified (index usage, query patterns)? [NFR-Performance, Gap]
   > ✅ data-model.md §Indexes defines required indexes for efficient queries
-- [x] CHK058 - Are polling efficiency requirements defined (queries per interval, batch sizes)? [NFR-Performance, Gap]
+- [x] CHK057 - Are polling efficiency requirements defined (queries per interval, batch sizes)? [NFR-Performance, Gap]
   > ✅ Assumptions §Performance & Observability: "Each poll cycle executes one findOneAndUpdate per available concurrency slot. No batch fetching in v1.0."
 
 ## Non-Functional Requirements - Security
 
-- [x] CHK059 - Are requirements defined for job data sanitization or validation? [NFR-Security, Gap]
+- [x] CHK058 - Are requirements defined for job data sanitization or validation? [NFR-Security, Gap]
   > ✅ Assumptions §Security: "Job data validation is the caller's responsibility. The library stores data as-is. Sensitive data should be encrypted by the application before enqueueing."
-- [x] CHK060 - Are requirements specified for preventing injection attacks via job data? [NFR-Security, Gap]
+- [x] CHK059 - Are requirements specified for preventing injection attacks via job data? [NFR-Security, Gap]
   > ✅ Assumptions §Security: "Job data is stored as BSON, not interpolated into queries, mitigating injection attacks by design."
-- [x] CHK061 - Are requirements defined for access control to scheduler operations? [NFR-Security, Gap]
+- [x] CHK060 - Are requirements defined for access control to scheduler operations? [NFR-Security, Gap]
   > ✅ Assumptions §Security: "Access control is delegated to MongoDB authentication/authorization. The library does not implement additional access control."
 
 ## Non-Functional Requirements - Observability
 
-- [x] CHK062 - Are structured logging requirements defined beyond event emission? [NFR-Observability, Gap]
+- [x] CHK061 - Are structured logging requirements defined beyond event emission? [NFR-Observability, Gap]
   > ✅ Assumptions §Performance & Observability: "The library does not include built-in logging. Use event subscriptions (job:start, job:complete, job:fail, job:error) to integrate with your logging infrastructure."
-- [x] CHK063 - Are metrics/instrumentation requirements specified (job counts, durations, queue depth)? [NFR-Observability, Gap]
+- [x] CHK062 - Are metrics/instrumentation requirements specified (job counts, durations, queue depth)? [NFR-Observability, Gap]
   > ✅ Assumptions §Performance & Observability: "Built-in metrics are out of scope. Event payloads include duration (job:complete) for custom metrics collection."
   > ✅ Future Considerations includes `getStats()` method for v1.x
-- [x] CHK064 - Are health check endpoint requirements defined for the scheduler? [NFR-Observability, Gap]
+- [x] CHK063 - Are health check endpoint requirements defined for the scheduler? [NFR-Observability, Gap]
   > ✅ FR-028: "System MUST expose `isHealthy()` method returning boolean indicating scheduler is running and connected."
   > ✅ MonquePublicAPI interface includes `isHealthy(): boolean`
-- [x] CHK065 - Are debugging requirements specified for tracing job execution? [NFR-Observability, Gap]
+- [x] CHK064 - Are debugging requirements specified for tracing job execution? [NFR-Observability, Gap]
   > ✅ Assumptions §Performance & Observability: "Job tracing is via event subscription. Each event includes the full IJob document for correlation with application tracing systems."
 
 ## Non-Functional Requirements - Scalability
 
-- [x] CHK066 - Are requirements defined for maximum concurrent scheduler instances? [NFR-Scalability, Gap]
+- [x] CHK065 - Are requirements defined for maximum concurrent scheduler instances? [NFR-Scalability, Gap]
   > ✅ Plan §Technical Context: "multiple scheduler instances supported with atomic locking"
   > ✅ Spec §SC-006: "Multiple scheduler instances can process jobs concurrently without duplicate processing"
-- [x] CHK067 - Are requirements specified for job volume limits per scheduler? [NFR-Scalability, Gap]
+- [x] CHK066 - Are requirements specified for job volume limits per scheduler? [NFR-Scalability, Gap]
   > ✅ Assumptions §Performance & Observability: "No hard limit on job volume. Practical limits depend on MongoDB capacity and polling interval."
-- [x] CHK068 - Are requirements defined for MongoDB sharding compatibility? [NFR-Scalability, Gap]
+- [x] CHK067 - Are requirements defined for MongoDB sharding compatibility? [NFR-Scalability, Gap]
   > ✅ Assumptions §Scope Boundaries: "MongoDB sharding is not tested or supported in v1.0. The jobs collection should remain on a single shard."
   > ✅ Future Considerations includes "MongoDB sharding support with shard key recommendations" for v2.0+
 
 ## API Contract Completeness
 
-- [x] CHK069 - Are all `EnqueueOptions` properties documented with types and defaults? [Completeness, contracts/job-schema.ts]
+- [x] CHK068 - Are all `EnqueueOptions` properties documented with types and defaults? [Completeness, contracts/job-schema.ts]
   > ✅ EnqueueOptions: uniqueKey (string?), runAt (Date?, default: now)
-- [x] CHK070 - Are all `MonqueOptions` properties documented with types and defaults? [Completeness, contracts/job-schema.ts]
+- [x] CHK069 - Are all `MonqueOptions` properties documented with types and defaults? [Completeness, contracts/job-schema.ts]
   > ✅ All 6 options documented with JSDoc @default values
-- [x] CHK071 - Are return types specified for all public methods (enqueue, now, schedule, worker, start, stop)? [Completeness, Gap]
+- [x] CHK070 - Are return types specified for all public methods (enqueue, now, schedule, worker, start, stop)? [Completeness, Gap]
   > ✅ contracts/job-schema.ts MonquePublicAPI interface specifies all return types:
   > - `enqueue<T>(): Promise<IJob<T>>`
   > - `now<T>(): Promise<IJob<T>>`
@@ -217,91 +216,76 @@
   > - `start(): void`
   > - `stop(): Promise<void>`
   > - `isHealthy(): boolean`
-- [x] CHK072 - Are error types/exceptions specified for each public method? [Completeness, Gap]
+- [x] CHK071 - Are error types/exceptions specified for each public method? [Completeness, Gap]
   > ✅ contracts/job-schema.ts defines custom error classes:
   > - `MonqueError` (base class)
   > - `InvalidCronError` (with `expression: string`)
   > - `ConnectionError`
   > - `ShutdownTimeoutError` (with `incompleteJobs: IJob[]`)
-- [x] CHK073 - Is the `IJob<T>` generic constraint documented (what T can be)? [Clarity, contracts/job-schema.ts]
+- [x] CHK072 - Is the `IJob<T>` generic constraint documented (what T can be)? [Clarity, contracts/job-schema.ts]
   > ✅ JSDoc: "Job payload - must be JSON-serializable"
-- [x] CHK074 - Are event payload types specified for all MonqueEventMap events? [Completeness, contracts/job-schema.ts]
+- [x] CHK073 - Are event payload types specified for all MonqueEventMap events? [Completeness, contracts/job-schema.ts]
   > ✅ All 4 events have typed payloads in MonqueEventMap interface
 
 ## Concurrency & Atomicity Requirements
 
-- [x] CHK075 - Is the atomic locking mechanism explicitly specified with MongoDB operations used? [Clarity, Spec §FR-006]
+- [x] CHK074 - Is the atomic locking mechanism explicitly specified with MongoDB operations used? [Clarity, Spec §FR-006]
   > ✅ Plan §Constitution Check: "findOneAndUpdate for job locking"
   > ✅ data-model.md: detailed atomic operation pattern
-- [x] CHK076 - Are race condition handling requirements specified for duplicate job prevention? [Completeness, Spec §FR-002]
+- [x] CHK075 - Are race condition handling requirements specified for duplicate job prevention? [Completeness, Spec §FR-002]
   > ✅ data-model.md §UniqueKey Constraints: upsert with $setOnInsert pattern
-- [x] CHK077 - Are requirements defined for lock timeout/expiration (stale processing jobs)? [Gap]
+- [x] CHK076 - Are requirements defined for lock timeout/expiration (stale processing jobs)? [Gap]
   > ✅ FR-026: lockTimeout configuration (default 30 minutes)
   > ✅ FR-027: stale job recovery on startup
   > ✅ MonqueOptions includes `lockTimeout` and `recoverStaleJobs`
   > ✅ Glossary defines "Stale Job" concept
-- [x] CHK078 - Are requirements specified for handling concurrent stop() calls? [Concurrency, Gap]
+- [x] CHK077 - Are requirements specified for handling concurrent stop() calls? [Concurrency, Gap]
   > ✅ Edge Cases §Lifecycle & Registration: "Multiple concurrent stop() calls are safe. All calls receive the same promise that resolves when shutdown completes."
-- [x] CHK079 - Are requirements defined for concurrent enqueue() calls with same uniqueKey? [Concurrency, Spec §FR-002]
+- [x] CHK078 - Are requirements defined for concurrent enqueue() calls with same uniqueKey? [Concurrency, Spec §FR-002]
   > ✅ data-model.md upsert pattern handles this atomically
-- [x] CHK080 - Are requirements specified for concurrent worker() registrations for same job name? [Concurrency, Gap]
+- [x] CHK079 - Are requirements specified for concurrent worker() registrations for same job name? [Concurrency, Gap]
   > ✅ Edge Cases §Lifecycle & Registration: "Later worker() registration for the same name replaces the previous handler. This is not thread-safe; register workers during initialization."
 
-## Framework Integration Requirements (Ts.ED)
 
-- [x] CHK081 - Are lifecycle hook requirements specified (OnInit, OnDestroy)? [Completeness, Plan §Project Structure]
-  > ✅ FR-024: "MonqueModule MUST call monque.start() on application initialization (OnInit)."
-  > ✅ FR-025: "MonqueModule MUST call monque.stop() on application shutdown (OnDestroy)."
-- [x] CHK082 - Are requirements defined for decorator options beyond `name`? [Completeness, Spec §FR-021]
-  > ✅ contracts/job-schema.ts JobDecoratorOptions: name (required), concurrency (optional)
-- [x] CHK083 - Are requirements specified for error handling during auto-discovery? [Exception Flow, Gap]
-  > ✅ Edge Cases §Ts.ED Integration: "If auto-discovery finds a @Job class that cannot be instantiated, a startup error is thrown."
-- [x] CHK084 - Are requirements defined for module configuration validation? [Completeness, Gap]
-  > ✅ Edge Cases §Ts.ED Integration: "MonqueModule.forRoot() validates that connection is provided. Invalid configuration throws during module initialization."
-- [x] CHK085 - Are requirements specified for graceful shutdown integration with Ts.ED lifecycle? [Integration, Gap]
-  > ✅ Covered by FR-025: "MonqueModule MUST call monque.stop() on application shutdown (OnDestroy)"
-- [x] CHK086 - Are requirements defined for testing utilities/mocks for Ts.ED integration? [Gap]
-  > ✅ Assumptions §Scope Boundaries: "Testing utilities are out of scope for v1.0. Consumers can mock the Monque class directly or use MongoDB memory server."
 
 ## Dependencies & Assumptions
 
-- [x] CHK087 - Is the MongoDB 4.0+ requirement validated against atomic operation needs? [Assumption, Spec §Assumptions]
+- [x] CHK080 - Is the MongoDB 4.0+ requirement validated against atomic operation needs? [Assumption, Spec §Assumptions]
   > ✅ MongoDB 4.0+ supports findOneAndUpdate with all needed options
-- [x] CHK088 - Is the Node.js 22+ requirement justified with specific feature dependencies? [Assumption, Spec §Assumptions]
+- [x] CHK081 - Is the Node.js 22+ requirement justified with specific feature dependencies? [Assumption, Spec §Assumptions]
   > ✅ Assumptions §Environment Requirements: "Node.js 22+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)"
-- [x] CHK089 - Are cron-parser library capabilities validated against 5-field format requirement? [Dependency, Spec §Assumptions]
+- [x] CHK082 - Are cron-parser library capabilities validated against 5-field format requirement? [Dependency, Spec §Assumptions]
   > ✅ cron-parser npm supports standard 5-field cron
-- [x] CHK090 - Are Ts.ED version compatibility requirements specified? [Dependency, Gap]
-  > ✅ Assumptions §Environment Requirements: "@monque/tsed targets Ts.ED v7.x. Compatibility with v6.x is not guaranteed."
-- [x] CHK091 - Is MongoDB driver version requirement specified? [Dependency, Gap]
+
+- [x] CHK083 - Is MongoDB driver version requirement specified? [Dependency, Gap]
   > ✅ Assumptions §Environment Requirements: "mongodb driver ^6.0.0 required for modern TypeScript types and Connection handling"
 
 ## Ambiguities & Conflicts to Resolve
 
-- [x] CHK092 - Is "job name" uniqueness scope clarified (global, per-scheduler, per-collection)? [Ambiguity]
+- [x] CHK084 - Is "job name" uniqueness scope clarified (global, per-scheduler, per-collection)? [Ambiguity]
   > ✅ Clarifications §Job Name Scope: "Job names are identifiers matching job types to worker handlers. Names are scoped to the Monque instance/collection. Multiple schedulers sharing a collection must register the same workers for consistent processing."
-- [x] CHK093 - Is behavior clarified when worker() is called for a name with no registered handler? [Ambiguity]
+- [x] CHK085 - Is behavior clarified when worker() is called for a name with no registered handler? [Ambiguity]
   > ✅ Edge Cases §Lifecycle & Registration: "Jobs enqueued with unregistered names remain pending until a worker is registered. This allows worker deployment independent of job enqueueing."
-- [x] CHK094 - Is the relationship between job `data` and handler `data` parameter clarified (copy vs reference)? [Ambiguity]
+- [x] CHK086 - Is the relationship between job `data` and handler `data` parameter clarified (copy vs reference)? [Ambiguity]
   > ✅ Clarifications §Data Handling: "Handlers receive the full IJob object. The `data` property is deserialized from MongoDB (deep copy, not reference to stored document)."
-- [x] CHK095 - Is behavior specified when enqueue() is called with unknown/unregistered job name? [Ambiguity]
-  > ✅ Covered by Edge Cases §Lifecycle & Registration (same as CHK093)
-- [x] CHK096 - Is the `lockedAt` field purpose and usage fully documented? [Clarity, Spec §FR-008]
+- [x] CHK087 - Is behavior specified when enqueue() is called with unknown/unregistered job name? [Ambiguity]
+  > ✅ Covered by Edge Cases §Lifecycle & Registration (same as CHK085)
+- [x] CHK088 - Is the `lockedAt` field purpose and usage fully documented? [Clarity, Spec §FR-008]
   > ✅ FR-008: "set lockedAt timestamp when locking a job"
   > ✅ data-model.md: "Timestamp when job was locked for processing"
-  > ⚠️ Need to document use for lockTimeout recovery (see CHK077)
-- [x] CHK097 - Is "single namespace per database" boundary explicitly defined? [Ambiguity, Spec §Clarifications]
+  > ⚠️ Need to document use for lockTimeout recovery (see CHK076)
+- [x] CHK089 - Is "single namespace per database" boundary explicitly defined? [Ambiguity, Spec §Clarifications]
   > ✅ Clarifications §Namespace Boundary: "Single namespace means all jobs in one collection. Different Monque instances on the same database/collection share the job pool. Use separate databases or collectionName option for isolation."
 
 ## Traceability & Documentation
 
-- [x] CHK098 - Are all FR requirements traceable to at least one user story? [Traceability]
+- [x] CHK090 - Are all FR requirements traceable to at least one user story? [Traceability]
   > ✅ FR-001→US1, FR-002→US2, FR-003→US4, FR-009→US3, FR-011→US5, FR-013-16→US6, FR-018-23→US7-8
-- [x] CHK099 - Are all user story acceptance scenarios traceable to implementation tasks? [Traceability]
+- [x] CHK091 - Are all user story acceptance scenarios traceable to implementation tasks? [Traceability]
   > ✅ tasks.md organizes tasks by user story (US1-US8) with explicit references
-- [x] CHK100 - Are all edge cases traceable to specific handling requirements? [Traceability]
+- [x] CHK092 - Are all edge cases traceable to specific handling requirements? [Traceability]
   > ✅ Each edge case in spec.md has inline handling description
-- [x] CHK101 - Is a glossary provided for domain terms (job, worker, scheduler, handler)? [Documentation, Gap]
+- [x] CHK093 - Is a glossary provided for domain terms (job, worker, scheduler, handler)? [Documentation, Gap]
   > ✅ Glossary section added to spec.md with definitions for:
   > - Job, Worker, Scheduler, Handler, Lock, Stale Job
 
@@ -329,7 +313,7 @@
 | Dependencies & Assumptions    | 5       | 5      | 0            |
 | Ambiguities & Conflicts       | 6       | 6      | 0            |
 | Traceability & Documentation  | 4       | 4      | 0            |
-| **Total**                     | **101** | **101**| **0**        |
+| **Total**                     | **93**  | **93** | **0**        |
 
 ---
 
@@ -337,9 +321,9 @@
 
 All previously identified critical gaps have been addressed in the second pass:
 
-1. **CHK010/CHK048/CHK051/CHK077 - Lock Timeout**: ✅ FR-026 adds `lockTimeout` configuration (default 30 minutes). FR-027 adds stale job recovery on startup. MonqueOptions includes `lockTimeout` and `recoverStaleJobs` options.
+1. **CHK010/CHK047/CHK050/CHK076 - Lock Timeout**: ✅ FR-026 adds `lockTimeout` configuration (default 30 minutes). FR-027 adds stale job recovery on startup. MonqueOptions includes `lockTimeout` and `recoverStaleJobs` options.
 
-2. **CHK051-054 - Recovery Flows**: ✅ All recovery scenarios now documented in Edge Cases §Recovery section and supported by FR-026/FR-027.
+2. **CHK050-054 - Recovery Flows**: ✅ All recovery scenarios now documented in Edge Cases §Recovery section and supported by FR-026/FR-027.
 
 ---
 
@@ -402,7 +386,7 @@ Definitions for: Job, Worker, Scheduler, Handler, Lock, Stale Job
 
 ## Notes
 
-- ✅ All 101 checklist items have been addressed
+- ✅ All 93 checklist items have been addressed
 - ✅ All critical gaps (lock timeout, recovery flows) have been resolved
 - ✅ All "out of scope" decisions are now documented to prevent scope creep
 - ✅ The specification is ready for implementation

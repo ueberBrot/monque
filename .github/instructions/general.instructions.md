@@ -22,6 +22,6 @@ You are an expert Backend Architect and Library Maintainer. You specialize in da
 
 # Project Structure
 - `packages/core`: The core scheduler library (Native Mongo).
-- `packages/tsed`: The Ts.ED framework integration.
+
 
 

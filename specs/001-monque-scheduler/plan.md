@@ -7,12 +7,12 @@
 
 ## Summary
 
-Implement a TypeScript monorepo containing two packages: `@monque/core` (a MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, stale job recovery via heartbeats/zombie takeover, real-time processing via Change Streams, and event-driven observability) and `@monque/tsed` (Ts.ED framework integration via decorators and DI). The core uses native MongoDB driver for atomic operations, extends EventEmitter for lifecycle events, and provides custom error classes for proper error handling.
+Implement a TypeScript monorepo containing one package: `@monque/core` (a MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, stale job recovery via heartbeats/zombie takeover, real-time processing via Change Streams, and event-driven observability). The core uses native MongoDB driver for atomic operations, extends EventEmitter for lifecycle events, and provides custom error classes for proper error handling.
 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x, Node.js 22+  
-**Primary Dependencies**: mongodb ^6.0.0 (native driver), cron-parser, @tsed/common, @tsed/di  
+**Primary Dependencies**: mongodb ^6.0.0 (native driver), cron-parser  
 **Storage**: MongoDB 4.0+ (required for atomic findAndModify operations and Change Streams)  
 **Testing**: Vitest with UI and coverage, targeting 100% coverage  
 **Target Platform**: Node.js server runtime (ESM + CJS dual output)  
@@ -40,7 +40,7 @@ Implement a TypeScript monorepo containing two packages: `@monque/core` (a Mongo
 | **III. Development - Semantic Versioning**   | ✅ PASS | Changesets for release management                                                                      |
 | **IV. API Design - Simplicity**              | ✅ PASS | Simple `now()`, `enqueue()`, `schedule()`, `worker()` API                                              |
 | **IV. API Design - Framework Agnostic Core** | ✅ PASS | `@monque/core` has no framework dependencies                                                           |
-| **IV. API Design - Framework Integrations**  | ✅ PASS | `@monque/tsed` as separate package                                                                     |
+
 | **V. Resilience - Exponential Backoff**      | ✅ PASS | Formula: `now + (2^failCount × baseRetryInterval)`, configurable via options                           |
 | **V. Resilience - Graceful Shutdown**        | ✅ PASS | Configurable timeout, waits for in-progress jobs, emits job:error with ShutdownTimeoutError on timeout |
 | **V. Resilience - Idempotency**              | ✅ PASS | `uniqueKey` option prevents duplicates                                                                 |
@@ -115,18 +115,7 @@ specs/001-monque-scheduler/
     │       ├── shutdown.test.ts
     │       ├── errors.test.ts
     │       └── stale-recovery.test.ts
-    ├── tsed/                 # @monque/tsed package
-    │   ├── package.json
-    │   ├── tsconfig.json
-    │   ├── tsdown.config.ts
-    │   ├── src/
-    │   │   ├── index.ts      # Public exports
-    │   │   ├── module.ts     # MonqueModule
-    │   │   └── decorators/
-    │   │       └── job.ts    # @Job decorator
-    │   └── tests/
-    │       ├── module.test.ts
-    │       └── decorator.test.ts
+
     └── docs/                 # Developer documentation (markdown)
         ├── package.json      # Minimal package for workspace inclusion
         ├── README.md         # Documentation index
@@ -138,12 +127,12 @@ specs/001-monque-scheduler/
         │   ├── job-scheduling.md
         │   ├── error-handling.md
         │   ├── graceful-shutdown.md
-        │   └── tsed-integration.md
+
         ├── api/
         │   ├── monque-class.md
         │   ├── job-interface.md
         │   ├── events.md
-        │   └── decorators.md
+
         └── examples/
             ├── basic-usage.md
             ├── unique-jobs.md
@@ -151,7 +140,7 @@ specs/001-monque-scheduler/
             └── error-retry.md
 ```
 
-**Structure Decision**: Monorepo structure with two packages under `packages/`. This aligns with Constitution Principle III (Monorepo Structure) and enables clear package boundaries between framework-agnostic core and framework-specific integrations.
+**Structure Decision**: Monorepo structure with one package under `packages/`. This aligns with Constitution Principle III (Monorepo Structure).
 
 ## Implementation Details
 

@@ -273,54 +273,6 @@ export interface MonqueEventMap {
 }
 
 /**
- * Options for the @Job decorator in @monque/tsed.
- *
- * @example
- * ```typescript
- * @Job({ name: 'send-email' })
- * class SendEmailJob {
- *   async handle(job: Job<EmailJobData>) {
- *     // ...
- *   }
- * }
- * ```
- */
-export interface JobDecoratorOptions {
-	/** Job type identifier - must match when enqueueing */
-	name: string;
-
-	/**
-	 * Number of concurrent jobs this worker can process.
-	 * @default 5
-	 */
-	concurrency?: number;
-}
-
-/**
- * Configuration options for MonqueModule in @monque/tsed.
- *
- * @example
- * ```typescript
- * // With Mongoose
- * MonqueModule.forRoot({
- *   connection: mongooseConnection,
- * });
- *
- * // With native MongoDB
- * MonqueModule.forRoot({
- *   connection: mongoDb,
- *   collectionName: 'custom_jobs',
- * });
- * ```
- */
-export interface MonqueModuleOptions extends MonqueOptions {
-	/**
-	 * MongoDB connection - can be either a Mongoose Connection or native MongoDB Db instance.
-	 */
-	connection: unknown;
-}
-
-/**
  * Options for registering a worker.
  *
  * @example

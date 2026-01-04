@@ -17,11 +17,7 @@ bun add @monque/core mongodb
 pnpm add @monque/core mongodb
 ```
 
-### Ts.ED Integration (Optional)
 
-```bash
-npm install @monque/tsed @monque/core
-```
 
 ## Basic Usage
 
@@ -131,74 +127,7 @@ await monque.schedule('0 0 * * *', 'daily-report', {
 });
 ```
 
-## Ts.ED Integration
 
-### 1. Configure the Module
-
-```typescript
-import { Configuration } from '@tsed/common';
-import { MonqueModule } from '@monque/tsed';
-import mongoose from 'mongoose';
-
-@Configuration({
-  imports: [
-    MonqueModule.forRoot({
-      connection: mongoose.connection, // Works with Mongoose or native Db
-    }),
-  ],
-})
-export class Server {}
-```
-
-### 2. Create Job Handlers
-
-```typescript
-import { Injectable } from '@tsed/di';
-import { Job } from '@monque/tsed';
-import type { IJob } from '@monque/core';
-
-interface OrderJobData {
-  orderId: string;
-}
-
-@Job({ name: 'process-order' })
-@Injectable()
-export class ProcessOrderJob {
-  constructor(
-    private orderService: OrderService, // Full DI access
-    private emailService: EmailService,
-  ) {}
-
-  async handle(job: IJob<OrderJobData>): Promise<void> {
-    const order = await this.orderService.findById(job.data.orderId);
-    await this.orderService.process(order);
-    await this.emailService.sendOrderConfirmation(order);
-  }
-}
-```
-
-### 3. Enqueue from Services
-
-```typescript
-import { Injectable } from '@tsed/di';
-import { Monque } from '@monque/core';
-
-@Injectable()
-export class OrderController {
-  constructor(private monque: Monque) {}
-
-  async createOrder(data: CreateOrderDto) {
-    const order = await this.saveOrder(data);
-    
-    // Queue background processing
-    await this.monque.enqueue('process-order', {
-      orderId: order.id,
-    });
-    
-    return order;
-  }
-}
-```
 
 ## Configuration Options
 

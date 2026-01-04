@@ -9,7 +9,7 @@ A MongoDB-backed job scheduler for Node.js with atomic locking, exponential back
 | Package                         | Description                                 |
 | ------------------------------- | ------------------------------------------- |
 | [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
-| [@monque/tsed](./packages/tsed) | Ts.ED framework integration with decorators |
+
 
 ## Features
 
@@ -55,7 +55,7 @@ await monque.enqueue('send-email', { to: 'user@example.com' });
 bun install
 
 # Run tests
-bun test
+bun run test
 
 # Run tests with UI
 bun test:ui

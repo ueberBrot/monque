@@ -3,7 +3,7 @@
 **Feature Branch**: `001-monque-scheduler`  
 **Created**: 16 December 2025  
 **Status**: Draft  
-**Input**: User description: "Scaffold and implement a monorepo project for a new job scheduler library called Monque (Mongo Queue) with core scheduling package and Ts.ED framework integration"
+**Input**: User description: "Scaffold and implement a monorepo project for a new job scheduler library called Monque (Mongo Queue)"
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -105,37 +105,7 @@ As a developer, I want to subscribe to job lifecycle events so that I can implem
 
 ---
 
-### User Story 7 - Use Decorators for Ts.ED Job Handlers (Priority: P3)
 
-As a Ts.ED developer, I want to use decorators to define job handlers so that job registration follows framework conventions.
-
-**Why this priority**: Framework-specific integration that adds developer convenience but is not required for core library functionality.
-
-**Independent Test**: Can be tested by creating a class with @Job decorator and verifying it's automatically registered as a worker when the module loads.
-
-**Acceptance Scenarios**:
-
-1. **Given** a class decorated with `@Job({ name: "process-order" })`, **When** the Ts.ED application starts, **Then** the class is registered as a worker for "process-order" jobs
-2. **Given** a job handler class with injected dependencies, **When** a job is processed, **Then** the handler has access to all injected services
-3. **Given** multiple job handler classes in the application, **When** the application starts, **Then** all handlers are discovered and registered automatically
-
----
-
-### User Story 8 - Configure Ts.ED Module with Different Connection Types (Priority: P3)
-
-As a Ts.ED developer, I want to configure the Monque module with either Mongoose or native MongoDB so that I can integrate with my existing database setup.
-
-**Why this priority**: Integration flexibility that supports different project setups but core functionality works with either approach.
-
-**Independent Test**: Can be tested by configuring the module with each connection type and verifying jobs can be enqueued and processed.
-
-**Acceptance Scenarios**:
-
-1. **Given** a Ts.ED application using Mongoose, **When** I configure MonqueModule with the Mongoose connection, **Then** jobs are stored and retrieved correctly
-2. **Given** a Ts.ED application using native MongoDB driver, **When** I configure MonqueModule with the native Db instance, **Then** jobs are stored and retrieved correctly
-3. **Given** the module is configured, **When** the application starts, **Then** the scheduler begins polling for jobs automatically
-
----
 
 ### Edge Cases
 
@@ -204,12 +174,7 @@ As a Ts.ED developer, I want to configure the Monque module with either Mongoose
 - What happens when the scheduler restarts with in-flight jobs?
   - When scheduler restarts (process restart), any jobs it had 'processing' remain in that state until lockTimeout expires, then are recovered
 
-**Ts.ED Integration**
 
-- What happens if auto-discovery finds a @Job class that cannot be instantiated?
-  - A startup error is thrown
-- What happens if MonqueModule.forRoot() is called with invalid configuration?
-  - MonqueModule.forRoot() validates that connection is provided. Invalid configuration throws during module initialization
 
 ## Requirements *(mandatory)*
 
@@ -248,16 +213,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **FR-017**: System MUST mark jobs as permanently "failed" after reaching maximum retry attempts
 - **FR-017a**: System MUST use a configurable `maxRetries` option with default value of 10 attempts
 
-**Framework Integration Package (`@monque/tsed`)**
 
-- **FR-018**: System MUST provide a configurable module accepting connection configuration via dependency injection
-- **FR-019**: System MUST support Mongoose Connection objects (extracting native .db handle)
-- **FR-020**: System MUST support native MongoDB Db instances directly
-- **FR-021**: System MUST provide a `@Job({ name: string, ... })` decorator for registering worker classes
-- **FR-022**: System MUST provide full access to Ts.ED's DI container within job handler classes
-- **FR-023**: System MUST auto-discover and register all decorated job handlers on application startup
-- **FR-024**: MonqueModule MUST call monque.start() on application initialization (OnInit)
-- **FR-025**: MonqueModule MUST call monque.stop() on application shutdown (OnDestroy)
 
 **Reliability & Recovery (v1.0)**
 
@@ -293,8 +249,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **SC-004**: Graceful shutdown completes all in-progress jobs within the configured timeout period
 - **SC-005**: All job lifecycle events fire within 100ms of the corresponding state change
 - **SC-006**: Multiple scheduler instances can process jobs concurrently without duplicate processing
-- **SC-007**: Ts.ED developers can define a job handler with minimal boilerplate: one decorator, one class declaration, one handler method
-- **SC-008**: Both Mongoose and native MongoDB connections work identically without code changes in job handlers
+
 
 ## Clarifications
 
@@ -321,10 +276,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - Q: How is the scheduler lifecycle managed? → A: Explicit `start()` and `stop()` methods (allows precise control during startup/shutdown).
 - Q: How are events handled? → A: `Monque` extends `EventEmitter` (standard Node.js pattern).
 - Q: What is the main entry point? → A: `Monque` class (encapsulates state, allows multiple instances).
-- Q: How is the Ts.ED module configured? → A: `MonqueModule.forRoot()` (standard Ts.ED pattern).
-- Q: What decorator is used for Ts.ED workers? → A: `@Job({ name: '...' })` (declarative, consistent with framework).
-- Q: What method must Ts.ED worker classes implement? → A: `handle(job: Job<T>): Promise<void>` (consistent with "handler" terminology).
-- Q: What is the Ts.ED module name? → A: `MonqueModule` (standard naming).
+
 
 ### Scope & Architecture Clarifications
 
@@ -348,7 +300,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - MongoDB 4.0+ is used (required for atomic findAndModify operations)
 - Node.js 22+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)
 - mongodb driver ^6.0.0 required for modern TypeScript types and Connection handling
-- @monque/tsed targets Ts.ED v7.x. Compatibility with v6.x is not guaranteed
+
 
 ### Configuration Defaults
 
