@@ -40,7 +40,7 @@ class EmailJobController {
 	static jobExecutions: Array<{ name: string; data: unknown }> = [];
 	static cronExecutions: number = 0;
 
-	constructor(private emailService: EmailService) {}
+	constructor(public emailService: EmailService) {}
 
 	@Job('send-welcome')
 	async sendWelcome(data: EmailPayload, _job: JobType<EmailPayload>): Promise<void> {
@@ -140,7 +140,7 @@ describe.skip('MonqueService Integration', () => {
 
 			expect(emailService).toBeDefined();
 			// EmailService is injected via constructor
-			expect((emailController as any).emailService).toBe(emailService);
+			expect(emailController.emailService).toBe(emailService);
 		});
 
 		it('should register @Job methods as workers with namespace', async () => {
@@ -325,7 +325,7 @@ describe.skip('MonqueService Integration', () => {
 			});
 
 			const errors: Error[] = [];
-			monque.on('job:fail', ({ error }) => {
+			monque.on('job:fail', ({ error }: { error: Error }) => {
 				errors.push(error);
 			});
 
