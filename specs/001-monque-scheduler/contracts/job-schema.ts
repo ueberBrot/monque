@@ -270,6 +270,37 @@ export interface MonqueEventMap {
 		error: Error;
 		job?: Job;
 	};
+
+	/**
+	 * Emitted when stale jobs are recovered on startup.
+	 */
+	'stale:recovered': {
+		count: number;
+	};
+
+	/**
+	 * Emitted when the change stream is successfully connected.
+	 */
+	'changestream:connected': undefined;
+
+	/**
+	 * Emitted when a change stream error occurs.
+	 */
+	'changestream:error': {
+		error: Error;
+	};
+
+	/**
+	 * Emitted when the change stream is closed.
+	 */
+	'changestream:closed': undefined;
+
+	/**
+	 * Emitted when falling back from change streams to polling-only mode.
+	 */
+	'changestream:fallback': {
+		reason: string;
+	};
 }
 
 /**
