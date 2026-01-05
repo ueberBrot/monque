@@ -1,9 +1,18 @@
 {
 	"name": "@monque/docs",
-	"version": "0.0.0",
-	"description": "Documentation for Monque job scheduler",
-	"private": true,
+	"type": "module",
+	"version": "0.0.1",
 	"scripts": {
-		"clean": "rimraf .turbo"
+		"dev": "astro dev",
+		"start": "astro dev",
+		"build": "astro build",
+		"preview": "astro preview",
+		"astro": "astro",
+		"clean": "rimraf dist .astro"
+	},
+	"dependencies": {
+		"@astrojs/starlight": "^0.37.1",
+		"astro": "^5.6.1",
+		"sharp": "^0.34.2"
 	}
 }
