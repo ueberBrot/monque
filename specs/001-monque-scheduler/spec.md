@@ -212,16 +212,21 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - **FR-016**: System MUST emit "job:error" event when an unexpected error occurs
 - **FR-017**: System MUST mark jobs as permanently "failed" after reaching maximum retry attempts
 - **FR-017a**: System MUST use a configurable `maxRetries` option with default value of 10 attempts
+- **FR-018**: System MUST emit "stale:recovered" event with count when stale jobs are recovered on startup
 
 
 
 **Reliability & Recovery (v1.0)**
 
-- **FR-026**: System MUST support configurable `heartbeatInterval` (default: 30s) and `heartbeatTolerance` (default: 90s)
+- **FR-026**: System MUST support configurable `heartbeatInterval` (default: 30s), `heartbeatTolerance` (default: 90s), and `lockTimeout` (default: 30m)
 - **FR-027**: System MUST implement "Zombie Takeover" to continuously detect and reset jobs where `lastHeartbeat` is older than tolerance
 - **FR-028**: System MUST expose `isHealthy()` method returning boolean indicating scheduler is running and connected
 - **FR-033**: System MUST use MongoDB Change Streams (`.watch()`) to detect new jobs immediately without polling
 - **FR-034**: System MUST implement a fallback polling mechanism (default: 5m) to ensure no jobs are missed if Change Stream events are lost
+- **FR-034a**: System MUST emit "changestream:connected" event when the Change Stream successfully connects
+- **FR-034b**: System MUST emit "changestream:error" event with error details when the Change Stream encounters an error
+- **FR-034c**: System MUST emit "changestream:closed" event when the Change Stream is closed
+- **FR-034d**: System MUST emit "changestream:fallback" event with reason only when falling back to polling-only mode
 - **FR-035**: System MUST use ESR (Equal, Sort, Range) indexing strategy for performance: `{ status: 1, nextRunAt: 1 }` and `{ status: 1, lastHeartbeat: 1 }`
 
 **Documentation Requirements**
@@ -310,6 +315,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 - Default graceful shutdown timeout is 30 seconds (configurable)
 - Default heartbeat interval is 30 seconds (configurable)
 - Default heartbeat tolerance is 90 seconds (configurable)
+- Default lock timeout is 30 minutes (configurable)
 - Maximum retry attempts defaults to 10 (configurable)
 - Jobs collection is named "monque_jobs" by default (configurable)
 - Cron expressions follow standard 5-field format (minute, hour, day of month, month, day of week)

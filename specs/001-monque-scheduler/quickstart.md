@@ -147,6 +147,9 @@ const monque = new Monque(db, {
   
   // Graceful shutdown timeout (ms)
   shutdownTimeout: 30000, // default
+
+  // Maximum time a job can remain locked (ms)
+  lockTimeout: 1800000, // default (30m)
   
   // Default concurrent jobs per worker
   defaultConcurrency: 5, // default

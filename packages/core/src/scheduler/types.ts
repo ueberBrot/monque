@@ -62,7 +62,7 @@ export interface MonqueOptions {
 	 * Maximum time in milliseconds a job can be in 'processing' status before
 	 * being considered stale and eligible for re-acquisition by other workers.
 	 * When using heartbeat-based detection, this should be at least 2-3x the heartbeatInterval.
-	 * @default 30000 (30 seconds, aligned with heartbeat timing)
+	 * @default 1800000 (30 minutes)
 	 */
 	lockTimeout?: number;
 

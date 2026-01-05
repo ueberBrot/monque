@@ -33,7 +33,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [X] T003 [P] Run `bunx @biomejs/biome init` to scaffold biome.json with recommended rules
 - [X] T004 [P] Create docker-compose.yml with MongoDB 4.0+ service for local development
 - [X] T005 [P] Run `bunx changeset init` to scaffold .changeset/ directory and config.json
-- [X] T006 Run `cd packages/core && bun init` then add mongodb ^6.0.0, cron-parser dependencies
+- [X] T006 Run `cd packages/core && bun init` then add mongodb ^7.0.0, cron-parser dependencies
 - [X] T007 Run `bunx tsdown --init` in packages/core/ to scaffold tsdown.config.ts (ESM + CJS dual output)
 - [X] T008 [P] Create packages/core/tsconfig.json with strict TypeScript 5.x configuration
 
@@ -82,7 +82,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [X] T024 Create packages/core/tests/backoff.test.ts with unit tests for backoff calculation
 - [X] T025 [P] Create packages/core/tests/cron.test.ts with unit tests for cron parsing
 - [X] T026 [P] Create packages/core/tests/errors.test.ts with unit tests for error classes
-- [X] T027 Create packages/core/src/monque.ts with Monque class skeleton extending EventEmitter, implementing MonquePublicAPI
+- [X] T027 Create packages/core/src/monque.ts with Monque class skeleton extending EventEmitter
 - [X] T028 Implement MongoDB collection setup and index creation in Monque constructor (status+nextRunAt, uniqueKey sparse, lockedAt+status)
 - [X] T029 Create packages/core/src/index.ts with public exports (types, errors, Monque class)
 - [X] T030 Run tests to verify foundational setup passes
@@ -288,7 +288,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 - [X] T086 [P] Update JobDocument interface in packages/core/src/types.ts to add heartbeatInterval field (milliseconds)
 - [X] T087 [P] Update MonqueOptions interface in packages/core/src/types.ts to add schedulerInstanceId option (defaults to UUID)
 - [X] T088 [P] Update MonqueOptions interface in packages/core/src/types.ts to add heartbeatInterval option (defaults to 30000ms)
-- [X] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30000ms)
+- [X] T089 [P] Update MonqueOptions interface in packages/core/src/types.ts to add lockTimeout to align with heartbeat timing (defaults to 30m)
 - [X] T091 Add TSDoc comments to all new fields in packages/core/src/types.ts explaining atomic claim pattern
 - [X] T092 Run TypeScript compiler to verify types are correct
 - [X] T093 Adjust existing tests to use new type definitions, add tests for new fields (claimedBy, lastHeartbeat, etc.). No backwards compatibility needed.
@@ -488,7 +488,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### TSDoc Tasks
 
-- [ ] T167 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (MonquePublicAPI methods, constructor options)
+- [ ] T167 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (Monque class methods, constructor options)
 - [ ] T168 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
 - [ ] T169 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
 - [ ] T170 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts

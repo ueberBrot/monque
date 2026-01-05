@@ -12,7 +12,7 @@ Implement a TypeScript monorepo containing one package: `@monque/core` (a MongoD
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x, Node.js 22+  
-**Primary Dependencies**: mongodb ^6.0.0 (native driver), cron-parser  
+**Primary Dependencies**: mongodb ^7.0.0 (native driver), cron-parser  
 **Storage**: MongoDB 4.0+ (required for atomic findAndModify operations and Change Streams)  
 **Testing**: Vitest with UI and coverage, targeting 100% coverage  
 **Target Platform**: Node.js server runtime (ESM + CJS dual output)  
@@ -28,7 +28,7 @@ Implement a TypeScript monorepo containing one package: `@monque/core` (a MongoD
 | Principle                                    | Status | Evidence                                                                                               |
 | -------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
 | **I. Code Quality - Type Safety First**      | ✅ PASS | All code strictly typed, `unknown` over `any`, interfaces for object shapes, custom error classes      |
-| **I. Code Quality - Interfaces Over Types**  | ✅ PASS | `Job<T>`, `MonquePublicAPI`, `MonqueEventMap`, `MonqueOptions`, `WorkerOptions` interfaces defined    |
+| **I. Code Quality - Interfaces Over Types**  | ✅ PASS | `Job<T>`, `MonqueEventMap`, `MonqueOptions`, `WorkerOptions` interfaces defined    |
 | **I. Code Quality - 100% Test Coverage**     | ✅ PASS | Spec requires happy path, edge cases, error handling, race conditions, backoff tests                   |
 | **I. Code Quality - No Enums**               | ✅ PASS | `JobStatus` uses `as const` pattern                                                                    |
 | **II. Architecture - Event-Driven Design**   | ✅ PASS | `Monque` extends `EventEmitter`, emits job:start/complete/fail/error                                   |
@@ -100,7 +100,7 @@ specs/001-monque-scheduler/
     │   ├── tsdown.config.ts
     │   ├── src/
     │   │   ├── index.ts      # Public exports
-    │   │   ├── monque.ts     # Main Monque class implementing MonquePublicAPI
+    │   │   ├── monque.ts     # Main Monque class
     │   │   ├── types.ts      # Type definitions (Job, MonqueOptions, etc.)
     │   │   ├── errors.ts     # Custom error classes (MonqueError, InvalidCronError, etc.)
     │   │   └── utils/
@@ -168,12 +168,17 @@ specs/001-monque-scheduler/
 
 ### Event Payloads (from contracts)
 
-| Event          | Payload                                           | When Emitted                                |
-| -------------- | ------------------------------------------------- | ------------------------------------------- |
-| `job:start`    | `Job`                                            | Job begins processing                       |
-| `job:complete` | `{ job: Job, duration: number }`                 | Job finishes successfully                   |
-| `job:fail`     | `{ job: Job, error: Error, willRetry: boolean }` | Job fails (may retry)                       |
-| `job:error`    | `{ error: Error, job?: Job }`                    | Unexpected error including shutdown timeout |
+| Event                   | Payload                                           | When Emitted                                                 |
+| ----------------------- | ------------------------------------------------- | ------------------------------------------------------------ |
+| `job:start`             | `Job`                                             | Job begins processing                                        |
+| `job:complete`          | `{ job: Job, duration: number }`                  | Job finishes successfully                                    |
+| `job:fail`              | `{ job: Job, error: Error, willRetry: boolean }`  | Job fails (may retry)                                        |
+| `job:error`             | `{ error: Error, job?: Job }`                     | Unexpected error including shutdown timeout                  |
+| `stale:recovered`       | `{ count: number }`                               | Stale jobs are recovered on startup                          |
+| `changestream:connected`| `undefined`                                       | Change Stream successfully connects                          |
+| `changestream:error`    | `{ error: Error }`                                | Change Stream error occurs                                   |
+| `changestream:closed`   | `undefined`                                       | Change Stream is closed                                      |
+| `changestream:fallback` | `{ reason: string }`                              | Falling back to polling-only mode                            |
 
 ### MongoDB Indexes (required)
 

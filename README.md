@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ueberBrot/monque/actions/workflows/ci.yml/badge.svg)](https://github.com/ueberBrot/monque/actions/workflows/ci.yml)
 
-A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and Ts.ED integration.
+A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and framework-agnostic design.
 
 ## Packages
 
@@ -18,7 +18,7 @@ A MongoDB-backed job scheduler for Node.js with atomic locking, exponential back
 - ⏰ **Cron Scheduling** - Schedule recurring jobs with standard cron expressions
 - 📡 **Event-Driven** - Subscribe to job lifecycle events for observability
 - 🛡️ **Type-Safe** - Full TypeScript support with generics
-- 🚀 **Framework Agnostic** - Use standalone or with Ts.ED integration
+- 🚀 **Framework Agnostic** - Works with any framework
 
 ## Quick Start
 

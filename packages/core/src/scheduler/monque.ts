@@ -16,6 +16,7 @@ import {
 	ConnectionError,
 	calculateBackoff,
 	getNextCronDate,
+	MonqueError,
 	WorkerRegistrationError,
 } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
@@ -32,7 +33,7 @@ const DEFAULTS = {
 	baseRetryInterval: 1000,
 	shutdownTimeout: 30000,
 	defaultConcurrency: 5,
-	lockTimeout: 30000, // 30 seconds (aligned with heartbeat timing)
+	lockTimeout: 1_800_000, // 30 minutes
 	recoverStaleJobs: true,
 	heartbeatInterval: 30000, // 30 seconds
 } as const;
@@ -411,9 +412,14 @@ export class Monque extends EventEmitter {
 
 			return { ...job, _id: result.insertedId } as PersistedJob<T>;
 		} catch (error) {
+			if (error instanceof ConnectionError) {
+				throw error;
+			}
 			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-
-			throw new ConnectionError(`Failed to enqueue job: ${message}`);
+			throw new ConnectionError(
+				`Failed to enqueue job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
 	}
 
@@ -559,8 +565,14 @@ export class Monque extends EventEmitter {
 
 			return { ...job, _id: result.insertedId } as PersistedJob<T>;
 		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
 			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(`Failed to schedule job: ${message}`);
+			throw new ConnectionError(
+				`Failed to schedule job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
 	}
 

@@ -297,21 +297,6 @@ export interface WorkerOptions {
 	replace?: boolean;
 }
 
-/**
- * Public API interface for the Monque scheduler.
- * Defines all public methods available on a Monque instance.
- *
- * @example
- * ```typescript
- * const monque: MonquePublicAPI = new Monque(db, options);
- *
- * // Enqueue a job
- * const job = await monque.enqueue('send-email', { to: 'user@example.com' });
- *
- * // Register a worker
- * monque.worker('send-email', async (job) => {
- *   await sendEmail(job.data.to);
- * });
 // ============================================================================
 // Error Classes
 // ============================================================================

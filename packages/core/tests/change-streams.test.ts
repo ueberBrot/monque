@@ -20,7 +20,7 @@ import {
 	waitFor,
 } from '@test-utils/test-utils.js';
 import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Job } from '@/jobs/types.js';
 import { Monque } from '@/scheduler/monque.js';
@@ -250,8 +250,10 @@ describe('change streams', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.on('changestream:error', ({ error }) => {
-				expect(error).toBeInstanceOf(Error);
+			const errorPromise = new Promise<Error>((resolve) => {
+				monque.on('changestream:error', ({ error }) => {
+					resolve(error);
+				});
 			});
 
 			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
@@ -264,10 +266,17 @@ describe('change streams', () => {
 			monque.start();
 			await waitFor(async () => connected, { timeout: 5000 });
 
-			// Force close to simulate error (direct access for testing)
-			// Note: In real scenarios, we would simulate network issues
-			// For this test, we verify the error handler is properly attached
-			expect(connected).toBe(true);
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+			expect(changeStream).toBeDefined();
+
+			if (changeStream) {
+				changeStream.emit('error', new Error('Simulated test error'));
+			}
+
+			const error = await errorPromise;
+			expect(error).toBeInstanceOf(Error);
+			expect(error.message).toBe('Simulated test error');
 		});
 
 		it('should continue processing with polling when change stream fails', async () => {
@@ -296,9 +305,19 @@ describe('change streams', () => {
 
 	describe('fallback to polling', () => {
 		it('should emit changestream:fallback event when change streams unavailable', async () => {
-			// This test verifies the fallback behavior exists
-			// In practice, change streams require replica set but Testcontainers may provide one
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+			// Spy on db.collection to return a collection with a failing watch method
+			const originalCollectionFn = db.collection.bind(db);
+			const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
+				const collection = originalCollectionFn(name, options);
+				// Mock watch to throw immediately
+				vi.spyOn(collection, 'watch').mockImplementation(() => {
+					throw new Error('Change streams unavailable');
+				});
+				return collection;
+			});
+
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 100,
@@ -306,9 +325,9 @@ describe('change streams', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			// Register fallback handler (may or may not emit depending on MongoDB capabilities)
+			let fallbackEmitted = false;
 			monque.on('changestream:fallback', () => {
-				// Handler registered for coverage
+				fallbackEmitted = true;
 			});
 
 			let processed = false;
@@ -318,12 +337,18 @@ describe('change streams', () => {
 
 			monque.start();
 
+			// Wait for fallback event
+			await waitFor(async () => fallbackEmitted, { timeout: 2000 });
+			expect(fallbackEmitted).toBe(true);
+
 			// Enqueue and verify processing still works via polling
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
 			await waitFor(async () => processed, { timeout: 5000 });
 
 			expect(processed).toBe(true);
-			// Fallback event may or may not be emitted depending on MongoDB capabilities
+
+			// Cleanup spy
+			collectionSpy.mockRestore();
 		});
 
 		it('should use polling as backup even with active change streams', async () => {

@@ -186,7 +186,7 @@
   > ✅ Future Considerations includes `getStats()` method for v1.x
 - [x] CHK063 - Are health check endpoint requirements defined for the scheduler? [NFR-Observability, Gap]
   > ✅ FR-028: "System MUST expose `isHealthy()` method returning boolean indicating scheduler is running and connected."
-  > ✅ MonquePublicAPI interface includes `isHealthy(): boolean`
+  > ✅ `Monque` class includes `isHealthy(): boolean`
 - [x] CHK064 - Are debugging requirements specified for tracing job execution? [NFR-Observability, Gap]
   > ✅ Assumptions §Performance & Observability: "Job tracing is via event subscription. Each event includes the full IJob document for correlation with application tracing systems."
 
@@ -208,7 +208,7 @@
 - [x] CHK069 - Are all `MonqueOptions` properties documented with types and defaults? [Completeness, contracts/job-schema.ts]
   > ✅ All 6 options documented with JSDoc @default values
 - [x] CHK070 - Are return types specified for all public methods (enqueue, now, schedule, worker, start, stop)? [Completeness, Gap]
-  > ✅ contracts/job-schema.ts MonquePublicAPI interface specifies all return types:
+  > ✅ contracts/job-schema.ts `Monque` class specifies all return types:
   > - `enqueue<T>(): Promise<IJob<T>>`
   > - `now<T>(): Promise<IJob<T>>`
   > - `schedule<T>(): Promise<IJob<T>>`
