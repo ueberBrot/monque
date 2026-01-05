@@ -6,7 +6,7 @@
  * - Emission of stale:recovered event
  * - Cleanup of failReason on successful completion
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

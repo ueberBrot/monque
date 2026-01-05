@@ -8,7 +8,7 @@
  * - Job status transitions during processing
  * - Concurrency limits per worker
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

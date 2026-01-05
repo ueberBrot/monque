@@ -9,7 +9,7 @@
  * - Recurring job completion and auto-rescheduling
  * - Cron timing after retries
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

@@ -5,7 +5,7 @@
  * - SC-006: Multiple scheduler instances can process jobs concurrently without duplicate processing
  * - High volume job processing with multiple workers
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

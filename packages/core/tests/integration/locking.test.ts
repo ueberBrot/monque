@@ -7,7 +7,7 @@
  * - No race conditions in job pickup
  * - lockedAt field is set correctly during processing
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

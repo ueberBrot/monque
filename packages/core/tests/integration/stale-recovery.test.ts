@@ -6,7 +6,7 @@
  * - Stale jobs are recovered to pending status on startup
  * - recoverStaleJobs=false option is respected
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

@@ -7,7 +7,7 @@
  * - Compound indexes for atomic claim queries (status+nextRunAt+claimedBy)
  * - Expanded recovery index (lockedAt+lastHeartbeat+status)
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

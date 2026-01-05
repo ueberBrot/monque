@@ -6,8 +6,8 @@
  * - failCount increment and failReason storage on job failure
  * - Permanent failure after maxRetries is exceeded
  *
- * @see {@link ../src/monque.ts}
- * @see {@link ../src/utils/backoff.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
+ * @see {@link ../../src/shared/utils/backoff.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

@@ -7,7 +7,7 @@
  * - Correct Job document structure returned
  * - Data integrity (payload preserved correctly)
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';
@@ -422,7 +422,7 @@ describe('now()', () => {
  * - completed jobs allow new jobs with same uniqueKey
  * - failed jobs allow new jobs with same uniqueKey
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 describe('uniqueKey deduplication', () => {
 	let db: Db;

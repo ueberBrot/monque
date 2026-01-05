@@ -7,7 +7,7 @@
  * - In-progress jobs complete before stop() resolves
  * - Shutdown timeout behavior with ShutdownTimeoutError emission
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';

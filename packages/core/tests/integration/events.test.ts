@@ -8,7 +8,7 @@
  * - job:error event emission for unexpected errors
  * - isHealthy() status reporting
  *
- * @see {@link ../src/monque.ts}
+ * @see {@link ../../src/scheduler/monque.ts}
  */
 
 import { TEST_CONSTANTS } from '@test-utils/constants.js';
