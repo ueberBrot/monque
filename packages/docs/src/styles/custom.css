@@ -40,3 +40,15 @@
 .site-title img {
 	height: 2rem;
 }
+
+/* Hero button override to match branding - Specific for Nova/Starlight setup */
+.nova-link-button-primary {
+	background-color: var(--monque-green) !important;
+	color: #001e2b !important;
+	border-color: var(--monque-green) !important;
+}
+
+.nova-link-button-primary:hover {
+	background-color: #00c452 !important;
+	border-color: #00c452 !important;
+}
