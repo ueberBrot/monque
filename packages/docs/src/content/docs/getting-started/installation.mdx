@@ -85,7 +85,7 @@ async function main() {
   
   console.log('✅ Connected to MongoDB');
   
-  const db = client.db('monque_test');
+  const db = client.db('my_app');
   const monque = new Monque(db);
   
   await monque.initialize();

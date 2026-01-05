@@ -18,24 +18,7 @@ A job represents a unit of work to be processed asynchronously. Each job has:
 
 ## Job Interface
 
-```typescript
-interface Job<T = unknown> {
-  _id?: ObjectId;           // MongoDB document ID
-  name: string;             // Job type (matches worker name)
-  data: T;                  // Your custom payload
-  status: JobStatusType;    // 'pending' | 'processing' | 'completed' | 'failed'
-  nextRunAt: Date;          // When to process
-  lockedAt?: Date | null;   // When job was claimed
-  claimedBy?: string | null; // Scheduler instance ID
-  lastHeartbeat?: Date | null; // Last liveness signal
-  failCount: number;        // Number of failed attempts
-  failReason?: string;      // Last error message
-  repeatInterval?: string;  // Cron expression for recurring jobs
-  uniqueKey?: string;       // Deduplication key
-  createdAt: Date;          // When job was created
-  updatedAt: Date;          // Last modification
-}
-```
+For the full interface definition, see the [Job API Reference](../../api/interfaces/job/).
 
 ## Job Lifecycle
 
@@ -216,25 +199,35 @@ monque.worker('charge-payment', async (job) => {
 
 ## Job Retention
 
-<Aside type="tip">
-  Monque does not automatically clean up completed or failed jobs. Implement your own retention policy based on your needs.
-</Aside>
+Monque provides built-in job retention to automatically clean up completed and failed jobs. This prevents your database from growing indefinitely.
 
-Example cleanup job:
+You can configure retention when initializing Monque:
 
 ```typescript
-// Schedule daily cleanup at 3 AM
-await monque.schedule('0 3 * * *', 'cleanup-old-jobs', {
-  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+const monque = new Monque(db, {
+  // ... other options
+  jobRetention: {
+    completed: 24 * 60 * 60 * 1000,    // Keep completed jobs for 24 hours
+    failed: 7 * 24 * 60 * 60 * 1000,   // Keep failed jobs for 7 days
+    interval: 60 * 60 * 1000           // Run cleanup every hour (default)
+  }
 });
+```
 
-monque.worker('cleanup-old-jobs', async (job) => {
-  const cutoff = new Date(Date.now() - job.data.maxAge);
-  
-  await db.collection('monque_jobs').deleteMany({
-    status: { $in: ['completed', 'failed'] },
-    updatedAt: { $lt: cutoff }
-  });
+<Aside type="note">
+  If `jobRetention` is not configured, Monque will keep all jobs forever.
+</Aside>
+
+### Manual Cleanup
+
+If you need more complex retention logic (e.g. keep important sales reports longer), you can implement a custom scheduled job:
+
+```typescript
+await monque.schedule('0 3 * * *', 'custom-cleanup', {});
+
+monque.worker('custom-cleanup', async () => {
+  const db = monque['db']; // Access database directly if needed
+  // ... custom cleanup logic using db.collection('monque_jobs').deleteMany(...)
 });
 ```
 

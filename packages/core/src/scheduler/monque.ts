@@ -5,6 +5,7 @@ import type {
 	ChangeStreamDocument,
 	Collection,
 	Db,
+	DeleteResult,
 	Document,
 	ObjectId,
 	WithId,
@@ -46,6 +47,7 @@ const DEFAULTS = {
 	lockTimeout: 1_800_000, // 30 minutes
 	recoverStaleJobs: true,
 	heartbeatInterval: 30000, // 30 seconds
+	retentionInterval: 3600_000, // 1 hour
 } as const;
 
 /**
@@ -133,12 +135,13 @@ type EmailJob = {};
  */
 export class Monque extends EventEmitter {
 	private readonly db: Db;
-	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay'>> &
-		Pick<MonqueOptions, 'maxBackoffDelay'>;
+	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>> &
+		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
 	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
+	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -191,6 +194,7 @@ export class Monque extends EventEmitter {
 			maxBackoffDelay: options.maxBackoffDelay,
 			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
+			jobRetention: options.jobRetention,
 		};
 	}
 
@@ -320,6 +324,50 @@ export class Monque extends EventEmitter {
 			this.emit('stale:recovered', {
 				count: result.modifiedCount,
 			});
+		}
+	}
+
+	/**
+	 * Clean up old completed and failed jobs based on retention policy.
+	 *
+	 * - Removes completed jobs older than `jobRetention.completed`
+	 * - Removes failed jobs older than `jobRetention.failed`
+	 *
+	 * The cleanup runs concurrently for both statuses if configured.
+	 *
+	 * @returns Promise resolving when all deletion operations complete
+	 */
+	private async cleanupJobs(): Promise<void> {
+		if (!this.collection || !this.options.jobRetention) {
+			return;
+		}
+
+		const { completed, failed } = this.options.jobRetention;
+		const now = Date.now();
+		const deletions: Promise<DeleteResult>[] = [];
+
+		if (completed) {
+			const cutoff = new Date(now - completed);
+			deletions.push(
+				this.collection.deleteMany({
+					status: JobStatus.COMPLETED,
+					updatedAt: { $lt: cutoff },
+				}),
+			);
+		}
+
+		if (failed) {
+			const cutoff = new Date(now - failed);
+			deletions.push(
+				this.collection.deleteMany({
+					status: JobStatus.FAILED,
+					updatedAt: { $lt: cutoff },
+				}),
+			);
+		}
+
+		if (deletions.length > 0) {
+			await Promise.all(deletions);
 		}
 	}
 
@@ -739,6 +787,22 @@ export class Monque extends EventEmitter {
 			});
 		}, this.options.heartbeatInterval);
 
+		// Start cleanup interval if retention is configured
+		if (this.options.jobRetention) {
+			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
+
+			// Run immediately on start
+			this.cleanupJobs().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
+			});
+
+			this.cleanupIntervalId = setInterval(() => {
+				this.cleanupJobs().catch((error: unknown) => {
+					this.emit('job:error', { error: error as Error });
+				});
+			}, interval);
+		}
+
 		// Run initial poll immediately to pick up any existing jobs
 		this.poll().catch((error: unknown) => {
 			this.emit('job:error', { error: error as Error });
@@ -797,6 +861,11 @@ export class Monque extends EventEmitter {
 		if (this.changeStreamReconnectTimer) {
 			clearTimeout(this.changeStreamReconnectTimer);
 			this.changeStreamReconnectTimer = null;
+		}
+
+		if (this.cleanupIntervalId) {
+			clearInterval(this.cleanupIntervalId);
+			this.cleanupIntervalId = null;
 		}
 
 		// Clear polling interval

@@ -309,52 +309,6 @@ Each scheduler instance:
 // Instance 2 (or 3, 4...) recovers the job on next startup or stale check
 ```
 
-## Testing Heartbeat Recovery
-
-```typescript
-import { describe, it, expect } from 'vitest';
-
-describe('Heartbeat Recovery', () => {
-  it('recovers stale jobs on startup', async () => {
-    // Create a stale job manually
-    await db.collection('monque_jobs').insertOne({
-      name: 'test-job',
-      status: 'processing',
-      claimedBy: 'crashed-instance',
-      lastHeartbeat: new Date(Date.now() - 3600000), // 1 hour ago
-      data: {},
-      failCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      nextRunAt: new Date()
-    });
-    
-    // New instance recovers it
-    const monque = new Monque(db, {
-      lockTimeout: 1800000,
-      recoverStaleJobs: true
-    });
-    
-    let recoveredCount = 0;
-    monque.on('stale:recovered', ({ count }) => {
-      recoveredCount = count;
-    });
-    
-    await monque.initialize();
-    monque.start();
-    
-    expect(recoveredCount).toBe(1);
-    
-    // Verify job is pending again
-    const job = await db.collection('monque_jobs').findOne({ name: 'test-job' });
-    expect(job.status).toBe('pending');
-    expect(job.claimedBy).toBeNull();
-    
-    await monque.stop();
-  });
-});
-```
-
 ## Next Steps
 
 - [Atomic Claim Pattern](/advanced/atomic-claim/) - How job claiming works

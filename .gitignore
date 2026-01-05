@@ -39,4 +39,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .turbo
 
 # Astro
-.astro
+
+# Generated API Docs
+packages/docs/src/content/docs/api/

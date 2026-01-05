@@ -88,4 +88,30 @@ export interface MonqueOptions {
 	 * @default true
 	 */
 	recoverStaleJobs?: boolean;
+
+	/**
+	 * Configuration for automatic cleanup of completed and failed jobs.
+	 * If undefined, no cleanup is performed.
+	 */
+	jobRetention?:
+		| {
+				/**
+				 * Age in milliseconds after which completed jobs are deleted.
+				 * Cleaned up based on 'updatedAt' timestamp.
+				 */
+				completed?: number;
+
+				/**
+				 * Age in milliseconds after which failed jobs are deleted.
+				 * Cleaned up based on 'updatedAt' timestamp.
+				 */
+				failed?: number;
+
+				/**
+				 * Interval in milliseconds for running the cleanup job.
+				 * @default 3600000 (1 hour)
+				 */
+				interval?: number;
+		  }
+		| undefined;
 }

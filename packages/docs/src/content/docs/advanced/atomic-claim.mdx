@@ -173,55 +173,6 @@ await monque.stop();
 // 3. Clears claimedBy for any incomplete jobs
 ```
 
-## Testing Atomic Claims
-
-Verify no duplicate processing in tests:
-
-```typescript
-import { describe, it, expect } from 'vitest';
-
-describe('Atomic Claims', () => {
-  it('processes each job exactly once with multiple instances', async () => {
-    const processedJobs = new Set<string>();
-    
-    // Create multiple instances
-    const instances = await Promise.all(
-      [1, 2, 3].map(async (n) => {
-        const monque = new Monque(db, {
-          schedulerInstanceId: `instance-${n}`
-        });
-        await monque.initialize();
-        
-        monque.worker('count-job', async (job) => {
-          const jobId = job._id.toString();
-          expect(processedJobs.has(jobId)).toBe(false);
-          processedJobs.add(jobId);
-        });
-        
-        return monque;
-      })
-    );
-    
-    // Enqueue many jobs
-    for (let i = 0; i < 100; i++) {
-      await instances[0].enqueue('count-job', { i });
-    }
-    
-    // Start all instances
-    instances.forEach(m => m.start());
-    
-    // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // Verify each job processed exactly once
-    expect(processedJobs.size).toBe(100);
-    
-    // Cleanup
-    await Promise.all(instances.map(m => m.stop()));
-  });
-});
-```
-
 ## Best Practices
 
 ### 1. Use Meaningful Instance IDs
