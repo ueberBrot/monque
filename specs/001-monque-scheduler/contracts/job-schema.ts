@@ -69,8 +69,25 @@ export interface Job<T = unknown> {
 	/** Timestamp when job was locked for processing */
 	lockedAt?: Date | null;
 
-	/** Timestamp of last worker heartbeat */
+	/**
+	 * Unique identifier of the scheduler instance that claimed this job.
+	 * Used for atomic claim pattern - ensures only one instance processes each job.
+	 * Set when a job is claimed, cleared when job completes or fails.
+	 */
+	claimedBy?: string | null;
+
+	/**
+	 * Timestamp of the last heartbeat update for this job.
+	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
+	 * Updated periodically while job is being processed.
+	 */
 	lastHeartbeat?: Date | null;
+
+	/**
+	 * Heartbeat interval in milliseconds for this job.
+	 * Stored on the job to allow recovery logic to use the correct timeout.
+	 */
+	heartbeatInterval?: number;
 
 	/** Number of failed attempts */
 	failCount: number;
