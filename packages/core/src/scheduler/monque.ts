@@ -1216,6 +1216,7 @@ export class Monque extends EventEmitter {
 					},
 				},
 			);
+			job.status = JobStatus.COMPLETED;
 		}
 	}
 

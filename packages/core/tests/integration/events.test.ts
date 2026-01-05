@@ -59,7 +59,7 @@ describe('Monitor Job Lifecycle Events', () => {
 
 			const startEvents: Job[] = [];
 			monque.on('job:start', (job) => {
-				startEvents.push(job);
+				startEvents.push({ ...job });
 			});
 
 			const handler = vi.fn();
@@ -102,7 +102,7 @@ describe('Monitor Job Lifecycle Events', () => {
 
 			expect(completeEvents).toHaveLength(1);
 			expect(completeEvents[0]?.job.name).toBe(TEST_CONSTANTS.JOB_NAME);
-			expect(completeEvents[0]?.job.status).toBe(JobStatus.PROCESSING);
+			expect(completeEvents[0]?.job.status).toBe(JobStatus.COMPLETED);
 			expect(completeEvents[0]?.duration).toBeGreaterThanOrEqual(45); // Allow 5ms tolerance for timer precision
 		});
 	});
