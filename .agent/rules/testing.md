@@ -8,10 +8,25 @@ globs: **/*.test.ts
 This project requires **100% test coverage**. Use Vitest.
 
 ## Running Tests
-Use `bun` to run tests:
+Always use the predefined scripts in `package.json` to run tests. Do not run `vitest` directly.
+
+### Root Level
 ```bash
-bun run test
-bunx vitest packages/core/tests/integration/enqueue.test.ts
+bun run test                # Run all tests
+bun run test:unit           # Run all unit tests
+bun run test:integration    # Run all integration tests
+bun run test:core           # Run core tests only
+bun run test:core:unit      # Run core unit tests
+bun run test:core:integration # Run core integration tests
+```
+
+### Package Level
+When working within a package (e.g., `packages/core`), use:
+```bash
+bun run test               # Run all tests for this package
+bun run test:unit          # Run unit tests
+bun run test:integration   # Run integration tests
+bun run test:watch         # Run tests in watch mode
 ```
 
 ## Test Structure
@@ -45,4 +60,4 @@ You MUST test both happy and sad paths.
 
 ## Mocking
 Use `vi.spyOn(collection, ...)` for DB mocks in unit tests.
-Use `vi.useFakeTimers()` for backoff verification.
+Use `vi.useFakeTimers()` for backoff verification.'

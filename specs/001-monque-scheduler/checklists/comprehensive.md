@@ -309,7 +309,6 @@
 | NFR - Scalability             | 3       | 3      | 0            |
 | API Contract Completeness     | 6       | 6      | 0            |
 | Concurrency & Atomicity       | 6       | 6      | 0            |
-| Framework Integration         | 6       | 6      | 0            |
 | Dependencies & Assumptions    | 5       | 5      | 0            |
 | Ambiguities & Conflicts       | 6       | 6      | 0            |
 | Traceability & Documentation  | 4       | 4      | 0            |

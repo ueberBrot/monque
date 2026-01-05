@@ -47,6 +47,7 @@ describe('cron', () => {
 			// Result should be on a Monday
 			expect(result.getDay()).toBe(1); // Monday
 			expect(result.getMinutes()).toBe(30);
+			expect(result.getHours()).toBe(9);
 			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
 		});
 

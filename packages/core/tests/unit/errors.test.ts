@@ -8,7 +8,7 @@
  * - ShutdownTimeoutError with incomplete jobs tracking
  * - Error inheritance chain (all catchable as Error/MonqueError)
  *
- * @see {@link ../src/errors.ts}
+ * @see {@link @/shared/errors.js}
  */
 
 import { describe, expect, it } from 'vitest';
@@ -19,7 +19,8 @@ import {
 	InvalidCronError,
 	MonqueError,
 	ShutdownTimeoutError,
-} from '@/shared/errors.js';
+	WorkerRegistrationError,
+} from '@/shared';
 
 describe('errors', () => {
 	describe('MonqueError', () => {
@@ -163,6 +164,34 @@ describe('errors', () => {
 		});
 	});
 
+	describe('WorkerRegistrationError', () => {
+		it('should create an error with message and job name', () => {
+			const error = new WorkerRegistrationError('Worker already registered', 'test-job');
+			expect(error.message).toBe('Worker already registered');
+			expect(error.jobName).toBe('test-job');
+		});
+
+		it('should have name "WorkerRegistrationError"', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error.name).toBe('WorkerRegistrationError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error.stack).toBeDefined();
+		});
+	});
+
 	describe('error inheritance chain', () => {
 		it('InvalidCronError should be catchable as MonqueError', () => {
 			const error = new InvalidCronError('bad', 'Invalid');
@@ -209,12 +238,28 @@ describe('errors', () => {
 			expect(caught).toBe(true);
 		});
 
+		it('WorkerRegistrationError should be catchable as MonqueError', () => {
+			const error = new WorkerRegistrationError('Failed', 'job');
+			let caught = false;
+
+			try {
+				throw error;
+			} catch (e) {
+				if (e instanceof MonqueError) {
+					caught = true;
+				}
+			}
+
+			expect(caught).toBe(true);
+		});
+
 		it('all errors should be catchable as Error', () => {
 			const errors = [
 				new MonqueError('Base'),
 				new InvalidCronError('x', 'Invalid'),
 				new ConnectionError('Failed'),
 				new ShutdownTimeoutError('Timeout', []),
+				new WorkerRegistrationError('Failed', 'job'),
 			];
 
 			for (const error of errors) {
