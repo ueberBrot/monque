@@ -1,40 +1,140 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Monque
+description: A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
+  tagline: Type-safe, reliable job scheduling powered by MongoDB
   image:
-    file: ../../assets/houston.webp
+    file: ../../assets/logo.svg
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Get Started
+      link: /getting-started/installation/
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
+    - text: View on GitHub
+      link: https://github.com/ueberBrot/monque
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
-## Next steps
+## Why Monque?
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
+	<Card title="Atomic Locking" icon="approve-check">
+		Prevents duplicate job processing across multiple workers using MongoDB's atomic operations. No race conditions, guaranteed single execution.
 	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
+	<Card title="Type-Safe" icon="seti:typescript">
+		Full TypeScript support with generics for job payloads. Catch errors at compile time, not runtime.
 	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
+	<Card title="Event-Driven" icon="rocket">
+		Subscribe to job lifecycle events (`job:start`, `job:complete`, `job:fail`) for full observability and integration with your logging infrastructure.
 	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
+	<Card title="Change Streams" icon="pulse">
+		Real-time job notifications via MongoDB Change Streams. No polling delay for instant job processing.
 	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
+	<Card title="Exponential Backoff" icon="refresh">
+		Automatic retries with configurable backoff formula. Failed jobs retry intelligently without overwhelming your system.
+	</Card>
+	<Card title="Cron Scheduling" icon="sun">
+		Schedule recurring jobs with standard 5-field cron expressions. Automatic rescheduling after successful completion.
+	</Card>
+</CardGrid>
+
+## Quick Example
+
+```typescript
+import { Monque } from '@monque/core';
+import { MongoClient } from 'mongodb';
+
+// Connect to MongoDB
+const client = new MongoClient('mongodb://localhost:27017');
+await client.connect();
+const db = client.db('myapp');
+
+// Create scheduler instance
+const monque = new Monque(db);
+await monque.initialize();
+
+// Define your job data type
+interface EmailJob {
+  to: string;
+  subject: string;
+  body: string;
+}
+
+// Register a worker with type safety
+monque.worker<EmailJob>('send-email', async (job) => {
+  console.log(`Sending email to ${job.data.to}`);
+  await sendEmail(job.data.to, job.data.subject, job.data.body);
+});
+
+// Monitor job lifecycle
+monque.on('job:complete', ({ job, duration }) => {
+  console.log(`Job ${job.name} completed in ${duration}ms`);
+});
+
+// Start processing
+monque.start();
+
+// Enqueue a job - it's that simple!
+await monque.enqueue('send-email', {
+  to: 'user@example.com',
+  subject: 'Welcome!',
+  body: 'Thanks for signing up.'
+});
+```
+
+## Installation
+
+<Tabs>
+  <TabItem label="bun">
+    ```bash
+    bun add @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="npm">
+    ```bash
+    npm install @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @monque/core mongodb
+    ```
+  </TabItem>
+</Tabs>
+
+## Features at a Glance
+
+| Feature | Description |
+|---------|-------------|
+| **Atomic Job Claims** | Single job execution guaranteed via `findOneAndUpdate` |
+| **Heartbeat Monitoring** | Detect stale jobs from crashed workers |
+| **Change Streams** | Real-time job notifications, no polling delay |
+| **Graceful Shutdown** | Wait for in-progress jobs before stopping |
+| **Unique Keys** | Prevent duplicate pending/processing jobs |
+| **Cron Scheduling** | Standard 5-field cron expression support |
+| **Exponential Backoff** | `nextRunAt = now + (2^failCount × baseInterval)` |
+| **Event Emission** | Full lifecycle hooks for observability |
+
+## Next Steps
+
+<CardGrid>
+	<Card title="Installation Guide" icon="document">
+		Learn about prerequisites and detailed setup instructions.
+		[Read more →](/getting-started/installation/)
+	</Card>
+	<Card title="Quick Start Tutorial" icon="rocket">
+		Build your first job queue in under 5 minutes.
+		[Get started →](/getting-started/quick-start/)
+	</Card>
+	<Card title="Core Concepts" icon="open-book">
+		Understand jobs, workers, and the processing lifecycle.
+		[Learn more →](/core-concepts/jobs/)
+	</Card>
+	<Card title="API Reference" icon="list-format">
+		Complete API documentation with TypeScript types.
+		[Explore →](/api/readme/)
 	</Card>
 </CardGrid>

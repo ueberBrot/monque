@@ -1,0 +1,245 @@
+---
+title: Jobs
+description: Understanding jobs and their lifecycle in Monque.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Jobs are the fundamental unit of work in Monque. This guide explains how jobs work, their lifecycle, and how to work with them effectively.
+
+## What is a Job?
+
+A job represents a unit of work to be processed asynchronously. Each job has:
+
+- **Name**: Identifies which worker should process it
+- **Data**: The payload containing information needed to complete the work
+- **Status**: Current state in the lifecycle (pending, processing, completed, failed)
+- **Scheduling**: When the job should run (`nextRunAt`)
+
+## Job Interface
+
+```typescript
+interface Job<T = unknown> {
+  _id?: ObjectId;           // MongoDB document ID
+  name: string;             // Job type (matches worker name)
+  data: T;                  // Your custom payload
+  status: JobStatusType;    // 'pending' | 'processing' | 'completed' | 'failed'
+  nextRunAt: Date;          // When to process
+  lockedAt?: Date | null;   // When job was claimed
+  claimedBy?: string | null; // Scheduler instance ID
+  lastHeartbeat?: Date | null; // Last liveness signal
+  failCount: number;        // Number of failed attempts
+  failReason?: string;      // Last error message
+  repeatInterval?: string;  // Cron expression for recurring jobs
+  uniqueKey?: string;       // Deduplication key
+  createdAt: Date;          // When job was created
+  updatedAt: Date;          // Last modification
+}
+```
+
+## Job Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: enqueue()
+    pending --> processing: worker claims
+    processing --> completed: success
+    processing --> pending: failure (retries left)
+    processing --> failed: max retries exceeded
+    completed --> pending: recurring job reschedules
+```
+
+### Status Definitions
+
+| Status       | Description                                         |
+| ------------ | --------------------------------------------------- |
+| `pending`    | Job is waiting to be picked up by a worker          |
+| `processing` | A worker has claimed and is executing the job       |
+| `completed`  | Job finished successfully                           |
+| `failed`     | Job permanently failed after exhausting all retries |
+
+## Creating Jobs
+
+### Immediate Execution
+
+Use `now()` for jobs that should run immediately:
+
+```typescript
+const job = await monque.now('send-email', {
+  to: 'user@example.com',
+  subject: 'Hello!'
+});
+
+console.log(job._id); // ObjectId
+console.log(job.status); // 'pending'
+```
+
+### Scheduled Execution
+
+Use `enqueue()` with `runAt` for delayed execution:
+
+```typescript
+// Run in 1 hour
+const job = await monque.enqueue('send-reminder', {
+  userId: '123',
+  message: 'Check back soon!'
+}, {
+  runAt: new Date(Date.now() + 3600000)
+});
+```
+
+### Recurring Jobs
+
+Use `schedule()` for cron-based recurring jobs:
+
+```typescript
+// Every day at midnight
+const job = await monque.schedule('0 0 * * *', 'daily-report', {
+  reportType: 'sales'
+});
+```
+
+## Preventing Duplicates
+
+Use `uniqueKey` to prevent duplicate jobs:
+
+```typescript
+// Only one sync job per user at a time
+await monque.enqueue('sync-user', { userId: '123' }, {
+  uniqueKey: 'sync-user-123'
+});
+
+// Attempting to enqueue again returns the existing job
+const existing = await monque.enqueue('sync-user', { userId: '123' }, {
+  uniqueKey: 'sync-user-123'
+});
+// existing._id === original job's _id
+```
+
+<Aside type="note">
+  `uniqueKey` only prevents duplicates when a job with that key is in `pending` or `processing` status. Completed and failed jobs don't block new ones.
+</Aside>
+
+## Querying Jobs
+
+### Get Jobs by Filter
+
+```typescript
+import { JobStatus } from '@monque/core';
+
+// All pending email jobs
+const pendingEmails = await monque.getJobs({
+  name: 'send-email',
+  status: JobStatus.PENDING
+});
+
+// All failed jobs (with pagination)
+const failedJobs = await monque.getJobs({
+  status: JobStatus.FAILED,
+  limit: 50,
+  skip: 0
+});
+
+// Multiple statuses
+const activeJobs = await monque.getJobs({
+  status: [JobStatus.PENDING, JobStatus.PROCESSING]
+});
+```
+
+### Get Single Job by ID
+
+```typescript
+import { ObjectId } from 'mongodb';
+
+const job = await monque.getJob(new ObjectId('...'));
+if (job) {
+  console.log(job.status, job.data);
+}
+```
+
+## Job Data Best Practices
+
+### Keep Payloads Small
+
+Job data should be reference data, not full documents:
+
+```typescript
+// ✅ Good - Store ID, fetch data in worker
+await monque.enqueue('process-order', { orderId: '123' });
+
+// ❌ Bad - Large embedded data
+await monque.enqueue('process-order', { 
+  order: { /* entire order document */ }
+});
+```
+
+### Use Type-Safe Payloads
+
+Define interfaces for your job data:
+
+```typescript
+interface ProcessOrderJob {
+  orderId: string;
+  priority: 'urgent' | 'normal';
+}
+
+// Type-safe enqueue
+await monque.enqueue<ProcessOrderJob>('process-order', {
+  orderId: '123',
+  priority: 'urgent'
+});
+
+// Type-safe worker
+monque.worker<ProcessOrderJob>('process-order', async (job) => {
+  const { orderId, priority } = job.data; // TypeScript knows the types
+});
+```
+
+### Idempotent Operations
+
+Design workers to handle duplicate execution safely:
+
+```typescript
+monque.worker('charge-payment', async (job) => {
+  const { paymentId } = job.data;
+  
+  // Check if already processed
+  const payment = await db.payments.findOne({ _id: paymentId });
+  if (payment.status === 'charged') {
+    return; // Already done, safe to skip
+  }
+  
+  // Process payment
+  await chargePayment(payment);
+});
+```
+
+## Job Retention
+
+<Aside type="tip">
+  Monque does not automatically clean up completed or failed jobs. Implement your own retention policy based on your needs.
+</Aside>
+
+Example cleanup job:
+
+```typescript
+// Schedule daily cleanup at 3 AM
+await monque.schedule('0 3 * * *', 'cleanup-old-jobs', {
+  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+});
+
+monque.worker('cleanup-old-jobs', async (job) => {
+  const cutoff = new Date(Date.now() - job.data.maxAge);
+  
+  await db.collection('monque_jobs').deleteMany({
+    status: { $in: ['completed', 'failed'] },
+    updatedAt: { $lt: cutoff }
+  });
+});
+```
+
+## Next Steps
+
+- [Workers](/core-concepts/workers/) - Learn how to process jobs
+- [Scheduling](/core-concepts/scheduling/) - Deep dive into cron expressions
+- [Retry & Backoff](/core-concepts/retry/) - Configure retry behavior

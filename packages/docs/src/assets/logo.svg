@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="40" height="40">
+  <defs>
+    <linearGradient id="mongoGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00ed64"/>
+      <stop offset="100%" style="stop-color:#00684a"/>
+    </linearGradient>
+  </defs>
+  <!-- Queue representation with MongoDB leaf motif -->
+  <rect x="10" y="35" width="80" height="30" rx="5" fill="url(#mongoGreen)"/>
+  <!-- Three jobs in queue -->
+  <circle cx="30" cy="50" r="8" fill="white" opacity="0.9"/>
+  <circle cx="50" cy="50" r="8" fill="white" opacity="0.7"/>
+  <circle cx="70" cy="50" r="8" fill="white" opacity="0.5"/>
+  <!-- Arrow indicating flow -->
+  <path d="M85 50 L95 50 M90 45 L95 50 L90 55" stroke="white" stroke-width="3" fill="none"/>
+</svg>

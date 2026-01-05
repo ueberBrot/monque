@@ -1,0 +1,42 @@
+/* Custom styles for Monque documentation */
+
+:root {
+	/* Brand colors */
+	--sl-color-accent-low: #1a4d2e;
+	--sl-color-accent: #4f9d69;
+	--sl-color-accent-high: #c3e6cb;
+	--sl-color-text-accent: #4f9d69;
+
+	/* MongoDB-inspired green palette */
+	--monque-green-dark: #00684a;
+	--monque-green: #00ed64;
+	--monque-green-light: #c3e6cb;
+}
+
+/* Dark theme adjustments */
+:root[data-theme="dark"] {
+	--sl-color-accent-low: #1a4d2e;
+	--sl-color-accent: #4f9d69;
+	--sl-color-accent-high: #c3e6cb;
+}
+
+/* Code block styling */
+.expressive-code {
+	margin-block: 1.5rem;
+}
+
+/* Better spacing for inline code */
+:not(pre) > code {
+	padding: 0.15em 0.3em;
+	border-radius: 0.25em;
+}
+
+/* Custom callout styling */
+.starlight-aside {
+	border-radius: 0.5rem;
+}
+
+/* Logo adjustments */
+.site-title img {
+	height: 2rem;
+}

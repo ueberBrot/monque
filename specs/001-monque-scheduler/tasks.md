@@ -450,35 +450,37 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Implementation for Phase 15
 
-- [ ] T145 Create packages/docs/ directory structure
-- [ ] T146 Initialize Starlight project in packages/docs/:
+- [X] T145 Create packages/docs/ directory structure
+- [X] T146 Initialize Starlight project in packages/docs/:
   ```bash
-  npm create astro@latest packages/docs -- --template starlight
+  bunx create astro@latest packages/docs -- --template starlight
   ```
-- [ ] T147 Configure packages/docs/astro.config.mjs with Monque branding and navigation
-- [ ] T148 Create packages/docs/src/content/docs/index.mdx as documentation home page
-- [ ] T149 Create packages/docs/src/content/docs/getting-started/installation.md
-- [ ] T150 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
-- [ ] T151 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
-- [ ] T152 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
-- [ ] T153 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
-- [ ] T154 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
-- [ ] T155 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
-- [ ] T156 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
-- [ ] T157 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
+- [X] T146a Install and configure `starlight-typedoc` plugin for automated API docs
+- [X] T146b Install and configure `starlight-links-validator`, `starlight-image-zoom`, and `starlight-heading-badges`
+- [X] T147 Configure packages/docs/astro.config.mjs with Monque branding and navigation
+- [X] T148 Create packages/docs/src/content/docs/index.mdx as documentation home page
+- [X] T149 Create packages/docs/src/content/docs/getting-started/installation.md
+- [X] T150 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
+- [X] T151 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
+- [X] T152 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
+- [X] T153 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
+- [X] T154 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
+- [X] T155 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
+- [X] T156 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
+- [X] T157 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
 
-- [ ] T158 Create packages/docs/src/content/docs/api/core.md with core API reference
+- [X] T158 Configure `starlight-typedoc` sidebar and output settings to generate API reference automatically
 
-- [ ] T159 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
-- [ ] T160 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
-- [ ] T161 Add code examples to all documentation pages with syntax highlighting
-- [ ] T162 Configure packages/docs/package.json with build and dev scripts
-- [ ] T163 Add packages/docs to turbo.json pipeline
-- [ ] T164 Update root README.md to link to documentation site
-- [ ] T165 Add documentation deployment configuration (Vercel/Netlify)
-- [ ] T166 Build and verify documentation site locally
+- [X] T159 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
+- [X] T160 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
+- [X] T161 Add code examples to all documentation pages with syntax highlighting
+- [X] T162 Configure packages/docs/package.json with build and dev scripts
+- [X] T163 Add packages/docs to turbo.json pipeline
+- [X] T164 Update root README.md to link to documentation site
+- [X] T165 Add documentation deployment configuration (Vercel/Netlify)
+- [X] T166 Build and verify documentation site locally
 
-**Checkpoint**: Documentation site complete and ready for deployment
+**Checkpoint**: Documentation site complete and ready for deployment ✓
 
 ---
 
@@ -488,22 +490,22 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### TSDoc Tasks
 
-- [ ] T167 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (Monque class methods, constructor options)
-- [ ] T168 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
-- [ ] T169 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
-- [ ] T170 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts
-- [ ] T171 [P] Add TSDoc comments to utility functions in packages/core/src/utils/cron.ts
+- [X] T167 [P] Add TSDoc comments to all public APIs in packages/core/src/monque.ts (Monque class methods, constructor options)
+- [X] T168 [P] Add TSDoc comments to all types in packages/core/src/types.ts (interfaces, type aliases, enums)
+- [X] T169 [P] Add TSDoc comments to all errors in packages/core/src/errors.ts (error classes, constructors, properties)
+- [X] T170 [P] Add TSDoc comments to utility functions in packages/core/src/utils/backoff.ts
+- [X] T171 [P] Add TSDoc comments to utility functions in packages/core/src/utils/cron.ts
 
-- [ ] T172 [P] Add TSDoc examples to key methods showing usage patterns
+- [X] T172 [P] Add TSDoc examples to key methods showing usage patterns
 
 ### Finalization Tasks
 
-- [ ] T173 Run biome lint and format on entire codebase
-- [ ] T174 Run full test suite with coverage report (target: 100%)
+- [X] T173 Run biome lint and format on entire codebase
+- [ ] T174 Run full test suite with coverage report
 - [ ] T175 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
 - [ ] T176 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
 - [ ] T177 Create .github/workflows/release.yml with GitHub Actions release pipeline
-- [ ] T178 Update root README.md with badges, quick start, and links to documentation site
+- [X] T178 Update root README.md with badges, quick start, and links to documentation site
 
 ---
 

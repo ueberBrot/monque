@@ -81,47 +81,6 @@ monque.on('job:error', ({ error, job? }) => { /* unexpected error */ });
 monque.on('stale:recovered', ({ count }) => { /* stale jobs recovered */ });
 ```
 
-## Test Utilities
-
-Test utilities are available via a separate export for integration testing:
-
-```typescript
-import {
-  getTestDb,
-  cleanupTestDb,
-  waitFor,
-  JobFactory,
-  JobFactoryHelpers,
-  TEST_CONSTANTS,
-} from '@monque/core/testing';
-import { describe, it, beforeAll, afterAll } from 'vitest';
-
-describe('MyJobProcessor', () => {
-  let db;
-
-  beforeAll(async () => {
-    db = await getTestDb('my-processor');
-  });
-
-  afterAll(async () => {
-    await cleanupTestDb(db);
-  });
-
-  it('should create test jobs', () => {
-    const job = JobFactory.build({ name: 'test-job' });
-    const processingJob = JobFactoryHelpers.processing();
-  });
-});
-```
-
-**Available utilities:**
-- `getTestDb(name)` - Get isolated test database
-- `cleanupTestDb(db)` - Drop test database
-- `waitFor(condition, options)` - Wait for async condition
-- `JobFactory` - Create test job fixtures
-- `JobFactoryHelpers` - Pre-configured job state helpers
-- `TEST_CONSTANTS` - Shared test constants
-
 ## Development
 
 ### Running Tests

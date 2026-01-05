@@ -1,0 +1,125 @@
+---
+title: Installation
+description: How to install Monque and set up your development environment.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+Before installing Monque, ensure you have:
+
+- **Node.js 22+** or **Bun 1.0+**
+- **MongoDB 4.0+** (required for atomic operations and Change Streams)
+  - For local development, use Docker or MongoDB Atlas
+  - Replica set required for Change Streams (MongoDB Atlas provides this by default)
+
+<Aside type="tip">
+  For local development, you can use Docker to quickly spin up a MongoDB replica set:
+  ```bash
+  docker run -d --name mongodb -p 27017:27017 mongo:7 --replSet rs0
+  docker exec -it mongodb mongosh --eval "rs.initiate()"
+  ```
+</Aside>
+
+## Install the Package
+
+<Tabs>
+  <TabItem label="bun">
+    ```bash
+    bun add @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="npm">
+    ```bash
+    npm install @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add @monque/core mongodb
+    ```
+  </TabItem>
+</Tabs>
+
+## Peer Dependencies
+
+Monque requires the MongoDB Node.js driver (`mongodb` ^7.0.0) as a peer dependency. This allows you to:
+
+- Use your existing MongoDB client instance
+- Control driver version independently
+- Share connections with your application
+
+## TypeScript Configuration
+
+Monque is written in TypeScript and provides full type definitions. For the best experience, ensure your `tsconfig.json` includes:
+
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "moduleResolution": "bundler", // or "node16"
+    "target": "ES2022",
+    "lib": ["ES2022"]
+  }
+}
+```
+
+## Verify Installation
+
+Create a simple script to verify everything is working:
+
+```typescript
+import { Monque } from '@monque/core';
+import { MongoClient } from 'mongodb';
+
+async function main() {
+  // Connect to MongoDB
+  const client = new MongoClient('mongodb://localhost:27017');
+  await client.connect();
+  
+  console.log('✅ Connected to MongoDB');
+  
+  const db = client.db('monque_test');
+  const monque = new Monque(db);
+  
+  await monque.initialize();
+  console.log('✅ Monque initialized');
+  
+  // Check health
+  monque.start();
+  console.log('✅ Scheduler started');
+  console.log('✅ Is healthy:', monque.isHealthy());
+  
+  await monque.stop();
+  await client.close();
+  
+  console.log('✅ Installation verified successfully!');
+}
+
+main().catch(console.error);
+```
+
+Run the script:
+
+<Tabs>
+  <TabItem label="bun">
+    ```bash
+    bun run verify.ts
+    ```
+  </TabItem>
+  <TabItem label="tsx">
+    ```bash
+    npx tsx verify.ts
+    ```
+  </TabItem>
+</Tabs>
+
+## Next Steps
+
+Now that you have Monque installed, head to the [Quick Start](/getting-started/quick-start/) guide to build your first job queue!
