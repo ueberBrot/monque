@@ -18,6 +18,14 @@
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
 		},
+		"test:unit": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
+		"test:integration": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
 		"test:dev": {
 			"cache": false,
 			"persistent": true,
