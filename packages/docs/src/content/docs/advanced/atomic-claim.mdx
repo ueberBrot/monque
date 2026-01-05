@@ -160,7 +160,7 @@ If a worker crashes while processing:
 
 1. Job remains in `processing` status with `claimedBy` set
 2. `lastHeartbeat` stops updating
-3. After `lockTimeout`, job is recovered (see [Heartbeat](/advanced/heartbeat/))
+3. After `lockTimeout`, job is recovered (see [Heartbeat](/monque/advanced/heartbeat/))
 
 ### Graceful Shutdown
 
@@ -225,6 +225,6 @@ monque.on('job:error', ({ error }) => {
 
 ## Next Steps
 
-- [Change Streams](/advanced/change-streams/) - Real-time job notifications
-- [Heartbeat Mechanism](/advanced/heartbeat/) - Detect stale claims
-- [Workers](/core-concepts/workers/) - Configure worker concurrency
+- [Change Streams](/monque/advanced/change-streams/) - Real-time job notifications
+- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Detect stale claims
+- [Workers](/monque/core-concepts/workers/) - Configure worker concurrency

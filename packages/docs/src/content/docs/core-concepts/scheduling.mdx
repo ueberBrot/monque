@@ -61,6 +61,23 @@ Monque uses the standard 5-field cron format:
 | `-`       | Range          | `0-15 * * * *` (minutes 0-15)     |
 | `/`       | Step values    | `*/5 * * * *` (every 5 minutes)   |
 
+### Predefined Aliases
+
+Monque supports standard cron aliases for common schedules:
+
+| Alias | Description | Equivalent |
+| ----- | ----------- | ---------- |
+| `@yearly` (or `@annually`) | Run once a year | `0 0 1 1 *` |
+| `@monthly` | Run once a month | `0 0 1 * *` |
+| `@weekly` | Run once a week | `0 0 * * 0` |
+| `@daily` (or `@midnight`) | Run once a day | `0 0 * * *` |
+| `@hourly` | Run once an hour | `0 * * * *`
+
+```typescript
+// Run daily at midnight using alias
+await monque.schedule('@daily', 'daily-cleanup', {});
+```
+
 ## Common Examples
 
 ### Time-Based Schedules
@@ -311,5 +328,5 @@ monque.on('job:complete', ({ job }) => {
 
 ## Next Steps
 
-- [Retry & Backoff](/core-concepts/retry/) - Handle scheduled job failures
-- [Workers](/core-concepts/workers/) - Configure worker concurrency
+- [Retry & Backoff](/monque/core-concepts/retry/) - Handle scheduled job failures
+- [Workers](/monque/core-concepts/workers/) - Configure worker concurrency

@@ -109,7 +109,7 @@ monque.worker('example', async (job) => {
 ### 4. Completion or Failure
 
 - **Success**: Job status set to `completed`
-- **Error thrown**: Job retried or set to `failed` (see [Retry & Backoff](/core-concepts/retry/))
+- **Error thrown**: Job retried or set to `failed` (see [Retry & Backoff](/monque/core-concepts/retry/))
 
 ## Error Handling
 
@@ -300,6 +300,6 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 
 ## Next Steps
 
-- [Scheduling](/core-concepts/scheduling/) - Configure recurring jobs
-- [Retry & Backoff](/core-concepts/retry/) - Understand failure handling
-- [Heartbeat Mechanism](/advanced/heartbeat/) - Learn about liveness tracking
+- [Scheduling](/monque/core-concepts/scheduling/) - Configure recurring jobs
+- [Retry & Backoff](/monque/core-concepts/retry/) - Understand failure handling
+- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Learn about liveness tracking

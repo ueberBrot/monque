@@ -3,6 +3,7 @@
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import starlightLinksValidator from 'starlight-links-validator';
+import starlightLlmsTxt from 'starlight-llms-txt';
 import starlightThemeNova from 'starlight-theme-nova';
 import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
 
@@ -61,6 +62,7 @@ export default defineConfig({
 				},
 			],
 			plugins: [
+				starlightLlmsTxt(),
 				starlightThemeNova(),
 				starlightLinksValidator({
 					errorOnRelativeLinks: true,
