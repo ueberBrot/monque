@@ -5,7 +5,7 @@ prev: false
 title: "WorkerOptions"
 ---
 
-Defined in: [packages/core/src/workers/types.ts:13](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/workers/types.ts#L13)
+Defined in: [packages/core/src/workers/types.ts:13](https://github.com/ueberBrot/monque/blob/main/packages/core/src/workers/types.ts#L13)
 
 Options for registering a worker.
 
@@ -25,7 +25,7 @@ monque.worker('send-email', emailHandler, {
 optional concurrency: number;
 ```
 
-Defined in: [packages/core/src/workers/types.ts:18](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/workers/types.ts#L18)
+Defined in: [packages/core/src/workers/types.ts:18](https://github.com/ueberBrot/monque/blob/main/packages/core/src/workers/types.ts#L18)
 
 Number of concurrent jobs this worker can process.
 
@@ -43,7 +43,7 @@ Number of concurrent jobs this worker can process.
 optional replace: boolean;
 ```
 
-Defined in: [packages/core/src/workers/types.ts:25](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/workers/types.ts#L25)
+Defined in: [packages/core/src/workers/types.ts:25](https://github.com/ueberBrot/monque/blob/main/packages/core/src/workers/types.ts#L25)
 
 Allow replacing an existing worker for the same job name.
 If false (default) and a worker already exists, throws WorkerRegistrationError.

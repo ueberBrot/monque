@@ -9,7 +9,7 @@ title: "PersistedJob"
 type PersistedJob<T> = Job<T> & object;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:123](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L123)
+Defined in: [packages/core/src/jobs/types.ts:123](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L123)
 
 A job that has been persisted to MongoDB and has a guaranteed `_id`.
 This is returned by `enqueue()`, `now()`, and `schedule()` methods.

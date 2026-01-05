@@ -9,7 +9,7 @@ title: "isCompletedJob"
 function isCompletedJob<T>(job): boolean;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:143](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L143)
+Defined in: [packages/core/src/jobs/guards.ts:143](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L143)
 
 Type guard to check if a job has completed successfully.
 
@@ -26,7 +26,7 @@ Equivalent to `job.status === JobStatus.COMPLETED` but with better semantics.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> | The job to check |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> | The job to check |
 
 ## Returns
 

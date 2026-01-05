@@ -9,7 +9,7 @@ title: "getNextCronDate"
 function getNextCronDate(expression, currentDate?): Date;
 ```
 
-Defined in: [packages/core/src/shared/utils/cron.ts:28](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/utils/cron.ts#L28)
+Defined in: [packages/core/src/shared/utils/cron.ts:28](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/utils/cron.ts#L28)
 
 Parse a cron expression and return the next scheduled run date.
 

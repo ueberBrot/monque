@@ -5,7 +5,7 @@ prev: false
 title: "Monque"
 ---
 
-Defined in: [packages/core/src/scheduler/monque.ts:134](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L134)
+Defined in: [packages/core/src/scheduler/monque.ts:134](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L134)
 
 Monque - MongoDB-backed job scheduler
 
@@ -97,14 +97,14 @@ process.on('SIGTERM', async () => {
 new Monque(db, options): Monque;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:179](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L179)
+Defined in: [packages/core/src/scheduler/monque.ts:179](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L179)
 
 #### Parameters
 
 | Parameter | Type |
 | ------ | ------ |
 | `db` | `Db` |
-| `options` | [`MonqueOptions`](/api/interfaces/monqueoptions/) |
+| `options` | [`MonqueOptions`](/monque/api/interfaces/monqueoptions/) |
 
 #### Returns
 
@@ -223,7 +223,7 @@ EventEmitter.addListener
 emit<K>(event, payload): boolean;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:1589](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L1589)
+Defined in: [packages/core/src/scheduler/monque.ts:1589](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L1589)
 
 Type-safe event emitter methods
 
@@ -231,14 +231,14 @@ Type-safe event emitter methods
 
 | Type Parameter |
 | ------ |
-| `K` *extends* keyof [`MonqueEventMap`](/api/interfaces/monqueeventmap/) |
+| `K` *extends* keyof [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) |
 
 #### Parameters
 
 | Parameter | Type |
 | ------ | ------ |
 | `event` | `K` |
-| `payload` | [`MonqueEventMap`](/api/interfaces/monqueeventmap/)\[`K`\] |
+| `payload` | [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/)\[`K`\] |
 
 #### Returns
 
@@ -261,7 +261,7 @@ enqueue<T>(
 options): Promise<PersistedJob<T>>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:370](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L370)
+Defined in: [packages/core/src/scheduler/monque.ts:370](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L370)
 
 Enqueue a job for processing.
 
@@ -286,11 +286,11 @@ Failed jobs are automatically retried with exponential backoff up to `maxRetries
 | ------ | ------ | ------ |
 | `name` | `string` | Job type identifier, must match a registered worker |
 | `data` | `T` | Job payload, will be passed to the worker handler |
-| `options` | [`EnqueueOptions`](/api/interfaces/enqueueoptions/) | Scheduling and deduplication options |
+| `options` | [`EnqueueOptions`](/monque/api/interfaces/enqueueoptions/) | Scheduling and deduplication options |
 
 #### Returns
 
-`Promise`\<[`PersistedJob`](/api/type-aliases/persistedjob/)\<`T`\>\>
+`Promise`\<[`PersistedJob`](/monque/api/type-aliases/persistedjob/)\<`T`\>\>
 
 Promise resolving to the created or existing job document
 
@@ -371,7 +371,7 @@ EventEmitter.eventNames
 getJob<T>(id): Promise<PersistedJob<T> | null>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:1019](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L1019)
+Defined in: [packages/core/src/scheduler/monque.ts:1019](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L1019)
 
 Get a single job by its MongoDB ObjectId.
 
@@ -392,7 +392,7 @@ logs, or stored references.
 
 #### Returns
 
-`Promise`\<[`PersistedJob`](/api/type-aliases/persistedjob/)\<`T`\> \| `null`\>
+`Promise`\<[`PersistedJob`](/monque/api/type-aliases/persistedjob/)\<`T`\> \| `null`\>
 
 Promise resolving to the job if found, null otherwise
 
@@ -428,7 +428,7 @@ app.get('/jobs/:id', async (req, res) => {
 getJobs<T>(filter): Promise<PersistedJob<T>[]>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:950](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L950)
+Defined in: [packages/core/src/scheduler/monque.ts:950](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L950)
 
 Query jobs from the queue with optional filters.
 
@@ -445,11 +445,11 @@ administrative purposes. Results are ordered by `nextRunAt` ascending.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `filter` | [`GetJobsFilter`](/api/interfaces/getjobsfilter/) | Optional filter criteria |
+| `filter` | [`GetJobsFilter`](/monque/api/interfaces/getjobsfilter/) | Optional filter criteria |
 
 #### Returns
 
-`Promise`\<[`PersistedJob`](/api/type-aliases/persistedjob/)\<`T`\>[]\>
+`Promise`\<[`PersistedJob`](/monque/api/type-aliases/persistedjob/)\<`T`\>[]\>
 
 Promise resolving to array of matching jobs
 
@@ -522,7 +522,7 @@ EventEmitter.getMaxListeners
 initialize(): Promise<void>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:203](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L203)
+Defined in: [packages/core/src/scheduler/monque.ts:203](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L203)
 
 Initialize the scheduler by setting up the MongoDB collection and indexes.
 Must be called before start().
@@ -543,7 +543,7 @@ If collection or index creation fails
 isHealthy(): boolean;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:904](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L904)
+Defined in: [packages/core/src/scheduler/monque.ts:904](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L904)
 
 Check if the scheduler is healthy (running and connected).
 
@@ -688,7 +688,7 @@ EventEmitter.listeners
 now<T>(name, data): Promise<PersistedJob<T>>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:464](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L464)
+Defined in: [packages/core/src/scheduler/monque.ts:464](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L464)
 
 Enqueue a job for immediate processing.
 
@@ -710,7 +710,7 @@ Jobs are picked up on the next poll cycle (typically within 1 second based on `p
 
 #### Returns
 
-`Promise`\<[`PersistedJob`](/api/type-aliases/persistedjob/)\<`T`\>\>
+`Promise`\<[`PersistedJob`](/monque/api/type-aliases/persistedjob/)\<`T`\>\>
 
 Promise resolving to the created job document
 
@@ -742,7 +742,7 @@ return order; // Return immediately, processing happens async
 off<K>(event, listener): this;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:1607](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L1607)
+Defined in: [packages/core/src/scheduler/monque.ts:1607](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L1607)
 
 Alias for `emitter.removeListener()`.
 
@@ -750,7 +750,7 @@ Alias for `emitter.removeListener()`.
 
 | Type Parameter |
 | ------ |
-| `K` *extends* keyof [`MonqueEventMap`](/api/interfaces/monqueeventmap/) |
+| `K` *extends* keyof [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) |
 
 #### Parameters
 
@@ -781,7 +781,7 @@ EventEmitter.off
 on<K>(event, listener): this;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:1593](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L1593)
+Defined in: [packages/core/src/scheduler/monque.ts:1593](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L1593)
 
 Adds the `listener` function to the end of the listeners array for the
 event named `eventName`. No checks are made to see if the `listener` has
@@ -816,7 +816,7 @@ myEE.emit('foo');
 
 | Type Parameter |
 | ------ |
-| `K` *extends* keyof [`MonqueEventMap`](/api/interfaces/monqueeventmap/) |
+| `K` *extends* keyof [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) |
 
 #### Parameters
 
@@ -847,7 +847,7 @@ EventEmitter.on
 once<K>(event, listener): this;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:1600](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L1600)
+Defined in: [packages/core/src/scheduler/monque.ts:1600](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L1600)
 
 Adds a **one-time** `listener` function for the event named `eventName`. The
 next time `eventName` is triggered, this listener is removed and then invoked.
@@ -879,7 +879,7 @@ myEE.emit('foo');
 
 | Type Parameter |
 | ------ |
-| `K` *extends* keyof [`MonqueEventMap`](/api/interfaces/monqueeventmap/) |
+| `K` *extends* keyof [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) |
 
 #### Parameters
 
@@ -1243,7 +1243,7 @@ schedule<T>(
 options): Promise<PersistedJob<T>>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:512](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L512)
+Defined in: [packages/core/src/scheduler/monque.ts:512](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L512)
 
 Schedule a recurring job with a cron expression.
 
@@ -1269,11 +1269,11 @@ can exist. This prevents duplicate scheduled jobs on application restart.
 | `cron` | `string` | Cron expression (5 fields or predefined expression) |
 | `name` | `string` | Job type identifier, must match a registered worker |
 | `data` | `T` | Job payload, will be passed to the worker handler on each run |
-| `options` | [`ScheduleOptions`](/api/interfaces/scheduleoptions/) | Scheduling options (uniqueKey for deduplication) |
+| `options` | [`ScheduleOptions`](/monque/api/interfaces/scheduleoptions/) | Scheduling options (uniqueKey for deduplication) |
 
 #### Returns
 
-`Promise`\<[`PersistedJob`](/api/type-aliases/persistedjob/)\<`T`\>\>
+`Promise`\<[`PersistedJob`](/monque/api/type-aliases/persistedjob/)\<`T`\>\>
 
 Promise resolving to the created job document with `repeatInterval` set
 
@@ -1353,7 +1353,7 @@ EventEmitter.setMaxListeners
 start(): void;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:714](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L714)
+Defined in: [packages/core/src/scheduler/monque.ts:714](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L714)
 
 Start polling for and processing jobs.
 
@@ -1411,7 +1411,7 @@ If scheduler not initialized (call `initialize()` first)
 stop(): Promise<void>;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:780](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L780)
+Defined in: [packages/core/src/scheduler/monque.ts:780](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L780)
 
 Stop the scheduler gracefully, waiting for in-progress jobs to complete.
 
@@ -1459,7 +1459,7 @@ worker<T>(
    options): void;
 ```
 
-Defined in: [packages/core/src/scheduler/monque.ts:653](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/scheduler/monque.ts#L653)
+Defined in: [packages/core/src/scheduler/monque.ts:653](https://github.com/ueberBrot/monque/blob/main/packages/core/src/scheduler/monque.ts#L653)
 
 Register a worker to process jobs of a specific type.
 
@@ -1487,8 +1487,8 @@ replacement of handlers. To explicitly replace a worker, pass `{ replace: true }
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
 | `name` | `string` | Job type identifier to handle |
-| `handler` | [`JobHandler`](/api/type-aliases/jobhandler/)\<`T`\> | Async function to execute for each job |
-| `options` | [`WorkerOptions`](/api/interfaces/workeroptions/) | Worker configuration |
+| `handler` | [`JobHandler`](/monque/api/type-aliases/jobhandler/)\<`T`\> | Async function to execute for each job |
+| `options` | [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker configuration |
 
 #### Returns
 

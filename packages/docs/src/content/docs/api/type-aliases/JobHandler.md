@@ -9,7 +9,7 @@ title: "JobHandler"
 type JobHandler<T> = (job) => Promise<void> | void;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:214](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L214)
+Defined in: [packages/core/src/jobs/types.ts:214](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L214)
 
 Handler function signature for processing jobs.
 
@@ -23,7 +23,7 @@ Handler function signature for processing jobs.
 
 | Parameter | Type |
 | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> |
 
 ## Returns
 

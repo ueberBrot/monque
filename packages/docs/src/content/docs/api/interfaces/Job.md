@@ -5,7 +5,7 @@ prev: false
 title: "Job"
 ---
 
-Defined in: [packages/core/src/jobs/types.ts:59](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L59)
+Defined in: [packages/core/src/jobs/types.ts:59](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L59)
 
 Represents a job in the Monque queue.
 
@@ -43,7 +43,7 @@ const job: Job<EmailJobData> = {
 optional _id: ObjectId;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:61](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L61)
+Defined in: [packages/core/src/jobs/types.ts:61](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L61)
 
 MongoDB document identifier
 
@@ -55,7 +55,7 @@ MongoDB document identifier
 optional claimedBy: string | null;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:83](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L83)
+Defined in: [packages/core/src/jobs/types.ts:83](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L83)
 
 Unique identifier of the scheduler instance that claimed this job.
 Used for atomic claim pattern - ensures only one instance processes each job.
@@ -69,7 +69,7 @@ Set when a job is claimed, cleared when job completes or fails.
 createdAt: Date;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:111](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L111)
+Defined in: [packages/core/src/jobs/types.ts:111](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L111)
 
 Job creation timestamp
 
@@ -81,7 +81,7 @@ Job creation timestamp
 data: T;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:67](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L67)
+Defined in: [packages/core/src/jobs/types.ts:67](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L67)
 
 Job payload - must be JSON-serializable
 
@@ -93,7 +93,7 @@ Job payload - must be JSON-serializable
 failCount: number;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:99](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L99)
+Defined in: [packages/core/src/jobs/types.ts:99](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L99)
 
 Number of failed attempts
 
@@ -105,7 +105,7 @@ Number of failed attempts
 optional failReason: string;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:102](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L102)
+Defined in: [packages/core/src/jobs/types.ts:102](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L102)
 
 Last failure error message
 
@@ -117,7 +117,7 @@ Last failure error message
 optional heartbeatInterval: number;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:96](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L96)
+Defined in: [packages/core/src/jobs/types.ts:96](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L96)
 
 Heartbeat interval in milliseconds for this job.
 Stored on the job to allow recovery logic to use the correct timeout.
@@ -130,7 +130,7 @@ Stored on the job to allow recovery logic to use the correct timeout.
 optional lastHeartbeat: Date | null;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:90](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L90)
+Defined in: [packages/core/src/jobs/types.ts:90](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L90)
 
 Timestamp of the last heartbeat update for this job.
 Used to detect stale jobs when a scheduler instance crashes without releasing.
@@ -144,7 +144,7 @@ Updated periodically while job is being processed.
 optional lockedAt: Date | null;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:76](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L76)
+Defined in: [packages/core/src/jobs/types.ts:76](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L76)
 
 Timestamp when job was locked for processing
 
@@ -156,7 +156,7 @@ Timestamp when job was locked for processing
 name: string;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:64](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L64)
+Defined in: [packages/core/src/jobs/types.ts:64](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L64)
 
 Job type identifier, matches worker registration
 
@@ -168,7 +168,7 @@ Job type identifier, matches worker registration
 nextRunAt: Date;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:73](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L73)
+Defined in: [packages/core/src/jobs/types.ts:73](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L73)
 
 When the job should be processed
 
@@ -180,7 +180,7 @@ When the job should be processed
 optional repeatInterval: string;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:105](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L105)
+Defined in: [packages/core/src/jobs/types.ts:105](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L105)
 
 Cron expression for recurring jobs
 
@@ -192,7 +192,7 @@ Cron expression for recurring jobs
 status: JobStatusType;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:70](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L70)
+Defined in: [packages/core/src/jobs/types.ts:70](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L70)
 
 Current lifecycle state
 
@@ -204,7 +204,7 @@ Current lifecycle state
 optional uniqueKey: string;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:108](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L108)
+Defined in: [packages/core/src/jobs/types.ts:108](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L108)
 
 Deduplication key to prevent duplicate jobs
 
@@ -216,6 +216,6 @@ Deduplication key to prevent duplicate jobs
 updatedAt: Date;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:114](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L114)
+Defined in: [packages/core/src/jobs/types.ts:114](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L114)
 
 Last modification timestamp

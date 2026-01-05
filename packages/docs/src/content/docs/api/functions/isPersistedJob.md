@@ -9,7 +9,7 @@ title: "isPersistedJob"
 function isPersistedJob<T>(job): job is PersistedJob<T>;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:37](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L37)
+Defined in: [packages/core/src/jobs/guards.ts:37](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L37)
 
 Type guard to check if a job has been persisted to MongoDB.
 
@@ -27,7 +27,7 @@ a job can be updated or referenced by its ID.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> | The job to check |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> | The job to check |
 
 ## Returns
 

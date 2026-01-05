@@ -5,7 +5,7 @@ prev: false
 title: "EnqueueOptions"
 ---
 
-Defined in: [packages/core/src/jobs/types.ts:136](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L136)
+Defined in: [packages/core/src/jobs/types.ts:136](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L136)
 
 Options for enqueueing a job.
 
@@ -26,7 +26,7 @@ await monque.enqueue('sync-user', { userId: '123' }, {
 optional runAt: Date;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:146](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L146)
+Defined in: [packages/core/src/jobs/types.ts:146](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L146)
 
 When the job should be processed. Defaults to immediately (new Date()).
 
@@ -38,7 +38,7 @@ When the job should be processed. Defaults to immediately (new Date()).
 optional uniqueKey: string;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:141](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L141)
+Defined in: [packages/core/src/jobs/types.ts:141](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L141)
 
 Deduplication key. If a job with this key is already pending or processing,
 the enqueue operation will not create a duplicate.

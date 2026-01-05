@@ -9,7 +9,7 @@ title: "isFailedJob"
 function isFailedJob<T>(job): boolean;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:168](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L168)
+Defined in: [packages/core/src/jobs/guards.ts:168](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L168)
 
 Type guard to check if a job has permanently failed.
 
@@ -26,7 +26,7 @@ Equivalent to `job.status === JobStatus.FAILED` but with better semantics.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> | The job to check |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> | The job to check |
 
 ## Returns
 

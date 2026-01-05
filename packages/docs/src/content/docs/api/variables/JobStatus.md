@@ -9,7 +9,7 @@ title: "JobStatus"
 const JobStatus: object;
 ```
 
-Defined in: [packages/core/src/jobs/types.ts:19](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/types.ts#L19)
+Defined in: [packages/core/src/jobs/types.ts:19](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/types.ts#L19)
 
 Represents the lifecycle states of a job in the queue.
 

@@ -5,7 +5,7 @@ prev: false
 title: "MonqueEventMap"
 ---
 
-Defined in: [packages/core/src/events/types.ts:6](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L6)
+Defined in: [packages/core/src/events/types.ts:6](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L6)
 
 Event payloads for Monque lifecycle events.
 
@@ -17,7 +17,7 @@ Event payloads for Monque lifecycle events.
 changestream:closed: undefined;
 ```
 
-Defined in: [packages/core/src/events/types.ts:61](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L61)
+Defined in: [packages/core/src/events/types.ts:61](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L61)
 
 Emitted when the change stream is closed.
 
@@ -29,7 +29,7 @@ Emitted when the change stream is closed.
 changestream:connected: undefined;
 ```
 
-Defined in: [packages/core/src/events/types.ts:49](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L49)
+Defined in: [packages/core/src/events/types.ts:49](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L49)
 
 Emitted when the change stream is successfully connected.
 
@@ -41,7 +41,7 @@ Emitted when the change stream is successfully connected.
 changestream:error: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:54](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L54)
+Defined in: [packages/core/src/events/types.ts:54](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L54)
 
 Emitted when a change stream error occurs.
 
@@ -59,7 +59,7 @@ error: Error;
 changestream:fallback: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:66](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L66)
+Defined in: [packages/core/src/events/types.ts:66](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L66)
 
 Emitted when falling back from change streams to polling-only mode.
 
@@ -77,7 +77,7 @@ reason: string;
 job:complete: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:15](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L15)
+Defined in: [packages/core/src/events/types.ts:15](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L15)
 
 Emitted when a job finishes successfully.
 
@@ -103,7 +103,7 @@ job: Job;
 job:error: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:34](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L34)
+Defined in: [packages/core/src/events/types.ts:34](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L34)
 
 Emitted for unexpected errors during processing.
 
@@ -127,7 +127,7 @@ optional job: Job<unknown>;
 job:fail: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:24](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L24)
+Defined in: [packages/core/src/events/types.ts:24](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L24)
 
 Emitted when a job fails (may retry).
 
@@ -159,7 +159,7 @@ Whether the job will be retried
 job:start: Job;
 ```
 
-Defined in: [packages/core/src/events/types.ts:10](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L10)
+Defined in: [packages/core/src/events/types.ts:10](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L10)
 
 Emitted when a job begins processing.
 
@@ -171,7 +171,7 @@ Emitted when a job begins processing.
 stale:recovered: object;
 ```
 
-Defined in: [packages/core/src/events/types.ts:42](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/events/types.ts#L42)
+Defined in: [packages/core/src/events/types.ts:42](https://github.com/ueberBrot/monque/blob/main/packages/core/src/events/types.ts#L42)
 
 Emitted when stale jobs are recovered on startup.
 

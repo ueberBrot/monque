@@ -12,7 +12,7 @@ function calculateBackoff(
    maxDelay?): Date;
 ```
 
-Defined in: [packages/core/src/shared/utils/backoff.ts:32](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/utils/backoff.ts#L32)
+Defined in: [packages/core/src/shared/utils/backoff.ts:32](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/utils/backoff.ts#L32)
 
 Calculate the next run time using exponential backoff.
 

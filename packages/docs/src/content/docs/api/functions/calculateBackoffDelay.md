@@ -12,7 +12,7 @@ function calculateBackoffDelay(
    maxDelay?): number;
 ```
 
-Defined in: [packages/core/src/shared/utils/backoff.ts:54](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/utils/backoff.ts#L54)
+Defined in: [packages/core/src/shared/utils/backoff.ts:54](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/utils/backoff.ts#L54)
 
 Calculate just the delay in milliseconds for a given fail count.
 

@@ -9,7 +9,7 @@ title: "isValidJobStatus"
 function isValidJobStatus(value): value is JobStatusType;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:73](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L73)
+Defined in: [packages/core/src/jobs/guards.ts:73](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L73)
 
 Type guard to check if a value is a valid job status.
 

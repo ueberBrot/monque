@@ -9,7 +9,7 @@ title: "isPendingJob"
 function isPendingJob<T>(job): boolean;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:101](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L101)
+Defined in: [packages/core/src/jobs/guards.ts:101](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L101)
 
 Type guard to check if a job is in pending status.
 
@@ -26,7 +26,7 @@ Equivalent to `job.status === JobStatus.PENDING` but with better semantics.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> | The job to check |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> | The job to check |
 
 ## Returns
 

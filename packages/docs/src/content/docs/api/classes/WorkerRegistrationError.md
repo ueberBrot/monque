@@ -5,7 +5,7 @@ prev: false
 title: "WorkerRegistrationError"
 ---
 
-Defined in: [packages/core/src/shared/errors.ts:133](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/errors.ts#L133)
+Defined in: [packages/core/src/shared/errors.ts:133](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/errors.ts#L133)
 
 Error thrown when attempting to register a worker for a job name
 that already has a registered worker, without explicitly allowing replacement.
@@ -28,7 +28,7 @@ monque.worker('send-email', handler2, { replace: true });
 
 ## Extends
 
-- [`MonqueError`](/api/classes/monqueerror/)
+- [`MonqueError`](/monque/api/classes/monqueerror/)
 
 ## Constructors
 
@@ -38,7 +38,7 @@ monque.worker('send-email', handler2, { replace: true });
 new WorkerRegistrationError(message, jobName): WorkerRegistrationError;
 ```
 
-Defined in: [packages/core/src/shared/errors.ts:134](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/errors.ts#L134)
+Defined in: [packages/core/src/shared/errors.ts:134](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/errors.ts#L134)
 
 #### Parameters
 
@@ -53,7 +53,7 @@ Defined in: [packages/core/src/shared/errors.ts:134](https://github.com/ueberBro
 
 #### Overrides
 
-[`MonqueError`](/api/classes/monqueerror/).[`constructor`](/api/classes/monqueerror/#constructor)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`constructor`](/monque/api/classes/monqueerror/#constructor)
 
 ## Properties
 
@@ -69,7 +69,7 @@ The cause of the error.
 
 #### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`cause`](/api/classes/monqueerror/#cause)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`cause`](/monque/api/classes/monqueerror/#cause)
 
 ***
 
@@ -79,7 +79,7 @@ The cause of the error.
 readonly jobName: string;
 ```
 
-Defined in: [packages/core/src/shared/errors.ts:136](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/errors.ts#L136)
+Defined in: [packages/core/src/shared/errors.ts:136](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/errors.ts#L136)
 
 ***
 
@@ -93,7 +93,7 @@ Defined in: node\_modules/.bun/typescript@5.9.3/node\_modules/typescript/lib/lib
 
 #### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`message`](/api/classes/monqueerror/#message)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`message`](/monque/api/classes/monqueerror/#message)
 
 ***
 
@@ -107,7 +107,7 @@ Defined in: node\_modules/.bun/typescript@5.9.3/node\_modules/typescript/lib/lib
 
 #### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`name`](/api/classes/monqueerror/#name)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`name`](/monque/api/classes/monqueerror/#name)
 
 ***
 
@@ -121,7 +121,7 @@ Defined in: node\_modules/.bun/typescript@5.9.3/node\_modules/typescript/lib/lib
 
 #### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`stack`](/api/classes/monqueerror/#stack)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`stack`](/monque/api/classes/monqueerror/#stack)
 
 ***
 
@@ -145,7 +145,7 @@ not capture any frames.
 
 #### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`stackTraceLimit`](/api/classes/monqueerror/#stacktracelimit)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`stackTraceLimit`](/monque/api/classes/monqueerror/#stacktracelimit)
 
 ## Methods
 
@@ -216,7 +216,7 @@ a();
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`captureStackTrace`](/api/classes/monqueerror/#capturestacktrace)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`captureStackTrace`](/monque/api/classes/monqueerror/#capturestacktrace)
 
 #### Call Signature
 
@@ -283,7 +283,7 @@ a();
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`captureStackTrace`](/api/classes/monqueerror/#capturestacktrace)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`captureStackTrace`](/monque/api/classes/monqueerror/#capturestacktrace)
 
 #### Call Signature
 
@@ -308,7 +308,7 @@ Create .stack property on a target object
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`captureStackTrace`](/api/classes/monqueerror/#capturestacktrace)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`captureStackTrace`](/monque/api/classes/monqueerror/#capturestacktrace)
 
 ***
 
@@ -336,7 +336,7 @@ Indicates whether the argument provided is a built-in Error instance or not.
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`isError`](/api/classes/monqueerror/#iserror)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`isError`](/monque/api/classes/monqueerror/#iserror)
 
 #### Call Signature
 
@@ -362,7 +362,7 @@ True if the value is an instance of Error, false otherwise
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`isError`](/api/classes/monqueerror/#iserror)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`isError`](/monque/api/classes/monqueerror/#iserror)
 
 ***
 
@@ -393,7 +393,7 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`prepareStackTrace`](/api/classes/monqueerror/#preparestacktrace)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`prepareStackTrace`](/monque/api/classes/monqueerror/#preparestacktrace)
 
 #### Call Signature
 
@@ -420,4 +420,4 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ##### Inherited from
 
-[`MonqueError`](/api/classes/monqueerror/).[`prepareStackTrace`](/api/classes/monqueerror/#preparestacktrace)
+[`MonqueError`](/monque/api/classes/monqueerror/).[`prepareStackTrace`](/monque/api/classes/monqueerror/#preparestacktrace)

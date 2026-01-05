@@ -9,7 +9,7 @@ title: "isRecurringJob"
 function isRecurringJob<T>(job): boolean;
 ```
 
-Defined in: [packages/core/src/jobs/guards.ts:197](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/jobs/guards.ts#L197)
+Defined in: [packages/core/src/jobs/guards.ts:197](https://github.com/ueberBrot/monque/blob/main/packages/core/src/jobs/guards.ts#L197)
 
 Type guard to check if a job is a recurring scheduled job.
 
@@ -26,7 +26,7 @@ rescheduled after each successful completion.
 
 | Parameter | Type | Description |
 | ------ | ------ | ------ |
-| `job` | [`Job`](/api/interfaces/job/)\<`T`\> | The job to check |
+| `job` | [`Job`](/monque/api/interfaces/job/)\<`T`\> | The job to check |
 
 ## Returns
 

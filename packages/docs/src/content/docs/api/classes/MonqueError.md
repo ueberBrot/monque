@@ -5,7 +5,7 @@ prev: false
 title: "MonqueError"
 ---
 
-Defined in: [packages/core/src/shared/errors.ts:17](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/errors.ts#L17)
+Defined in: [packages/core/src/shared/errors.ts:17](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/errors.ts#L17)
 
 Base error class for all Monque-related errors.
 
@@ -27,10 +27,10 @@ try {
 
 ## Extended by
 
-- [`ConnectionError`](/api/classes/connectionerror/)
-- [`InvalidCronError`](/api/classes/invalidcronerror/)
-- [`ShutdownTimeoutError`](/api/classes/shutdowntimeouterror/)
-- [`WorkerRegistrationError`](/api/classes/workerregistrationerror/)
+- [`ConnectionError`](/monque/api/classes/connectionerror/)
+- [`InvalidCronError`](/monque/api/classes/invalidcronerror/)
+- [`ShutdownTimeoutError`](/monque/api/classes/shutdowntimeouterror/)
+- [`WorkerRegistrationError`](/monque/api/classes/workerregistrationerror/)
 
 ## Constructors
 
@@ -40,7 +40,7 @@ try {
 new MonqueError(message): MonqueError;
 ```
 
-Defined in: [packages/core/src/shared/errors.ts:18](https://github.com/ueberBrot/monque/blob/1f83b8316cb0fc85fdcc60acd7eba3a60dce443e/packages/core/src/shared/errors.ts#L18)
+Defined in: [packages/core/src/shared/errors.ts:18](https://github.com/ueberBrot/monque/blob/main/packages/core/src/shared/errors.ts#L18)
 
 #### Parameters
 
