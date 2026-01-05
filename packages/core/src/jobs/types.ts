@@ -165,6 +165,41 @@ export interface ScheduleOptions {
 }
 
 /**
+ * Filter options for querying jobs.
+ *
+ * Use with `monque.getJobs()` to filter jobs by name, status, or limit results.
+ *
+ * @example
+ * ```typescript
+ * // Get all pending email jobs
+ * const pendingEmails = await monque.getJobs({
+ *   name: 'send-email',
+ *   status: JobStatus.PENDING,
+ * });
+ *
+ * // Get all failed or completed jobs (paginated)
+ * const finishedJobs = await monque.getJobs({
+ *   status: [JobStatus.COMPLETED, JobStatus.FAILED],
+ *   limit: 50,
+ *   skip: 100,
+ * });
+ * ```
+ */
+export interface GetJobsFilter {
+	/** Filter by job type name */
+	name?: string;
+
+	/** Filter by status (single or multiple) */
+	status?: JobStatusType | JobStatusType[];
+
+	/** Maximum number of jobs to return (default: 100) */
+	limit?: number;
+
+	/** Number of jobs to skip for pagination */
+	skip?: number;
+}
+
+/**
  * Handler function signature for processing jobs.
  *
  * @template T - The type of the job's data payload

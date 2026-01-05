@@ -21,10 +21,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
 import { JobStatus } from '@/jobs/types.js';
 import { Monque } from '@/scheduler/monque.js';
-
-import { JobFactoryHelpers } from './factories/job.factory.js';
 
 describe('heartbeat mechanism', () => {
 	let db: Db;

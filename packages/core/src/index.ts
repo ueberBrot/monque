@@ -1,10 +1,16 @@
-// Main class
-
 // Types - Events
 export type { MonqueEventMap } from '@/events';
 // Types - Jobs
 export {
 	type EnqueueOptions,
+	type GetJobsFilter,
+	isCompletedJob,
+	isFailedJob,
+	isPendingJob,
+	isPersistedJob,
+	isProcessingJob,
+	isRecurringJob,
+	isValidJobStatus,
 	type Job,
 	type JobHandler,
 	JobStatus,
@@ -14,6 +20,7 @@ export {
 } from '@/jobs';
 // Types - Scheduler
 export type { MonqueOptions } from '@/scheduler';
+// Main class
 export { Monque } from '@/scheduler';
 // Errors
 // Utilities (for advanced use cases)

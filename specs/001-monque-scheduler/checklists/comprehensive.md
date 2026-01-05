@@ -258,7 +258,7 @@
   > ✅ cron-parser npm supports standard 5-field cron
 
 - [x] CHK083 - Is MongoDB driver version requirement specified? [Dependency, Gap]
-  > ✅ Assumptions §Environment Requirements: "mongodb driver ^6.0.0 required for modern TypeScript types and Connection handling"
+  > ✅ Assumptions §Environment Requirements: "mongodb driver ^7.0.0 required for modern TypeScript types and Connection handling"
 
 ## Ambiguities & Conflicts to Resolve
 

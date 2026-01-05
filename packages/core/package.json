@@ -32,8 +32,12 @@
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
 		"test": "vitest run",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
+		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
 		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
 		"test:watch": "vitest",
+		"test:watch:unit": "vitest --config vitest.unit.config.ts",
+		"test:watch:integration": "vitest integration/",
 		"lint": "biome check src/"
 	},
 	"keywords": [

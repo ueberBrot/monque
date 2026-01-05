@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { ChangeStream, ChangeStreamDocument, Collection, Db, Document, WithId } from 'mongodb';
+import type {
+	ChangeStream,
+	ChangeStreamDocument,
+	Collection,
+	Db,
+	Document,
+	ObjectId,
+	WithId,
+} from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
 	type EnqueueOptions,
+	type GetJobsFilter,
+	isPersistedJob,
 	type Job,
 	type JobHandler,
 	JobStatus,
@@ -896,6 +906,139 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
+	 * Query jobs from the queue with optional filters.
+	 *
+	 * Provides read-only access to job data for monitoring, debugging, and
+	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param filter - Optional filter criteria
+	 * @returns Promise resolving to array of matching jobs
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Get all pending jobs
+	 * ```typescript
+	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
+	 * console.log(`${pendingJobs.length} jobs waiting`);
+	 * ```
+	 *
+	 * @example Get failed email jobs
+	 * ```typescript
+	 * const failedEmails = await monque.getJobs({
+	 *   name: 'send-email',
+	 *   status: JobStatus.FAILED,
+	 * });
+	 * for (const job of failedEmails) {
+	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
+	 * }
+	 * ```
+	 *
+	 * @example Paginated job listing
+	 * ```typescript
+	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
+	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
+	 * ```
+	 *
+	 * @example Use with type guards from @monque/core
+	 * ```typescript
+	 * import { isPendingJob, isRecurringJob } from '@monque/core';
+	 *
+	 * const jobs = await monque.getJobs();
+	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
+	 * ```
+	 */
+	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
+		this.ensureInitialized();
+
+		if (!this.collection) {
+			throw new ConnectionError('Failed to query jobs: collection not available');
+		}
+
+		const query: Document = {};
+
+		if (filter.name !== undefined) {
+			query['name'] = filter.name;
+		}
+
+		if (filter.status !== undefined) {
+			if (Array.isArray(filter.status)) {
+				query['status'] = { $in: filter.status };
+			} else {
+				query['status'] = filter.status;
+			}
+		}
+
+		const limit = filter.limit ?? 100;
+		const skip = filter.skip ?? 0;
+
+		try {
+			const cursor = this.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
+
+			const docs = await cursor.toArray();
+			return docs.map((doc) => this.documentToPersistedJob<T>(doc));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
+			throw new ConnectionError(
+				`Failed to query jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Get a single job by its MongoDB ObjectId.
+	 *
+	 * Useful for retrieving job details when you have a job ID from events,
+	 * logs, or stored references.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param id - The job's ObjectId
+	 * @returns Promise resolving to the job if found, null otherwise
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Look up job from event
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   // Later, retrieve the job to check its status
+	 *   const currentJob = await monque.getJob(job._id);
+	 *   console.log(`Job status: ${currentJob?.status}`);
+	 * });
+	 * ```
+	 *
+	 * @example Admin endpoint
+	 * ```typescript
+	 * app.get('/jobs/:id', async (req, res) => {
+	 *   const job = await monque.getJob(new ObjectId(req.params.id));
+	 *   if (!job) {
+	 *     return res.status(404).json({ error: 'Job not found' });
+	 *   }
+	 *   res.json(job);
+	 * });
+	 * ```
+	 */
+	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
+		this.ensureInitialized();
+
+		if (!this.collection) {
+			throw new ConnectionError('Failed to get job: collection not available');
+		}
+
+		try {
+			const doc = await this.collection.findOne({ _id: id });
+			if (!doc) {
+				return null;
+			}
+			return this.documentToPersistedJob<T>(doc as WithId<Document>);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
+			throw new ConnectionError(
+				`Failed to get job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
 	 * Poll for available jobs and process them.
 	 *
 	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
@@ -1030,7 +1173,7 @@ export class Monque extends EventEmitter {
 	 * @param job - The job that completed successfully
 	 */
 	private async completeJob(job: Job): Promise<void> {
-		if (!this.collection || !job._id) {
+		if (!this.collection || !isPersistedJob(job)) {
 			return;
 		}
 
@@ -1090,7 +1233,7 @@ export class Monque extends EventEmitter {
 	 * @param error - The error that caused the failure
 	 */
 	private async failJob(job: Job, error: Error): Promise<void> {
-		if (!this.collection || !job._id) {
+		if (!this.collection || !isPersistedJob(job)) {
 			return;
 		}
 
