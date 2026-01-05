@@ -68,7 +68,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run Unit Tests
-        run: bun run test:core:unit
+        run: bun turbo test:unit --filter=@monque/core
 
   integration-tests:
     name: Integration Tests
@@ -94,7 +94,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run Integration Tests
-        run: bun run test:core:integration
+        run: bun turbo test:integration --filter=@monque/core
 
   build:
     name: Build & Coverage

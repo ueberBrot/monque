@@ -1,49 +1,50 @@
-# Starlight Starter Kit: Basics
+# Monque Documentation
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+Documentation site for the [Monque](https://github.com/ueberBrot/monque) job scheduler, built with [Astro Starlight](https://starlight.astro.build/).
 
+## Tech Stack
+
+- **Framework**: [Astro](https://astro.build/)
+- **Documentation Theme**: [Starlight](https://starlight.astro.build/)
+- **API Documentation**: [TypeDoc](https://typedoc.org/) with [Starlight TypeDoc Plugin](https://starlight-typedoc.vercel.app/)
+
+## Getting Started
+
+1. **Install dependencies**:
+
+   ```bash
+   bun install
+   ```
+
+2. **Start the development server**:
+
+   ```bash
+   bun dev
+   ```
+
+   The site will be available at http://localhost:4321/monque.
+
+## Building
+
+To build the static documentation site:
+
+```bash
+bun build
 ```
-bun create astro@latest -- --template starlight
-```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+The output will be in the `dist/` directory.
 
-## 🚀 Project Structure
+## Project Structure
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+- `src/content/docs`: Markdown and MDX files for the documentation pages.
+- `src/assets`: Static assets like images.
+- `src/styles`: Custom CSS.
+- `astro.config.mjs`: Astro and Starlight configuration.
+- `package.json`: Dependencies and scripts.
 
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
+## Contribution
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+To add a new documentation page:
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
-
-Static assets, like favicons, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `bun install`             | Installs dependencies                            |
-| `bun dev`             | Starts local dev server at `localhost:4321`      |
-| `bun build`           | Build your production site to `./dist/`          |
-| `bun preview`         | Preview your build locally, before deploying     |
-| `bun astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `bun astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+1. Create a new `.md` or `.mdx` file in `src/content/docs/`.
+2. Add the page to the `sidebar` configuration in `astro.config.mjs` if you want it to appear in the navigation menu.

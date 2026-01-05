@@ -226,8 +226,12 @@ If you need more complex retention logic (e.g. keep important sales reports long
 await monque.schedule('0 3 * * *', 'custom-cleanup', {});
 
 monque.worker('custom-cleanup', async () => {
-  const db = monque['db']; // Access database directly if needed
-  // ... custom cleanup logic using db.collection('monque_jobs').deleteMany(...)
+  // Use Monque's public API to query and manage jobs
+  const oldJobs = await monque.getJobs({
+    status: JobStatus.COMPLETED,
+    // Add custom filter logic here
+  });
+  // Process cleanup based on your retention rules
 });
 ```
 

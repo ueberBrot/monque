@@ -34,7 +34,7 @@ With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`):
 | 5th retry  | 5         | 32s   | ~1 min                 |
 | 6th retry  | 6         | 64s   | ~2 min                 |
 | 7th retry  | 7         | 128s  | ~4 min                 |
-| 8th retry  | 8         | 256s  | ~8 min                 |
+| 8th retry  | 8         | 256s  | ~8.5 min               |
 | 9th retry  | 9         | 512s  | ~17 min                |
 | 10th retry | 10        | -     | **Failed permanently** |
 
@@ -59,7 +59,7 @@ const monque = new Monque(db, {
 | `maxBackoffDelay`   | `undefined` | Optional maximum delay cap                      |
 
 <Aside type="tip">
-  Use `maxBackoffDelay` to prevent extremely long delays for jobs with high retry counts. Without it, the 10th retry could wait over 17 minutes.
+  Use `maxBackoffDelay` to cap extremely long delays. With the default `maxRetries: 10`, the last actual retry occurs when `failCount = 9` (a 512s ≈ 8.5min delay). If you increase `maxRetries`, the delay for `failCount = 10` would be 1024s (≈ 17min).
 </Aside>
 
 ## Monitoring Retries

@@ -4,8 +4,16 @@ MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron 
 
 ## Installation
 
+Using Bun:
 ```bash
 bun add @monque/core mongodb
+```
+
+Or using npm/yarn/pnpm:
+```bash
+npm install @monque/core mongodb
+yarn add @monque/core mongodb
+pnpm add @monque/core mongodb
 ```
 
 ## Usage

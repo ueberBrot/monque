@@ -71,7 +71,7 @@ Monque supports standard cron aliases for common schedules:
 | `@monthly` | Run once a month | `0 0 1 * *` |
 | `@weekly` | Run once a week | `0 0 * * 0` |
 | `@daily` (or `@midnight`) | Run once a day | `0 0 * * *` |
-| `@hourly` | Run once an hour | `0 * * * *`
+| `@hourly` | Run once an hour | `0 * * * *` |
 
 ```typescript
 // Run daily at midnight using alias
@@ -236,16 +236,14 @@ await monque.schedule('60 * * * *', 'job', {});
 ## Timezone Considerations
 
 <Aside type="caution">
-  Cron expressions are evaluated in the server's local timezone. For consistent behavior across deployments, consider using UTC.
+  Cron expressions are evaluated in the server's local timezone unless the environment is specifically configured for UTC. For consistent behavior across deployments, it is recommended to set your server or container timezone to UTC.
 </Aside>
 
 ```typescript
-// Run at 9 AM UTC regardless of server timezone
-const utcNineAM = new Date();
-utcNineAM.setUTCHours(9, 0, 0, 0);
-
+// If your server is in UTC, this runs at 9 AM UTC
+// If your server is in EST, this runs at 9 AM EST
 await monque.schedule('0 9 * * *', 'daily-task', {
-  note: 'Scheduled in server timezone, adjust if needed'
+  note: 'Check your server timezone for consistent scheduling'
 });
 ```
 

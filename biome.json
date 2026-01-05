@@ -9,6 +9,18 @@
 		"ignoreUnknown": false,
 		"includes": ["**", "!!**/dist", "!!**/coverage", "!!**/.turbo", "!!**/.astro"]
 	},
+	"overrides": [
+		{
+			"includes": ["packages/docs/src/styles/custom.css"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noImportantStyles": "off"
+					}
+				}
+			}
+		}
+	],
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",

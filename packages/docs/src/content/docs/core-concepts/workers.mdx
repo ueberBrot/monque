@@ -129,21 +129,26 @@ monque.worker('flaky-api', async (job) => {
 
 ### Manual Failure
 
-For expected failures that shouldn't retry:
+To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.worker` handler will trigger the retry policy by default.
 
 ```typescript
 import { MonqueError } from '@monque/core';
 
 monque.worker('validate-input', async (job) => {
+  // Use job.failCount to skip retries for known unrecoverable errors
+  if (job.failCount > 0) {
+    return; // Returning instead of throwing "skips" the retry
+  }
+
   if (!isValid(job.data)) {
-    // This will still trigger retry logic
-    throw new Error('Invalid input');
+    // Throwing MonqueError will trigger the retry policy
+    throw new MonqueError('Invalid input');
   }
 });
 ```
 
 <Aside type="tip">
-  To prevent retries for known unrecoverable errors, you can check `job.failCount` in your handler and decide to skip processing.
+  Checking `job.failCount` inside your `monque.worker` handler is the recommended way to prevent retries for errors that won't be resolved by trying again, instead of throwing `MonqueError`.
 </Aside>
 
 ## Concurrency Control

@@ -1,7 +1,6 @@
 # Monque
 
 [![CI](https://github.com/ueberBrot/monque/actions/workflows/ci.yml/badge.svg)](https://github.com/ueberBrot/monque/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@monque/core.svg)](https://www.npmjs.com/package/@monque/core)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
@@ -123,6 +122,7 @@ cd packages/docs && bun run dev
 
 - Node.js 22+
 - MongoDB 4.0+ (Replica Set required for Change Streams)
+- Bun 1.3.5+
 
 ## Documentation
 
