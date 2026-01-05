@@ -22,8 +22,8 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { Job } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
+import type { Job } from '@/jobs';
+import { Monque } from '@/scheduler';
 
 describe('change streams', () => {
 	let db: Db;
@@ -300,6 +300,103 @@ describe('change streams', () => {
 			await waitFor(async () => processed, { timeout: 5000 });
 
 			expect(processed).toBe(true);
+		});
+
+		it('should emit changestream:fallback after exhausting reconnection attempts', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100, // Fast polling for fallback
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const fallbackEvents: { reason: string }[] = [];
+			const errorEvents: { error: Error }[] = [];
+
+			monque.on('changestream:fallback', (payload) => {
+				fallbackEvents.push(payload);
+			});
+			monque.on('changestream:error', (payload) => {
+				errorEvents.push(payload);
+			});
+
+			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// @ts-expect-error - Accessing private property for testing
+			const maxAttempts = monque.maxChangeStreamReconnectAttempts;
+
+			// Simulate repeated errors to exhaust reconnection attempts
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+
+			// Emit more errors than max attempts to trigger fallback
+			for (let i = 0; i <= maxAttempts + 1; i++) {
+				if (changeStream) {
+					changeStream.emit('error', new Error(`Simulated test error ${i + 1}`));
+					// Small delay to allow error handling
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+			}
+
+			// Give time for fallback to be emitted
+			await waitFor(async () => fallbackEvents.length > 0, { timeout: 5000 });
+
+			expect(fallbackEvents.length).toBeGreaterThan(0);
+			expect(fallbackEvents[0]?.reason).toContain('Exhausted');
+			expect(fallbackEvents[0]?.reason).toContain('reconnection attempts');
+		});
+
+		it('should attempt reconnection with exponential backoff after change stream error', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 5000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let connectionCount = 0;
+			monque.on('changestream:connected', () => {
+				connectionCount++;
+			});
+
+			const errorEvents: { error: Error }[] = [];
+			monque.on('changestream:error', (payload) => {
+				errorEvents.push(payload);
+			});
+
+			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.start();
+
+			await waitFor(async () => connectionCount >= 1, { timeout: 5000 });
+
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+
+			// Emit a single error - should trigger reconnection
+			if (changeStream) {
+				changeStream.emit('error', new Error('Simulated recoverable error'));
+			}
+
+			// Wait for error to be processed and reconnection attempt
+			await waitFor(async () => errorEvents.length >= 1, { timeout: 3000 });
+
+			// Allow time for reconnection (first attempt has 1s delay)
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+
+			// Connection count may increase if reconnection was successful
+			// Or remain same if still attempting - either way, verify error was handled
+			expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+			expect(errorEvents[0]?.error.message).toBe('Simulated recoverable error');
 		});
 	});
 

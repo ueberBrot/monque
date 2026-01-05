@@ -17,6 +17,13 @@ export default mergeConfig(
 			include: ['tests/**/*.test.ts'],
 			coverage: {
 				include: ['src/**/*.ts'],
+				exclude: [
+					// Type-only files with no runtime code
+					'src/**/types.ts',
+					'src/events/types.ts',
+					'src/workers/types.ts',
+					'src/scheduler/types.ts',
+				],
 			},
 			// Global setup for MongoDB Testcontainers (returns teardown function)
 			globalSetup: ['./tests/setup/global-setup.ts'],

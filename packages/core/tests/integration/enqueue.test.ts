@@ -22,9 +22,9 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus, type PersistedJob } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
-import type { MonqueOptions } from '@/scheduler/types.js';
+import { JobStatus, type PersistedJob } from '@/jobs';
+import type { MonqueOptions } from '@/scheduler';
+import { Monque } from '@/scheduler';
 
 describe('enqueue()', () => {
 	let db: Db;

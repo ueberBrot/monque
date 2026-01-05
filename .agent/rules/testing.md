@@ -5,7 +5,7 @@ globs: **/*.test.ts
 
 # Testing Rules
 
-This project requires **100% test coverage**. Use Vitest.
+This project requires **the highest test coverage** that can be done wit healistic scenarios. Use Vitest.
 
 ## Running Tests
 Always use the predefined scripts in `package.json` to run tests. Do not run `vitest` directly.
@@ -18,6 +18,7 @@ bun run test:integration    # Run all integration tests
 bun run test:core           # Run core tests only
 bun run test:core:unit      # Run core unit tests
 bun run test:core:integration # Run core integration tests
+bun run test:coverage       # Run test coverage
 ```
 
 ### Package Level

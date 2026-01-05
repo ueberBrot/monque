@@ -24,8 +24,8 @@ import { ObjectId } from 'mongodb';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
+import { JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
 
 /** Test-specific job names to avoid collision */
 const JOB_NAMES = {

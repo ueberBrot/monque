@@ -22,10 +22,10 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { MonqueEventMap } from '@/events/types.js';
-import type { Job } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
-import { ShutdownTimeoutError } from '@/shared/errors.js';
+import type { MonqueEventMap } from '@/events';
+import type { Job } from '@/jobs';
+import { Monque } from '@/scheduler';
+import { ShutdownTimeoutError } from '@/shared';
 
 describe('stop() - Graceful Shutdown', () => {
 	let db: Db;

@@ -23,9 +23,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { MonqueEventMap } from '@/events/types.js';
-import { type Job, JobStatus } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
+import type { MonqueEventMap } from '@/events';
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
 
 describe('Monitor Job Lifecycle Events', () => {
 	let db: Db;
@@ -221,6 +221,79 @@ describe('Monitor Job Lifecycle Events', () => {
 			await monque.stop();
 
 			expect(monque.isHealthy()).toBe(false);
+		});
+	});
+
+	describe('event listener methods', () => {
+		it('should remove listener with off() method', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const startEvents: Job[] = [];
+			const listener = (job: Job) => {
+				startEvents.push(job);
+			};
+
+			// Add listener
+			monque.on('job:start', listener);
+
+			// Register worker and enqueue job
+			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
+
+			monque.start();
+			await waitFor(async () => startEvents.length > 0);
+			expect(startEvents).toHaveLength(1);
+
+			// Remove listener
+			monque.off('job:start', listener);
+
+			// Enqueue another job
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
+			await waitFor(
+				async () => {
+					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+					return jobs.length >= 2;
+				},
+				{ timeout: 5000 },
+			);
+
+			// Listener should not have received the second event
+			expect(startEvents).toHaveLength(1);
+		});
+
+		it('should fire listener only once with once() method', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const completeEvents: MonqueEventMap['job:complete'][] = [];
+			monque.once('job:complete', (payload) => {
+				completeEvents.push(payload);
+			});
+
+			// Register worker and enqueue multiple jobs
+			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test3' });
+
+			monque.start();
+
+			// Wait for all jobs to complete
+			await waitFor(
+				async () => {
+					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+					return jobs.length >= 3;
+				},
+				{ timeout: 5000 },
+			);
+
+			// once() listener should have fired only once
+			expect(completeEvents).toHaveLength(1);
 		});
 	});
 });

@@ -25,9 +25,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { type Job, JobStatus } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
-import { InvalidCronError } from '@/shared/errors.js';
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+import { InvalidCronError } from '@/shared';
 
 describe('schedule()', () => {
 	let db: Db;

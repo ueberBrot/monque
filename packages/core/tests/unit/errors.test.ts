@@ -110,6 +110,14 @@ describe('errors', () => {
 			const error = new ConnectionError('Failed');
 			expect(error.stack).toBeDefined();
 		});
+
+		it('should chain the cause error when provided', () => {
+			const cause = new Error('Original database error');
+			const error = new ConnectionError('Connection failed', { cause });
+
+			expect(error.cause).toBe(cause);
+			expect(error.message).toBe('Connection failed');
+		});
 	});
 
 	describe('ShutdownTimeoutError', () => {

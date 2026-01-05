@@ -21,11 +21,9 @@
 		"test:core:unit": "turbo test:unit --filter=@monque/core",
 		"test:core:integration": "turbo test:integration --filter=@monque/core",
 		"test:ui": "vitest --ui",
-		"test:coverage": "vitest run --coverage",
 		"lint": "turbo lint",
 		"clean": "turbo clean && rimraf coverage .turbo",
 		"clean:core": "turbo clean --filter=@monque/core",
-
 		"clean:docs": "turbo clean --filter=@monque/docs",
 		"reset": "rimraf --glob '**/node_modules' '**/dist' '**/coverage' '**/.turbo'",
 		"format": "biome format --write .",

@@ -9,9 +9,10 @@ import {
 	isProcessingJob,
 	isRecurringJob,
 	isValidJobStatus,
-} from '@/jobs/guards.js';
-import type { Job, PersistedJob } from '@/jobs/types.js';
-import { JobStatus } from '@/jobs/types.js';
+	type Job,
+	JobStatus,
+	type PersistedJob,
+} from '@/jobs';
 
 describe('job guards', () => {
 	let baseJob: Job;

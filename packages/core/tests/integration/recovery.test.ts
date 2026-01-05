@@ -22,8 +22,8 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus } from '@/jobs/types.js';
-import { Monque } from '@/scheduler/monque.js';
+import { JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
 
 describe('recovery and cleanup', () => {
 	let db: Db;
