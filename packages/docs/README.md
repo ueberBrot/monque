@@ -22,7 +22,7 @@ Documentation site for the [Monque](https://github.com/ueberBrot/monque) job sch
    bun dev
    ```
 
-   The site will be available at http://localhost:4321/monque.
+   The site will be available at <http://localhost:4321/monque>.
 
 ## Building
 

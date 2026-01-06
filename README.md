@@ -28,6 +28,7 @@ A MongoDB-backed job scheduler for Node.js with atomic locking, exponential back
 
 ## Quick Start
 
+Using Bun (see [Requirements](#requirements)):
 ```bash
 bun add @monque/core mongodb
 ```
