@@ -1,14 +1,21 @@
 # Monque
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ueberBrot/monque/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS)](https://github.com/ueberBrot/monque/actions/workflows/deploy-docs.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/ueberBrot/monque?branch=main&style=for-the-badge&label=COVERAGE)](https://codecov.io/gh/ueberBrot/monque)
-[![License](https://img.shields.io/github/license/ueberBrot/monque?style=for-the-badge&label=LICENSE)](https://github.com/ueberBrot/monque/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ueberbrot/monque/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS)](https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/ueberbrot/monque?branch=main&style=for-the-badge&label=COVERAGE)](https://codecov.io/gh/ueberbrot/monque)
+[![License](https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE)](https://github.com/ueberbrot/monque/blob/main/LICENSE)
 [![Website](https://img.shields.io/website?url=https%3A%2F%2FueberBrot.github.io%2Fmonque%2F&style=for-the-badge&label=WEBSITE)](https://ueberBrot.github.io/monque/)
 
 A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
 
 📚 **[Documentation](https://ueberBrot.github.io/monque/)** | 🚀 **[Quick Start](https://ueberBrot.github.io/monque/getting-started/quick-start/)**
+
+## Status
+
+Monque is currently in **pre-release (0.x)**.
+
+- The public API may change between releases.
+- Expect breaking changes until `1.0.0`.
 
 ## Packages
 

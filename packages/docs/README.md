@@ -1,6 +1,6 @@
 # Monque Documentation
 
-Documentation site for the [Monque](https://github.com/ueberBrot/monque) job scheduler, built with [Astro Starlight](https://starlight.astro.build/).
+Documentation site for the [Monque](https://github.com/ueberbrot/monque) job scheduler, built with [Astro Starlight](https://starlight.astro.build/).
 
 ## Tech Stack
 

@@ -41,6 +41,13 @@
 	height: 2rem;
 }
 
+.monque-version {
+	font-size: 0.85em;
+	font-weight: 500;
+	opacity: 0.7;
+	white-space: nowrap;
+}
+
 /* Hero button override to match branding - Specific for Nova/Starlight setup */
 .nova-link-button-primary {
 	background-color: var(--monque-green) !important;

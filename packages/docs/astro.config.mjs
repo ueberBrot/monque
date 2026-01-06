@@ -1,5 +1,6 @@
 // @ts-check
 
+import { readFileSync } from 'node:fs';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import starlightLinksValidator from 'starlight-links-validator';
@@ -9,8 +10,18 @@ import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
 
 import remarkMermaidToPre from './src/remark/remark-mermaid-to-pre.mjs';
 
+const corePackageJsonUrl = new URL('../core/package.json', import.meta.url);
+const corePackageJson = JSON.parse(readFileSync(corePackageJsonUrl, 'utf8'));
+const coreVersion =
+	typeof corePackageJson?.version === 'string' ? corePackageJson.version : 'unknown';
+
 // https://astro.build/config
 export default defineConfig({
+	vite: {
+		define: {
+			__MONQUE_CORE_VERSION__: JSON.stringify(coreVersion),
+		},
+	},
 	markdown: {
 		remarkPlugins: [remarkMermaidToPre],
 	},
@@ -21,13 +32,16 @@ export default defineConfig({
 			title: 'Monque',
 			description:
 				'A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.',
+			components: {
+				SiteTitle: './src/components/SiteTitle.astro',
+			},
 			logo: {
 				src: './src/assets/logo.svg',
 				replacesTitle: false,
 			},
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ueberBrot/monque' }],
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ueberbrot/monque' }],
 			editLink: {
-				baseUrl: 'https://github.com/ueberBrot/monque/edit/main/packages/docs/',
+				baseUrl: 'https://github.com/ueberbrot/monque/edit/main/packages/docs/',
 			},
 			lastUpdated: true,
 			customCss: ['./src/styles/custom.css'],

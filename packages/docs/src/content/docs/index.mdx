@@ -2,6 +2,9 @@
 title: Monque
 description: A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
 template: splash
+banner:
+  content: |
+    Monque is currently in pre-release (0.x). The public API may change between releases.
 hero:
   tagline: Type-safe, reliable job scheduling powered by MongoDB
   image:
@@ -11,12 +14,18 @@ hero:
       link: /monque/getting-started/installation/
       icon: right-arrow
     - text: View on GitHub
-      link: https://github.com/ueberBrot/monque
+      link: https://github.com/ueberbrot/monque
       icon: external
       variant: minimal
 ---
 
-import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+import VersionBadge from '../../components/VersionBadge.astro';
+
+<Aside type="caution">
+  Monque is currently in pre-release. Expect breaking changes until 1.0.0.
+  Current version: <VersionBadge />
+</Aside>
 
 ## Why Monque?
 
