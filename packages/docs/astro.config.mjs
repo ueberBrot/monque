@@ -24,6 +24,7 @@ export default defineConfig({
 			editLink: {
 				baseUrl: 'https://github.com/ueberBrot/monque/edit/main/packages/docs/',
 			},
+			lastUpdated: true,
 			customCss: ['./src/styles/custom.css'],
 			sidebar: [
 				{
