@@ -1,12 +1,14 @@
 # Monque
 
-[![CI](https://github.com/ueberBrot/monque/actions/workflows/ci.yml/badge.svg)](https://github.com/ueberBrot/monque/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![CI](https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ueberBrot/monque/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS)](https://github.com/ueberBrot/monque/actions/workflows/deploy-docs.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/ueberBrot/monque?branch=main&style=for-the-badge&label=COVERAGE)](https://codecov.io/gh/ueberBrot/monque)
+[![License](https://img.shields.io/github/license/ueberBrot/monque?style=for-the-badge&label=LICENSE)](https://github.com/ueberBrot/monque/blob/main/LICENSE)
+[![Website](https://img.shields.io/website?url=https%3A%2F%2FueberBrot.github.io%2Fmonque%2F&style=for-the-badge&label=WEBSITE)](https://ueberBrot.github.io/monque/)
 
 A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
 
-📚 **[Documentation](https://monque.dev)** | 🚀 **[Quick Start](https://monque.dev/getting-started/quick-start/)**
+📚 **[Documentation](https://ueberBrot.github.io/monque/)** | 🚀 **[Quick Start](https://ueberBrot.github.io/monque/getting-started/quick-start/)**
 
 ## Packages
 
@@ -127,12 +129,12 @@ cd packages/docs && bun run dev
 
 ## Documentation
 
-Visit [monque.dev](https://monque.dev) for comprehensive documentation:
+Visit the documentation site for comprehensive guides:
 
-- [Installation Guide](https://monque.dev/getting-started/installation/)
-- [Quick Start Tutorial](https://monque.dev/getting-started/quick-start/)
-- [Core Concepts](https://monque.dev/core-concepts/jobs/)
-- [API Reference](https://monque.dev/api/)
+- [Installation Guide](https://ueberBrot.github.io/monque/getting-started/installation/)
+- [Quick Start Tutorial](https://ueberBrot.github.io/monque/getting-started/quick-start/)
+- [Core Concepts](https://ueberBrot.github.io/monque/core-concepts/jobs/)
+- [API Reference](https://ueberBrot.github.io/monque/api/)
 
 ## License
 

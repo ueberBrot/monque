@@ -182,6 +182,10 @@ monque.worker<ProcessOrderJob>('process-order', async (job) => {
 
 Design workers to handle duplicate execution safely:
 
+<Aside type="note">
+  Monque prevents two schedulers from claiming the same pending job at the same time, but a job may still run more than once (for example after a crash, a retry, or stale recovery). Design handlers to be safe to re-run.
+</Aside>
+
 ```typescript
 monque.worker('charge-payment', async (job) => {
   const { paymentId } = job.data;
@@ -215,8 +219,26 @@ const monque = new Monque(db, {
 ```
 
 <Aside type="note">
-  If `jobRetention` is not configured, Monque will keep all jobs forever.
+  If `jobRetention` is not configured, no automatic cleanup is performed.
 </Aside>
+
+## Indexes
+
+Monque creates MongoDB indexes during `initialize()` to keep polling, claiming, deduplication, and recovery queries fast.
+
+<Aside type="note">
+  Your MongoDB user must have permission to create indexes. If index creation is restricted in production, create the required indexes ahead of time.
+</Aside>
+
+The indexes Monque creates are:
+
+- `{ status: 1, nextRunAt: 1 }` for efficient polling (ready-to-run jobs)
+- `{ name: 1, uniqueKey: 1 }` as a **partial unique** index for deduplication (only when `uniqueKey` exists and status is `pending`/`processing`)
+- `{ name: 1, status: 1 }` for querying by job type and status
+- `{ claimedBy: 1, status: 1 }` for ownership queries and heartbeat updates
+- `{ lastHeartbeat: 1, status: 1 }` for heartbeat-based monitoring queries
+- `{ status: 1, nextRunAt: 1, claimedBy: 1 }` for the atomic claim query
+- `{ lockedAt: 1, lastHeartbeat: 1, status: 1 }` to support stale recovery queries
 
 ### Manual Cleanup
 

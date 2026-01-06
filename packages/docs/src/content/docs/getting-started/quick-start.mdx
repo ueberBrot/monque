@@ -72,7 +72,7 @@ monque.worker<EmailJobData>('send-email', async (job) => {
 Monitor job lifecycle for logging and metrics:
 
 ```typescript
-monque.on('job:start', ({ job }) => {
+monque.on('job:start', (job) => {
   console.log(`🚀 Starting job: ${job.name} (${job._id})`);
 });
 
@@ -226,16 +226,18 @@ await monque.schedule('*/5 * * * *', 'health-check', {
 
 Customize Monque behavior with options:
 
+For the full list of options and defaults, see the [MonqueOptions API Reference](/monque/api/interfaces/monqueoptions/).
+
 ```typescript
 const monque = new Monque(db, {
-  collectionName: 'jobs',        // Default: 'monque_jobs'
-  pollInterval: 1000,            // Default: 1000ms
-  maxRetries: 10,                // Default: 10
-  baseRetryInterval: 1000,       // Default: 1000ms
-  shutdownTimeout: 30000,        // Default: 30000ms
-  defaultConcurrency: 5,         // Default: 5
-  lockTimeout: 1800000,          // Default: 30 minutes
-  heartbeatInterval: 30000,      // Default: 30 seconds
+  collectionName: 'jobs',
+  pollInterval: 1000,
+  maxRetries: 10,
+  baseRetryInterval: 1000,
+  shutdownTimeout: 30000,
+  defaultConcurrency: 5,
+  lockTimeout: 1800000,
+  heartbeatInterval: 30000,
 });
 ```
 

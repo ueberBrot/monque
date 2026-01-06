@@ -1,11 +1,13 @@
 ---
 title: Atomic Claim Pattern
-description: How Monque ensures exactly-once job processing across distributed workers.
+description: How Monque prevents concurrent duplicate processing across distributed workers.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-The atomic claim pattern is Monque's core mechanism for ensuring jobs are processed exactly once, even when running multiple scheduler instances.
+The atomic claim pattern is Monque's core mechanism for ensuring a pending job is claimed by only one scheduler instance at a time.
+
+This prevents **concurrent duplicates**, but it does not guarantee that a job can never run more than once. Jobs may be processed again after a crash, a retry, or stale recovery, so workers should be idempotent.
 
 ## The Problem
 
@@ -18,7 +20,7 @@ In distributed systems, multiple workers might try to pick up the same job simul
 
 ## The Solution: Atomic Claims
 
-Monque uses MongoDB's `findOneAndUpdate` with atomic guarantees to ensure exactly one worker claims each job.
+Monque uses MongoDB's `findOneAndUpdate` with atomic guarantees to ensure only one scheduler claims each pending job.
 
 ### How It Works
 
@@ -30,14 +32,19 @@ const job = await collection.findOneAndUpdate(
     name: workerName,            // For this worker type
     status: 'pending',           // Not already claimed
     nextRunAt: { $lte: now },    // Ready to run
-    claimedBy: null              // Not owned by another instance
+    $or: [                       // Not owned by another instance
+      { claimedBy: null },
+      { claimedBy: { $exists: false } }
+    ]
   },
   {
     $set: {
       status: 'processing',
       claimedBy: schedulerInstanceId,  // Mark ownership
       lockedAt: new Date(),
-      lastHeartbeat: new Date()
+      lastHeartbeat: new Date(),
+      heartbeatInterval: 30000,
+      updatedAt: new Date()
     }
   },
   {
@@ -101,7 +108,7 @@ monque2.worker('send-email', emailHandler);
 monque2.start();
 
 // Both compete fairly for jobs
-// Each job is processed by exactly one instance
+// Each pending job is claimed by exactly one instance at a time
 ```
 
 ### Load Distribution
@@ -118,7 +125,9 @@ Instance 2 claims: B, D, F, H
 
 ## Indexes for Performance
 
-Monque creates optimized indexes for atomic claims:
+Monque creates the required MongoDB indexes during `initialize()` to keep claim and polling queries fast.
+
+For the full list of indexes, see [Jobs](/monque/core-concepts/jobs/).
 
 ```typescript
 // Compound index for claim queries
@@ -128,7 +137,7 @@ Monque creates optimized indexes for atomic claims:
 { claimedBy: 1, status: 1 }
 ```
 
-These indexes ensure claim operations remain fast even with millions of jobs.
+These indexes ensure claim operations remain fast even with large queues.
 
 ## Claim Lifecycle
 
@@ -160,7 +169,7 @@ If a worker crashes while processing:
 
 1. Job remains in `processing` status with `claimedBy` set
 2. `lastHeartbeat` stops updating
-3. After `lockTimeout`, job is recovered (see [Heartbeat](/monque/advanced/heartbeat/))
+3. After `lockTimeout`, the job can be recovered on startup (see [Heartbeat](/monque/advanced/heartbeat/))
 
 ### Graceful Shutdown
 
@@ -170,7 +179,8 @@ When `stop()` is called:
 await monque.stop();
 // 1. Stops accepting new jobs
 // 2. Waits for in-progress jobs to complete
-// 3. Clears claimedBy for any incomplete jobs
+// 3. If shutdown times out, in-progress jobs may remain in `processing`
+//    and will be recovered later by stale recovery on startup
 ```
 
 ## Best Practices

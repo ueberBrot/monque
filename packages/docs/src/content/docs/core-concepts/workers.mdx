@@ -53,6 +53,7 @@ monque.worker('heavy-computation', async (job) => {
 | Option        | Type     | Default                         | Description                             |
 | ------------- | -------- | ------------------------------- | --------------------------------------- |
 | `concurrency` | `number` | `5` (from `defaultConcurrency`) | Maximum concurrent jobs for this worker |
+| `replace`     | `boolean` | `false`                         | Replace an existing worker with the same name instead of throwing |
 
 <Aside type="note">
   Each worker type maintains its own concurrency limit. A scheduler with 3 workers at concurrency 5 each could process up to 15 jobs simultaneously.
@@ -64,8 +65,8 @@ monque.worker('heavy-computation', async (job) => {
 
 When `start()` is called, Monque begins looking for jobs:
 
-1. **Change Stream notification** triggers immediate claim attempt (real-time)
-2. **Polling** runs as backup every `pollInterval` milliseconds
+1. **Polling** runs every `pollInterval` milliseconds
+2. **Change Streams** (if available) trigger an additional, debounced poll for low-latency processing
 
 ### 2. Atomic Claim
 
@@ -78,20 +79,22 @@ const job = await collection.findOneAndUpdate(
     name: workerName,
     status: 'pending',
     nextRunAt: { $lte: new Date() },
-    claimedBy: null
+    $or: [{ claimedBy: null }, { claimedBy: { $exists: false } }]
   },
   {
     $set: {
       status: 'processing',
       claimedBy: schedulerInstanceId,
       lockedAt: new Date(),
-      lastHeartbeat: new Date()
+      lastHeartbeat: new Date(),
+      heartbeatInterval: 30000,
+      updatedAt: new Date()
     }
   }
 );
 ```
 
-This ensures only one worker instance processes each job, even with multiple schedulers.
+This prevents two scheduler instances from claiming the same pending job at the same time.
 
 ### 3. Execution
 
@@ -232,7 +235,7 @@ Workers can be registered before or after `start()`:
 </Tabs>
 
 <Aside type="caution">
-  Attempting to register a worker with the same name twice will throw a `WorkerRegistrationError`. This prevents accidental overwrites.
+  Attempting to register a worker with the same name twice will throw a `WorkerRegistrationError` by default. If you intentionally want to replace a worker (e.g., hot reload in development), pass `{ replace: true }`.
 </Aside>
 
 ## Best Practices
@@ -279,7 +282,7 @@ monque.worker('sync-data', async (job) => {
 Use job events for centralized logging:
 
 ```typescript
-monque.on('job:start', ({ job }) => {
+monque.on('job:start', (job) => {
   logger.info('Job started', { jobId: job._id, name: job.name });
 });
 

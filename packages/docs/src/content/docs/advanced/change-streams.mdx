@@ -29,8 +29,8 @@ monque.start();
 
 // Behind the scenes:
 // - Change stream opened
-// - Polling interval set as backup (10s by default)
-// - Ready to process jobs instantly
+// - Polling continues at `pollInterval`
+// - Change stream events trigger a debounced poll for low-latency processing
 ```
 
 ### Event Types Monitored
@@ -52,13 +52,13 @@ monque.start();
 
 | Without Change Streams       | With Change Streams      |
 | ---------------------------- | ------------------------ |
-| Poll every 1000ms            | Instant notification     |
-| Average latency: 500ms       | Average latency: ~50ms   |
-| Wasted queries when idle     | Only queries when needed |
-| Scales poorly with many jobs | Efficient at any scale   |
+| Reacts on poll cycle         | Reacts on change events  |
+| Latency: up to `pollInterval` | Latency: typically within the debounce window + processing time |
+| Poll queries run while idle  | Polling still runs, but change events reduce time-to-start |
+| More idle work at scale      | Fewer “wait for poll” delays at scale |
 
 <Aside type="note">
-  With Change Streams, job processing latency drops from an average of half the poll interval to near-instant. A job enqueued at time T is typically being processed within 50ms.
+  Change Streams reduce the *time-to-start* for newly enqueued jobs because Monque can react to inserts/updates instead of waiting for the next poll cycle. Monque still polls as a safety net.
 </Aside>
 
 ## Requirements
@@ -140,18 +140,18 @@ monque.on('changestream:closed', () => {
 
 ## Configuration
 
-### Poll Interval Adjustment
+### Polling and Change Streams
 
-When Change Streams are active, polling serves as a backup:
+`pollInterval` always controls how often the scheduler polls the database:
 
 ```typescript
 const monque = new Monque(db, {
-  pollInterval: 10000  // 10s backup polling (default when Change Streams active)
+  pollInterval: 10000
 });
 ```
 
 <Aside type="note">
-  Monque automatically adjusts the poll interval when Change Streams are working. The `pollInterval` option primarily affects backup polling frequency.
+  Change Streams do not automatically change `pollInterval`. When Change Streams are available, Monque reacts to change events by triggering a debounced poll in addition to the regular polling loop.
 </Aside>
 
 ## Reconnection Strategy
@@ -171,10 +171,10 @@ Monque implements exponential backoff for reconnection:
 ### Health Check Integration
 
 ```typescript
-// Change Stream status affects isHealthy()
+// isHealthy() indicates the scheduler is started and initialized.
+// Change Streams are optional and do not affect this.
 if (monque.isHealthy()) {
-  // Scheduler running and connected
-  // (Change Stream may or may not be active)
+  // Scheduler is running
 }
 ```
 

@@ -1,0 +1,19 @@
+# Focus the digest on core library code, not the docs site.
+
+# Monorepo docs site (Astro)
+packages/docs/
+
+# Common build + cache outputs
+**/build/
+**/.next/
+**/*.tmp
+**/*.cache
+
+# OS noise
+ 
+
+.specify/
+.vscode/
+.agent/
+.changeset/
+.github/

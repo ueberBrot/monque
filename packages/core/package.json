@@ -51,7 +51,7 @@
 		"cron",
 		"background-jobs"
 	],
-	"license": "MIT",
+	"license": "ISC",
 	"dependencies": {
 		"cron-parser": "^5.4.0"
 	},
@@ -59,12 +59,14 @@
 		"mongodb": "^7.0.0"
 	},
 	"devDependencies": {
+		"@arethetypeswrong/cli": "^0.18.2",
 		"@faker-js/faker": "^10.1.0",
 		"@testcontainers/mongodb": "^11.10.0",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/bun": "^1.3.5",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.0.0",
+		"publint": "^0.3.16",
 		"tsdown": "^0.18.1",
 		"typescript": "^5.7.3"
 	}

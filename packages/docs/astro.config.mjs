@@ -7,8 +7,13 @@ import starlightLlmsTxt from 'starlight-llms-txt';
 import starlightThemeNova from 'starlight-theme-nova';
 import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
 
+import remarkMermaidToPre from './src/remark/remark-mermaid-to-pre.mjs';
+
 // https://astro.build/config
 export default defineConfig({
+	markdown: {
+		remarkPlugins: [remarkMermaidToPre],
+	},
 	site: 'https://ueberBrot.github.io',
 	base: '/monque',
 	integrations: [
@@ -58,8 +63,29 @@ export default defineConfig({
 					tag: 'meta',
 					attrs: {
 						property: 'og:image',
-						content: 'https://monque.dev/og-image.png',
+						content: 'https://ueberBrot.github.io/monque/favicon.svg',
 					},
+				},
+				{
+					tag: 'script',
+					attrs: { type: 'module' },
+					content: `
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+mermaid.initialize({ startOnLoad: false });
+
+async function renderMermaid() {
+  try {
+    await mermaid.run({ querySelector: 'pre.mermaid' });
+  } catch {
+    // ignore render errors
+  }
+}
+
+window.addEventListener('DOMContentLoaded', renderMermaid);
+document.addEventListener('astro:page-load', renderMermaid);
+document.addEventListener('astro:after-swap', renderMermaid);
+`,
 				},
 			],
 			plugins: [

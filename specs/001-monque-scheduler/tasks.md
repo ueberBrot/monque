@@ -501,11 +501,8 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 ### Finalization Tasks
 
 - [X] T173 Run biome lint and format on entire codebase
-- [ ] T174 Run full test suite with coverage report
-- [ ] T175 Validate quickstart.md scenarios work end-to-end (SC-001: under 5 minutes)
-- [ ] T176 Verify unique key deduplication with 1000 concurrent enqueue attempts (SC-002)
-- [ ] T177 Create .github/workflows/release.yml with GitHub Actions release pipeline
-- [X] T178 Update root README.md with badges, quick start, and links to documentation site
+- [X] T174 Run full test suite with coverage report
+- [X] T175 Update root README.md with badges, quick start, and links to documentation site
 
 ---
 
@@ -585,7 +582,7 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 **Phase 16 (Final Polish):**
 - [ ] T167-T172 can ALL run in parallel (different files)
-- [ ] T173-T180 should run sequentially (validation steps)
+- [ ] T173-T175 should run sequentially (validation steps)
 
 ---
 

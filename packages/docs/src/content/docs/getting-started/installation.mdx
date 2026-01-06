@@ -10,9 +10,9 @@ import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 Before installing Monque, ensure you have:
 
 - **Node.js 22+** or **Bun 1.0+**
-- **MongoDB 4.0+** (required for atomic operations and Change Streams)
-  - For local development, use Docker or MongoDB Atlas
-  - Replica set required for Change Streams (MongoDB Atlas provides this by default)
+- **MongoDB 4.0+**
+  - Monque works with regular polling on standalone MongoDB
+  - Change Streams require a replica set or sharded cluster (MongoDB Atlas provides this by default)
 
 <Aside type="tip">
   For local development, you can use Docker to quickly spin up a MongoDB replica set:
@@ -63,7 +63,7 @@ Monque is written in TypeScript and provides full type definitions. For the best
 {
   "compilerOptions": {
     "strict": true,
-    "moduleResolution": "bundler", // or "node16"
+    "moduleResolution": "bundler",
     "target": "ES2022",
     "lib": ["ES2022"]
   }

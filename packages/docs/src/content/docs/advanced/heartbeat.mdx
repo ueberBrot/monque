@@ -5,7 +5,7 @@ description: How Monque detects and recovers stale jobs from crashed workers.
 
 import { Aside } from '@astrojs/starlight/components';
 
-The heartbeat mechanism ensures jobs aren't lost when a worker crashes. Processing workers periodically update a timestamp, allowing the system to detect and recover abandoned jobs.
+The heartbeat mechanism ensures jobs aren't lost when a worker crashes. While processing, Monque periodically updates a timestamp on claimed jobs. On startup, Monque can recover jobs that were left stuck in `processing`.
 
 ## The Problem
 
@@ -16,9 +16,9 @@ When a worker crashes mid-processing:
 3. No other worker can pick it up
 4. Job is effectively lost
 
-## The Solution: Heartbeats
+## The Solution: Heartbeats + Stale Recovery
 
-Workers periodically update `lastHeartbeat` for jobs they're processing. If heartbeats stop, the job is considered abandoned and can be recovered.
+While a job is `processing`, Monque periodically updates `lastHeartbeat` to signal liveness. Separately, Monque can recover jobs that have been `processing` for longer than `lockTimeout` by resetting them back to `pending` on startup.
 
 ### How It Works
 
@@ -35,7 +35,7 @@ sequenceDiagram
     
     Note over W: Worker crashes!
     
-    S->>DB: Find jobs with old lastHeartbeat
+    S->>DB: Find jobs with old lockedAt
     S->>DB: Reset to pending
     
     Note over DB: Job available for retry
@@ -87,7 +87,7 @@ Every `heartbeatInterval` milliseconds:
 // Update query (internal)
 await collection.updateMany(
   { claimedBy: this.instanceId, status: 'processing' },
-  { $set: { lastHeartbeat: new Date() } }
+  { $set: { lastHeartbeat: new Date(), updatedAt: new Date() } }
 );
 ```
 
@@ -96,12 +96,10 @@ await collection.updateMany(
 When job completes or fails:
 
 ```typescript
-// Fields cleared
+// Fields cleared (unset)
 {
   status: 'completed',  // or 'failed' / 'pending' for retry
-  claimedBy: null,
-  lockedAt: null,
-  lastHeartbeat: null
+  // claimedBy, lockedAt, lastHeartbeat, heartbeatInterval removed
 }
 ```
 
@@ -109,7 +107,7 @@ When job completes or fails:
 
 ### On Startup
 
-When `start()` is called with `recoverStaleJobs: true`:
+During `initialize()` (when `recoverStaleJobs: true`), Monque recovers jobs that were left stuck in `processing`:
 
 ```typescript
 // Find and reset stale jobs
@@ -118,10 +116,11 @@ const cutoffTime = new Date(Date.now() - lockTimeout);
 const result = await collection.updateMany(
   {
     status: 'processing',
-    lastHeartbeat: { $lt: cutoffTime }
+    lockedAt: { $lt: cutoffTime }
   },
   {
-    $set: { status: 'pending', claimedBy: null, lockedAt: null }
+    $set: { status: 'pending', updatedAt: new Date() },
+    $unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '', heartbeatInterval: '' }
   }
 );
 
@@ -154,8 +153,11 @@ async function recoverStaleJobs() {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000);
   
   const result = await db.collection('monque_jobs').updateMany(
-    { status: 'processing', lastHeartbeat: { $lt: cutoff } },
-    { $set: { status: 'pending', claimedBy: null } }
+    { status: 'processing', lockedAt: { $lt: cutoff } },
+    {
+      $set: { status: 'pending', updatedAt: new Date() },
+      $unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '', heartbeatInterval: '' }
+    }
   );
   
   return result.modifiedCount;
@@ -256,7 +258,7 @@ const monque = new Monque(db, {
 **Checks**:
 1. Verify `recoverStaleJobs: true`
 2. Check `lockTimeout` isn't too high
-3. Ensure `start()` was called
+3. Ensure `initialize()` was called
 
 ### High Stale Recovery Count
 
@@ -272,7 +274,7 @@ const monque = new Monque(db, {
 // Query to find stale job patterns
 const staleJobs = await db.collection('monque_jobs').find({
   status: 'processing',
-  lastHeartbeat: { $lt: new Date(Date.now() - lockTimeout) }
+  lockedAt: { $lt: new Date(Date.now() - lockTimeout) }
 }).toArray();
 
 // Analyze by job name
