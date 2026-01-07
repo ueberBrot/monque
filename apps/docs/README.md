@@ -19,7 +19,11 @@ Documentation site for the [Monque](https://github.com/ueberbrot/monque) job sch
 2. **Start the development server**:
 
    ```bash
-   bun dev
+   # From the repo root
+   bun run dev:docs
+
+   # Or from within apps/docs
+   cd apps/docs && bun run dev
    ```
 
    The site will be available at <http://localhost:4321/monque>.
@@ -29,7 +33,11 @@ Documentation site for the [Monque](https://github.com/ueberbrot/monque) job sch
 To build the static documentation site:
 
 ```bash
-bun build
+# From the repo root
+bun run build:docs
+
+# Or from within apps/docs
+cd apps/docs && bun run build
 ```
 
 The output will be in the `dist/` directory.

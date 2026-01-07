@@ -27,7 +27,7 @@ await collection.findOneAndUpdate(
 ## Exponential Backoff
 On failure, do NOT retry immediately. Calculate the next run time:
 ```typescript
-const delay = Math.pow(2, job.failCount) * 60_000; // ms
+const delay = Math.pow(2, job.failCount) * 1_000; // ms (DEFAULT_BASE_INTERVAL)
 job.nextRunAt = new Date(Date.now() + delay);
 job.status = JobStatus.PENDING;
 ```

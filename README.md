@@ -108,20 +108,14 @@ bun install
 # Run tests
 bun run test
 
-# Run tests with UI
-bun test:dev
-
-# Run tests with coverage
-bun test:coverage
-
-# Build all packages
+# Build all packages & apps
 bun run build
 
-# Format code
-bun run format
+# Format & lint code
+bun run check
 
 # Run docs locally
-cd packages/docs && bun run dev
+bun run dev:docs
 ```
 
 ## Requirements

@@ -1,40 +1,7 @@
-import { defineConfig } from 'vitest/config';
-
 /**
- * Shared vitest configuration for the monorepo.
- * Package-level configs extend this with their own include/exclude paths.
+ * Vitest configuration is owned by individual packages (e.g. packages/core).
  *
- * Usage:
- * - `bun test` - Run tests via turbo
- * - `bun test:ui` - Open Vitest UI in browser
- * - `bun test:coverage` - Run tests with coverage report
+ * This file is intentionally a stub so the repo root does not need a Vitest
+ * dependency just to typecheck or lint.
  */
-export default defineConfig({
-	test: {
-		globals: true,
-		environment: 'node',
-		coverage: {
-			enabled: true,
-			provider: 'v8',
-			reporter: ['text', 'json', 'html', 'lcov'],
-			reportsDirectory: './coverage',
-			exclude: [
-				'**/node_modules/**',
-				'**/dist/**',
-				'**/*.d.ts',
-				'**/tests/**',
-				'**/*.config.ts',
-				'**/*.config.js',
-				'**/index.ts',
-			],
-			thresholds: {
-				lines: 85,
-				functions: 90,
-				branches: 75,
-				statements: 85,
-			},
-		},
-		testTimeout: 30000,
-		hookTimeout: 30000,
-	},
-});
+export default {};

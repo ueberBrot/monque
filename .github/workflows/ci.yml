@@ -79,13 +79,18 @@ jobs:
       - name: Run Tests
         run: bun turbo test --filter=@monque/core
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        if: ${{ always() && secrets.CODECOV_TOKEN != '' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+      - name: Upload coverage artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
-          files: packages/core/coverage/lcov.info
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          name: coverage-core
+          path: packages/core/coverage/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Coverage summary
+        if: ${{ always() }}
+        run: bun scripts/coverage-summary.mjs packages/core/coverage/coverage-summary.json
 
   build:
     name: Build

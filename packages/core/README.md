@@ -112,7 +112,7 @@ When `TESTCONTAINERS_REUSE_ENABLE=true`, the MongoDB testcontainer persists betw
 
 To manually clean up reusable containers:
 ```bash
-docker stop $(docker ps -q --filter label=org.testcontainers=true)
+docker ps -q --filter label=org.testcontainers=true | while read -r id; do docker stop "$id"; done
 ```
 
 ## License
