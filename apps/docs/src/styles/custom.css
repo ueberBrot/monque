@@ -1,61 +1,108 @@
-/* Custom styles for Monque documentation */
-
 :root {
-	/* Brand colors */
-	--sl-color-accent-low: #1a4d2e;
-	--sl-color-accent: #4f9d69;
-	--sl-color-accent-high: #c3e6cb;
-	--sl-color-text-accent: #4f9d69;
+	/* --- Brand Palette --- */
+	--monque-primary: #11e167; /* Bright Green */
+	--monque-primary-hover: #0ed15f; /* Slightly darker for interactions */
+	--monque-primary-low: #11e1671a; /* Low opacity green for subtle backgrounds */
+	--monque-primary-high: #b8f5d2; /* Light green for text highlights */
 
-	/* MongoDB-inspired green palette */
-	--monque-green-dark: #00684a;
-	--monque-green: #00ed64;
-	--monque-green-light: #c3e6cb;
+	--monque-secondary: #fc991b; /* Orange */
+	--monque-secondary-low: #543309;
+	--monque-secondary-high: #fedeb2;
 }
 
-/* Dark theme adjustments */
-:root[data-theme="dark"] {
-	--sl-color-accent-low: #1a4d2e;
-	--sl-color-accent: #4f9d69;
-	--sl-color-accent-high: #c3e6cb;
+/* Apply variables to Starlight Dark Theme */
+	:root[data-theme="dark"] {
+	/* Soften standard text colors (User Feedback: "Text is too white") */
+	--sl-color-white: #e0e6e6;
+	--sl-color-gray-1: #e0e6e6;
+	--sl-color-gray-2: #bdc4c4;
+
+	/* Accent (Green) - Controls links, active states, etc. */
+	--sl-color-accent-low: var(--monque-primary-low);
+	--sl-color-accent: var(--monque-primary);
+	--sl-color-accent-high: var(--monque-primary-high);
+	--sl-color-text-accent: var(--monque-primary);
+
+	/* Green Palette (Tips normally use Purple in Starlight, so we override Purple) */
+	--sl-color-green-low: var(--monque-primary-low);
+	--sl-color-green: var(--monque-primary);
+	--sl-color-green-high: var(--monque-primary-high);
+
+	--sl-color-purple-low: var(--monque-primary-low);
+	--sl-color-purple: var(--monque-primary);
+	--sl-color-purple-high: var(--monque-primary-high);
+
+	/* Banner Customization (Orange/Caution) */
+	--sl-color-banner-bg: var(--monque-secondary);
+	--sl-color-banner-text: #052e16; /* Extremely dark green/black for high contrast */
+
+	/* Orange Palette Mapping */
+	--sl-color-orange: var(--monque-secondary);
+	--sl-color-orange-low: var(--monque-secondary-low);
+	--sl-color-orange-high: var(--monque-secondary-high);
 }
 
-/* Code block styling */
-.expressive-code {
-	margin-block: 1.5rem;
+/* Nova Theme Configuration & Specific Overrides */
+
+	/* Primary Action Buttons (Green) */
+	.nova-link-button-primary {
+	background-color: var(--monque-primary) !important;
+	color: #052e16 !important; /* Extremely dark green/black for high contrast */
+	border-color: var(--monque-primary) !important;
+	font-weight: 700;
 }
 
-/* Better spacing for inline code */
-:not(pre) > code {
+.nova-link-button-primary:hover {
+	background-color: var(--monque-primary-hover) !important;
+	border-color: var(--monque-primary-hover) !important;
+	box-shadow: 0 0 15px rgba(17, 225, 103, 0.3) !important; /* Glow effect */
+}
+
+/* Typography & Layout Tweaks */
+
+	/* Make inline code stand out slightly more & restore spacing */
+	:not(pre)
+	> code {
+	color: var(--monque-primary-high);
+	font-weight: 500;
 	padding: 0.15em 0.3em;
 	border-radius: 0.25em;
 }
 
+/* Customize the site title to use the brand green & restore logo size */
+	.site-title {
+	color: var(--monque-primary) !important;
+}
+
+.site-title span {
+	color: var(--monque-primary);
+}
+
+.site-title img {
+	height: 2rem;
+}
+
 /* Custom callout styling */
-.starlight-aside {
+	.starlight-aside {
 	border-radius: 0.5rem;
 }
 
-/* Logo adjustments */
-.site-title img {
-	height: 2rem;
+/* Adjust the sidebar active item indicator */
+.sidebar-content
+a[aria-current="page"] {
+	border-left-color: var(--monque-primary);
+	color: var(--monque-primary);
+	background-color: var(--monque-primary-low);
+}
+
+.expressive-code {
+	margin-block: 1.5rem;
 }
 
 .monque-version {
 	font-size: 0.85em;
 	font-weight: 500;
 	opacity: 0.7;
+	color: var(--monque-text-gray);
 	white-space: nowrap;
-}
-
-/* Hero button override to match branding - Specific for Nova/Starlight setup */
-.nova-link-button-primary {
-	background-color: var(--monque-green) !important;
-	color: #001e2b !important;
-	border-color: var(--monque-green) !important;
-}
-
-.nova-link-button-primary:hover {
-	background-color: #00c452 !important;
-	border-color: #00c452 !important;
 }
