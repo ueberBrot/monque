@@ -10,7 +10,7 @@ import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
 
 import remarkMermaidToPre from './src/remark/remark-mermaid-to-pre.mjs';
 
-const corePackageJsonUrl = new URL('../core/package.json', import.meta.url);
+const corePackageJsonUrl = new URL('../../packages/core/package.json', import.meta.url);
 const corePackageJson = JSON.parse(readFileSync(corePackageJsonUrl, 'utf8'));
 const coreVersion =
 	typeof corePackageJson?.version === 'string' ? corePackageJson.version : 'unknown';
@@ -41,7 +41,7 @@ export default defineConfig({
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ueberbrot/monque' }],
 			editLink: {
-				baseUrl: 'https://github.com/ueberbrot/monque/edit/main/packages/docs/',
+				baseUrl: 'https://github.com/ueberbrot/monque/edit/main/apps/docs/',
 			},
 			lastUpdated: true,
 			customCss: ['./src/styles/custom.css'],
@@ -109,8 +109,8 @@ document.addEventListener('astro:after-swap', renderMermaid);
 					errorOnRelativeLinks: true,
 				}),
 				starlightTypeDoc({
-					entryPoints: ['../core/src/index.ts'],
-					tsconfig: '../core/tsconfig.json',
+					entryPoints: ['../../packages/core/src/index.ts'],
+					tsconfig: '../../packages/core/tsconfig.json',
 					output: 'api',
 					sidebar: {
 						label: 'API Reference',

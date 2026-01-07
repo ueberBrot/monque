@@ -18,7 +18,7 @@
 Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - Core package: `packages/core/src/`, `packages/core/tests/`
 
-- Documentation: `packages/docs/`
+- Documentation: `apps/docs/`
 
 ---
 
@@ -37,7 +37,7 @@ Based on plan.md structure (monorepo with Turborepo + Bun workspaces):
 - [X] T007 Run `bunx tsdown --init` in packages/core/ to scaffold tsdown.config.ts (ESM + CJS dual output)
 - [X] T008 [P] Create packages/core/tsconfig.json with strict TypeScript 5.x configuration
 
-- [X] T012 [P] Run `cd packages/docs && bun init` for minimal workspace placeholder
+- [X] T012 [P] Run `cd apps/docs && bun init` for minimal workspace placeholder
 - [X] T013 Run `bunx vitest init` at root, configure workspace and coverage settings targeting 100%
 - [X] T014 Run `bun install` to install all dependencies
 
@@ -450,32 +450,32 @@ The following phases represent the refactor to atomic claim pattern with MongoDB
 
 ### Implementation for Phase 15
 
-- [X] T145 Create packages/docs/ directory structure
-- [X] T146 Initialize Starlight project in packages/docs/:
+- [X] T145 Create apps/docs/ directory structure
+- [X] T146 Initialize Starlight project in apps/docs/:
   ```bash
-  bunx create astro@latest packages/docs -- --template starlight
+  bunx create astro@latest apps/docs -- --template starlight
   ```
 - [X] T146a Install and configure `starlight-typedoc` plugin for automated API docs
 - [X] T146b Install and configure `starlight-links-validator`, `starlight-image-zoom`, and `starlight-heading-badges`
-- [X] T147 Configure packages/docs/astro.config.mjs with Monque branding and navigation
-- [X] T148 Create packages/docs/src/content/docs/index.mdx as documentation home page
-- [X] T149 Create packages/docs/src/content/docs/getting-started/installation.md
-- [X] T150 Create packages/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
-- [X] T151 Create packages/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
-- [X] T152 Create packages/docs/src/content/docs/core-concepts/workers.md explaining worker registration
-- [X] T153 Create packages/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
-- [X] T154 Create packages/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
-- [X] T155 Create packages/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
-- [X] T156 Create packages/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
-- [X] T157 Create packages/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
+- [X] T147 Configure apps/docs/astro.config.mjs with Monque branding and navigation
+- [X] T148 Create apps/docs/src/content/docs/index.mdx as documentation home page
+- [X] T149 Create apps/docs/src/content/docs/getting-started/installation.md
+- [X] T150 Create apps/docs/src/content/docs/getting-started/quick-start.md with examples from specs/001-monque-scheduler/quickstart.md
+- [X] T151 Create apps/docs/src/content/docs/core-concepts/jobs.md explaining job lifecycle
+- [X] T152 Create apps/docs/src/content/docs/core-concepts/workers.md explaining worker registration
+- [X] T153 Create apps/docs/src/content/docs/core-concepts/scheduling.md explaining cron scheduling
+- [X] T154 Create apps/docs/src/content/docs/core-concepts/retry.md explaining retry with backoff
+- [X] T155 Create apps/docs/src/content/docs/advanced/atomic-claim.md explaining atomic claim pattern
+- [X] T156 Create apps/docs/src/content/docs/advanced/change-streams.md explaining change stream integration
+- [X] T157 Create apps/docs/src/content/docs/advanced/heartbeat.md explaining heartbeat mechanism
 
 - [X] T158 Configure `starlight-typedoc` sidebar and output settings to generate API reference automatically
 
-- [X] T159 Create packages/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
-- [X] T160 Create packages/docs/src/content/docs/guides/migration.md for migration from polling to change streams
+- [X] T159 Create apps/docs/src/content/docs/guides/testing.md with testing guide using exported test utils
+- [X] T160 Create apps/docs/src/content/docs/guides/migration.md for migration from polling to change streams
 - [X] T161 Add code examples to all documentation pages with syntax highlighting
-- [X] T162 Configure packages/docs/package.json with build and dev scripts
-- [X] T163 Add packages/docs to turbo.json pipeline
+- [X] T162 Configure apps/docs/package.json with build and dev scripts
+- [X] T163 Add apps/docs to turbo.json pipeline
 - [X] T164 Update root README.md to link to documentation site
 - [X] T165 Add documentation deployment configuration (Vercel/Netlify)
 - [X] T166 Build and verify documentation site locally

@@ -11,7 +11,7 @@
 	},
 	"overrides": [
 		{
-			"includes": ["packages/docs/src/styles/custom.css"],
+			"includes": ["apps/docs/src/styles/custom.css"],
 			"linter": {
 				"rules": {
 					"complexity": {

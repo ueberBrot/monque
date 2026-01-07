@@ -10,19 +10,15 @@ A MongoDB-backed job scheduler for Node.js with atomic locking, exponential back
 
 📚 **[Documentation](https://ueberBrot.github.io/monque/)** | 🚀 **[Quick Start](https://ueberBrot.github.io/monque/getting-started/quick-start/)**
 
-## Status
-
-Monque is currently in **pre-release (0.x)**.
-
-- The public API may change between releases.
-- Expect breaking changes until `1.0.0`.
+> [!WARNING]
+> Monque is currently in **pre-release (0.x)**. The public API may change between releases. Expect breaking changes until `1.0.0`.
 
 ## Packages
 
 | Package                         | Description                                 |
 | ------------------------------- | ------------------------------------------- |
 | [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
-| [@monque/docs](./packages/docs) | Documentation site (Starlight)              |
+| [@monque/docs](./apps/docs)     | Documentation site (Starlight)              |
 
 ## Features
 

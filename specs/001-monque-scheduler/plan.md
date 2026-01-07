@@ -60,7 +60,7 @@ Implement a TypeScript monorepo containing one package: `@monque/core` (a MongoD
 | **Native Driver**         | ✅ PASS | Only `mongodb` ^7.0.0 as core dependency, no ORM                                                                       |
 | **API Simplicity**        | ✅ PASS | 4 main methods: `now()`, `enqueue()`, `schedule()`, `worker()` + `start()`, `stop()`, `isHealthy()`                    |
 | **JSDoc Documentation**   | ✅ PASS | All interfaces documented with examples in contracts                                                                   |
-| **Markdown Docs**         | ✅ PASS | `packages/docs/` for portable developer documentation                                                                  |
+| **Markdown Docs**         | ✅ PASS | `apps/docs/` for portable developer documentation                                                                  |
 | **Error Handling**        | ✅ PASS | Custom error classes: `MonqueError`, `InvalidCronError`, `ConnectionError`, `ShutdownTimeoutError`                     |
 
 **Post-Design Gate**: ✅ DESIGN COMPLIANT

@@ -7,7 +7,8 @@
 		"node": ">=22.21.1"
 	},
 	"workspaces": [
-		"packages/*"
+		"packages/*",
+		"apps/*"
 	],
 	"scripts": {
 		"prepare": "lefthook install",

@@ -19,6 +19,24 @@
         "vitest": "^4.0.16",
       },
     },
+    "apps/docs": {
+      "name": "@monque/docs",
+      "version": "0.0.1",
+      "dependencies": {
+        "@astrojs/starlight": "^0.37.1",
+        "astro": "^5.6.1",
+        "sharp": "^0.34.2",
+        "starlight-links-validator": "^0.19.2",
+        "starlight-llms-txt": "^0.7.0",
+        "starlight-theme-nova": "^0.10.0",
+        "starlight-typedoc": "^0.21.5",
+        "typedoc": "^0.28.15",
+        "typedoc-plugin-markdown": "^4.9.0",
+      },
+      "devDependencies": {
+        "@astrojs/check": "^0.9.6",
+      },
+    },
     "packages/core": {
       "name": "@monque/core",
       "version": "0.0.0",
@@ -39,24 +57,6 @@
       },
       "peerDependencies": {
         "mongodb": "^7.0.0",
-      },
-    },
-    "packages/docs": {
-      "name": "@monque/docs",
-      "version": "0.0.1",
-      "dependencies": {
-        "@astrojs/starlight": "^0.37.1",
-        "astro": "^5.6.1",
-        "sharp": "^0.34.2",
-        "starlight-links-validator": "^0.19.2",
-        "starlight-llms-txt": "^0.7.0",
-        "starlight-theme-nova": "^0.10.0",
-        "starlight-typedoc": "^0.21.5",
-        "typedoc": "^0.28.15",
-        "typedoc-plugin-markdown": "^4.9.0",
-      },
-      "devDependencies": {
-        "@astrojs/check": "^0.9.6",
       },
     },
   },
@@ -389,7 +389,7 @@
 
     "@monque/core": ["@monque/core@workspace:packages/core"],
 
-    "@monque/docs": ["@monque/docs@workspace:packages/docs"],
+    "@monque/docs": ["@monque/docs@workspace:apps/docs"],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.0", "", { "dependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1", "@tybys/wasm-util": "^0.10.1" } }, "sha512-Fq6DJW+Bb5jaWE69/qOE0D1TUN9+6uWhCeZpdnSBk14pjLcCWR7Q8n49PTSPHazM37JqrsdpEthXy2xn6jWWiA=="],
 
