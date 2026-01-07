@@ -1,9 +1,13 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: False positive in Astro
 import config from 'virtual:starlight/user-config';
+// biome-ignore lint/correctness/noUnusedImports: False positive in Astro
 import { logos } from 'virtual:starlight/user-images';
 
+// biome-ignore lint/correctness/noUnusedImports: False positive in Astro
 import VersionBadge from './VersionBadge.astro';
 
+// biome-ignore lint/correctness/noUnusedVariables: False positive in Astro
 const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
 ---
 

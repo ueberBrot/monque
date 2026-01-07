@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint & Format
@@ -19,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -52,6 +57,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -72,21 +79,13 @@ jobs:
       - name: Run Tests
         run: bun turbo test --filter=@monque/core
 
-      - name: Upload Test Results
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: packages/core/coverage
-          retention-days: 3
-
       - name: Upload coverage
         uses: codecov/codecov-action@v5
-        if: always()
+        if: ${{ always() && secrets.CODECOV_TOKEN != '' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
         with:
+          files: packages/core/coverage/lcov.info
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: ${{ github.repository }}
 
   build:
     name: Build
@@ -96,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -119,6 +120,13 @@ jobs:
       - name: Check Exports
         run: bun turbo check:exports
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: packages/*/dist
+          retention-days: 1
+
   release:
     name: Release
     needs: build
@@ -127,6 +135,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,8 +147,22 @@ jobs:
         with:
           bun-version: 1.3.5
 
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
         run: bun install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
 
       - name: Create Release PR or Publish
         uses: changesets/action@v1
@@ -151,22 +174,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
 
   check-changeset:
     name: Check Changeset
-    needs: build
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.5
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile

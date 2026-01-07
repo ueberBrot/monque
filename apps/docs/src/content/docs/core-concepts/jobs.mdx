@@ -13,7 +13,7 @@ A job represents a unit of work to be processed asynchronously. Each job has:
 
 - **Name**: Identifies which worker should process it
 - **Data**: The payload containing information needed to complete the work
-- **Status**: Current state in the lifecycle (pending, processing, completed, failed)
+- **Status**: Current state in the lifecycle (`pending`, `processing`, `completed`, `failed`). Can be referenced via the [`JobStatus`](/monque/api/variables/jobstatus/) enum from `@monque/core`.
 - **Scheduling**: When the job should run (`nextRunAt`)
 
 ## Job Interface
@@ -183,7 +183,12 @@ monque.worker<ProcessOrderJob>('process-order', async (job) => {
 Design workers to handle duplicate execution safely:
 
 <Aside type="note">
-  Monque prevents two schedulers from claiming the same pending job at the same time, but a job may still run more than once (for example after a crash, a retry, or stale recovery). Design handlers to be safe to re-run.
+  **Why jobs might run twice:** Monque ensures a job is only claimed by one worker at a time. However, a job can be re-run in scenarios such as:
+  
+  - **Retries**: If a job fails, the [retry logic](/monque/core-concepts/retry/) will re-queue it.
+  - **Stale Recovery**: If a worker crashes or stops sending heartbeats, the recovery mechanism will re-queue the job.
+  
+  Always design your workers to be idempotent (safe to run multiple times).
 </Aside>
 
 ```typescript
@@ -242,18 +247,31 @@ The indexes Monque creates are:
 
 ### Manual Cleanup
 
-If you need more complex retention logic (e.g. keep important sales reports longer), you can implement a custom scheduled job:
+If you need more complex retention logic (e.g., keep important sales reports longer), implement a custom scheduled job that uses the MongoDB driver directly:
+
+<Aside type="note">
+  Monque does not expose a public `deleteJob` API in v1.0. Use the MongoDB driver for custom deletion logic.
+</Aside>
 
 ```typescript
+import { JobStatus } from '@monque/core';
+
 await monque.schedule('0 3 * * *', 'custom-cleanup', {});
 
 monque.worker('custom-cleanup', async () => {
-  // Use Monque's public API to query and manage jobs
-  const oldJobs = await monque.getJobs({
-    status: JobStatus.COMPLETED,
-    // Add custom filter logic here
+  // Access the jobs collection via your own MongoDB client.
+  // Use the same collection name you configured for Monque (default: 'monque_jobs').
+  const collection = db.collection('monque_jobs');
+  
+  const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+  
+  // Delete old completed/failed jobs (never delete 'processing' jobs!)
+  await collection.deleteMany({
+    status: { $in: [JobStatus.COMPLETED, JobStatus.FAILED] },
+    updatedAt: { $lt: cutoffDate },
+    // Add custom filter logic here, e.g., exclude important reports
+    name: { $ne: 'important-report' }
   });
-  // Process cleanup based on your retention rules
 });
 ```
 

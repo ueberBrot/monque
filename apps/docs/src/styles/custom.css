@@ -1,4 +1,7 @@
 :root {
+	/* --- Typography --- */
+	--sl-font: "Quicksand", sans-serif;
+
 	/* --- Brand Palette --- */
 	--monque-primary: #11e167; /* Bright Green */
 	--monque-primary-hover: #0ed15f; /* Slightly darker for interactions */
@@ -10,8 +13,44 @@
 	--monque-secondary-high: #fedeb2;
 }
 
+/* Apply variables to Starlight Light Theme */
+:root[data-theme="light"] {
+	/* Light mode specific brand colors */
+	--monque-primary-low: #dcfce7; /* Light green background */
+	--monque-primary: #059033; /* Darker green for better contrast on light bg */
+	--monque-primary-high: #052e16; /* Dark green for text */
+
+	--monque-secondary-low: #fef3c7; /* Light orange background */
+	--monque-secondary: #d97706; /* Darker orange for contrast */
+	--monque-secondary-high: #78350f; /* Dark brown/orange for text */
+
+	/* Accent (Green) - Controls links, active states, etc. */
+	--sl-color-accent-low: var(--monque-primary-low);
+	--sl-color-accent: var(--monque-primary);
+	--sl-color-accent-high: var(--monque-primary-high);
+	--sl-color-text-accent: var(--monque-primary);
+
+	/* Green Palette */
+	--sl-color-green-low: var(--monque-primary-low);
+	--sl-color-green: var(--monque-primary);
+	--sl-color-green-high: var(--monque-primary-high);
+
+	--sl-color-purple-low: var(--monque-primary-low);
+	--sl-color-purple: var(--monque-primary);
+	--sl-color-purple-high: var(--monque-primary-high);
+
+	/* Banner Customization (Orange/Caution) */
+	--sl-color-banner-bg: var(--monque-secondary);
+	--sl-color-banner-text: #fffbeb; /* Light cream for contrast on orange */
+
+	/* Orange Palette Mapping */
+	--sl-color-orange: var(--monque-secondary);
+	--sl-color-orange-low: var(--monque-secondary-low);
+	--sl-color-orange-high: var(--monque-secondary-high);
+}
+
 /* Apply variables to Starlight Dark Theme */
-	:root[data-theme="dark"] {
+:root[data-theme="dark"] {
 	/* Soften standard text colors (User Feedback: "Text is too white") */
 	--sl-color-white: #e0e6e6;
 	--sl-color-gray-1: #e0e6e6;
@@ -44,8 +83,8 @@
 
 /* Nova Theme Configuration & Specific Overrides */
 
-	/* Primary Action Buttons (Green) */
-	.nova-link-button-primary {
+/* Primary Action Buttons (Green) */
+.nova-link-button-primary {
 	background-color: var(--monque-primary) !important;
 	color: #052e16 !important; /* Extremely dark green/black for high contrast */
 	border-color: var(--monque-primary) !important;
@@ -60,9 +99,8 @@
 
 /* Typography & Layout Tweaks */
 
-	/* Make inline code stand out slightly more & restore spacing */
-	:not(pre)
-	> code {
+/* Make inline code stand out slightly more & restore spacing */
+:not(pre) > code {
 	color: var(--monque-primary-high);
 	font-weight: 500;
 	padding: 0.15em 0.3em;
@@ -70,7 +108,7 @@
 }
 
 /* Customize the site title to use the brand green & restore logo size */
-	.site-title {
+.site-title {
 	color: var(--monque-primary) !important;
 }
 
@@ -83,13 +121,12 @@
 }
 
 /* Custom callout styling */
-	.starlight-aside {
+.starlight-aside {
 	border-radius: 0.5rem;
 }
 
 /* Adjust the sidebar active item indicator */
-.sidebar-content
-a[aria-current="page"] {
+.sidebar-content a[aria-current="page"] {
 	border-left-color: var(--monque-primary);
 	color: var(--monque-primary);
 	background-color: var(--monque-primary-low);
@@ -97,6 +134,26 @@ a[aria-current="page"] {
 
 .expressive-code {
 	margin-block: 1.5rem;
+}
+
+/* Mermaid diagram styling */
+pre.mermaid {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	background: var(--sl-color-bg-nav);
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.5rem;
+	margin-block: 1.5rem;
+	padding: 1.5rem;
+	overflow-x: auto;
+	min-height: fit-content;
+}
+
+pre.mermaid svg {
+	max-width: 100%;
+	height: auto;
+	overflow: visible;
 }
 
 .monque-version {

@@ -26,7 +26,7 @@ While a job is `processing`, Monque periodically updates `lastHeartbeat` to sign
 sequenceDiagram
     participant W as Worker
     participant DB as MongoDB
-    participant S as Stale Checker
+    participant S as New Worker (startup)
     
     W->>DB: Claim job (set lastHeartbeat)
     loop Every 30 seconds
@@ -35,7 +35,7 @@ sequenceDiagram
     
     Note over W: Worker crashes!
     
-    S->>DB: Find jobs with old lockedAt
+    S->>DB: initialize(): Find jobs with old lockedAt
     S->>DB: Reset to pending
     
     Note over DB: Job available for retry
@@ -56,7 +56,7 @@ const monque = new Monque(db, {
 | Option              | Default           | Description                                    |
 | ------------------- | ----------------- | ---------------------------------------------- |
 | `heartbeatInterval` | `30000` (30s)     | How often to update heartbeat while processing |
-| `lockTimeout`       | `1800000` (30min) | Time without heartbeat before job is stale     |
+| `lockTimeout`       | `1800000` (30min) | Maximum time since a job was claimed (`lockedAt`) before it is considered stale |
 | `recoverStaleJobs`  | `true`            | Whether to recover stale jobs on startup       |
 
 <Aside type="tip">
@@ -186,23 +186,15 @@ const longJobMonque = new Monque(db, {
 });
 ```
 
-### 2. Monitor Heartbeat Health
+### 2. Monitoring Heartbeats
+
+Monque manages heartbeats automatically in the background. If a heartbeat update fails (e.g., due to database connectivity), Monque emits a `job:error` event.
+
+To verify heartbeats are updating normally during debugging, you can check the job status using the public API:
 
 ```typescript
-// Track heartbeat updates
-let lastHeartbeat = Date.now();
-
-const originalStart = monque.start.bind(monque);
-monque.start = function() {
-  setInterval(() => {
-    const elapsed = Date.now() - lastHeartbeat;
-    if (elapsed > heartbeatInterval * 2) {
-      alerting.warn('Heartbeat delayed', { elapsed });
-    }
-  }, heartbeatInterval);
-  
-  return originalStart();
-};
+const job = await monque.getJob(jobId);
+console.log('Last heartbeat:', job.lastHeartbeat);
 ```
 
 ### 3. Handle Long-Running Jobs
@@ -272,6 +264,8 @@ const monque = new Monque(db, {
 **Investigation**:
 ```typescript
 // Query to find stale job patterns
+const lockTimeout = 30 * 60 * 1000; // 30 minutes
+
 const staleJobs = await db.collection('monque_jobs').find({
   status: 'processing',
   lockedAt: { $lt: new Date(Date.now() - lockTimeout) }
@@ -291,8 +285,8 @@ console.log('Stale jobs by type:', byName);
 Monque creates indexes optimized for heartbeat queries:
 
 ```typescript
-// Index for stale job detection
-{ lastHeartbeat: 1, status: 1 }
+// Index for stale job detection (optimizes queries on lockedAt)
+{ lockedAt: 1, lastHeartbeat: 1, status: 1 }
 
 // Index for heartbeat updates
 { claimedBy: 1, status: 1 }

@@ -2,7 +2,7 @@
  * remark plugin: convert ```mermaid fences into <pre class="mermaid"> blocks.
  *
  * This enables client-side Mermaid rendering (no build-time renderers).
- * Workaround until astro-mermaid fixes it's claude-code runtime dependency addition.
+ * Workaround until astro-mermaid fixes its claude-code runtime dependency addition.
  */
 
 function escapeHtml(value) {
@@ -18,7 +18,7 @@ export default function remarkMermaidToPre() {
 			const node = stack.pop();
 			if (!node || typeof node !== 'object') continue;
 
-			if (node.type === 'code' && (node.lang === 'mermaid' || node.lang === 'Mermaid')) {
+			if (node.type === 'code' && node.lang?.toLowerCase() === 'mermaid') {
 				node.type = 'html';
 				node.value = `<pre class="mermaid">\n${escapeHtml(node.value ?? '')}\n</pre>`;
 				delete node.lang;

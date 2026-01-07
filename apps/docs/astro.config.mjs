@@ -44,7 +44,13 @@ export default defineConfig({
 				baseUrl: 'https://github.com/ueberbrot/monque/edit/main/apps/docs/',
 			},
 			lastUpdated: true,
-			customCss: ['./src/styles/custom.css'],
+			customCss: [
+				'@fontsource/quicksand/400.css',
+				'@fontsource/quicksand/500.css',
+				'@fontsource/quicksand/600.css',
+				'@fontsource/quicksand/700.css',
+				'./src/styles/custom.css',
+			],
 			sidebar: [
 				{
 					label: 'Getting Started',

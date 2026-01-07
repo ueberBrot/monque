@@ -2,6 +2,16 @@
 	"name": "monque",
 	"private": true,
 	"type": "module",
+	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+	"license": "ISC",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ueberBrot/monque.git"
+	},
+	"bugs": {
+		"url": "https://github.com/ueberBrot/monque/issues"
+	},
+	"homepage": "https://github.com/ueberBrot/monque#readme",
 	"packageManager": "bun@1.3.5",
 	"engines": {
 		"node": ">=22.21.1"

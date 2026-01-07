@@ -24,6 +24,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@astrojs/starlight": "^0.37.1",
+        "@fontsource/quicksand": "^5.2.10",
         "astro": "^5.6.1",
         "sharp": "^0.34.2",
         "starlight-links-validator": "^0.19.2",
@@ -296,6 +297,8 @@
     "@floating-ui/dom": ["@floating-ui/dom@1.7.4", "", { "dependencies": { "@floating-ui/core": "^1.7.3", "@floating-ui/utils": "^0.2.10" } }, "sha512-OOchDgh4F2CchOX94cRVqhvy7b3AFb+/rQXyswmzmGakRfkMgoWVjfnLWkRirfLEfuD4ysVW16eXzwt3jHIzKA=="],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="],
+
+    "@fontsource/quicksand": ["@fontsource/quicksand@5.2.10", "", {}, "sha512-rck0ccT6vJF9RnbSW2ON1grq5qFZvjVOGvYIUixATXF8mNh4KglD+8Sn8QpRgKQBSBJF5yOR3SBYBWPg/Y8YbQ=="],
 
     "@gerrit0/mini-shiki": ["@gerrit0/mini-shiki@3.20.0", "", { "dependencies": { "@shikijs/engine-oniguruma": "^3.20.0", "@shikijs/langs": "^3.20.0", "@shikijs/themes": "^3.20.0", "@shikijs/types": "^3.20.0", "@shikijs/vscode-textmate": "^10.0.2" } }, "sha512-Wa57i+bMpK6PGJZ1f2myxo3iO+K/kZikcyvH8NIqNNZhQUbDav7V9LQmWOXhf946mz5c1NZ19WMsGYiDKTryzQ=="],
 

@@ -1,70 +1,59 @@
----
-applyTo: "**/*.test.ts"
----
-# Testing Instructions
+# Testing Rules
 
-This project requires **100% test coverage**. Use Vitest.
+This project requires **the highest test coverage** that can be done wit healistic scenarios. Use Vitest.
 
 ## Running Tests
+Always use the predefined scripts in `package.json` to run tests. Do not run `vitest` directly.
 
-Use `bun` to run tests.
-
+### Root Level
 ```bash
-# Run all tests (uses vitest via package.json script)
-bun run test
+bun run test                # Run all tests
+bun run test:unit           # Run all unit tests
+bun run test:integration    # Run all integration tests
+bun run test:core           # Run core tests only
+bun run test:core:unit      # Run core unit tests
+bun run test:core:integration # Run core integration tests
+bun run test:coverage       # Run test coverage
+```
 
-# Run specific test file (uses vitest directly)
-bunx vitest packages/core/tests/enqueue.test.ts
+### Package Level
+When working within a package (e.g., `packages/core`), use:
+```bash
+bun run test               # Run all tests for this package
+bun run test:unit          # Run unit tests
+bun run test:integration   # Run integration tests
+bun run test:watch         # Run tests in watch mode
 ```
 
 ## Test Structure
+Organize tests by feature and type:
 
-Organize tests by feature:
-
-```
-tests/
-├── enqueue.test.ts      # Job creation, uniqueKey
-├── worker.test.ts       # Job processing, concurrency
-├── locking.test.ts      # Atomic lock, race conditions
-├── retry.test.ts        # Backoff logic, max retries
-├── cron.test.ts         # Cron scheduling
-└── errors.test.ts       # Custom error classes
-```
+- `tests/unit/`: **Unit Tests**. Fast, isolated.
+  - MUST mock all external dependencies (DB, Time).
+  - Focus on individual function logic.
+  
+- `tests/integration/`: **Integration Tests**. Real dependencies.
+  - connect to a real MongoDB instance.
+  - Verify complete flows (enqueue -> process -> complete).
 
 ## Required Scenarios
+You MUST test both happy and sad paths.
 
-### Happy Path
-- Enqueue a job -> Worker picks it up -> Status becomes `completed`.
+### 1. Happy Path
+- Enqueue -> Worker picks up -> Complete.
 
-### Unique Keys
-- Enqueue with `uniqueKey` -> Enqueue again with same key -> Only one job exists.
-- Completed job with `uniqueKey` -> Enqueue again -> New job is created.
+### 2. Idempotency (Unique Keys)
+- Enqueue duplicate key -> Only one job.
+- Complete job -> Enqueue key -> New job.
 
-### Backoff
-- Job fails -> `nextRunAt` is set to `now + 2^failCount * baseRetryInterval` (default 1s).
-- Job fails `maxRetries` times -> Status becomes `failed`.
+### 3. Resilience
+- **Backoff:** Verify `nextRunAt` calculation.
+- **Max Retries:** Verify status becomes `failed`.
+- **Race Conditions:** Verify only one worker locks a job.
 
-### Race Conditions
-- Two workers try to lock the same job -> Only one succeeds.
+### 4. Lifecycle
+- **Shutdown:** Verify `stop()` waits for jobs or times out.
 
-### Graceful Shutdown
-- Call `stop()` while job is processing -> Job completes before shutdown.
-- Call `stop()` and timeout expires -> `job:error` event is emitted.
-
-## Mocking Patterns
-
-```typescript
-// Simulate DB error
-vi.spyOn(collection, 'findOneAndUpdate').mockRejectedValueOnce(new Error('DB Error'));
-
-// Control time for backoff tests
-vi.useFakeTimers();
-vi.advanceTimersByTime(60_000);
-vi.useRealTimers();
-```
-
-## Assertions
-
-- Use `expect(job.status).toBe(JobStatus.COMPLETED)` for state checks.
-- Use `expect(monque.emit).toHaveBeenCalledWith('job:complete', ...)` for event checks.
-
+## Mocking
+Use `vi.spyOn(collection, ...)` for DB mocks in unit tests.
+Use `vi.useFakeTimers()` for backoff verification.'

@@ -2,6 +2,17 @@
 	"name": "@monque/core",
 	"version": "0.0.0",
 	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
+	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ueberBrot/monque.git",
+		"directory": "packages/core"
+	},
+	"bugs": {
+		"url": "https://github.com/ueberBrot/monque/issues"
+	},
+	"homepage": "https://github.com/ueberBrot/monque#readme",
+	"sideEffects": false,
 	"type": "module",
 	"packageManager": "bun@1.3.5",
 	"engines": {
@@ -49,7 +60,12 @@
 		"scheduler",
 		"mongodb",
 		"cron",
-		"background-jobs"
+		"background-jobs",
+		"typescript",
+		"distributed",
+		"task-queue",
+		"atomic",
+		"persistence"
 	],
 	"license": "ISC",
 	"dependencies": {

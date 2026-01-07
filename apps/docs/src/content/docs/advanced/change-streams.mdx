@@ -260,27 +260,43 @@ monque.on('changestream:error', () => {
 
 ## Performance Comparison
 
-### Benchmark
+Monque does not publish benchmark numbers for Change Streams.
+
+In general:
+
+- **Polling-only** pickup latency is bounded by `pollInterval`.
+- **With Change Streams** enabled, pickup latency is typically bounded by the Change Stream notification delay plus Monque's **100ms debounce window** and processing time.
+
+### Measure In Your Environment
+
+The exact numbers depend on MongoDB deployment (local vs Atlas), network latency, job volume, and worker load. If you want hard data, measure pickup latency in your application:
 
 ```typescript
-// 1000 jobs enqueued, measured time to start processing
+const enqueueTime = Date.now();
 
-// Without Change Streams (polling at 1000ms):
-// Average pickup latency: 487ms
-// P95 pickup latency: 962ms
+await monque.enqueue('measured-job', { enqueueTime });
 
-// With Change Streams:
-// Average pickup latency: 23ms
-// P95 pickup latency: 67ms
+monque.worker('measured-job', async (job) => {
+  const pickupLatency = Date.now() - job.data.enqueueTime;
+  // Replace `yourMetrics` with your metrics client (Prometheus, StatsD, OpenTelemetry, ...)
+  yourMetrics.histogram('monque.pickup_latency_ms', pickupLatency);
+});
 ```
 
-### Memory Usage
+To compare **polling-only** vs **Change Streams**:
 
-Change Streams add minimal memory overhead:
+- Run against a **standalone** MongoDB (no replica set) to force polling-only mode.
+- Run against a **replica set/sharded cluster** (e.g., Atlas) to enable Change Streams.
 
-- One cursor per Monque instance
-- Buffered events (typically < 1KB)
-- No significant impact on heap
+### Resource Impact
+
+Enabling Change Streams maintains an open cursor to the MongoDB server. While typically lightweight, the actual memory footprint depends on your specific workload:
+
+- **Driver Buffering:** The MongoDB Node.js driver buffers events internally.
+- **Event Volume:** High update rates will increase memory pressure if consumers lag.
+- **Document Size:** Large `updateDescription` fields in change events increase payload size.
+
+If memory usage is a critical concern, we recommend profiling your application under load, as the overhead is generally negligible for most use cases but can vary.
 
 ## Best Practices
 
@@ -309,16 +325,7 @@ monque.on('changestream:error', ({ error }) => {
 
 ### 3. Monitor Latency
 
-```typescript
-const enqueueTime = Date.now();
-
-await monque.enqueue('measured-job', { enqueueTime });
-
-monque.worker('measured-job', async (job) => {
-  const pickupLatency = Date.now() - job.data.enqueueTime;
-  metrics.histogram('monque.pickup_latency', pickupLatency);
-});
-```
+The snippet above shows one simple way to capture pickup latency.
 
 ## Next Steps
 
