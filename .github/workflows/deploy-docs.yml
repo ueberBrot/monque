@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install, build, and upload your site
+      - name: Install, build, and upload docs
         uses: withastro/action@v5
         with:
           path: ./apps/docs
@@ -38,6 +38,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy Docs to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
