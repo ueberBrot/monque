@@ -1,35 +1,50 @@
-# Monque
+<p align="center">
+  <img src="assets/logo-with-text.svg" alt="Monque Logo" width="800"/>
+</p>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/ueberbrot/monque/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS)](https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/ueberbrot/monque?branch=main&style=for-the-badge&label=COVERAGE)](https://codecov.io/gh/ueberbrot/monque)
-[![License](https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE)](https://github.com/ueberbrot/monque/blob/main/LICENSE)
-[![Website](https://img.shields.io/website?url=https%3A%2F%2FueberBrot.github.io%2Fmonque%2F&style=for-the-badge&label=WEBSITE)](https://ueberBrot.github.io/monque/)
+<p align="center">
+  <a href="https://github.com/ueberbrot/monque/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI" />
+  </a>
+  <a href="https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS" alt="Docs" />
+  </a>
+  <a href="https://github.com/ueberbrot/monque/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE" alt="License" />
+  </a>
+  <a href="https://ueberBrot.github.io/monque/">
+    <img src="https://img.shields.io/website?url=https%3A%2F%2FueberBrot.github.io%2Fmonque%2F&style=for-the-badge&label=WEBSITE" alt="Website" />
+  </a>
+</p>
 
-A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
+<p align="center">
+  <b>A MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, and event-driven observability.</b>
+</p>
 
-📚 **[Documentation](https://ueberBrot.github.io/monque/)** | 🚀 **[Quick Start](https://ueberBrot.github.io/monque/getting-started/quick-start/)**
+<p align="center">
+  📚 <a href="https://ueberBrot.github.io/monque/"><b>Documentation</b></a> | 🚀 <a href="https://ueberBrot.github.io/monque/getting-started/quick-start/"><b>Quick Start</b></a>
+</p>
 
 > [!WARNING]
-> Monque is currently in **pre-release (0.x)**. The public API may change between releases. Expect breaking changes until `1.0.0`.
+> Monque is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
 
 ## Packages
 
 | Package                         | Description                                 |
 | ------------------------------- | ------------------------------------------- |
 | [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
-| [@monque/docs](./apps/docs)     | Documentation site (Starlight)              |
+| [@monque/docs](./apps/docs)     | Documentation site                          |
 
 ## Features
 
-- 🔒 **Atomic Locking** - Prevents duplicate job processing across multiple workers using MongoDB's atomic operations
-- 🔄 **Exponential Backoff** - Automatic retries with configurable backoff: `nextRunAt = now + (2^failCount × baseInterval)`
-- ⏰ **Cron Scheduling** - Schedule recurring jobs with standard 5-field cron expressions
-- 📡 **Event-Driven** - Subscribe to `job:start`, `job:complete`, `job:fail`, `job:error` events
-- 🛡️ **Type-Safe** - Full TypeScript support with generics for job payloads
-- ⚡ **Change Streams** - Real-time job notifications via MongoDB Change Streams (no polling delay)
+- 🔒 **Atomic Locking** - Prevents duplicate job processing across multiple schedulers using MongoDB atomic operations
 - 💓 **Heartbeat Monitoring** - Automatic stale job detection and recovery
-- 🚀 **Framework Agnostic** - Works with any Node.js framework
+- 🛡️ **Type-Safe** - Full TypeScript support with generics for job payloads
+- 🔌 **Framework Agnostic** - Works with any Node.js framework
+- 🔔 **Event-Driven** - Subscribe to job lifecycle events for observability and integrations
+- 📡 **Change Streams** - Real-time job notifications via MongoDB Change Streams (polling remains as a safety net)
+- ⏰ **Cron Scheduling** - Schedule recurring jobs with standard 5-field cron expressions
+- 🔄 **Exponential Backoff** - Automatic retries with configurable exponential backoff
 
 ## Quick Start
 

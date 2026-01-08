@@ -188,7 +188,7 @@ const longJobMonque = new Monque(db, {
 
 ### 2. Monitoring Heartbeats
 
-Monque manages heartbeats automatically in the background. If a heartbeat update fails (e.g., due to database connectivity), Monque emits a `job:error` event.
+Monque manages heartbeats automatically in the background. If a heartbeat update fails (e.g., database connectivity issues), Monque emits a `job:error` event.
 
 To verify heartbeats are updating normally during debugging, you can check the job status using the public API:
 

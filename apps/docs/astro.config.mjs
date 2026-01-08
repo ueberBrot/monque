@@ -36,7 +36,7 @@ export default defineConfig({
 				SiteTitle: './src/components/SiteTitle.astro',
 			},
 			logo: {
-				src: './src/assets/logo.svg',
+				src: './src/assets/icon.svg',
 				replacesTitle: false,
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ueberbrot/monque' }],

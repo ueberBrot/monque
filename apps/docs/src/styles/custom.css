@@ -163,3 +163,9 @@ pre.mermaid svg {
 	color: var(--monque-text-gray);
 	white-space: nowrap;
 }
+
+/* Hero Image Adjustment */
+.hero img {
+	height: 320px !important;
+	width: auto !important;
+}

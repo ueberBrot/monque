@@ -1,11 +1,11 @@
 ---
 title: Monque
-description: A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
+description: A MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, and event-driven observability.
 template: splash
 hero:
   tagline: Type-safe, reliable job scheduling powered by MongoDB
   image:
-    file: ../../assets/logo.svg
+    file: ../../../../../assets/logo.svg
   actions:
     - text: Get Started
       link: /monque/getting-started/installation/
@@ -23,29 +23,6 @@ import VersionBadge from '../../components/VersionBadge.astro';
   Monque is currently in pre-release. Expect breaking changes until 1.0.0.
   Current version: <VersionBadge />
 </Aside>
-
-## Why Monque?
-
-<CardGrid stagger>
-	<Card title="Atomic Locking" icon="approve-check">
-      Prevents concurrent duplicate processing across multiple schedulers using MongoDB atomic claims. Jobs can still be retried or re-run after crashes, so workers should be idempotent.
-	</Card>
-	<Card title="Type-Safe" icon="seti:typescript">
-		Full TypeScript support with generics for job payloads. Catch errors at compile time, not runtime.
-	</Card>
-	<Card title="Event-Driven" icon="rocket">
-		Subscribe to job lifecycle events (`job:start`, `job:complete`, `job:fail`) for full observability and integration with your logging infrastructure.
-	</Card>
-	<Card title="Change Streams" icon="pulse">
-      Real-time job notifications via MongoDB Change Streams, while polling continues as a safety net.
-	</Card>
-	<Card title="Exponential Backoff" icon="refresh">
-		Automatic retries with configurable backoff formula. Failed jobs retry intelligently without overwhelming your system.
-	</Card>
-	<Card title="Cron Scheduling" icon="sun">
-		Schedule recurring jobs with standard 5-field cron expressions. Automatic rescheduling after successful completion.
-	</Card>
-</CardGrid>
 
 ## Quick Example
 
@@ -111,18 +88,35 @@ await monque.enqueue('send-email', {
   </TabItem>
 </Tabs>
 
-## Features at a Glance
+## Why Monque?
 
-| Feature | Description |
-|---------|-------------|
-| **Atomic Job Claims** | Atomic `findOneAndUpdate` claim to avoid concurrent duplicates |
-| **Heartbeat Monitoring** | Detect stale jobs from crashed workers |
-| **Change Streams** | Real-time notifications (polling still runs) |
-| **Graceful Shutdown** | Wait for in-progress jobs before stopping |
-| **Unique Keys** | Prevent duplicate pending/processing jobs |
-| **Cron Scheduling** | Standard 5-field cron expression support |
-| **Exponential Backoff** | `nextRunAt = now + (2^failCount × baseInterval)` |
-| **Event Emission** | Full lifecycle hooks for observability |
+<CardGrid stagger>
+  <Card title="Atomic Locking" icon="seti:lock">
+      Prevents concurrent duplicate processing across multiple schedulers using MongoDB atomic claims. Jobs can still be retried or re-run after crashes, so workers should be idempotent.
+	</Card>
+  <Card title="Heartbeat Monitoring" icon="heart">
+    Detects stale jobs from crashed workers and recovers them automatically to keep processing moving.
+  </Card>
+  <Card title="Type-Safe" icon="seti:typescript">
+		Full TypeScript support with generics for job payloads. Catch errors at compile time, not runtime.
+	</Card>
+  <Card title="Framework Agnostic" icon="puzzle">
+    Works with any Node.js framework and runs wherever you can connect to MongoDB.
+  </Card>
+  <Card title="Event-Driven" icon="comment">
+		Subscribe to job lifecycle events for full observability and integration with your logging infrastructure.
+	</Card>
+  <Card title="Change Streams" icon="rss">
+      Real-time job notifications via MongoDB Change Streams, while polling continues as a safety net.
+	</Card>
+  <Card title="Cron Scheduling" icon="seti:clock">
+		Schedule recurring jobs with standard 5-field cron expressions. Automatic rescheduling after successful completion.
+	</Card>
+  <Card title="Exponential Backoff" icon="seti:clock">
+    Automatic retries with configurable exponential backoff. Failed jobs retry intelligently without overwhelming your system.
+	</Card>
+</CardGrid>
+
 
 ## Next Steps
 

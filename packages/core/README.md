@@ -1,9 +1,13 @@
-# @monque/core
+<p align="center">
+  <img src="../../assets/logo.svg" width="180" alt="Monque logo" />
+</p>
 
-MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.
+<h1 align="center">@monque/core</h1>
+
+<p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
 
 > [!WARNING]
-> This package is currently in **pre-release (0.x)**. The public API may change between releases. Expect breaking changes until `1.0.0`.
+> This package is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
 
 ## Installation
 
