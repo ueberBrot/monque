@@ -138,6 +138,8 @@ process.on('SIGTERM', async () => {
 });
 ```
 
+If `stop()` hits the configured `shutdownTimeout`, in-progress jobs are left in `processing` so stale job recovery can safely re-claim them later.
+
 ## Complete Example
 
 Here's the full working example:

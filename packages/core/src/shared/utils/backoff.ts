@@ -5,6 +5,15 @@
 export const DEFAULT_BASE_INTERVAL = 1000;
 
 /**
+ * Default maximum delay cap for exponential backoff in milliseconds.
+ *
+ * This prevents unbounded delays (e.g. failCount=20 is >11 days at 1s base)
+ * and avoids precision/overflow issues for very large fail counts.
+ * @default 86400000 (24 hours)
+ */
+export const DEFAULT_MAX_BACKOFF_DELAY = 24 * 60 * 60 * 1_000;
+
+/**
  * Calculate the next run time using exponential backoff.
  *
  * Formula: nextRunAt = now + (2^failCount × baseInterval)
@@ -34,10 +43,11 @@ export function calculateBackoff(
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
 	maxDelay?: number,
 ): Date {
+	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
 	let delay = 2 ** failCount * baseInterval;
 
-	if (maxDelay !== undefined && delay > maxDelay) {
-		delay = maxDelay;
+	if (delay > effectiveMaxDelay) {
+		delay = effectiveMaxDelay;
 	}
 
 	return new Date(Date.now() + delay);
@@ -56,10 +66,11 @@ export function calculateBackoffDelay(
 	baseInterval: number = DEFAULT_BASE_INTERVAL,
 	maxDelay?: number,
 ): number {
+	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
 	let delay = 2 ** failCount * baseInterval;
 
-	if (maxDelay !== undefined && delay > maxDelay) {
-		delay = maxDelay;
+	if (delay > effectiveMaxDelay) {
+		delay = effectiveMaxDelay;
 	}
 
 	return delay;

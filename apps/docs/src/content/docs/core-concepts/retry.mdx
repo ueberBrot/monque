@@ -18,7 +18,7 @@ When jobs fail, Monque automatically retries them using exponential backoff. Thi
 ## Backoff Formula
 
 ```
-nextRunAt = now + (2^failCount × baseRetryInterval)
+nextRunAt = now + min(2^failCount × baseRetryInterval, maxBackoffDelay)
 ```
 
 ### Example Timeline
@@ -46,7 +46,7 @@ With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`):
 const monque = new Monque(db, {
   maxRetries: 10,          // Default: 10
   baseRetryInterval: 1000, // Default: 1000ms
-  maxBackoffDelay: 3600000 // Optional: cap at 1 hour
+  maxBackoffDelay: 3600000 // Optional override: cap at 1 hour (default cap is 24 hours)
 });
 ```
 
@@ -56,10 +56,10 @@ const monque = new Monque(db, {
 | ------------------- | ----------- | ----------------------------------------------- |
 | `maxRetries`        | `10`        | Maximum retry attempts before permanent failure |
 | `baseRetryInterval` | `1000` (1s) | Base delay multiplied by backoff factor         |
-| `maxBackoffDelay`   | `undefined` | Optional maximum delay cap                      |
+| `maxBackoffDelay`   | `86400000`  | Maximum delay cap (24 hours)                    |
 
 <Aside type="tip">
-  Use `maxBackoffDelay` to cap extremely long delays. With the default `maxRetries: 10`, the last actual retry occurs when `failCount = 9` (a 512s ≈ 8.5min delay). If you increase `maxRetries`, the delay for `failCount = 10` would be 1024s (≈ 17min).
+  Monque caps exponential backoff by default to prevent unbounded delays (e.g. `failCount = 20` at a 1s base is > 11 days) and to avoid precision/overflow issues at very large `failCount` values. Override with `maxBackoffDelay` if you want a smaller (or larger) cap.
 </Aside>
 
 ## Monitoring Retries

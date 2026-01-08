@@ -243,7 +243,7 @@ The indexes Monque creates are:
 - `{ claimedBy: 1, status: 1 }` for ownership queries and heartbeat updates
 - `{ lastHeartbeat: 1, status: 1 }` for heartbeat-based monitoring queries
 - `{ status: 1, nextRunAt: 1, claimedBy: 1 }` for the atomic claim query
-- `{ lockedAt: 1, lastHeartbeat: 1, status: 1 }` to support stale recovery queries
+- `{ status: 1, lockedAt: 1, lastHeartbeat: 1 }` to support stale recovery queries
 
 ### Manual Cleanup
 

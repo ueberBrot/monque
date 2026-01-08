@@ -20,6 +20,11 @@ When a worker crashes mid-processing:
 
 While a job is `processing`, Monque periodically updates `lastHeartbeat` to signal liveness. Separately, Monque can recover jobs that have been `processing` for longer than `lockTimeout` by resetting them back to `pending` on startup.
 
+It helps to think of these fields as serving different purposes:
+
+- `lockedAt`: Used for stale recovery. `lockTimeout` is an **absolute limit** on how long a job may remain locked/processing before it is considered stale and eligible for recovery.
+- `lastHeartbeat`: Used for monitoring and debugging. It lets you confirm a worker is still actively updating jobs, but it is not what the startup recovery logic uses to decide staleness.
+
 ### How It Works
 
 ```mermaid
@@ -55,8 +60,8 @@ const monque = new Monque(db, {
 
 | Option              | Default           | Description                                    |
 | ------------------- | ----------------- | ---------------------------------------------- |
-| `heartbeatInterval` | `30000` (30s)     | How often to update heartbeat while processing |
-| `lockTimeout`       | `1800000` (30min) | Maximum time since a job was claimed (`lockedAt`) before it is considered stale |
+| `heartbeatInterval` | `30000` (30s)     | How often Monque updates `lastHeartbeat` while processing (monitoring/debugging) |
+| `lockTimeout`       | `1800000` (30min) | Maximum time since a job was claimed (`lockedAt`) before it is considered stale (absolute duration limit, not a heartbeat timeout) |
 | `recoverStaleJobs`  | `true`            | Whether to recover stale jobs on startup       |
 
 <Aside type="tip">
@@ -190,6 +195,8 @@ const longJobMonque = new Monque(db, {
 
 Monque manages heartbeats automatically in the background. If a heartbeat update fails (e.g., database connectivity issues), Monque emits a `job:error` event.
 
+Note that stale recovery is based on `lockedAt` + `lockTimeout`; `lastHeartbeat` is primarily an observability signal to verify worker liveness.
+
 To verify heartbeats are updating normally during debugging, you can check the job status using the public API:
 
 ```typescript
@@ -282,15 +289,20 @@ console.log('Stale jobs by type:', byName);
 
 ## Index Support
 
-Monque creates indexes optimized for heartbeat queries:
+Monque creates indexes to support both recovery and observability queries:
 
 ```typescript
-// Index for stale job detection (optimizes queries on lockedAt)
-{ lockedAt: 1, lastHeartbeat: 1, status: 1 }
+// Index used for stale recovery scans (and time-window analysis)
+{ status: 1, lockedAt: 1, lastHeartbeat: 1 }
+
+// Index used for monitoring (e.g., finding jobs with old heartbeats)
+{ lastHeartbeat: 1, status: 1 }
 
 // Index for heartbeat updates
 { claimedBy: 1, status: 1 }
 ```
+
+The stale recovery query shown in this document filters by `status` (equality) and `lockedAt` (range), so the recovery index is ordered to start with `{ status: 1, lockedAt: 1 }`. The `lastHeartbeat` suffix mainly supports additional monitoring/debugging access patterns (and leaves room for recovery strategies that also consider heartbeat age), rather than implying that `lockTimeout` is a heartbeat timeout.
 
 ## Multi-Instance Behavior
 

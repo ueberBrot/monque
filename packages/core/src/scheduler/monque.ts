@@ -236,9 +236,9 @@ export class Monque extends EventEmitter {
 	 * - `{name, uniqueKey}` - Partial unique index for deduplication (pending/processing only)
 	 * - `{name, status}` - For job lookup by type
 	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
-	 * - `{lastHeartbeat, status}` - For detecting stale jobs via heartbeat timeout
+	 * - `{lastHeartbeat, status}` - For monitoring/debugging queries (e.g., inspecting heartbeat age)
 	 * - `{status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs)
-	 * - `{lockedAt, lastHeartbeat, status}` - For stale job recovery combining lock time and heartbeat
+	 * - `{lockedAt, lastHeartbeat, status}` - Supports recovery scans and monitoring access patterns
 	 */
 	private async createIndexes(): Promise<void> {
 		if (!this.collection) {
@@ -269,8 +269,8 @@ export class Monque extends EventEmitter {
 		// Used for heartbeat updates and cleanup on shutdown.
 		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
 
-		// Compound index for detecting stale jobs via heartbeat timeout.
-		// Used to find processing jobs that have stopped sending heartbeats.
+		// Compound index for monitoring/debugging via heartbeat timestamps.
+		// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
 		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
 
 		// Compound index for atomic claim queries.
@@ -280,10 +280,9 @@ export class Monque extends EventEmitter {
 			{ background: true },
 		);
 
-		// Expanded index for stale job recovery combining lock time and heartbeat.
-		// Supports recovery queries that check both lockedAt and lastHeartbeat.
+		// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
 		await this.collection.createIndex(
-			{ lockedAt: 1, lastHeartbeat: 1, status: 1 },
+			{ status: 1, lockedAt: 1, lastHeartbeat: 1 },
 			{ background: true },
 		);
 	}
@@ -815,6 +814,7 @@ export class Monque extends EventEmitter {
 	 * Stops polling for new jobs and waits for all active jobs to finish processing.
 	 * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
 	 * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
+	 * On timeout, jobs still in progress are left as `processing` for stale job recovery.
 	 *
 	 * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
 	 *
@@ -1373,8 +1373,10 @@ export class Monque extends EventEmitter {
 	 * Update heartbeats for all jobs claimed by this scheduler instance.
 	 *
 	 * This method runs periodically while the scheduler is running to indicate
-	 * that jobs are still being actively processed. Other instances use the
-	 * lastHeartbeat timestamp to detect stale jobs from crashed schedulers.
+	 * that jobs are still being actively processed.
+	 *
+	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
+	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
 	 *
 	 * @private
 	 */

@@ -29,6 +29,7 @@ export {
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
 	getNextCronDate,
 	InvalidCronError,
 	MonqueError,

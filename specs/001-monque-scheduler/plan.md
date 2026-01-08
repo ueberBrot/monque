@@ -11,7 +11,7 @@ Implement a TypeScript monorepo containing one package: `@monque/core` (a MongoD
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x, Node.js 22+  
+**Language/Version**: TypeScript 5.x, Node.js 20+  
 **Primary Dependencies**: mongodb ^7.0.0 (native driver), cron-parser  
 **Storage**: MongoDB 4.0+ (required for atomic findAndModify operations and Change Streams)  
 **Testing**: Vitest with UI and coverage, targeting 100% coverage  

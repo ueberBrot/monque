@@ -252,8 +252,8 @@
 
 - [x] CHK080 - Is the MongoDB 4.0+ requirement validated against atomic operation needs? [Assumption, Spec §Assumptions]
   > ✅ MongoDB 4.0+ supports findOneAndUpdate with all needed options
-- [x] CHK081 - Is the Node.js 22+ requirement justified with specific feature dependencies? [Assumption, Spec §Assumptions]
-  > ✅ Assumptions §Environment Requirements: "Node.js 22+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)"
+- [x] CHK081 - Is the Node.js 20+ requirement justified with specific feature dependencies? [Assumption, Spec §Assumptions]
+  > ✅ Assumptions §Environment Requirements: "Node.js 20+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)"
 - [x] CHK082 - Are cron-parser library capabilities validated against 5-field format requirement? [Dependency, Spec §Assumptions]
   > ✅ cron-parser npm supports standard 5-field cron
 
@@ -351,7 +351,7 @@ All suggested edge cases have been documented under organized subsections:
 ### Assumptions Added to `spec.md`:
 
 Organized into clear subsections:
-- Environment Requirements (Node.js 22+, MongoDB 4.0+, driver versions, Ts.ED v7.x)
+- Environment Requirements (Node.js 20+, MongoDB 4.0+, driver versions, Ts.ED v7.x)
 - Configuration Defaults (all defaults documented with configurability noted)
 - Scope Boundaries (v1.0 exclusions: cancellation, priorities, bulk ops, progress tracking, sharding, testing utilities)
 - Security (data validation, injection prevention, access control)

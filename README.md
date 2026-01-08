@@ -135,7 +135,7 @@ bun run dev:docs
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 20+
 - MongoDB 4.0+ (Replica Set required for Change Streams)
 - Bun 1.3.5+
 

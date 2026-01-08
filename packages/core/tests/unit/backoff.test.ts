@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { calculateBackoff, calculateBackoffDelay, DEFAULT_BASE_INTERVAL } from '@/shared';
+import {
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
+} from '@/shared';
 
 describe('backoff', () => {
 	beforeEach(() => {
@@ -15,6 +20,12 @@ describe('backoff', () => {
 	describe('DEFAULT_BASE_INTERVAL', () => {
 		it('should be 1000ms (1 second)', () => {
 			expect(DEFAULT_BASE_INTERVAL).toBe(1000);
+		});
+	});
+
+	describe('DEFAULT_MAX_BACKOFF_DELAY', () => {
+		it('should be 24 hours', () => {
+			expect(DEFAULT_MAX_BACKOFF_DELAY).toBe(24 * 60 * 60 * 1_000);
 		});
 	});
 
@@ -52,6 +63,11 @@ describe('backoff', () => {
 		it('should cap delay at maxDelay when provided', () => {
 			expect(calculateBackoffDelay(10, 1000, 60000)).toBe(60000); // 1024000 > 60000
 			expect(calculateBackoffDelay(1, 1000, 60000)).toBe(2000); // 2000 < 60000
+		});
+
+		it('should cap delay at DEFAULT_MAX_BACKOFF_DELAY by default', () => {
+			// 2^20 * 1000ms = 1,048,576,000ms (~12.1 days) > 24h
+			expect(calculateBackoffDelay(20)).toBe(DEFAULT_MAX_BACKOFF_DELAY);
 		});
 	});
 
@@ -130,6 +146,12 @@ describe('backoff', () => {
 			const expectedDelay = 60000; // Capped at 60000ms
 
 			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should cap delay at DEFAULT_MAX_BACKOFF_DELAY by default', () => {
+			const now = Date.now();
+			const result = calculateBackoff(20);
+			expect(result.getTime()).toBe(now + DEFAULT_MAX_BACKOFF_DELAY);
 		});
 	});
 });

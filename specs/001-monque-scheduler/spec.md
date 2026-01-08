@@ -303,7 +303,7 @@ The following features are explicitly excluded from v1.0 to maintain focus and r
 ### Environment Requirements
 
 - MongoDB 4.0+ is used (required for atomic findAndModify operations)
-- Node.js 22+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)
+- Node.js 20+ runtime environment (required for: native ESM support, stable fetch API, performance improvements. May work on 20 LTS but untested)
 - mongodb driver ^7.0.0 required for modern TypeScript types and Connection handling
 
 

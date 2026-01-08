@@ -27,11 +27,7 @@ export default defineConfig({
 				'**/*.config.ts',
 				'**/*.config.js',
 				'**/index.ts',
-				// Type-only files with no runtime code
 				'src/**/types.ts',
-				'src/events/types.ts',
-				'src/workers/types.ts',
-				'src/scheduler/types.ts',
 			],
 			thresholds: {
 				lines: 85,

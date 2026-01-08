@@ -12,7 +12,7 @@ import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 Before installing Monque, ensure you have:
 
-- **Node.js 22+** or **Bun 1.0+**
+- **Node.js 20+** or **Bun 1.0+**
 - **MongoDB 4.0+**
   - Monque works with regular polling on standalone MongoDB
   - Change Streams require a replica set or sharded cluster (MongoDB Atlas provides this by default)
@@ -20,9 +20,11 @@ Before installing Monque, ensure you have:
 <Aside type="tip">
   For local development, you can use Docker to quickly spin up a MongoDB replica set:
   ```bash
-  docker run -d --name mongodb -p 27017:27017 mongo:7 --replSet rs0
+  docker run -d --name mongodb -p 27017:27017 mongo --replSet rs0
   docker exec -it mongodb mongosh --eval "rs.initiate()"
   ```
+
+  Alternatively, MongoDB publishes an **Atlas Local** Docker image (`mongodb/mongodb-atlas-local`) if you want an Atlas-like local deployment.
 </Aside>
 
 ## Install the Package
@@ -57,71 +59,6 @@ Monque requires the MongoDB Node.js driver (`mongodb` ^7.0.0) as a peer dependen
 - Use your existing MongoDB client instance
 - Control driver version independently
 - Share connections with your application
-
-## TypeScript Configuration
-
-Monque is written in TypeScript and provides full type definitions. For the best experience, ensure your `tsconfig.json` includes:
-
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "moduleResolution": "bundler",
-    "target": "ES2022",
-    "lib": ["ES2022"]
-  }
-}
-```
-
-## Verify Installation
-
-Create a simple script to verify everything is working:
-
-```typescript
-import { Monque } from '@monque/core';
-import { MongoClient } from 'mongodb';
-
-async function main() {
-  // Connect to MongoDB
-  const client = new MongoClient('mongodb://localhost:27017');
-  await client.connect();
-  
-  console.log('✅ Connected to MongoDB');
-  
-  const db = client.db('my_app');
-  const monque = new Monque(db);
-  
-  await monque.initialize();
-  console.log('✅ Monque initialized');
-  
-  // Check health
-  monque.start();
-  console.log('✅ Scheduler started');
-  console.log('✅ Is healthy:', monque.isHealthy());
-  
-  await monque.stop();
-  await client.close();
-  
-  console.log('✅ Installation verified successfully!');
-}
-
-main().catch(console.error);
-```
-
-Run the script:
-
-<Tabs>
-  <TabItem label="bun">
-    ```bash
-    bun run verify.ts
-    ```
-  </TabItem>
-  <TabItem label="tsx">
-    ```bash
-    npx tsx verify.ts
-    ```
-  </TabItem>
-</Tabs>
 
 ## Next Steps
 

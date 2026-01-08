@@ -5,7 +5,7 @@
  * - All required indexes are created on initialization
  * - Indexes for atomic claim pattern (claimedBy+status, lastHeartbeat+status)
  * - Compound indexes for atomic claim queries (status+nextRunAt+claimedBy)
- * - Expanded recovery index (lockedAt+lastHeartbeat+status)
+ * - Expanded recovery index (status+lockedAt+lastHeartbeat)
  *
  * @see {@link ../../src/scheduler/monque.ts}
  */
@@ -65,7 +65,7 @@ describe('Index creation', () => {
 			expect(indexKeys).toContain('claimedBy,status');
 			expect(indexKeys).toContain('lastHeartbeat,status');
 			expect(indexKeys).toContain('status,nextRunAt,claimedBy');
-			expect(indexKeys).toContain('lockedAt,lastHeartbeat,status');
+			expect(indexKeys).toContain('status,lockedAt,lastHeartbeat');
 		});
 
 		it('should create claimedBy+status compound index for job ownership queries', async () => {
@@ -124,7 +124,7 @@ describe('Index creation', () => {
 			expect(atomicClaimIndex?.background).toBe(true);
 		});
 
-		it('should create expanded lockedAt+lastHeartbeat+status index for recovery queries', async () => {
+		it('should create expanded status+lockedAt+lastHeartbeat index for recovery queries', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -141,7 +141,7 @@ describe('Index creation', () => {
 			);
 
 			expect(recoveryIndex).toBeDefined();
-			expect(recoveryIndex?.key).toEqual({ lockedAt: 1, lastHeartbeat: 1, status: 1 });
+			expect(recoveryIndex?.key).toEqual({ status: 1, lockedAt: 1, lastHeartbeat: 1 });
 			expect(recoveryIndex?.background).toBe(true);
 		});
 	});

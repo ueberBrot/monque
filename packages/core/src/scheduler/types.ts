@@ -42,7 +42,9 @@ export interface MonqueOptions {
 	/**
 	 * Maximum delay in milliseconds for exponential backoff.
 	 * If calculated delay exceeds this value, it will be capped.
-	 * @default undefined (no cap)
+	 *
+	 * Defaults to 24 hours to prevent unbounded delays.
+	 * @default 86400000 (24 hours)
 	 */
 	maxBackoffDelay?: number | undefined;
 
@@ -60,8 +62,10 @@ export interface MonqueOptions {
 
 	/**
 	 * Maximum time in milliseconds a job can be in 'processing' status before
-	 * being considered stale and eligible for re-acquisition by other workers.
-	 * When using heartbeat-based detection, this should be at least 2-3x the heartbeatInterval.
+	 * being considered stale and eligible for recovery.
+	 *
+	 * Stale recovery uses `lockedAt` as the source of truth; this is an absolute
+	 * “time locked” limit, not a heartbeat timeout.
 	 * @default 1800000 (30 minutes)
 	 */
 	lockTimeout?: number;
@@ -76,8 +80,10 @@ export interface MonqueOptions {
 
 	/**
 	 * Interval in milliseconds for heartbeat updates during job processing.
-	 * The scheduler periodically updates lastHeartbeat for all jobs it is processing
-	 * to indicate liveness. Other instances use this to detect stale jobs.
+	 * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
+	 * to indicate liveness for monitoring/debugging.
+	 *
+	 * Note: stale recovery is based on `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
 	 * @default 30000 (30 seconds)
 	 */
 	heartbeatInterval?: number;

@@ -69,18 +69,10 @@ Change Streams require:
 - **Replica Set or Sharded Cluster** (not standalone)
 
 <Aside type="tip">
-  MongoDB Atlas always runs as a replica set, so Change Streams work out of the box. For local development, use `--replSet rs0` when starting MongoDB.
+  MongoDB Atlas always runs as a replica set, so Change Streams work out of the box.
+
+  For local development setup (Docker), see the [Installation prerequisites](/monque/getting-started/installation/).
 </Aside>
-
-### Local Development Setup
-
-```bash
-# Start MongoDB with replica set
-docker run -d --name mongodb -p 27017:27017 mongo:7 --replSet rs0
-
-# Initialize replica set
-docker exec -it mongodb mongosh --eval "rs.initiate()"
-```
 
 ## Event Lifecycle
 
