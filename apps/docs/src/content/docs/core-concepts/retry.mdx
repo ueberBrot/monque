@@ -1,0 +1,292 @@
+---
+title: Retry & Backoff
+description: Configure automatic retry behavior with exponential backoff.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+When jobs fail, Monque automatically retries them using exponential backoff. This prevents overwhelming external services while ensuring jobs eventually complete.
+
+## How Retries Work
+
+1. Worker handler throws an error or returns rejected promise
+2. `failCount` is incremented
+3. `failReason` is set to the error message
+4. If `failCount < maxRetries`: schedule retry with backoff
+5. If `failCount >= maxRetries`: mark as permanently `failed`
+
+## Backoff Formula
+
+```
+nextRunAt = now + min(2^failCount × baseRetryInterval, maxBackoffDelay)
+```
+
+### Example Timeline
+
+With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`):
+
+| Attempt    | failCount | Delay | Total Wait             |
+| ---------- | --------- | ----- | ---------------------- |
+| 1st retry  | 1         | 2s    | 2s                     |
+| 2nd retry  | 2         | 4s    | 6s                     |
+| 3rd retry  | 3         | 8s    | 14s                    |
+| 4th retry  | 4         | 16s   | 30s                    |
+| 5th retry  | 5         | 32s   | ~1 min                 |
+| 6th retry  | 6         | 64s   | ~2 min                 |
+| 7th retry  | 7         | 128s  | ~4 min                 |
+| 8th retry  | 8         | 256s  | ~8.5 min               |
+| 9th retry  | 9         | 512s  | ~17 min                |
+| 10th retry | 10        | -     | **Failed permanently** |
+
+## Configuration
+
+### Global Settings
+
+```typescript
+const monque = new Monque(db, {
+  maxRetries: 10,          // Default: 10
+  baseRetryInterval: 1000, // Default: 1000ms
+  maxBackoffDelay: 3600000 // Optional override: cap at 1 hour (default cap is 24 hours)
+});
+```
+
+### Configuration Options
+
+| Option              | Default     | Description                                     |
+| ------------------- | ----------- | ----------------------------------------------- |
+| `maxRetries`        | `10`        | Maximum retry attempts before permanent failure |
+| `baseRetryInterval` | `1000` (1s) | Base delay multiplied by backoff factor         |
+| `maxBackoffDelay`   | `86400000`  | Maximum delay cap (24 hours)                    |
+
+<Aside type="tip">
+  Monque caps exponential backoff by default to prevent unbounded delays (e.g. `failCount = 20` at a 1s base is > 11 days) and to avoid precision/overflow issues at very large `failCount` values. Override with `maxBackoffDelay` if you want a smaller (or larger) cap.
+</Aside>
+
+## Monitoring Retries
+
+### Via Events
+
+```typescript
+monque.on('job:fail', ({ job, error, willRetry }) => {
+  console.log(`Job ${job.name} failed: ${error.message}`);
+  console.log(`Attempt: ${job.failCount}`);
+  console.log(`Will retry: ${willRetry}`);
+  
+  if (willRetry) {
+    console.log(`Next attempt at: ${job.nextRunAt}`);
+  } else {
+    console.log('Job permanently failed after max retries');
+    // Alert, log to error tracker, etc.
+  }
+});
+```
+
+### Via Job Properties
+
+```typescript
+monque.worker('example', async (job) => {
+  if (job.failCount > 0) {
+    console.log(`Retry attempt ${job.failCount}`);
+    console.log(`Previous error: ${job.failReason}`);
+  }
+  
+  // Processing logic
+});
+```
+
+## Error Handling Patterns
+
+### Transient vs Permanent Failures
+
+```typescript
+class PermanentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermanentError';
+  }
+}
+
+monque.worker('api-call', async (job) => {
+  try {
+    const response = await fetch(job.data.url);
+    
+    if (response.status === 404) {
+      // Resource doesn't exist - won't succeed on retry
+      throw new PermanentError('Resource not found');
+    }
+    
+    if (response.status === 503) {
+      // Service temporarily unavailable - retry makes sense
+      throw new Error('Service unavailable');
+    }
+    
+    await processResponse(response);
+  } catch (error) {
+    throw error; // Will be retried unless max retries reached
+  }
+});
+
+// Handle permanent failures differently
+monque.on('job:fail', ({ job, error, willRetry }) => {
+  if (error.name === 'PermanentError' && willRetry) {
+    // You might want to manually fail these
+    console.log('Permanent error will still retry per config');
+  }
+});
+```
+
+### Circuit Breaker Pattern
+
+```typescript
+const circuitBreaker = {
+  failures: 0,
+  lastFailure: 0,
+  threshold: 5,
+  resetTime: 60000 // 1 minute
+};
+
+monque.worker('external-api', async (job) => {
+  // Check circuit breaker
+  const now = Date.now();
+  if (circuitBreaker.failures >= circuitBreaker.threshold) {
+    if (now - circuitBreaker.lastFailure < circuitBreaker.resetTime) {
+      throw new Error('Circuit breaker open');
+    }
+    // Reset after cool-down
+    circuitBreaker.failures = 0;
+  }
+  
+  try {
+    await callExternalApi(job.data);
+    circuitBreaker.failures = 0; // Success resets counter
+  } catch (error) {
+    circuitBreaker.failures++;
+    circuitBreaker.lastFailure = now;
+    throw error;
+  }
+});
+```
+
+## Recurring Job Retries
+
+For recurring jobs (`schedule()`), retry behavior differs:
+
+1. Failed job retries with exponential backoff
+2. After successful completion (including successful retry), job reschedules using original cron
+3. The retry delay is **added** to normal schedule
+
+### Example
+
+```
+Cron: '0 * * * *' (hourly)
+
+14:00 - Job runs, fails
+14:00 - Retry 1 scheduled for 14:00 + 2s = 14:00:02
+14:00:02 - Retry runs, succeeds
+14:00:02 - Next run scheduled for 15:00 (cron schedule resumes)
+```
+
+## Best Practices
+
+### 1. Set Appropriate Retry Limits
+
+```typescript
+// Mission-critical: more retries
+const criticalMonque = new Monque(db, {
+  maxRetries: 20,
+  maxBackoffDelay: 3600000 // Cap at 1 hour
+});
+
+// Background tasks: fewer retries
+const backgroundMonque = new Monque(db, {
+  maxRetries: 3,
+  baseRetryInterval: 5000 // Start slower
+});
+```
+
+### 2. Log Retry Context
+
+```typescript
+monque.worker('important-job', async (job) => {
+  const logger = createLogger({
+    jobId: job._id,
+    attempt: job.failCount + 1,
+    maxRetries: 10
+  });
+  
+  logger.info('Processing job');
+  
+  try {
+    await process(job.data);
+    logger.info('Job completed');
+  } catch (error) {
+    logger.error('Job failed', { error: error.message });
+    throw error;
+  }
+});
+```
+
+### 3. Handle Dead Letter Queue
+
+```typescript
+monque.on('job:fail', async ({ job, error, willRetry }) => {
+  if (!willRetry) {
+    // Move to dead letter queue for manual review
+    await db.collection('dead_letter_queue').insertOne({
+      originalJob: job,
+      failedAt: new Date(),
+      finalError: error.message,
+      totalAttempts: job.failCount
+    });
+    
+    // Alert on-call
+    await alerting.send({
+      severity: 'high',
+      message: `Job ${job.name} permanently failed after ${job.failCount} attempts`,
+      context: { jobId: job._id, error: error.message }
+    });
+  }
+});
+```
+
+### 4. Implement Backoff Jitter (Manual)
+
+For high-volume systems, add jitter to prevent thundering herd:
+
+```typescript
+monque.worker('high-volume-job', async (job) => {
+  if (job.failCount > 0) {
+    // Add random delay 0-1000ms to spread out retries
+    const jitter = Math.random() * 1000;
+    await new Promise(resolve => setTimeout(resolve, jitter));
+  }
+  
+  await processJob(job.data);
+});
+```
+
+## Disabling Retries
+
+Set `maxRetries: 0` for jobs that should never retry:
+
+```typescript
+const noRetryMonque = new Monque(db, {
+  maxRetries: 0
+});
+
+// Or handle in worker
+monque.worker('fire-and-forget', async (job) => {
+  try {
+    await sendNotification(job.data);
+  } catch (error) {
+    // Log but don't throw - job will complete without retry
+    console.error('Notification failed:', error);
+  }
+});
+```
+
+## Next Steps
+
+- [Jobs](/monque/core-concepts/jobs/) - Understand job lifecycle
+- [Workers](/monque/core-concepts/workers/) - Configure worker behavior
+- [Change Streams](/monque/advanced/change-streams/) - Real-time monitoring

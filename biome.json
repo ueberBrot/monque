@@ -1,0 +1,71 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"ignoreUnknown": false,
+		"includes": ["**", "!!**/dist", "!!**/coverage", "!!**/.turbo", "!!**/.astro"]
+	},
+	"overrides": [
+		{
+			"includes": ["apps/docs/src/styles/custom.css"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noImportantStyles": "off"
+					}
+				}
+			}
+		}
+	],
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineWidth": 100
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"correctness": {
+				"noUnusedImports": "error",
+				"noUnusedVariables": "error"
+			},
+			"complexity": {
+				"useLiteralKeys": "off"
+			}
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"semicolons": "always"
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {
+						"groups": [
+							":URL:",
+							[":BUN:", ":NODE:", ":PACKAGE_WITH_PROTOCOL:"],
+							[":PACKAGE:", "!@/**", "!@tests/**"],
+							":BLANK_LINE:",
+							["@/**", "@tests/**"],
+							":BLANK_LINE:",
+							":PATH:"
+						],
+						"identifierOrder": "natural"
+					}
+				}
+			}
+		}
+	}
+}

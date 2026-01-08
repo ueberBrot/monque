@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  # --- OIDC Trusted Publishing (enable later) ---
+  # Required for GitHub Actions OIDC token minting:
+  # id-token: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Create Release PR or Publish
+        uses: changesets/action@e0145edc7d9d8679003495b11f87bd8ef63c0cba
+        with:
+          publish: bunx changeset publish
+          version: bunx changeset version
+          commit: "chore: update versions"
+          title: "chore: update versions"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Token-based first publish (no OIDC/provenance yet).
+
+          # --- OIDC Trusted Publishing (enable later) ---
+          # 1) Uncomment `id-token: write` in `permissions` above.
+          # 2) Configure npm Trusted Publishing for this repo/workflow.
+          # 3) Switch env to the settings below.
+          #
+          # ✅ From Issue https://github.com/changesets/action/issues/542:
+          # Set NPM_TOKEN to an empty string.
+          # If removed, the action might write "undefined" to .npmrc.
+          # NPM_TOKEN: ""
+          # NPM_CONFIG_PROVENANCE: true

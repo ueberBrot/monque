@@ -1,0 +1,65 @@
+---
+title: Installation
+description: How to install Monque and set up your development environment.
+banner:
+  content: |
+    Monque is currently in pre-release. The public API may change between releases. Expect breaking changes until 1.0.0.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+Before installing Monque, ensure you have:
+
+- **Node.js 20+** or **Bun 1.0+**
+- **MongoDB 4.0+**
+  - Monque works with regular polling on standalone MongoDB
+  - Change Streams require a replica set or sharded cluster (MongoDB Atlas provides this by default)
+
+<Aside type="tip">
+  For local development, you can use Docker to quickly spin up a MongoDB replica set:
+  ```bash
+  docker run -d --name mongodb -p 27017:27017 mongo --replSet rs0
+  docker exec -it mongodb mongosh --eval "rs.initiate()"
+  ```
+
+  Alternatively, MongoDB publishes an **Atlas Local** Docker image (`mongodb/mongodb-atlas-local`) if you want an Atlas-like local deployment.
+</Aside>
+
+## Install the Package
+
+<Tabs>
+  <TabItem label="bun">
+    ```bash
+    bun add @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="npm">
+    ```bash
+    npm install @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add @monque/core mongodb
+    ```
+  </TabItem>
+</Tabs>
+
+## Peer Dependencies
+
+Monque requires the MongoDB Node.js driver (`mongodb` ^7.0.0) as a peer dependency. This allows you to:
+
+- Use your existing MongoDB client instance
+- Control driver version independently
+- Share connections with your application
+
+## Next Steps
+
+Now that you have Monque installed, head to the [Quick Start](/monque/getting-started/quick-start/) guide to build your first job queue!

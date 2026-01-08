@@ -1,0 +1,330 @@
+---
+title: Scheduling
+description: Schedule recurring jobs using cron expressions.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Monque supports recurring job scheduling using standard 5-field cron expressions.
+
+## Basic Scheduling
+
+Use `schedule()` to create recurring jobs:
+
+```typescript
+// Run every hour at minute 0
+await monque.schedule('0 * * * *', 'hourly-report', {
+  type: 'analytics'
+});
+```
+
+### Method Signature
+
+```typescript
+schedule<T>(
+  cronExpression: string,  // 5-field cron expression
+  name: string,            // Job type name
+  data: T,                 // Job payload
+  options?: ScheduleOptions
+): Promise<PersistedJob<T>>
+```
+
+### Schedule Options
+
+```typescript
+interface ScheduleOptions {
+  uniqueKey?: string;  // Prevent duplicate scheduled jobs
+}
+```
+
+## Cron Expression Format
+
+Monque uses the standard 5-field cron format:
+
+```
+┌───────────── minute (0-59)
+│ ┌───────────── hour (0-23)
+│ │ ┌───────────── day of month (1-31)
+│ │ │ ┌───────────── month (1-12)
+│ │ │ │ ┌───────────── day of week (0-6, Sunday=0)
+│ │ │ │ │
+│ │ │ │ │
+* * * * *
+```
+
+### Special Characters
+
+| Character | Description    | Example                           |
+| --------- | -------------- | --------------------------------- |
+| `*`       | Any value      | `* * * * *` (every minute)        |
+| `,`       | List separator | `0,30 * * * *` (0 and 30 minutes) |
+| `-`       | Range          | `0-15 * * * *` (minutes 0-15)     |
+| `/`       | Step values    | `*/5 * * * *` (every 5 minutes)   |
+
+### Predefined Aliases
+
+Monque supports standard cron aliases for common schedules:
+
+| Alias | Description | Equivalent |
+| ----- | ----------- | ---------- |
+| `@yearly` (or `@annually`) | Run once a year | `0 0 1 1 *` |
+| `@monthly` | Run once a month | `0 0 1 * *` |
+| `@weekly` | Run once a week | `0 0 * * 0` |
+| `@daily` (or `@midnight`) | Run once a day | `0 0 * * *` |
+| `@hourly` | Run once an hour | `0 * * * *` |
+
+```typescript
+// Run daily at midnight using alias
+await monque.schedule('@daily', 'daily-cleanup', {});
+```
+
+## Common Examples
+
+### Time-Based Schedules
+
+```typescript
+// Every minute
+await monque.schedule('* * * * *', 'heartbeat-check', {});
+
+// Every 5 minutes
+await monque.schedule('*/5 * * * *', 'sync-cache', {});
+
+// Every hour at minute 0
+await monque.schedule('0 * * * *', 'hourly-cleanup', {});
+
+// Every 6 hours
+await monque.schedule('0 */6 * * *', 'refresh-tokens', {});
+```
+
+### Daily Schedules
+
+```typescript
+// Every day at midnight
+await monque.schedule('0 0 * * *', 'daily-report', {
+  reportType: 'sales'
+});
+
+// Every day at 9 AM
+await monque.schedule('0 9 * * *', 'morning-briefing', {
+  channels: ['email', 'slack']
+});
+
+// Twice daily at 6 AM and 6 PM
+await monque.schedule('0 6,18 * * *', 'inventory-sync', {});
+```
+
+### Weekly Schedules
+
+```typescript
+// Every Monday at 9 AM
+await monque.schedule('0 9 * * 1', 'weekly-summary', {
+  reportType: 'performance'
+});
+
+// Weekdays at 8 AM
+await monque.schedule('0 8 * * 1-5', 'workday-startup', {});
+
+// Every Sunday at midnight
+await monque.schedule('0 0 * * 0', 'weekly-cleanup', {});
+```
+
+### Monthly Schedules
+
+```typescript
+// First day of month at midnight
+await monque.schedule('0 0 1 * *', 'monthly-billing', {});
+
+// 15th of every month at noon
+await monque.schedule('0 12 15 * *', 'mid-month-review', {});
+
+// Last day approach: run on 28th (safe for all months)
+await monque.schedule('0 0 28 * *', 'monthly-summary', {});
+```
+
+## How Recurring Jobs Work
+
+### Initial Scheduling
+
+When you call `schedule()`:
+
+1. Cron expression is validated
+2. Next run time is calculated from current time
+3. Job is created with `repeatInterval` set to the cron expression
+
+```typescript
+const job = await monque.schedule('0 * * * *', 'hourly-task', { foo: 'bar' });
+
+console.log(job.repeatInterval); // '0 * * * *'
+console.log(job.nextRunAt);      // Next hour, minute 0
+```
+
+### After Completion
+
+When a recurring job completes successfully:
+
+1. Status changes to `completed`
+2. Monque calculates next run time from current time
+3. Job is reset to `pending` with new `nextRunAt`
+
+<Aside type="note">
+  Failed jobs that retry follow the exponential backoff schedule. After successful retry, they resume the original cron schedule.
+</Aside>
+
+### Example Timeline
+
+For `'0 * * * *'` (hourly at minute 0):
+
+```
+10:00 - Job created, nextRunAt = 11:00
+11:00 - Job runs, completes at 11:02
+11:02 - Rescheduled, nextRunAt = 12:00
+12:00 - Job runs, fails
+12:00 - Retry scheduled, nextRunAt = 12:00 + backoff
+12:02 - Retry succeeds
+12:02 - Rescheduled, nextRunAt = 13:00
+```
+
+## Preventing Duplicate Schedules
+
+Use `uniqueKey` to ensure only one scheduled instance exists:
+
+```typescript
+// Only one hourly report job will exist
+await monque.schedule('0 * * * *', 'hourly-report', {}, {
+  uniqueKey: 'hourly-report-singleton'
+});
+
+// Safe to call multiple times (during app startup, etc.)
+await monque.schedule('0 * * * *', 'hourly-report', {}, {
+  uniqueKey: 'hourly-report-singleton'
+});
+// Second call returns existing job, no duplicate created
+```
+
+<Aside type="tip">
+  Always use `uniqueKey` for scheduled jobs in production. This prevents duplicates when your application restarts or scales.
+</Aside>
+
+## Error Handling
+
+### Invalid Cron Expression
+
+```typescript
+import { InvalidCronError } from '@monque/core';
+
+try {
+  await monque.schedule('invalid cron', 'job', {});
+} catch (error) {
+  if (error instanceof InvalidCronError) {
+    console.log('Invalid expression:', error.expression);
+    console.log('Error:', error.message);
+    // Error includes: position of error, valid format example
+  }
+}
+```
+
+### Helpful Error Messages
+
+Monque provides detailed error messages for invalid expressions:
+
+```typescript
+await monque.schedule('60 * * * *', 'job', {});
+// InvalidCronError: Invalid cron expression "60 * * * *": 
+// minute (field 1) value 60 is out of range (0-59)
+```
+
+## Timezone Considerations
+
+<Aside type="caution">
+  Cron expressions are evaluated in the server's local timezone unless the environment is specifically configured for UTC. For consistent behavior across deployments, it is recommended to set your server or container timezone to UTC.
+</Aside>
+
+```typescript
+// If your server is in UTC, this runs at 9 AM UTC
+// If your server is in EST, this runs at 9 AM EST
+await monque.schedule('0 9 * * *', 'daily-task', {
+  note: 'Check your server timezone for consistent scheduling'
+});
+```
+
+## Managing Scheduled Jobs
+
+### List Recurring Jobs
+
+```typescript
+import { JobStatus } from '@monque/core';
+
+const recurringJobs = await monque.getJobs({
+  status: [JobStatus.PENDING, JobStatus.PROCESSING]
+});
+
+const scheduledJobs = recurringJobs.filter(job => job.repeatInterval);
+
+for (const job of scheduledJobs) {
+  console.log(`${job.name}: ${job.repeatInterval} - Next: ${job.nextRunAt}`);
+}
+```
+
+### Cancel a Scheduled Job
+
+To stop a recurring job, delete it from the database:
+
+```typescript
+const collection = db.collection('monque_jobs');
+
+// Delete by uniqueKey
+await collection.deleteOne({ uniqueKey: 'hourly-report-singleton' });
+
+// Or by name (careful: deletes all jobs with this name)
+await collection.deleteMany({ name: 'hourly-report' });
+```
+
+## Best Practices
+
+### 1. Use Descriptive Names
+
+```typescript
+// ✅ Good
+await monque.schedule('0 0 * * *', 'daily-user-activity-digest', {});
+await monque.schedule('*/15 * * * *', 'sync-inventory-with-warehouse', {});
+
+// ❌ Bad
+await monque.schedule('0 0 * * *', 'job1', {});
+await monque.schedule('*/15 * * * *', 'sync', {});
+```
+
+### 2. Include Context in Payload
+
+```typescript
+await monque.schedule('0 9 * * 1', 'weekly-report', {
+  reportType: 'sales',
+  recipients: ['team@example.com'],
+  includePreviousWeek: true
+});
+```
+
+### 3. Handle Overlapping Runs
+
+For long-running scheduled jobs, use `uniqueKey` to prevent overlap:
+
+```typescript
+// If job takes longer than 1 hour, next run waits
+await monque.schedule('0 * * * *', 'long-running-sync', {}, {
+  uniqueKey: 'long-sync-singleton'
+});
+```
+
+### 4. Log Schedule Information
+
+```typescript
+monque.on('job:complete', ({ job }) => {
+  if (job.repeatInterval) {
+    console.log(`Recurring job ${job.name} completed. Next run: ${job.nextRunAt}`);
+  }
+});
+```
+
+## Next Steps
+
+- [Retry & Backoff](/monque/core-concepts/retry/) - Handle scheduled job failures
+- [Workers](/monque/core-concepts/workers/) - Configure worker concurrency

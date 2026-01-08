@@ -1,0 +1,15 @@
+# Monorepo docs site (Astro)
+packages/docs/
+
+# Common build + cache outputs
+**/build/
+**/.next/
+**/*.tmp
+**/*.cache
+
+# Miscellaneous
+.specify/
+.vscode/
+.agent/
+.changeset/
+.github/

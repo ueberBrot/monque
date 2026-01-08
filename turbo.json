@@ -1,0 +1,50 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"globalDependencies": ["**/.env.*local"],
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": ["dist/**"]
+		},
+		"check:exports": {
+			"dependsOn": ["build"],
+			"outputs": []
+		},
+		"type-check": {
+			"outputs": [],
+			"inputs": ["src/**", "tests/**", "tsconfig.json"]
+		},
+		"test": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
+		"test:unit": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
+		"test:integration": {
+			"outputs": ["coverage/**"],
+			"inputs": ["src/**", "tests/**"]
+		},
+		"test:dev": {
+			"cache": false,
+			"persistent": true,
+			"inputs": ["src/**", "tests/**"]
+		},
+
+		"lint": {
+			"outputs": []
+		},
+		"clean": {
+			"cache": false
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"preview": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

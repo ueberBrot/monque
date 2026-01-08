@@ -1,0 +1,16 @@
+{
+	"$schema": "https://unpkg.com/knip@5.76.0/schema.json",
+	"ignore": ["specs/**"],
+	"ignoreBinaries": [],
+	"ignoreDependencies": [],
+	"workspaces": {
+		"apps/docs": {
+			"entry": [],
+			"project": []
+		},
+		"packages/*": {
+			"entry": ["src/index.ts"],
+			"project": ["src/**/*.ts", "tests/**/*.ts"]
+		}
+	}
+}
