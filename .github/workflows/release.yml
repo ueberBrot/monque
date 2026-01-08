@@ -12,7 +12,9 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
+  # --- OIDC Trusted Publishing (enable later) ---
+  # Required for GitHub Actions OIDC token minting:
+  # id-token: write
 
 jobs:
   release:
@@ -25,7 +27,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node (for OIDC)
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -59,8 +61,16 @@ jobs:
           title: "chore: update versions"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Token-based first publish (no OIDC/provenance yet).
+
+          # --- OIDC Trusted Publishing (enable later) ---
+          # 1) Uncomment `id-token: write` in `permissions` above.
+          # 2) Configure npm Trusted Publishing for this repo/workflow.
+          # 3) Switch env to the settings below.
+          #
           # ✅ From Issue https://github.com/changesets/action/issues/542:
-          # Set this to an empty string. 
+          # Set NPM_TOKEN to an empty string.
           # If removed, the action might write "undefined" to .npmrc.
-          NPM_TOKEN: ""
-          NPM_CONFIG_PROVENANCE: true
+          # NPM_TOKEN: ""
+          # NPM_CONFIG_PROVENANCE: true
