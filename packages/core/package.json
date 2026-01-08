@@ -76,16 +76,16 @@
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "^0.18.2",
-		"@faker-js/faker": "^10.1.0",
-		"@testcontainers/mongodb": "^11.10.0",
+		"@faker-js/faker": "^10.2.0",
+		"@testcontainers/mongodb": "^11.11.0",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/bun": "^1.3.5",
 		"@vitest/coverage-v8": "^4.0.16",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.0.0",
 		"publint": "^0.3.16",
-		"tsdown": "^0.18.1",
-		"typescript": "^5.7.3",
+		"tsdown": "^0.18.4",
+		"typescript": "^5.9.3",
 		"vitest": "^4.0.16"
 	}
 }
