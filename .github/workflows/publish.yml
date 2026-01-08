@@ -12,9 +12,9 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  # --- OIDC Trusted Publishing (enable later) ---
+  # OIDC Trusted Publishing (npm)
   # Required for GitHub Actions OIDC token minting:
-  # id-token: write
+  id-token: write
 
 jobs:
   release:
@@ -52,19 +52,6 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Verify npm auth
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NODE_AUTH_TOKEN is empty. Check the NPM_TOKEN secret for this workflow run.";
-            exit 1
-          fi
-
-          npm config set registry "https://registry.npmjs.org/"
-          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
-          npm whoami --registry="https://registry.npmjs.org/"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create Release PR or Publish
         uses: changesets/action@e0145edc7d9d8679003495b11f87bd8ef63c0cba
         with:
@@ -74,17 +61,9 @@ jobs:
           title: "chore: update versions"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          # Token-based first publish (no OIDC/provenance yet).
-
-          # --- OIDC Trusted Publishing (enable later) ---
-          # 1) Uncomment `id-token: write` in `permissions` above.
-          # 2) Configure npm Trusted Publishing for this repo/workflow.
-          # 3) Switch env to the settings below.
-          #
-          # ✅ From Issue https://github.com/changesets/action/issues/542:
-          # Set NPM_TOKEN to an empty string.
-          # If removed, the action might write "undefined" to .npmrc.
-          # NPM_TOKEN: ""
-          # NPM_CONFIG_PROVENANCE: true
+          # OIDC Trusted Publishing (npm)
+          # 1) Keep NPM_TOKEN empty (do not remove), to avoid writing "undefined" to .npmrc.
+          #    Ref: https://github.com/changesets/action/issues/542
+          # 2) Enable provenance.
+          NPM_TOKEN: ""
+          NPM_CONFIG_PROVENANCE: true
