@@ -52,6 +52,19 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Verify npm auth
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "NODE_AUTH_TOKEN is empty. Check the NPM_TOKEN secret for this workflow run.";
+            exit 1
+          fi
+
+          npm config set registry "https://registry.npmjs.org/"
+          npm config set //registry.npmjs.org/:_authToken "${NODE_AUTH_TOKEN}"
+          npm whoami --registry="https://registry.npmjs.org/"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Create Release PR or Publish
         uses: changesets/action@e0145edc7d9d8679003495b11f87bd8ef63c0cba
         with:
@@ -62,6 +75,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           # Token-based first publish (no OIDC/provenance yet).
 
           # --- OIDC Trusted Publishing (enable later) ---
