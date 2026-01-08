@@ -11404,7 +11404,7 @@ export async function findJobByQuery<T = unknown>(
 	"type": "module",
 	"packageManager": "bun@1.3.5",
 	"engines": {
-		"node": ">>=20.0.0"
+		"node": ">=20.0.0"
 	},
 	"publishConfig": {
 		"access": "public"
