@@ -70,6 +70,10 @@ monque.worker<EmailJobData>('send-email', async (job) => {
   Workers can be `async` functions. If they throw an error or return a rejected promise, the job will be retried automatically.
 </Aside>
 
+<Aside type="caution">
+  **Idempotency Required:** Monque provides at-least-once delivery. Jobs may run more than once due to retries or [stale recovery](/monque/advanced/heartbeat/). Design your workers to be idempotent—safe to run multiple times with the same input. See [Idempotent Operations](/monque/core-concepts/jobs/#idempotent-operations) and the [Production Checklist](/monque/advanced/production-checklist/).
+</Aside>
+
 ## Subscribe to Events
 
 Monitor job lifecycle for logging and metrics:

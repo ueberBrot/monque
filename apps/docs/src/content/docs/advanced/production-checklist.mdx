@@ -1,0 +1,325 @@
+---
+title: Production Checklist
+description: Critical considerations and gotchas when deploying Monque in production.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Before deploying Monque to production, review this checklist to avoid common pitfalls and ensure reliable job processing.
+
+## Quick Reference
+
+| Topic | Key Point |
+|-------|-----------|
+| Idempotency | Workers must handle duplicate execution safely |
+| Deduplication | Use [`uniqueKey`](/monque/api/interfaces/enqueueoptions/#uniquekey) to prevent duplicate jobs |
+| Replica Set | Required for [Change Streams](/monque/advanced/change-streams/) |
+| Shutdown | Configure [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout) appropriately |
+| Lock Timeout | Set [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) to 2× longest job duration |
+
+---
+
+## 1. Design for Idempotency
+
+<Aside type="caution">
+  **Critical:** Monque provides at-least-once delivery semantics. Your workers **must** be idempotent—safe to run multiple times with the same input.
+</Aside>
+
+Jobs may be executed more than once due to:
+
+- **Retries**: Failed jobs are automatically retried with [exponential backoff](/monque/core-concepts/retry/)
+- **Stale Recovery**: If a worker crashes, the [heartbeat mechanism](/monque/advanced/heartbeat/) recovers stuck jobs
+- **Network Issues**: Transient failures during completion acknowledgment
+
+### Idempotency Patterns
+
+```typescript
+import { Monque } from '@monque/core';
+
+// ✅ Good: Check state before mutating
+monque.worker('charge-payment', async (job) => {
+  const { paymentId } = job.data;
+  
+  const payment = await db.payments.findOne({ _id: paymentId });
+  if (payment.status === 'charged') {
+    return; // Already processed, skip safely
+  }
+  
+  await chargePayment(payment);
+  await db.payments.updateOne(
+    { _id: paymentId },
+    { $set: { status: 'charged' } }
+  );
+});
+
+// ✅ Good: Use database transactions for atomic operations
+monque.worker('transfer-funds', async (job) => {
+  const { fromAccount, toAccount, amount, transferId } = job.data;
+  
+  // Use transferId as idempotency key
+  const existing = await db.transfers.findOne({ transferId });
+  if (existing) return;
+  
+  const session = client.startSession();
+  await session.withTransaction(async () => {
+    await db.accounts.updateOne({ _id: fromAccount }, { $inc: { balance: -amount } }, { session });
+    await db.accounts.updateOne({ _id: toAccount }, { $inc: { balance: amount } }, { session });
+    await db.transfers.insertOne({ transferId, status: 'completed' }, { session });
+  });
+});
+```
+
+See [Idempotent Operations](/monque/core-concepts/jobs/#idempotent-operations) for more patterns.
+
+---
+
+## 2. Use `uniqueKey` for Deduplication
+
+Prevent duplicate jobs from being enqueued using [`uniqueKey`](/monque/api/interfaces/enqueueoptions/#uniquekey):
+
+```typescript
+// Only one sync job per user at a time
+await monque.enqueue('sync-user', { userId: '123' }, {
+  uniqueKey: 'sync-user-123'
+});
+```
+
+<Aside type="note">
+  `uniqueKey` prevents duplicates only when a job with that key is in `pending` or `processing` status. Once a job completes or fails, a new job with the same key can be enqueued.
+</Aside>
+
+### Always Use `uniqueKey` for Scheduled Jobs
+
+```typescript
+// ✅ Safe for app restarts and scaling
+await monque.schedule('0 * * * *', 'hourly-report', {}, {
+  uniqueKey: 'hourly-report-singleton'
+});
+```
+
+Without `uniqueKey`, calling [`schedule()`](/monque/api/classes/monque/#schedule) multiple times (e.g., on each app restart) creates duplicate scheduled jobs.
+
+---
+
+## 3. MongoDB Replica Set Required
+
+<Aside type="caution">
+  [Change Streams](/monque/advanced/change-streams/) require a MongoDB Replica Set or Sharded Cluster. Standalone MongoDB instances do not support Change Streams.
+</Aside>
+
+Without a replica set:
+
+- Monque falls back to polling only
+- Job pickup latency increases to `pollInterval` (default: 1000ms)
+- Real-time job notifications are unavailable
+
+### Local Development with Replica Set
+
+Use Docker Compose for local development:
+
+```yaml
+# docker-compose.yml
+services:
+  mongo:
+    image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+```
+
+Initialize the replica set:
+
+```bash
+docker exec -it <container> mongosh --eval "rs.initiate()"
+```
+
+<Aside type="tip">
+  MongoDB Atlas always runs as a replica set, so Change Streams work out of the box in production.
+</Aside>
+
+---
+
+## 4. Configure Graceful Shutdown
+
+Ensure in-progress jobs complete before your application exits:
+
+```typescript
+const monque = new Monque(db, {
+  shutdownTimeout: 30000 // Wait up to 30s for jobs to finish
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down...');
+  await monque.stop(); // Waits for in-progress jobs
+  await client.close();
+  process.exit(0);
+});
+```
+
+<Aside type="note">
+  If [`stop()`](/monque/api/classes/monque/#stop) hits the configured [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout), in-progress jobs remain in `processing` status. The [stale recovery](/monque/advanced/heartbeat/) mechanism will reclaim them when another instance starts.
+</Aside>
+
+### Kubernetes Considerations
+
+Set `terminationGracePeriodSeconds` higher than `shutdownTimeout`:
+
+```yaml
+spec:
+  terminationGracePeriodSeconds: 45  # > shutdownTimeout (30s)
+  containers:
+    - name: worker
+      lifecycle:
+        preStop:
+          exec:
+            command: ["sh", "-c", "sleep 5"]
+```
+
+---
+
+## 5. Tune `lockTimeout` for Your Workload
+
+The [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) determines how long a job can remain in `processing` before it's considered stale and recovered.
+
+<Aside type="tip">
+  Set `lockTimeout` to at least **2× your longest expected job duration**. This prevents false-positive stale recovery for legitimately long-running jobs.
+</Aside>
+
+```typescript
+const monque = new Monque(db, {
+  lockTimeout: 3600000,      // 1 hour (for jobs up to 30 min)
+  heartbeatInterval: 30000   // Update heartbeat every 30s
+});
+```
+
+### Symptoms of Incorrect `lockTimeout`
+
+| Symptom | Likely Cause |
+|---------|--------------|
+| Jobs running twice | `lockTimeout` too short |
+| Jobs stuck in `processing` | Worker crashed, `recoverStaleJobs: false` |
+| Slow failure detection | `lockTimeout` too long |
+
+---
+
+## 6. Set Appropriate Concurrency
+
+Configure [`defaultConcurrency`](/monque/api/interfaces/monqueoptions/#defaultconcurrency) and per-worker concurrency based on your workload:
+
+```typescript
+const monque = new Monque(db, {
+  defaultConcurrency: 5
+});
+
+// CPU-bound: low concurrency
+monque.worker('video-transcode', handler, { concurrency: 2 });
+
+// I/O-bound: higher concurrency
+monque.worker('api-sync', handler, { concurrency: 10 });
+
+// External API with rate limits: match the limit
+monque.worker('stripe-webhook', handler, { concurrency: 5 });
+```
+
+See [Concurrency Strategy](/monque/core-concepts/workers/#concurrency-strategy) for guidelines.
+
+---
+
+## 7. Monitor Job Events
+
+Subscribe to events for observability:
+
+```typescript
+// Track failures
+monque.on('job:fail', ({ job, error, willRetry }) => {
+  logger.error('Job failed', {
+    jobId: job._id,
+    name: job.name,
+    error: error.message,
+    willRetry,
+    failCount: job.failCount
+  });
+  
+  if (!willRetry) {
+    alerting.notify(`Job ${job.name} permanently failed`);
+  }
+});
+
+// Monitor stale recovery
+monque.on('stale:recovered', ({ count }) => {
+  if (count > 0) {
+    metrics.increment('monque.stale_jobs_recovered', count);
+    logger.warn(`Recovered ${count} stale jobs`);
+  }
+});
+
+// Track Change Stream health
+monque.on('changestream:fallback', ({ reason }) => {
+  logger.warn('Change Streams unavailable, using polling', { reason });
+});
+```
+
+See [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) for all available events.
+
+---
+
+## 8. Configure Job Retention
+
+Prevent unbounded database growth by configuring retention:
+
+```typescript
+const monque = new Monque(db, {
+  jobRetention: {
+    completed: 24 * 60 * 60 * 1000,    // 24 hours
+    failed: 7 * 24 * 60 * 60 * 1000,   // 7 days
+    interval: 60 * 60 * 1000           // Cleanup every hour
+  }
+});
+```
+
+<Aside type="note">
+  If `jobRetention` is not configured, no automatic cleanup is performed. Monitor your jobs collection size in production.
+</Aside>
+
+---
+
+## 9. Ensure Index Permissions
+
+Monque creates MongoDB indexes during [`initialize()`](/monque/api/classes/monque/#initialize). Your database user must have index creation permissions.
+
+If index creation is restricted in production, create indexes ahead of time:
+
+```javascript
+// Required indexes (see Jobs documentation for full list)
+db.monque_jobs.createIndex({ status: 1, nextRunAt: 1 });
+db.monque_jobs.createIndex({ name: 1, status: 1 });
+db.monque_jobs.createIndex({ claimedBy: 1, status: 1 });
+db.monque_jobs.createIndex({ status: 1, nextRunAt: 1, claimedBy: 1 });
+// ... see Jobs docs for complete list
+```
+
+See [Indexes](/monque/core-concepts/jobs/#indexes) for the complete list.
+
+---
+
+## Pre-Deployment Checklist
+
+- [ ] Workers are idempotent (safe for duplicate execution)
+- [ ] Scheduled jobs use `uniqueKey`
+- [ ] MongoDB is a replica set (for Change Streams)
+- [ ] `SIGTERM` handler calls `monque.stop()`
+- [ ] `lockTimeout` is 2× longest job duration
+- [ ] Concurrency matches workload characteristics
+- [ ] Event handlers for `job:fail` and `stale:recovered`
+- [ ] Job retention is configured
+- [ ] Database user has index creation permissions (or indexes pre-created)
+
+---
+
+## API Reference
+
+- [`Monque`](/monque/api/classes/monque/) - Main scheduler class
+- [`MonqueOptions`](/monque/api/interfaces/monqueoptions/) - Configuration options
+- [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) - Available events
+- [`EnqueueOptions`](/monque/api/interfaces/enqueueoptions/) - Job enqueue options
+- [`WorkerOptions`](/monque/api/interfaces/workeroptions/) - Worker configuration

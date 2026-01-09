@@ -7,13 +7,26 @@ import { Aside } from '@astrojs/starlight/components';
 
 Jobs are the fundamental unit of work in Monque. This guide explains how jobs work, their lifecycle, and how to work with them effectively.
 
+## Quick Reference
+
+| Method / Type | Description |
+|---------------|-------------|
+| [`Job`](/monque/api/interfaces/job/) | Job document interface |
+| [`enqueue()`](/monque/api/classes/monque/#enqueue) | Create a job with optional scheduling |
+| [`now()`](/monque/api/classes/monque/#now) | Create a job for immediate execution |
+| [`schedule()`](/monque/api/classes/monque/#schedule) | Create a recurring cron-based job |
+| [`getJob()`](/monque/api/classes/monque/#getjob) | Retrieve a single job by ID |
+| [`getJobs()`](/monque/api/classes/monque/#getjobs) | Query jobs with filters |
+| [`EnqueueOptions`](/monque/api/interfaces/enqueueoptions/) | Options for `enqueue()` |
+| [`JobStatus`](/monque/api/variables/jobstatus/) | Status values object |
+
 ## What is a Job?
 
 A job represents a unit of work to be processed asynchronously. Each job has:
 
 - **Name**: Identifies which worker should process it
 - **Data**: The payload containing information needed to complete the work
-- **Status**: Current state in the lifecycle (`pending`, `processing`, `completed`, `failed`). Can be referenced via the [`JobStatus`](/monque/api/variables/jobstatus/) enum from `@monque/core`.
+- **Status**: Current state in the lifecycle (`pending`, `processing`, `completed`, `failed`). Can be referenced via the [`JobStatus`](/monque/api/variables/jobstatus/) Object from `@monque/core`.
 - **Scheduling**: When the job should run (`nextRunAt`)
 
 ## Job Interface
@@ -45,9 +58,20 @@ stateDiagram-v2
 
 ### Immediate Execution
 
-Use `now()` for jobs that should run immediately:
+Use [`now()`](/monque/api/classes/monque/#now) for jobs that should run immediately. This is sugar for `enqueue()` without scheduling options:
 
 ```typescript
+import { Monque } from '@monque/core';
+import { MongoClient } from 'mongodb';
+
+const client = new MongoClient('mongodb://localhost:27017');
+await client.connect();
+const db = client.db('myapp');
+
+const monque = new Monque(db);
+await monque.initialize();
+
+// Enqueue for immediate execution
 const job = await monque.now('send-email', {
   to: 'user@example.com',
   subject: 'Hello!'
@@ -59,7 +83,7 @@ console.log(job.status); // 'pending'
 
 ### Scheduled Execution
 
-Use `enqueue()` with `runAt` for delayed execution:
+Use [`enqueue()`](/monque/api/classes/monque/#enqueue) with `runAt` for delayed execution:
 
 ```typescript
 // Run in 1 hour
@@ -73,7 +97,7 @@ const job = await monque.enqueue('send-reminder', {
 
 ### Recurring Jobs
 
-Use `schedule()` for cron-based recurring jobs:
+Use [`schedule()`](/monque/api/classes/monque/#schedule) for cron-based recurring jobs:
 
 ```typescript
 // Every day at midnight
@@ -84,7 +108,7 @@ const job = await monque.schedule('0 0 * * *', 'daily-report', {
 
 ## Preventing Duplicates
 
-Use `uniqueKey` to prevent duplicate jobs:
+Use [`uniqueKey`](/monque/api/interfaces/enqueueoptions/#uniquekey) to prevent duplicate jobs:
 
 ```typescript
 // Only one sync job per user at a time
@@ -280,3 +304,16 @@ monque.worker('custom-cleanup', async () => {
 - [Workers](/monque/core-concepts/workers/) - Learn how to process jobs
 - [Scheduling](/monque/core-concepts/scheduling/) - Deep dive into cron expressions
 - [Retry & Backoff](/monque/core-concepts/retry/) - Configure retry behavior
+
+## API Reference
+
+- [`Job`](/monque/api/interfaces/job/) - Full job document interface
+- [`PersistedJob`](/monque/api/type-aliases/persistedjob/) - Type returned from enqueue operations
+- [`Monque.enqueue()`](/monque/api/classes/monque/#enqueue) - Enqueue a job
+- [`Monque.now()`](/monque/api/classes/monque/#now) - Immediate execution sugar
+- [`Monque.schedule()`](/monque/api/classes/monque/#schedule) - Recurring job scheduling
+- [`Monque.getJob()`](/monque/api/classes/monque/#getjob) - Get job by ID
+- [`Monque.getJobs()`](/monque/api/classes/monque/#getjobs) - Query jobs
+- [`EnqueueOptions`](/monque/api/interfaces/enqueueoptions/) - Enqueue options
+- [`GetJobsFilter`](/monque/api/interfaces/getjobsfilter/) - Job query filter
+- [`JobStatus`](/monque/api/variables/jobstatus/) - Status constants
