@@ -43,6 +43,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Validate API Links
+        run: bun run lint:api-links
+
       - name: Format Check
         run: bun run format:check
 

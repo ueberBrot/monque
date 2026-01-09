@@ -29,6 +29,7 @@
 		"test:integration": "turbo test:integration",
 		"test:dev": "turbo test:dev",
 		"lint": "turbo lint",
+		"lint:api-links": "bun scripts/validate-api-links.ts",
 		"clean": "turbo clean && rimraf coverage .turbo",
 		"clean:core": "turbo clean --filter=@monque/core",
 		"clean:docs": "turbo clean --filter=@monque/docs",

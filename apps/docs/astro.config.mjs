@@ -74,6 +74,7 @@ export default defineConfig({
 						{ label: 'Atomic Claim Pattern', slug: 'advanced/atomic-claim' },
 						{ label: 'Change Streams', slug: 'advanced/change-streams' },
 						{ label: 'Heartbeat Mechanism', slug: 'advanced/heartbeat' },
+						{ label: 'Production Checklist', slug: 'advanced/production-checklist' },
 					],
 				},
 				typeDocSidebarGroup,

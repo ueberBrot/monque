@@ -7,9 +7,20 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Workers are the execution engines of Monque. They pick up jobs and execute your business logic.
 
+## Quick Reference
+
+| Method / Type | Description |
+|---------------|-------------|
+| [`worker()`](/monque/api/classes/monque/#worker) | Register a job handler |
+| [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker configuration (concurrency, replace) |
+| [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
+| [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
+| [`now()`](/monque/api/classes/monque/#now) | Enqueue for immediate execution |
+| [`MonqueOptions.defaultConcurrency`](/monque/api/interfaces/monqueoptions/#defaultconcurrency) | Global concurrency default |
+
 ## Registering a Worker
 
-Use the `worker()` method to register a handler for a specific job type:
+Use the [`worker()`](/monque/api/classes/monque/#worker) method to register a handler for a specific job type:
 
 ```typescript
 monque.worker('job-name', async (job) => {
@@ -38,7 +49,7 @@ monque.worker<ImageProcessJob>('process-image', async (job) => {
 
 ### With Worker Options
 
-Configure worker-specific settings:
+Configure worker-specific settings via [`WorkerOptions`](/monque/api/interfaces/workeroptions/):
 
 ```typescript
 monque.worker('heavy-computation', async (job) => {
@@ -63,9 +74,9 @@ monque.worker('heavy-computation', async (job) => {
 
 ### 1. Job Acquisition
 
-When `start()` is called, Monque begins looking for jobs:
+When [`start()`](/monque/api/classes/monque/#start) is called, Monque begins looking for jobs:
 
-1. **Polling** runs every `pollInterval` milliseconds
+1. **Polling** runs every [`pollInterval`](/monque/api/interfaces/monqueoptions/#pollinterval) milliseconds
 2. **Change Streams** (if available) trigger an additional, debounced poll for low-latency processing
 
 ### 2. Atomic Claim
@@ -157,7 +168,7 @@ monque.worker('check-external-resource', async (job) => {
 
 ### Global Default
 
-Set in Monque options:
+Set in [`MonqueOptions`](/monque/api/interfaces/monqueoptions/):
 
 ```typescript
 const monque = new Monque(db, {
@@ -310,3 +321,14 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 - [Scheduling](/monque/core-concepts/scheduling/) - Configure recurring jobs
 - [Retry & Backoff](/monque/core-concepts/retry/) - Understand failure handling
 - [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Learn about liveness tracking
+
+## API Reference
+
+- [`Monque.worker()`](/monque/api/classes/monque/#worker) - Register a worker handler
+- [`Monque.start()`](/monque/api/classes/monque/#start) - Start the scheduler
+- [`Monque.stop()`](/monque/api/classes/monque/#stop) - Graceful shutdown
+- [`Monque.now()`](/monque/api/classes/monque/#now) - Immediate job execution
+- [`WorkerOptions`](/monque/api/interfaces/workeroptions/) - Worker configuration
+- [`MonqueOptions`](/monque/api/interfaces/monqueoptions/) - Scheduler options
+- [`Job`](/monque/api/interfaces/job/) - Job document passed to handlers
+- [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) - Available events

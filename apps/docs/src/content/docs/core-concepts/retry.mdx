@@ -7,6 +7,16 @@ import { Aside } from '@astrojs/starlight/components';
 
 When jobs fail, Monque automatically retries them using exponential backoff. This prevents overwhelming external services while ensuring jobs eventually complete.
 
+## Quick Reference
+
+| Option / Property | Default | Description |
+|-------------------|---------|-------------|
+| [`maxRetries`](/monque/api/interfaces/monqueoptions/#maxretries) | `10` | Maximum retry attempts |
+| [`baseRetryInterval`](/monque/api/interfaces/monqueoptions/#baseretryinterval) | `1000ms` | Base delay for backoff calculation |
+| [`maxBackoffDelay`](/monque/api/interfaces/monqueoptions/#maxbackoffdelay) | `86400000ms` | Maximum backoff cap (24h) |
+| [`Job.failCount`](/monque/api/interfaces/job/#failcount) | - | Number of failed attempts |
+| [`Job.failReason`](/monque/api/interfaces/job/#failreason) | - | Last error message |
+
 ## How Retries Work
 
 1. Worker handler throws an error or returns rejected promise
@@ -42,7 +52,11 @@ With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`):
 
 ### Global Settings
 
+Configure retry behavior in [`MonqueOptions`](/monque/api/interfaces/monqueoptions/):
+
 ```typescript
+import { Monque } from '@monque/core';
+
 const monque = new Monque(db, {
   maxRetries: 10,          // Default: 10
   baseRetryInterval: 1000, // Default: 1000ms
@@ -65,6 +79,8 @@ const monque = new Monque(db, {
 ## Monitoring Retries
 
 ### Via Events
+
+Subscribe to [`job:fail`](/monque/api/interfaces/monqueeventmap/) events:
 
 ```typescript
 monque.on('job:fail', ({ job, error, willRetry }) => {
@@ -290,3 +306,10 @@ monque.worker('fire-and-forget', async (job) => {
 - [Jobs](/monque/core-concepts/jobs/) - Understand job lifecycle
 - [Workers](/monque/core-concepts/workers/) - Configure worker behavior
 - [Change Streams](/monque/advanced/change-streams/) - Real-time monitoring
+
+## API Reference
+
+- [`MonqueOptions`](/monque/api/interfaces/monqueoptions/) - Retry configuration options
+- [`Job`](/monque/api/interfaces/job/) - Job interface with `failCount`, `failReason`
+- [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) - Events including `job:fail`
+- [`MonqueError`](/monque/api/classes/monqueerror/) - Base error class

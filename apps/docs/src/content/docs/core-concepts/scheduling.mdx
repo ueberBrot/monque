@@ -7,11 +7,22 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Monque supports recurring job scheduling using standard 5-field cron expressions.
 
+## Quick Reference
+
+| Method / Type | Description |
+|---------------|-------------|
+| [`schedule()`](/monque/api/classes/monque/#schedule) | Create a recurring cron-based job |
+| [`ScheduleOptions`](/monque/api/interfaces/scheduleoptions/) | Options for `schedule()` |
+| [`Job.repeatInterval`](/monque/api/interfaces/job/#repeatinterval) | Cron expression for recurring jobs |
+| [`InvalidCronError`](/monque/api/classes/invalidcronerror/) | Thrown for invalid cron expressions |
+
 ## Basic Scheduling
 
-Use `schedule()` to create recurring jobs:
+Use [`schedule()`](/monque/api/classes/monque/#schedule) to create recurring jobs:
 
 ```typescript
+import { Monque } from '@monque/core';
+
 // Run every hour at minute 0
 await monque.schedule('0 * * * *', 'hourly-report', {
   type: 'analytics'
@@ -63,7 +74,7 @@ Monque uses the standard 5-field cron format:
 
 ### Predefined Aliases
 
-Monque supports standard cron aliases for common schedules:
+Monque supports cron aliases provided by the [`cron-parser`](https://github.com/harrisiirak/cron-parser) library for common schedules:
 
 | Alias | Description | Equivalent |
 | ----- | ----------- | ---------- |
@@ -209,8 +220,10 @@ await monque.schedule('0 * * * *', 'hourly-report', {}, {
 
 ### Invalid Cron Expression
 
+Monque throws [`InvalidCronError`](/monque/api/classes/invalidcronerror/) for invalid expressions:
+
 ```typescript
-import { InvalidCronError } from '@monque/core';
+import { InvalidCronError, Monque } from '@monque/core';
 
 try {
   await monque.schedule('invalid cron', 'job', {});
@@ -328,3 +341,11 @@ monque.on('job:complete', ({ job }) => {
 
 - [Retry & Backoff](/monque/core-concepts/retry/) - Handle scheduled job failures
 - [Workers](/monque/core-concepts/workers/) - Configure worker concurrency
+
+## API Reference
+
+- [`Monque.schedule()`](/monque/api/classes/monque/#schedule) - Schedule a recurring job
+- [`ScheduleOptions`](/monque/api/interfaces/scheduleoptions/) - Schedule options
+- [`Job`](/monque/api/interfaces/job/) - Job interface with `repeatInterval`, `nextRunAt`
+- [`InvalidCronError`](/monque/api/classes/invalidcronerror/) - Cron validation error
+- [`JobStatus`](/monque/api/variables/jobstatus/) - Job status constants
