@@ -268,7 +268,7 @@ const enqueueTime = Date.now();
 
 await monque.enqueue('measured-job', { enqueueTime });
 
-monque.worker('measured-job', async (job) => {
+monque.register('measured-job', async (job) => {
   const pickupLatency = Date.now() - job.data.enqueueTime;
   // Replace `yourMetrics` with your metrics client (Prometheus, StatsD, OpenTelemetry, ...)
   yourMetrics.histogram('monque.pickup_latency_ms', pickupLatency);

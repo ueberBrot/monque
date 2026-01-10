@@ -97,14 +97,14 @@ Run multiple scheduler instances for high availability:
 const monque1 = new Monque(db, {
   schedulerInstanceId: 'server-a'
 });
-monque1.worker('send-email', emailHandler);
+monque1.register('send-email', emailHandler);
 monque1.start();
 
 // Instance 2 (server-b)  
 const monque2 = new Monque(db, {
   schedulerInstanceId: 'server-b'
 });
-monque2.worker('send-email', emailHandler);
+monque2.register('send-email', emailHandler);
 monque2.start();
 
 // Both compete fairly for jobs

@@ -1043,7 +1043,7 @@ import type { JobHandler, PersistedJob } from '@/jobs';
  *
  * @example
  * ```typescript
- * monque.worker('send-email', emailHandler, {
+ * monque.register('send-email', emailHandler, {
  *   concurrency: 3,
  * });
  * ```
@@ -1140,7 +1140,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			let processedJob: Job | null = null;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async (job) => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
 				processedJob = job;
 				// Hold the job to verify claimedBy while processing
 				await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1178,7 +1178,7 @@ describe('atomic job claiming', () => {
 				completed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Quick completion
 			});
 
@@ -1213,7 +1213,7 @@ describe('atomic job claiming', () => {
 				}
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Intentional failure');
 			});
 
@@ -1249,7 +1249,7 @@ describe('atomic job claiming', () => {
 			});
 
 			let attempts = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				attempts++;
 				if (attempts === 1) {
 					throw new Error('First attempt fails');
@@ -1318,9 +1318,9 @@ describe('atomic job claiming', () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
-			monque3.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
+			monque1.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
+			monque2.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
+			monque3.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
 
 			// Enqueue a single job
 			await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
@@ -1386,8 +1386,8 @@ describe('atomic job claiming', () => {
 				await new Promise((resolve) => setTimeout(resolve, 20));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue jobs
 			for (let i = 0; i < jobCount; i++) {
@@ -1451,7 +1451,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -1480,7 +1480,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 
@@ -1561,7 +1561,7 @@ describe('change streams', () => {
 				connected = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -1586,7 +1586,7 @@ describe('change streams', () => {
 				closed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -1682,7 +1682,7 @@ describe('change streams', () => {
 
 			let attempts = 0;
 			let completed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				attempts++;
 				if (attempts === 1) {
 					throw new Error('First attempt fails');
@@ -1716,7 +1716,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let executions = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				executions++;
 			});
 
@@ -1756,7 +1756,7 @@ describe('change streams', () => {
 				});
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			let connected = false;
 			monque.on('changestream:connected', () => {
@@ -1789,7 +1789,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 
@@ -1821,7 +1821,7 @@ describe('change streams', () => {
 				errorEvents.push(payload);
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			let connected = false;
 			monque.on('changestream:connected', () => {
@@ -1874,7 +1874,7 @@ describe('change streams', () => {
 				errorEvents.push(payload);
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connectionCount >= 1, { timeout: 5000 });
@@ -1928,7 +1928,7 @@ describe('change streams', () => {
 			});
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 
@@ -1958,7 +1958,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processCount = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processCount++;
 			});
 
@@ -1994,7 +1994,7 @@ describe('change streams', () => {
 				closed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -2014,7 +2014,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processedAfterStop = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processedAfterStop = true;
 			});
 
@@ -2084,8 +2084,8 @@ describe('change streams', () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			let connected1 = false;
 			let connected2 = false;
@@ -2223,7 +2223,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			});
@@ -2253,7 +2253,7 @@ describe('heartbeat mechanism', () => {
 
 			const heartbeatTimestamps: Date[] = [];
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Hold the job long enough for multiple heartbeats
 				const collection = db.collection(collectionName);
 
@@ -2312,7 +2312,7 @@ describe('heartbeat mechanism', () => {
 				completed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Quick completion
 			});
 
@@ -2343,7 +2343,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			});
@@ -2370,7 +2370,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 200));
 			});
@@ -2489,7 +2489,7 @@ describe('heartbeat mechanism', () => {
 				resolveJob = resolve;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				// Wait until we signal completion
 				await jobPromise;
@@ -3596,8 +3596,8 @@ export class ShutdownTimeoutError extends MonqueError {
  * @example
  * ```typescript
  * try {
- *   monque.worker('send-email', handler1);
- *   monque.worker('send-email', handler2); // throws
+ *   monque.register('send-email', handler1);
+ *   monque.register('send-email', handler2); // throws
  * } catch (error) {
  *   if (error instanceof WorkerRegistrationError) {
  *     console.error('Worker already registered for:', error.jobName);
@@ -3605,7 +3605,7 @@ export class ShutdownTimeoutError extends MonqueError {
  * }
  *
  * // To intentionally replace a worker:
- * monque.worker('send-email', handler2, { replace: true });
+ * monque.register('send-email', handler2, { replace: true });
  * ```
  */
 export class WorkerRegistrationError extends MonqueError {
@@ -3705,7 +3705,7 @@ describe('Concurrency & Scalability', () => {
 
 		// Register worker on all instances
 		for (const monque of monqueInstances) {
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 			monque.on('job:error', (payload) => processingErrors.push(payload.error));
 		}
 
@@ -4871,7 +4871,7 @@ describe('atomic job locking', () => {
 				// Hold the job for a moment to inspect state
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
@@ -4900,7 +4900,7 @@ describe('atomic job locking', () => {
 				jobAcquired = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 
@@ -4955,8 +4955,8 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue multiple jobs
 			const jobCount = 10;
@@ -5012,8 +5012,8 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 80));
 			});
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue jobs
 			const jobCount = 8;
@@ -5074,9 +5074,9 @@ describe('atomic job locking', () => {
 			const handler2 = createHandler();
 			const handler3 = createHandler();
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
-			monque3.worker(TEST_CONSTANTS.JOB_NAME, handler3);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque3.register(TEST_CONSTANTS.JOB_NAME, handler3);
 
 			// Enqueue jobs
 			const jobCount = 15;
@@ -5114,7 +5114,7 @@ describe('atomic job locking', () => {
 				checkDuringProcessing = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
@@ -5154,7 +5154,7 @@ describe('atomic job locking', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
@@ -5181,7 +5181,7 @@ describe('atomic job locking', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
@@ -5224,7 +5224,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -5252,7 +5252,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -5276,7 +5276,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -5296,7 +5296,7 @@ describe('atomic job locking', () => {
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {}, { runAt: futureDate });
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -5460,7 +5460,7 @@ describe('recovery and cleanup', () => {
 			const jobId = result.insertedId;
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -5497,7 +5497,7 @@ describe('recovery and cleanup', () => {
 			const jobId = result.insertedId;
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -6587,7 +6587,7 @@ describe('schedule()', () => {
 			const handler = vi.fn((job: Job) => {
 				handlerCalls.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a job with a cron that runs every minute
 			// We'll manually set nextRunAt to now so it runs immediately
@@ -6624,7 +6624,7 @@ describe('schedule()', () => {
 			const handler = vi.fn((job: Job) => {
 				processedJob = job;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Use a specific cron expression for predictable timing
 			const cronExpression = '0 * * * *'; // Every hour at minute 0
@@ -6662,7 +6662,7 @@ describe('schedule()', () => {
 				}
 				// Second call succeeds
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(
@@ -6714,7 +6714,7 @@ describe('schedule()', () => {
 			const handler = vi.fn(() => {
 				throw new Error('Always fails');
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const cronExpression = '*/30 * * * *'; // Every 30 minutes
@@ -6761,7 +6761,7 @@ describe('schedule()', () => {
 				}
 				// Second call succeeds
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job that runs hourly
 			const cronExpression = '0 * * * *';
@@ -6815,7 +6815,7 @@ describe('schedule()', () => {
 			const handler = vi.fn(() => {
 				processed = true;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue a one-time job (not scheduled with cron)
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { oneTime: true });
@@ -6845,7 +6845,7 @@ describe('schedule()', () => {
 			});
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(
@@ -6883,7 +6883,7 @@ describe('schedule()', () => {
 					throw new Error('Test failure reason');
 				}
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(
@@ -7044,7 +7044,7 @@ describe('stop() - Graceful Shutdown', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -7075,7 +7075,7 @@ describe('stop() - Graceful Shutdown', () => {
 			const handler = vi.fn((job: Job) => {
 				processedJobs.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue first job
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
@@ -7150,7 +7150,7 @@ describe('stop() - Graceful Shutdown', () => {
 				await new Promise((resolve) => setTimeout(resolve, 500));
 				jobCompleted = true;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -7189,7 +7189,7 @@ describe('stop() - Graceful Shutdown', () => {
 				await new Promise((resolve) => setTimeout(resolve, 100 + job.data.order * 100));
 				completedJobs.push(job.data.order);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue multiple jobs
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
@@ -7225,7 +7225,7 @@ describe('stop() - Graceful Shutdown', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -7260,7 +7260,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Set up event listener before starting
 			const errorEvents: MonqueEventMap['job:error'][] = [];
@@ -7303,7 +7303,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Set up event listener
 			let shutdownError: ShutdownTimeoutError | undefined;
@@ -7351,7 +7351,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			let errorEmitted = false;
 			monque.on('job:error', () => {
@@ -7392,7 +7392,7 @@ describe('stop() - Graceful Shutdown', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			let errorEmitted = false;
 			monque.on('job:error', () => {
@@ -7688,7 +7688,7 @@ describe('worker()', () => {
 
 			const handler = vi.fn();
 			// Worker registration is synchronous and should not throw
-			expect(() => monque.worker(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
+			expect(() => monque.register(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
 		});
 
 		it('should allow registering multiple workers for different job names', async () => {
@@ -7704,9 +7704,9 @@ describe('worker()', () => {
 			const handler2 = vi.fn();
 			const handler3 = vi.fn();
 
-			monque.worker(jobType1Name, handler1);
-			monque.worker(jobType2Name, handler2);
-			monque.worker(jobType3Name, handler3);
+			monque.register(jobType1Name, handler1);
+			monque.register(jobType2Name, handler2);
+			monque.register(jobType3Name, handler3);
 		});
 
 		it('should throw WorkerRegistrationError when registering same job name twice without replace', async () => {
@@ -7719,11 +7719,11 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(sameJobName, handler1);
+			monque.register(sameJobName, handler1);
 
 			// Second registration should throw
-			expect(() => monque.worker(sameJobName, handler2)).toThrow(WorkerRegistrationError);
-			expect(() => monque.worker(sameJobName, handler2)).toThrow(
+			expect(() => monque.register(sameJobName, handler2)).toThrow(WorkerRegistrationError);
+			expect(() => monque.register(sameJobName, handler2)).toThrow(
 				`Worker already registered for job name "${sameJobName}"`,
 			);
 		});
@@ -7738,8 +7738,8 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(sameJobName, handler1);
-			monque.worker(sameJobName, handler2, { replace: true });
+			monque.register(sameJobName, handler1);
+			monque.register(sameJobName, handler2, { replace: true });
 
 			// Enqueue a job and verify only handler2 is called
 			await monque.enqueue(sameJobName, {});
@@ -7761,10 +7761,10 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(jobName, handler1);
+			monque.register(jobName, handler1);
 
 			try {
-				monque.worker(jobName, handler2);
+				monque.register(jobName, handler2);
 				expect.fail('Should have thrown');
 			} catch (error) {
 				expect(error).toBeInstanceOf(WorkerRegistrationError);
@@ -7781,7 +7781,7 @@ describe('worker()', () => {
 			const handler = vi.fn();
 
 			// Registration with options should succeed
-			expect(() => monque.worker('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
+			expect(() => monque.register('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
 		});
 	});
 
@@ -7793,7 +7793,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
@@ -7813,7 +7813,7 @@ describe('worker()', () => {
 			const handler = vi.fn((job: Job) => {
 				receivedJobs.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const enqueuedData = { userId: '123', action: 'process' };
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, enqueuedData);
@@ -7842,7 +7842,7 @@ describe('worker()', () => {
 			const handler = vi.fn((job: Job<{ order: number }>) => {
 				processedJobs.push(job.data.order);
 			});
-			monque.worker(orderedJobName, handler);
+			monque.register(orderedJobName, handler);
 
 			// Enqueue jobs with different nextRunAt times (in reverse order)
 			const now = Date.now();
@@ -7865,7 +7865,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(registeredJobName, handler);
+			monque.register(registeredJobName, handler);
 
 			// Enqueue both registered and unregistered job types
 			await monque.enqueue(registeredJobName, {});
@@ -7890,7 +7890,7 @@ describe('worker()', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((r) => setTimeout(r, 50));
 			});
-			monque.worker(asyncJobName, handler);
+			monque.register(asyncJobName, handler);
 
 			await monque.enqueue(asyncJobName, {});
 			monque.start();
@@ -7908,7 +7908,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(completeJobName, handler);
+			monque.register(completeJobName, handler);
 
 			const job = await monque.enqueue(completeJobName, {});
 			monque.start();
@@ -7932,7 +7932,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(unlockJobName, handler);
+			monque.register(unlockJobName, handler);
 
 			const job = await monque.enqueue(unlockJobName, {});
 			monque.start();
@@ -7971,7 +7971,7 @@ describe('worker()', () => {
 				const end = Date.now();
 				timestamps.push({ start, end });
 			});
-			monque.worker(concurrencyJobName, handler);
+			monque.register(concurrencyJobName, handler);
 
 			// Enqueue more jobs than the concurrency limit
 			for (let i = 0; i < 5; i++) {
@@ -8013,7 +8013,7 @@ describe('worker()', () => {
 				const end = Date.now();
 				timestamps.push({ start, end });
 			});
-			monque.worker(limitedJobName, handler, { concurrency: workerConcurrency });
+			monque.register(limitedJobName, handler, { concurrency: workerConcurrency });
 
 			// Enqueue multiple jobs
 			for (let i = 0; i < 3; i++) {
@@ -8068,8 +8068,8 @@ describe('worker()', () => {
 				timestampsB.push({ start, end });
 			});
 
-			monque.worker(jobTypeAName, handlerA, { concurrency: 2 });
-			monque.worker(jobTypeBName, handlerB, { concurrency: 4 });
+			monque.register(jobTypeAName, handlerA, { concurrency: 2 });
+			monque.register(jobTypeBName, handlerB, { concurrency: 4 });
 
 			// Enqueue jobs for both types
 			for (let i = 0; i < 4; i++) {
@@ -8116,7 +8116,7 @@ describe('worker()', () => {
 				await new Promise((r) => setTimeout(r, 100));
 				processedOrder.push(job.data.index);
 			});
-			monque.worker(slotJobName, handler);
+			monque.register(slotJobName, handler);
 
 			// Enqueue 4 jobs
 			for (let i = 0; i < 4; i++) {
@@ -8142,7 +8142,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(noStartJobName, handler);
+			monque.register(noStartJobName, handler);
 
 			await monque.enqueue(noStartJobName, {});
 
@@ -8160,7 +8160,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(stopJobName, handler);
+			monque.register(stopJobName, handler);
 
 			monque.start();
 			await monque.stop();
@@ -8182,7 +8182,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(restartJobName, handler);
+			monque.register(restartJobName, handler);
 
 			monque.start();
 			await monque.stop();
@@ -8842,7 +8842,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -8871,7 +8871,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -8904,7 +8904,7 @@ describe('Monitor Job Lifecycle Events', () => {
 
 			const error = new Error('Task failed');
 			const handler = vi.fn().mockRejectedValue(error);
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -8934,7 +8934,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			const handler = vi.fn().mockRejectedValue(new Error('Final failure'));
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -8954,7 +8954,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			monqueInstances.push(monque);
 
 			// Register a worker so poll() has something to do and reaches the database
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			const errorEvents: MonqueEventMap['job:error'][] = [];
 			monque.on('job:error', (payload) => {
@@ -9019,7 +9019,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			monque.on('job:start', listener);
 
 			// Register worker and enqueue job
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
 
 			monque.start();
@@ -9055,7 +9055,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			// Register worker and enqueue multiple jobs
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test3' });
@@ -9926,7 +9926,7 @@ export class Monque extends EventEmitter {
 	 * @example Worker with custom concurrency
 	 * ```typescript
 	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
-	 * monque.worker('process-video', async (job) => {
+	 * monque.register('process-video', async (job) => {
 	 *   await videoProcessor.transcode(job.data.videoId);
 	 * }, { concurrency: 2 });
 	 * ```
@@ -9934,12 +9934,12 @@ export class Monque extends EventEmitter {
 	 * @example Replacing an existing worker
 	 * ```typescript
 	 * // Replace the existing handler for 'send-email'
-	 * monque.worker('send-email', newEmailHandler, { replace: true });
+	 * monque.register('send-email', newEmailHandler, { replace: true });
 	 * ```
 	 *
 	 * @example Worker with error handling
 	 * ```typescript
-	 * monque.worker('sync-user', async (job) => {
+	 * monque.register('sync-user', async (job) => {
 	 *   try {
 	 *     await externalApi.syncUser(job.data.userId);
 	 *   } catch (error) {
@@ -9983,8 +9983,8 @@ export class Monque extends EventEmitter {
 	 * const monque = new Monque(db);
 	 * await monque.initialize();
 	 *
-	 * monque.worker('send-email', emailHandler);
-	 * monque.worker('process-order', orderHandler);
+	 * monque.register('send-email', emailHandler);
+	 * monque.register('process-order', orderHandler);
 	 *
 	 * monque.start(); // Begin processing jobs
 	 * ```
@@ -10973,7 +10973,7 @@ const monque = new Monque(client.db('myapp'), {
 await monque.initialize();
 
 // Register workers
-monque.worker('send-email', async (job) => {
+monque.register('send-email', async (job) => {
   await sendEmail(job.data.to, job.data.subject);
 });
 

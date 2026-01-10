@@ -100,7 +100,7 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 ### Via Job Properties
 
 ```typescript
-monque.worker('example', async (job) => {
+monque.register('example', async (job) => {
   if (job.failCount > 0) {
     console.log(`Retry attempt ${job.failCount}`);
     console.log(`Previous error: ${job.failReason}`);
@@ -122,7 +122,7 @@ class PermanentError extends Error {
   }
 }
 
-monque.worker('api-call', async (job) => {
+monque.register('api-call', async (job) => {
   try {
     const response = await fetch(job.data.url);
     
@@ -161,7 +161,7 @@ const circuitBreaker = {
   resetTime: 60000 // 1 minute
 };
 
-monque.worker('external-api', async (job) => {
+monque.register('external-api', async (job) => {
   // Check circuit breaker
   const now = Date.now();
   if (circuitBreaker.failures >= circuitBreaker.threshold) {
@@ -223,7 +223,7 @@ const backgroundMonque = new Monque(db, {
 ### 2. Log Retry Context
 
 ```typescript
-monque.worker('important-job', async (job) => {
+monque.register('important-job', async (job) => {
   const logger = createLogger({
     jobId: job._id,
     attempt: job.failCount + 1,
@@ -270,7 +270,7 @@ monque.on('job:fail', async ({ job, error, willRetry }) => {
 For high-volume systems, add jitter to prevent thundering herd:
 
 ```typescript
-monque.worker('high-volume-job', async (job) => {
+monque.register('high-volume-job', async (job) => {
   if (job.failCount > 0) {
     // Add random delay 0-1000ms to spread out retries
     const jitter = Math.random() * 1000;
@@ -291,7 +291,7 @@ const noRetryMonque = new Monque(db, {
 });
 
 // Or handle in worker
-monque.worker('fire-and-forget', async (job) => {
+monque.register('fire-and-forget', async (job) => {
   try {
     await sendNotification(job.data);
   } catch (error) {

@@ -58,7 +58,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			});
@@ -88,7 +88,7 @@ describe('heartbeat mechanism', () => {
 
 			const heartbeatTimestamps: Date[] = [];
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Hold the job long enough for multiple heartbeats
 				const collection = db.collection(collectionName);
 
@@ -147,7 +147,7 @@ describe('heartbeat mechanism', () => {
 				completed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Quick completion
 			});
 
@@ -178,7 +178,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			});
@@ -205,7 +205,7 @@ describe('heartbeat mechanism', () => {
 			await monque.initialize();
 
 			let jobStarted = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				await new Promise((resolve) => setTimeout(resolve, 200));
 			});
@@ -324,7 +324,7 @@ describe('heartbeat mechanism', () => {
 				resolveJob = resolve;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				jobStarted = true;
 				// Wait until we signal completion
 				await jobPromise;

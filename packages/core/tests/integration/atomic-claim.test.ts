@@ -59,7 +59,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			let processedJob: Job | null = null;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async (job) => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
 				processedJob = job;
 				// Hold the job to verify claimedBy while processing
 				await new Promise((resolve) => setTimeout(resolve, 200));
@@ -97,7 +97,7 @@ describe('atomic job claiming', () => {
 				completed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				// Quick completion
 			});
 
@@ -132,7 +132,7 @@ describe('atomic job claiming', () => {
 				}
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Intentional failure');
 			});
 
@@ -168,7 +168,7 @@ describe('atomic job claiming', () => {
 			});
 
 			let attempts = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				attempts++;
 				if (attempts === 1) {
 					throw new Error('First attempt fails');
@@ -237,9 +237,9 @@ describe('atomic job claiming', () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
-			monque3.worker(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
+			monque1.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
+			monque2.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
+			monque3.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
 
 			// Enqueue a single job
 			await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
@@ -305,8 +305,8 @@ describe('atomic job claiming', () => {
 				await new Promise((resolve) => setTimeout(resolve, 20));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue jobs
 			for (let i = 0; i < jobCount; i++) {
@@ -370,7 +370,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -399,7 +399,7 @@ describe('atomic job claiming', () => {
 			await monque.initialize();
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 

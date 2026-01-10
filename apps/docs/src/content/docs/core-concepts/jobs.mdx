@@ -216,7 +216,7 @@ Design workers to handle duplicate execution safely:
 </Aside>
 
 ```typescript
-monque.worker('charge-payment', async (job) => {
+monque.register('charge-payment', async (job) => {
   const { paymentId } = job.data;
   
   // Check if already processed
@@ -282,7 +282,7 @@ import { JobStatus } from '@monque/core';
 
 await monque.schedule('0 3 * * *', 'custom-cleanup', {});
 
-monque.worker('custom-cleanup', async () => {
+monque.register('custom-cleanup', async () => {
   // Access the jobs collection via your own MongoDB client.
   // Use the same collection name you configured for Monque (default: 'monque_jobs').
   const collection = db.collection('monque_jobs');

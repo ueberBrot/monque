@@ -209,7 +209,7 @@ console.log('Last heartbeat:', job.lastHeartbeat);
 For jobs that may exceed `lockTimeout`:
 
 ```typescript
-monque.worker('long-analysis', async (job) => {
+monque.register('long-analysis', async (job) => {
   const chunks = splitIntoChunks(job.data);
   
   for (const chunk of chunks) {
