@@ -118,8 +118,8 @@ export class ShutdownTimeoutError extends MonqueError {
  * @example
  * ```typescript
  * try {
- *   monque.worker('send-email', handler1);
- *   monque.worker('send-email', handler2); // throws
+ *   monque.register('send-email', handler1);
+ *   monque.register('send-email', handler2); // throws
  * } catch (error) {
  *   if (error instanceof WorkerRegistrationError) {
  *     console.error('Worker already registered for:', error.jobName);
@@ -127,7 +127,7 @@ export class ShutdownTimeoutError extends MonqueError {
  * }
  *
  * // To intentionally replace a worker:
- * monque.worker('send-email', handler2, { replace: true });
+ * monque.register('send-email', handler2, { replace: true });
  * ```
  */
 export class WorkerRegistrationError extends MonqueError {

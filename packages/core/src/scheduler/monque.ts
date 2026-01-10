@@ -94,7 +94,7 @@ type EmailJob = {};
 *   body: string
 * }
  *
- * monque.worker<EmailJob>('send-email', async (job) =>
+ * monque.register<EmailJob>('send-email', async (job) =>
 {
 	*   await emailService.send(job.data.to, job.data.subject, job.data.body)
 	*
@@ -665,7 +665,7 @@ export class Monque extends EventEmitter {
 	 *   body: string;
 	 * }
 	 *
-	 * monque.worker<EmailJob>('send-email', async (job) => {
+	 * monque.register<EmailJob>('send-email', async (job) => {
 	 *   await emailService.send(job.data.to, job.data.subject, job.data.body);
 	 * });
 	 * ```
@@ -673,7 +673,7 @@ export class Monque extends EventEmitter {
 	 * @example Worker with custom concurrency
 	 * ```typescript
 	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
-	 * monque.worker('process-video', async (job) => {
+	 * monque.register('process-video', async (job) => {
 	 *   await videoProcessor.transcode(job.data.videoId);
 	 * }, { concurrency: 2 });
 	 * ```
@@ -681,12 +681,12 @@ export class Monque extends EventEmitter {
 	 * @example Replacing an existing worker
 	 * ```typescript
 	 * // Replace the existing handler for 'send-email'
-	 * monque.worker('send-email', newEmailHandler, { replace: true });
+	 * monque.register('send-email', newEmailHandler, { replace: true });
 	 * ```
 	 *
 	 * @example Worker with error handling
 	 * ```typescript
-	 * monque.worker('sync-user', async (job) => {
+	 * monque.register('sync-user', async (job) => {
 	 *   try {
 	 *     await externalApi.syncUser(job.data.userId);
 	 *   } catch (error) {
@@ -697,7 +697,7 @@ export class Monque extends EventEmitter {
 	 * });
 	 * ```
 	 */
-	worker<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
+	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
 		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
 
 		// Check for existing worker and throw unless replace is explicitly true
@@ -730,8 +730,8 @@ export class Monque extends EventEmitter {
 	 * const monque = new Monque(db);
 	 * await monque.initialize();
 	 *
-	 * monque.worker('send-email', emailHandler);
-	 * monque.worker('process-order', orderHandler);
+	 * monque.register('send-email', emailHandler);
+	 * monque.register('process-order', orderHandler);
 	 *
 	 * monque.start(); // Begin processing jobs
 	 * ```

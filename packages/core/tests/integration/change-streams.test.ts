@@ -61,7 +61,7 @@ describe('change streams', () => {
 				connected = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -86,7 +86,7 @@ describe('change streams', () => {
 				closed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -109,7 +109,7 @@ describe('change streams', () => {
 			let startTime: number;
 			let processingTime: number | null = null;
 
-			monque.worker<{ value: number }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ value: number }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				processingTime = Date.now() - startTime;
 			});
 
@@ -145,7 +145,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			const processedIds: number[] = [];
-			monque.worker<{ id: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
+			monque.register<{ id: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
 				processedIds.push(job.data.id);
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			});
@@ -182,7 +182,7 @@ describe('change streams', () => {
 
 			let attempts = 0;
 			let completed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				attempts++;
 				if (attempts === 1) {
 					throw new Error('First attempt fails');
@@ -216,7 +216,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let executions = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				executions++;
 			});
 
@@ -256,7 +256,7 @@ describe('change streams', () => {
 				});
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			let connected = false;
 			monque.on('changestream:connected', () => {
@@ -289,7 +289,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 
@@ -321,7 +321,7 @@ describe('change streams', () => {
 				errorEvents.push(payload);
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			let connected = false;
 			monque.on('changestream:connected', () => {
@@ -374,7 +374,7 @@ describe('change streams', () => {
 				errorEvents.push(payload);
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connectionCount >= 1, { timeout: 5000 });
@@ -428,7 +428,7 @@ describe('change streams', () => {
 			});
 
 			let processed = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processed = true;
 			});
 
@@ -458,7 +458,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processCount = 0;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processCount++;
 			});
 
@@ -494,7 +494,7 @@ describe('change streams', () => {
 				closed = true;
 			});
 
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			monque.start();
 
 			await waitFor(async () => connected, { timeout: 5000 });
@@ -514,7 +514,7 @@ describe('change streams', () => {
 			await monque.initialize();
 
 			let processedAfterStop = false;
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
 				processedAfterStop = true;
 			});
 
@@ -584,8 +584,8 @@ describe('change streams', () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			};
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			let connected1 = false;
 			let connected2 = false;
@@ -629,7 +629,7 @@ describe('change streams', () => {
 			const latencies: number[] = [];
 			let processed = 0;
 
-			monque.worker<{ startTime: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
+			monque.register<{ startTime: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
 				latencies.push(Date.now() - job.data.startTime);
 				processed++;
 			});

@@ -63,7 +63,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -92,7 +92,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -125,7 +125,7 @@ describe('Monitor Job Lifecycle Events', () => {
 
 			const error = new Error('Task failed');
 			const handler = vi.fn().mockRejectedValue(error);
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -155,7 +155,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			const handler = vi.fn().mockRejectedValue(new Error('Final failure'));
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -175,7 +175,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			monqueInstances.push(monque);
 
 			// Register a worker so poll() has something to do and reaches the database
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 
 			const errorEvents: MonqueEventMap['job:error'][] = [];
 			monque.on('job:error', (payload) => {
@@ -240,7 +240,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			monque.on('job:start', listener);
 
 			// Register worker and enqueue job
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
 
 			monque.start();
@@ -276,7 +276,7 @@ describe('Monitor Job Lifecycle Events', () => {
 			});
 
 			// Register worker and enqueue multiple jobs
-			monque.worker(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test3' });

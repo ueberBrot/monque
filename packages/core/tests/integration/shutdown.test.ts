@@ -57,7 +57,7 @@ describe('stop() - Graceful Shutdown', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -88,7 +88,7 @@ describe('stop() - Graceful Shutdown', () => {
 			const handler = vi.fn((job: Job) => {
 				processedJobs.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue first job
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
@@ -163,7 +163,7 @@ describe('stop() - Graceful Shutdown', () => {
 				await new Promise((resolve) => setTimeout(resolve, 500));
 				jobCompleted = true;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
@@ -202,7 +202,7 @@ describe('stop() - Graceful Shutdown', () => {
 				await new Promise((resolve) => setTimeout(resolve, 100 + job.data.order * 100));
 				completedJobs.push(job.data.order);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue multiple jobs
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
@@ -238,7 +238,7 @@ describe('stop() - Graceful Shutdown', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -273,7 +273,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Set up event listener before starting
 			const errorEvents: MonqueEventMap['job:error'][] = [];
@@ -316,7 +316,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Set up event listener
 			let shutdownError: ShutdownTimeoutError | undefined;
@@ -364,7 +364,7 @@ describe('stop() - Graceful Shutdown', () => {
 				jobStarted();
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			let errorEmitted = false;
 			monque.on('job:error', () => {
@@ -405,7 +405,7 @@ describe('stop() - Graceful Shutdown', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((resolve) => setTimeout(resolve, 100));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			let errorEmitted = false;
 			monque.on('job:error', () => {

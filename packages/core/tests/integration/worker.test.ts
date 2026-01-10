@@ -58,7 +58,7 @@ describe('worker()', () => {
 
 			const handler = vi.fn();
 			// Worker registration is synchronous and should not throw
-			expect(() => monque.worker(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
+			expect(() => monque.register(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
 		});
 
 		it('should allow registering multiple workers for different job names', async () => {
@@ -74,9 +74,9 @@ describe('worker()', () => {
 			const handler2 = vi.fn();
 			const handler3 = vi.fn();
 
-			monque.worker(jobType1Name, handler1);
-			monque.worker(jobType2Name, handler2);
-			monque.worker(jobType3Name, handler3);
+			monque.register(jobType1Name, handler1);
+			monque.register(jobType2Name, handler2);
+			monque.register(jobType3Name, handler3);
 		});
 
 		it('should throw WorkerRegistrationError when registering same job name twice without replace', async () => {
@@ -89,11 +89,11 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(sameJobName, handler1);
+			monque.register(sameJobName, handler1);
 
 			// Second registration should throw
-			expect(() => monque.worker(sameJobName, handler2)).toThrow(WorkerRegistrationError);
-			expect(() => monque.worker(sameJobName, handler2)).toThrow(
+			expect(() => monque.register(sameJobName, handler2)).toThrow(WorkerRegistrationError);
+			expect(() => monque.register(sameJobName, handler2)).toThrow(
 				`Worker already registered for job name "${sameJobName}"`,
 			);
 		});
@@ -108,8 +108,8 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(sameJobName, handler1);
-			monque.worker(sameJobName, handler2, { replace: true });
+			monque.register(sameJobName, handler1);
+			monque.register(sameJobName, handler2, { replace: true });
 
 			// Enqueue a job and verify only handler2 is called
 			await monque.enqueue(sameJobName, {});
@@ -131,10 +131,10 @@ describe('worker()', () => {
 			const handler1 = vi.fn();
 			const handler2 = vi.fn();
 
-			monque.worker(jobName, handler1);
+			monque.register(jobName, handler1);
 
 			try {
-				monque.worker(jobName, handler2);
+				monque.register(jobName, handler2);
 				expect.fail('Should have thrown');
 			} catch (error) {
 				expect(error).toBeInstanceOf(WorkerRegistrationError);
@@ -151,7 +151,7 @@ describe('worker()', () => {
 			const handler = vi.fn();
 
 			// Registration with options should succeed
-			expect(() => monque.worker('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
+			expect(() => monque.register('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
 		});
 	});
 
@@ -163,7 +163,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
@@ -183,7 +183,7 @@ describe('worker()', () => {
 			const handler = vi.fn((job: Job) => {
 				receivedJobs.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const enqueuedData = { userId: '123', action: 'process' };
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, enqueuedData);
@@ -212,7 +212,7 @@ describe('worker()', () => {
 			const handler = vi.fn((job: Job<{ order: number }>) => {
 				processedJobs.push(job.data.order);
 			});
-			monque.worker(orderedJobName, handler);
+			monque.register(orderedJobName, handler);
 
 			// Enqueue jobs with different nextRunAt times (in reverse order)
 			const now = Date.now();
@@ -235,7 +235,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(registeredJobName, handler);
+			monque.register(registeredJobName, handler);
 
 			// Enqueue both registered and unregistered job types
 			await monque.enqueue(registeredJobName, {});
@@ -260,7 +260,7 @@ describe('worker()', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((r) => setTimeout(r, 50));
 			});
-			monque.worker(asyncJobName, handler);
+			monque.register(asyncJobName, handler);
 
 			await monque.enqueue(asyncJobName, {});
 			monque.start();
@@ -278,7 +278,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(completeJobName, handler);
+			monque.register(completeJobName, handler);
 
 			const job = await monque.enqueue(completeJobName, {});
 			monque.start();
@@ -302,7 +302,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(unlockJobName, handler);
+			monque.register(unlockJobName, handler);
 
 			const job = await monque.enqueue(unlockJobName, {});
 			monque.start();
@@ -341,7 +341,7 @@ describe('worker()', () => {
 				const end = Date.now();
 				timestamps.push({ start, end });
 			});
-			monque.worker(concurrencyJobName, handler);
+			monque.register(concurrencyJobName, handler);
 
 			// Enqueue more jobs than the concurrency limit
 			for (let i = 0; i < 5; i++) {
@@ -383,7 +383,7 @@ describe('worker()', () => {
 				const end = Date.now();
 				timestamps.push({ start, end });
 			});
-			monque.worker(limitedJobName, handler, { concurrency: workerConcurrency });
+			monque.register(limitedJobName, handler, { concurrency: workerConcurrency });
 
 			// Enqueue multiple jobs
 			for (let i = 0; i < 3; i++) {
@@ -438,8 +438,8 @@ describe('worker()', () => {
 				timestampsB.push({ start, end });
 			});
 
-			monque.worker(jobTypeAName, handlerA, { concurrency: 2 });
-			monque.worker(jobTypeBName, handlerB, { concurrency: 4 });
+			monque.register(jobTypeAName, handlerA, { concurrency: 2 });
+			monque.register(jobTypeBName, handlerB, { concurrency: 4 });
 
 			// Enqueue jobs for both types
 			for (let i = 0; i < 4; i++) {
@@ -486,7 +486,7 @@ describe('worker()', () => {
 				await new Promise((r) => setTimeout(r, 100));
 				processedOrder.push(job.data.index);
 			});
-			monque.worker(slotJobName, handler);
+			monque.register(slotJobName, handler);
 
 			// Enqueue 4 jobs
 			for (let i = 0; i < 4; i++) {
@@ -512,7 +512,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(noStartJobName, handler);
+			monque.register(noStartJobName, handler);
 
 			await monque.enqueue(noStartJobName, {});
 
@@ -530,7 +530,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(stopJobName, handler);
+			monque.register(stopJobName, handler);
 
 			monque.start();
 			await monque.stop();
@@ -552,7 +552,7 @@ describe('worker()', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(restartJobName, handler);
+			monque.register(restartJobName, handler);
 
 			monque.start();
 			await monque.stop();

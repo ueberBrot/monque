@@ -60,7 +60,7 @@ describe('atomic job locking', () => {
 				// Hold the job for a moment to inspect state
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
@@ -89,7 +89,7 @@ describe('atomic job locking', () => {
 				jobAcquired = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 
@@ -144,8 +144,8 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue multiple jobs
 			const jobCount = 10;
@@ -201,8 +201,8 @@ describe('atomic job locking', () => {
 				await new Promise((r) => setTimeout(r, 80));
 			});
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
 
 			// Enqueue jobs
 			const jobCount = 8;
@@ -263,9 +263,9 @@ describe('atomic job locking', () => {
 			const handler2 = createHandler();
 			const handler3 = createHandler();
 
-			monque1.worker(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.worker(TEST_CONSTANTS.JOB_NAME, handler2);
-			monque3.worker(TEST_CONSTANTS.JOB_NAME, handler3);
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
+			monque3.register(TEST_CONSTANTS.JOB_NAME, handler3);
 
 			// Enqueue jobs
 			const jobCount = 15;
@@ -303,7 +303,7 @@ describe('atomic job locking', () => {
 				checkDuringProcessing = true;
 				await new Promise((r) => setTimeout(r, 200));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
@@ -343,7 +343,7 @@ describe('atomic job locking', () => {
 			await monque.initialize();
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			monque.start();
@@ -370,7 +370,7 @@ describe('atomic job locking', () => {
 			const handler = vi.fn(async () => {
 				await new Promise((r) => setTimeout(r, 100));
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
 			const collection = db.collection(collectionName);
@@ -413,7 +413,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -441,7 +441,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -465,7 +465,7 @@ describe('atomic job locking', () => {
 			);
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));
@@ -485,7 +485,7 @@ describe('atomic job locking', () => {
 			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {}, { runAt: futureDate });
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 			await new Promise((r) => setTimeout(r, 500));

@@ -325,7 +325,7 @@ export interface MonqueEventMap {
  *
  * @example
  * ```typescript
- * monque.worker('send-email', emailHandler, {
+ * monque.register('send-email', emailHandler, {
  *   concurrency: 3,
  * });
  * ```

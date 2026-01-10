@@ -436,7 +436,7 @@ describe('schedule()', () => {
 			const handler = vi.fn((job: Job) => {
 				handlerCalls.push(job);
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a job with a cron that runs every minute
 			// We'll manually set nextRunAt to now so it runs immediately
@@ -473,7 +473,7 @@ describe('schedule()', () => {
 			const handler = vi.fn((job: Job) => {
 				processedJob = job;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Use a specific cron expression for predictable timing
 			const cronExpression = '0 * * * *'; // Every hour at minute 0
@@ -511,7 +511,7 @@ describe('schedule()', () => {
 				}
 				// Second call succeeds
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(
@@ -563,7 +563,7 @@ describe('schedule()', () => {
 			const handler = vi.fn(() => {
 				throw new Error('Always fails');
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const cronExpression = '*/30 * * * *'; // Every 30 minutes
@@ -610,7 +610,7 @@ describe('schedule()', () => {
 				}
 				// Second call succeeds
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job that runs hourly
 			const cronExpression = '0 * * * *';
@@ -664,7 +664,7 @@ describe('schedule()', () => {
 			const handler = vi.fn(() => {
 				processed = true;
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Enqueue a one-time job (not scheduled with cron)
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { oneTime: true });
@@ -694,7 +694,7 @@ describe('schedule()', () => {
 			});
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(
@@ -732,7 +732,7 @@ describe('schedule()', () => {
 					throw new Error('Test failure reason');
 				}
 			});
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			// Schedule a recurring job
 			const job = await monque.schedule(

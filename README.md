@@ -69,7 +69,7 @@ interface EmailJob {
   subject: string;
 }
 
-monque.worker<EmailJob>('send-email', async (job) => {
+monque.register<EmailJob>('send-email', async (job) => {
   console.log('Sending email to:', job.data.to);
   await sendEmail(job.data);
 });

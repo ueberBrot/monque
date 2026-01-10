@@ -56,7 +56,7 @@ interface EmailJobData {
 Workers process jobs of a specific type:
 
 ```typescript
-monque.worker<EmailJobData>('send-email', async (job) => {
+monque.register<EmailJobData>('send-email', async (job) => {
   console.log(`📧 Sending email to ${job.data.to}`);
   
   // Your email sending logic here
@@ -169,7 +169,7 @@ async function main() {
   await monque.initialize();
 
   // Register worker
-  monque.worker<EmailJobData>('send-email', async (job) => {
+  monque.register<EmailJobData>('send-email', async (job) => {
     console.log(`📧 Sending to ${job.data.to}: ${job.data.subject}`);
     // Simulate sending email
     await new Promise(resolve => setTimeout(resolve, 100));

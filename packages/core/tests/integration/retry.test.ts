@@ -68,7 +68,7 @@ describe('Retry Logic', () => {
 			// Handler that fails once
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				if (callCount === 1) {
 					failureTime = Date.now();
@@ -121,7 +121,7 @@ describe('Retry Logic', () => {
 			// Handler that always fails
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				failureTime = Date.now();
 				throw new Error(`Attempt ${callCount} fails`);
@@ -177,7 +177,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failureTime = Date.now();
 				throw new Error('Always fails');
 			});
@@ -217,7 +217,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Always fails');
 			});
 
@@ -251,7 +251,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			const errorMessage = 'Connection timeout to external API';
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error(errorMessage);
 			});
 
@@ -285,7 +285,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let callCount = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				throw new Error(`Failure #${callCount}`);
 			});
@@ -325,7 +325,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			// Sync throw handler
-			monque.worker<{ type: string }>(TEST_CONSTANTS.JOB_NAME, (job) => {
+			monque.register<{ type: string }>(TEST_CONSTANTS.JOB_NAME, (job) => {
 				if (job.data.type === 'sync') {
 					throw new Error('Sync error');
 				}
@@ -363,7 +363,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
@@ -400,7 +400,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Persistent failure');
 			});
 
@@ -442,7 +442,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let failCount = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failCount++;
 				throw new Error(`Failure ${failCount}`);
 			});
@@ -480,7 +480,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let handlerCalls = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				handlerCalls++;
 			});
 
@@ -520,7 +520,7 @@ describe('Retry Logic', () => {
 				metadata: { key: 'value' },
 			};
 
-			monque.worker<typeof jobData>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<typeof jobData>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Failure');
 			});
 
@@ -565,7 +565,7 @@ describe('Retry Logic', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
@@ -599,7 +599,7 @@ describe('Retry Logic', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Final failure');
 			});
 
