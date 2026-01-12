@@ -57,7 +57,7 @@
 		},
 		{
 			"description": "Group docs-site dependency updates",
-			"matchPaths": ["apps/docs/**"],
+			"matchFileNames": ["apps/docs/**"],
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "docs (non-major)",
 			"automerge": true,
@@ -65,18 +65,18 @@
 		},
 		{
 			"description": "Group core package testing tool updates",
-			"matchPaths": ["packages/core/**"],
-			"matchPackagePatterns": [
-				"^vitest$",
-				"^@vitest/",
-				"^@testcontainers/",
-				"^@faker-js/",
-				"^fishery$"
-			],
+			"matchFileNames": ["packages/core/**"],
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "core testing (non-major)",
 			"automerge": true,
-			"platformAutomerge": true
+			"platformAutomerge": true,
+			"matchPackageNames": [
+				"/^vitest$/",
+				"/^@vitest//",
+				"/^@testcontainers//",
+				"/^@faker-js//",
+				"/^fishery$/"
+			]
 		}
 	]
 }
