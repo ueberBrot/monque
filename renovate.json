@@ -49,6 +49,13 @@
 			"platformAutomerge": true
 		},
 		{
+			"description": "Keep Node.js version updates manual (major runtime change)",
+			"matchPackageNames": ["node"],
+			"matchManagers": ["github-actions"],
+			"automerge": false,
+			"separateMajorMinor": true
+		},
+		{
 			"description": "Group docs-site dependency updates",
 			"matchPaths": ["apps/docs/**"],
 			"matchUpdateTypes": ["minor", "patch"],
