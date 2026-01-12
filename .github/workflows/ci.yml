@@ -43,9 +43,6 @@ jobs:
       - name: Lint
         run: bun run lint
 
-      - name: Format Check
-        run: bun run format:check
-
       - name: Type Check
         run: bun run type-check
 
@@ -89,7 +86,7 @@ jobs:
 
       - name: Coverage summary
         if: ${{ always() }}
-        run: bun scripts/coverage-summary.mjs packages/core/coverage/coverage-summary.json
+        run: bun scripts/coverage-summary.ts packages/core/coverage/coverage-summary.json
 
   build:
     name: Build

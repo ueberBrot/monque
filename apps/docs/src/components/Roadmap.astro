@@ -12,7 +12,8 @@ interface Props {
 	items: RoadmapItem[];
 }
 
-const { items } = Astro.props;
+const { items } = Astro.props as Props;
+void items;
 ---
 
 <div class="monque-roadmap">

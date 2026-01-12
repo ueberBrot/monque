@@ -1,0 +1,60 @@
+name: Renovate Changesets
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: renovate-changesets-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  add-changeset:
+    name: Add changeset for Renovate PR
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        github.event.pull_request.user.login == 'renovate[bot]' ||
+        github.event.pull_request.user.login == 'mend-renovate[bot]' ||
+        github.actor == 'renovate[bot]' ||
+        github.actor == 'mend-renovate[bot]'
+      )
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate changeset (if needed)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bun scripts/renovate-generate-changeset.ts
+
+      - name: Commit and push changeset
+        run: |
+          if [ -z "$(git status --porcelain .changeset)" ]; then
+            echo "No changeset created; skipping commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .changeset/*.md
+          git commit -m "chore(changeset): add renovate deps changeset"
+          git push
