@@ -48,9 +48,15 @@
 
 ## Quick Start
 
-Using Bun (see [Requirements](#requirements)):
+Install dependencies (MongoDB is a peer dependency):
 ```bash
 bun add @monque/core mongodb
+
+npm install @monque/core mongodb
+
+pnpm add @monque/core mongodb
+```
+
 ```
 
 ```typescript
@@ -116,6 +122,8 @@ const monque = new Monque(db, {
 
 ## Development
 
+This repository uses Bun workspaces and scripts for development.
+
 ```bash
 # Install dependencies
 bun install
@@ -137,7 +145,7 @@ bun run dev:docs
 
 - Node.js 20+
 - MongoDB 4.0+ (Replica Set required for Change Streams)
-- Bun 1.3.5+
+- Bun 1.3.5+ (development only; required to work on this repo)
 
 ## Documentation
 
