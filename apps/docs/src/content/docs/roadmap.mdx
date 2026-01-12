@@ -1,0 +1,87 @@
+---
+title: Roadmap
+description: Future expansion plans for Monque core and ecosystem.
+---
+
+import Roadmap from '../../components/Roadmap.astro';
+
+This document outlines the planned trajectory for Monque, moving from a robust job queue to a comprehensive orchestration platform.
+
+## Core Package (`@monque/core`)
+
+<Roadmap items={[
+  {
+    title: 'The "Management" Release',
+    version: 'v1.1.0',
+    status: 'planned',
+    description: 'Foundational APIs needed for external tooling like dashboards.',
+    features: [
+      'Job Management APIs: Single & Bulk operations (cancel, retry, delete)',
+      'Stable Cursor Pagination for scalable list queries',
+      'Statistics & Aggregation APIs'
+    ]
+  },
+  {
+    title: 'The "Orchestration" Release',
+    version: 'v1.2.0',
+    status: 'planned',
+    description: 'Enable code-first orchestration for complex, multi-step processes.',
+    features: [
+      'Workflows Engine with runJob() helper',
+      'State Management (pause, resume, cancel workflows)',
+      'Expanded Event Bus for full lifecycle observability'
+    ]
+  },
+  {
+    title: 'The "Pipeline" Release',
+    version: 'v1.3.0',
+    status: 'planned',
+    description: 'Support user-defined flows via configuration rather than code.',
+    features: [
+      'Declarative JSON-based pipelines',
+      'Control Flow Primitives (if, switch, parallel, map, wait)',
+      'Pipeline execution events'
+    ]
+  },
+  {
+    title: 'The "Enterprise" Release',
+    version: 'v1.4.0',
+    status: 'planned',
+    description: 'Features to support SaaS platforms and high-scale deployments.',
+    features: [
+      'Multi-Tenancy / Namespacing',
+      'Global & Per-queue Rate Limiting',
+      'Priority Queues'
+    ]
+  }
+]} />
+
+## Ecosystem Packages
+
+<Roadmap items={[
+  {
+    title: 'Framework Integrations',
+    version: '@monque/ts-ed',
+    date: 'Post v1.1.0',
+    status: 'planned',
+    description: 'Primary integration for the Ts.ED framework, enabling dependency injection and decorator capabilities.',
+    features: [
+      'Decorator-based worker registration (@Worker, @Cron)',
+      'Native lifecycle integration',
+      'Type-safe job definitions'
+    ]
+  },
+  {
+    title: 'Monque Dashboard',
+    version: '@monque/dashboard',
+    date: 'Post v1.2.0',
+    status: 'planned',
+    description: 'A server-agnostic web UI for monitoring and managing queues.',
+    features: [
+      'Real-time job monitoring',
+      'Job inspection (payloads, stack traces)',
+      'Management actions (retry, cancel, delete)',
+      'Connect-compatible middleware (Express standard)'
+    ]
+  }
+]} />

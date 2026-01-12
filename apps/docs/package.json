@@ -13,6 +13,7 @@
 		"build": "astro build",
 		"preview": "astro preview",
 		"astro": "astro",
+		"lint": "biome check src/",
 		"clean": "rimraf dist .astro",
 		"type-check": "astro check"
 	},

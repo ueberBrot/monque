@@ -1,0 +1,234 @@
+---
+interface RoadmapItem {
+	title: string;
+	version?: string;
+	status: 'completed' | 'current' | 'planned';
+	date?: string;
+	description?: string;
+	features?: string[];
+}
+
+interface Props {
+	items: RoadmapItem[];
+}
+
+const { items } = Astro.props as Props;
+void items;
+---
+
+<div class="monque-roadmap">
+	{
+		items.map((item) => (
+			<div class={`roadmap-item status-${item.status}`}>
+				<div class="roadmap-marker-container">
+					<div class="roadmap-marker" />
+					<div class="roadmap-line" />
+				</div>
+				<div class="roadmap-content">
+					<div class="roadmap-header">
+						{item.version && <span class="roadmap-version">{item.version}</span>}
+						<div class="title-group">
+							<h3 class="roadmap-title">{item.title}</h3>
+							{item.date && <span class="roadmap-date">{item.date}</span>}
+						</div>
+					</div>
+					
+					{item.description && <p class="roadmap-desc">{item.description}</p>}
+					
+					{item.features && item.features.length > 0 && (
+						<ul class="roadmap-features">
+							{item.features.map((feature) => (
+								<li>{feature}</li>
+							))}
+						</ul>
+					)}
+				</div>
+			</div>
+		))
+	}
+</div>
+
+<style>
+	.monque-roadmap {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		gap: 0; /* Items connect directly */
+		margin-top: 2rem;
+		margin-bottom: 2rem;
+	}
+
+	.roadmap-item {
+		display: flex;
+		gap: 1.5rem;
+		position: relative;
+		/* Padding moved to content so the marker/line container stretches */
+	}
+
+	.roadmap-item:last-child {
+		/* No specific override needed */
+	}
+
+	/* --- Marker & Line --- */
+	.roadmap-marker-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		min-width: 24px;
+	}
+
+	.roadmap-marker {
+		width: 16px;
+		height: 16px;
+		border-radius: 50%;
+		background-color: var(--sl-color-gray-3);
+		border: 2px solid var(--sl-color-bg);
+		z-index: 2; /* Sit on top of the line */
+		margin-top: 0.25rem; /* Align with title text roughly */
+		transition: all 0.3s ease;
+	}
+
+	.roadmap-line {
+		width: 2px;
+		background-color: var(--sl-color-hairline);
+		flex-grow: 1;
+		margin-top: -2px; /* Connect to marker */
+		margin-bottom: -16px; /* Extend into the next item's top space */
+		z-index: 1;
+	}
+
+	.roadmap-item:last-child .roadmap-line {
+		display: none;
+	}
+	
+	/* --- Status Styles --- */
+	
+	/* Completed */
+	.status-completed .roadmap-marker {
+		background-color: var(--monque-primary);
+		box-shadow: 0 0 0 3px var(--monque-primary-low);
+	}
+	.status-completed .roadmap-line {
+		background: linear-gradient(to bottom, var(--monque-primary) 0%, var(--sl-color-hairline) 100%);
+	}
+    /* If next is also completed, solid line? simplified to gradient or solid */
+    .status-completed:not(:last-child) .roadmap-line {
+         background: var(--monque-primary);
+    }
+
+	/* Current (In Progress) */
+	.status-current .roadmap-marker {
+		background-color: var(--monque-secondary);
+		box-shadow: 0 0 0 4px var(--monque-secondary-low);
+		transform: scale(1.1);
+	}
+	.status-current .roadmap-title {
+		color: var(--monque-secondary);
+	}
+
+	/* Planned */
+	.status-planned .roadmap-marker {
+		background-color: var(--sl-color-gray-5);
+		border-color: var(--sl-color-gray-4);
+	}
+    .status-planned .roadmap-title {
+        color: var(--sl-color-gray-3);
+    }
+
+	/* --- Content --- */
+	.roadmap-content {
+		flex: 1;
+		padding-top: 0; /* Align with marker */
+		padding-bottom: 3rem; /* Spacing between items handled here */
+	}
+	
+	.roadmap-item:last-child .roadmap-content {
+		padding-bottom: 0;
+	}
+
+	.roadmap-header {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin-bottom: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.roadmap-version {
+		font-family: var(--sl-font-mono);
+		font-size: 0.85rem;
+		font-weight: 700;
+		padding: 0.15rem 0.5rem;
+		border-radius: 4px;
+		background-color: var(--sl-color-gray-6);
+		color: var(--sl-color-gray-2);
+		border: 1px solid var(--sl-color-hairline);
+	}
+	
+	.status-completed .roadmap-version {
+		background-color: var(--monque-primary-low);
+		color: var(--monque-primary);
+		border-color: transparent;
+	}
+
+	.status-current .roadmap-version {
+		background-color: var(--monque-secondary-low);
+		color: var(--monque-secondary);
+		border-color: transparent;
+	}
+
+	.title-group {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.roadmap-title {
+		margin: 0 !important;
+		font-size: 1.2rem;
+		line-height: 1.3;
+		font-weight: 700;
+	}
+
+	.roadmap-date {
+		font-size: 0.85rem;
+		color: var(--sl-color-gray-3);
+	}
+
+	.roadmap-desc {
+		margin-top: 0.5rem;
+		margin-bottom: 0.75rem;
+		color: var(--sl-color-gray-2);
+		font-size: 1rem;
+		line-height: 1.6;
+	}
+
+	.roadmap-features {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.roadmap-features li {
+		position: relative;
+		padding-left: 1.25rem;
+		color: var(--sl-color-gray-2);
+		font-size: 0.95rem;
+	}
+
+	.roadmap-features li::before {
+		content: "•";
+		position: absolute;
+		left: 0;
+		color: var(--monque-primary);
+		font-weight: bold;
+	}
+    
+    .status-planned .roadmap-features li::before {
+        color: var(--sl-color-gray-4);
+    }
+</style>
