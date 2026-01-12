@@ -57,8 +57,6 @@ npm install @monque/core mongodb
 pnpm add @monque/core mongodb
 ```
 
-```
-
 ```typescript
 import { Monque } from '@monque/core';
 import { MongoClient } from 'mongodb';
