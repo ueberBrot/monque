@@ -78,7 +78,7 @@ describe('Concurrency & Scalability', () => {
 
 		// Register worker on all instances
 		for (const monque of monqueInstances) {
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 			monque.on('job:error', (payload) => processingErrors.push(payload.error));
 		}
 

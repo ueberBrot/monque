@@ -11,7 +11,7 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 
 | Method / Type | Description |
 |---------------|-------------|
-| [`worker()`](/monque/api/classes/monque/#worker) | Register a job handler |
+| [`register()`](/monque/api/classes/monque/#register) | Register a job handler |
 | [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker configuration (concurrency, replace) |
 | [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
 | [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
@@ -20,10 +20,10 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 
 ## Registering a Worker
 
-Use the [`worker()`](/monque/api/classes/monque/#worker) method to register a handler for a specific job type:
+Use the [`register()`](/monque/api/classes/monque/#register) method to register a handler for a specific job type:
 
 ```typescript
-monque.worker('job-name', async (job) => {
+monque.register('job-name', async (job) => {
   // Your processing logic
 });
 ```
@@ -40,7 +40,7 @@ interface ImageProcessJob {
   format: 'jpeg' | 'png' | 'webp';
 }
 
-monque.worker<ImageProcessJob>('process-image', async (job) => {
+monque.register<ImageProcessJob>('process-image', async (job) => {
   const { imageUrl, width, height, format } = job.data;
   // TypeScript knows all property types
   await processImage(imageUrl, { width, height, format });
@@ -52,7 +52,7 @@ monque.worker<ImageProcessJob>('process-image', async (job) => {
 Configure worker-specific settings via [`WorkerOptions`](/monque/api/interfaces/workeroptions/):
 
 ```typescript
-monque.worker('heavy-computation', async (job) => {
+monque.register('heavy-computation', async (job) => {
   await compute(job.data);
 }, {
   concurrency: 2 // Only 2 concurrent jobs (overrides defaultConcurrency)
@@ -112,7 +112,7 @@ This prevents two scheduler instances from claiming the same pending job at the 
 Your handler function is called with the full job document:
 
 ```typescript
-monque.worker('example', async (job) => {
+monque.register('example', async (job) => {
   console.log(job._id);      // ObjectId
   console.log(job.name);     // 'example'
   console.log(job.data);     // Your payload
@@ -132,7 +132,7 @@ monque.worker('example', async (job) => {
 If your handler throws or returns a rejected promise, the job is automatically retried:
 
 ```typescript
-monque.worker('flaky-api', async (job) => {
+monque.register('flaky-api', async (job) => {
   const response = await fetch(job.data.apiUrl);
   if (!response.ok) {
     throw new Error(`API returned ${response.status}`);
@@ -143,10 +143,10 @@ monque.worker('flaky-api', async (job) => {
 
 ### Manual Failure
 
-To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.worker` handler will trigger the retry policy by default.
+To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.register` handler will trigger the retry policy by default.
 
 ```typescript
-monque.worker('check-external-resource', async (job) => {
+monque.register('check-external-resource', async (job) => {
   // Check if resource exists before retrying expensive operations
   if (job.failCount > 0) {
     const exists = await checkResourceExists(job.data.resourceId);
@@ -180,13 +180,13 @@ const monque = new Monque(db, {
 
 ```typescript
 // Low-priority background tasks: higher concurrency
-monque.worker('log-analytics', handler, { concurrency: 20 });
+monque.register('log-analytics', handler, { concurrency: 20 });
 
 // Resource-intensive tasks: lower concurrency
-monque.worker('video-transcode', handler, { concurrency: 2 });
+monque.register('video-transcode', handler, { concurrency: 2 });
 
 // External API calls: match rate limits
-monque.worker('api-sync', handler, { concurrency: 5 });
+monque.register('api-sync', handler, { concurrency: 5 });
 ```
 
 ### Concurrency Strategy
@@ -204,17 +204,17 @@ Register multiple workers for different job types:
 
 ```typescript
 // Email processing
-monque.worker<EmailJob>('send-email', async (job) => {
+monque.register<EmailJob>('send-email', async (job) => {
   await sendEmail(job.data);
 });
 
 // Image processing
-monque.worker<ImageJob>('resize-image', async (job) => {
+monque.register<ImageJob>('resize-image', async (job) => {
   await resizeImage(job.data);
 });
 
 // Notification dispatch
-monque.worker<NotificationJob>('push-notification', async (job) => {
+monque.register<NotificationJob>('push-notification', async (job) => {
   await sendPushNotification(job.data);
 });
 ```
@@ -227,8 +227,8 @@ Workers can be registered before or after `start()`:
   <TabItem label="Before Start (Recommended)">
     ```typescript
     // Register all workers first
-    monque.worker('job-a', handlerA);
-    monque.worker('job-b', handlerB);
+    monque.register('job-a', handlerA);
+    monque.register('job-b', handlerB);
     
     // Then start processing
     monque.start();
@@ -240,7 +240,7 @@ Workers can be registered before or after `start()`:
     
     // Workers registered after start begin processing
     // on the next poll cycle
-    monque.worker('dynamic-worker', handler);
+    monque.register('dynamic-worker', handler);
     ```
   </TabItem>
 </Tabs>
@@ -257,11 +257,11 @@ Each worker should do one thing well:
 
 ```typescript
 // ✅ Good - Single responsibility
-monque.worker('send-email', sendEmailHandler);
-monque.worker('update-stats', updateStatsHandler);
+monque.register('send-email', sendEmailHandler);
+monque.register('update-stats', updateStatsHandler);
 
 // ❌ Bad - Too much in one handler
-monque.worker('process-order', async (job) => {
+monque.register('process-order', async (job) => {
   await sendConfirmationEmail();
   await updateInventory();
   await notifyShipping();
@@ -274,7 +274,7 @@ monque.worker('process-order', async (job) => {
 Design for idempotency:
 
 ```typescript
-monque.worker('sync-data', async (job) => {
+monque.register('sync-data', async (job) => {
   const { batchId } = job.data;
   
   // Track progress in external state
@@ -324,7 +324,7 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 
 ## API Reference
 
-- [`Monque.worker()`](/monque/api/classes/monque/#worker) - Register a worker handler
+- [`Monque.register()`](/monque/api/classes/monque/#register) - Register a worker handler
 - [`Monque.start()`](/monque/api/classes/monque/#start) - Start the scheduler
 - [`Monque.stop()`](/monque/api/classes/monque/#stop) - Graceful shutdown
 - [`Monque.now()`](/monque/api/classes/monque/#now) - Immediate job execution

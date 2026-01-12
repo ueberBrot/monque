@@ -147,7 +147,7 @@ describe('recovery and cleanup', () => {
 			const jobId = result.insertedId;
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 
@@ -184,7 +184,7 @@ describe('recovery and cleanup', () => {
 			const jobId = result.insertedId;
 
 			const handler = vi.fn();
-			monque.worker(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
 			monque.start();
 

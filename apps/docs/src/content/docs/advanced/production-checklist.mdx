@@ -37,7 +37,7 @@ Jobs may be executed more than once due to:
 import { Monque } from '@monque/core';
 
 // ✅ Good: Check state before mutating
-monque.worker('charge-payment', async (job) => {
+monque.register('charge-payment', async (job) => {
   const { paymentId } = job.data;
   
   const payment = await db.payments.findOne({ _id: paymentId });
@@ -53,7 +53,7 @@ monque.worker('charge-payment', async (job) => {
 });
 
 // ✅ Good: Use database transactions for atomic operations
-monque.worker('transfer-funds', async (job) => {
+monque.register('transfer-funds', async (job) => {
   const { fromAccount, toAccount, amount, transferId } = job.data;
   
   // Use transferId as idempotency key
@@ -212,13 +212,13 @@ const monque = new Monque(db, {
 });
 
 // CPU-bound: low concurrency
-monque.worker('video-transcode', handler, { concurrency: 2 });
+monque.register('video-transcode', handler, { concurrency: 2 });
 
 // I/O-bound: higher concurrency
-monque.worker('api-sync', handler, { concurrency: 10 });
+monque.register('api-sync', handler, { concurrency: 10 });
 
 // External API with rate limits: match the limit
-monque.worker('stripe-webhook', handler, { concurrency: 5 });
+monque.register('stripe-webhook', handler, { concurrency: 5 });
 ```
 
 See [Concurrency Strategy](/monque/core-concepts/workers/#concurrency-strategy) for guidelines.

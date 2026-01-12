@@ -42,7 +42,7 @@ const monque = new Monque(client.db('myapp'), {
 await monque.initialize();
 
 // Register workers
-monque.worker('send-email', async (job) => {
+monque.register('send-email', async (job) => {
   await sendEmail(job.data.to, job.data.subject);
 });
 
@@ -81,7 +81,7 @@ Creates a new Monque instance.
 - `enqueue(name, data, options?)` - Enqueue a job
 - `now(name, data)` - Enqueue for immediate processing
 - `schedule(cron, name, data)` - Schedule recurring job
-- `worker(name, handler, options?)` - Register a worker
+- `register(name, handler, options?)` - Register a worker
 - `start()` - Start processing jobs
 - `stop()` - Graceful shutdown
 - `isHealthy()` - Check scheduler health
