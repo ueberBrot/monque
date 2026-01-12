@@ -11,7 +11,7 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 
 | Method / Type | Description |
 |---------------|-------------|
-| [`worker()`](/monque/api/classes/monque/#worker) | Register a job handler |
+| [`register()`](/monque/api/classes/monque/#register) | Register a job handler |
 | [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker configuration (concurrency, replace) |
 | [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
 | [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
@@ -20,7 +20,7 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 
 ## Registering a Worker
 
-Use the [`worker()`](/monque/api/classes/monque/#worker) method to register a handler for a specific job type:
+Use the [`register()`](/monque/api/classes/monque/#register) method to register a handler for a specific job type:
 
 ```typescript
 monque.register('job-name', async (job) => {
@@ -40,7 +40,7 @@ interface ImageProcessJob {
   format: 'jpeg' | 'png' | 'webp';
 }
 
-monque.worker<ImageProcessJob>('process-image', async (job) => {
+monque.register<ImageProcessJob>('process-image', async (job) => {
   const { imageUrl, width, height, format } = job.data;
   // TypeScript knows all property types
   await processImage(imageUrl, { width, height, format });
@@ -143,7 +143,7 @@ monque.register('flaky-api', async (job) => {
 
 ### Manual Failure
 
-To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.worker` handler will trigger the retry policy by default.
+To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.register` handler will trigger the retry policy by default.
 
 ```typescript
 monque.register('check-external-resource', async (job) => {
@@ -204,17 +204,17 @@ Register multiple workers for different job types:
 
 ```typescript
 // Email processing
-monque.worker<EmailJob>('send-email', async (job) => {
+monque.register<EmailJob>('send-email', async (job) => {
   await sendEmail(job.data);
 });
 
 // Image processing
-monque.worker<ImageJob>('resize-image', async (job) => {
+monque.register<ImageJob>('resize-image', async (job) => {
   await resizeImage(job.data);
 });
 
 // Notification dispatch
-monque.worker<NotificationJob>('push-notification', async (job) => {
+monque.register<NotificationJob>('push-notification', async (job) => {
   await sendPushNotification(job.data);
 });
 ```
@@ -324,7 +324,7 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 
 ## API Reference
 
-- [`Monque.register()`](/monque/api/classes/monque/#worker) - Register a worker handler
+- [`Monque.register()`](/monque/api/classes/monque/#register) - Register a worker handler
 - [`Monque.start()`](/monque/api/classes/monque/#start) - Start the scheduler
 - [`Monque.stop()`](/monque/api/classes/monque/#stop) - Graceful shutdown
 - [`Monque.now()`](/monque/api/classes/monque/#now) - Immediate job execution

@@ -197,7 +197,7 @@ await monque.enqueue<ProcessOrderJob>('process-order', {
 });
 
 // Type-safe worker
-monque.worker<ProcessOrderJob>('process-order', async (job) => {
+monque.register<ProcessOrderJob>('process-order', async (job) => {
   const { orderId, priority } = job.data; // TypeScript knows the types
 });
 ```

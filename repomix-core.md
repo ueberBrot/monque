@@ -75,12 +75,12 @@ packages/
         inspection.test.ts
         locking.test.ts
         recovery.test.ts
+        register.test.ts
         retention.test.ts
         retry.test.ts
         schedule.test.ts
         shutdown.test.ts
         stale-recovery.test.ts
-        worker.test.ts
       setup/
         constants.ts
         global-setup.ts
@@ -92,6 +92,7 @@ packages/
         cron.test.ts
         errors.test.ts
         guards.test.ts
+    CHANGELOG.md
     package.json
     README.md
     tsconfig.json
@@ -102,9 +103,655 @@ packages/
 
 # Files
 
+## File: packages/core/tests/integration/register.test.ts
+````typescript
+/**
+ * Tests for the register() method and job processing in the Monque scheduler.
+ *
+ * These tests verify:
+ * - Worker registration functionality
+ * - Job processing by registered workers
+ * - Correct handler invocation with job data
+ * - Job status transitions during processing
+ * - Concurrency limits per worker
+ *
+ * @see {@link ../../src/scheduler/monque.ts}
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+import { WorkerRegistrationError } from '@/shared';
+
+describe('register()', () => {
+	let db: Db;
+	let collectionName: string;
+	let monque: Monque;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('worker');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('registration', () => {
+		it('should register a worker for a job name', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			// Worker registration is synchronous and should not throw
+			expect(() => monque.register(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
+		});
+
+		it('should allow registering multiple workers for different job names', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const jobType1Name = 'job-type-1';
+			const jobType2Name = 'job-type-2';
+			const jobType3Name = 'job-type-3';
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+			const handler3 = vi.fn();
+
+			monque.register(jobType1Name, handler1);
+			monque.register(jobType2Name, handler2);
+			monque.register(jobType3Name, handler3);
+		});
+
+		it('should throw WorkerRegistrationError when registering same job name twice without replace', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const sameJobName = 'same-job';
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+
+			monque.register(sameJobName, handler1);
+
+			// Second registration should throw
+			expect(() => monque.register(sameJobName, handler2)).toThrow(WorkerRegistrationError);
+			expect(() => monque.register(sameJobName, handler2)).toThrow(
+				`Worker already registered for job name "${sameJobName}"`,
+			);
+		});
+
+		it('should replace handler when registering same job name with { replace: true }', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const sameJobName = 'same-job-replace';
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+
+			monque.register(sameJobName, handler1);
+			monque.register(sameJobName, handler2, { replace: true });
+
+			// Enqueue a job and verify only handler2 is called
+			await monque.enqueue(sameJobName, {});
+			monque.start();
+
+			await waitFor(async () => handler2.mock.calls.length > 0);
+
+			expect(handler1).not.toHaveBeenCalled();
+			expect(handler2).toHaveBeenCalledTimes(1);
+		});
+
+		it('should include job name in WorkerRegistrationError', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const jobName = 'error-job-name';
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler1 = vi.fn();
+			const handler2 = vi.fn();
+
+			monque.register(jobName, handler1);
+
+			try {
+				monque.register(jobName, handler2);
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(WorkerRegistrationError);
+				expect((error as WorkerRegistrationError).jobName).toBe(jobName);
+			}
+		});
+
+		it('should accept concurrency option', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+
+			// Registration with options should succeed
+			expect(() => monque.register('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
+		});
+	});
+
+	describe('job processing', () => {
+		it('should process pending jobs when started', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length > 0);
+
+			expect(handler).toHaveBeenCalledTimes(1);
+		});
+
+		it('should pass job to handler with correct data', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const receivedJobs: Job[] = [];
+			const handler = vi.fn((job: Job) => {
+				receivedJobs.push(job);
+			});
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			const enqueuedData = { userId: '123', action: 'process' };
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, enqueuedData);
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length > 0);
+
+			expect(receivedJobs).toHaveLength(1);
+
+			const receivedJob = receivedJobs[0];
+
+			if (!receivedJob) throw new Error('Expected receivedJob to be defined');
+
+			expect(receivedJob.name).toBe(TEST_CONSTANTS.JOB_NAME);
+			expect(receivedJob.data).toEqual(enqueuedData);
+		});
+
+		it('should process jobs in order of nextRunAt', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100, defaultConcurrency: 1 });
+			const orderedJobName = 'ordered-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const processedJobs: number[] = [];
+			const handler = vi.fn((job: Job<{ order: number }>) => {
+				processedJobs.push(job.data.order);
+			});
+			monque.register(orderedJobName, handler);
+
+			// Enqueue jobs with different nextRunAt times (in reverse order)
+			const now = Date.now();
+			await monque.enqueue(orderedJobName, { order: 3 }, { runAt: new Date(now + 30) });
+			await monque.enqueue(orderedJobName, { order: 1 }, { runAt: new Date(now + 10) });
+			await monque.enqueue(orderedJobName, { order: 2 }, { runAt: new Date(now + 20) });
+
+			monque.start();
+
+			await waitFor(async () => processedJobs.length === 3, { timeout: 5000 });
+
+			expect(processedJobs).toEqual([1, 2, 3]);
+		});
+
+		it('should only process jobs for registered workers', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const registeredJobName = 'registered-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(registeredJobName, handler);
+
+			// Enqueue both registered and unregistered job types
+			await monque.enqueue(registeredJobName, {});
+			await monque.enqueue('unregistered-job', {});
+
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length > 0);
+			// Give extra time to ensure unregistered job isn't picked up
+			await new Promise((r) => setTimeout(r, 300));
+
+			expect(handler).toHaveBeenCalledTimes(1);
+		});
+
+		it('should handle async handlers', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const asyncJobName = 'async-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn(async () => {
+				await new Promise((r) => setTimeout(r, 50));
+			});
+			monque.register(asyncJobName, handler);
+
+			await monque.enqueue(asyncJobName, {});
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length > 0);
+
+			expect(handler).toHaveBeenCalledTimes(1);
+		});
+
+		it('should update job status to completed after successful processing', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const completeJobName = 'complete-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(completeJobName, handler);
+
+			const job = await monque.enqueue(completeJobName, {});
+			monque.start();
+
+			await waitFor(async () => {
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ _id: job._id });
+				return doc?.['status'] === JobStatus.COMPLETED;
+			});
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
+		});
+
+		it('should clear lockedAt after successful processing', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const unlockJobName = 'unlock-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(unlockJobName, handler);
+
+			const job = await monque.enqueue(unlockJobName, {});
+			monque.start();
+
+			await waitFor(async () => {
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ _id: job._id });
+				return doc?.['status'] === JobStatus.COMPLETED;
+			});
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+			expect(doc?.['lockedAt']).toBeUndefined();
+		});
+	});
+
+	describe('concurrency limits', () => {
+		it('should respect defaultConcurrency option', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const defaultConcurrency = 2;
+			const concurrencyJobName = 'concurrent-job';
+			monque = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let maxConcurrent = 0;
+			let currentConcurrent = 0;
+			const timestamps: { start: number; end: number }[] = [];
+
+			const handler = vi.fn(async () => {
+				const start = Date.now();
+				currentConcurrent++;
+				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+				await new Promise((r) => setTimeout(r, 200));
+				currentConcurrent--;
+				const end = Date.now();
+				timestamps.push({ start, end });
+			});
+			monque.register(concurrencyJobName, handler);
+
+			// Enqueue more jobs than the concurrency limit
+			for (let i = 0; i < 5; i++) {
+				await monque.enqueue(concurrencyJobName, { index: i });
+			}
+
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length === 5, { timeout: 10000 });
+
+			expect(maxConcurrent).toBeLessThanOrEqual(defaultConcurrency);
+			expect(maxConcurrent).toBeGreaterThan(0);
+
+			// Verify actual concurrency by checking overlapping execution windows
+			const overlaps = timestamps.some((t1, i) =>
+				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlaps).toBe(true);
+		});
+
+		it('should respect worker-specific concurrency option', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: 10 });
+			const limitedJobName = 'limited-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let maxConcurrent = 0;
+			let currentConcurrent = 0;
+			const workerConcurrency = 1; // Override to 1
+			const timestamps: { start: number; end: number }[] = [];
+
+			const handler = vi.fn(async () => {
+				const start = Date.now();
+				currentConcurrent++;
+				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+				await new Promise((r) => setTimeout(r, 100));
+				currentConcurrent--;
+				const end = Date.now();
+				timestamps.push({ start, end });
+			});
+			monque.register(limitedJobName, handler, { concurrency: workerConcurrency });
+
+			// Enqueue multiple jobs
+			for (let i = 0; i < 3; i++) {
+				await monque.enqueue(limitedJobName, { index: i });
+			}
+
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length === 3, { timeout: 5000 });
+
+			expect(maxConcurrent).toBe(workerConcurrency);
+
+			// Verify no overlapping execution (concurrency of 1 means sequential)
+			const overlaps = timestamps.some((t1, i) =>
+				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlaps).toBe(false);
+		});
+
+		it('should allow different concurrency per worker type', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50, heartbeatInterval: 1000 });
+			const jobTypeAName = 'type-a';
+			const jobTypeBName = 'type-b';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let maxConcurrentA = 0;
+			let currentConcurrentA = 0;
+			let maxConcurrentB = 0;
+			let currentConcurrentB = 0;
+			const timestampsA: { start: number; end: number }[] = [];
+			const timestampsB: { start: number; end: number }[] = [];
+
+			const handlerA = vi.fn(async () => {
+				const start = Date.now();
+				currentConcurrentA++;
+				maxConcurrentA = Math.max(maxConcurrentA, currentConcurrentA);
+				await new Promise((r) => setTimeout(r, 200));
+				currentConcurrentA--;
+				const end = Date.now();
+				timestampsA.push({ start, end });
+			});
+
+			const handlerB = vi.fn(async () => {
+				const start = Date.now();
+				currentConcurrentB++;
+				maxConcurrentB = Math.max(maxConcurrentB, currentConcurrentB);
+				await new Promise((r) => setTimeout(r, 200));
+				currentConcurrentB--;
+				const end = Date.now();
+				timestampsB.push({ start, end });
+			});
+
+			monque.register(jobTypeAName, handlerA, { concurrency: 2 });
+			monque.register(jobTypeBName, handlerB, { concurrency: 4 });
+
+			// Enqueue jobs for both types
+			for (let i = 0; i < 4; i++) {
+				await monque.enqueue(jobTypeAName, { index: i });
+				await monque.enqueue(jobTypeBName, { index: i });
+			}
+
+			monque.start();
+
+			await waitFor(
+				async () => handlerA.mock.calls.length === 4 && handlerB.mock.calls.length === 4,
+				{ timeout: 10000 },
+			);
+
+			expect(maxConcurrentA).toBeLessThanOrEqual(2);
+			expect(maxConcurrentB).toBeLessThanOrEqual(4);
+
+			// Verify actual concurrency by checking overlapping execution windows
+			const overlapsA = timestampsA.some((t1, i) =>
+				timestampsA.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			const overlapsB = timestampsB.some((t1, i) =>
+				timestampsB.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
+			);
+			expect(overlapsA).toBe(true);
+			expect(overlapsB).toBe(true);
+		});
+
+		it('should process more jobs as slots become available', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const concurrency = 2;
+			monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				defaultConcurrency: concurrency,
+			});
+			const slotJobName = 'slot-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const processedOrder: number[] = [];
+
+			const handler = vi.fn(async (job: Job<{ index: number }>) => {
+				await new Promise((r) => setTimeout(r, 100));
+				processedOrder.push(job.data.index);
+			});
+			monque.register(slotJobName, handler);
+
+			// Enqueue 4 jobs
+			for (let i = 0; i < 4; i++) {
+				await monque.enqueue(slotJobName, { index: i });
+			}
+
+			monque.start();
+
+			await waitFor(async () => processedOrder.length === 4, { timeout: 5000 });
+
+			// All jobs should have been processed
+			expect(processedOrder).toHaveLength(4);
+			expect([...processedOrder].sort()).toEqual([0, 1, 2, 3]);
+		});
+	});
+
+	describe('start() and stop()', () => {
+		it('should not process jobs before start() is called', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const noStartJobName = 'no-start-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(noStartJobName, handler);
+
+			await monque.enqueue(noStartJobName, {});
+
+			// Wait some time without calling start()
+			await new Promise((r) => setTimeout(r, 300));
+
+			expect(handler).not.toHaveBeenCalled();
+		});
+
+		it('should stop processing after stop() is called', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const stopJobName = 'stop-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(stopJobName, handler);
+
+			monque.start();
+			await monque.stop();
+
+			// Enqueue job after stop
+			await monque.enqueue(stopJobName, {});
+
+			// Wait and verify no processing
+			await new Promise((r) => setTimeout(r, 300));
+
+			expect(handler).not.toHaveBeenCalled();
+		});
+
+		it('should allow restart after stop()', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 100 });
+			const restartJobName = 'restart-job';
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(restartJobName, handler);
+
+			monque.start();
+			await monque.stop();
+
+			// Enqueue job and restart
+			await monque.enqueue(restartJobName, {});
+			monque.start();
+
+			await waitFor(async () => handler.mock.calls.length > 0);
+
+			expect(handler).toHaveBeenCalledTimes(1);
+		});
+	});
+});
+````
+
 ## File: packages/core/src/events/index.ts
 ````typescript
 export type { MonqueEventMap } from './types.js';
+````
+
+## File: packages/core/src/events/types.ts
+````typescript
+import type { Job } from '@/jobs';
+
+/**
+ * Event payloads for Monque lifecycle events.
+ */
+export interface MonqueEventMap {
+	/**
+	 * Emitted when a job begins processing.
+	 */
+	'job:start': Job;
+
+	/**
+	 * Emitted when a job finishes successfully.
+	 */
+	'job:complete': {
+		job: Job;
+		/** Processing duration in milliseconds */
+		duration: number;
+	};
+
+	/**
+	 * Emitted when a job fails (may retry).
+	 */
+	'job:fail': {
+		job: Job;
+		error: Error;
+		/** Whether the job will be retried */
+		willRetry: boolean;
+	};
+
+	/**
+	 * Emitted for unexpected errors during processing.
+	 */
+	'job:error': {
+		error: Error;
+		job?: Job;
+	};
+
+	/**
+	 * Emitted when stale jobs are recovered on startup.
+	 */
+	'stale:recovered': {
+		count: number;
+	};
+
+	/**
+	 * Emitted when the change stream is successfully connected.
+	 */
+	'changestream:connected': undefined;
+
+	/**
+	 * Emitted when a change stream error occurs.
+	 */
+	'changestream:error': {
+		error: Error;
+	};
+
+	/**
+	 * Emitted when the change stream is closed.
+	 */
+	'changestream:closed': undefined;
+
+	/**
+	 * Emitted when falling back from change streams to polling-only mode.
+	 */
+	'changestream:fallback': {
+		reason: string;
+	};
+}
 ````
 
 ## File: packages/core/src/jobs/guards.ts
@@ -307,399 +954,6 @@ export function isFailedJob<T>(job: Job<T>): boolean {
  */
 export function isRecurringJob<T>(job: Job<T>): boolean {
 	return job.repeatInterval !== undefined && job.repeatInterval !== null;
-}
-````
-
-## File: packages/core/src/scheduler/index.ts
-````typescript
-export { Monque } from './monque.js';
-export type { MonqueOptions } from './types.js';
-````
-
-## File: packages/core/src/shared/utils/backoff.ts
-````typescript
-/**
- * Default base interval for exponential backoff in milliseconds.
- * @default 1000
- */
-export const DEFAULT_BASE_INTERVAL = 1000;
-
-/**
- * Calculate the next run time using exponential backoff.
- *
- * Formula: nextRunAt = now + (2^failCount × baseInterval)
- *
- * @param failCount - Number of previous failed attempts
- * @param baseInterval - Base interval in milliseconds (default: 1000ms)
- * @param maxDelay - Maximum delay in milliseconds (optional)
- * @returns The next run date
- *
- * @example
- * ```typescript
- * // First retry (failCount=1): 2^1 * 1000 = 2000ms delay
- * const nextRun = calculateBackoff(1);
- *
- * // Second retry (failCount=2): 2^2 * 1000 = 4000ms delay
- * const nextRun = calculateBackoff(2);
- *
- * // With custom base interval
- * const nextRun = calculateBackoff(3, 500); // 2^3 * 500 = 4000ms delay
- *
- * // With max delay
- * const nextRun = calculateBackoff(10, 1000, 60000); // capped at 60000ms
- * ```
- */
-export function calculateBackoff(
-	failCount: number,
-	baseInterval: number = DEFAULT_BASE_INTERVAL,
-	maxDelay?: number,
-): Date {
-	let delay = 2 ** failCount * baseInterval;
-
-	if (maxDelay !== undefined && delay > maxDelay) {
-		delay = maxDelay;
-	}
-
-	return new Date(Date.now() + delay);
-}
-
-/**
- * Calculate just the delay in milliseconds for a given fail count.
- *
- * @param failCount - Number of previous failed attempts
- * @param baseInterval - Base interval in milliseconds (default: 1000ms)
- * @param maxDelay - Maximum delay in milliseconds (optional)
- * @returns The delay in milliseconds
- */
-export function calculateBackoffDelay(
-	failCount: number,
-	baseInterval: number = DEFAULT_BASE_INTERVAL,
-	maxDelay?: number,
-): number {
-	let delay = 2 ** failCount * baseInterval;
-
-	if (maxDelay !== undefined && delay > maxDelay) {
-		delay = maxDelay;
-	}
-
-	return delay;
-}
-````
-
-## File: packages/core/src/shared/utils/index.ts
-````typescript
-export { calculateBackoff } from './backoff.js';
-export { getNextCronDate } from './cron.js';
-````
-
-## File: packages/core/src/workers/index.ts
-````typescript
-export type { WorkerOptions, WorkerRegistration } from './types.js';
-````
-
-## File: packages/core/src/reset.d.ts
-````typescript
-import '@total-typescript/ts-reset';
-````
-
-## File: packages/core/tests/integration/retention.test.ts
-````typescript
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { Monque } from '@/scheduler';
-
-describe('job retention', () => {
-	let db: Db;
-	let collectionName: string;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('retention');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-	});
-
-	it('should delete completed jobs older than specified retention', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		// Configure retention to clean up every 100ms, keeping completed jobs for 5000ms
-		const monque = new Monque(db, {
-			collectionName,
-			pollInterval: 1000,
-			jobRetention: {
-				completed: 5000, // 5000ms retention
-				interval: 100, // Check every 100ms
-			},
-		});
-		monqueInstances.push(monque);
-
-		const collection = db.collection(collectionName);
-
-		const now = new Date();
-		const oldDate = new Date(now.getTime() - 6000); // 6s ago (should be deleted)
-		const recentDate = new Date(now.getTime() - 100); // 100ms ago (should be kept)
-
-		// Insert old completed job
-		await collection.insertOne(
-			JobFactoryHelpers.completed({
-				name: 'old-job',
-				updatedAt: oldDate,
-			}),
-		);
-
-		// Insert recent completed job
-		await collection.insertOne(
-			JobFactoryHelpers.completed({
-				name: 'recent-job',
-				updatedAt: recentDate,
-			}),
-		);
-
-		await monque.initialize();
-		monque.start();
-
-		// Wait for cleanup to happen
-		await waitFor(
-			async () => {
-				const count = await collection.countDocuments({ name: 'old-job' });
-				return count === 0;
-			},
-			{ timeout: 2000, interval: 50 },
-		);
-
-		const oldJob = await collection.findOne({ name: 'old-job' });
-		expect(oldJob).toBeNull();
-
-		const recentJob = await collection.findOne({ name: 'recent-job' });
-		expect(recentJob).not.toBeNull();
-	});
-
-	it('should delete failed jobs older than specified retention', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const monque = new Monque(db, {
-			collectionName,
-			pollInterval: 1000,
-			jobRetention: {
-				failed: 5000, // 5000ms retention
-				interval: 100, // Check every 100ms
-			},
-		});
-		monqueInstances.push(monque);
-
-		const collection = db.collection(collectionName);
-
-		const now = new Date();
-		const oldDate = new Date(now.getTime() - 6000);
-		const recentDate = new Date(now.getTime() - 100);
-
-		await collection.insertOne(
-			JobFactoryHelpers.failed({
-				name: 'old-failed-job',
-				updatedAt: oldDate,
-			}),
-		);
-
-		await collection.insertOne(
-			JobFactoryHelpers.failed({
-				name: 'recent-failed-job',
-				updatedAt: recentDate,
-			}),
-		);
-
-		await monque.initialize();
-		monque.start();
-
-		await waitFor(
-			async () => {
-				const count = await collection.countDocuments({ name: 'old-failed-job' });
-				return count === 0;
-			},
-			{ timeout: 2000, interval: 50 },
-		);
-
-		const oldJob = await collection.findOne({ name: 'old-failed-job' });
-		expect(oldJob).toBeNull();
-
-		const recentJob = await collection.findOne({ name: 'recent-failed-job' });
-		expect(recentJob).not.toBeNull();
-	});
-
-	it('should not delete jobs if retention is not configured', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const monque = new Monque(db, {
-			collectionName,
-			pollInterval: 1000,
-			// No jobRetention
-		});
-		monqueInstances.push(monque);
-
-		const collection = db.collection(collectionName);
-		const oldDate = new Date(Date.now() - 5000);
-
-		await collection.insertOne(
-			JobFactoryHelpers.completed({
-				name: 'should-keep-job',
-				updatedAt: oldDate,
-			}),
-		);
-
-		await monque.initialize();
-		monque.start();
-
-		// Wait a bit to ensure no cleanup happens
-		await new Promise((r) => setTimeout(r, 500));
-
-		const job = await collection.findOne({ name: 'should-keep-job' });
-		expect(job).not.toBeNull();
-	});
-});
-````
-
-## File: packages/core/tests/setup/constants.ts
-````typescript
-/**
- * Shared constants for test files to reduce duplication.
- */
-
-export const TEST_CONSTANTS = {
-	/** Default collection name for tests */
-	COLLECTION_NAME: 'monque_jobs',
-	/** Default job name */
-	JOB_NAME: 'test-job',
-	/** Default job data payload */
-	JOB_DATA: { data: 'test' },
-	/** Default cron expression (every minute) */
-	CRON_EVERY_MINUTE: '* * * * *',
-	/** Default cron expression (every hour) */
-	CRON_EVERY_HOUR: '0 * * * *',
-} as const;
-````
-
-## File: packages/core/tests/setup/seed.ts
-````typescript
-import { faker } from '@faker-js/faker';
-
-// Set a constant seed for deterministic test data
-faker.seed(123456);
-````
-
-## File: packages/core/vitest.unit.config.ts
-````typescript
-import { fileURLToPath } from 'node:url';
-import { defineConfig, mergeConfig } from 'vitest/config';
-
-import rootConfig from '../../vitest.config.ts';
-
-export default mergeConfig(
-	rootConfig,
-	defineConfig({
-		resolve: {
-			alias: {
-				'@': fileURLToPath(new URL('./src', import.meta.url)),
-				'@tests': fileURLToPath(new URL('./tests', import.meta.url)),
-				'@test-utils': fileURLToPath(new URL('./tests/setup', import.meta.url)),
-			},
-		},
-		test: {
-			include: ['tests/unit/**/*.test.ts'],
-			coverage: {
-				include: ['src/**/*.ts'],
-			},
-			// Unit tests don't need MongoDB
-			setupFiles: ['./tests/setup/seed.ts'],
-			// Shorter timeouts for unit tests
-			testTimeout: 5000,
-			hookTimeout: 10000,
-		},
-	}),
-);
-````
-
-## File: packages/core/src/events/types.ts
-````typescript
-import type { Job } from '@/jobs';
-
-/**
- * Event payloads for Monque lifecycle events.
- */
-export interface MonqueEventMap {
-	/**
-	 * Emitted when a job begins processing.
-	 */
-	'job:start': Job;
-
-	/**
-	 * Emitted when a job finishes successfully.
-	 */
-	'job:complete': {
-		job: Job;
-		/** Processing duration in milliseconds */
-		duration: number;
-	};
-
-	/**
-	 * Emitted when a job fails (may retry).
-	 */
-	'job:fail': {
-		job: Job;
-		error: Error;
-		/** Whether the job will be retried */
-		willRetry: boolean;
-	};
-
-	/**
-	 * Emitted for unexpected errors during processing.
-	 */
-	'job:error': {
-		error: Error;
-		job?: Job;
-	};
-
-	/**
-	 * Emitted when stale jobs are recovered on startup.
-	 */
-	'stale:recovered': {
-		count: number;
-	};
-
-	/**
-	 * Emitted when the change stream is successfully connected.
-	 */
-	'changestream:connected': undefined;
-
-	/**
-	 * Emitted when a change stream error occurs.
-	 */
-	'changestream:error': {
-		error: Error;
-	};
-
-	/**
-	 * Emitted when the change stream is closed.
-	 */
-	'changestream:closed': undefined;
-
-	/**
-	 * Emitted when falling back from change streams to polling-only mode.
-	 */
-	'changestream:fallback': {
-		reason: string;
-	};
 }
 ````
 
@@ -946,6 +1200,220 @@ export interface GetJobsFilter {
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
 ````
 
+## File: packages/core/src/scheduler/index.ts
+````typescript
+export { Monque } from './monque.js';
+export type { MonqueOptions } from './types.js';
+````
+
+## File: packages/core/src/scheduler/types.ts
+````typescript
+/**
+ * Configuration options for the Monque scheduler.
+ *
+ * @example
+ * ```typescript
+ * const monque = new Monque(db, {
+ *   collectionName: 'jobs',
+ *   pollInterval: 1000,
+ *   maxRetries: 10,
+ *   baseRetryInterval: 1000,
+ *   shutdownTimeout: 30000,
+ *   defaultConcurrency: 5,
+ * });
+ * ```
+ */
+export interface MonqueOptions {
+	/**
+	 * Name of the MongoDB collection for storing jobs.
+	 * @default 'monque_jobs'
+	 */
+	collectionName?: string;
+
+	/**
+	 * Interval in milliseconds between polling for new jobs.
+	 * @default 1000
+	 */
+	pollInterval?: number;
+
+	/**
+	 * Maximum number of retry attempts before marking a job as permanently failed.
+	 * @default 10
+	 */
+	maxRetries?: number;
+
+	/**
+	 * Base interval in milliseconds for exponential backoff calculation.
+	 * Actual delay = 2^failCount * baseRetryInterval
+	 * @default 1000
+	 */
+	baseRetryInterval?: number;
+
+	/**
+	 * Maximum delay in milliseconds for exponential backoff.
+	 * If calculated delay exceeds this value, it will be capped.
+	 *
+	 * Defaults to 24 hours to prevent unbounded delays.
+	 * @default 86400000 (24 hours)
+	 */
+	maxBackoffDelay?: number | undefined;
+
+	/**
+	 * Timeout in milliseconds for graceful shutdown.
+	 * @default 30000
+	 */
+	shutdownTimeout?: number;
+
+	/**
+	 * Default number of concurrent jobs per worker.
+	 * @default 5
+	 */
+	defaultConcurrency?: number;
+
+	/**
+	 * Maximum time in milliseconds a job can be in 'processing' status before
+	 * being considered stale and eligible for recovery.
+	 *
+	 * Stale recovery uses `lockedAt` as the source of truth; this is an absolute
+	 * “time locked” limit, not a heartbeat timeout.
+	 * @default 1800000 (30 minutes)
+	 */
+	lockTimeout?: number;
+
+	/**
+	 * Unique identifier for this scheduler instance.
+	 * Used for atomic job claiming - each instance uses this ID to claim jobs.
+	 * Defaults to a randomly generated UUID v4.
+	 * @default crypto.randomUUID()
+	 */
+	schedulerInstanceId?: string;
+
+	/**
+	 * Interval in milliseconds for heartbeat updates during job processing.
+	 * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
+	 * to indicate liveness for monitoring/debugging.
+	 *
+	 * Note: stale recovery is based on `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
+	 * @default 30000 (30 seconds)
+	 */
+	heartbeatInterval?: number;
+
+	/**
+	 * Whether to recover stale processing jobs on scheduler startup.
+	 * When true, jobs with lockedAt older than lockTimeout will be reset to pending.
+	 * @default true
+	 */
+	recoverStaleJobs?: boolean;
+
+	/**
+	 * Configuration for automatic cleanup of completed and failed jobs.
+	 * If undefined, no cleanup is performed.
+	 */
+	jobRetention?:
+		| {
+				/**
+				 * Age in milliseconds after which completed jobs are deleted.
+				 * Cleaned up based on 'updatedAt' timestamp.
+				 */
+				completed?: number;
+
+				/**
+				 * Age in milliseconds after which failed jobs are deleted.
+				 * Cleaned up based on 'updatedAt' timestamp.
+				 */
+				failed?: number;
+
+				/**
+				 * Interval in milliseconds for running the cleanup job.
+				 * @default 3600000 (1 hour)
+				 */
+				interval?: number;
+		  }
+		| undefined;
+}
+````
+
+## File: packages/core/src/shared/utils/backoff.ts
+````typescript
+/**
+ * Default base interval for exponential backoff in milliseconds.
+ * @default 1000
+ */
+export const DEFAULT_BASE_INTERVAL = 1000;
+
+/**
+ * Default maximum delay cap for exponential backoff in milliseconds.
+ *
+ * This prevents unbounded delays (e.g. failCount=20 is >11 days at 1s base)
+ * and avoids precision/overflow issues for very large fail counts.
+ * @default 86400000 (24 hours)
+ */
+export const DEFAULT_MAX_BACKOFF_DELAY = 24 * 60 * 60 * 1_000;
+
+/**
+ * Calculate the next run time using exponential backoff.
+ *
+ * Formula: nextRunAt = now + (2^failCount × baseInterval)
+ *
+ * @param failCount - Number of previous failed attempts
+ * @param baseInterval - Base interval in milliseconds (default: 1000ms)
+ * @param maxDelay - Maximum delay in milliseconds (optional)
+ * @returns The next run date
+ *
+ * @example
+ * ```typescript
+ * // First retry (failCount=1): 2^1 * 1000 = 2000ms delay
+ * const nextRun = calculateBackoff(1);
+ *
+ * // Second retry (failCount=2): 2^2 * 1000 = 4000ms delay
+ * const nextRun = calculateBackoff(2);
+ *
+ * // With custom base interval
+ * const nextRun = calculateBackoff(3, 500); // 2^3 * 500 = 4000ms delay
+ *
+ * // With max delay
+ * const nextRun = calculateBackoff(10, 1000, 60000); // capped at 60000ms
+ * ```
+ */
+export function calculateBackoff(
+	failCount: number,
+	baseInterval: number = DEFAULT_BASE_INTERVAL,
+	maxDelay?: number,
+): Date {
+	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
+	let delay = 2 ** failCount * baseInterval;
+
+	if (delay > effectiveMaxDelay) {
+		delay = effectiveMaxDelay;
+	}
+
+	return new Date(Date.now() + delay);
+}
+
+/**
+ * Calculate just the delay in milliseconds for a given fail count.
+ *
+ * @param failCount - Number of previous failed attempts
+ * @param baseInterval - Base interval in milliseconds (default: 1000ms)
+ * @param maxDelay - Maximum delay in milliseconds (optional)
+ * @returns The delay in milliseconds
+ */
+export function calculateBackoffDelay(
+	failCount: number,
+	baseInterval: number = DEFAULT_BASE_INTERVAL,
+	maxDelay?: number,
+): number {
+	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
+	let delay = 2 ** failCount * baseInterval;
+
+	if (delay > effectiveMaxDelay) {
+		delay = effectiveMaxDelay;
+	}
+
+	return delay;
+}
+````
+
 ## File: packages/core/src/shared/utils/cron.ts
 ````typescript
 import { CronExpressionParser } from 'cron-parser';
@@ -1017,6 +1485,12 @@ function handleCronParseError(expression: string, error: unknown): never {
 }
 ````
 
+## File: packages/core/src/shared/utils/index.ts
+````typescript
+export { calculateBackoff } from './backoff.js';
+export { getNextCronDate } from './cron.js';
+````
+
 ## File: packages/core/src/shared/index.ts
 ````typescript
 export {
@@ -1030,2113 +1504,24 @@ export {
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
 } from './utils/backoff.js';
 export { getNextCronDate, validateCronExpression } from './utils/cron.js';
 ````
 
-## File: packages/core/src/workers/types.ts
+## File: packages/core/src/workers/index.ts
 ````typescript
-import type { JobHandler, PersistedJob } from '@/jobs';
-
-/**
- * Options for registering a worker.
- *
- * @example
- * ```typescript
- * monque.register('send-email', emailHandler, {
- *   concurrency: 3,
- * });
- * ```
- */
-export interface WorkerOptions {
-	/**
-	 * Number of concurrent jobs this worker can process.
-	 * @default 5 (uses defaultConcurrency from MonqueOptions)
-	 */
-	concurrency?: number;
-
-	/**
-	 * Allow replacing an existing worker for the same job name.
-	 * If false (default) and a worker already exists, throws WorkerRegistrationError.
-	 * @default false
-	 */
-	replace?: boolean;
-}
-
-/**
- * Internal worker registration with handler and options.
- * Tracks the handler, concurrency limit, and currently active jobs.
- */
-export interface WorkerRegistration<T = unknown> {
-	/** The job handler function */
-	handler: JobHandler<T>;
-	/** Maximum concurrent jobs for this worker */
-	concurrency: number;
-	/** Map of active job IDs to their job data */
-	activeJobs: Map<string, PersistedJob<T>>;
-}
+export type { WorkerOptions, WorkerRegistration } from './types.js';
 ````
 
-## File: packages/core/tests/integration/atomic-claim.test.ts
+## File: packages/core/src/index.ts
 ````typescript
-/**
- * Tests for atomic job claiming using the claimedBy field.
- *
- * These tests verify:
- * - Jobs are claimed atomically using claimedBy field
- * - Only one scheduler instance can claim a job
- * - Concurrent claim attempts result in only one success
- * - claimedBy is set when job is acquired
- * - claimedBy is cleared when job completes or fails
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { type Job, JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('atomic job claiming', () => {
-	let db: Db;
-	let collectionName: string;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('atomic-claim');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('claimedBy field behavior', () => {
-		it('should set claimedBy to scheduler instance ID when acquiring a job', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'test-instance-123';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processedJob: Job | null = null;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
-				processedJob = job;
-				// Hold the job to verify claimedBy while processing
-				await new Promise((resolve) => setTimeout(resolve, 200));
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-
-			monque.start();
-
-			// Wait for job to start processing
-			await waitFor(async () => processedJob !== null, { timeout: 5000 });
-
-			// Check claimedBy in database while job is processing
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-
-			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
-			expect(doc?.['claimedBy']).toBe(instanceId);
-			expect(doc?.['lockedAt']).toBeInstanceOf(Date);
-		});
-
-		it('should clear claimedBy when job completes successfully', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'test-instance-456';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let completed = false;
-			monque.on('job:complete', () => {
-				completed = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				// Quick completion
-			});
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => completed, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-
-			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
-			expect(doc?.['claimedBy']).toBeUndefined();
-		});
-
-		it('should clear claimedBy when job fails permanently', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'test-instance-789';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-				maxRetries: 1, // Fail immediately after first attempt
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let permanentlyFailed = false;
-			monque.on('job:fail', ({ willRetry }) => {
-				if (!willRetry) {
-					permanentlyFailed = true;
-				}
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				throw new Error('Intentional failure');
-			});
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => permanentlyFailed, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-
-			expect(doc?.['status']).toBe(JobStatus.FAILED);
-			expect(doc?.['claimedBy']).toBeUndefined();
-		});
-
-		it('should clear claimedBy when job fails but will retry', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'test-instance-retry';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-				maxRetries: 3,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let failedWithRetry = false;
-			monque.on('job:fail', ({ willRetry }) => {
-				if (willRetry) {
-					failedWithRetry = true;
-				}
-			});
-
-			let attempts = 0;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				attempts++;
-				if (attempts === 1) {
-					throw new Error('First attempt fails');
-				}
-			});
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => failedWithRetry, { timeout: 5000 });
-			await monque.stop();
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-
-			expect(doc?.['status']).toBe(JobStatus.PENDING);
-			expect(doc?.['claimedBy']).toBeUndefined();
-			expect(doc?.['failCount']).toBe(1);
-		});
-	});
-
-	describe('concurrent claim attempts', () => {
-		it('should allow only one instance to claim a job when multiple attempt simultaneously', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-
-			const instance1Id = 'instance-1';
-			const instance2Id = 'instance-2';
-			const instance3Id = 'instance-3';
-
-			const monque1 = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				schedulerInstanceId: instance1Id,
-				defaultConcurrency: 1,
-			});
-			const monque2 = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				schedulerInstanceId: instance2Id,
-				defaultConcurrency: 1,
-			});
-			const monque3 = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				schedulerInstanceId: instance3Id,
-				defaultConcurrency: 1,
-			});
-
-			monqueInstances.push(monque1, monque2, monque3);
-
-			await monque1.initialize();
-			await monque2.initialize();
-			await monque3.initialize();
-
-			const claimedBy = new Set<string>();
-			const processedJobIds = new Set<string>();
-			const duplicates: string[] = [];
-
-			const createHandler = (instanceName: string) => async (job: Job<{ id: number }>) => {
-				const jobId = job._id?.toString() ?? '';
-				if (processedJobIds.has(jobId)) {
-					duplicates.push(`${jobId} by ${instanceName}`);
-				}
-				processedJobIds.add(jobId);
-				claimedBy.add(instanceName);
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			};
-
-			monque1.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
-			monque2.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
-			monque3.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
-
-			// Enqueue a single job
-			await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
-
-			// Start all instances simultaneously
-			monque1.start();
-			monque2.start();
-			monque3.start();
-
-			// Wait for job to be processed
-			await waitFor(async () => processedJobIds.size === 1, { timeout: 5000 });
-
-			// Verify no duplicates
-			expect(duplicates).toHaveLength(0);
-			// Exactly one instance should have claimed the job
-			expect(claimedBy.size).toBe(1);
-		});
-
-		it('should distribute multiple jobs across instances without duplicates', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const jobCount = 20;
-
-			const monque1 = new Monque(db, {
-				collectionName,
-				pollInterval: 30,
-				schedulerInstanceId: 'dist-instance-1',
-				defaultConcurrency: 3,
-			});
-			const monque2 = new Monque(db, {
-				collectionName,
-				pollInterval: 30,
-				schedulerInstanceId: 'dist-instance-2',
-				defaultConcurrency: 3,
-			});
-
-			monqueInstances.push(monque1, monque2);
-
-			await monque1.initialize();
-			await monque2.initialize();
-
-			const processedJobs = new Set<number>();
-			const duplicateJobs = new Set<number>();
-			const instance1Jobs: number[] = [];
-			const instance2Jobs: number[] = [];
-
-			const handler1 = async (job: Job<{ id: number }>) => {
-				const id = job.data.id;
-				if (processedJobs.has(id)) {
-					duplicateJobs.add(id);
-				}
-				processedJobs.add(id);
-				instance1Jobs.push(id);
-				await new Promise((resolve) => setTimeout(resolve, 20));
-			};
-
-			const handler2 = async (job: Job<{ id: number }>) => {
-				const id = job.data.id;
-				if (processedJobs.has(id)) {
-					duplicateJobs.add(id);
-				}
-				processedJobs.add(id);
-				instance2Jobs.push(id);
-				await new Promise((resolve) => setTimeout(resolve, 20));
-			};
-
-			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
-
-			// Enqueue jobs
-			for (let i = 0; i < jobCount; i++) {
-				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i });
-			}
-
-			monque1.start();
-			monque2.start();
-
-			await waitFor(async () => processedJobs.size === jobCount, { timeout: 10000 });
-
-			expect(processedJobs.size).toBe(jobCount);
-			expect(duplicateJobs.size).toBe(0);
-
-			// Both instances should have processed some jobs (distribution)
-			expect(instance1Jobs.length + instance2Jobs.length).toBe(jobCount);
-
-			// Wait for database to reflect all completions
-			await waitFor(
-				async () => {
-					const count = await db
-						.collection(collectionName)
-						.countDocuments({ status: JobStatus.COMPLETED });
-					return count === jobCount;
-				},
-				{ timeout: 5000 },
-			);
-
-			const completedCount = await db
-				.collection(collectionName)
-				.countDocuments({ status: JobStatus.COMPLETED });
-			expect(completedCount).toBe(jobCount);
-		});
-	});
-
-	describe('claim query behavior', () => {
-		it('should not claim jobs already claimed by another instance', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-
-			// Create a job and manually set it as claimed by another instance
-			const collection = db.collection(collectionName);
-			const now = new Date();
-			const claimedJob = JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { value: 1 },
-				nextRunAt: new Date(now.getTime() - 1000),
-				claimedBy: 'other-instance',
-				lockedAt: now,
-				lastHeartbeat: now,
-				createdAt: now,
-				updatedAt: now,
-			});
-			await collection.insertOne(claimedJob);
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: 'new-instance',
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			monque.start();
-
-			// Wait a bit to ensure polling happens
-			await new Promise((resolve) => setTimeout(resolve, 500));
-			await monque.stop();
-
-			// Handler should not have been called since job is claimed by another
-			expect(handler).not.toHaveBeenCalled();
-
-			// Verify job is still claimed by other instance
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-			expect(doc?.['claimedBy']).toBe('other-instance');
-		});
-
-		it('should claim unclaimed pending jobs', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'claiming-instance';
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processed = true;
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => processed, { timeout: 5000 });
-
-			// Job should have been processed
-			expect(processed).toBe(true);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/integration/change-streams.test.ts
-````typescript
-/**
- * Tests for MongoDB Change Stream integration.
- *
- * These tests verify:
- * - Change stream initialization on start()
- * - Job notification via insert events
- * - Job notification via update events (status change to pending)
- * - Error handling and reconnection with exponential backoff
- * - Graceful fallback to polling when change streams unavailable
- * - Change stream cleanup on shutdown
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import type { Job } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('change streams', () => {
-	let db: Db;
-	let collectionName: string;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('change-streams');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('change stream initialization', () => {
-		it('should emit changestream:connected event when change stream is established', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connected, { timeout: 5000 });
-			expect(connected).toBe(true);
-		});
-
-		it('should emit changestream:closed event on stop()', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connected = false;
-			let closed = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-			monque.on('changestream:closed', () => {
-				closed = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connected, { timeout: 5000 });
-			await monque.stop();
-
-			expect(closed).toBe(true);
-		});
-	});
-
-	describe('job notification via insert events', () => {
-		it('should trigger job processing immediately when job is inserted', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 5000, // 5 second backup poll - change stream should be faster
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let startTime: number;
-			let processingTime: number | null = null;
-
-			monque.worker<{ value: number }>(TEST_CONSTANTS.JOB_NAME, async () => {
-				processingTime = Date.now() - startTime;
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// Small delay to ensure initial poll has completed
-			await new Promise((resolve) => setTimeout(resolve, 200));
-
-			// Enqueue job after change stream is connected and initial poll is done
-			startTime = Date.now();
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-
-			await waitFor(async () => processingTime !== null, { timeout: 10000 });
-
-			// Should process faster than backup poll interval
-			expect(processingTime).toBeLessThan(5000);
-		});
-
-		it('should process multiple inserted jobs in sequence', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 2000, // 2 second poll to help pick up remaining jobs
-				defaultConcurrency: 1,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const processedIds: number[] = [];
-			monque.worker<{ id: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
-				processedIds.push(job.data.id);
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// Enqueue jobs after change stream is connected
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 2 });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 3 });
-
-			await waitFor(async () => processedIds.length === 3, { timeout: 10000 });
-			expect(processedIds).toHaveLength(3);
-		});
-	});
-
-	describe('job notification via update events', () => {
-		it('should process job when status changes to pending (retry scenario)', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 2000, // 2 second poll for quicker retry pickup
-				maxRetries: 3,
-				baseRetryInterval: 50, // Short interval for faster retry
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let attempts = 0;
-			let completed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				attempts++;
-				if (attempts === 1) {
-					throw new Error('First attempt fails');
-				}
-				completed = true;
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-
-			// Wait for retry to complete
-			await waitFor(async () => completed, { timeout: 10000 });
-			expect(attempts).toBe(2);
-			expect(completed).toBe(true);
-		});
-
-		it('should detect recurring job reschedule via update event', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 2000, // nextRunAt changes rely on polling (status changes trigger change stream)
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let executions = 0;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				executions++;
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// Schedule a job that should run immediately
-			const job = await monque.schedule('* * * * *', TEST_CONSTANTS.JOB_NAME, { value: 1 });
-
-			// Trigger it by setting nextRunAt to now
-			const collection = db.collection(collectionName);
-			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
-
-			await waitFor(async () => executions >= 1, { timeout: 5000 });
-			expect(executions).toBeGreaterThanOrEqual(1);
-		});
-	});
-
-	describe('error handling and reconnection', () => {
-		it('should emit changestream:error when an error occurs', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 1000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const errorPromise = new Promise<Error>((resolve) => {
-				monque.on('changestream:error', ({ error }) => {
-					resolve(error);
-				});
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// @ts-expect-error - Accessing private property for testing
-			const changeStream = monque.changeStream;
-			expect(changeStream).toBeDefined();
-
-			if (changeStream) {
-				changeStream.emit('error', new Error('Simulated test error'));
-			}
-
-			const error = await errorPromise;
-			expect(error).toBeInstanceOf(Error);
-			expect(error.message).toBe('Simulated test error');
-		});
-
-		it('should continue processing with polling when change stream fails', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100, // Fast polling for fallback
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processed = true;
-			});
-
-			monque.start();
-
-			// Even if change stream has issues, polling should work
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			await waitFor(async () => processed, { timeout: 5000 });
-
-			expect(processed).toBe(true);
-		});
-
-		it('should emit changestream:fallback after exhausting reconnection attempts', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100, // Fast polling for fallback
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const fallbackEvents: { reason: string }[] = [];
-			const errorEvents: { error: Error }[] = [];
-
-			monque.on('changestream:fallback', (payload) => {
-				fallbackEvents.push(payload);
-			});
-			monque.on('changestream:error', (payload) => {
-				errorEvents.push(payload);
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// @ts-expect-error - Accessing private property for testing
-			const maxAttempts = monque.maxChangeStreamReconnectAttempts;
-
-			// Simulate repeated errors to exhaust reconnection attempts
-			// @ts-expect-error - Accessing private property for testing
-			const changeStream = monque.changeStream;
-
-			// Emit more errors than max attempts to trigger fallback
-			for (let i = 0; i <= maxAttempts + 1; i++) {
-				if (changeStream) {
-					changeStream.emit('error', new Error(`Simulated test error ${i + 1}`));
-					// Small delay to allow error handling
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				}
-			}
-
-			// Give time for fallback to be emitted
-			await waitFor(async () => fallbackEvents.length > 0, { timeout: 5000 });
-
-			expect(fallbackEvents.length).toBeGreaterThan(0);
-			expect(fallbackEvents[0]?.reason).toContain('Exhausted');
-			expect(fallbackEvents[0]?.reason).toContain('reconnection attempts');
-		});
-
-		it('should attempt reconnection with exponential backoff after change stream error', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 5000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connectionCount = 0;
-			monque.on('changestream:connected', () => {
-				connectionCount++;
-			});
-
-			const errorEvents: { error: Error }[] = [];
-			monque.on('changestream:error', (payload) => {
-				errorEvents.push(payload);
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connectionCount >= 1, { timeout: 5000 });
-
-			// @ts-expect-error - Accessing private property for testing
-			const changeStream = monque.changeStream;
-
-			// Emit a single error - should trigger reconnection
-			if (changeStream) {
-				changeStream.emit('error', new Error('Simulated recoverable error'));
-			}
-
-			// Wait for error to be processed and reconnection attempt
-			await waitFor(async () => errorEvents.length >= 1, { timeout: 3000 });
-
-			// Allow time for reconnection (first attempt has 1s delay)
-			await new Promise((resolve) => setTimeout(resolve, 1500));
-
-			// Connection count may increase if reconnection was successful
-			// Or remain same if still attempting - either way, verify error was handled
-			expect(errorEvents.length).toBeGreaterThanOrEqual(1);
-			expect(errorEvents[0]?.error.message).toBe('Simulated recoverable error');
-		});
-	});
-
-	describe('fallback to polling', () => {
-		it('should emit changestream:fallback event when change streams unavailable', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-
-			// Spy on db.collection to return a collection with a failing watch method
-			const originalCollectionFn = db.collection.bind(db);
-			const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
-				const collection = originalCollectionFn(name, options);
-				// Mock watch to throw immediately
-				vi.spyOn(collection, 'watch').mockImplementation(() => {
-					throw new Error('Change streams unavailable');
-				});
-				return collection;
-			});
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let fallbackEmitted = false;
-			monque.on('changestream:fallback', () => {
-				fallbackEmitted = true;
-			});
-
-			let processed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processed = true;
-			});
-
-			monque.start();
-
-			// Wait for fallback event
-			await waitFor(async () => fallbackEmitted, { timeout: 2000 });
-			expect(fallbackEmitted).toBe(true);
-
-			// Enqueue and verify processing still works via polling
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			await waitFor(async () => processed, { timeout: 5000 });
-
-			expect(processed).toBe(true);
-
-			// Cleanup spy
-			collectionSpy.mockRestore();
-		});
-
-		it('should use polling as backup even with active change streams', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 200,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processCount = 0;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processCount++;
-			});
-
-			monque.start();
-
-			// Enqueue multiple jobs
-			for (let i = 0; i < 5; i++) {
-				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: i });
-			}
-
-			await waitFor(async () => processCount === 5, { timeout: 10000 });
-			expect(processCount).toBe(5);
-		});
-	});
-
-	describe('cleanup on shutdown', () => {
-		it('should close change stream cursor on stop()', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connected = false;
-			let closed = false;
-
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-			monque.on('changestream:closed', () => {
-				closed = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			await monque.stop();
-
-			expect(closed).toBe(true);
-		});
-
-		it('should not process new jobs after stop() is called', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processedAfterStop = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processedAfterStop = true;
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			await monque.stop();
-
-			// Enqueue after stop - should not be processed
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			await new Promise((resolve) => setTimeout(resolve, 500));
-
-			expect(processedAfterStop).toBe(false);
-		});
-	});
-
-	describe('integration with atomic claim', () => {
-		it('should distribute jobs across multiple instances via change streams', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const jobCount = 10;
-
-			const monque1 = new Monque(db, {
-				collectionName,
-				pollInterval: 5000, // 5 second backup poll
-				schedulerInstanceId: 'cs-instance-1',
-				defaultConcurrency: 2,
-			});
-			const monque2 = new Monque(db, {
-				collectionName,
-				pollInterval: 5000, // 5 second backup poll
-				schedulerInstanceId: 'cs-instance-2',
-				defaultConcurrency: 2,
-			});
-
-			monqueInstances.push(monque1, monque2);
-
-			await monque1.initialize();
-			await monque2.initialize();
-
-			const processedJobs = new Set<number>();
-			const duplicates = new Set<number>();
-			const instance1Jobs: number[] = [];
-			const instance2Jobs: number[] = [];
-
-			const handler1 = async (job: Job<{ id: number }>) => {
-				const id = job.data.id;
-				if (processedJobs.has(id)) {
-					duplicates.add(id);
-				}
-				processedJobs.add(id);
-				instance1Jobs.push(id);
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			};
-
-			const handler2 = async (job: Job<{ id: number }>) => {
-				const id = job.data.id;
-				if (processedJobs.has(id)) {
-					duplicates.add(id);
-				}
-				processedJobs.add(id);
-				instance2Jobs.push(id);
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			};
-
-			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
-			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
-
-			let connected1 = false;
-			let connected2 = false;
-			monque1.on('changestream:connected', () => {
-				connected1 = true;
-			});
-			monque2.on('changestream:connected', () => {
-				connected2 = true;
-			});
-
-			monque1.start();
-			monque2.start();
-
-			await waitFor(async () => connected1 && connected2, { timeout: 5000 });
-
-			// Enqueue jobs
-			for (let i = 0; i < jobCount; i++) {
-				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i });
-			}
-
-			await waitFor(async () => processedJobs.size === jobCount, { timeout: 15000 });
-
-			expect(processedJobs.size).toBe(jobCount);
-			expect(duplicates.size).toBe(0);
-			expect(instance1Jobs.length + instance2Jobs.length).toBe(jobCount);
-		});
-	});
-
-	describe('performance', () => {
-		it('should process jobs with lower latency than poll interval', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const pollInterval = 10000; // 10 seconds
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const latencies: number[] = [];
-			let processed = 0;
-
-			monque.worker<{ startTime: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
-				latencies.push(Date.now() - job.data.startTime);
-				processed++;
-			});
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.start();
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			// Enqueue several jobs with timestamps
-			for (let i = 0; i < 5; i++) {
-				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { startTime: Date.now() });
-				await new Promise((resolve) => setTimeout(resolve, 100));
-			}
-
-			await waitFor(async () => processed === 5, { timeout: 15000 });
-
-			// All latencies should be much less than poll interval
-			const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
-			expect(avgLatency).toBeLessThan(pollInterval);
-			// Most should be under 1 second with change streams
-			const fastJobs = latencies.filter((l) => l < 1000).length;
-			expect(fastJobs).toBeGreaterThan(0);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/integration/heartbeat.test.ts
-````typescript
-/**
- * Tests for heartbeat mechanism during job processing.
- *
- * These tests verify:
- * - lastHeartbeat is updated periodically while processing
- * - Heartbeat interval is configurable
- * - Stale jobs are detected using lastHeartbeat
- * - Heartbeat mechanism stops on job completion/failure
- * - Heartbeat cleanup occurs on scheduler shutdown
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('heartbeat mechanism', () => {
-	let db: Db;
-	let collectionName: string;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('heartbeat');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('heartbeat updates during processing', () => {
-		it('should set lastHeartbeat when claiming a job', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				heartbeatInterval: 100,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 500));
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => jobStarted, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-
-			expect(doc?.['lastHeartbeat']).toBeInstanceOf(Date);
-			expect(doc?.['heartbeatInterval']).toBe(100);
-		});
-
-		it('should update lastHeartbeat periodically while processing', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const heartbeatInterval = 100; // 100ms for faster test
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				heartbeatInterval,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const heartbeatTimestamps: Date[] = [];
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				// Hold the job long enough for multiple heartbeats
-				const collection = db.collection(collectionName);
-
-				// Record initial heartbeat
-				const doc1 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc1?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc1['lastHeartbeat'] as Date);
-				}
-
-				// Wait for heartbeat update
-				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
-
-				// Record updated heartbeat
-				const doc2 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc2?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc2['lastHeartbeat'] as Date);
-				}
-
-				// Wait for another heartbeat update
-				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
-
-				const doc3 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc3?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc3['lastHeartbeat'] as Date);
-				}
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => heartbeatTimestamps.length >= 3, { timeout: 5000 });
-
-			// Verify heartbeats are increasing
-			expect(heartbeatTimestamps.length).toBeGreaterThanOrEqual(3);
-			for (let i = 1; i < heartbeatTimestamps.length; i++) {
-				const prev = heartbeatTimestamps[i - 1];
-				const curr = heartbeatTimestamps[i];
-				if (prev && curr) {
-					expect(curr.getTime()).toBeGreaterThanOrEqual(prev.getTime());
-				}
-			}
-		});
-
-		it('should clear lastHeartbeat when job completes', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				heartbeatInterval: 50,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let completed = false;
-			monque.on('job:complete', () => {
-				completed = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				// Quick completion
-			});
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => completed, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-
-			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
-			expect(doc?.['lastHeartbeat']).toBeUndefined();
-			expect(doc?.['claimedBy']).toBeUndefined();
-		});
-	});
-
-	describe('heartbeat interval configuration', () => {
-		it('should use custom heartbeat interval', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const customInterval = 200;
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				heartbeatInterval: customInterval,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 500));
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => jobStarted, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-
-			expect(doc?.['heartbeatInterval']).toBe(customInterval);
-		});
-
-		it('should use default heartbeat interval of 30000ms', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				// No heartbeatInterval specified
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 200));
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => jobStarted, { timeout: 5000 });
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-
-			expect(doc?.['heartbeatInterval']).toBe(30000);
-		});
-	});
-
-	describe('stale job detection using lastHeartbeat', () => {
-		it('should recover jobs with stale lastHeartbeat on startup', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const lockTimeout = 500; // 500ms for faster test
-
-			// Create a stale job (lastHeartbeat older than lockTimeout)
-			const collection = db.collection(collectionName);
-			const staleTime = new Date(Date.now() - lockTimeout * 2);
-			const staleJob = JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { value: 'stale' },
-				nextRunAt: new Date(Date.now() - 10000),
-				claimedBy: 'dead-instance',
-				lockedAt: staleTime,
-				lastHeartbeat: staleTime,
-				heartbeatInterval: 100,
-				createdAt: staleTime,
-				updatedAt: staleTime,
-			});
-			await collection.insertOne(staleJob);
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				lockTimeout,
-				recoverStaleJobs: true,
-			});
-			monqueInstances.push(monque);
-
-			let staleRecovered = false;
-			monque.on('stale:recovered', ({ count }) => {
-				if (count > 0) {
-					staleRecovered = true;
-				}
-			});
-
-			await monque.initialize();
-
-			// Job should be recovered to pending
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-			expect(doc?.['status']).toBe(JobStatus.PENDING);
-			expect(doc?.['claimedBy']).toBeUndefined();
-			expect(staleRecovered).toBe(true);
-		});
-
-		it('should not recover jobs with recent lastHeartbeat', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const lockTimeout = 5000;
-
-			// Create a job with recent heartbeat (not stale)
-			const collection = db.collection(collectionName);
-			const recentTime = new Date();
-			const activeJob = JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { value: 'active' },
-				nextRunAt: new Date(Date.now() - 10000),
-				claimedBy: 'active-instance',
-				lockedAt: recentTime,
-				lastHeartbeat: recentTime,
-				heartbeatInterval: 100,
-				createdAt: recentTime,
-				updatedAt: recentTime,
-			});
-			await collection.insertOne(activeJob);
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				lockTimeout,
-				recoverStaleJobs: true,
-			});
-			monqueInstances.push(monque);
-
-			await monque.initialize();
-
-			// Job should still be processing (not recovered)
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
-			expect(doc?.['claimedBy']).toBe('active-instance');
-		});
-	});
-
-	describe('heartbeat cleanup on shutdown', () => {
-		it('should release claimed jobs when stop() is called', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'shutdown-instance';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				heartbeatInterval: 50,
-				schedulerInstanceId: instanceId,
-				shutdownTimeout: 5000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let jobStarted = false;
-			let resolveJob: (() => void) | undefined;
-			const jobPromise = new Promise<void>((resolve) => {
-				resolveJob = resolve;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				// Wait until we signal completion
-				await jobPromise;
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => jobStarted, { timeout: 5000 });
-
-			// Job is now processing - verify it's claimed
-			const collection = db.collection(collectionName);
-			let doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-			expect(doc?.['claimedBy']).toBe(instanceId);
-
-			// Let the job complete
-			resolveJob?.();
-
-			// Stop should wait for job to complete
-			await monque.stop();
-
-			// After stop, job should be completed and claim cleared
-			doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
-			expect(doc?.['claimedBy']).toBeUndefined();
-		});
-	});
-});
-````
-
-## File: packages/core/tests/integration/inspection.test.ts
-````typescript
-/**
- * Tests for the getJobs() and getJob() methods of the Monque scheduler.
- *
- * These tests verify:
- * - Basic job querying functionality
- * - Filtering by name, status, and combinations
- * - Pagination with limit and skip
- * - Single job lookup by ID
- * - Error handling for uninitialized scheduler
- *
- * @see {@link ../../src/scheduler/monque.ts}
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-} from '@test-utils/test-utils.js';
-import type { Collection, Db, Document } from 'mongodb';
-import { ObjectId } from 'mongodb';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-
-import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-/** Test-specific job names to avoid collision */
-const JOB_NAMES = {
-	EMAIL: 'send-email',
-	REPORT: 'generate-report',
-	SYNC: 'sync-data',
-} as const;
-
-describe('getJobs()', () => {
-	let db: Db;
-	let collectionName: string;
-	let collection: Collection<Document>;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('inspection-getJobs');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	beforeEach(async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		collection = db.collection(collectionName);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('basic querying', () => {
-		it('should return all jobs when no filter is provided', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJobs = [
-				JobFactory.build({ name: JOB_NAMES.EMAIL }),
-				JobFactory.build({ name: JOB_NAMES.REPORT }),
-				JobFactory.build({ name: JOB_NAMES.SYNC }),
-			];
-			await collection.insertMany(seedJobs);
-
-			const jobs = await monque.getJobs();
-
-			expect(jobs).toHaveLength(3);
-		});
-
-		it('should return empty array when no jobs exist', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const jobs = await monque.getJobs();
-
-			expect(jobs).toHaveLength(0);
-			expect(jobs).toEqual([]);
-		});
-
-		it('should return jobs ordered by nextRunAt ascending', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const now = Date.now();
-			const seedJobs = [
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { order: 3 },
-					nextRunAt: new Date(now + 3000),
-				}),
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { order: 1 },
-					nextRunAt: new Date(now + 1000),
-				}),
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { order: 2 },
-					nextRunAt: new Date(now + 2000),
-				}),
-			];
-			await collection.insertMany(seedJobs);
-
-			const jobs = await monque.getJobs<{ order: number }>();
-
-			expect(jobs[0]?.data.order).toBe(1);
-			expect(jobs[1]?.data.order).toBe(2);
-			expect(jobs[2]?.data.order).toBe(3);
-		});
-
-		it('should return PersistedJob with _id', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			await collection.insertOne(seedJob);
-
-			const jobs = await monque.getJobs();
-
-			expect(jobs[0]?._id).toBeInstanceOf(ObjectId);
-			expect(jobs[0]?.name).toBe(JOB_NAMES.EMAIL);
-			expect(jobs[0]?.status).toBe(JobStatus.PENDING);
-		});
-	});
-
-	describe('filter by name', () => {
-		it('should filter jobs by name', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJobs = [
-				JobFactory.build({ name: JOB_NAMES.EMAIL }),
-				JobFactory.build({ name: JOB_NAMES.EMAIL }),
-				JobFactory.build({ name: JOB_NAMES.REPORT }),
-			];
-			await collection.insertMany(seedJobs);
-
-			const emailJobs = await monque.getJobs({ name: JOB_NAMES.EMAIL });
-
-			expect(emailJobs).toHaveLength(2);
-			expect(emailJobs.every((j) => j.name === JOB_NAMES.EMAIL)).toBe(true);
-		});
-
-		it('should return empty when name does not match any jobs', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			await collection.insertOne(seedJob);
-
-			const jobs = await monque.getJobs({ name: 'non-existent-job' });
-
-			expect(jobs).toHaveLength(0);
-		});
-	});
-
-	describe('filter by status', () => {
-		it('should filter jobs by single status', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const pendingJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			const completedJob = JobFactoryHelpers.completed({ name: JOB_NAMES.REPORT });
-			await collection.insertMany([pendingJob, completedJob]);
-
-			const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
-			const completedJobs = await monque.getJobs({ status: JobStatus.COMPLETED });
-
-			expect(pendingJobs).toHaveLength(1);
-			expect(pendingJobs[0]?.status).toBe(JobStatus.PENDING);
-			expect(completedJobs).toHaveLength(1);
-			expect(completedJobs[0]?.status).toBe(JobStatus.COMPLETED);
-		});
-
-		it('should filter jobs by multiple statuses', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const pendingJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			const completedJob = JobFactoryHelpers.completed({ name: JOB_NAMES.REPORT });
-			const failedJob = JobFactoryHelpers.failed({ name: JOB_NAMES.SYNC });
-			await collection.insertMany([pendingJob, completedJob, failedJob]);
-
-			const finishedJobs = await monque.getJobs({
-				status: [JobStatus.COMPLETED, JobStatus.FAILED],
-			});
-
-			expect(finishedJobs).toHaveLength(2);
-			expect(finishedJobs.some((j) => j.status === JobStatus.COMPLETED)).toBe(true);
-			expect(finishedJobs.some((j) => j.status === JobStatus.FAILED)).toBe(true);
-		});
-	});
-
-	describe('pagination', () => {
-		it('should limit results with limit option', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJobs = JobFactory.buildList(10, { name: JOB_NAMES.EMAIL });
-			await collection.insertMany(seedJobs);
-
-			const resultJobs = await monque.getJobs({ limit: 5 });
-
-			expect(resultJobs).toHaveLength(5);
-		});
-
-		it('should skip results with skip option', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const now = Date.now();
-			const seedJobs = Array.from({ length: 5 }, (_, i) =>
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { index: i },
-					nextRunAt: new Date(now + i * 1000),
-				}),
-			);
-			await collection.insertMany(seedJobs);
-
-			const resultJobs = await monque.getJobs<{ index: number }>({ skip: 2 });
-
-			expect(resultJobs).toHaveLength(3);
-			expect(resultJobs[0]?.data.index).toBe(2);
-			expect(resultJobs[1]?.data.index).toBe(3);
-			expect(resultJobs[2]?.data.index).toBe(4);
-		});
-
-		it('should support pagination with limit and skip', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const now = Date.now();
-			const seedJobs = Array.from({ length: 10 }, (_, i) =>
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { index: i },
-					nextRunAt: new Date(now + i * 1000),
-				}),
-			);
-			await collection.insertMany(seedJobs);
-
-			const page1 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 0 });
-			const page2 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 3 });
-			const page3 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 6 });
-
-			expect(page1).toHaveLength(3);
-			expect(page1[0]?.data.index).toBe(0);
-
-			expect(page2).toHaveLength(3);
-			expect(page2[0]?.data.index).toBe(3);
-
-			expect(page3).toHaveLength(3);
-			expect(page3[0]?.data.index).toBe(6);
-		});
-
-		it('should default limit to 100', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJobs = JobFactory.buildList(105, { name: JOB_NAMES.EMAIL });
-			await collection.insertMany(seedJobs);
-
-			const resultJobs = await monque.getJobs();
-
-			expect(resultJobs).toHaveLength(100);
-		});
-	});
-
-	describe('combined filters', () => {
-		it('should combine name and status filters', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const pendingEmail = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			const completedEmail = JobFactoryHelpers.completed({ name: JOB_NAMES.EMAIL });
-			const pendingReport = JobFactory.build({ name: JOB_NAMES.REPORT });
-			await collection.insertMany([pendingEmail, completedEmail, pendingReport]);
-
-			const pendingEmails = await monque.getJobs({
-				name: JOB_NAMES.EMAIL,
-				status: JobStatus.PENDING,
-			});
-
-			expect(pendingEmails).toHaveLength(1);
-			expect(pendingEmails[0]?.name).toBe(JOB_NAMES.EMAIL);
-			expect(pendingEmails[0]?.status).toBe(JobStatus.PENDING);
-		});
-
-		it('should combine all filters', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const now = Date.now();
-			const emailJobs = Array.from({ length: 10 }, (_, i) =>
-				JobFactory.build({
-					name: JOB_NAMES.EMAIL,
-					data: { index: i },
-					nextRunAt: new Date(now + i * 1000),
-				}),
-			);
-			const reportJob = JobFactory.build({ name: JOB_NAMES.REPORT });
-			await collection.insertMany([...emailJobs, reportJob]);
-
-			const jobs = await monque.getJobs<{ index: number }>({
-				name: JOB_NAMES.EMAIL,
-				status: JobStatus.PENDING,
-				limit: 3,
-				skip: 2,
-			});
-
-			expect(jobs).toHaveLength(3);
-			expect(jobs[0]?.data.index).toBe(2);
-			expect(jobs.every((j) => j.name === JOB_NAMES.EMAIL)).toBe(true);
-		});
-	});
-
-	describe('error handling', () => {
-		it('should throw when not initialized', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-
-			await expect(monque.getJobs()).rejects.toThrow('not initialized');
-		});
-	});
-});
-
-describe('getJob()', () => {
-	let db: Db;
-	let collectionName: string;
-	let collection: Collection<Document>;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('inspection-getJob');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	beforeEach(async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		collection = db.collection(collectionName);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('basic lookup', () => {
-		it('should return job by ObjectId', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
-			await collection.insertOne(seedJob);
-
-			const job = await monque.getJob(seedJob._id);
-
-			expect(job).not.toBeNull();
-			expect(job?._id.toString()).toBe(seedJob._id.toString());
-			expect(job?.name).toBe(JOB_NAMES.EMAIL);
-		});
-
-		it('should return null for non-existent job', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const nonExistentId = new ObjectId();
-
-			const job = await monque.getJob(nonExistentId);
-
-			expect(job).toBeNull();
-		});
-
-		it('should return job with all fields', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const futureDate = new Date(Date.now() + 60000);
-			const seedJob = JobFactory.build({
-				name: JOB_NAMES.EMAIL,
-				nextRunAt: futureDate,
-				uniqueKey: 'test-unique-key',
-			});
-			await collection.insertOne(seedJob);
-
-			const job = await monque.getJob(seedJob._id);
-
-			expect(job).not.toBeNull();
-			expect(job?._id).toBeInstanceOf(ObjectId);
-			expect(job?.name).toBe(JOB_NAMES.EMAIL);
-			expect(job?.status).toBe(JobStatus.PENDING);
-			expect(job?.nextRunAt.getTime()).toBe(futureDate.getTime());
-			expect(job?.uniqueKey).toBe('test-unique-key');
-			expect(job?.failCount).toBe(0);
-			expect(job?.createdAt).toBeInstanceOf(Date);
-			expect(job?.updatedAt).toBeInstanceOf(Date);
-		});
-	});
-
-	describe('type safety', () => {
-		it('should preserve generic type for job data', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			type EmailJobData = {
-				to: string;
-				subject: string;
-				[key: string]: unknown;
-			};
-
-			const seedJob = JobFactoryHelpers.withData<EmailJobData>(
-				{ to: 'test@example.com', subject: 'Hello' },
-				{ name: JOB_NAMES.EMAIL },
-			);
-			await collection.insertOne(seedJob);
-
-			const job = await monque.getJob<EmailJobData>(seedJob._id);
-
-			expect(job?.data.to).toBe('test@example.com');
-			expect(job?.data.subject).toBe('Hello');
-		});
-	});
-
-	describe('error handling', () => {
-		it('should throw when not initialized', async () => {
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-
-			const someId = new ObjectId();
-
-			await expect(monque.getJob(someId)).rejects.toThrow('not initialized');
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/backoff.test.ts
-````typescript
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { calculateBackoff, calculateBackoffDelay, DEFAULT_BASE_INTERVAL } from '@/shared';
-
-describe('backoff', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-		vi.setSystemTime(new Date('2025-01-01T00:00:00.000Z'));
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
-	describe('DEFAULT_BASE_INTERVAL', () => {
-		it('should be 1000ms (1 second)', () => {
-			expect(DEFAULT_BASE_INTERVAL).toBe(1000);
-		});
-	});
-
-	describe('calculateBackoffDelay', () => {
-		it('should calculate delay for failCount=0 as 2^0 * 1000 = 1000ms', () => {
-			expect(calculateBackoffDelay(0)).toBe(1000);
-		});
-
-		it('should calculate delay for failCount=1 as 2^1 * 1000 = 2000ms', () => {
-			expect(calculateBackoffDelay(1)).toBe(2000);
-		});
-
-		it('should calculate delay for failCount=2 as 2^2 * 1000 = 4000ms', () => {
-			expect(calculateBackoffDelay(2)).toBe(4000);
-		});
-
-		it('should calculate delay for failCount=3 as 2^3 * 1000 = 8000ms', () => {
-			expect(calculateBackoffDelay(3)).toBe(8000);
-		});
-
-		it('should calculate delay for failCount=10 as 2^10 * 1000 = 1024000ms', () => {
-			expect(calculateBackoffDelay(10)).toBe(1024000);
-		});
-
-		it('should use custom base interval when provided', () => {
-			expect(calculateBackoffDelay(1, 500)).toBe(1000); // 2^1 * 500
-			expect(calculateBackoffDelay(2, 500)).toBe(2000); // 2^2 * 500
-			expect(calculateBackoffDelay(3, 500)).toBe(4000); // 2^3 * 500
-		});
-
-		it('should handle zero base interval', () => {
-			expect(calculateBackoffDelay(5, 0)).toBe(0);
-		});
-
-		it('should cap delay at maxDelay when provided', () => {
-			expect(calculateBackoffDelay(10, 1000, 60000)).toBe(60000); // 1024000 > 60000
-			expect(calculateBackoffDelay(1, 1000, 60000)).toBe(2000); // 2000 < 60000
-		});
-	});
-
-	describe('calculateBackoff', () => {
-		it('should return Date with delay for failCount=1', () => {
-			const now = Date.now();
-			const result = calculateBackoff(1);
-			const expectedDelay = 2000; // 2^1 * 1000
-
-			expect(result).toBeInstanceOf(Date);
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should return Date with delay for failCount=2', () => {
-			const now = Date.now();
-			const result = calculateBackoff(2);
-			const expectedDelay = 4000; // 2^2 * 1000
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should return Date with delay for failCount=5', () => {
-			const now = Date.now();
-			const result = calculateBackoff(5);
-			const expectedDelay = 32000; // 2^5 * 1000
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should use custom base interval', () => {
-			const now = Date.now();
-			const result = calculateBackoff(3, 2000);
-			const expectedDelay = 16000; // 2^3 * 2000
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should use default base interval when not provided', () => {
-			const now = Date.now();
-			const result = calculateBackoff(4);
-			const expectedDelay = 16000; // 2^4 * 1000 (DEFAULT_BASE_INTERVAL)
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should calculate proper exponential progression', () => {
-			const now = Date.now();
-
-			// Verify exponential growth pattern
-			const delays = [0, 1, 2, 3, 4, 5].map((failCount) => {
-				const result = calculateBackoff(failCount);
-				return result.getTime() - now;
-			});
-
-			expect(delays).toEqual([
-				1000, // 2^0 * 1000
-				2000, // 2^1 * 1000
-				4000, // 2^2 * 1000
-				8000, // 2^3 * 1000
-				16000, // 2^4 * 1000
-				32000, // 2^5 * 1000
-			]);
-		});
-
-		it('should handle large failCount values', () => {
-			const now = Date.now();
-			const result = calculateBackoff(15);
-			const expectedDelay = 32768000; // 2^15 * 1000 = ~32768 seconds
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-
-		it('should cap delay at maxDelay when provided', () => {
-			const now = Date.now();
-			const result = calculateBackoff(10, 1000, 60000);
-			const expectedDelay = 60000; // Capped at 60000ms
-
-			expect(result.getTime()).toBe(now + expectedDelay);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/guards.test.ts
-````typescript
-import { ObjectId } from 'mongodb';
-import { beforeEach, describe, expect, it } from 'vitest';
-
-import {
+// Types - Events
+export type { MonqueEventMap } from '@/events';
+// Types - Jobs
+export {
+	type EnqueueOptions,
+	type GetJobsFilter,
 	isCompletedJob,
 	isFailedJob,
 	isPendingJob,
@@ -3145,613 +1530,131 @@ import {
 	isRecurringJob,
 	isValidJobStatus,
 	type Job,
+	type JobHandler,
 	JobStatus,
+	type JobStatusType,
 	type PersistedJob,
+	type ScheduleOptions,
 } from '@/jobs';
+// Types - Scheduler
+export type { MonqueOptions } from '@/scheduler';
+// Main class
+export { Monque } from '@/scheduler';
+// Errors
+// Utilities (for advanced use cases)
+export {
+	ConnectionError,
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
+	getNextCronDate,
+	InvalidCronError,
+	MonqueError,
+	ShutdownTimeoutError,
+	validateCronExpression,
+	WorkerRegistrationError,
+} from '@/shared';
+// Types - Workers
+export type { WorkerOptions } from '@/workers';
+````
 
-describe('job guards', () => {
-	let baseJob: Job;
+## File: packages/core/src/reset.d.ts
+````typescript
+import '@total-typescript/ts-reset';
+````
 
-	beforeEach(() => {
-		baseJob = {
-			name: 'test-job',
-			data: { foo: 'bar' },
+## File: packages/core/tests/factories/job.factory.ts
+````typescript
+import { faker } from '@faker-js/faker';
+import { Factory } from 'fishery';
+import { ObjectId } from 'mongodb';
+
+import { TEST_CONSTANTS } from '@tests/setup/constants.js';
+import { JobStatus, type PersistedJob } from '@/jobs';
+
+/**
+ * Transient parameters for JobFactory.
+ * These don't end up in the built object but control factory behavior.
+ */
+interface JobTransientParams {
+	/** Generate custom data shape instead of default email/userId */
+	withData?: Record<string, unknown>;
+}
+
+/**
+ * Factory for creating test Job objects with realistic fake data.
+ *
+ * @example
+ * ```typescript
+ * // Basic usage - creates a pending job with random data
+ * const job = JobFactory.build();
+ *
+ * // Override specific fields
+ * const processingJob = JobFactory.build({ status: JobStatus.PROCESSING });
+ *
+ * // Use transient params for custom data
+ * const emailJob = JobFactory.build({}, { transient: { withData: { to: 'test@example.com' } } });
+ *
+ * // Use status-specific helpers
+ * const failed = JobFactoryHelpers.failed();
+ * const processing = JobFactoryHelpers.processing();
+ * ```
+ */
+export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientParams>(
+	({ transientParams }) => {
+		const data = transientParams.withData ?? {
+			email: faker.internet.email(),
+			userId: faker.string.uuid(),
+		};
+
+		return {
+			_id: new ObjectId(faker.database.mongodbObjectId()),
+			name: TEST_CONSTANTS.JOB_NAME,
+			data,
 			status: JobStatus.PENDING,
-			nextRunAt: new Date(),
 			failCount: 0,
 			createdAt: new Date(),
 			updatedAt: new Date(),
+			nextRunAt: new Date(),
 		};
-	});
-
-	describe('isPersistedJob', () => {
-		it('should return true for job with _id', () => {
-			const persistedJob: PersistedJob = {
-				...baseJob,
-				_id: new ObjectId(),
-			};
-
-			expect(isPersistedJob(persistedJob)).toBe(true);
-		});
-
-		it('should return false for job without _id', () => {
-			expect(isPersistedJob(baseJob)).toBe(false);
-		});
-
-		it('should return false when _id is undefined', () => {
-			// Job without _id property (same as baseJob)
-			expect(isPersistedJob(baseJob)).toBe(false);
-		});
-
-		it('should return false when _id is null', () => {
-			const jobWithNullId = {
-				...baseJob,
-				_id: null as unknown as ObjectId,
-			};
-
-			expect(isPersistedJob(jobWithNullId)).toBe(false);
-		});
-
-		it('should narrow type to PersistedJob when true', () => {
-			const job: Job = {
-				...baseJob,
-				_id: new ObjectId(),
-			};
-
-			if (isPersistedJob(job)) {
-				// This should compile without errors - TypeScript knows _id exists
-				const id: ObjectId = job._id;
-				expect(id).toBeInstanceOf(ObjectId);
-			} else {
-				throw new Error('Should have been persisted');
-			}
-		});
-	});
-
-	describe('isValidJobStatus', () => {
-		it('should return true for PENDING status', () => {
-			expect(isValidJobStatus(JobStatus.PENDING)).toBe(true);
-			expect(isValidJobStatus('pending')).toBe(true);
-		});
-
-		it('should return true for PROCESSING status', () => {
-			expect(isValidJobStatus(JobStatus.PROCESSING)).toBe(true);
-			expect(isValidJobStatus('processing')).toBe(true);
-		});
-
-		it('should return true for COMPLETED status', () => {
-			expect(isValidJobStatus(JobStatus.COMPLETED)).toBe(true);
-			expect(isValidJobStatus('completed')).toBe(true);
-		});
-
-		it('should return true for FAILED status', () => {
-			expect(isValidJobStatus(JobStatus.FAILED)).toBe(true);
-			expect(isValidJobStatus('failed')).toBe(true);
-		});
-
-		it('should return false for invalid string', () => {
-			expect(isValidJobStatus('invalid')).toBe(false);
-			expect(isValidJobStatus('PENDING')).toBe(false);
-			expect(isValidJobStatus('')).toBe(false);
-		});
-
-		it('should return false for non-string types', () => {
-			expect(isValidJobStatus(123)).toBe(false);
-			expect(isValidJobStatus(null)).toBe(false);
-			expect(isValidJobStatus(undefined)).toBe(false);
-			expect(isValidJobStatus({})).toBe(false);
-			expect(isValidJobStatus([])).toBe(false);
-			expect(isValidJobStatus(true)).toBe(false);
-		});
-	});
-
-	describe('isPendingJob', () => {
-		it('should return true when status is PENDING', () => {
-			const job: Job = { ...baseJob, status: JobStatus.PENDING };
-			expect(isPendingJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not PENDING', () => {
-			expect(isPendingJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isPendingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
-			expect(isPendingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
-		});
-	});
-
-	describe('isProcessingJob', () => {
-		it('should return true when status is PROCESSING', () => {
-			const job: Job = { ...baseJob, status: JobStatus.PROCESSING };
-			expect(isProcessingJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not PROCESSING', () => {
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
-		});
-	});
-
-	describe('isCompletedJob', () => {
-		it('should return true when status is COMPLETED', () => {
-			const job: Job = { ...baseJob, status: JobStatus.COMPLETED };
-			expect(isCompletedJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not COMPLETED', () => {
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
-		});
-	});
-
-	describe('isFailedJob', () => {
-		it('should return true when status is FAILED', () => {
-			const job: Job = { ...baseJob, status: JobStatus.FAILED };
-			expect(isFailedJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not FAILED', () => {
-			expect(isFailedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isFailedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isFailedJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
-		});
-	});
-
-	describe('isRecurringJob', () => {
-		it('should return true when repeatInterval is defined', () => {
-			const job: Job = { ...baseJob, repeatInterval: '0 * * * *' };
-			expect(isRecurringJob(job)).toBe(true);
-		});
-
-		it('should return false when repeatInterval is undefined', () => {
-			const job: Job = { ...baseJob };
-			expect(isRecurringJob(job)).toBe(false);
-		});
-
-		it('should return false when repeatInterval is null', () => {
-			const job: Job = { ...baseJob, repeatInterval: null as unknown as string };
-			expect(isRecurringJob(job)).toBe(false);
-		});
-
-		it('should return true for empty string repeatInterval', () => {
-			// Even empty string means it's defined as recurring (though invalid cron)
-			const job: Job = { ...baseJob, repeatInterval: '' };
-			expect(isRecurringJob(job)).toBe(true);
-		});
-	});
-
-	describe('combined usage', () => {
-		it('should allow combining multiple guards', () => {
-			const job: PersistedJob = {
-				...baseJob,
-				_id: new ObjectId(),
-				status: JobStatus.FAILED,
-				repeatInterval: '0 0 * * *',
-			};
-
-			expect(isPersistedJob(job)).toBe(true);
-			expect(isFailedJob(job)).toBe(true);
-			expect(isRecurringJob(job)).toBe(true);
-			expect(isPendingJob(job)).toBe(false);
-		});
-
-		it('should work in filter operations', () => {
-			const jobs: Job[] = [
-				{ ...baseJob, status: JobStatus.PENDING },
-				{ ...baseJob, status: JobStatus.PROCESSING },
-				{ ...baseJob, status: JobStatus.COMPLETED },
-				{ ...baseJob, status: JobStatus.FAILED },
-			];
-
-			const pendingJobs = jobs.filter(isPendingJob);
-			const failedJobs = jobs.filter(isFailedJob);
-
-			expect(pendingJobs).toHaveLength(1);
-			expect(failedJobs).toHaveLength(1);
-		});
-	});
-});
-````
-
-## File: packages/core/src/scheduler/types.ts
-````typescript
-/**
- * Configuration options for the Monque scheduler.
- *
- * @example
- * ```typescript
- * const monque = new Monque(db, {
- *   collectionName: 'jobs',
- *   pollInterval: 1000,
- *   maxRetries: 10,
- *   baseRetryInterval: 1000,
- *   shutdownTimeout: 30000,
- *   defaultConcurrency: 5,
- * });
- * ```
- */
-export interface MonqueOptions {
-	/**
-	 * Name of the MongoDB collection for storing jobs.
-	 * @default 'monque_jobs'
-	 */
-	collectionName?: string;
-
-	/**
-	 * Interval in milliseconds between polling for new jobs.
-	 * @default 1000
-	 */
-	pollInterval?: number;
-
-	/**
-	 * Maximum number of retry attempts before marking a job as permanently failed.
-	 * @default 10
-	 */
-	maxRetries?: number;
-
-	/**
-	 * Base interval in milliseconds for exponential backoff calculation.
-	 * Actual delay = 2^failCount * baseRetryInterval
-	 * @default 1000
-	 */
-	baseRetryInterval?: number;
-
-	/**
-	 * Maximum delay in milliseconds for exponential backoff.
-	 * If calculated delay exceeds this value, it will be capped.
-	 * @default undefined (no cap)
-	 */
-	maxBackoffDelay?: number | undefined;
-
-	/**
-	 * Timeout in milliseconds for graceful shutdown.
-	 * @default 30000
-	 */
-	shutdownTimeout?: number;
-
-	/**
-	 * Default number of concurrent jobs per worker.
-	 * @default 5
-	 */
-	defaultConcurrency?: number;
-
-	/**
-	 * Maximum time in milliseconds a job can be in 'processing' status before
-	 * being considered stale and eligible for re-acquisition by other workers.
-	 * When using heartbeat-based detection, this should be at least 2-3x the heartbeatInterval.
-	 * @default 1800000 (30 minutes)
-	 */
-	lockTimeout?: number;
-
-	/**
-	 * Unique identifier for this scheduler instance.
-	 * Used for atomic job claiming - each instance uses this ID to claim jobs.
-	 * Defaults to a randomly generated UUID v4.
-	 * @default crypto.randomUUID()
-	 */
-	schedulerInstanceId?: string;
-
-	/**
-	 * Interval in milliseconds for heartbeat updates during job processing.
-	 * The scheduler periodically updates lastHeartbeat for all jobs it is processing
-	 * to indicate liveness. Other instances use this to detect stale jobs.
-	 * @default 30000 (30 seconds)
-	 */
-	heartbeatInterval?: number;
-
-	/**
-	 * Whether to recover stale processing jobs on scheduler startup.
-	 * When true, jobs with lockedAt older than lockTimeout will be reset to pending.
-	 * @default true
-	 */
-	recoverStaleJobs?: boolean;
-
-	/**
-	 * Configuration for automatic cleanup of completed and failed jobs.
-	 * If undefined, no cleanup is performed.
-	 */
-	jobRetention?:
-		| {
-				/**
-				 * Age in milliseconds after which completed jobs are deleted.
-				 * Cleaned up based on 'updatedAt' timestamp.
-				 */
-				completed?: number;
-
-				/**
-				 * Age in milliseconds after which failed jobs are deleted.
-				 * Cleaned up based on 'updatedAt' timestamp.
-				 */
-				failed?: number;
-
-				/**
-				 * Interval in milliseconds for running the cleanup job.
-				 * @default 3600000 (1 hour)
-				 */
-				interval?: number;
-		  }
-		| undefined;
-}
-````
-
-## File: packages/core/src/shared/errors.ts
-````typescript
-import type { Job } from '@/jobs';
-
-/**
- * Base error class for all Monque-related errors.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof MonqueError) {
- *     console.error('Monque error:', error.message);
- *   }
- * }
- * ```
- */
-export class MonqueError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'MonqueError';
-		// Maintains proper stack trace for where our error was thrown (only available on V8)
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, MonqueError);
-		}
-	}
-}
-
-/**
- * Error thrown when an invalid cron expression is provided.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.schedule('invalid cron', 'job', data);
- * } catch (error) {
- *   if (error instanceof InvalidCronError) {
- *     console.error('Invalid expression:', error.expression);
- *   }
- * }
- * ```
- */
-export class InvalidCronError extends MonqueError {
-	constructor(
-		public readonly expression: string,
-		message: string,
-	) {
-		super(message);
-		this.name = 'InvalidCronError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidCronError);
-		}
-	}
-}
-
-/**
- * Error thrown when there's a database connection issue.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof ConnectionError) {
- *     console.error('Database connection lost');
- *   }
- * }
- * ```
- */
-export class ConnectionError extends MonqueError {
-	constructor(message: string, options?: { cause?: Error }) {
-		super(message);
-		this.name = 'ConnectionError';
-		if (options?.cause) {
-			this.cause = options.cause;
-		}
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ConnectionError);
-		}
-	}
-}
-
-/**
- * Error thrown when graceful shutdown times out.
- * Includes information about jobs that were still in progress.
- *
- * @example
- * ```typescript
- * try {
- *   await monque.stop();
- * } catch (error) {
- *   if (error instanceof ShutdownTimeoutError) {
- *     console.error('Incomplete jobs:', error.incompleteJobs.length);
- *   }
- * }
- * ```
- */
-export class ShutdownTimeoutError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly incompleteJobs: Job[],
-	) {
-		super(message);
-		this.name = 'ShutdownTimeoutError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ShutdownTimeoutError);
-		}
-	}
-}
-
-/**
- * Error thrown when attempting to register a worker for a job name
- * that already has a registered worker, without explicitly allowing replacement.
- *
- * @example
- * ```typescript
- * try {
- *   monque.register('send-email', handler1);
- *   monque.register('send-email', handler2); // throws
- * } catch (error) {
- *   if (error instanceof WorkerRegistrationError) {
- *     console.error('Worker already registered for:', error.jobName);
- *   }
- * }
- *
- * // To intentionally replace a worker:
- * monque.register('send-email', handler2, { replace: true });
- * ```
- */
-export class WorkerRegistrationError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly jobName: string,
-	) {
-		super(message);
-		this.name = 'WorkerRegistrationError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, WorkerRegistrationError);
-		}
-	}
-}
-````
-
-## File: packages/core/tests/integration/concurrency.test.ts
-````typescript
-/**
- * Integration tests for concurrency and race conditions.
- *
- * These tests verify:
- * - SC-006: Multiple scheduler instances can process jobs concurrently without duplicate processing
- * - High volume job processing with multiple workers
- *
- * @see {@link ../../src/scheduler/monque.ts}
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { type Job, JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('Concurrency & Scalability', () => {
-	let db: Db;
-	let collectionName: string;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('concurrency');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	it('should process 100 jobs with 3 scheduler instances without duplicates', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const jobCount = 100;
-		const instanceCount = 3;
-
-		// Create multiple Monque instances sharing the same collection
-		for (let i = 0; i < instanceCount; i++) {
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50, // Fast polling for test
-				defaultConcurrency: 5,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-		}
-
-		// Track processed jobs
-		const processedJobs = new Set<number>();
-		const duplicateJobs = new Set<number>();
-		const processingErrors: Error[] = [];
-
-		// Define handler that tracks execution
-		const handler = async (job: Job<{ id: number }>) => {
-			const id = job.data.id;
-			if (processedJobs.has(id)) {
-				duplicateJobs.add(id);
-			}
-			processedJobs.add(id);
-			// Simulate some work
-			await new Promise((resolve) => setTimeout(resolve, 10));
-		};
-
-		// Register worker on all instances
-		for (const monque of monqueInstances) {
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-			monque.on('job:error', (payload) => processingErrors.push(payload.error));
-		}
-
-		// Enqueue jobs using the first instance
-		const firstInstance = monqueInstances[0];
-		if (!firstInstance) {
-			throw new Error('No Monque instance available');
-		}
-		const enqueuePromises = [];
-		for (let i = 0; i < jobCount; i++) {
-			enqueuePromises.push(firstInstance.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i }));
-		}
-		await Promise.all(enqueuePromises);
-
-		// Start all instances
-		for (const m of monqueInstances) {
-			m.start();
-		}
-
-		// Wait for all jobs to be processed
-		await waitFor(async () => processedJobs.size === jobCount, {
-			timeout: 30000,
-		});
-
-		// Verify results
-		expect(processedJobs.size).toBe(jobCount);
-		expect(duplicateJobs.size).toBe(0);
-		expect(processingErrors).toHaveLength(0);
-
-		// Verify in DB that all are completed
-		await waitFor(
-			async () => {
-				const count = await db
-					.collection(collectionName)
-					.countDocuments({ status: JobStatus.COMPLETED });
-				return count === jobCount;
-			},
-			{ timeout: 10000 },
-		);
-
-		const count = await db
-			.collection(collectionName)
-			.countDocuments({ status: JobStatus.COMPLETED });
-		expect(count).toBe(jobCount);
-	});
-});
+	},
+);
+
+/** Convenience builders for common job states */
+export const JobFactoryHelpers = {
+	/** Build a job in PROCESSING state with lockedAt set */
+	processing: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.PROCESSING,
+			lockedAt: new Date(),
+			claimedBy: overrides?.claimedBy ?? 'test-instance-id',
+			lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
+			...overrides,
+		}),
+
+	/** Build a job in COMPLETED state */
+	completed: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.COMPLETED,
+			...overrides,
+		}),
+
+	/** Build a job in FAILED state with failCount and failReason */
+	failed: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.FAILED,
+			failCount: 10,
+			failReason: 'Max retries exceeded',
+			...overrides,
+		}),
+
+	/** Build a job with custom data payload */
+	withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
+		JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {
+			transient: { withData: data },
+		}) as PersistedJob<T>,
+};
 ````
 
 ## File: packages/core/tests/integration/enqueue.test.ts
@@ -4598,7 +2501,7 @@ describe('uniqueKey deduplication', () => {
  * - All required indexes are created on initialization
  * - Indexes for atomic claim pattern (claimedBy+status, lastHeartbeat+status)
  * - Compound indexes for atomic claim queries (status+nextRunAt+claimedBy)
- * - Expanded recovery index (lockedAt+lastHeartbeat+status)
+ * - Expanded recovery index (status+lockedAt+lastHeartbeat)
  *
  * @see {@link ../../src/scheduler/monque.ts}
  */
@@ -4658,7 +2561,7 @@ describe('Index creation', () => {
 			expect(indexKeys).toContain('claimedBy,status');
 			expect(indexKeys).toContain('lastHeartbeat,status');
 			expect(indexKeys).toContain('status,nextRunAt,claimedBy');
-			expect(indexKeys).toContain('lockedAt,lastHeartbeat,status');
+			expect(indexKeys).toContain('status,lockedAt,lastHeartbeat');
 		});
 
 		it('should create claimedBy+status compound index for job ownership queries', async () => {
@@ -4717,7 +2620,7 @@ describe('Index creation', () => {
 			expect(atomicClaimIndex?.background).toBe(true);
 		});
 
-		it('should create expanded lockedAt+lastHeartbeat+status index for recovery queries', async () => {
+		it('should create expanded status+lockedAt+lastHeartbeat index for recovery queries', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -4734,7 +2637,7 @@ describe('Index creation', () => {
 			);
 
 			expect(recoveryIndex).toBeDefined();
-			expect(recoveryIndex?.key).toEqual({ lockedAt: 1, lastHeartbeat: 1, status: 1 });
+			expect(recoveryIndex?.key).toEqual({ status: 1, lockedAt: 1, lastHeartbeat: 1 });
 			expect(recoveryIndex?.background).toBe(true);
 		});
 	});
@@ -4802,6 +2705,6036 @@ describe('Index creation', () => {
 			const queryPlanner = explainResult['queryPlanner'] as Record<string, unknown>;
 			const winningPlanStr = JSON.stringify(queryPlanner);
 			expect(winningPlanStr).toContain('IXSCAN');
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/inspection.test.ts
+````typescript
+/**
+ * Tests for the getJobs() and getJob() methods of the Monque scheduler.
+ *
+ * These tests verify:
+ * - Basic job querying functionality
+ * - Filtering by name, status, and combinations
+ * - Pagination with limit and skip
+ * - Single job lookup by ID
+ * - Error handling for uninitialized scheduler
+ *
+ * @see {@link ../../src/scheduler/monque.ts}
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+} from '@test-utils/test-utils.js';
+import type { Collection, Db, Document } from 'mongodb';
+import { ObjectId } from 'mongodb';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+import { JobFactory, JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+/** Test-specific job names to avoid collision */
+const JOB_NAMES = {
+	EMAIL: 'send-email',
+	REPORT: 'generate-report',
+	SYNC: 'sync-data',
+} as const;
+
+describe('getJobs()', () => {
+	let db: Db;
+	let collectionName: string;
+	let collection: Collection<Document>;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('inspection-getJobs');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	beforeEach(async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		collection = db.collection(collectionName);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('basic querying', () => {
+		it('should return all jobs when no filter is provided', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJobs = [
+				JobFactory.build({ name: JOB_NAMES.EMAIL }),
+				JobFactory.build({ name: JOB_NAMES.REPORT }),
+				JobFactory.build({ name: JOB_NAMES.SYNC }),
+			];
+			await collection.insertMany(seedJobs);
+
+			const jobs = await monque.getJobs();
+
+			expect(jobs).toHaveLength(3);
+		});
+
+		it('should return empty array when no jobs exist', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const jobs = await monque.getJobs();
+
+			expect(jobs).toHaveLength(0);
+			expect(jobs).toEqual([]);
+		});
+
+		it('should return jobs ordered by nextRunAt ascending', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const now = Date.now();
+			const seedJobs = [
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { order: 3 },
+					nextRunAt: new Date(now + 3000),
+				}),
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { order: 1 },
+					nextRunAt: new Date(now + 1000),
+				}),
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { order: 2 },
+					nextRunAt: new Date(now + 2000),
+				}),
+			];
+			await collection.insertMany(seedJobs);
+
+			const jobs = await monque.getJobs<{ order: number }>();
+
+			expect(jobs[0]?.data.order).toBe(1);
+			expect(jobs[1]?.data.order).toBe(2);
+			expect(jobs[2]?.data.order).toBe(3);
+		});
+
+		it('should return PersistedJob with _id', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			await collection.insertOne(seedJob);
+
+			const jobs = await monque.getJobs();
+
+			expect(jobs[0]?._id).toBeInstanceOf(ObjectId);
+			expect(jobs[0]?.name).toBe(JOB_NAMES.EMAIL);
+			expect(jobs[0]?.status).toBe(JobStatus.PENDING);
+		});
+	});
+
+	describe('filter by name', () => {
+		it('should filter jobs by name', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJobs = [
+				JobFactory.build({ name: JOB_NAMES.EMAIL }),
+				JobFactory.build({ name: JOB_NAMES.EMAIL }),
+				JobFactory.build({ name: JOB_NAMES.REPORT }),
+			];
+			await collection.insertMany(seedJobs);
+
+			const emailJobs = await monque.getJobs({ name: JOB_NAMES.EMAIL });
+
+			expect(emailJobs).toHaveLength(2);
+			expect(emailJobs.every((j) => j.name === JOB_NAMES.EMAIL)).toBe(true);
+		});
+
+		it('should return empty when name does not match any jobs', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			await collection.insertOne(seedJob);
+
+			const jobs = await monque.getJobs({ name: 'non-existent-job' });
+
+			expect(jobs).toHaveLength(0);
+		});
+	});
+
+	describe('filter by status', () => {
+		it('should filter jobs by single status', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const pendingJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			const completedJob = JobFactoryHelpers.completed({ name: JOB_NAMES.REPORT });
+			await collection.insertMany([pendingJob, completedJob]);
+
+			const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
+			const completedJobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+
+			expect(pendingJobs).toHaveLength(1);
+			expect(pendingJobs[0]?.status).toBe(JobStatus.PENDING);
+			expect(completedJobs).toHaveLength(1);
+			expect(completedJobs[0]?.status).toBe(JobStatus.COMPLETED);
+		});
+
+		it('should filter jobs by multiple statuses', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const pendingJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			const completedJob = JobFactoryHelpers.completed({ name: JOB_NAMES.REPORT });
+			const failedJob = JobFactoryHelpers.failed({ name: JOB_NAMES.SYNC });
+			await collection.insertMany([pendingJob, completedJob, failedJob]);
+
+			const finishedJobs = await monque.getJobs({
+				status: [JobStatus.COMPLETED, JobStatus.FAILED],
+			});
+
+			expect(finishedJobs).toHaveLength(2);
+			expect(finishedJobs.some((j) => j.status === JobStatus.COMPLETED)).toBe(true);
+			expect(finishedJobs.some((j) => j.status === JobStatus.FAILED)).toBe(true);
+		});
+	});
+
+	describe('pagination', () => {
+		it('should limit results with limit option', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJobs = JobFactory.buildList(10, { name: JOB_NAMES.EMAIL });
+			await collection.insertMany(seedJobs);
+
+			const resultJobs = await monque.getJobs({ limit: 5 });
+
+			expect(resultJobs).toHaveLength(5);
+		});
+
+		it('should skip results with skip option', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const now = Date.now();
+			const seedJobs = Array.from({ length: 5 }, (_, i) =>
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { index: i },
+					nextRunAt: new Date(now + i * 1000),
+				}),
+			);
+			await collection.insertMany(seedJobs);
+
+			const resultJobs = await monque.getJobs<{ index: number }>({ skip: 2 });
+
+			expect(resultJobs).toHaveLength(3);
+			expect(resultJobs[0]?.data.index).toBe(2);
+			expect(resultJobs[1]?.data.index).toBe(3);
+			expect(resultJobs[2]?.data.index).toBe(4);
+		});
+
+		it('should support pagination with limit and skip', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const now = Date.now();
+			const seedJobs = Array.from({ length: 10 }, (_, i) =>
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { index: i },
+					nextRunAt: new Date(now + i * 1000),
+				}),
+			);
+			await collection.insertMany(seedJobs);
+
+			const page1 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 0 });
+			const page2 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 3 });
+			const page3 = await monque.getJobs<{ index: number }>({ limit: 3, skip: 6 });
+
+			expect(page1).toHaveLength(3);
+			expect(page1[0]?.data.index).toBe(0);
+
+			expect(page2).toHaveLength(3);
+			expect(page2[0]?.data.index).toBe(3);
+
+			expect(page3).toHaveLength(3);
+			expect(page3[0]?.data.index).toBe(6);
+		});
+
+		it('should default limit to 100', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJobs = JobFactory.buildList(105, { name: JOB_NAMES.EMAIL });
+			await collection.insertMany(seedJobs);
+
+			const resultJobs = await monque.getJobs();
+
+			expect(resultJobs).toHaveLength(100);
+		});
+	});
+
+	describe('combined filters', () => {
+		it('should combine name and status filters', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const pendingEmail = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			const completedEmail = JobFactoryHelpers.completed({ name: JOB_NAMES.EMAIL });
+			const pendingReport = JobFactory.build({ name: JOB_NAMES.REPORT });
+			await collection.insertMany([pendingEmail, completedEmail, pendingReport]);
+
+			const pendingEmails = await monque.getJobs({
+				name: JOB_NAMES.EMAIL,
+				status: JobStatus.PENDING,
+			});
+
+			expect(pendingEmails).toHaveLength(1);
+			expect(pendingEmails[0]?.name).toBe(JOB_NAMES.EMAIL);
+			expect(pendingEmails[0]?.status).toBe(JobStatus.PENDING);
+		});
+
+		it('should combine all filters', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const now = Date.now();
+			const emailJobs = Array.from({ length: 10 }, (_, i) =>
+				JobFactory.build({
+					name: JOB_NAMES.EMAIL,
+					data: { index: i },
+					nextRunAt: new Date(now + i * 1000),
+				}),
+			);
+			const reportJob = JobFactory.build({ name: JOB_NAMES.REPORT });
+			await collection.insertMany([...emailJobs, reportJob]);
+
+			const jobs = await monque.getJobs<{ index: number }>({
+				name: JOB_NAMES.EMAIL,
+				status: JobStatus.PENDING,
+				limit: 3,
+				skip: 2,
+			});
+
+			expect(jobs).toHaveLength(3);
+			expect(jobs[0]?.data.index).toBe(2);
+			expect(jobs.every((j) => j.name === JOB_NAMES.EMAIL)).toBe(true);
+		});
+	});
+
+	describe('error handling', () => {
+		it('should throw when not initialized', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+
+			await expect(monque.getJobs()).rejects.toThrow('not initialized');
+		});
+	});
+});
+
+describe('getJob()', () => {
+	let db: Db;
+	let collectionName: string;
+	let collection: Collection<Document>;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('inspection-getJob');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	beforeEach(async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		collection = db.collection(collectionName);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('basic lookup', () => {
+		it('should return job by ObjectId', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const seedJob = JobFactory.build({ name: JOB_NAMES.EMAIL });
+			await collection.insertOne(seedJob);
+
+			const job = await monque.getJob(seedJob._id);
+
+			expect(job).not.toBeNull();
+			expect(job?._id.toString()).toBe(seedJob._id.toString());
+			expect(job?.name).toBe(JOB_NAMES.EMAIL);
+		});
+
+		it('should return null for non-existent job', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const nonExistentId = new ObjectId();
+
+			const job = await monque.getJob(nonExistentId);
+
+			expect(job).toBeNull();
+		});
+
+		it('should return job with all fields', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const futureDate = new Date(Date.now() + 60000);
+			const seedJob = JobFactory.build({
+				name: JOB_NAMES.EMAIL,
+				nextRunAt: futureDate,
+				uniqueKey: 'test-unique-key',
+			});
+			await collection.insertOne(seedJob);
+
+			const job = await monque.getJob(seedJob._id);
+
+			expect(job).not.toBeNull();
+			expect(job?._id).toBeInstanceOf(ObjectId);
+			expect(job?.name).toBe(JOB_NAMES.EMAIL);
+			expect(job?.status).toBe(JobStatus.PENDING);
+			expect(job?.nextRunAt.getTime()).toBe(futureDate.getTime());
+			expect(job?.uniqueKey).toBe('test-unique-key');
+			expect(job?.failCount).toBe(0);
+			expect(job?.createdAt).toBeInstanceOf(Date);
+			expect(job?.updatedAt).toBeInstanceOf(Date);
+		});
+	});
+
+	describe('type safety', () => {
+		it('should preserve generic type for job data', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			type EmailJobData = {
+				to: string;
+				subject: string;
+				[key: string]: unknown;
+			};
+
+			const seedJob = JobFactoryHelpers.withData<EmailJobData>(
+				{ to: 'test@example.com', subject: 'Hello' },
+				{ name: JOB_NAMES.EMAIL },
+			);
+			await collection.insertOne(seedJob);
+
+			const job = await monque.getJob<EmailJobData>(seedJob._id);
+
+			expect(job?.data.to).toBe('test@example.com');
+			expect(job?.data.subject).toBe('Hello');
+		});
+	});
+
+	describe('error handling', () => {
+		it('should throw when not initialized', async () => {
+			const monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+
+			const someId = new ObjectId();
+
+			await expect(monque.getJob(someId)).rejects.toThrow('not initialized');
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/retention.test.ts
+````typescript
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { Monque } from '@/scheduler';
+
+describe('job retention', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('retention');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+	});
+
+	it('should delete completed jobs older than specified retention', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		// Configure retention to clean up every 100ms, keeping completed jobs for 5000ms
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 1000,
+			jobRetention: {
+				completed: 5000, // 5000ms retention
+				interval: 100, // Check every 100ms
+			},
+		});
+		monqueInstances.push(monque);
+
+		const collection = db.collection(collectionName);
+
+		const now = new Date();
+		const oldDate = new Date(now.getTime() - 6000); // 6s ago (should be deleted)
+		const recentDate = new Date(now.getTime() - 100); // 100ms ago (should be kept)
+
+		// Insert old completed job
+		await collection.insertOne(
+			JobFactoryHelpers.completed({
+				name: 'old-job',
+				updatedAt: oldDate,
+			}),
+		);
+
+		// Insert recent completed job
+		await collection.insertOne(
+			JobFactoryHelpers.completed({
+				name: 'recent-job',
+				updatedAt: recentDate,
+			}),
+		);
+
+		await monque.initialize();
+		monque.start();
+
+		// Wait for cleanup to happen
+		await waitFor(
+			async () => {
+				const count = await collection.countDocuments({ name: 'old-job' });
+				return count === 0;
+			},
+			{ timeout: 2000, interval: 50 },
+		);
+
+		const oldJob = await collection.findOne({ name: 'old-job' });
+		expect(oldJob).toBeNull();
+
+		const recentJob = await collection.findOne({ name: 'recent-job' });
+		expect(recentJob).not.toBeNull();
+	});
+
+	it('should delete failed jobs older than specified retention', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 1000,
+			jobRetention: {
+				failed: 5000, // 5000ms retention
+				interval: 100, // Check every 100ms
+			},
+		});
+		monqueInstances.push(monque);
+
+		const collection = db.collection(collectionName);
+
+		const now = new Date();
+		const oldDate = new Date(now.getTime() - 6000);
+		const recentDate = new Date(now.getTime() - 100);
+
+		await collection.insertOne(
+			JobFactoryHelpers.failed({
+				name: 'old-failed-job',
+				updatedAt: oldDate,
+			}),
+		);
+
+		await collection.insertOne(
+			JobFactoryHelpers.failed({
+				name: 'recent-failed-job',
+				updatedAt: recentDate,
+			}),
+		);
+
+		await monque.initialize();
+		monque.start();
+
+		await waitFor(
+			async () => {
+				const count = await collection.countDocuments({ name: 'old-failed-job' });
+				return count === 0;
+			},
+			{ timeout: 2000, interval: 50 },
+		);
+
+		const oldJob = await collection.findOne({ name: 'old-failed-job' });
+		expect(oldJob).toBeNull();
+
+		const recentJob = await collection.findOne({ name: 'recent-failed-job' });
+		expect(recentJob).not.toBeNull();
+	});
+
+	it('should not delete jobs if retention is not configured', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 1000,
+			// No jobRetention
+		});
+		monqueInstances.push(monque);
+
+		const collection = db.collection(collectionName);
+		const oldDate = new Date(Date.now() - 5000);
+
+		await collection.insertOne(
+			JobFactoryHelpers.completed({
+				name: 'should-keep-job',
+				updatedAt: oldDate,
+			}),
+		);
+
+		await monque.initialize();
+		monque.start();
+
+		// Wait a bit to ensure no cleanup happens
+		await new Promise((r) => setTimeout(r, 500));
+
+		const job = await collection.findOne({ name: 'should-keep-job' });
+		expect(job).not.toBeNull();
+	});
+});
+````
+
+## File: packages/core/tests/integration/stale-recovery.test.ts
+````typescript
+/**
+ * Tests for stale job recovery in the Monque scheduler.
+ *
+ * These tests verify:
+ * - Stale jobs (processing > lockTimeout) are detected
+ * - Stale jobs are recovered to pending status on startup
+ * - recoverStaleJobs=false option is respected
+ *
+ * @see {@link ../../src/scheduler/monque.ts}
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	findJobByQuery,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('Stale Job Recovery', () => {
+	let db: Db;
+	let collectionName: string;
+	let monque: Monque;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('stale-recovery');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	it('should recover stale jobs on startup when recoverStaleJobs is true (default)', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const collection = db.collection(collectionName);
+
+		// Insert a stale job manually
+		const staleTime = new Date(Date.now() - 30 * 60 * 1000 - 1000); // 30m 1s ago
+		await collection.insertOne(
+			JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { id: 1 },
+				nextRunAt: staleTime,
+				lockedAt: staleTime,
+				createdAt: staleTime,
+				updatedAt: staleTime,
+			}),
+		);
+
+		// Insert a fresh processing job (not stale)
+		const freshTime = new Date();
+		await collection.insertOne(
+			JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { id: 2 },
+				nextRunAt: freshTime,
+				lockedAt: freshTime,
+				createdAt: freshTime,
+				updatedAt: freshTime,
+			}),
+		);
+
+		// Initialize Monque (should trigger recovery)
+		monque = new Monque(db, {
+			collectionName,
+			lockTimeout: 30 * 60 * 1000, // 30 minutes
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		// Check jobs
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+		const freshJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
+
+		// Stale job should be reset to pending
+		expect(staleJob).not.toBeNull();
+		expect(staleJob?.status).toBe(JobStatus.PENDING);
+		expect(staleJob?.lockedAt).toBeUndefined();
+
+		// Fresh job should remain processing
+		expect(freshJob).not.toBeNull();
+		expect(freshJob?.status).toBe(JobStatus.PROCESSING);
+		expect(freshJob?.lockedAt).not.toBeNull();
+	});
+
+	it('should not recover stale jobs when recoverStaleJobs is false', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const collection = db.collection(collectionName);
+
+		// Insert a stale job manually
+		const staleTime = new Date(Date.now() - 30 * 60 * 1000 - 1000); // 30m 1s ago
+		await collection.insertOne(
+			JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { id: 1 },
+				nextRunAt: staleTime,
+				lockedAt: staleTime,
+				createdAt: staleTime,
+				updatedAt: staleTime,
+			}),
+		);
+
+		// Initialize Monque with recovery disabled
+		monque = new Monque(db, {
+			collectionName,
+			lockTimeout: 30 * 60 * 1000,
+			recoverStaleJobs: false,
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		// Check job
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+
+		// Stale job should remain processing
+		expect(staleJob).not.toBeNull();
+		expect(staleJob?.status).toBe(JobStatus.PROCESSING);
+		expect(staleJob?.lockedAt).not.toBeNull();
+	});
+
+	it('should respect custom lockTimeout configuration', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const collection = db.collection(collectionName);
+
+		const customTimeout = 10000; // 10 seconds
+
+		// Insert a job that is stale according to custom timeout
+		const staleTime = new Date(Date.now() - customTimeout - 1000);
+		await collection.insertOne(
+			JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { id: 1 },
+				nextRunAt: staleTime,
+				lockedAt: staleTime,
+				createdAt: staleTime,
+				updatedAt: staleTime,
+			}),
+		);
+
+		// Insert a job that is 5s old (not stale with 10s timeout)
+		const notStaleTime = new Date(Date.now() - 5000);
+		await collection.insertOne(
+			JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { id: 2 },
+				nextRunAt: notStaleTime,
+				lockedAt: notStaleTime,
+				createdAt: notStaleTime,
+				updatedAt: notStaleTime,
+			}),
+		);
+
+		// Initialize Monque with custom timeout
+		monque = new Monque(db, {
+			collectionName,
+			lockTimeout: customTimeout,
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		// Check jobs
+		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+		const notStaleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
+
+		// Stale job should be reset
+		expect(staleJob?.status).toBe(JobStatus.PENDING);
+
+		// Not stale job should remain processing
+		expect(notStaleJob?.status).toBe(JobStatus.PROCESSING);
+	});
+});
+````
+
+## File: packages/core/tests/setup/constants.ts
+````typescript
+/**
+ * Shared constants for test files to reduce duplication.
+ */
+
+export const TEST_CONSTANTS = {
+	/** Default collection name for tests */
+	COLLECTION_NAME: 'monque_jobs',
+	/** Default job name */
+	JOB_NAME: 'test-job',
+	/** Default job data payload */
+	JOB_DATA: { data: 'test' },
+	/** Default cron expression (every minute) */
+	CRON_EVERY_MINUTE: '* * * * *',
+	/** Default cron expression (every hour) */
+	CRON_EVERY_HOUR: '0 * * * *',
+} as const;
+````
+
+## File: packages/core/tests/setup/global-setup.ts
+````typescript
+/**
+ * Vitest global setup - pre-starts MongoDB container and returns teardown.
+ *
+ * This runs once before all test files. Starting the container here
+ * reduces cold-start time for the first test file.
+ *
+ * The returned function is called after all tests complete for cleanup.
+ *
+ * Note: The container will be started lazily on first getMongoDb() call
+ * if not started here, so this is optional but improves test startup experience.
+ */
+
+import { closeMongoDb, getMongoDb, getMongoUri, isMongoDbRunning } from '@tests/setup/mongodb.js';
+
+// Track if cleanup has already been performed
+let cleanedUp = false;
+
+async function cleanup(): Promise<void> {
+	if (cleanedUp) return;
+	cleanedUp = true;
+
+	if (isMongoDbRunning()) {
+		console.log('\n🛑 Stopping MongoDB Testcontainer...');
+		await closeMongoDb();
+		console.log('✅ MongoDB container stopped\n');
+	}
+}
+
+export default async function globalSetup(): Promise<() => Promise<void>> {
+	console.log('\n🚀 Starting MongoDB Testcontainer...');
+
+	// Pre-start the container
+	await getMongoDb();
+
+	const uri = await getMongoUri();
+	console.log(`✅ MongoDB ready at: ${uri}\n`);
+
+	// Register signal handlers for cleanup on interruption
+	const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+	for (const signal of signals) {
+		process.on(signal, async () => {
+			console.log(`\n⚠️  Received ${signal}, cleaning up...`);
+			await cleanup();
+			process.exit(128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1));
+		});
+	}
+
+	// Also handle uncaught exceptions
+	process.on('uncaughtException', async (error) => {
+		console.error('\n❌ Uncaught exception, cleaning up...', error);
+		await cleanup();
+		process.exit(1);
+	});
+
+	// Return teardown function
+	return cleanup;
+}
+````
+
+## File: packages/core/tests/setup/mongodb.ts
+````typescript
+/**
+ * MongoDB Testcontainers singleton manager for integration tests.
+ *
+ * This module provides a shared MongoDB container across all test files
+ * for performance. Container is started on first call to getMongoDb()
+ * and stays running until closeMongoDb() is called (typically in globalTeardown).
+ *
+ * @example
+ * ```typescript
+ * import { getMongoDb, closeMongoDb } from './setup/mongodb';
+ *
+ * let db: Db;
+ *
+ * beforeAll(async () => {
+ *   db = await getMongoDb();
+ * });
+ * ```
+ */
+
+import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
+import { type Db, MongoClient } from 'mongodb';
+
+const mongoContainerImage = 'mongo:8';
+
+/**
+ * Check if container reuse is enabled via environment variable.
+ * When enabled, containers persist between test runs for faster iteration.
+ * Ryuk (the cleanup container) is kept enabled as a safety net for orphans.
+ */
+const isReuseEnabled = process.env['TESTCONTAINERS_REUSE_ENABLE'] === 'true';
+
+// Module-level singleton instances
+let container: StartedMongoDBContainer | null = null;
+let client: MongoClient | null = null;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Ensures the MongoDB container is initialized.
+ * Handles concurrent calls by reusing the same initialization promise.
+ */
+async function ensureInitialized(): Promise<void> {
+	if (initPromise) {
+		// Initialization in progress or complete, wait for it
+		return initPromise;
+	}
+
+	if (container) {
+		// Already initialized
+		return;
+	}
+
+	initPromise = (async () => {
+		try {
+			const mongoContainer = new MongoDBContainer(mongoContainerImage);
+			container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
+		} catch (error) {
+			initPromise = null;
+			container = null;
+			throw new Error(`Failed to start MongoDB container: ${error}`);
+		}
+	})();
+
+	return initPromise;
+}
+
+/**
+ * Gets or creates a MongoDB connection from the shared Testcontainer.
+ * Container is started on first call and reused for subsequent calls.
+ * When TESTCONTAINERS_REUSE_ENABLE=true, the container persists between test runs.
+ *
+ * @returns A MongoDB Db instance connected to the test container
+ */
+export async function getMongoDb(): Promise<Db> {
+	await ensureInitialized();
+
+	if (!container) {
+		throw new Error('MongoDB container not initialized');
+	}
+
+	if (!client) {
+		try {
+			const uri = container.getConnectionString();
+			client = new MongoClient(uri, {
+				// Use directConnection for container
+				directConnection: true,
+			});
+			await client.connect();
+		} catch (error) {
+			// Clean up container if client connection fails
+			if (container) {
+				await container.stop().catch(() => {
+					// Ignore stop errors, we're already in error state
+				});
+				container = null;
+			}
+			client = null;
+			throw new Error(`Failed to connect MongoDB client: ${error}`);
+		}
+	}
+
+	return client.db('monque_test');
+}
+
+/**
+ * Gets the MongoDB connection string from the running container.
+ * Useful for passing to Monque instances in tests.
+ *
+ * @returns The MongoDB connection URI
+ * @throws If container has not been started
+ */
+export async function getMongoUri(): Promise<string> {
+	await ensureInitialized();
+
+	if (!container) {
+		throw new Error('MongoDB container not initialized');
+	}
+
+	return container.getConnectionString();
+}
+
+/**
+ * Gets the MongoClient instance connected to the test container.
+ * Useful for tests that need direct client access.
+ *
+ * @returns The MongoClient instance
+ */
+export async function getMongoClient(): Promise<MongoClient> {
+	// Ensure container and client are initialized
+	await getMongoDb();
+
+	if (!client) {
+		throw new Error('MongoClient not initialized');
+	}
+
+	return client;
+}
+
+/**
+ * Closes the MongoDB connection and optionally stops the container.
+ * When TESTCONTAINERS_REUSE_ENABLE=true, the container is kept running
+ * for faster subsequent test runs. Should be called in globalTeardown.
+ */
+export async function closeMongoDb(): Promise<void> {
+	if (client) {
+		await client.close();
+		client = null;
+	}
+
+	if (container) {
+		// Only stop the container if reuse is disabled
+		// When reuse is enabled, keep it running for faster subsequent runs
+		if (!isReuseEnabled) {
+			await container.stop();
+		}
+		container = null;
+	}
+}
+
+/**
+ * Checks if the MongoDB container is currently running.
+ *
+ * @returns true if container is started and client is connected
+ */
+export function isMongoDbRunning(): boolean {
+	return container !== null && client !== null;
+}
+````
+
+## File: packages/core/tests/setup/seed.ts
+````typescript
+import { faker } from '@faker-js/faker';
+
+// Set a constant seed for deterministic test data
+faker.seed(123456);
+````
+
+## File: packages/core/tests/setup/test-utils.ts
+````typescript
+/**
+ * Test utilities for MongoDB integration tests.
+ *
+ * Provides helper functions for isolated test databases and cleanup.
+ *
+ * @example
+ * ```typescript
+ * import { getTestDb, cleanupTestDb } from './setup/test-utils';
+ *
+ * describe('MyTest', () => {
+ *   let db: Db;
+ *
+ *   beforeAll(async () => {
+ *     db = await getTestDb('my-test-suite');
+ *   });
+ *
+ *   afterAll(async () => {
+ *     await cleanupTestDb(db);
+ *   });
+ * });
+ * ```
+ */
+
+import type { Collection, Db, Document, ObjectId } from 'mongodb';
+
+import { getMongoClient } from '@tests/setup/mongodb.js';
+import type { Job } from '@/jobs';
+
+/**
+ * Gets an isolated test database.
+ * Each test file should use a unique testName to avoid conflicts.
+ *
+ * @param testName - A unique identifier for the test suite (used as database name suffix)
+ * @returns A MongoDB Db instance for isolated testing
+ */
+export async function getTestDb(testName: string): Promise<Db> {
+	const client = await getMongoClient();
+	// Sanitize test name for use as database name
+	const sanitizedName = testName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+	return client.db(`monque_test_${sanitizedName}`);
+}
+
+/**
+ * Drops the test database to clean up after test suite.
+ * Call this in afterAll() to ensure test isolation.
+ *
+ * @param db - The database instance to drop
+ */
+export async function cleanupTestDb(db: Db): Promise<void> {
+	await db.dropDatabase();
+}
+
+/**
+ * Clears all documents from a specific collection without dropping it.
+ * Useful for cleaning up between tests within the same suite.
+ *
+ * @param db - The database instance
+ * @param collectionName - Name of the collection to clear
+ */
+export async function clearCollection(db: Db, collectionName: string): Promise<void> {
+	await db.collection(collectionName).deleteMany({});
+}
+
+/**
+ * Creates a unique collection name for test isolation.
+ * Useful when running parallel tests that share a database.
+ *
+ * @param baseName - Base collection name
+ * @returns Unique collection name with random suffix
+ */
+export function uniqueCollectionName(baseName: string): string {
+	const suffix = Math.random().toString(36).substring(2, 8);
+
+	return `${baseName}_${suffix}`;
+}
+
+/**
+ * Waits for a condition to be true with timeout.
+ * Useful for testing async operations like job processing.
+ *
+ * @param condition - Async function that returns true when condition is met
+ * @param options - Configuration for polling and timeout
+ * @returns Promise that resolves when condition is true
+ * @throws Error if timeout is exceeded
+ */
+export async function waitFor(
+	condition: () => Promise<boolean>,
+	options: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+	const { timeout = 10000, interval = 100 } = options;
+	const startTime = Date.now();
+
+	while (Date.now() - startTime < timeout) {
+		if (await condition()) {
+			return;
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, interval));
+	}
+
+	const elapsed = Date.now() - startTime;
+	throw new Error(
+		`waitFor condition not met within ${timeout}ms (elapsed: ${elapsed}ms). ` +
+			`Consider increasing timeout or checking test conditions.`,
+	);
+}
+
+/**
+ * Stops multiple Monque instances in parallel.
+ * Useful for cleaning up in afterEach/afterAll.
+ *
+ * @param instances - Array of Monque instances or objects with a stop method
+ */
+export async function stopMonqueInstances(
+	instances: { stop: () => Promise<void> }[],
+): Promise<void> {
+	await Promise.all(instances.map((i) => i.stop()));
+	// Clear the array in place
+	instances.length = 0;
+}
+
+/**
+ * Updates a job's nextRunAt to now for immediate execution in tests.
+ * Useful for triggering scheduled jobs immediately without waiting for their scheduled time.
+ *
+ * @param collection - The MongoDB collection containing the job
+ * @param jobId - The ObjectId of the job to trigger
+ */
+export async function triggerJobImmediately(
+	collection: Collection,
+	jobId: ObjectId,
+): Promise<void> {
+	await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
+}
+
+/**
+ * Finds a job by a custom query and returns it typed as Job.
+ * This helper eliminates the need for unsafe double-casting (as unknown as Job)
+ * when querying jobs directly from the collection in tests.
+ *
+ * @param collection - The MongoDB collection containing jobs
+ * @param query - MongoDB query to find the job
+ * @returns The job if found, null otherwise
+ *
+ * @example
+ * ```typescript
+ * const job = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
+ * expect(job?.status).toBe(JobStatus.PENDING);
+ * ```
+ */
+export async function findJobByQuery<T = unknown>(
+	collection: Collection,
+	query: Document,
+): Promise<Job<T> | null> {
+	const doc = await collection.findOne(query);
+	return doc as Job<T> | null;
+}
+````
+
+## File: packages/core/tests/unit/backoff.test.ts
+````typescript
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
+} from '@/shared';
+
+describe('backoff', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2025-01-01T00:00:00.000Z'));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	describe('DEFAULT_BASE_INTERVAL', () => {
+		it('should be 1000ms (1 second)', () => {
+			expect(DEFAULT_BASE_INTERVAL).toBe(1000);
+		});
+	});
+
+	describe('DEFAULT_MAX_BACKOFF_DELAY', () => {
+		it('should be 24 hours', () => {
+			expect(DEFAULT_MAX_BACKOFF_DELAY).toBe(24 * 60 * 60 * 1_000);
+		});
+	});
+
+	describe('calculateBackoffDelay', () => {
+		it('should calculate delay for failCount=0 as 2^0 * 1000 = 1000ms', () => {
+			expect(calculateBackoffDelay(0)).toBe(1000);
+		});
+
+		it('should calculate delay for failCount=1 as 2^1 * 1000 = 2000ms', () => {
+			expect(calculateBackoffDelay(1)).toBe(2000);
+		});
+
+		it('should calculate delay for failCount=2 as 2^2 * 1000 = 4000ms', () => {
+			expect(calculateBackoffDelay(2)).toBe(4000);
+		});
+
+		it('should calculate delay for failCount=3 as 2^3 * 1000 = 8000ms', () => {
+			expect(calculateBackoffDelay(3)).toBe(8000);
+		});
+
+		it('should calculate delay for failCount=10 as 2^10 * 1000 = 1024000ms', () => {
+			expect(calculateBackoffDelay(10)).toBe(1024000);
+		});
+
+		it('should use custom base interval when provided', () => {
+			expect(calculateBackoffDelay(1, 500)).toBe(1000); // 2^1 * 500
+			expect(calculateBackoffDelay(2, 500)).toBe(2000); // 2^2 * 500
+			expect(calculateBackoffDelay(3, 500)).toBe(4000); // 2^3 * 500
+		});
+
+		it('should handle zero base interval', () => {
+			expect(calculateBackoffDelay(5, 0)).toBe(0);
+		});
+
+		it('should cap delay at maxDelay when provided', () => {
+			expect(calculateBackoffDelay(10, 1000, 60000)).toBe(60000); // 1024000 > 60000
+			expect(calculateBackoffDelay(1, 1000, 60000)).toBe(2000); // 2000 < 60000
+		});
+
+		it('should cap delay at DEFAULT_MAX_BACKOFF_DELAY by default', () => {
+			// 2^20 * 1000ms = 1,048,576,000ms (~12.1 days) > 24h
+			expect(calculateBackoffDelay(20)).toBe(DEFAULT_MAX_BACKOFF_DELAY);
+		});
+	});
+
+	describe('calculateBackoff', () => {
+		it('should return Date with delay for failCount=1', () => {
+			const now = Date.now();
+			const result = calculateBackoff(1);
+			const expectedDelay = 2000; // 2^1 * 1000
+
+			expect(result).toBeInstanceOf(Date);
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should return Date with delay for failCount=2', () => {
+			const now = Date.now();
+			const result = calculateBackoff(2);
+			const expectedDelay = 4000; // 2^2 * 1000
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should return Date with delay for failCount=5', () => {
+			const now = Date.now();
+			const result = calculateBackoff(5);
+			const expectedDelay = 32000; // 2^5 * 1000
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should use custom base interval', () => {
+			const now = Date.now();
+			const result = calculateBackoff(3, 2000);
+			const expectedDelay = 16000; // 2^3 * 2000
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should use default base interval when not provided', () => {
+			const now = Date.now();
+			const result = calculateBackoff(4);
+			const expectedDelay = 16000; // 2^4 * 1000 (DEFAULT_BASE_INTERVAL)
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should calculate proper exponential progression', () => {
+			const now = Date.now();
+
+			// Verify exponential growth pattern
+			const delays = [0, 1, 2, 3, 4, 5].map((failCount) => {
+				const result = calculateBackoff(failCount);
+				return result.getTime() - now;
+			});
+
+			expect(delays).toEqual([
+				1000, // 2^0 * 1000
+				2000, // 2^1 * 1000
+				4000, // 2^2 * 1000
+				8000, // 2^3 * 1000
+				16000, // 2^4 * 1000
+				32000, // 2^5 * 1000
+			]);
+		});
+
+		it('should handle large failCount values', () => {
+			const now = Date.now();
+			const result = calculateBackoff(15);
+			const expectedDelay = 32768000; // 2^15 * 1000 = ~32768 seconds
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should cap delay at maxDelay when provided', () => {
+			const now = Date.now();
+			const result = calculateBackoff(10, 1000, 60000);
+			const expectedDelay = 60000; // Capped at 60000ms
+
+			expect(result.getTime()).toBe(now + expectedDelay);
+		});
+
+		it('should cap delay at DEFAULT_MAX_BACKOFF_DELAY by default', () => {
+			const now = Date.now();
+			const result = calculateBackoff(20);
+			expect(result.getTime()).toBe(now + DEFAULT_MAX_BACKOFF_DELAY);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/cron.test.ts
+````typescript
+import { describe, expect, it } from 'vitest';
+
+import { getNextCronDate, InvalidCronError, validateCronExpression } from '@/shared';
+
+// Test fixtures - shared reference dates
+const TEST_DATE_MID_MORNING = new Date('2025-01-01T10:30:00.000Z');
+const TEST_DATE_EARLY_MORNING = new Date('2025-01-01T08:00:00.000Z');
+
+describe('cron', () => {
+	describe('getNextCronDate', () => {
+		it('should parse "* * * * *" (every minute)', () => {
+			const now = new Date();
+			const result = getNextCronDate('* * * * *', now);
+			expect(result).toBeInstanceOf(Date);
+			// Should be within the next minute
+			expect(result.getTime()).toBeGreaterThan(now.getTime());
+			expect(result.getTime() - now.getTime()).toBeLessThanOrEqual(60000);
+		});
+
+		it('should parse "0 * * * *" (every hour at minute 0)', () => {
+			const result = getNextCronDate('0 * * * *', TEST_DATE_MID_MORNING);
+			// Next run should be at minute 0
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
+		it('should parse "0 0 * * *" (every day at midnight)', () => {
+			const result = getNextCronDate('0 0 * * *', TEST_DATE_MID_MORNING);
+			// Next run should be at 00:00
+			expect(result.getHours()).toBe(0);
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
+		it('should parse predefined expressions like @daily', () => {
+			const result = getNextCronDate('@daily', TEST_DATE_MID_MORNING);
+			// Next run should be at 00:00
+			expect(result.getHours()).toBe(0);
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
+		it('should parse "30 9 * * 1" (every Monday at 9:30am)', () => {
+			// Jan 1, 2025 is a Wednesday
+			const result = getNextCronDate('30 9 * * 1', TEST_DATE_MID_MORNING);
+			// Result should be on a Monday
+			expect(result.getDay()).toBe(1); // Monday
+			expect(result.getMinutes()).toBe(30);
+			expect(result.getHours()).toBe(9);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
+		it('should parse "0 12 1 * *" (first day of every month at noon)', () => {
+			const result = getNextCronDate('0 12 1 * *', TEST_DATE_EARLY_MORNING);
+			// Next run should be on the 1st of the month at noon
+			expect(result.getDate()).toBe(1);
+			expect(result.getHours()).toBe(12);
+			expect(result.getMinutes()).toBe(0);
+		});
+
+		it('should accept a custom reference date', () => {
+			const referenceDate = new Date('2025-06-15T08:00:00.000Z');
+			const result = getNextCronDate('0 9 * * *', referenceDate);
+			// Next 9am after June 15 8am
+			expect(result.getHours()).toBe(9);
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(referenceDate.getTime());
+		});
+
+		it('should throw InvalidCronError for invalid expression', () => {
+			expect(() => getNextCronDate('invalid')).toThrow(InvalidCronError);
+		});
+
+		it('should throw InvalidCronError with expression property', () => {
+			try {
+				getNextCronDate('not a cron');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(InvalidCronError);
+				expect((error as InvalidCronError).expression).toBe('not a cron');
+			}
+		});
+
+		it('should include helpful error message with format example', () => {
+			try {
+				getNextCronDate('bad');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(InvalidCronError);
+				const message = (error as InvalidCronError).message;
+				expect(message).toContain('Invalid cron expression');
+				expect(message).toContain('"bad"');
+				expect(message).toContain('minute hour day-of-month month day-of-week');
+				expect(message).toContain('predefined expression');
+				expect(message).toContain('Example:');
+			}
+		});
+
+		it('should handle expressions with ranges', () => {
+			const result = getNextCronDate('0 9-17 * * *', TEST_DATE_EARLY_MORNING); // 9am to 5pm
+			// Next run should be between 9am and 5pm
+			expect(result.getHours()).toBeGreaterThanOrEqual(9);
+			expect(result.getHours()).toBeLessThanOrEqual(17);
+			expect(result.getMinutes()).toBe(0);
+		});
+
+		it('should handle expressions with steps', () => {
+			const result = getNextCronDate('*/15 * * * *', TEST_DATE_MID_MORNING); // Every 15 minutes
+			// Next 15-minute mark
+			expect(result.getMinutes() % 15).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+
+		it('should handle expressions with lists', () => {
+			const result = getNextCronDate('0 9,12,18 * * *', TEST_DATE_MID_MORNING); // 9am, 12pm, 6pm
+			// Next should be at one of those hours
+			expect([9, 12, 18]).toContain(result.getHours());
+			expect(result.getMinutes()).toBe(0);
+			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
+		});
+	});
+
+	describe('validateCronExpression', () => {
+		it('should not throw for valid expressions', () => {
+			expect(() => validateCronExpression('* * * * *')).not.toThrow();
+			expect(() => validateCronExpression('0 0 * * *')).not.toThrow();
+			expect(() => validateCronExpression('30 9 1 * 1')).not.toThrow();
+			expect(() => validateCronExpression('*/5 * * * *')).not.toThrow();
+			expect(() => validateCronExpression('0 9-17 * * 1-5')).not.toThrow();
+		});
+
+		it('should throw InvalidCronError for invalid expressions', () => {
+			expect(() => validateCronExpression('invalid')).toThrow(InvalidCronError);
+			expect(() => validateCronExpression('60 * * * *')).toThrow(InvalidCronError); // Invalid minute
+			expect(() => validateCronExpression('* 25 * * *')).toThrow(InvalidCronError); // Invalid hour
+		});
+
+		it('should throw InvalidCronError with expression property', () => {
+			try {
+				validateCronExpression('wrong');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(InvalidCronError);
+				expect((error as InvalidCronError).expression).toBe('wrong');
+			}
+		});
+
+		it('should include helpful error message', () => {
+			try {
+				validateCronExpression('x x x x x');
+				expect.fail('Should have thrown');
+			} catch (error) {
+				expect(error).toBeInstanceOf(InvalidCronError);
+				const message = (error as InvalidCronError).message;
+				expect(message).toContain('Invalid cron expression');
+				expect(message).toContain('Example:');
+			}
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/errors.test.ts
+````typescript
+/**
+ * Tests for custom error classes in the Monque scheduler.
+ *
+ * These tests verify:
+ * - MonqueError base class functionality
+ * - InvalidCronError with expression storage
+ * - ConnectionError for database issues
+ * - ShutdownTimeoutError with incomplete jobs tracking
+ * - Error inheritance chain (all catchable as Error/MonqueError)
+ *
+ * @see {@link @/shared/errors.js}
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import {
+	ConnectionError,
+	InvalidCronError,
+	MonqueError,
+	ShutdownTimeoutError,
+	WorkerRegistrationError,
+} from '@/shared';
+
+describe('errors', () => {
+	describe('MonqueError', () => {
+		it('should create an error with the correct message', () => {
+			const error = new MonqueError('Test error message');
+			expect(error.message).toBe('Test error message');
+		});
+
+		it('should have name "MonqueError"', () => {
+			const error = new MonqueError('Test');
+			expect(error.name).toBe('MonqueError');
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new MonqueError('Test');
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new MonqueError('Test');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new MonqueError('Test');
+			expect(error.stack).toBeDefined();
+			expect(error.stack).toContain('MonqueError');
+		});
+	});
+
+	describe('InvalidCronError', () => {
+		it('should create an error with expression and message', () => {
+			const error = new InvalidCronError('bad cron', 'Invalid expression');
+			expect(error.message).toBe('Invalid expression');
+			expect(error.expression).toBe('bad cron');
+		});
+
+		it('should have name "InvalidCronError"', () => {
+			const error = new InvalidCronError('* *', 'Too few fields');
+			expect(error.name).toBe('InvalidCronError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new InvalidCronError('x', 'Invalid');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new InvalidCronError('x', 'Invalid');
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should expose the invalid expression', () => {
+			const expression = '60 * * * *';
+			const error = new InvalidCronError(expression, 'Minute out of range');
+			expect(error.expression).toBe(expression);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new InvalidCronError('bad', 'Invalid');
+			expect(error.stack).toBeDefined();
+		});
+	});
+
+	describe('ConnectionError', () => {
+		it('should create an error with the correct message', () => {
+			const error = new ConnectionError('Database connection failed');
+			expect(error.message).toBe('Database connection failed');
+		});
+
+		it('should have name "ConnectionError"', () => {
+			const error = new ConnectionError('Connection lost');
+			expect(error.name).toBe('ConnectionError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new ConnectionError('Timeout');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new ConnectionError('Timeout');
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new ConnectionError('Failed');
+			expect(error.stack).toBeDefined();
+		});
+
+		it('should chain the cause error when provided', () => {
+			const cause = new Error('Original database error');
+			const error = new ConnectionError('Connection failed', { cause });
+
+			expect(error.cause).toBe(cause);
+			expect(error.message).toBe('Connection failed');
+		});
+	});
+
+	describe('ShutdownTimeoutError', () => {
+		it('should create an error with message and incomplete jobs', () => {
+			const incompleteJobs = [
+				JobFactoryHelpers.processing({ name: 'job1' }),
+				JobFactoryHelpers.processing({ name: 'job2' }),
+			];
+			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
+
+			expect(error.message).toBe('Shutdown timed out');
+			expect(error.incompleteJobs).toEqual(incompleteJobs);
+		});
+
+		it('should have name "ShutdownTimeoutError"', () => {
+			const error = new ShutdownTimeoutError('Timeout', []);
+			expect(error.name).toBe('ShutdownTimeoutError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new ShutdownTimeoutError('Timeout', []);
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new ShutdownTimeoutError('Timeout', []);
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should expose incompleteJobs array', () => {
+			const job = JobFactoryHelpers.processing({ name: 'job1' });
+			const error = new ShutdownTimeoutError('Timeout', [job]);
+			expect(error.incompleteJobs).toHaveLength(1);
+			expect(error.incompleteJobs[0]?.name).toBe(job.name);
+		});
+
+		it('should handle empty incompleteJobs array', () => {
+			const error = new ShutdownTimeoutError('No jobs running', []);
+			expect(error.incompleteJobs).toHaveLength(0);
+		});
+
+		it('should preserve job data in incompleteJobs', () => {
+			const job = JobFactoryHelpers.processing();
+			const error = new ShutdownTimeoutError('Timeout', [job]);
+
+			expect(error.incompleteJobs[0]?.data).toEqual(job.data);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new ShutdownTimeoutError('Timeout', []);
+			expect(error.stack).toBeDefined();
+		});
+	});
+
+	describe('WorkerRegistrationError', () => {
+		it('should create an error with message and job name', () => {
+			const error = new WorkerRegistrationError('Worker already registered', 'test-job');
+			expect(error.message).toBe('Worker already registered');
+			expect(error.jobName).toBe('test-job');
+		});
+
+		it('should have name "WorkerRegistrationError"', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error.name).toBe('WorkerRegistrationError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+
+		it('should be an instance of Error', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error).toBeInstanceOf(Error);
+		});
+
+		it('should have a stack trace', () => {
+			const error = new WorkerRegistrationError('Error', 'job');
+			expect(error.stack).toBeDefined();
+		});
+	});
+
+	describe('error inheritance chain', () => {
+		it('InvalidCronError should be catchable as MonqueError', () => {
+			const error = new InvalidCronError('bad', 'Invalid');
+			let caught = false;
+
+			try {
+				throw error;
+			} catch (e) {
+				if (e instanceof MonqueError) {
+					caught = true;
+				}
+			}
+
+			expect(caught).toBe(true);
+		});
+
+		it('ConnectionError should be catchable as MonqueError', () => {
+			const error = new ConnectionError('Failed');
+			let caught = false;
+
+			try {
+				throw error;
+			} catch (e) {
+				if (e instanceof MonqueError) {
+					caught = true;
+				}
+			}
+
+			expect(caught).toBe(true);
+		});
+
+		it('ShutdownTimeoutError should be catchable as MonqueError', () => {
+			const error = new ShutdownTimeoutError('Timeout', []);
+			let caught = false;
+
+			try {
+				throw error;
+			} catch (e) {
+				if (e instanceof MonqueError) {
+					caught = true;
+				}
+			}
+
+			expect(caught).toBe(true);
+		});
+
+		it('WorkerRegistrationError should be catchable as MonqueError', () => {
+			const error = new WorkerRegistrationError('Failed', 'job');
+			let caught = false;
+
+			try {
+				throw error;
+			} catch (e) {
+				if (e instanceof MonqueError) {
+					caught = true;
+				}
+			}
+
+			expect(caught).toBe(true);
+		});
+
+		it('all errors should be catchable as Error', () => {
+			const errors = [
+				new MonqueError('Base'),
+				new InvalidCronError('x', 'Invalid'),
+				new ConnectionError('Failed'),
+				new ShutdownTimeoutError('Timeout', []),
+				new WorkerRegistrationError('Failed', 'job'),
+			];
+
+			for (const error of errors) {
+				let caught = false;
+				try {
+					throw error;
+				} catch (e) {
+					if (e instanceof Error) {
+						caught = true;
+					}
+				}
+				expect(caught).toBe(true);
+			}
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/guards.test.ts
+````typescript
+import { ObjectId } from 'mongodb';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import {
+	isCompletedJob,
+	isFailedJob,
+	isPendingJob,
+	isPersistedJob,
+	isProcessingJob,
+	isRecurringJob,
+	isValidJobStatus,
+	type Job,
+	JobStatus,
+	type PersistedJob,
+} from '@/jobs';
+
+describe('job guards', () => {
+	let baseJob: Job;
+
+	beforeEach(() => {
+		baseJob = {
+			name: 'test-job',
+			data: { foo: 'bar' },
+			status: JobStatus.PENDING,
+			nextRunAt: new Date(),
+			failCount: 0,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+	});
+
+	describe('isPersistedJob', () => {
+		it('should return true for job with _id', () => {
+			const persistedJob: PersistedJob = {
+				...baseJob,
+				_id: new ObjectId(),
+			};
+
+			expect(isPersistedJob(persistedJob)).toBe(true);
+		});
+
+		it('should return false for job without _id', () => {
+			expect(isPersistedJob(baseJob)).toBe(false);
+		});
+
+		it('should return false when _id is undefined', () => {
+			// Job without _id property (same as baseJob)
+			expect(isPersistedJob(baseJob)).toBe(false);
+		});
+
+		it('should return false when _id is null', () => {
+			const jobWithNullId = {
+				...baseJob,
+				_id: null as unknown as ObjectId,
+			};
+
+			expect(isPersistedJob(jobWithNullId)).toBe(false);
+		});
+
+		it('should narrow type to PersistedJob when true', () => {
+			const job: Job = {
+				...baseJob,
+				_id: new ObjectId(),
+			};
+
+			if (isPersistedJob(job)) {
+				// This should compile without errors - TypeScript knows _id exists
+				const id: ObjectId = job._id;
+				expect(id).toBeInstanceOf(ObjectId);
+			} else {
+				throw new Error('Should have been persisted');
+			}
+		});
+	});
+
+	describe('isValidJobStatus', () => {
+		it('should return true for PENDING status', () => {
+			expect(isValidJobStatus(JobStatus.PENDING)).toBe(true);
+			expect(isValidJobStatus('pending')).toBe(true);
+		});
+
+		it('should return true for PROCESSING status', () => {
+			expect(isValidJobStatus(JobStatus.PROCESSING)).toBe(true);
+			expect(isValidJobStatus('processing')).toBe(true);
+		});
+
+		it('should return true for COMPLETED status', () => {
+			expect(isValidJobStatus(JobStatus.COMPLETED)).toBe(true);
+			expect(isValidJobStatus('completed')).toBe(true);
+		});
+
+		it('should return true for FAILED status', () => {
+			expect(isValidJobStatus(JobStatus.FAILED)).toBe(true);
+			expect(isValidJobStatus('failed')).toBe(true);
+		});
+
+		it('should return false for invalid string', () => {
+			expect(isValidJobStatus('invalid')).toBe(false);
+			expect(isValidJobStatus('PENDING')).toBe(false);
+			expect(isValidJobStatus('')).toBe(false);
+		});
+
+		it('should return false for non-string types', () => {
+			expect(isValidJobStatus(123)).toBe(false);
+			expect(isValidJobStatus(null)).toBe(false);
+			expect(isValidJobStatus(undefined)).toBe(false);
+			expect(isValidJobStatus({})).toBe(false);
+			expect(isValidJobStatus([])).toBe(false);
+			expect(isValidJobStatus(true)).toBe(false);
+		});
+	});
+
+	describe('isPendingJob', () => {
+		it('should return true when status is PENDING', () => {
+			const job: Job = { ...baseJob, status: JobStatus.PENDING };
+			expect(isPendingJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not PENDING', () => {
+			expect(isPendingJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
+			expect(isPendingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
+			expect(isPendingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+		});
+	});
+
+	describe('isProcessingJob', () => {
+		it('should return true when status is PROCESSING', () => {
+			const job: Job = { ...baseJob, status: JobStatus.PROCESSING };
+			expect(isProcessingJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not PROCESSING', () => {
+			expect(isProcessingJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
+			expect(isProcessingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
+			expect(isProcessingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+		});
+	});
+
+	describe('isCompletedJob', () => {
+		it('should return true when status is COMPLETED', () => {
+			const job: Job = { ...baseJob, status: JobStatus.COMPLETED };
+			expect(isCompletedJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not COMPLETED', () => {
+			expect(isCompletedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
+			expect(isCompletedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
+			expect(isCompletedJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+		});
+	});
+
+	describe('isFailedJob', () => {
+		it('should return true when status is FAILED', () => {
+			const job: Job = { ...baseJob, status: JobStatus.FAILED };
+			expect(isFailedJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not FAILED', () => {
+			expect(isFailedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
+			expect(isFailedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
+			expect(isFailedJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
+		});
+	});
+
+	describe('isRecurringJob', () => {
+		it('should return true when repeatInterval is defined', () => {
+			const job: Job = { ...baseJob, repeatInterval: '0 * * * *' };
+			expect(isRecurringJob(job)).toBe(true);
+		});
+
+		it('should return false when repeatInterval is undefined', () => {
+			const job: Job = { ...baseJob };
+			expect(isRecurringJob(job)).toBe(false);
+		});
+
+		it('should return false when repeatInterval is null', () => {
+			const job: Job = { ...baseJob, repeatInterval: null as unknown as string };
+			expect(isRecurringJob(job)).toBe(false);
+		});
+
+		it('should return true for empty string repeatInterval', () => {
+			// Even empty string means it's defined as recurring (though invalid cron)
+			const job: Job = { ...baseJob, repeatInterval: '' };
+			expect(isRecurringJob(job)).toBe(true);
+		});
+	});
+
+	describe('combined usage', () => {
+		it('should allow combining multiple guards', () => {
+			const job: PersistedJob = {
+				...baseJob,
+				_id: new ObjectId(),
+				status: JobStatus.FAILED,
+				repeatInterval: '0 0 * * *',
+			};
+
+			expect(isPersistedJob(job)).toBe(true);
+			expect(isFailedJob(job)).toBe(true);
+			expect(isRecurringJob(job)).toBe(true);
+			expect(isPendingJob(job)).toBe(false);
+		});
+
+		it('should work in filter operations', () => {
+			const jobs: Job[] = [
+				{ ...baseJob, status: JobStatus.PENDING },
+				{ ...baseJob, status: JobStatus.PROCESSING },
+				{ ...baseJob, status: JobStatus.COMPLETED },
+				{ ...baseJob, status: JobStatus.FAILED },
+			];
+
+			const pendingJobs = jobs.filter(isPendingJob);
+			const failedJobs = jobs.filter(isFailedJob);
+
+			expect(pendingJobs).toHaveLength(1);
+			expect(failedJobs).toHaveLength(1);
+		});
+	});
+});
+````
+
+## File: packages/core/CHANGELOG.md
+````markdown
+# @monque/core
+
+## 0.1.0
+
+### Minor Changes
+
+- [`fe193bb`](https://github.com/ueberBrot/monque/commit/fe193bb3d840667dded3c3ea093a464d3b1852ba) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Initial pre-release of Monque core.
+
+  - MongoDB-backed scheduler with atomic claiming/locking to prevent duplicate processing across multiple instances.
+  - Workers + concurrency controls for background job processing.
+  - Enqueue immediate jobs and schedule recurring jobs via 5-field cron expressions.
+  - Built-in retries with configurable exponential backoff.
+  - Heartbeats, stale job detection, and recovery on startup.
+  - Event-driven observability for job lifecycle events (with change streams support and polling as a safety net).
+````
+
+## File: packages/core/tsconfig.json
+````json
+{
+	"compilerOptions": {
+		// Environment setup & latest features
+		"lib": ["ESNext"],
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleDetection": "force",
+
+		// Bundler mode
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+
+		// Best practices
+		"strict": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"exactOptionalPropertyTypes": true,
+		"forceConsistentCasingInFileNames": true,
+		"esModuleInterop": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"declaration": true,
+		"declarationMap": true,
+
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["src/*"],
+			"@tests/*": ["tests/*"],
+			"@test-utils/*": ["tests/setup/*"]
+		}
+	},
+	"include": ["src/**/*", "tests/**/*"],
+	"exclude": ["node_modules", "dist"]
+}
+````
+
+## File: packages/core/tsdown.config.ts
+````typescript
+import { defineConfig } from 'tsdown';
+
+export default defineConfig({
+	entry: ['src/index.ts'],
+	format: ['esm', 'cjs'],
+	dts: true,
+	clean: true,
+	sourcemap: true,
+	target: 'node22',
+	outDir: 'dist',
+	external: ['mongodb'],
+});
+````
+
+## File: packages/core/vitest.config.ts
+````typescript
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+	resolve: {
+		alias: {
+			'@': fileURLToPath(new URL('./src', import.meta.url)),
+			'@tests': fileURLToPath(new URL('./tests', import.meta.url)),
+			'@test-utils': fileURLToPath(new URL('./tests/setup', import.meta.url)),
+		},
+	},
+	test: {
+		globals: true,
+		environment: 'node',
+		include: ['tests/**/*.test.ts'],
+		coverage: {
+			enabled: true,
+			provider: 'v8',
+			reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
+			reportsDirectory: './coverage',
+			include: ['src/**/*.ts'],
+			exclude: [
+				'**/node_modules/**',
+				'**/dist/**',
+				'**/*.d.ts',
+				'**/tests/**',
+				'**/*.config.ts',
+				'**/*.config.js',
+				'**/index.ts',
+				'src/**/types.ts',
+			],
+			thresholds: {
+				lines: 85,
+				functions: 85,
+				branches: 75,
+				statements: 85,
+			},
+		},
+		// Global setup for MongoDB Testcontainers (returns teardown function)
+		globalSetup: ['./tests/setup/global-setup.ts'],
+		// Seed faker for deterministic tests
+		setupFiles: ['./tests/setup/seed.ts'],
+		// Increase timeout for integration tests (container startup can be slow)
+		testTimeout: 30000,
+		hookTimeout: 60000,
+	},
+});
+````
+
+## File: packages/core/vitest.unit.config.ts
+````typescript
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+	resolve: {
+		alias: {
+			'@': fileURLToPath(new URL('./src', import.meta.url)),
+			'@tests': fileURLToPath(new URL('./tests', import.meta.url)),
+			'@test-utils': fileURLToPath(new URL('./tests/setup', import.meta.url)),
+		},
+	},
+	test: {
+		globals: true,
+		environment: 'node',
+		include: ['tests/unit/**/*.test.ts'],
+		coverage: {
+			enabled: true,
+			provider: 'v8',
+			reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
+			reportsDirectory: './coverage',
+			include: ['src/**/*.ts'],
+			exclude: [
+				'**/node_modules/**',
+				'**/dist/**',
+				'**/*.d.ts',
+				'**/tests/**',
+				'**/*.config.ts',
+				'**/*.config.js',
+				'**/index.ts',
+				// Type-only files with no runtime code
+				'src/**/types.ts',
+				'src/events/types.ts',
+				'src/workers/types.ts',
+				'src/scheduler/types.ts',
+			],
+			thresholds: {
+				lines: 85,
+				functions: 85,
+				branches: 75,
+				statements: 85,
+			},
+		},
+		// Unit tests don't need MongoDB
+		setupFiles: ['./tests/setup/seed.ts'],
+		// Shorter timeouts for unit tests
+		testTimeout: 5000,
+		hookTimeout: 10000,
+	},
+});
+````
+
+## File: packages/core/src/scheduler/monque.ts
+````typescript
+import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import type {
+	ChangeStream,
+	ChangeStreamDocument,
+	Collection,
+	Db,
+	DeleteResult,
+	Document,
+	ObjectId,
+	WithId,
+} from 'mongodb';
+
+import type { MonqueEventMap } from '@/events';
+import {
+	type EnqueueOptions,
+	type GetJobsFilter,
+	isPersistedJob,
+	type Job,
+	type JobHandler,
+	JobStatus,
+	type JobStatusType,
+	type PersistedJob,
+	type ScheduleOptions,
+} from '@/jobs';
+import {
+	ConnectionError,
+	calculateBackoff,
+	getNextCronDate,
+	MonqueError,
+	WorkerRegistrationError,
+} from '@/shared';
+import type { WorkerOptions, WorkerRegistration } from '@/workers';
+
+import type { MonqueOptions } from './types.js';
+
+/**
+ * Default configuration values
+ */
+const DEFAULTS = {
+	collectionName: 'monque_jobs',
+	pollInterval: 1000,
+	maxRetries: 10,
+	baseRetryInterval: 1000,
+	shutdownTimeout: 30000,
+	defaultConcurrency: 5,
+	lockTimeout: 1_800_000, // 30 minutes
+	recoverStaleJobs: true,
+	heartbeatInterval: 30000, // 30 seconds
+	retentionInterval: 3600_000, // 1 hour
+} as const;
+
+/**
+ * Monque - MongoDB-backed job scheduler
+ *
+ * A type-safe job scheduler with atomic locking, exponential backoff, cron scheduling,
+ * stale job recovery, and event-driven observability. Built on native MongoDB driver.
+ *
+ * @example Complete lifecycle
+ * ```;
+typescript
+ *
+
+import { Monque } from '@monque/core';
+
+*
+
+import { MongoClient } from 'mongodb';
+
+*
+ *
+const client = new MongoClient('mongodb://localhost:27017');
+* await client.connect()
+*
+const db = client.db('myapp');
+*
+ * // Create instance with options
+ *
+const monque = new Monque(db, {
+ *   collectionName: 'jobs',
+ *   pollInterval: 1000,
+ *   maxRetries: 10,
+ *   shutdownTimeout: 30000,
+ * });
+*
+ * // Initialize (sets up indexes and recovers stale jobs)
+ * await monque.initialize()
+*
+ * // Register workers with type safety
+ *
+type EmailJob = {};
+*   to: string
+*   subject: string
+*   body: string
+* }
+ *
+ * monque.register<EmailJob>('send-email', async (job) =>
+{
+	*   await emailService.send(job.data.to, job.data.subject, job.data.body)
+	*
+}
+)
+*
+ * // Monitor events for observability
+ * monque.on('job:complete', (
+{
+	job, duration;
+}
+) =>
+{
+ *   logger.info(`Job $job.namecompleted in $durationms`);
+ * });
+ *
+ * monque.on('job:fail', ({ job, error, willRetry }) => {
+ *   logger.error(`Job $job.namefailed:`, error);
+ * });
+ *
+ * // Start processing
+ * monque.start();
+ *
+ * // Enqueue jobs
+ * await monque.enqueue('send-email', {
+ *   to: 'user@example.com',
+ *   subject: 'Welcome!',
+ *   body: 'Thanks for signing up.'
+ * });
+ *
+ * // Graceful shutdown
+ * process.on('SIGTERM', async () => {
+ *   await monque.stop();
+ *   await client.close();
+ *   process.exit(0);
+ * });
+ * ```
+ */
+export class Monque extends EventEmitter {
+	private readonly db: Db;
+	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>> &
+		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
+	private collection: Collection<Document> | null = null;
+	private workers: Map<string, WorkerRegistration> = new Map();
+	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
+	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
+	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+	private isRunning = false;
+	private isInitialized = false;
+
+	/**
+	 * MongoDB Change Stream for real-time job notifications.
+	 * When available, provides instant job processing without polling delay.
+	 */
+	private changeStream: ChangeStream | null = null;
+
+	/**
+	 * Number of consecutive reconnection attempts for change stream.
+	 * Used for exponential backoff during reconnection.
+	 */
+	private changeStreamReconnectAttempts = 0;
+
+	/**
+	 * Maximum reconnection attempts before falling back to polling-only mode.
+	 */
+	private readonly maxChangeStreamReconnectAttempts = 3;
+
+	/**
+	 * Debounce timer for change stream event processing.
+	 * Prevents claim storms when multiple events arrive in quick succession.
+	 */
+	private changeStreamDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * Whether the scheduler is currently using change streams for notifications.
+	 */
+	private usingChangeStreams = false;
+
+	/**
+	 * Timer ID for change stream reconnection with exponential backoff.
+	 * Tracked to allow cancellation during shutdown.
+	 */
+	private changeStreamReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+	constructor(db: Db, options: MonqueOptions = {}) {
+		super();
+		this.db = db;
+		this.options = {
+			collectionName: options.collectionName ?? DEFAULTS.collectionName,
+			pollInterval: options.pollInterval ?? DEFAULTS.pollInterval,
+			maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,
+			baseRetryInterval: options.baseRetryInterval ?? DEFAULTS.baseRetryInterval,
+			shutdownTimeout: options.shutdownTimeout ?? DEFAULTS.shutdownTimeout,
+			defaultConcurrency: options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
+			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
+			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
+			maxBackoffDelay: options.maxBackoffDelay,
+			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
+			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
+			jobRetention: options.jobRetention,
+		};
+	}
+
+	/**
+	 * Initialize the scheduler by setting up the MongoDB collection and indexes.
+	 * Must be called before start().
+	 *
+	 * @throws {ConnectionError} If collection or index creation fails
+	 */
+	async initialize(): Promise<void> {
+		if (this.isInitialized) {
+			return;
+		}
+
+		try {
+			this.collection = this.db.collection(this.options.collectionName);
+
+			// Create indexes for efficient queries
+			await this.createIndexes();
+
+			// Recover stale jobs if enabled
+			if (this.options.recoverStaleJobs) {
+				await this.recoverStaleJobs();
+			}
+
+			this.isInitialized = true;
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : 'Unknown error during initialization';
+			throw new ConnectionError(`Failed to initialize Monque: ${message}`);
+		}
+	}
+
+	/**
+	 * Create required MongoDB indexes for efficient job processing.
+	 *
+	 * The following indexes are created:
+	 * - `{status, nextRunAt}` - For efficient job polling queries
+	 * - `{name, uniqueKey}` - Partial unique index for deduplication (pending/processing only)
+	 * - `{name, status}` - For job lookup by type
+	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
+	 * - `{lastHeartbeat, status}` - For monitoring/debugging queries (e.g., inspecting heartbeat age)
+	 * - `{status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs)
+	 * - `{lockedAt, lastHeartbeat, status}` - Supports recovery scans and monitoring access patterns
+	 */
+	private async createIndexes(): Promise<void> {
+		if (!this.collection) {
+			throw new ConnectionError('Collection not initialized');
+		}
+
+		// Compound index for job polling - status + nextRunAt for efficient queries
+		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
+
+		// Partial unique index for deduplication - scoped by name + uniqueKey
+		// Only enforced where uniqueKey exists and status is pending/processing
+		await this.collection.createIndex(
+			{ name: 1, uniqueKey: 1 },
+			{
+				unique: true,
+				partialFilterExpression: {
+					uniqueKey: { $exists: true },
+					status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+				},
+				background: true,
+			},
+		);
+
+		// Index for job lookup by name
+		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
+
+		// Compound index for finding jobs claimed by a specific scheduler instance.
+		// Used for heartbeat updates and cleanup on shutdown.
+		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
+
+		// Compound index for monitoring/debugging via heartbeat timestamps.
+		// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
+		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
+
+		// Compound index for atomic claim queries.
+		// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
+		await this.collection.createIndex(
+			{ status: 1, nextRunAt: 1, claimedBy: 1 },
+			{ background: true },
+		);
+
+		// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
+		await this.collection.createIndex(
+			{ status: 1, lockedAt: 1, lastHeartbeat: 1 },
+			{ background: true },
+		);
+	}
+
+	/**
+	 * Recover stale jobs that were left in 'processing' status.
+	 * A job is considered stale if its `lockedAt` timestamp exceeds the configured `lockTimeout`.
+	 * Stale jobs are reset to 'pending' so they can be picked up by workers again.
+	 */
+	private async recoverStaleJobs(): Promise<void> {
+		if (!this.collection) {
+			return;
+		}
+
+		const staleThreshold = new Date(Date.now() - this.options.lockTimeout);
+
+		const result = await this.collection.updateMany(
+			{
+				status: JobStatus.PROCESSING,
+				lockedAt: { $lt: staleThreshold },
+			},
+			{
+				$set: {
+					status: JobStatus.PENDING,
+					updatedAt: new Date(),
+				},
+				$unset: {
+					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+					heartbeatInterval: '',
+				},
+			},
+		);
+
+		if (result.modifiedCount > 0) {
+			// Emit event for recovered jobs
+			this.emit('stale:recovered', {
+				count: result.modifiedCount,
+			});
+		}
+	}
+
+	/**
+	 * Clean up old completed and failed jobs based on retention policy.
+	 *
+	 * - Removes completed jobs older than `jobRetention.completed`
+	 * - Removes failed jobs older than `jobRetention.failed`
+	 *
+	 * The cleanup runs concurrently for both statuses if configured.
+	 *
+	 * @returns Promise resolving when all deletion operations complete
+	 */
+	private async cleanupJobs(): Promise<void> {
+		if (!this.collection || !this.options.jobRetention) {
+			return;
+		}
+
+		const { completed, failed } = this.options.jobRetention;
+		const now = Date.now();
+		const deletions: Promise<DeleteResult>[] = [];
+
+		if (completed) {
+			const cutoff = new Date(now - completed);
+			deletions.push(
+				this.collection.deleteMany({
+					status: JobStatus.COMPLETED,
+					updatedAt: { $lt: cutoff },
+				}),
+			);
+		}
+
+		if (failed) {
+			const cutoff = new Date(now - failed);
+			deletions.push(
+				this.collection.deleteMany({
+					status: JobStatus.FAILED,
+					updatedAt: { $lt: cutoff },
+				}),
+			);
+		}
+
+		if (deletions.length > 0) {
+			await Promise.all(deletions);
+		}
+	}
+
+	/**
+	 * Enqueue a job for processing.
+	 *
+	 * Jobs are stored in MongoDB and processed by registered workers. Supports
+	 * delayed execution via `runAt` and deduplication via `uniqueKey`.
+	 *
+	 * When a `uniqueKey` is provided, only one pending or processing job with that key
+	 * can exist. Completed or failed jobs don't block new jobs with the same key.
+	 *
+	 * Failed jobs are automatically retried with exponential backoff up to `maxRetries`
+	 * (default: 10 attempts). The delay between retries is calculated as `2^failCount × baseRetryInterval`.
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler
+	 * @param options - Scheduling and deduplication options
+	 * @returns Promise resolving to the created or existing job document
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Basic job enqueueing
+	 * ```typescript
+	 * await monque.enqueue('send-email', {
+	 *   to: 'user@example.com',
+	 *   subject: 'Welcome!',
+	 *   body: 'Thanks for signing up.'
+	 * });
+	 * ```
+	 *
+	 * @example Delayed execution
+	 * ```typescript
+	 * const oneHourLater = new Date(Date.now() + 3600000);
+	 * await monque.enqueue('reminder', { message: 'Check in!' }, {
+	 *   runAt: oneHourLater
+	 * });
+	 * ```
+	 *
+	 * @example Prevent duplicates with unique key
+	 * ```typescript
+	 * await monque.enqueue('sync-user', { userId: '123' }, {
+	 *   uniqueKey: 'sync-user-123'
+	 * });
+	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
+	 * ```
+	 */
+	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
+		this.ensureInitialized();
+
+		const now = new Date();
+		const job: Omit<Job<T>, '_id'> = {
+			name,
+			data,
+			status: JobStatus.PENDING,
+			nextRunAt: options.runAt ?? now,
+			failCount: 0,
+			createdAt: now,
+			updatedAt: now,
+		};
+
+		if (options.uniqueKey) {
+			job.uniqueKey = options.uniqueKey;
+		}
+
+		try {
+			if (options.uniqueKey) {
+				if (!this.collection) {
+					throw new ConnectionError('Failed to enqueue job: collection not available');
+				}
+
+				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
+				const result = await this.collection.findOneAndUpdate(
+					{
+						name,
+						uniqueKey: options.uniqueKey,
+						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+					},
+					{
+						$setOnInsert: job,
+					},
+					{
+						upsert: true,
+						returnDocument: 'after',
+					},
+				);
+
+				if (!result) {
+					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
+				}
+
+				return this.documentToPersistedJob<T>(result as WithId<Document>);
+			}
+
+			const result = await this.collection?.insertOne(job as Document);
+
+			if (!result) {
+				throw new ConnectionError('Failed to enqueue job: collection not available');
+			}
+
+			return { ...job, _id: result.insertedId } as PersistedJob<T>;
+		} catch (error) {
+			if (error instanceof ConnectionError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
+			throw new ConnectionError(
+				`Failed to enqueue job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Enqueue a job for immediate processing.
+	 *
+	 * Convenience method equivalent to `enqueue(name, data, { runAt: new Date() })`.
+	 * Jobs are picked up on the next poll cycle (typically within 1 second based on `pollInterval`).
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler
+	 * @returns Promise resolving to the created job document
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Send email immediately
+	 * ```typescript
+	 * await monque.now('send-email', {
+	 *   to: 'admin@example.com',
+	 *   subject: 'Alert',
+	 *   body: 'Immediate attention required'
+	 * });
+	 * ```
+	 *
+	 * @example Process order in background
+	 * ```typescript
+	 * const order = await createOrder(data);
+	 * await monque.now('process-order', { orderId: order.id });
+	 * return order; // Return immediately, processing happens async
+	 * ```
+	 */
+	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
+		return this.enqueue(name, data, { runAt: new Date() });
+	}
+
+	/**
+	 * Schedule a recurring job with a cron expression.
+	 *
+	 * Creates a job that automatically re-schedules itself based on the cron pattern.
+	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
+	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
+	 * After successful completion, the job is reset to `pending` status and scheduled
+	 * for its next run based on the cron expression.
+	 *
+	 * When a `uniqueKey` is provided, only one pending or processing job with that key
+	 * can exist. This prevents duplicate scheduled jobs on application restart.
+	 *
+	 * @template T - The job data payload type (must be JSON-serializable)
+	 * @param cron - Cron expression (5 fields or predefined expression)
+	 * @param name - Job type identifier, must match a registered worker
+	 * @param data - Job payload, will be passed to the worker handler on each run
+	 * @param options - Scheduling options (uniqueKey for deduplication)
+	 * @returns Promise resolving to the created job document with `repeatInterval` set
+	 * @throws {InvalidCronError} If cron expression is invalid
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example Hourly cleanup job
+	 * ```typescript
+	 * await monque.schedule('0 * * * *', 'cleanup-temp-files', {
+	 *   directory: '/tmp/uploads'
+	 * });
+	 * ```
+	 *
+	 * @example Prevent duplicate scheduled jobs with unique key
+	 * ```typescript
+	 * await monque.schedule('0 * * * *', 'hourly-report', { type: 'sales' }, {
+	 *   uniqueKey: 'hourly-report-sales'
+	 * });
+	 * // Subsequent calls with same uniqueKey return existing pending/processing job
+	 * ```
+	 *
+	 * @example Daily report at midnight (using predefined expression)
+	 * ```typescript
+	 * await monque.schedule('@daily', 'daily-report', {
+	 *   reportType: 'sales',
+	 *   recipients: ['analytics@example.com']
+	 * });
+	 * ```
+	 */
+	async schedule<T>(
+		cron: string,
+		name: string,
+		data: T,
+		options: ScheduleOptions = {},
+	): Promise<PersistedJob<T>> {
+		this.ensureInitialized();
+
+		// Validate cron and get next run date (throws InvalidCronError if invalid)
+		const nextRunAt = getNextCronDate(cron);
+
+		const now = new Date();
+		const job: Omit<Job<T>, '_id'> = {
+			name,
+			data,
+			status: JobStatus.PENDING,
+			nextRunAt,
+			repeatInterval: cron,
+			failCount: 0,
+			createdAt: now,
+			updatedAt: now,
+		};
+
+		if (options.uniqueKey) {
+			job.uniqueKey = options.uniqueKey;
+		}
+
+		try {
+			if (options.uniqueKey) {
+				if (!this.collection) {
+					throw new ConnectionError('Failed to schedule job: collection not available');
+				}
+
+				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
+				const result = await this.collection.findOneAndUpdate(
+					{
+						name,
+						uniqueKey: options.uniqueKey,
+						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+					},
+					{
+						$setOnInsert: job,
+					},
+					{
+						upsert: true,
+						returnDocument: 'after',
+					},
+				);
+
+				if (!result) {
+					throw new ConnectionError(
+						'Failed to schedule job: findOneAndUpdate returned no document',
+					);
+				}
+
+				return this.documentToPersistedJob<T>(result as WithId<Document>);
+			}
+
+			const result = await this.collection?.insertOne(job as Document);
+
+			if (!result) {
+				throw new ConnectionError('Failed to schedule job: collection not available');
+			}
+
+			return { ...job, _id: result.insertedId } as PersistedJob<T>;
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
+			throw new ConnectionError(
+				`Failed to schedule job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Register a worker to process jobs of a specific type.
+	 *
+	 * Workers can be registered before or after calling `start()`. Each worker
+	 * processes jobs concurrently up to its configured concurrency limit (default: 5).
+	 *
+	 * The handler function receives the full job object including metadata (`_id`, `status`,
+	 * `failCount`, etc.). If the handler throws an error, the job is retried with exponential
+	 * backoff up to `maxRetries` times. After exhausting retries, the job is marked as `failed`.
+	 *
+	 * Events are emitted during job processing: `job:start`, `job:complete`, `job:fail`, and `job:error`.
+	 *
+	 * **Duplicate Registration**: By default, registering a worker for a job name that already has
+	 * a worker will throw a `WorkerRegistrationError`. This fail-fast behavior prevents accidental
+	 * replacement of handlers. To explicitly replace a worker, pass `{ replace: true }`.
+	 *
+	 * @template T - The job data payload type for type-safe access to `job.data`
+	 * @param name - Job type identifier to handle
+	 * @param handler - Async function to execute for each job
+	 * @param options - Worker configuration
+	 * @param options.concurrency - Maximum concurrent jobs for this worker (default: `defaultConcurrency`)
+	 * @param options.replace - When `true`, replace existing worker instead of throwing error
+	 * @throws {WorkerRegistrationError} When a worker is already registered for `name` and `replace` is not `true`
+	 *
+	 * @example Basic email worker
+	 * ```typescript
+	 * interface EmailJob {
+	 *   to: string;
+	 *   subject: string;
+	 *   body: string;
+	 * }
+	 *
+	 * monque.register<EmailJob>('send-email', async (job) => {
+	 *   await emailService.send(job.data.to, job.data.subject, job.data.body);
+	 * });
+	 * ```
+	 *
+	 * @example Worker with custom concurrency
+	 * ```typescript
+	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
+	 * monque.register('process-video', async (job) => {
+	 *   await videoProcessor.transcode(job.data.videoId);
+	 * }, { concurrency: 2 });
+	 * ```
+	 *
+	 * @example Replacing an existing worker
+	 * ```typescript
+	 * // Replace the existing handler for 'send-email'
+	 * monque.register('send-email', newEmailHandler, { replace: true });
+	 * ```
+	 *
+	 * @example Worker with error handling
+	 * ```typescript
+	 * monque.register('sync-user', async (job) => {
+	 *   try {
+	 *     await externalApi.syncUser(job.data.userId);
+	 *   } catch (error) {
+	 *     // Job will retry with exponential backoff
+	 *     // Delay = 2^failCount × baseRetryInterval (default: 1000ms)
+	 *     throw new Error(`Sync failed: ${error.message}`);
+	 *   }
+	 * });
+	 * ```
+	 */
+	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
+		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
+
+		// Check for existing worker and throw unless replace is explicitly true
+		if (this.workers.has(name) && options.replace !== true) {
+			throw new WorkerRegistrationError(
+				`Worker already registered for job name "${name}". Use { replace: true } to replace.`,
+				name,
+			);
+		}
+
+		this.workers.set(name, {
+			handler: handler as JobHandler,
+			concurrency,
+			activeJobs: new Map(),
+		});
+	}
+
+	/**
+	 * Start polling for and processing jobs.
+	 *
+	 * Begins polling MongoDB at the configured interval (default: 1 second) to pick up
+	 * pending jobs and dispatch them to registered workers. Must call `initialize()` first.
+	 * Workers can be registered before or after calling `start()`.
+	 *
+	 * Jobs are processed concurrently up to each worker's configured concurrency limit.
+	 * The scheduler continues running until `stop()` is called.
+	 *
+	 * @example Basic startup
+	 * ```typescript
+	 * const monque = new Monque(db);
+	 * await monque.initialize();
+	 *
+	 * monque.register('send-email', emailHandler);
+	 * monque.register('process-order', orderHandler);
+	 *
+	 * monque.start(); // Begin processing jobs
+	 * ```
+	 *
+	 * @example With event monitoring
+	 * ```typescript
+	 * monque.on('job:start', (job) => {
+	 *   logger.info(`Starting job ${job.name}`);
+	 * });
+	 *
+	 * monque.on('job:complete', ({ job, duration }) => {
+	 *   metrics.recordJobDuration(job.name, duration);
+	 * });
+	 *
+	 * monque.on('job:fail', ({ job, error, willRetry }) => {
+	 *   logger.error(`Job ${job.name} failed:`, error);
+	 *   if (!willRetry) {
+	 *     alerting.sendAlert(`Job permanently failed: ${job.name}`);
+	 *   }
+	 * });
+	 *
+	 * monque.start();
+	 * ```
+	 *
+	 * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
+	 */
+	start(): void {
+		if (this.isRunning) {
+			return;
+		}
+
+		if (!this.isInitialized) {
+			throw new ConnectionError('Monque not initialized. Call initialize() before start().');
+		}
+
+		this.isRunning = true;
+
+		// Set up change streams as the primary notification mechanism
+		this.setupChangeStream();
+
+		// Set up polling as backup (runs at configured interval)
+		this.pollIntervalId = setInterval(() => {
+			this.poll().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
+			});
+		}, this.options.pollInterval);
+
+		// Start heartbeat interval for claimed jobs
+		this.heartbeatIntervalId = setInterval(() => {
+			this.updateHeartbeats().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
+			});
+		}, this.options.heartbeatInterval);
+
+		// Start cleanup interval if retention is configured
+		if (this.options.jobRetention) {
+			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
+
+			// Run immediately on start
+			this.cleanupJobs().catch((error: unknown) => {
+				this.emit('job:error', { error: error as Error });
+			});
+
+			this.cleanupIntervalId = setInterval(() => {
+				this.cleanupJobs().catch((error: unknown) => {
+					this.emit('job:error', { error: error as Error });
+				});
+			}, interval);
+		}
+
+		// Run initial poll immediately to pick up any existing jobs
+		this.poll().catch((error: unknown) => {
+			this.emit('job:error', { error: error as Error });
+		});
+	}
+
+	/**
+	 * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
+	 *
+	 * Stops polling for new jobs and waits for all active jobs to finish processing.
+	 * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
+	 * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
+	 * On timeout, jobs still in progress are left as `processing` for stale job recovery.
+	 *
+	 * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
+	 *
+	 * @returns Promise that resolves when all jobs complete or timeout is reached
+	 *
+	 * @example Graceful application shutdown
+	 * ```typescript
+	 * process.on('SIGTERM', async () => {
+	 *   console.log('Shutting down gracefully...');
+	 *   await monque.stop(); // Wait for jobs to complete
+	 *   await mongoClient.close();
+	 *   process.exit(0);
+	 * });
+	 * ```
+	 *
+	 * @example With timeout handling
+	 * ```typescript
+	 * monque.on('job:error', ({ error }) => {
+	 *   if (error.name === 'ShutdownTimeoutError') {
+	 *     logger.warn('Forced shutdown after timeout:', error.incompleteJobs);
+	 *   }
+	 * });
+	 *
+	 * await monque.stop();
+	 * ```
+	 */
+	async stop(): Promise<void> {
+		if (!this.isRunning) {
+			return;
+		}
+
+		this.isRunning = false;
+
+		// Close change stream
+		await this.closeChangeStream();
+
+		// Clear debounce timer
+		if (this.changeStreamDebounceTimer) {
+			clearTimeout(this.changeStreamDebounceTimer);
+			this.changeStreamDebounceTimer = null;
+		}
+
+		// Clear reconnection timer
+		if (this.changeStreamReconnectTimer) {
+			clearTimeout(this.changeStreamReconnectTimer);
+			this.changeStreamReconnectTimer = null;
+		}
+
+		if (this.cleanupIntervalId) {
+			clearInterval(this.cleanupIntervalId);
+			this.cleanupIntervalId = null;
+		}
+
+		// Clear polling interval
+		if (this.pollIntervalId) {
+			clearInterval(this.pollIntervalId);
+			this.pollIntervalId = null;
+		}
+
+		// Clear heartbeat interval
+		if (this.heartbeatIntervalId) {
+			clearInterval(this.heartbeatIntervalId);
+			this.heartbeatIntervalId = null;
+		}
+
+		// Wait for all active jobs to complete (with timeout)
+		const activeJobs = this.getActiveJobs();
+		if (activeJobs.length === 0) {
+			return;
+		}
+
+		// Create a promise that resolves when all jobs are done
+		let checkInterval: ReturnType<typeof setInterval> | undefined;
+		const waitForJobs = new Promise<undefined>((resolve) => {
+			checkInterval = setInterval(() => {
+				if (this.getActiveJobs().length === 0) {
+					clearInterval(checkInterval);
+					resolve(undefined);
+				}
+			}, 100);
+		});
+
+		// Race between job completion and timeout
+		const timeout = new Promise<'timeout'>((resolve) => {
+			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
+		});
+
+		let result: undefined | 'timeout';
+
+		try {
+			result = await Promise.race([waitForJobs, timeout]);
+		} finally {
+			if (checkInterval) {
+				clearInterval(checkInterval);
+			}
+		}
+
+		if (result === 'timeout') {
+			const incompleteJobs = this.getActiveJobsList();
+			const { ShutdownTimeoutError } = await import('@/shared/errors.js');
+
+			const error = new ShutdownTimeoutError(
+				`Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
+				incompleteJobs,
+			);
+			this.emit('job:error', { error });
+		}
+	}
+
+	/**
+	 * Check if the scheduler is healthy (running and connected).
+	 *
+	 * Returns `true` when the scheduler is started, initialized, and has an active
+	 * MongoDB collection reference. Useful for health check endpoints and monitoring.
+	 *
+	 * A healthy scheduler:
+	 * - Has called `initialize()` successfully
+	 * - Has called `start()` and is actively polling
+	 * - Has a valid MongoDB collection reference
+	 *
+	 * @returns `true` if scheduler is running and connected, `false` otherwise
+	 *
+	 * @example Express health check endpoint
+	 * ```typescript
+	 * app.get('/health', (req, res) => {
+	 *   const healthy = monque.isHealthy();
+	 *   res.status(healthy ? 200 : 503).json({
+	 *     status: healthy ? 'ok' : 'unavailable',
+	 *     scheduler: healthy,
+	 *     timestamp: new Date().toISOString()
+	 *   });
+	 * });
+	 * ```
+	 *
+	 * @example Kubernetes readiness probe
+	 * ```typescript
+	 * app.get('/readyz', (req, res) => {
+	 *   if (monque.isHealthy() && dbConnected) {
+	 *     res.status(200).send('ready');
+	 *   } else {
+	 *     res.status(503).send('not ready');
+	 *   }
+	 * });
+	 * ```
+	 *
+	 * @example Periodic health monitoring
+	 * ```typescript
+	 * setInterval(() => {
+	 *   if (!monque.isHealthy()) {
+	 *     logger.error('Scheduler unhealthy');
+	 *     metrics.increment('scheduler.unhealthy');
+	 *   }
+	 * }, 60000); // Check every minute
+	 * ```
+	 */
+	isHealthy(): boolean {
+		return this.isRunning && this.isInitialized && this.collection !== null;
+	}
+
+	/**
+	 * Query jobs from the queue with optional filters.
+	 *
+	 * Provides read-only access to job data for monitoring, debugging, and
+	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param filter - Optional filter criteria
+	 * @returns Promise resolving to array of matching jobs
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Get all pending jobs
+	 * ```typescript
+	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
+	 * console.log(`${pendingJobs.length} jobs waiting`);
+	 * ```
+	 *
+	 * @example Get failed email jobs
+	 * ```typescript
+	 * const failedEmails = await monque.getJobs({
+	 *   name: 'send-email',
+	 *   status: JobStatus.FAILED,
+	 * });
+	 * for (const job of failedEmails) {
+	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
+	 * }
+	 * ```
+	 *
+	 * @example Paginated job listing
+	 * ```typescript
+	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
+	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
+	 * ```
+	 *
+	 * @example Use with type guards from @monque/core
+	 * ```typescript
+	 * import { isPendingJob, isRecurringJob } from '@monque/core';
+	 *
+	 * const jobs = await monque.getJobs();
+	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
+	 * ```
+	 */
+	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
+		this.ensureInitialized();
+
+		if (!this.collection) {
+			throw new ConnectionError('Failed to query jobs: collection not available');
+		}
+
+		const query: Document = {};
+
+		if (filter.name !== undefined) {
+			query['name'] = filter.name;
+		}
+
+		if (filter.status !== undefined) {
+			if (Array.isArray(filter.status)) {
+				query['status'] = { $in: filter.status };
+			} else {
+				query['status'] = filter.status;
+			}
+		}
+
+		const limit = filter.limit ?? 100;
+		const skip = filter.skip ?? 0;
+
+		try {
+			const cursor = this.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
+
+			const docs = await cursor.toArray();
+			return docs.map((doc) => this.documentToPersistedJob<T>(doc));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
+			throw new ConnectionError(
+				`Failed to query jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Get a single job by its MongoDB ObjectId.
+	 *
+	 * Useful for retrieving job details when you have a job ID from events,
+	 * logs, or stored references.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param id - The job's ObjectId
+	 * @returns Promise resolving to the job if found, null otherwise
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Look up job from event
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   // Later, retrieve the job to check its status
+	 *   const currentJob = await monque.getJob(job._id);
+	 *   console.log(`Job status: ${currentJob?.status}`);
+	 * });
+	 * ```
+	 *
+	 * @example Admin endpoint
+	 * ```typescript
+	 * app.get('/jobs/:id', async (req, res) => {
+	 *   const job = await monque.getJob(new ObjectId(req.params.id));
+	 *   if (!job) {
+	 *     return res.status(404).json({ error: 'Job not found' });
+	 *   }
+	 *   res.json(job);
+	 * });
+	 * ```
+	 */
+	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
+		this.ensureInitialized();
+
+		if (!this.collection) {
+			throw new ConnectionError('Failed to get job: collection not available');
+		}
+
+		try {
+			const doc = await this.collection.findOne({ _id: id });
+			if (!doc) {
+				return null;
+			}
+			return this.documentToPersistedJob<T>(doc as WithId<Document>);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
+			throw new ConnectionError(
+				`Failed to get job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Poll for available jobs and process them.
+	 *
+	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
+	 * attempts to acquire jobs up to the worker's available concurrency slots.
+	 *
+	 * @private
+	 */
+	private async poll(): Promise<void> {
+		if (!this.isRunning || !this.collection) {
+			return;
+		}
+
+		for (const [name, worker] of this.workers) {
+			// Check if worker has capacity
+			const availableSlots = worker.concurrency - worker.activeJobs.size;
+
+			if (availableSlots <= 0) {
+				continue;
+			}
+
+			// Try to acquire jobs up to available slots
+			for (let i = 0; i < availableSlots; i++) {
+				const job = await this.acquireJob(name);
+
+				if (job) {
+					this.processJob(job, worker).catch((error: unknown) => {
+						this.emit('job:error', { error: error as Error, job });
+					});
+				} else {
+					// No more jobs available for this worker
+					break;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Atomically acquire a pending job for processing using the claimedBy pattern.
+	 *
+	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
+	 * instance can claim a job. The query ensures the job is:
+	 * - In pending status
+	 * - Has nextRunAt <= now
+	 * - Is not claimed by another instance (claimedBy is null/undefined)
+	 *
+	 * @private
+	 * @param name - The job type to acquire
+	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
+	 */
+	private async acquireJob(name: string): Promise<PersistedJob | null> {
+		if (!this.collection) {
+			return null;
+		}
+
+		const now = new Date();
+
+		const result = await this.collection.findOneAndUpdate(
+			{
+				name,
+				status: JobStatus.PENDING,
+				nextRunAt: { $lte: now },
+				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
+			},
+			{
+				$set: {
+					status: JobStatus.PROCESSING,
+					claimedBy: this.options.schedulerInstanceId,
+					lockedAt: now,
+					lastHeartbeat: now,
+					heartbeatInterval: this.options.heartbeatInterval,
+					updatedAt: now,
+				},
+			},
+			{
+				sort: { nextRunAt: 1 },
+				returnDocument: 'after',
+			},
+		);
+
+		if (!result) {
+			return null;
+		}
+
+		return this.documentToPersistedJob(result as WithId<Document>);
+	}
+
+	/**
+	 * Execute a job using its registered worker handler.
+	 *
+	 * Tracks the job as active during processing, emits lifecycle events, and handles
+	 * both success and failure cases. On success, calls `completeJob()`. On failure,
+	 * calls `failJob()` which implements exponential backoff retry logic.
+	 *
+	 * @private
+	 * @param job - The job to process
+	 * @param worker - The worker registration containing the handler and active job tracking
+	 */
+	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
+		const jobId = job._id.toString();
+		worker.activeJobs.set(jobId, job);
+
+		const startTime = Date.now();
+		this.emit('job:start', job);
+
+		try {
+			await worker.handler(job);
+
+			// Job completed successfully
+			const duration = Date.now() - startTime;
+			await this.completeJob(job);
+			this.emit('job:complete', { job, duration });
+		} catch (error) {
+			// Job failed
+			const err = error instanceof Error ? error : new Error(String(error));
+			await this.failJob(job, err);
+
+			const willRetry = job.failCount + 1 < this.options.maxRetries;
+			this.emit('job:fail', { job, error: err, willRetry });
+		} finally {
+			worker.activeJobs.delete(jobId);
+		}
+	}
+
+	/**
+	 * Mark a job as completed successfully.
+	 *
+	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
+	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
+	 * Clears `lockedAt` and `failReason` fields in both cases.
+	 *
+	 * @private
+	 * @param job - The job that completed successfully
+	 */
+	private async completeJob(job: Job): Promise<void> {
+		if (!this.collection || !isPersistedJob(job)) {
+			return;
+		}
+
+		if (job.repeatInterval) {
+			// Recurring job - schedule next run
+			const nextRunAt = getNextCronDate(job.repeatInterval);
+			await this.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						nextRunAt,
+						failCount: 0,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+						failReason: '',
+					},
+				},
+			);
+		} else {
+			// One-time job - mark as completed
+			await this.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.COMPLETED,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+						failReason: '',
+					},
+				},
+			);
+			job.status = JobStatus.COMPLETED;
+		}
+	}
+
+	/**
+	 * Handle job failure with exponential backoff retry logic.
+	 *
+	 * Increments `failCount` and calculates next retry time using exponential backoff:
+	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
+	 *
+	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
+	 * to `pending` status for retry. Stores error message in `failReason` field.
+	 *
+	 * @private
+	 * @param job - The job that failed
+	 * @param error - The error that caused the failure
+	 */
+	private async failJob(job: Job, error: Error): Promise<void> {
+		if (!this.collection || !isPersistedJob(job)) {
+			return;
+		}
+
+		const newFailCount = job.failCount + 1;
+
+		if (newFailCount >= this.options.maxRetries) {
+			// Permanent failure
+			await this.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.FAILED,
+						failCount: newFailCount,
+						failReason: error.message,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+					},
+				},
+			);
+		} else {
+			// Schedule retry with exponential backoff
+			const nextRunAt = calculateBackoff(
+				newFailCount,
+				this.options.baseRetryInterval,
+				this.options.maxBackoffDelay,
+			);
+
+			await this.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: newFailCount,
+						failReason: error.message,
+						nextRunAt,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+					},
+				},
+			);
+		}
+	}
+
+	/**
+	 * Ensure the scheduler is initialized before operations.
+	 *
+	 * @private
+	 * @throws {ConnectionError} If scheduler not initialized or collection unavailable
+	 */
+	private ensureInitialized(): void {
+		if (!this.isInitialized || !this.collection) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+	}
+
+	/**
+	 * Update heartbeats for all jobs claimed by this scheduler instance.
+	 *
+	 * This method runs periodically while the scheduler is running to indicate
+	 * that jobs are still being actively processed.
+	 *
+	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
+	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
+	 *
+	 * @private
+	 */
+	private async updateHeartbeats(): Promise<void> {
+		if (!this.collection || !this.isRunning) {
+			return;
+		}
+
+		const now = new Date();
+
+		await this.collection.updateMany(
+			{
+				claimedBy: this.options.schedulerInstanceId,
+				status: JobStatus.PROCESSING,
+			},
+			{
+				$set: {
+					lastHeartbeat: now,
+					updatedAt: now,
+				},
+			},
+		);
+	}
+
+	/**
+	 * Set up MongoDB Change Stream for real-time job notifications.
+	 *
+	 * Change streams provide instant notifications when jobs are inserted or when
+	 * job status changes to pending (e.g., after a retry). This eliminates the
+	 * polling delay for reactive job processing.
+	 *
+	 * The change stream watches for:
+	 * - Insert operations (new jobs)
+	 * - Update operations where status field changes
+	 *
+	 * If change streams are unavailable (e.g., standalone MongoDB), the system
+	 * gracefully falls back to polling-only mode.
+	 *
+	 * @private
+	 */
+	private setupChangeStream(): void {
+		if (!this.collection || !this.isRunning) {
+			return;
+		}
+
+		try {
+			// Create change stream with pipeline to filter relevant events
+			const pipeline = [
+				{
+					$match: {
+						$or: [
+							{ operationType: 'insert' },
+							{
+								operationType: 'update',
+								'updateDescription.updatedFields.status': { $exists: true },
+							},
+						],
+					},
+				},
+			];
+
+			this.changeStream = this.collection.watch(pipeline, {
+				fullDocument: 'updateLookup',
+			});
+
+			// Handle change events
+			this.changeStream.on('change', (change) => {
+				this.handleChangeStreamEvent(change);
+			});
+
+			// Handle errors with reconnection
+			this.changeStream.on('error', (error: Error) => {
+				this.emit('changestream:error', { error });
+				this.handleChangeStreamError(error);
+			});
+
+			// Mark as connected
+			this.usingChangeStreams = true;
+			this.changeStreamReconnectAttempts = 0;
+			this.emit('changestream:connected', undefined);
+		} catch (error) {
+			// Change streams not available (e.g., standalone MongoDB)
+			this.usingChangeStreams = false;
+			const reason = error instanceof Error ? error.message : 'Unknown error';
+			this.emit('changestream:fallback', { reason });
+		}
+	}
+
+	/**
+	 * Handle a change stream event by triggering a debounced poll.
+	 *
+	 * Events are debounced to prevent "claim storms" when multiple changes arrive
+	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
+	 * collects multiple events and triggers a single poll.
+	 *
+	 * @private
+	 * @param change - The change stream event document
+	 */
+	private handleChangeStreamEvent(change: ChangeStreamDocument<Document>): void {
+		if (!this.isRunning) {
+			return;
+		}
+
+		// Trigger poll on insert (new job) or update where status changes
+		const isInsert = change.operationType === 'insert';
+		const isUpdate = change.operationType === 'update';
+
+		// Get fullDocument if available (for insert or with updateLookup option)
+		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
+		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
+
+		// For inserts: always trigger since new pending jobs need processing
+		// For updates: trigger if status changed to pending (retry/release scenario)
+		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
+
+		if (shouldTrigger) {
+			// Debounce poll triggers to avoid claim storms
+			if (this.changeStreamDebounceTimer) {
+				clearTimeout(this.changeStreamDebounceTimer);
+			}
+
+			this.changeStreamDebounceTimer = setTimeout(() => {
+				this.changeStreamDebounceTimer = null;
+				this.poll().catch((error: unknown) => {
+					this.emit('job:error', { error: error as Error });
+				});
+			}, 100);
+		}
+	}
+
+	/**
+	 * Handle change stream errors with exponential backoff reconnection.
+	 *
+	 * Attempts to reconnect up to `maxChangeStreamReconnectAttempts` times with
+	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
+	 * polling-only mode.
+	 *
+	 * @private
+	 * @param error - The error that caused the change stream failure
+	 */
+	private handleChangeStreamError(error: Error): void {
+		if (!this.isRunning) {
+			return;
+		}
+
+		this.changeStreamReconnectAttempts++;
+
+		if (this.changeStreamReconnectAttempts > this.maxChangeStreamReconnectAttempts) {
+			// Fall back to polling-only mode
+			this.usingChangeStreams = false;
+			this.emit('changestream:fallback', {
+				reason: `Exhausted ${this.maxChangeStreamReconnectAttempts} reconnection attempts: ${error.message}`,
+			});
+			return;
+		}
+
+		// Exponential backoff: 1s, 2s, 4s
+		const delay = 2 ** (this.changeStreamReconnectAttempts - 1) * 1000;
+
+		// Clear any existing reconnect timer before scheduling a new one
+		if (this.changeStreamReconnectTimer) {
+			clearTimeout(this.changeStreamReconnectTimer);
+		}
+
+		this.changeStreamReconnectTimer = setTimeout(() => {
+			this.changeStreamReconnectTimer = null;
+			if (this.isRunning) {
+				// Close existing change stream before reconnecting
+				if (this.changeStream) {
+					this.changeStream.close().catch(() => {});
+					this.changeStream = null;
+				}
+				this.setupChangeStream();
+			}
+		}, delay);
+	}
+
+	/**
+	 * Close the change stream cursor and emit closed event.
+	 *
+	 * @private
+	 */
+	private async closeChangeStream(): Promise<void> {
+		if (this.changeStream) {
+			try {
+				await this.changeStream.close();
+			} catch {
+				// Ignore close errors during shutdown
+			}
+			this.changeStream = null;
+
+			if (this.usingChangeStreams) {
+				this.emit('changestream:closed', undefined);
+			}
+		}
+
+		this.usingChangeStreams = false;
+		this.changeStreamReconnectAttempts = 0;
+	}
+
+	/**
+	 * Get array of active job IDs across all workers.
+	 *
+	 * @private
+	 * @returns Array of job ID strings currently being processed
+	 */
+	private getActiveJobs(): string[] {
+		const activeJobs: string[] = [];
+		for (const worker of this.workers.values()) {
+			activeJobs.push(...worker.activeJobs.keys());
+		}
+		return activeJobs;
+	}
+
+	/**
+	 * Get list of active job documents (for shutdown timeout error).
+	 *
+	 * @private
+	 * @returns Array of active Job objects
+	 */
+	private getActiveJobsList(): Job[] {
+		const activeJobs: Job[] = [];
+		for (const worker of this.workers.values()) {
+			activeJobs.push(...worker.activeJobs.values());
+		}
+		return activeJobs;
+	}
+
+	/**
+	 * Convert a MongoDB document to a typed PersistedJob object.
+	 *
+	 * Maps raw MongoDB document fields to the strongly-typed `PersistedJob<T>` interface,
+	 * ensuring type safety and handling optional fields (`lockedAt`, `failReason`, etc.).
+	 *
+	 * @private
+	 * @template T - The job data payload type
+	 * @param doc - The raw MongoDB document with `_id`
+	 * @returns A strongly-typed PersistedJob object with guaranteed `_id`
+	 */
+	private documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
+		const job: PersistedJob<T> = {
+			_id: doc._id,
+			name: doc['name'] as string,
+			data: doc['data'] as T,
+			status: doc['status'] as JobStatusType,
+			nextRunAt: doc['nextRunAt'] as Date,
+			failCount: doc['failCount'] as number,
+			createdAt: doc['createdAt'] as Date,
+			updatedAt: doc['updatedAt'] as Date,
+		};
+
+		// Only set optional properties if they exist
+		if (doc['lockedAt'] !== undefined) {
+			job.lockedAt = doc['lockedAt'] as Date | null;
+		}
+		if (doc['claimedBy'] !== undefined) {
+			job.claimedBy = doc['claimedBy'] as string | null;
+		}
+		if (doc['lastHeartbeat'] !== undefined) {
+			job.lastHeartbeat = doc['lastHeartbeat'] as Date | null;
+		}
+		if (doc['heartbeatInterval'] !== undefined) {
+			job.heartbeatInterval = doc['heartbeatInterval'] as number;
+		}
+		if (doc['failReason'] !== undefined) {
+			job.failReason = doc['failReason'] as string;
+		}
+		if (doc['repeatInterval'] !== undefined) {
+			job.repeatInterval = doc['repeatInterval'] as string;
+		}
+		if (doc['uniqueKey'] !== undefined) {
+			job.uniqueKey = doc['uniqueKey'] as string;
+		}
+
+		return job;
+	}
+
+	/**
+	 * Type-safe event emitter methods
+	 */
+	override emit<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]): boolean {
+		return super.emit(event, payload);
+	}
+
+	override on<K extends keyof MonqueEventMap>(
+		event: K,
+		listener: (payload: MonqueEventMap[K]) => void,
+	): this {
+		return super.on(event, listener);
+	}
+
+	override once<K extends keyof MonqueEventMap>(
+		event: K,
+		listener: (payload: MonqueEventMap[K]) => void,
+	): this {
+		return super.once(event, listener);
+	}
+
+	override off<K extends keyof MonqueEventMap>(
+		event: K,
+		listener: (payload: MonqueEventMap[K]) => void,
+	): this {
+		return super.off(event, listener);
+	}
+}
+````
+
+## File: packages/core/src/shared/errors.ts
+````typescript
+import type { Job } from '@/jobs';
+
+/**
+ * Base error class for all Monque-related errors.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof MonqueError) {
+ *     console.error('Monque error:', error.message);
+ *   }
+ * }
+ * ```
+ */
+export class MonqueError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'MonqueError';
+		// Maintains proper stack trace for where our error was thrown (only available on V8)
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, MonqueError);
+		}
+	}
+}
+
+/**
+ * Error thrown when an invalid cron expression is provided.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.schedule('invalid cron', 'job', data);
+ * } catch (error) {
+ *   if (error instanceof InvalidCronError) {
+ *     console.error('Invalid expression:', error.expression);
+ *   }
+ * }
+ * ```
+ */
+export class InvalidCronError extends MonqueError {
+	constructor(
+		public readonly expression: string,
+		message: string,
+	) {
+		super(message);
+		this.name = 'InvalidCronError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, InvalidCronError);
+		}
+	}
+}
+
+/**
+ * Error thrown when there's a database connection issue.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof ConnectionError) {
+ *     console.error('Database connection lost');
+ *   }
+ * }
+ * ```
+ */
+export class ConnectionError extends MonqueError {
+	constructor(message: string, options?: { cause?: Error }) {
+		super(message);
+		this.name = 'ConnectionError';
+		if (options?.cause) {
+			this.cause = options.cause;
+		}
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, ConnectionError);
+		}
+	}
+}
+
+/**
+ * Error thrown when graceful shutdown times out.
+ * Includes information about jobs that were still in progress.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.stop();
+ * } catch (error) {
+ *   if (error instanceof ShutdownTimeoutError) {
+ *     console.error('Incomplete jobs:', error.incompleteJobs.length);
+ *   }
+ * }
+ * ```
+ */
+export class ShutdownTimeoutError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly incompleteJobs: Job[],
+	) {
+		super(message);
+		this.name = 'ShutdownTimeoutError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, ShutdownTimeoutError);
+		}
+	}
+}
+
+/**
+ * Error thrown when attempting to register a worker for a job name
+ * that already has a registered worker, without explicitly allowing replacement.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   monque.register('send-email', handler1);
+ *   monque.register('send-email', handler2); // throws
+ * } catch (error) {
+ *   if (error instanceof WorkerRegistrationError) {
+ *     console.error('Worker already registered for:', error.jobName);
+ *   }
+ * }
+ *
+ * // To intentionally replace a worker:
+ * monque.register('send-email', handler2, { replace: true });
+ * ```
+ */
+export class WorkerRegistrationError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly jobName: string,
+	) {
+		super(message);
+		this.name = 'WorkerRegistrationError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, WorkerRegistrationError);
+		}
+	}
+}
+````
+
+## File: packages/core/src/workers/types.ts
+````typescript
+import type { JobHandler, PersistedJob } from '@/jobs';
+
+/**
+ * Options for registering a worker.
+ *
+ * @example
+ * ```typescript
+ * monque.register('send-email', emailHandler, {
+ *   concurrency: 3,
+ * });
+ * ```
+ */
+export interface WorkerOptions {
+	/**
+	 * Number of concurrent jobs this worker can process.
+	 * @default 5 (uses defaultConcurrency from MonqueOptions)
+	 */
+	concurrency?: number;
+
+	/**
+	 * Allow replacing an existing worker for the same job name.
+	 * If false (default) and a worker already exists, throws WorkerRegistrationError.
+	 * @default false
+	 */
+	replace?: boolean;
+}
+
+/**
+ * Internal worker registration with handler and options.
+ * Tracks the handler, concurrency limit, and currently active jobs.
+ */
+export interface WorkerRegistration<T = unknown> {
+	/** The job handler function */
+	handler: JobHandler<T>;
+	/** Maximum concurrent jobs for this worker */
+	concurrency: number;
+	/** Map of active job IDs to their job data */
+	activeJobs: Map<string, PersistedJob<T>>;
+}
+````
+
+## File: packages/core/tests/integration/atomic-claim.test.ts
+````typescript
+/**
+ * Tests for atomic job claiming using the claimedBy field.
+ *
+ * These tests verify:
+ * - Jobs are claimed atomically using claimedBy field
+ * - Only one scheduler instance can claim a job
+ * - Concurrent claim attempts result in only one success
+ * - claimedBy is set when job is acquired
+ * - claimedBy is cleared when job completes or fails
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('atomic job claiming', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('atomic-claim');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('claimedBy field behavior', () => {
+		it('should set claimedBy to scheduler instance ID when acquiring a job', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'test-instance-123';
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: instanceId,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processedJob: Job | null = null;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
+				processedJob = job;
+				// Hold the job to verify claimedBy while processing
+				await new Promise((resolve) => setTimeout(resolve, 200));
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+
+			monque.start();
+
+			// Wait for job to start processing
+			await waitFor(async () => processedJob !== null, { timeout: 5000 });
+
+			// Check claimedBy in database while job is processing
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+
+			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
+			expect(doc?.['claimedBy']).toBe(instanceId);
+			expect(doc?.['lockedAt']).toBeInstanceOf(Date);
+		});
+
+		it('should clear claimedBy when job completes successfully', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'test-instance-456';
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: instanceId,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let completed = false;
+			monque.on('job:complete', () => {
+				completed = true;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				// Quick completion
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => completed, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+
+			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
+			expect(doc?.['claimedBy']).toBeUndefined();
+		});
+
+		it('should clear claimedBy when job fails permanently', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'test-instance-789';
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: instanceId,
+				maxRetries: 1, // Fail immediately after first attempt
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let permanentlyFailed = false;
+			monque.on('job:fail', ({ willRetry }) => {
+				if (!willRetry) {
+					permanentlyFailed = true;
+				}
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				throw new Error('Intentional failure');
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => permanentlyFailed, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+
+			expect(doc?.['status']).toBe(JobStatus.FAILED);
+			expect(doc?.['claimedBy']).toBeUndefined();
+		});
+
+		it('should clear claimedBy when job fails but will retry', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'test-instance-retry';
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: instanceId,
+				maxRetries: 3,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let failedWithRetry = false;
+			monque.on('job:fail', ({ willRetry }) => {
+				if (willRetry) {
+					failedWithRetry = true;
+				}
+			});
+
+			let attempts = 0;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				attempts++;
+				if (attempts === 1) {
+					throw new Error('First attempt fails');
+				}
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => failedWithRetry, { timeout: 5000 });
+			await monque.stop();
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+
+			expect(doc?.['status']).toBe(JobStatus.PENDING);
+			expect(doc?.['claimedBy']).toBeUndefined();
+			expect(doc?.['failCount']).toBe(1);
+		});
+	});
+
+	describe('concurrent claim attempts', () => {
+		it('should allow only one instance to claim a job when multiple attempt simultaneously', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+			const instance1Id = 'instance-1';
+			const instance2Id = 'instance-2';
+			const instance3Id = 'instance-3';
+
+			const monque1 = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				schedulerInstanceId: instance1Id,
+				defaultConcurrency: 1,
+			});
+			const monque2 = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				schedulerInstanceId: instance2Id,
+				defaultConcurrency: 1,
+			});
+			const monque3 = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				schedulerInstanceId: instance3Id,
+				defaultConcurrency: 1,
+			});
+
+			monqueInstances.push(monque1, monque2, monque3);
+
+			await monque1.initialize();
+			await monque2.initialize();
+			await monque3.initialize();
+
+			const claimedBy = new Set<string>();
+			const processedJobIds = new Set<string>();
+			const duplicates: string[] = [];
+
+			const createHandler = (instanceName: string) => async (job: Job<{ id: number }>) => {
+				const jobId = job._id?.toString() ?? '';
+				if (processedJobIds.has(jobId)) {
+					duplicates.push(`${jobId} by ${instanceName}`);
+				}
+				processedJobIds.add(jobId);
+				claimedBy.add(instanceName);
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			};
+
+			monque1.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-1'));
+			monque2.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-2'));
+			monque3.register(TEST_CONSTANTS.JOB_NAME, createHandler('instance-3'));
+
+			// Enqueue a single job
+			await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
+
+			// Start all instances simultaneously
+			monque1.start();
+			monque2.start();
+			monque3.start();
+
+			// Wait for job to be processed
+			await waitFor(async () => processedJobIds.size === 1, { timeout: 5000 });
+
+			// Verify no duplicates
+			expect(duplicates).toHaveLength(0);
+			// Exactly one instance should have claimed the job
+			expect(claimedBy.size).toBe(1);
+		});
+
+		it('should distribute multiple jobs across instances without duplicates', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const jobCount = 20;
+
+			const monque1 = new Monque(db, {
+				collectionName,
+				pollInterval: 30,
+				schedulerInstanceId: 'dist-instance-1',
+				defaultConcurrency: 3,
+			});
+			const monque2 = new Monque(db, {
+				collectionName,
+				pollInterval: 30,
+				schedulerInstanceId: 'dist-instance-2',
+				defaultConcurrency: 3,
+			});
+
+			monqueInstances.push(monque1, monque2);
+
+			await monque1.initialize();
+			await monque2.initialize();
+
+			const processedJobs = new Set<number>();
+			const duplicateJobs = new Set<number>();
+			const instance1Jobs: number[] = [];
+			const instance2Jobs: number[] = [];
+
+			const handler1 = async (job: Job<{ id: number }>) => {
+				const id = job.data.id;
+				if (processedJobs.has(id)) {
+					duplicateJobs.add(id);
+				}
+				processedJobs.add(id);
+				instance1Jobs.push(id);
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			};
+
+			const handler2 = async (job: Job<{ id: number }>) => {
+				const id = job.data.id;
+				if (processedJobs.has(id)) {
+					duplicateJobs.add(id);
+				}
+				processedJobs.add(id);
+				instance2Jobs.push(id);
+				await new Promise((resolve) => setTimeout(resolve, 20));
+			};
+
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
+
+			// Enqueue jobs
+			for (let i = 0; i < jobCount; i++) {
+				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i });
+			}
+
+			monque1.start();
+			monque2.start();
+
+			await waitFor(async () => processedJobs.size === jobCount, { timeout: 10000 });
+
+			expect(processedJobs.size).toBe(jobCount);
+			expect(duplicateJobs.size).toBe(0);
+
+			// Both instances should have processed some jobs (distribution)
+			expect(instance1Jobs.length + instance2Jobs.length).toBe(jobCount);
+
+			// Wait for database to reflect all completions
+			await waitFor(
+				async () => {
+					const count = await db
+						.collection(collectionName)
+						.countDocuments({ status: JobStatus.COMPLETED });
+					return count === jobCount;
+				},
+				{ timeout: 5000 },
+			);
+
+			const completedCount = await db
+				.collection(collectionName)
+				.countDocuments({ status: JobStatus.COMPLETED });
+			expect(completedCount).toBe(jobCount);
+		});
+	});
+
+	describe('claim query behavior', () => {
+		it('should not claim jobs already claimed by another instance', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+			// Create a job and manually set it as claimed by another instance
+			const collection = db.collection(collectionName);
+			const now = new Date();
+			const claimedJob = JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { value: 1 },
+				nextRunAt: new Date(now.getTime() - 1000),
+				claimedBy: 'other-instance',
+				lockedAt: now,
+				lastHeartbeat: now,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await collection.insertOne(claimedJob);
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: 'new-instance',
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const handler = vi.fn();
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			monque.start();
+
+			// Wait a bit to ensure polling happens
+			await new Promise((resolve) => setTimeout(resolve, 500));
+			await monque.stop();
+
+			// Handler should not have been called since job is claimed by another
+			expect(handler).not.toHaveBeenCalled();
+
+			// Verify job is still claimed by other instance
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+			expect(doc?.['claimedBy']).toBe('other-instance');
+		});
+
+		it('should claim unclaimed pending jobs', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'claiming-instance';
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				schedulerInstanceId: instanceId,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processed = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processed = true;
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => processed, { timeout: 5000 });
+
+			// Job should have been processed
+			expect(processed).toBe(true);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/change-streams.test.ts
+````typescript
+/**
+ * Tests for MongoDB Change Stream integration.
+ *
+ * These tests verify:
+ * - Change stream initialization on start()
+ * - Job notification via insert events
+ * - Job notification via update events (status change to pending)
+ * - Error handling and reconnection with exponential backoff
+ * - Graceful fallback to polling when change streams unavailable
+ * - Change stream cleanup on shutdown
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import type { Job } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('change streams', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('change-streams');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('change stream initialization', () => {
+		it('should emit changestream:connected event when change stream is established', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 10000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.start();
+
+			await waitFor(async () => connected, { timeout: 5000 });
+			expect(connected).toBe(true);
+		});
+
+		it('should emit changestream:closed event on stop()', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 10000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let connected = false;
+			let closed = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+			monque.on('changestream:closed', () => {
+				closed = true;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.start();
+
+			await waitFor(async () => connected, { timeout: 5000 });
+			await monque.stop();
+
+			expect(closed).toBe(true);
+		});
+	});
+
+	describe('job notification via insert events', () => {
+		it('should trigger job processing immediately when job is inserted', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 5000, // 5 second backup poll - change stream should be faster
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let startTime: number;
+			let processingTime: number | null = null;
+
+			monque.register<{ value: number }>(TEST_CONSTANTS.JOB_NAME, async () => {
+				processingTime = Date.now() - startTime;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// Small delay to ensure initial poll has completed
+			await new Promise((resolve) => setTimeout(resolve, 200));
+
+			// Enqueue job after change stream is connected and initial poll is done
+			startTime = Date.now();
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+
+			await waitFor(async () => processingTime !== null, { timeout: 10000 });
+
+			// Should process faster than backup poll interval
+			expect(processingTime).toBeLessThan(5000);
+		});
+
+		it('should process multiple inserted jobs in sequence', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 2000, // 2 second poll to help pick up remaining jobs
+				defaultConcurrency: 1,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const processedIds: number[] = [];
+			monque.register<{ id: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
+				processedIds.push(job.data.id);
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// Enqueue jobs after change stream is connected
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 1 });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 2 });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { id: 3 });
+
+			await waitFor(async () => processedIds.length === 3, { timeout: 10000 });
+			expect(processedIds).toHaveLength(3);
+		});
+	});
+
+	describe('job notification via update events', () => {
+		it('should process job when status changes to pending (retry scenario)', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 2000, // 2 second poll for quicker retry pickup
+				maxRetries: 3,
+				baseRetryInterval: 50, // Short interval for faster retry
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let attempts = 0;
+			let completed = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				attempts++;
+				if (attempts === 1) {
+					throw new Error('First attempt fails');
+				}
+				completed = true;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+
+			// Wait for retry to complete
+			await waitFor(async () => completed, { timeout: 10000 });
+			expect(attempts).toBe(2);
+			expect(completed).toBe(true);
+		});
+
+		it('should detect recurring job reschedule via update event', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 2000, // nextRunAt changes rely on polling (status changes trigger change stream)
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let executions = 0;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				executions++;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// Schedule a job that should run immediately
+			const job = await monque.schedule('* * * * *', TEST_CONSTANTS.JOB_NAME, { value: 1 });
+
+			// Trigger it by setting nextRunAt to now
+			const collection = db.collection(collectionName);
+			await collection.updateOne({ _id: job._id }, { $set: { nextRunAt: new Date() } });
+
+			await waitFor(async () => executions >= 1, { timeout: 5000 });
+			expect(executions).toBeGreaterThanOrEqual(1);
+		});
+	});
+
+	describe('error handling and reconnection', () => {
+		it('should emit changestream:error when an error occurs', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 1000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const errorPromise = new Promise<Error>((resolve) => {
+				monque.on('changestream:error', ({ error }) => {
+					resolve(error);
+				});
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+			expect(changeStream).toBeDefined();
+
+			if (changeStream) {
+				changeStream.emit('error', new Error('Simulated test error'));
+			}
+
+			const error = await errorPromise;
+			expect(error).toBeInstanceOf(Error);
+			expect(error.message).toBe('Simulated test error');
+		});
+
+		it('should continue processing with polling when change stream fails', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100, // Fast polling for fallback
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processed = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processed = true;
+			});
+
+			monque.start();
+
+			// Even if change stream has issues, polling should work
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			await waitFor(async () => processed, { timeout: 5000 });
+
+			expect(processed).toBe(true);
+		});
+
+		it('should emit changestream:fallback after exhausting reconnection attempts', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100, // Fast polling for fallback
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const fallbackEvents: { reason: string }[] = [];
+			const errorEvents: { error: Error }[] = [];
+
+			monque.on('changestream:fallback', (payload) => {
+				fallbackEvents.push(payload);
+			});
+			monque.on('changestream:error', (payload) => {
+				errorEvents.push(payload);
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// @ts-expect-error - Accessing private property for testing
+			const maxAttempts = monque.maxChangeStreamReconnectAttempts;
+
+			// Simulate repeated errors to exhaust reconnection attempts
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+
+			// Emit more errors than max attempts to trigger fallback
+			for (let i = 0; i <= maxAttempts + 1; i++) {
+				if (changeStream) {
+					changeStream.emit('error', new Error(`Simulated test error ${i + 1}`));
+					// Small delay to allow error handling
+					await new Promise((resolve) => setTimeout(resolve, 50));
+				}
+			}
+
+			// Give time for fallback to be emitted
+			await waitFor(async () => fallbackEvents.length > 0, { timeout: 5000 });
+
+			expect(fallbackEvents.length).toBeGreaterThan(0);
+			expect(fallbackEvents[0]?.reason).toContain('Exhausted');
+			expect(fallbackEvents[0]?.reason).toContain('reconnection attempts');
+		});
+
+		it('should attempt reconnection with exponential backoff after change stream error', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 5000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let connectionCount = 0;
+			monque.on('changestream:connected', () => {
+				connectionCount++;
+			});
+
+			const errorEvents: { error: Error }[] = [];
+			monque.on('changestream:error', (payload) => {
+				errorEvents.push(payload);
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.start();
+
+			await waitFor(async () => connectionCount >= 1, { timeout: 5000 });
+
+			// @ts-expect-error - Accessing private property for testing
+			const changeStream = monque.changeStream;
+
+			// Emit a single error - should trigger reconnection
+			if (changeStream) {
+				changeStream.emit('error', new Error('Simulated recoverable error'));
+			}
+
+			// Wait for error to be processed and reconnection attempt
+			await waitFor(async () => errorEvents.length >= 1, { timeout: 3000 });
+
+			// Allow time for reconnection (first attempt has 1s delay)
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+
+			// Connection count may increase if reconnection was successful
+			// Or remain same if still attempting - either way, verify error was handled
+			expect(errorEvents.length).toBeGreaterThanOrEqual(1);
+			expect(errorEvents[0]?.error.message).toBe('Simulated recoverable error');
+		});
+	});
+
+	describe('fallback to polling', () => {
+		it('should emit changestream:fallback event when change streams unavailable', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+			// Spy on db.collection to return a collection with a failing watch method
+			const originalCollectionFn = db.collection.bind(db);
+			const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
+				const collection = originalCollectionFn(name, options);
+				// Mock watch to throw immediately
+				vi.spyOn(collection, 'watch').mockImplementation(() => {
+					throw new Error('Change streams unavailable');
+				});
+				return collection;
+			});
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let fallbackEmitted = false;
+			monque.on('changestream:fallback', () => {
+				fallbackEmitted = true;
+			});
+
+			let processed = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processed = true;
+			});
+
+			monque.start();
+
+			// Wait for fallback event
+			await waitFor(async () => fallbackEmitted, { timeout: 2000 });
+			expect(fallbackEmitted).toBe(true);
+
+			// Enqueue and verify processing still works via polling
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			await waitFor(async () => processed, { timeout: 5000 });
+
+			expect(processed).toBe(true);
+
+			// Cleanup spy
+			collectionSpy.mockRestore();
+		});
+
+		it('should use polling as backup even with active change streams', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 200,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processCount = 0;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processCount++;
+			});
+
+			monque.start();
+
+			// Enqueue multiple jobs
+			for (let i = 0; i < 5; i++) {
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: i });
+			}
+
+			await waitFor(async () => processCount === 5, { timeout: 10000 });
+			expect(processCount).toBe(5);
+		});
+	});
+
+	describe('cleanup on shutdown', () => {
+		it('should close change stream cursor on stop()', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 10000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let connected = false;
+			let closed = false;
+
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+			monque.on('changestream:closed', () => {
+				closed = true;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			monque.start();
+
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			await monque.stop();
+
+			expect(closed).toBe(true);
+		});
+
+		it('should not process new jobs after stop() is called', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 10000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processedAfterStop = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processedAfterStop = true;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			await monque.stop();
+
+			// Enqueue after stop - should not be processed
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			await new Promise((resolve) => setTimeout(resolve, 500));
+
+			expect(processedAfterStop).toBe(false);
+		});
+	});
+
+	describe('integration with atomic claim', () => {
+		it('should distribute jobs across multiple instances via change streams', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const jobCount = 10;
+
+			const monque1 = new Monque(db, {
+				collectionName,
+				pollInterval: 5000, // 5 second backup poll
+				schedulerInstanceId: 'cs-instance-1',
+				defaultConcurrency: 2,
+			});
+			const monque2 = new Monque(db, {
+				collectionName,
+				pollInterval: 5000, // 5 second backup poll
+				schedulerInstanceId: 'cs-instance-2',
+				defaultConcurrency: 2,
+			});
+
+			monqueInstances.push(monque1, monque2);
+
+			await monque1.initialize();
+			await monque2.initialize();
+
+			const processedJobs = new Set<number>();
+			const duplicates = new Set<number>();
+			const instance1Jobs: number[] = [];
+			const instance2Jobs: number[] = [];
+
+			const handler1 = async (job: Job<{ id: number }>) => {
+				const id = job.data.id;
+				if (processedJobs.has(id)) {
+					duplicates.add(id);
+				}
+				processedJobs.add(id);
+				instance1Jobs.push(id);
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			};
+
+			const handler2 = async (job: Job<{ id: number }>) => {
+				const id = job.data.id;
+				if (processedJobs.has(id)) {
+					duplicates.add(id);
+				}
+				processedJobs.add(id);
+				instance2Jobs.push(id);
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			};
+
+			monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
+			monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
+
+			let connected1 = false;
+			let connected2 = false;
+			monque1.on('changestream:connected', () => {
+				connected1 = true;
+			});
+			monque2.on('changestream:connected', () => {
+				connected2 = true;
+			});
+
+			monque1.start();
+			monque2.start();
+
+			await waitFor(async () => connected1 && connected2, { timeout: 5000 });
+
+			// Enqueue jobs
+			for (let i = 0; i < jobCount; i++) {
+				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i });
+			}
+
+			await waitFor(async () => processedJobs.size === jobCount, { timeout: 15000 });
+
+			expect(processedJobs.size).toBe(jobCount);
+			expect(duplicates.size).toBe(0);
+			expect(instance1Jobs.length + instance2Jobs.length).toBe(jobCount);
+		});
+	});
+
+	describe('performance', () => {
+		it('should process jobs with lower latency than poll interval', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const pollInterval = 10000; // 10 seconds
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const latencies: number[] = [];
+			let processed = 0;
+
+			monque.register<{ startTime: number }>(TEST_CONSTANTS.JOB_NAME, async (job) => {
+				latencies.push(Date.now() - job.data.startTime);
+				processed++;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// Enqueue several jobs with timestamps
+			for (let i = 0; i < 5; i++) {
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { startTime: Date.now() });
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+
+			await waitFor(async () => processed === 5, { timeout: 15000 });
+
+			// All latencies should be much less than poll interval
+			const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
+			expect(avgLatency).toBeLessThan(pollInterval);
+			// Most should be under 1 second with change streams
+			const fastJobs = latencies.filter((l) => l < 1000).length;
+			expect(fastJobs).toBeGreaterThan(0);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/concurrency.test.ts
+````typescript
+/**
+ * Integration tests for concurrency and race conditions.
+ *
+ * These tests verify:
+ * - SC-006: Multiple scheduler instances can process jobs concurrently without duplicate processing
+ * - High volume job processing with multiple workers
+ *
+ * @see {@link ../../src/scheduler/monque.ts}
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('Concurrency & Scalability', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('concurrency');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	it('should process 100 jobs with 3 scheduler instances without duplicates', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const jobCount = 100;
+		const instanceCount = 3;
+
+		// Create multiple Monque instances sharing the same collection
+		for (let i = 0; i < instanceCount; i++) {
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50, // Fast polling for test
+				defaultConcurrency: 5,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+		}
+
+		// Track processed jobs
+		const processedJobs = new Set<number>();
+		const duplicateJobs = new Set<number>();
+		const processingErrors: Error[] = [];
+
+		// Define handler that tracks execution
+		const handler = async (job: Job<{ id: number }>) => {
+			const id = job.data.id;
+			if (processedJobs.has(id)) {
+				duplicateJobs.add(id);
+			}
+			processedJobs.add(id);
+			// Simulate some work
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		};
+
+		// Register worker on all instances
+		for (const monque of monqueInstances) {
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+			monque.on('job:error', (payload) => processingErrors.push(payload.error));
+		}
+
+		// Enqueue jobs using the first instance
+		const firstInstance = monqueInstances[0];
+		if (!firstInstance) {
+			throw new Error('No Monque instance available');
+		}
+		const enqueuePromises = [];
+		for (let i = 0; i < jobCount; i++) {
+			enqueuePromises.push(firstInstance.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i }));
+		}
+		await Promise.all(enqueuePromises);
+
+		// Start all instances
+		for (const m of monqueInstances) {
+			m.start();
+		}
+
+		// Wait for all jobs to be processed
+		await waitFor(async () => processedJobs.size === jobCount, {
+			timeout: 30000,
+		});
+
+		// Verify results
+		expect(processedJobs.size).toBe(jobCount);
+		expect(duplicateJobs.size).toBe(0);
+		expect(processingErrors).toHaveLength(0);
+
+		// Verify in DB that all are completed
+		await waitFor(
+			async () => {
+				const count = await db
+					.collection(collectionName)
+					.countDocuments({ status: JobStatus.COMPLETED });
+				return count === jobCount;
+			},
+			{ timeout: 10000 },
+		);
+
+		const count = await db
+			.collection(collectionName)
+			.countDocuments({ status: JobStatus.COMPLETED });
+		expect(count).toBe(jobCount);
+	});
+});
+````
+
+## File: packages/core/tests/integration/events.test.ts
+````typescript
+/**
+ * Tests for job lifecycle events and observability in the Monque scheduler.
+ *
+ * These tests verify:
+ * - job:start event emission
+ * - job:complete event emission with duration
+ * - job:fail event emission with error and retry status
+ * - job:error event emission for unexpected errors
+ * - isHealthy() status reporting
+ *
+ * @see {@link ../../src/scheduler/monque.ts}
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import type { MonqueEventMap } from '@/events';
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('Monitor Job Lifecycle Events', () => {
+	let db: Db;
+	let collectionName: string;
+	let monque: Monque;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('events');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('job:start event', () => {
+		it('should emit job:start when processing begins', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const startEvents: Job[] = [];
+			monque.on('job:start', (job) => {
+				startEvents.push({ ...job });
+			});
+
+			const handler = vi.fn();
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
+
+			monque.start();
+
+			await waitFor(async () => startEvents.length > 0);
+
+			expect(startEvents).toHaveLength(1);
+			expect(startEvents[0]?.name).toBe(TEST_CONSTANTS.JOB_NAME);
+			expect(startEvents[0]?.status).toBe(JobStatus.PROCESSING);
+		});
+	});
+
+	describe('job:complete event', () => {
+		it('should emit job:complete with duration when job finishes successfully', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const completeEvents: MonqueEventMap['job:complete'][] = [];
+			monque.on('job:complete', (payload) => {
+				completeEvents.push(payload);
+			});
+
+			const handler = vi.fn(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			});
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
+
+			monque.start();
+
+			await waitFor(async () => completeEvents.length > 0);
+
+			expect(completeEvents).toHaveLength(1);
+			expect(completeEvents[0]?.job.name).toBe(TEST_CONSTANTS.JOB_NAME);
+			expect(completeEvents[0]?.job.status).toBe(JobStatus.COMPLETED);
+			expect(completeEvents[0]?.duration).toBeGreaterThanOrEqual(45); // Allow 5ms tolerance for timer precision
+		});
+	});
+
+	describe('job:fail event', () => {
+		it('should emit job:fail with error and willRetry=true when job fails and has retries left', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				maxRetries: 3,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const failEvents: MonqueEventMap['job:fail'][] = [];
+			monque.on('job:fail', (payload) => {
+				failEvents.push(payload);
+			});
+
+			const error = new Error('Task failed');
+			const handler = vi.fn().mockRejectedValue(error);
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
+
+			monque.start();
+
+			await waitFor(async () => failEvents.length > 0);
+
+			expect(failEvents).toHaveLength(1);
+			expect(failEvents[0]?.job.name).toBe(TEST_CONSTANTS.JOB_NAME);
+			expect(failEvents[0]?.error.message).toBe('Task failed');
+			expect(failEvents[0]?.willRetry).toBe(true);
+		});
+
+		it('should emit job:fail with willRetry=false when job fails and max retries reached', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				maxRetries: 1, // Only 1 attempt allowed (0 retries)
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const failEvents: MonqueEventMap['job:fail'][] = [];
+			monque.on('job:fail', (payload) => {
+				failEvents.push(payload);
+			});
+
+			const handler = vi.fn().mockRejectedValue(new Error('Final failure'));
+			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
+
+			monque.start();
+
+			await waitFor(async () => failEvents.length > 0);
+
+			expect(failEvents).toHaveLength(1);
+			expect(failEvents[0]?.willRetry).toBe(false);
+		});
+	});
+
+	describe('job:error event', () => {
+		it('should emit job:error for unexpected errors', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+
+			// Register a worker so poll() has something to do and reaches the database
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+
+			const errorEvents: MonqueEventMap['job:error'][] = [];
+			monque.on('job:error', (payload) => {
+				errorEvents.push(payload);
+			});
+
+			// Mock findOneAndUpdate to throw an error during polling
+			// This avoids mocking private methods and couples the test to the data layer dependency instead
+			const collection = db.collection(collectionName);
+			vi.spyOn(collection, 'findOneAndUpdate').mockRejectedValue(new Error('Poll error'));
+			vi.spyOn(db, 'collection').mockReturnValue(collection);
+
+			await monque.initialize();
+			monque.start();
+
+			await waitFor(async () => errorEvents.length > 0);
+
+			expect(errorEvents.length).toBeGreaterThan(0);
+			expect(errorEvents[0]?.error.message).toBe('Poll error');
+		});
+	});
+
+	describe('isHealthy()', () => {
+		it('should return true when running and initialized', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			expect(monque.isHealthy()).toBe(false); // Not started yet
+
+			monque.start();
+			expect(monque.isHealthy()).toBe(true);
+		});
+
+		it('should return false when stopped', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			monque.start();
+			await monque.stop();
+
+			expect(monque.isHealthy()).toBe(false);
+		});
+	});
+
+	describe('event listener methods', () => {
+		it('should remove listener with off() method', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const startEvents: Job[] = [];
+			const listener = (job: Job) => {
+				startEvents.push(job);
+			};
+
+			// Add listener
+			monque.on('job:start', listener);
+
+			// Register worker and enqueue job
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
+
+			monque.start();
+			await waitFor(async () => startEvents.length > 0);
+			expect(startEvents).toHaveLength(1);
+
+			// Remove listener
+			monque.off('job:start', listener);
+
+			// Enqueue another job
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
+			await waitFor(
+				async () => {
+					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+					return jobs.length >= 2;
+				},
+				{ timeout: 5000 },
+			);
+
+			// Listener should not have received the second event
+			expect(startEvents).toHaveLength(1);
+		});
+
+		it('should fire listener only once with once() method', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName, pollInterval: 50 });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const completeEvents: MonqueEventMap['job:complete'][] = [];
+			monque.once('job:complete', (payload) => {
+				completeEvents.push(payload);
+			});
+
+			// Register worker and enqueue multiple jobs
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test3' });
+
+			monque.start();
+
+			// Wait for all jobs to complete
+			await waitFor(
+				async () => {
+					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+					return jobs.length >= 3;
+				},
+				{ timeout: 5000 },
+			);
+
+			// once() listener should have fired only once
+			expect(completeEvents).toHaveLength(1);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/heartbeat.test.ts
+````typescript
+/**
+ * Tests for heartbeat mechanism during job processing.
+ *
+ * These tests verify:
+ * - lastHeartbeat is updated periodically while processing
+ * - Heartbeat interval is configurable
+ * - Stale jobs are detected using lastHeartbeat
+ * - Heartbeat mechanism stops on job completion/failure
+ * - Heartbeat cleanup occurs on scheduler shutdown
+ */
+
+import { TEST_CONSTANTS } from '@test-utils/constants.js';
+import {
+	cleanupTestDb,
+	clearCollection,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+	waitFor,
+} from '@test-utils/test-utils.js';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('heartbeat mechanism', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('heartbeat');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	describe('heartbeat updates during processing', () => {
+		it('should set lastHeartbeat when claiming a job', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				heartbeatInterval: 100,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let jobStarted = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				jobStarted = true;
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => jobStarted, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+
+			expect(doc?.['lastHeartbeat']).toBeInstanceOf(Date);
+			expect(doc?.['heartbeatInterval']).toBe(100);
+		});
+
+		it('should update lastHeartbeat periodically while processing', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const heartbeatInterval = 100; // 100ms for faster test
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				heartbeatInterval,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const heartbeatTimestamps: Date[] = [];
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				// Hold the job long enough for multiple heartbeats
+				const collection = db.collection(collectionName);
+
+				// Record initial heartbeat
+				const doc1 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				if (doc1?.['lastHeartbeat']) {
+					heartbeatTimestamps.push(doc1['lastHeartbeat'] as Date);
+				}
+
+				// Wait for heartbeat update
+				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
+
+				// Record updated heartbeat
+				const doc2 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				if (doc2?.['lastHeartbeat']) {
+					heartbeatTimestamps.push(doc2['lastHeartbeat'] as Date);
+				}
+
+				// Wait for another heartbeat update
+				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
+
+				const doc3 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				if (doc3?.['lastHeartbeat']) {
+					heartbeatTimestamps.push(doc3['lastHeartbeat'] as Date);
+				}
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => heartbeatTimestamps.length >= 3, { timeout: 5000 });
+
+			// Verify heartbeats are increasing
+			expect(heartbeatTimestamps.length).toBeGreaterThanOrEqual(3);
+			for (let i = 1; i < heartbeatTimestamps.length; i++) {
+				const prev = heartbeatTimestamps[i - 1];
+				const curr = heartbeatTimestamps[i];
+				if (prev && curr) {
+					expect(curr.getTime()).toBeGreaterThanOrEqual(prev.getTime());
+				}
+			}
+		});
+
+		it('should clear lastHeartbeat when job completes', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				heartbeatInterval: 50,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let completed = false;
+			monque.on('job:complete', () => {
+				completed = true;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				// Quick completion
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => completed, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ _id: job._id });
+
+			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
+			expect(doc?.['lastHeartbeat']).toBeUndefined();
+			expect(doc?.['claimedBy']).toBeUndefined();
+		});
+	});
+
+	describe('heartbeat interval configuration', () => {
+		it('should use custom heartbeat interval', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const customInterval = 200;
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				heartbeatInterval: customInterval,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let jobStarted = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				jobStarted = true;
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => jobStarted, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+
+			expect(doc?.['heartbeatInterval']).toBe(customInterval);
+		});
+
+		it('should use default heartbeat interval of 30000ms', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				// No heartbeatInterval specified
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let jobStarted = false;
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				jobStarted = true;
+				await new Promise((resolve) => setTimeout(resolve, 200));
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => jobStarted, { timeout: 5000 });
+
+			const collection = db.collection(collectionName);
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+
+			expect(doc?.['heartbeatInterval']).toBe(30000);
+		});
+	});
+
+	describe('stale job detection using lastHeartbeat', () => {
+		it('should recover jobs with stale lastHeartbeat on startup', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const lockTimeout = 500; // 500ms for faster test
+
+			// Create a stale job (lastHeartbeat older than lockTimeout)
+			const collection = db.collection(collectionName);
+			const staleTime = new Date(Date.now() - lockTimeout * 2);
+			const staleJob = JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { value: 'stale' },
+				nextRunAt: new Date(Date.now() - 10000),
+				claimedBy: 'dead-instance',
+				lockedAt: staleTime,
+				lastHeartbeat: staleTime,
+				heartbeatInterval: 100,
+				createdAt: staleTime,
+				updatedAt: staleTime,
+			});
+			await collection.insertOne(staleJob);
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				lockTimeout,
+				recoverStaleJobs: true,
+			});
+			monqueInstances.push(monque);
+
+			let staleRecovered = false;
+			monque.on('stale:recovered', ({ count }) => {
+				if (count > 0) {
+					staleRecovered = true;
+				}
+			});
+
+			await monque.initialize();
+
+			// Job should be recovered to pending
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+			expect(doc?.['status']).toBe(JobStatus.PENDING);
+			expect(doc?.['claimedBy']).toBeUndefined();
+			expect(staleRecovered).toBe(true);
+		});
+
+		it('should not recover jobs with recent lastHeartbeat', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const lockTimeout = 5000;
+
+			// Create a job with recent heartbeat (not stale)
+			const collection = db.collection(collectionName);
+			const recentTime = new Date();
+			const activeJob = JobFactoryHelpers.processing({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { value: 'active' },
+				nextRunAt: new Date(Date.now() - 10000),
+				claimedBy: 'active-instance',
+				lockedAt: recentTime,
+				lastHeartbeat: recentTime,
+				heartbeatInterval: 100,
+				createdAt: recentTime,
+				updatedAt: recentTime,
+			});
+			await collection.insertOne(activeJob);
+
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 100,
+				lockTimeout,
+				recoverStaleJobs: true,
+			});
+			monqueInstances.push(monque);
+
+			await monque.initialize();
+
+			// Job should still be processing (not recovered)
+			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
+			expect(doc?.['claimedBy']).toBe('active-instance');
+		});
+	});
+
+	describe('heartbeat cleanup on shutdown', () => {
+		it('should release claimed jobs when stop() is called', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const instanceId = 'shutdown-instance';
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 50,
+				heartbeatInterval: 50,
+				schedulerInstanceId: instanceId,
+				shutdownTimeout: 5000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let jobStarted = false;
+			let resolveJob: (() => void) | undefined;
+			const jobPromise = new Promise<void>((resolve) => {
+				resolveJob = resolve;
+			});
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				jobStarted = true;
+				// Wait until we signal completion
+				await jobPromise;
+			});
+
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+			monque.start();
+
+			await waitFor(async () => jobStarted, { timeout: 5000 });
+
+			// Job is now processing - verify it's claimed
+			const collection = db.collection(collectionName);
+			let doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+			expect(doc?.['claimedBy']).toBe(instanceId);
+
+			// Let the job complete
+			resolveJob?.();
+
+			// Stop should wait for job to complete
+			await monque.stop();
+
+			// After stop, job should be completed and claim cleared
+			doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
+			expect(doc?.['claimedBy']).toBeUndefined();
 		});
 	});
 });
@@ -5589,7 +9522,7 @@ describe('Retry Logic', () => {
 			// Handler that fails once
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				if (callCount === 1) {
 					failureTime = Date.now();
@@ -5642,7 +9575,7 @@ describe('Retry Logic', () => {
 			// Handler that always fails
 			let callCount = 0;
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				failureTime = Date.now();
 				throw new Error(`Attempt ${callCount} fails`);
@@ -5698,7 +9631,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let failureTime = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failureTime = Date.now();
 				throw new Error('Always fails');
 			});
@@ -5738,7 +9671,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Always fails');
 			});
 
@@ -5772,7 +9705,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			const errorMessage = 'Connection timeout to external API';
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error(errorMessage);
 			});
 
@@ -5806,7 +9739,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let callCount = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				throw new Error(`Failure #${callCount}`);
 			});
@@ -5846,7 +9779,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			// Sync throw handler
-			monque.worker<{ type: string }>(TEST_CONSTANTS.JOB_NAME, (job) => {
+			monque.register<{ type: string }>(TEST_CONSTANTS.JOB_NAME, (job) => {
 				if (job.data.type === 'sync') {
 					throw new Error('Sync error');
 				}
@@ -5884,7 +9817,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
@@ -5921,7 +9854,7 @@ describe('Retry Logic', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Persistent failure');
 			});
 
@@ -5963,7 +9896,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let failCount = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				failCount++;
 				throw new Error(`Failure ${failCount}`);
 			});
@@ -6001,7 +9934,7 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let handlerCalls = 0;
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				handlerCalls++;
 			});
 
@@ -6041,7 +9974,7 @@ describe('Retry Logic', () => {
 				metadata: { key: 'value' },
 			};
 
-			monque.worker<typeof jobData>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<typeof jobData>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Failure');
 			});
 
@@ -6086,7 +10019,7 @@ describe('Retry Logic', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Temporary failure');
 			});
 
@@ -6120,7 +10053,7 @@ describe('Retry Logic', () => {
 				failEvents.push(event);
 			});
 
-			monque.worker<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
+			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				throw new Error('Final failure');
 			});
 
@@ -7434,3511 +11367,113 @@ describe('stop() - Graceful Shutdown', () => {
 });
 ````
 
-## File: packages/core/tests/integration/stale-recovery.test.ts
-````typescript
-/**
- * Tests for stale job recovery in the Monque scheduler.
- *
- * These tests verify:
- * - Stale jobs (processing > lockTimeout) are detected
- * - Stale jobs are recovered to pending status on startup
- * - recoverStaleJobs=false option is respected
- *
- * @see {@link ../../src/scheduler/monque.ts}
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	findJobByQuery,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import { JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('Stale Job Recovery', () => {
-	let db: Db;
-	let collectionName: string;
-	let monque: Monque;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('stale-recovery');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	it('should recover stale jobs on startup when recoverStaleJobs is true (default)', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const collection = db.collection(collectionName);
-
-		// Insert a stale job manually
-		const staleTime = new Date(Date.now() - 30 * 60 * 1000 - 1000); // 30m 1s ago
-		await collection.insertOne(
-			JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { id: 1 },
-				nextRunAt: staleTime,
-				lockedAt: staleTime,
-				createdAt: staleTime,
-				updatedAt: staleTime,
-			}),
-		);
-
-		// Insert a fresh processing job (not stale)
-		const freshTime = new Date();
-		await collection.insertOne(
-			JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { id: 2 },
-				nextRunAt: freshTime,
-				lockedAt: freshTime,
-				createdAt: freshTime,
-				updatedAt: freshTime,
-			}),
-		);
-
-		// Initialize Monque (should trigger recovery)
-		monque = new Monque(db, {
-			collectionName,
-			lockTimeout: 30 * 60 * 1000, // 30 minutes
-		});
-		monqueInstances.push(monque);
-		await monque.initialize();
-
-		// Check jobs
-		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
-		const freshJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
-
-		// Stale job should be reset to pending
-		expect(staleJob).not.toBeNull();
-		expect(staleJob?.status).toBe(JobStatus.PENDING);
-		expect(staleJob?.lockedAt).toBeUndefined();
-
-		// Fresh job should remain processing
-		expect(freshJob).not.toBeNull();
-		expect(freshJob?.status).toBe(JobStatus.PROCESSING);
-		expect(freshJob?.lockedAt).not.toBeNull();
-	});
-
-	it('should not recover stale jobs when recoverStaleJobs is false', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const collection = db.collection(collectionName);
-
-		// Insert a stale job manually
-		const staleTime = new Date(Date.now() - 30 * 60 * 1000 - 1000); // 30m 1s ago
-		await collection.insertOne(
-			JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { id: 1 },
-				nextRunAt: staleTime,
-				lockedAt: staleTime,
-				createdAt: staleTime,
-				updatedAt: staleTime,
-			}),
-		);
-
-		// Initialize Monque with recovery disabled
-		monque = new Monque(db, {
-			collectionName,
-			lockTimeout: 30 * 60 * 1000,
-			recoverStaleJobs: false,
-		});
-		monqueInstances.push(monque);
-		await monque.initialize();
-
-		// Check job
-		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
-
-		// Stale job should remain processing
-		expect(staleJob).not.toBeNull();
-		expect(staleJob?.status).toBe(JobStatus.PROCESSING);
-		expect(staleJob?.lockedAt).not.toBeNull();
-	});
-
-	it('should respect custom lockTimeout configuration', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const collection = db.collection(collectionName);
-
-		const customTimeout = 10000; // 10 seconds
-
-		// Insert a job that is stale according to custom timeout
-		const staleTime = new Date(Date.now() - customTimeout - 1000);
-		await collection.insertOne(
-			JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { id: 1 },
-				nextRunAt: staleTime,
-				lockedAt: staleTime,
-				createdAt: staleTime,
-				updatedAt: staleTime,
-			}),
-		);
-
-		// Insert a job that is 5s old (not stale with 10s timeout)
-		const notStaleTime = new Date(Date.now() - 5000);
-		await collection.insertOne(
-			JobFactoryHelpers.processing({
-				name: TEST_CONSTANTS.JOB_NAME,
-				data: { id: 2 },
-				nextRunAt: notStaleTime,
-				lockedAt: notStaleTime,
-				createdAt: notStaleTime,
-				updatedAt: notStaleTime,
-			}),
-		);
-
-		// Initialize Monque with custom timeout
-		monque = new Monque(db, {
-			collectionName,
-			lockTimeout: customTimeout,
-		});
-		monqueInstances.push(monque);
-		await monque.initialize();
-
-		// Check jobs
-		const staleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
-		const notStaleJob = await findJobByQuery<{ id: number }>(collection, { 'data.id': 2 });
-
-		// Stale job should be reset
-		expect(staleJob?.status).toBe(JobStatus.PENDING);
-
-		// Not stale job should remain processing
-		expect(notStaleJob?.status).toBe(JobStatus.PROCESSING);
-	});
-});
-````
-
-## File: packages/core/tests/integration/worker.test.ts
-````typescript
-/**
- * Tests for the worker() method and job processing in the Monque scheduler.
- *
- * These tests verify:
- * - Worker registration functionality
- * - Job processing by registered workers
- * - Correct handler invocation with job data
- * - Job status transitions during processing
- * - Concurrency limits per worker
- *
- * @see {@link ../../src/scheduler/monque.ts}
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import { type Job, JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-import { WorkerRegistrationError } from '@/shared';
-
-describe('worker()', () => {
-	let db: Db;
-	let collectionName: string;
-	let monque: Monque;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('worker');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('registration', () => {
-		it('should register a worker for a job name', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			// Worker registration is synchronous and should not throw
-			expect(() => monque.register(TEST_CONSTANTS.JOB_NAME, handler)).not.toThrow();
-		});
-
-		it('should allow registering multiple workers for different job names', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const jobType1Name = 'job-type-1';
-			const jobType2Name = 'job-type-2';
-			const jobType3Name = 'job-type-3';
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler1 = vi.fn();
-			const handler2 = vi.fn();
-			const handler3 = vi.fn();
-
-			monque.register(jobType1Name, handler1);
-			monque.register(jobType2Name, handler2);
-			monque.register(jobType3Name, handler3);
-		});
-
-		it('should throw WorkerRegistrationError when registering same job name twice without replace', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const sameJobName = 'same-job';
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler1 = vi.fn();
-			const handler2 = vi.fn();
-
-			monque.register(sameJobName, handler1);
-
-			// Second registration should throw
-			expect(() => monque.register(sameJobName, handler2)).toThrow(WorkerRegistrationError);
-			expect(() => monque.register(sameJobName, handler2)).toThrow(
-				`Worker already registered for job name "${sameJobName}"`,
-			);
-		});
-
-		it('should replace handler when registering same job name with { replace: true }', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const sameJobName = 'same-job-replace';
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler1 = vi.fn();
-			const handler2 = vi.fn();
-
-			monque.register(sameJobName, handler1);
-			monque.register(sameJobName, handler2, { replace: true });
-
-			// Enqueue a job and verify only handler2 is called
-			await monque.enqueue(sameJobName, {});
-			monque.start();
-
-			await waitFor(async () => handler2.mock.calls.length > 0);
-
-			expect(handler1).not.toHaveBeenCalled();
-			expect(handler2).toHaveBeenCalledTimes(1);
-		});
-
-		it('should include job name in WorkerRegistrationError', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const jobName = 'error-job-name';
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler1 = vi.fn();
-			const handler2 = vi.fn();
-
-			monque.register(jobName, handler1);
-
-			try {
-				monque.register(jobName, handler2);
-				expect.fail('Should have thrown');
-			} catch (error) {
-				expect(error).toBeInstanceOf(WorkerRegistrationError);
-				expect((error as WorkerRegistrationError).jobName).toBe(jobName);
-			}
-		});
-
-		it('should accept concurrency option', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-
-			// Registration with options should succeed
-			expect(() => monque.register('concurrent-job', handler, { concurrency: 3 })).not.toThrow();
-		});
-	});
-
-	describe('job processing', () => {
-		it('should process pending jobs when started', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length > 0);
-
-			expect(handler).toHaveBeenCalledTimes(1);
-		});
-
-		it('should pass job to handler with correct data', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const receivedJobs: Job[] = [];
-			const handler = vi.fn((job: Job) => {
-				receivedJobs.push(job);
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			const enqueuedData = { userId: '123', action: 'process' };
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, enqueuedData);
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length > 0);
-
-			expect(receivedJobs).toHaveLength(1);
-
-			const receivedJob = receivedJobs[0];
-
-			if (!receivedJob) throw new Error('Expected receivedJob to be defined');
-
-			expect(receivedJob.name).toBe(TEST_CONSTANTS.JOB_NAME);
-			expect(receivedJob.data).toEqual(enqueuedData);
-		});
-
-		it('should process jobs in order of nextRunAt', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100, defaultConcurrency: 1 });
-			const orderedJobName = 'ordered-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const processedJobs: number[] = [];
-			const handler = vi.fn((job: Job<{ order: number }>) => {
-				processedJobs.push(job.data.order);
-			});
-			monque.register(orderedJobName, handler);
-
-			// Enqueue jobs with different nextRunAt times (in reverse order)
-			const now = Date.now();
-			await monque.enqueue(orderedJobName, { order: 3 }, { runAt: new Date(now + 30) });
-			await monque.enqueue(orderedJobName, { order: 1 }, { runAt: new Date(now + 10) });
-			await monque.enqueue(orderedJobName, { order: 2 }, { runAt: new Date(now + 20) });
-
-			monque.start();
-
-			await waitFor(async () => processedJobs.length === 3, { timeout: 5000 });
-
-			expect(processedJobs).toEqual([1, 2, 3]);
-		});
-
-		it('should only process jobs for registered workers', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const registeredJobName = 'registered-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(registeredJobName, handler);
-
-			// Enqueue both registered and unregistered job types
-			await monque.enqueue(registeredJobName, {});
-			await monque.enqueue('unregistered-job', {});
-
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length > 0);
-			// Give extra time to ensure unregistered job isn't picked up
-			await new Promise((r) => setTimeout(r, 300));
-
-			expect(handler).toHaveBeenCalledTimes(1);
-		});
-
-		it('should handle async handlers', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const asyncJobName = 'async-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn(async () => {
-				await new Promise((r) => setTimeout(r, 50));
-			});
-			monque.register(asyncJobName, handler);
-
-			await monque.enqueue(asyncJobName, {});
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length > 0);
-
-			expect(handler).toHaveBeenCalledTimes(1);
-		});
-
-		it('should update job status to completed after successful processing', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const completeJobName = 'complete-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(completeJobName, handler);
-
-			const job = await monque.enqueue(completeJobName, {});
-			monque.start();
-
-			await waitFor(async () => {
-				const collection = db.collection(collectionName);
-				const doc = await collection.findOne({ _id: job._id });
-				return doc?.['status'] === JobStatus.COMPLETED;
-			});
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['status']).toBe(JobStatus.COMPLETED);
-		});
-
-		it('should clear lockedAt after successful processing', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const unlockJobName = 'unlock-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(unlockJobName, handler);
-
-			const job = await monque.enqueue(unlockJobName, {});
-			monque.start();
-
-			await waitFor(async () => {
-				const collection = db.collection(collectionName);
-				const doc = await collection.findOne({ _id: job._id });
-				return doc?.['status'] === JobStatus.COMPLETED;
-			});
-
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['lockedAt']).toBeUndefined();
-		});
-	});
-
-	describe('concurrency limits', () => {
-		it('should respect defaultConcurrency option', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const defaultConcurrency = 2;
-			const concurrencyJobName = 'concurrent-job';
-			monque = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let maxConcurrent = 0;
-			let currentConcurrent = 0;
-			const timestamps: { start: number; end: number }[] = [];
-
-			const handler = vi.fn(async () => {
-				const start = Date.now();
-				currentConcurrent++;
-				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
-				await new Promise((r) => setTimeout(r, 200));
-				currentConcurrent--;
-				const end = Date.now();
-				timestamps.push({ start, end });
-			});
-			monque.register(concurrencyJobName, handler);
-
-			// Enqueue more jobs than the concurrency limit
-			for (let i = 0; i < 5; i++) {
-				await monque.enqueue(concurrencyJobName, { index: i });
-			}
-
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length === 5, { timeout: 10000 });
-
-			expect(maxConcurrent).toBeLessThanOrEqual(defaultConcurrency);
-			expect(maxConcurrent).toBeGreaterThan(0);
-
-			// Verify actual concurrency by checking overlapping execution windows
-			const overlaps = timestamps.some((t1, i) =>
-				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
-			);
-			expect(overlaps).toBe(true);
-		});
-
-		it('should respect worker-specific concurrency option', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50, defaultConcurrency: 10 });
-			const limitedJobName = 'limited-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let maxConcurrent = 0;
-			let currentConcurrent = 0;
-			const workerConcurrency = 1; // Override to 1
-			const timestamps: { start: number; end: number }[] = [];
-
-			const handler = vi.fn(async () => {
-				const start = Date.now();
-				currentConcurrent++;
-				maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
-				await new Promise((r) => setTimeout(r, 100));
-				currentConcurrent--;
-				const end = Date.now();
-				timestamps.push({ start, end });
-			});
-			monque.register(limitedJobName, handler, { concurrency: workerConcurrency });
-
-			// Enqueue multiple jobs
-			for (let i = 0; i < 3; i++) {
-				await monque.enqueue(limitedJobName, { index: i });
-			}
-
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length === 3, { timeout: 5000 });
-
-			expect(maxConcurrent).toBe(workerConcurrency);
-
-			// Verify no overlapping execution (concurrency of 1 means sequential)
-			const overlaps = timestamps.some((t1, i) =>
-				timestamps.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
-			);
-			expect(overlaps).toBe(false);
-		});
-
-		it('should allow different concurrency per worker type', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50, heartbeatInterval: 1000 });
-			const jobTypeAName = 'type-a';
-			const jobTypeBName = 'type-b';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let maxConcurrentA = 0;
-			let currentConcurrentA = 0;
-			let maxConcurrentB = 0;
-			let currentConcurrentB = 0;
-			const timestampsA: { start: number; end: number }[] = [];
-			const timestampsB: { start: number; end: number }[] = [];
-
-			const handlerA = vi.fn(async () => {
-				const start = Date.now();
-				currentConcurrentA++;
-				maxConcurrentA = Math.max(maxConcurrentA, currentConcurrentA);
-				await new Promise((r) => setTimeout(r, 200));
-				currentConcurrentA--;
-				const end = Date.now();
-				timestampsA.push({ start, end });
-			});
-
-			const handlerB = vi.fn(async () => {
-				const start = Date.now();
-				currentConcurrentB++;
-				maxConcurrentB = Math.max(maxConcurrentB, currentConcurrentB);
-				await new Promise((r) => setTimeout(r, 200));
-				currentConcurrentB--;
-				const end = Date.now();
-				timestampsB.push({ start, end });
-			});
-
-			monque.register(jobTypeAName, handlerA, { concurrency: 2 });
-			monque.register(jobTypeBName, handlerB, { concurrency: 4 });
-
-			// Enqueue jobs for both types
-			for (let i = 0; i < 4; i++) {
-				await monque.enqueue(jobTypeAName, { index: i });
-				await monque.enqueue(jobTypeBName, { index: i });
-			}
-
-			monque.start();
-
-			await waitFor(
-				async () => handlerA.mock.calls.length === 4 && handlerB.mock.calls.length === 4,
-				{ timeout: 10000 },
-			);
-
-			expect(maxConcurrentA).toBeLessThanOrEqual(2);
-			expect(maxConcurrentB).toBeLessThanOrEqual(4);
-
-			// Verify actual concurrency by checking overlapping execution windows
-			const overlapsA = timestampsA.some((t1, i) =>
-				timestampsA.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
-			);
-			const overlapsB = timestampsB.some((t1, i) =>
-				timestampsB.slice(i + 1).some((t2) => t1.start < t2.end && t2.start < t1.end),
-			);
-			expect(overlapsA).toBe(true);
-			expect(overlapsB).toBe(true);
-		});
-
-		it('should process more jobs as slots become available', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const concurrency = 2;
-			monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				defaultConcurrency: concurrency,
-			});
-			const slotJobName = 'slot-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const processedOrder: number[] = [];
-
-			const handler = vi.fn(async (job: Job<{ index: number }>) => {
-				await new Promise((r) => setTimeout(r, 100));
-				processedOrder.push(job.data.index);
-			});
-			monque.register(slotJobName, handler);
-
-			// Enqueue 4 jobs
-			for (let i = 0; i < 4; i++) {
-				await monque.enqueue(slotJobName, { index: i });
-			}
-
-			monque.start();
-
-			await waitFor(async () => processedOrder.length === 4, { timeout: 5000 });
-
-			// All jobs should have been processed
-			expect(processedOrder).toHaveLength(4);
-			expect([...processedOrder].sort()).toEqual([0, 1, 2, 3]);
-		});
-	});
-
-	describe('start() and stop()', () => {
-		it('should not process jobs before start() is called', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const noStartJobName = 'no-start-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(noStartJobName, handler);
-
-			await monque.enqueue(noStartJobName, {});
-
-			// Wait some time without calling start()
-			await new Promise((r) => setTimeout(r, 300));
-
-			expect(handler).not.toHaveBeenCalled();
-		});
-
-		it('should stop processing after stop() is called', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const stopJobName = 'stop-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(stopJobName, handler);
-
-			monque.start();
-			await monque.stop();
-
-			// Enqueue job after stop
-			await monque.enqueue(stopJobName, {});
-
-			// Wait and verify no processing
-			await new Promise((r) => setTimeout(r, 300));
-
-			expect(handler).not.toHaveBeenCalled();
-		});
-
-		it('should allow restart after stop()', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 100 });
-			const restartJobName = 'restart-job';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const handler = vi.fn();
-			monque.register(restartJobName, handler);
-
-			monque.start();
-			await monque.stop();
-
-			// Enqueue job and restart
-			await monque.enqueue(restartJobName, {});
-			monque.start();
-
-			await waitFor(async () => handler.mock.calls.length > 0);
-
-			expect(handler).toHaveBeenCalledTimes(1);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/setup/global-setup.ts
-````typescript
-/**
- * Vitest global setup - pre-starts MongoDB container and returns teardown.
- *
- * This runs once before all test files. Starting the container here
- * reduces cold-start time for the first test file.
- *
- * The returned function is called after all tests complete for cleanup.
- *
- * Note: The container will be started lazily on first getMongoDb() call
- * if not started here, so this is optional but improves test startup experience.
- */
-
-import { closeMongoDb, getMongoDb, getMongoUri, isMongoDbRunning } from '@tests/setup/mongodb.js';
-
-// Track if cleanup has already been performed
-let cleanedUp = false;
-
-async function cleanup(): Promise<void> {
-	if (cleanedUp) return;
-	cleanedUp = true;
-
-	if (isMongoDbRunning()) {
-		console.log('\n🛑 Stopping MongoDB Testcontainer...');
-		await closeMongoDb();
-		console.log('✅ MongoDB container stopped\n');
-	}
-}
-
-export default async function globalSetup(): Promise<() => Promise<void>> {
-	console.log('\n🚀 Starting MongoDB Testcontainer...');
-
-	// Pre-start the container
-	await getMongoDb();
-
-	const uri = await getMongoUri();
-	console.log(`✅ MongoDB ready at: ${uri}\n`);
-
-	// Register signal handlers for cleanup on interruption
-	const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
-	for (const signal of signals) {
-		process.on(signal, async () => {
-			console.log(`\n⚠️  Received ${signal}, cleaning up...`);
-			await cleanup();
-			process.exit(128 + (signal === 'SIGINT' ? 2 : signal === 'SIGTERM' ? 15 : 1));
-		});
-	}
-
-	// Also handle uncaught exceptions
-	process.on('uncaughtException', async (error) => {
-		console.error('\n❌ Uncaught exception, cleaning up...', error);
-		await cleanup();
-		process.exit(1);
-	});
-
-	// Return teardown function
-	return cleanup;
-}
-````
-
-## File: packages/core/tests/unit/cron.test.ts
-````typescript
-import { describe, expect, it } from 'vitest';
-
-import { getNextCronDate, InvalidCronError, validateCronExpression } from '@/shared';
-
-// Test fixtures - shared reference dates
-const TEST_DATE_MID_MORNING = new Date('2025-01-01T10:30:00.000Z');
-const TEST_DATE_EARLY_MORNING = new Date('2025-01-01T08:00:00.000Z');
-
-describe('cron', () => {
-	describe('getNextCronDate', () => {
-		it('should parse "* * * * *" (every minute)', () => {
-			const now = new Date();
-			const result = getNextCronDate('* * * * *', now);
-			expect(result).toBeInstanceOf(Date);
-			// Should be within the next minute
-			expect(result.getTime()).toBeGreaterThan(now.getTime());
-			expect(result.getTime() - now.getTime()).toBeLessThanOrEqual(60000);
-		});
-
-		it('should parse "0 * * * *" (every hour at minute 0)', () => {
-			const result = getNextCronDate('0 * * * *', TEST_DATE_MID_MORNING);
-			// Next run should be at minute 0
-			expect(result.getMinutes()).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-
-		it('should parse "0 0 * * *" (every day at midnight)', () => {
-			const result = getNextCronDate('0 0 * * *', TEST_DATE_MID_MORNING);
-			// Next run should be at 00:00
-			expect(result.getHours()).toBe(0);
-			expect(result.getMinutes()).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-
-		it('should parse predefined expressions like @daily', () => {
-			const result = getNextCronDate('@daily', TEST_DATE_MID_MORNING);
-			// Next run should be at 00:00
-			expect(result.getHours()).toBe(0);
-			expect(result.getMinutes()).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-
-		it('should parse "30 9 * * 1" (every Monday at 9:30am)', () => {
-			// Jan 1, 2025 is a Wednesday
-			const result = getNextCronDate('30 9 * * 1', TEST_DATE_MID_MORNING);
-			// Result should be on a Monday
-			expect(result.getDay()).toBe(1); // Monday
-			expect(result.getMinutes()).toBe(30);
-			expect(result.getHours()).toBe(9);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-
-		it('should parse "0 12 1 * *" (first day of every month at noon)', () => {
-			const result = getNextCronDate('0 12 1 * *', TEST_DATE_EARLY_MORNING);
-			// Next run should be on the 1st of the month at noon
-			expect(result.getDate()).toBe(1);
-			expect(result.getHours()).toBe(12);
-			expect(result.getMinutes()).toBe(0);
-		});
-
-		it('should accept a custom reference date', () => {
-			const referenceDate = new Date('2025-06-15T08:00:00.000Z');
-			const result = getNextCronDate('0 9 * * *', referenceDate);
-			// Next 9am after June 15 8am
-			expect(result.getHours()).toBe(9);
-			expect(result.getMinutes()).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(referenceDate.getTime());
-		});
-
-		it('should throw InvalidCronError for invalid expression', () => {
-			expect(() => getNextCronDate('invalid')).toThrow(InvalidCronError);
-		});
-
-		it('should throw InvalidCronError with expression property', () => {
-			try {
-				getNextCronDate('not a cron');
-				expect.fail('Should have thrown');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				expect((error as InvalidCronError).expression).toBe('not a cron');
-			}
-		});
-
-		it('should include helpful error message with format example', () => {
-			try {
-				getNextCronDate('bad');
-				expect.fail('Should have thrown');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				const message = (error as InvalidCronError).message;
-				expect(message).toContain('Invalid cron expression');
-				expect(message).toContain('"bad"');
-				expect(message).toContain('minute hour day-of-month month day-of-week');
-				expect(message).toContain('predefined expression');
-				expect(message).toContain('Example:');
-			}
-		});
-
-		it('should handle expressions with ranges', () => {
-			const result = getNextCronDate('0 9-17 * * *', TEST_DATE_EARLY_MORNING); // 9am to 5pm
-			// Next run should be between 9am and 5pm
-			expect(result.getHours()).toBeGreaterThanOrEqual(9);
-			expect(result.getHours()).toBeLessThanOrEqual(17);
-			expect(result.getMinutes()).toBe(0);
-		});
-
-		it('should handle expressions with steps', () => {
-			const result = getNextCronDate('*/15 * * * *', TEST_DATE_MID_MORNING); // Every 15 minutes
-			// Next 15-minute mark
-			expect(result.getMinutes() % 15).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-
-		it('should handle expressions with lists', () => {
-			const result = getNextCronDate('0 9,12,18 * * *', TEST_DATE_MID_MORNING); // 9am, 12pm, 6pm
-			// Next should be at one of those hours
-			expect([9, 12, 18]).toContain(result.getHours());
-			expect(result.getMinutes()).toBe(0);
-			expect(result.getTime()).toBeGreaterThan(TEST_DATE_MID_MORNING.getTime());
-		});
-	});
-
-	describe('validateCronExpression', () => {
-		it('should not throw for valid expressions', () => {
-			expect(() => validateCronExpression('* * * * *')).not.toThrow();
-			expect(() => validateCronExpression('0 0 * * *')).not.toThrow();
-			expect(() => validateCronExpression('30 9 1 * 1')).not.toThrow();
-			expect(() => validateCronExpression('*/5 * * * *')).not.toThrow();
-			expect(() => validateCronExpression('0 9-17 * * 1-5')).not.toThrow();
-		});
-
-		it('should throw InvalidCronError for invalid expressions', () => {
-			expect(() => validateCronExpression('invalid')).toThrow(InvalidCronError);
-			expect(() => validateCronExpression('60 * * * *')).toThrow(InvalidCronError); // Invalid minute
-			expect(() => validateCronExpression('* 25 * * *')).toThrow(InvalidCronError); // Invalid hour
-		});
-
-		it('should throw InvalidCronError with expression property', () => {
-			try {
-				validateCronExpression('wrong');
-				expect.fail('Should have thrown');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				expect((error as InvalidCronError).expression).toBe('wrong');
-			}
-		});
-
-		it('should include helpful error message', () => {
-			try {
-				validateCronExpression('x x x x x');
-				expect.fail('Should have thrown');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				const message = (error as InvalidCronError).message;
-				expect(message).toContain('Invalid cron expression');
-				expect(message).toContain('Example:');
-			}
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/errors.test.ts
-````typescript
-/**
- * Tests for custom error classes in the Monque scheduler.
- *
- * These tests verify:
- * - MonqueError base class functionality
- * - InvalidCronError with expression storage
- * - ConnectionError for database issues
- * - ShutdownTimeoutError with incomplete jobs tracking
- * - Error inheritance chain (all catchable as Error/MonqueError)
- *
- * @see {@link @/shared/errors.js}
- */
-
-import { describe, expect, it } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
-import {
-	ConnectionError,
-	InvalidCronError,
-	MonqueError,
-	ShutdownTimeoutError,
-	WorkerRegistrationError,
-} from '@/shared';
-
-describe('errors', () => {
-	describe('MonqueError', () => {
-		it('should create an error with the correct message', () => {
-			const error = new MonqueError('Test error message');
-			expect(error.message).toBe('Test error message');
-		});
-
-		it('should have name "MonqueError"', () => {
-			const error = new MonqueError('Test');
-			expect(error.name).toBe('MonqueError');
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new MonqueError('Test');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new MonqueError('Test');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new MonqueError('Test');
-			expect(error.stack).toBeDefined();
-			expect(error.stack).toContain('MonqueError');
-		});
-	});
-
-	describe('InvalidCronError', () => {
-		it('should create an error with expression and message', () => {
-			const error = new InvalidCronError('bad cron', 'Invalid expression');
-			expect(error.message).toBe('Invalid expression');
-			expect(error.expression).toBe('bad cron');
-		});
-
-		it('should have name "InvalidCronError"', () => {
-			const error = new InvalidCronError('* *', 'Too few fields');
-			expect(error.name).toBe('InvalidCronError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new InvalidCronError('x', 'Invalid');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new InvalidCronError('x', 'Invalid');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should expose the invalid expression', () => {
-			const expression = '60 * * * *';
-			const error = new InvalidCronError(expression, 'Minute out of range');
-			expect(error.expression).toBe(expression);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new InvalidCronError('bad', 'Invalid');
-			expect(error.stack).toBeDefined();
-		});
-	});
-
-	describe('ConnectionError', () => {
-		it('should create an error with the correct message', () => {
-			const error = new ConnectionError('Database connection failed');
-			expect(error.message).toBe('Database connection failed');
-		});
-
-		it('should have name "ConnectionError"', () => {
-			const error = new ConnectionError('Connection lost');
-			expect(error.name).toBe('ConnectionError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new ConnectionError('Timeout');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new ConnectionError('Timeout');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new ConnectionError('Failed');
-			expect(error.stack).toBeDefined();
-		});
-
-		it('should chain the cause error when provided', () => {
-			const cause = new Error('Original database error');
-			const error = new ConnectionError('Connection failed', { cause });
-
-			expect(error.cause).toBe(cause);
-			expect(error.message).toBe('Connection failed');
-		});
-	});
-
-	describe('ShutdownTimeoutError', () => {
-		it('should create an error with message and incomplete jobs', () => {
-			const incompleteJobs = [
-				JobFactoryHelpers.processing({ name: 'job1' }),
-				JobFactoryHelpers.processing({ name: 'job2' }),
-			];
-			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
-
-			expect(error.message).toBe('Shutdown timed out');
-			expect(error.incompleteJobs).toEqual(incompleteJobs);
-		});
-
-		it('should have name "ShutdownTimeoutError"', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error.name).toBe('ShutdownTimeoutError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should expose incompleteJobs array', () => {
-			const job = JobFactoryHelpers.processing({ name: 'job1' });
-			const error = new ShutdownTimeoutError('Timeout', [job]);
-			expect(error.incompleteJobs).toHaveLength(1);
-			expect(error.incompleteJobs[0]?.name).toBe(job.name);
-		});
-
-		it('should handle empty incompleteJobs array', () => {
-			const error = new ShutdownTimeoutError('No jobs running', []);
-			expect(error.incompleteJobs).toHaveLength(0);
-		});
-
-		it('should preserve job data in incompleteJobs', () => {
-			const job = JobFactoryHelpers.processing();
-			const error = new ShutdownTimeoutError('Timeout', [job]);
-
-			expect(error.incompleteJobs[0]?.data).toEqual(job.data);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error.stack).toBeDefined();
-		});
-	});
-
-	describe('WorkerRegistrationError', () => {
-		it('should create an error with message and job name', () => {
-			const error = new WorkerRegistrationError('Worker already registered', 'test-job');
-			expect(error.message).toBe('Worker already registered');
-			expect(error.jobName).toBe('test-job');
-		});
-
-		it('should have name "WorkerRegistrationError"', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error.name).toBe('WorkerRegistrationError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error.stack).toBeDefined();
-		});
-	});
-
-	describe('error inheritance chain', () => {
-		it('InvalidCronError should be catchable as MonqueError', () => {
-			const error = new InvalidCronError('bad', 'Invalid');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('ConnectionError should be catchable as MonqueError', () => {
-			const error = new ConnectionError('Failed');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('ShutdownTimeoutError should be catchable as MonqueError', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('WorkerRegistrationError should be catchable as MonqueError', () => {
-			const error = new WorkerRegistrationError('Failed', 'job');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('all errors should be catchable as Error', () => {
-			const errors = [
-				new MonqueError('Base'),
-				new InvalidCronError('x', 'Invalid'),
-				new ConnectionError('Failed'),
-				new ShutdownTimeoutError('Timeout', []),
-				new WorkerRegistrationError('Failed', 'job'),
-			];
-
-			for (const error of errors) {
-				let caught = false;
-				try {
-					throw error;
-				} catch (e) {
-					if (e instanceof Error) {
-						caught = true;
-					}
-				}
-				expect(caught).toBe(true);
-			}
-		});
-	});
-});
-````
-
-## File: packages/core/tsconfig.json
+## File: packages/core/package.json
 ````json
 {
-	"compilerOptions": {
-		// Environment setup & latest features
-		"lib": ["ESNext"],
-		"target": "ESNext",
-		"module": "ESNext",
-		"moduleDetection": "force",
-
-		// Bundler mode
-		"moduleResolution": "bundler",
-		"allowImportingTsExtensions": true,
-		"verbatimModuleSyntax": true,
-		"noEmit": true,
-
-		// Best practices
-		"strict": true,
-		"skipLibCheck": true,
-		"noFallthroughCasesInSwitch": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"noPropertyAccessFromIndexSignature": true,
-		"exactOptionalPropertyTypes": true,
-		"forceConsistentCasingInFileNames": true,
-		"esModuleInterop": true,
-		"resolveJsonModule": true,
-		"isolatedModules": true,
-		"declaration": true,
-		"declarationMap": true,
-
-		"baseUrl": ".",
-		"paths": {
-			"@/*": ["src/*"],
-			"@tests/*": ["tests/*"],
-			"@test-utils/*": ["tests/setup/*"]
+	"name": "@monque/core",
+	"version": "0.1.0",
+	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
+	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ueberBrot/monque.git",
+		"directory": "packages/core"
+	},
+	"bugs": {
+		"url": "https://github.com/ueberBrot/monque/issues"
+	},
+	"homepage": "https://github.com/ueberBrot/monque#readme",
+	"sideEffects": false,
+	"type": "module",
+	"packageManager": "bun@1.3.5",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
 		}
 	},
-	"include": ["src/**/*", "tests/**/*"],
-	"exclude": ["node_modules", "dist"]
-}
-````
-
-## File: packages/core/tsdown.config.ts
-````typescript
-import { defineConfig } from 'tsdown';
-
-export default defineConfig({
-	entry: ['src/index.ts'],
-	format: ['esm', 'cjs'],
-	dts: true,
-	clean: true,
-	sourcemap: true,
-	target: 'node22',
-	outDir: 'dist',
-	external: ['mongodb'],
-});
-````
-
-## File: packages/core/tests/integration/events.test.ts
-````typescript
-/**
- * Tests for job lifecycle events and observability in the Monque scheduler.
- *
- * These tests verify:
- * - job:start event emission
- * - job:complete event emission with duration
- * - job:fail event emission with error and retry status
- * - job:error event emission for unexpected errors
- * - isHealthy() status reporting
- *
- * @see {@link ../../src/scheduler/monque.ts}
- */
-
-import { TEST_CONSTANTS } from '@test-utils/constants.js';
-import {
-	cleanupTestDb,
-	clearCollection,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-	waitFor,
-} from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-
-import type { MonqueEventMap } from '@/events';
-import { type Job, JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('Monitor Job Lifecycle Events', () => {
-	let db: Db;
-	let collectionName: string;
-	let monque: Monque;
-	const monqueInstances: Monque[] = [];
-
-	beforeAll(async () => {
-		db = await getTestDb('events');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		vi.restoreAllMocks();
-		await stopMonqueInstances(monqueInstances);
-
-		if (collectionName) {
-			await clearCollection(db, collectionName);
-		}
-	});
-
-	describe('job:start event', () => {
-		it('should emit job:start when processing begins', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const startEvents: Job[] = [];
-			monque.on('job:start', (job) => {
-				startEvents.push({ ...job });
-			});
-
-			const handler = vi.fn();
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
-
-			monque.start();
-
-			await waitFor(async () => startEvents.length > 0);
-
-			expect(startEvents).toHaveLength(1);
-			expect(startEvents[0]?.name).toBe(TEST_CONSTANTS.JOB_NAME);
-			expect(startEvents[0]?.status).toBe(JobStatus.PROCESSING);
-		});
-	});
-
-	describe('job:complete event', () => {
-		it('should emit job:complete with duration when job finishes successfully', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const completeEvents: MonqueEventMap['job:complete'][] = [];
-			monque.on('job:complete', (payload) => {
-				completeEvents.push(payload);
-			});
-
-			const handler = vi.fn(async () => {
-				await new Promise((resolve) => setTimeout(resolve, 50));
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
-
-			monque.start();
-
-			await waitFor(async () => completeEvents.length > 0);
-
-			expect(completeEvents).toHaveLength(1);
-			expect(completeEvents[0]?.job.name).toBe(TEST_CONSTANTS.JOB_NAME);
-			expect(completeEvents[0]?.job.status).toBe(JobStatus.COMPLETED);
-			expect(completeEvents[0]?.duration).toBeGreaterThanOrEqual(45); // Allow 5ms tolerance for timer precision
-		});
-	});
-
-	describe('job:fail event', () => {
-		it('should emit job:fail with error and willRetry=true when job fails and has retries left', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				maxRetries: 3,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const failEvents: MonqueEventMap['job:fail'][] = [];
-			monque.on('job:fail', (payload) => {
-				failEvents.push(payload);
-			});
-
-			const error = new Error('Task failed');
-			const handler = vi.fn().mockRejectedValue(error);
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
-
-			monque.start();
-
-			await waitFor(async () => failEvents.length > 0);
-
-			expect(failEvents).toHaveLength(1);
-			expect(failEvents[0]?.job.name).toBe(TEST_CONSTANTS.JOB_NAME);
-			expect(failEvents[0]?.error.message).toBe('Task failed');
-			expect(failEvents[0]?.willRetry).toBe(true);
-		});
-
-		it('should emit job:fail with willRetry=false when job fails and max retries reached', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				maxRetries: 1, // Only 1 attempt allowed (0 retries)
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const failEvents: MonqueEventMap['job:fail'][] = [];
-			monque.on('job:fail', (payload) => {
-				failEvents.push(payload);
-			});
-
-			const handler = vi.fn().mockRejectedValue(new Error('Final failure'));
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
-
-			monque.start();
-
-			await waitFor(async () => failEvents.length > 0);
-
-			expect(failEvents).toHaveLength(1);
-			expect(failEvents[0]?.willRetry).toBe(false);
-		});
-	});
-
-	describe('job:error event', () => {
-		it('should emit job:error for unexpected errors', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
-			monqueInstances.push(monque);
-
-			// Register a worker so poll() has something to do and reaches the database
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-
-			const errorEvents: MonqueEventMap['job:error'][] = [];
-			monque.on('job:error', (payload) => {
-				errorEvents.push(payload);
-			});
-
-			// Mock findOneAndUpdate to throw an error during polling
-			// This avoids mocking private methods and couples the test to the data layer dependency instead
-			const collection = db.collection(collectionName);
-			vi.spyOn(collection, 'findOneAndUpdate').mockRejectedValue(new Error('Poll error'));
-			vi.spyOn(db, 'collection').mockReturnValue(collection);
-
-			await monque.initialize();
-			monque.start();
-
-			await waitFor(async () => errorEvents.length > 0);
-
-			expect(errorEvents.length).toBeGreaterThan(0);
-			expect(errorEvents[0]?.error.message).toBe('Poll error');
-		});
-	});
-
-	describe('isHealthy()', () => {
-		it('should return true when running and initialized', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			expect(monque.isHealthy()).toBe(false); // Not started yet
-
-			monque.start();
-			expect(monque.isHealthy()).toBe(true);
-		});
-
-		it('should return false when stopped', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			monque.start();
-			await monque.stop();
-
-			expect(monque.isHealthy()).toBe(false);
-		});
-	});
-
-	describe('event listener methods', () => {
-		it('should remove listener with off() method', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const startEvents: Job[] = [];
-			const listener = (job: Job) => {
-				startEvents.push(job);
-			};
-
-			// Add listener
-			monque.on('job:start', listener);
-
-			// Register worker and enqueue job
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
-
-			monque.start();
-			await waitFor(async () => startEvents.length > 0);
-			expect(startEvents).toHaveLength(1);
-
-			// Remove listener
-			monque.off('job:start', listener);
-
-			// Enqueue another job
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
-			await waitFor(
-				async () => {
-					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
-					return jobs.length >= 2;
-				},
-				{ timeout: 5000 },
-			);
-
-			// Listener should not have received the second event
-			expect(startEvents).toHaveLength(1);
-		});
-
-		it('should fire listener only once with once() method', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, { collectionName, pollInterval: 50 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const completeEvents: MonqueEventMap['job:complete'][] = [];
-			monque.once('job:complete', (payload) => {
-				completeEvents.push(payload);
-			});
-
-			// Register worker and enqueue multiple jobs
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test1' });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test2' });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test3' });
-
-			monque.start();
-
-			// Wait for all jobs to complete
-			await waitFor(
-				async () => {
-					const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
-					return jobs.length >= 3;
-				},
-				{ timeout: 5000 },
-			);
-
-			// once() listener should have fired only once
-			expect(completeEvents).toHaveLength(1);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/setup/mongodb.ts
-````typescript
-/**
- * MongoDB Testcontainers singleton manager for integration tests.
- *
- * This module provides a shared MongoDB container across all test files
- * for performance. Container is started on first call to getMongoDb()
- * and stays running until closeMongoDb() is called (typically in globalTeardown).
- *
- * @example
- * ```typescript
- * import { getMongoDb, closeMongoDb } from './setup/mongodb';
- *
- * let db: Db;
- *
- * beforeAll(async () => {
- *   db = await getMongoDb();
- * });
- * ```
- */
-
-import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
-import { type Db, MongoClient } from 'mongodb';
-
-const mongoContainerImage = 'mongo:8';
-
-/**
- * Check if container reuse is enabled via environment variable.
- * When enabled, containers persist between test runs for faster iteration.
- * Ryuk (the cleanup container) is kept enabled as a safety net for orphans.
- */
-const isReuseEnabled = process.env['TESTCONTAINERS_REUSE_ENABLE'] === 'true';
-
-// Module-level singleton instances
-let container: StartedMongoDBContainer | null = null;
-let client: MongoClient | null = null;
-let initPromise: Promise<void> | null = null;
-
-/**
- * Ensures the MongoDB container is initialized.
- * Handles concurrent calls by reusing the same initialization promise.
- */
-async function ensureInitialized(): Promise<void> {
-	if (initPromise) {
-		// Initialization in progress or complete, wait for it
-		return initPromise;
-	}
-
-	if (container) {
-		// Already initialized
-		return;
-	}
-
-	initPromise = (async () => {
-		try {
-			const mongoContainer = new MongoDBContainer(mongoContainerImage);
-			container = await (isReuseEnabled ? mongoContainer.withReuse() : mongoContainer).start();
-		} catch (error) {
-			initPromise = null;
-			container = null;
-			throw new Error(`Failed to start MongoDB container: ${error}`);
-		}
-	})();
-
-	return initPromise;
-}
-
-/**
- * Gets or creates a MongoDB connection from the shared Testcontainer.
- * Container is started on first call and reused for subsequent calls.
- * When TESTCONTAINERS_REUSE_ENABLE=true, the container persists between test runs.
- *
- * @returns A MongoDB Db instance connected to the test container
- */
-export async function getMongoDb(): Promise<Db> {
-	await ensureInitialized();
-
-	if (!container) {
-		throw new Error('MongoDB container not initialized');
-	}
-
-	if (!client) {
-		try {
-			const uri = container.getConnectionString();
-			client = new MongoClient(uri, {
-				// Use directConnection for container
-				directConnection: true,
-			});
-			await client.connect();
-		} catch (error) {
-			// Clean up container if client connection fails
-			if (container) {
-				await container.stop().catch(() => {
-					// Ignore stop errors, we're already in error state
-				});
-				container = null;
-			}
-			client = null;
-			throw new Error(`Failed to connect MongoDB client: ${error}`);
-		}
-	}
-
-	return client.db('monque_test');
-}
-
-/**
- * Gets the MongoDB connection string from the running container.
- * Useful for passing to Monque instances in tests.
- *
- * @returns The MongoDB connection URI
- * @throws If container has not been started
- */
-export async function getMongoUri(): Promise<string> {
-	await ensureInitialized();
-
-	if (!container) {
-		throw new Error('MongoDB container not initialized');
-	}
-
-	return container.getConnectionString();
-}
-
-/**
- * Gets the MongoClient instance connected to the test container.
- * Useful for tests that need direct client access.
- *
- * @returns The MongoClient instance
- */
-export async function getMongoClient(): Promise<MongoClient> {
-	// Ensure container and client are initialized
-	await getMongoDb();
-
-	if (!client) {
-		throw new Error('MongoClient not initialized');
-	}
-
-	return client;
-}
-
-/**
- * Closes the MongoDB connection and optionally stops the container.
- * When TESTCONTAINERS_REUSE_ENABLE=true, the container is kept running
- * for faster subsequent test runs. Should be called in globalTeardown.
- */
-export async function closeMongoDb(): Promise<void> {
-	if (client) {
-		await client.close();
-		client = null;
-	}
-
-	if (container) {
-		// Only stop the container if reuse is disabled
-		// When reuse is enabled, keep it running for faster subsequent runs
-		if (!isReuseEnabled) {
-			await container.stop();
-		}
-		container = null;
-	}
-}
-
-/**
- * Checks if the MongoDB container is currently running.
- *
- * @returns true if container is started and client is connected
- */
-export function isMongoDbRunning(): boolean {
-	return container !== null && client !== null;
-}
-````
-
-## File: packages/core/src/scheduler/monque.ts
-````typescript
-import { randomUUID } from 'node:crypto';
-import { EventEmitter } from 'node:events';
-import type {
-	ChangeStream,
-	ChangeStreamDocument,
-	Collection,
-	Db,
-	DeleteResult,
-	Document,
-	ObjectId,
-	WithId,
-} from 'mongodb';
-
-import type { MonqueEventMap } from '@/events';
-import {
-	type EnqueueOptions,
-	type GetJobsFilter,
-	isPersistedJob,
-	type Job,
-	type JobHandler,
-	JobStatus,
-	type JobStatusType,
-	type PersistedJob,
-	type ScheduleOptions,
-} from '@/jobs';
-import {
-	ConnectionError,
-	calculateBackoff,
-	getNextCronDate,
-	MonqueError,
-	WorkerRegistrationError,
-} from '@/shared';
-import type { WorkerOptions, WorkerRegistration } from '@/workers';
-
-import type { MonqueOptions } from './types.js';
-
-/**
- * Default configuration values
- */
-const DEFAULTS = {
-	collectionName: 'monque_jobs',
-	pollInterval: 1000,
-	maxRetries: 10,
-	baseRetryInterval: 1000,
-	shutdownTimeout: 30000,
-	defaultConcurrency: 5,
-	lockTimeout: 1_800_000, // 30 minutes
-	recoverStaleJobs: true,
-	heartbeatInterval: 30000, // 30 seconds
-	retentionInterval: 3600_000, // 1 hour
-} as const;
-
-/**
- * Monque - MongoDB-backed job scheduler
- *
- * A type-safe job scheduler with atomic locking, exponential backoff, cron scheduling,
- * stale job recovery, and event-driven observability. Built on native MongoDB driver.
- *
- * @example Complete lifecycle
- * ```;
-typescript
- *
-
-import { Monque } from '@monque/core';
-
-*
-
-import { MongoClient } from 'mongodb';
-
-*
- *
-const client = new MongoClient('mongodb://localhost:27017');
-* await client.connect()
-*
-const db = client.db('myapp');
-*
- * // Create instance with options
- *
-const monque = new Monque(db, {
- *   collectionName: 'jobs',
- *   pollInterval: 1000,
- *   maxRetries: 10,
- *   shutdownTimeout: 30000,
- * });
-*
- * // Initialize (sets up indexes and recovers stale jobs)
- * await monque.initialize()
-*
- * // Register workers with type safety
- *
-type EmailJob = {};
-*   to: string
-*   subject: string
-*   body: string
-* }
- *
- * monque.worker<EmailJob>('send-email', async (job) =>
-{
-	*   await emailService.send(job.data.to, job.data.subject, job.data.body)
-	*
-}
-)
-*
- * // Monitor events for observability
- * monque.on('job:complete', (
-{
-	job, duration;
-}
-) =>
-{
- *   logger.info(`Job $job.namecompleted in $durationms`);
- * });
- *
- * monque.on('job:fail', ({ job, error, willRetry }) => {
- *   logger.error(`Job $job.namefailed:`, error);
- * });
- *
- * // Start processing
- * monque.start();
- *
- * // Enqueue jobs
- * await monque.enqueue('send-email', {
- *   to: 'user@example.com',
- *   subject: 'Welcome!',
- *   body: 'Thanks for signing up.'
- * });
- *
- * // Graceful shutdown
- * process.on('SIGTERM', async () => {
- *   await monque.stop();
- *   await client.close();
- *   process.exit(0);
- * });
- * ```
- */
-export class Monque extends EventEmitter {
-	private readonly db: Db;
-	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>> &
-		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
-	private collection: Collection<Document> | null = null;
-	private workers: Map<string, WorkerRegistration> = new Map();
-	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
-	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
-	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
-	private isRunning = false;
-	private isInitialized = false;
-
-	/**
-	 * MongoDB Change Stream for real-time job notifications.
-	 * When available, provides instant job processing without polling delay.
-	 */
-	private changeStream: ChangeStream | null = null;
-
-	/**
-	 * Number of consecutive reconnection attempts for change stream.
-	 * Used for exponential backoff during reconnection.
-	 */
-	private changeStreamReconnectAttempts = 0;
-
-	/**
-	 * Maximum reconnection attempts before falling back to polling-only mode.
-	 */
-	private readonly maxChangeStreamReconnectAttempts = 3;
-
-	/**
-	 * Debounce timer for change stream event processing.
-	 * Prevents claim storms when multiple events arrive in quick succession.
-	 */
-	private changeStreamDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/**
-	 * Whether the scheduler is currently using change streams for notifications.
-	 */
-	private usingChangeStreams = false;
-
-	/**
-	 * Timer ID for change stream reconnection with exponential backoff.
-	 * Tracked to allow cancellation during shutdown.
-	 */
-	private changeStreamReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-	constructor(db: Db, options: MonqueOptions = {}) {
-		super();
-		this.db = db;
-		this.options = {
-			collectionName: options.collectionName ?? DEFAULTS.collectionName,
-			pollInterval: options.pollInterval ?? DEFAULTS.pollInterval,
-			maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,
-			baseRetryInterval: options.baseRetryInterval ?? DEFAULTS.baseRetryInterval,
-			shutdownTimeout: options.shutdownTimeout ?? DEFAULTS.shutdownTimeout,
-			defaultConcurrency: options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
-			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
-			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
-			maxBackoffDelay: options.maxBackoffDelay,
-			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
-			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
-			jobRetention: options.jobRetention,
-		};
-	}
-
-	/**
-	 * Initialize the scheduler by setting up the MongoDB collection and indexes.
-	 * Must be called before start().
-	 *
-	 * @throws {ConnectionError} If collection or index creation fails
-	 */
-	async initialize(): Promise<void> {
-		if (this.isInitialized) {
-			return;
-		}
-
-		try {
-			this.collection = this.db.collection(this.options.collectionName);
-
-			// Create indexes for efficient queries
-			await this.createIndexes();
-
-			// Recover stale jobs if enabled
-			if (this.options.recoverStaleJobs) {
-				await this.recoverStaleJobs();
-			}
-
-			this.isInitialized = true;
-		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : 'Unknown error during initialization';
-			throw new ConnectionError(`Failed to initialize Monque: ${message}`);
-		}
-	}
-
-	/**
-	 * Create required MongoDB indexes for efficient job processing.
-	 *
-	 * The following indexes are created:
-	 * - `{status, nextRunAt}` - For efficient job polling queries
-	 * - `{name, uniqueKey}` - Partial unique index for deduplication (pending/processing only)
-	 * - `{name, status}` - For job lookup by type
-	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
-	 * - `{lastHeartbeat, status}` - For detecting stale jobs via heartbeat timeout
-	 * - `{status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs)
-	 * - `{lockedAt, lastHeartbeat, status}` - For stale job recovery combining lock time and heartbeat
-	 */
-	private async createIndexes(): Promise<void> {
-		if (!this.collection) {
-			throw new ConnectionError('Collection not initialized');
-		}
-
-		// Compound index for job polling - status + nextRunAt for efficient queries
-		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
-
-		// Partial unique index for deduplication - scoped by name + uniqueKey
-		// Only enforced where uniqueKey exists and status is pending/processing
-		await this.collection.createIndex(
-			{ name: 1, uniqueKey: 1 },
-			{
-				unique: true,
-				partialFilterExpression: {
-					uniqueKey: { $exists: true },
-					status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-				},
-				background: true,
-			},
-		);
-
-		// Index for job lookup by name
-		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
-
-		// Compound index for finding jobs claimed by a specific scheduler instance.
-		// Used for heartbeat updates and cleanup on shutdown.
-		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
-
-		// Compound index for detecting stale jobs via heartbeat timeout.
-		// Used to find processing jobs that have stopped sending heartbeats.
-		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
-
-		// Compound index for atomic claim queries.
-		// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
-		await this.collection.createIndex(
-			{ status: 1, nextRunAt: 1, claimedBy: 1 },
-			{ background: true },
-		);
-
-		// Expanded index for stale job recovery combining lock time and heartbeat.
-		// Supports recovery queries that check both lockedAt and lastHeartbeat.
-		await this.collection.createIndex(
-			{ lockedAt: 1, lastHeartbeat: 1, status: 1 },
-			{ background: true },
-		);
-	}
-
-	/**
-	 * Recover stale jobs that were left in 'processing' status.
-	 * A job is considered stale if its `lockedAt` timestamp exceeds the configured `lockTimeout`.
-	 * Stale jobs are reset to 'pending' so they can be picked up by workers again.
-	 */
-	private async recoverStaleJobs(): Promise<void> {
-		if (!this.collection) {
-			return;
-		}
-
-		const staleThreshold = new Date(Date.now() - this.options.lockTimeout);
-
-		const result = await this.collection.updateMany(
-			{
-				status: JobStatus.PROCESSING,
-				lockedAt: { $lt: staleThreshold },
-			},
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					updatedAt: new Date(),
-				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-					heartbeatInterval: '',
-				},
-			},
-		);
-
-		if (result.modifiedCount > 0) {
-			// Emit event for recovered jobs
-			this.emit('stale:recovered', {
-				count: result.modifiedCount,
-			});
-		}
-	}
-
-	/**
-	 * Clean up old completed and failed jobs based on retention policy.
-	 *
-	 * - Removes completed jobs older than `jobRetention.completed`
-	 * - Removes failed jobs older than `jobRetention.failed`
-	 *
-	 * The cleanup runs concurrently for both statuses if configured.
-	 *
-	 * @returns Promise resolving when all deletion operations complete
-	 */
-	private async cleanupJobs(): Promise<void> {
-		if (!this.collection || !this.options.jobRetention) {
-			return;
-		}
-
-		const { completed, failed } = this.options.jobRetention;
-		const now = Date.now();
-		const deletions: Promise<DeleteResult>[] = [];
-
-		if (completed) {
-			const cutoff = new Date(now - completed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.COMPLETED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (failed) {
-			const cutoff = new Date(now - failed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.FAILED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (deletions.length > 0) {
-			await Promise.all(deletions);
-		}
-	}
-
-	/**
-	 * Enqueue a job for processing.
-	 *
-	 * Jobs are stored in MongoDB and processed by registered workers. Supports
-	 * delayed execution via `runAt` and deduplication via `uniqueKey`.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. Completed or failed jobs don't block new jobs with the same key.
-	 *
-	 * Failed jobs are automatically retried with exponential backoff up to `maxRetries`
-	 * (default: 10 attempts). The delay between retries is calculated as `2^failCount × baseRetryInterval`.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @param options - Scheduling and deduplication options
-	 * @returns Promise resolving to the created or existing job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Basic job enqueueing
-	 * ```typescript
-	 * await monque.enqueue('send-email', {
-	 *   to: 'user@example.com',
-	 *   subject: 'Welcome!',
-	 *   body: 'Thanks for signing up.'
-	 * });
-	 * ```
-	 *
-	 * @example Delayed execution
-	 * ```typescript
-	 * const oneHourLater = new Date(Date.now() + 3600000);
-	 * await monque.enqueue('reminder', { message: 'Check in!' }, {
-	 *   runAt: oneHourLater
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicates with unique key
-	 * ```typescript
-	 * await monque.enqueue('sync-user', { userId: '123' }, {
-	 *   uniqueKey: 'sync-user-123'
-	 * });
-	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
-	 * ```
-	 */
-	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-		this.ensureInitialized();
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt: options.runAt ?? now,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to enqueue job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to enqueue job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof ConnectionError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			throw new ConnectionError(
-				`Failed to enqueue job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Enqueue a job for immediate processing.
-	 *
-	 * Convenience method equivalent to `enqueue(name, data, { runAt: new Date() })`.
-	 * Jobs are picked up on the next poll cycle (typically within 1 second based on `pollInterval`).
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @returns Promise resolving to the created job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Send email immediately
-	 * ```typescript
-	 * await monque.now('send-email', {
-	 *   to: 'admin@example.com',
-	 *   subject: 'Alert',
-	 *   body: 'Immediate attention required'
-	 * });
-	 * ```
-	 *
-	 * @example Process order in background
-	 * ```typescript
-	 * const order = await createOrder(data);
-	 * await monque.now('process-order', { orderId: order.id });
-	 * return order; // Return immediately, processing happens async
-	 * ```
-	 */
-	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-		return this.enqueue(name, data, { runAt: new Date() });
-	}
-
-	/**
-	 * Schedule a recurring job with a cron expression.
-	 *
-	 * Creates a job that automatically re-schedules itself based on the cron pattern.
-	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
-	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
-	 * After successful completion, the job is reset to `pending` status and scheduled
-	 * for its next run based on the cron expression.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. This prevents duplicate scheduled jobs on application restart.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param cron - Cron expression (5 fields or predefined expression)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler on each run
-	 * @param options - Scheduling options (uniqueKey for deduplication)
-	 * @returns Promise resolving to the created job document with `repeatInterval` set
-	 * @throws {InvalidCronError} If cron expression is invalid
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Hourly cleanup job
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'cleanup-temp-files', {
-	 *   directory: '/tmp/uploads'
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicate scheduled jobs with unique key
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'hourly-report', { type: 'sales' }, {
-	 *   uniqueKey: 'hourly-report-sales'
-	 * });
-	 * // Subsequent calls with same uniqueKey return existing pending/processing job
-	 * ```
-	 *
-	 * @example Daily report at midnight (using predefined expression)
-	 * ```typescript
-	 * await monque.schedule('@daily', 'daily-report', {
-	 *   reportType: 'sales',
-	 *   recipients: ['analytics@example.com']
-	 * });
-	 * ```
-	 */
-	async schedule<T>(
-		cron: string,
-		name: string,
-		data: T,
-		options: ScheduleOptions = {},
-	): Promise<PersistedJob<T>> {
-		this.ensureInitialized();
-
-		// Validate cron and get next run date (throws InvalidCronError if invalid)
-		const nextRunAt = getNextCronDate(cron);
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt,
-			repeatInterval: cron,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to schedule job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError(
-						'Failed to schedule job: findOneAndUpdate returned no document',
-					);
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to schedule job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof MonqueError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(
-				`Failed to schedule job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Register a worker to process jobs of a specific type.
-	 *
-	 * Workers can be registered before or after calling `start()`. Each worker
-	 * processes jobs concurrently up to its configured concurrency limit (default: 5).
-	 *
-	 * The handler function receives the full job object including metadata (`_id`, `status`,
-	 * `failCount`, etc.). If the handler throws an error, the job is retried with exponential
-	 * backoff up to `maxRetries` times. After exhausting retries, the job is marked as `failed`.
-	 *
-	 * Events are emitted during job processing: `job:start`, `job:complete`, `job:fail`, and `job:error`.
-	 *
-	 * **Duplicate Registration**: By default, registering a worker for a job name that already has
-	 * a worker will throw a `WorkerRegistrationError`. This fail-fast behavior prevents accidental
-	 * replacement of handlers. To explicitly replace a worker, pass `{ replace: true }`.
-	 *
-	 * @template T - The job data payload type for type-safe access to `job.data`
-	 * @param name - Job type identifier to handle
-	 * @param handler - Async function to execute for each job
-	 * @param options - Worker configuration
-	 * @param options.concurrency - Maximum concurrent jobs for this worker (default: `defaultConcurrency`)
-	 * @param options.replace - When `true`, replace existing worker instead of throwing error
-	 * @throws {WorkerRegistrationError} When a worker is already registered for `name` and `replace` is not `true`
-	 *
-	 * @example Basic email worker
-	 * ```typescript
-	 * interface EmailJob {
-	 *   to: string;
-	 *   subject: string;
-	 *   body: string;
-	 * }
-	 *
-	 * monque.worker<EmailJob>('send-email', async (job) => {
-	 *   await emailService.send(job.data.to, job.data.subject, job.data.body);
-	 * });
-	 * ```
-	 *
-	 * @example Worker with custom concurrency
-	 * ```typescript
-	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
-	 * monque.register('process-video', async (job) => {
-	 *   await videoProcessor.transcode(job.data.videoId);
-	 * }, { concurrency: 2 });
-	 * ```
-	 *
-	 * @example Replacing an existing worker
-	 * ```typescript
-	 * // Replace the existing handler for 'send-email'
-	 * monque.register('send-email', newEmailHandler, { replace: true });
-	 * ```
-	 *
-	 * @example Worker with error handling
-	 * ```typescript
-	 * monque.register('sync-user', async (job) => {
-	 *   try {
-	 *     await externalApi.syncUser(job.data.userId);
-	 *   } catch (error) {
-	 *     // Job will retry with exponential backoff
-	 *     // Delay = 2^failCount × baseRetryInterval (default: 1000ms)
-	 *     throw new Error(`Sync failed: ${error.message}`);
-	 *   }
-	 * });
-	 * ```
-	 */
-	worker<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
-		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
-
-		// Check for existing worker and throw unless replace is explicitly true
-		if (this.workers.has(name) && options.replace !== true) {
-			throw new WorkerRegistrationError(
-				`Worker already registered for job name "${name}". Use { replace: true } to replace.`,
-				name,
-			);
-		}
-
-		this.workers.set(name, {
-			handler: handler as JobHandler,
-			concurrency,
-			activeJobs: new Map(),
-		});
-	}
-
-	/**
-	 * Start polling for and processing jobs.
-	 *
-	 * Begins polling MongoDB at the configured interval (default: 1 second) to pick up
-	 * pending jobs and dispatch them to registered workers. Must call `initialize()` first.
-	 * Workers can be registered before or after calling `start()`.
-	 *
-	 * Jobs are processed concurrently up to each worker's configured concurrency limit.
-	 * The scheduler continues running until `stop()` is called.
-	 *
-	 * @example Basic startup
-	 * ```typescript
-	 * const monque = new Monque(db);
-	 * await monque.initialize();
-	 *
-	 * monque.register('send-email', emailHandler);
-	 * monque.register('process-order', orderHandler);
-	 *
-	 * monque.start(); // Begin processing jobs
-	 * ```
-	 *
-	 * @example With event monitoring
-	 * ```typescript
-	 * monque.on('job:start', (job) => {
-	 *   logger.info(`Starting job ${job.name}`);
-	 * });
-	 *
-	 * monque.on('job:complete', ({ job, duration }) => {
-	 *   metrics.recordJobDuration(job.name, duration);
-	 * });
-	 *
-	 * monque.on('job:fail', ({ job, error, willRetry }) => {
-	 *   logger.error(`Job ${job.name} failed:`, error);
-	 *   if (!willRetry) {
-	 *     alerting.sendAlert(`Job permanently failed: ${job.name}`);
-	 *   }
-	 * });
-	 *
-	 * monque.start();
-	 * ```
-	 *
-	 * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
-	 */
-	start(): void {
-		if (this.isRunning) {
-			return;
-		}
-
-		if (!this.isInitialized) {
-			throw new ConnectionError('Monque not initialized. Call initialize() before start().');
-		}
-
-		this.isRunning = true;
-
-		// Set up change streams as the primary notification mechanism
-		this.setupChangeStream();
-
-		// Set up polling as backup (runs at configured interval)
-		this.pollIntervalId = setInterval(() => {
-			this.poll().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-		}, this.options.pollInterval);
-
-		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(() => {
-			this.updateHeartbeats().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-		}, this.options.heartbeatInterval);
-
-		// Start cleanup interval if retention is configured
-		if (this.options.jobRetention) {
-			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
-
-			// Run immediately on start
-			this.cleanupJobs().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-
-			this.cleanupIntervalId = setInterval(() => {
-				this.cleanupJobs().catch((error: unknown) => {
-					this.emit('job:error', { error: error as Error });
-				});
-			}, interval);
-		}
-
-		// Run initial poll immediately to pick up any existing jobs
-		this.poll().catch((error: unknown) => {
-			this.emit('job:error', { error: error as Error });
-		});
-	}
-
-	/**
-	 * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
-	 *
-	 * Stops polling for new jobs and waits for all active jobs to finish processing.
-	 * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
-	 * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
-	 *
-	 * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
-	 *
-	 * @returns Promise that resolves when all jobs complete or timeout is reached
-	 *
-	 * @example Graceful application shutdown
-	 * ```typescript
-	 * process.on('SIGTERM', async () => {
-	 *   console.log('Shutting down gracefully...');
-	 *   await monque.stop(); // Wait for jobs to complete
-	 *   await mongoClient.close();
-	 *   process.exit(0);
-	 * });
-	 * ```
-	 *
-	 * @example With timeout handling
-	 * ```typescript
-	 * monque.on('job:error', ({ error }) => {
-	 *   if (error.name === 'ShutdownTimeoutError') {
-	 *     logger.warn('Forced shutdown after timeout:', error.incompleteJobs);
-	 *   }
-	 * });
-	 *
-	 * await monque.stop();
-	 * ```
-	 */
-	async stop(): Promise<void> {
-		if (!this.isRunning) {
-			return;
-		}
-
-		this.isRunning = false;
-
-		// Close change stream
-		await this.closeChangeStream();
-
-		// Clear debounce timer
-		if (this.changeStreamDebounceTimer) {
-			clearTimeout(this.changeStreamDebounceTimer);
-			this.changeStreamDebounceTimer = null;
-		}
-
-		// Clear reconnection timer
-		if (this.changeStreamReconnectTimer) {
-			clearTimeout(this.changeStreamReconnectTimer);
-			this.changeStreamReconnectTimer = null;
-		}
-
-		if (this.cleanupIntervalId) {
-			clearInterval(this.cleanupIntervalId);
-			this.cleanupIntervalId = null;
-		}
-
-		// Clear polling interval
-		if (this.pollIntervalId) {
-			clearInterval(this.pollIntervalId);
-			this.pollIntervalId = null;
-		}
-
-		// Clear heartbeat interval
-		if (this.heartbeatIntervalId) {
-			clearInterval(this.heartbeatIntervalId);
-			this.heartbeatIntervalId = null;
-		}
-
-		// Wait for all active jobs to complete (with timeout)
-		const activeJobs = this.getActiveJobs();
-		if (activeJobs.length === 0) {
-			return;
-		}
-
-		// Create a promise that resolves when all jobs are done
-		let checkInterval: ReturnType<typeof setInterval> | undefined;
-		const waitForJobs = new Promise<undefined>((resolve) => {
-			checkInterval = setInterval(() => {
-				if (this.getActiveJobs().length === 0) {
-					clearInterval(checkInterval);
-					resolve(undefined);
-				}
-			}, 100);
-		});
-
-		// Race between job completion and timeout
-		const timeout = new Promise<'timeout'>((resolve) => {
-			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
-		});
-
-		let result: undefined | 'timeout';
-
-		try {
-			result = await Promise.race([waitForJobs, timeout]);
-		} finally {
-			if (checkInterval) {
-				clearInterval(checkInterval);
-			}
-		}
-
-		if (result === 'timeout') {
-			const incompleteJobs = this.getActiveJobsList();
-			const { ShutdownTimeoutError } = await import('@/shared/errors.js');
-
-			const error = new ShutdownTimeoutError(
-				`Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
-				incompleteJobs,
-			);
-			this.emit('job:error', { error });
-		}
-	}
-
-	/**
-	 * Check if the scheduler is healthy (running and connected).
-	 *
-	 * Returns `true` when the scheduler is started, initialized, and has an active
-	 * MongoDB collection reference. Useful for health check endpoints and monitoring.
-	 *
-	 * A healthy scheduler:
-	 * - Has called `initialize()` successfully
-	 * - Has called `start()` and is actively polling
-	 * - Has a valid MongoDB collection reference
-	 *
-	 * @returns `true` if scheduler is running and connected, `false` otherwise
-	 *
-	 * @example Express health check endpoint
-	 * ```typescript
-	 * app.get('/health', (req, res) => {
-	 *   const healthy = monque.isHealthy();
-	 *   res.status(healthy ? 200 : 503).json({
-	 *     status: healthy ? 'ok' : 'unavailable',
-	 *     scheduler: healthy,
-	 *     timestamp: new Date().toISOString()
-	 *   });
-	 * });
-	 * ```
-	 *
-	 * @example Kubernetes readiness probe
-	 * ```typescript
-	 * app.get('/readyz', (req, res) => {
-	 *   if (monque.isHealthy() && dbConnected) {
-	 *     res.status(200).send('ready');
-	 *   } else {
-	 *     res.status(503).send('not ready');
-	 *   }
-	 * });
-	 * ```
-	 *
-	 * @example Periodic health monitoring
-	 * ```typescript
-	 * setInterval(() => {
-	 *   if (!monque.isHealthy()) {
-	 *     logger.error('Scheduler unhealthy');
-	 *     metrics.increment('scheduler.unhealthy');
-	 *   }
-	 * }, 60000); // Check every minute
-	 * ```
-	 */
-	isHealthy(): boolean {
-		return this.isRunning && this.isInitialized && this.collection !== null;
-	}
-
-	/**
-	 * Query jobs from the queue with optional filters.
-	 *
-	 * Provides read-only access to job data for monitoring, debugging, and
-	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param filter - Optional filter criteria
-	 * @returns Promise resolving to array of matching jobs
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Get all pending jobs
-	 * ```typescript
-	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
-	 * console.log(`${pendingJobs.length} jobs waiting`);
-	 * ```
-	 *
-	 * @example Get failed email jobs
-	 * ```typescript
-	 * const failedEmails = await monque.getJobs({
-	 *   name: 'send-email',
-	 *   status: JobStatus.FAILED,
-	 * });
-	 * for (const job of failedEmails) {
-	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
-	 * }
-	 * ```
-	 *
-	 * @example Paginated job listing
-	 * ```typescript
-	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
-	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
-	 * ```
-	 *
-	 * @example Use with type guards from @monque/core
-	 * ```typescript
-	 * import { isPendingJob, isRecurringJob } from '@monque/core';
-	 *
-	 * const jobs = await monque.getJobs();
-	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
-	 * ```
-	 */
-	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-		this.ensureInitialized();
-
-		if (!this.collection) {
-			throw new ConnectionError('Failed to query jobs: collection not available');
-		}
-
-		const query: Document = {};
-
-		if (filter.name !== undefined) {
-			query['name'] = filter.name;
-		}
-
-		if (filter.status !== undefined) {
-			if (Array.isArray(filter.status)) {
-				query['status'] = { $in: filter.status };
-			} else {
-				query['status'] = filter.status;
-			}
-		}
-
-		const limit = filter.limit ?? 100;
-		const skip = filter.skip ?? 0;
-
-		try {
-			const cursor = this.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
-
-			const docs = await cursor.toArray();
-			return docs.map((doc) => this.documentToPersistedJob<T>(doc));
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
-			throw new ConnectionError(
-				`Failed to query jobs: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Get a single job by its MongoDB ObjectId.
-	 *
-	 * Useful for retrieving job details when you have a job ID from events,
-	 * logs, or stored references.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param id - The job's ObjectId
-	 * @returns Promise resolving to the job if found, null otherwise
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Look up job from event
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   // Later, retrieve the job to check its status
-	 *   const currentJob = await monque.getJob(job._id);
-	 *   console.log(`Job status: ${currentJob?.status}`);
-	 * });
-	 * ```
-	 *
-	 * @example Admin endpoint
-	 * ```typescript
-	 * app.get('/jobs/:id', async (req, res) => {
-	 *   const job = await monque.getJob(new ObjectId(req.params.id));
-	 *   if (!job) {
-	 *     return res.status(404).json({ error: 'Job not found' });
-	 *   }
-	 *   res.json(job);
-	 * });
-	 * ```
-	 */
-	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
-		this.ensureInitialized();
-
-		if (!this.collection) {
-			throw new ConnectionError('Failed to get job: collection not available');
-		}
-
-		try {
-			const doc = await this.collection.findOne({ _id: id });
-			if (!doc) {
-				return null;
-			}
-			return this.documentToPersistedJob<T>(doc as WithId<Document>);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
-			throw new ConnectionError(
-				`Failed to get job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Poll for available jobs and process them.
-	 *
-	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
-	 * attempts to acquire jobs up to the worker's available concurrency slots.
-	 *
-	 * @private
-	 */
-	private async poll(): Promise<void> {
-		if (!this.isRunning || !this.collection) {
-			return;
-		}
-
-		for (const [name, worker] of this.workers) {
-			// Check if worker has capacity
-			const availableSlots = worker.concurrency - worker.activeJobs.size;
-
-			if (availableSlots <= 0) {
-				continue;
-			}
-
-			// Try to acquire jobs up to available slots
-			for (let i = 0; i < availableSlots; i++) {
-				const job = await this.acquireJob(name);
-
-				if (job) {
-					this.processJob(job, worker).catch((error: unknown) => {
-						this.emit('job:error', { error: error as Error, job });
-					});
-				} else {
-					// No more jobs available for this worker
-					break;
-				}
-			}
-		}
-	}
-
-	/**
-	 * Atomically acquire a pending job for processing using the claimedBy pattern.
-	 *
-	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
-	 * instance can claim a job. The query ensures the job is:
-	 * - In pending status
-	 * - Has nextRunAt <= now
-	 * - Is not claimed by another instance (claimedBy is null/undefined)
-	 *
-	 * @private
-	 * @param name - The job type to acquire
-	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
-	 */
-	private async acquireJob(name: string): Promise<PersistedJob | null> {
-		if (!this.collection) {
-			return null;
-		}
-
-		const now = new Date();
-
-		const result = await this.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.options.schedulerInstanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
-
-		if (!result) {
-			return null;
-		}
-
-		return this.documentToPersistedJob(result as WithId<Document>);
-	}
-
-	/**
-	 * Execute a job using its registered worker handler.
-	 *
-	 * Tracks the job as active during processing, emits lifecycle events, and handles
-	 * both success and failure cases. On success, calls `completeJob()`. On failure,
-	 * calls `failJob()` which implements exponential backoff retry logic.
-	 *
-	 * @private
-	 * @param job - The job to process
-	 * @param worker - The worker registration containing the handler and active job tracking
-	 */
-	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
-		const jobId = job._id.toString();
-		worker.activeJobs.set(jobId, job);
-
-		const startTime = Date.now();
-		this.emit('job:start', job);
-
-		try {
-			await worker.handler(job);
-
-			// Job completed successfully
-			const duration = Date.now() - startTime;
-			await this.completeJob(job);
-			this.emit('job:complete', { job, duration });
-		} catch (error) {
-			// Job failed
-			const err = error instanceof Error ? error : new Error(String(error));
-			await this.failJob(job, err);
-
-			const willRetry = job.failCount + 1 < this.options.maxRetries;
-			this.emit('job:fail', { job, error: err, willRetry });
-		} finally {
-			worker.activeJobs.delete(jobId);
-		}
-	}
-
-	/**
-	 * Mark a job as completed successfully.
-	 *
-	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
-	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
-	 * Clears `lockedAt` and `failReason` fields in both cases.
-	 *
-	 * @private
-	 * @param job - The job that completed successfully
-	 */
-	private async completeJob(job: Job): Promise<void> {
-		if (!this.collection || !isPersistedJob(job)) {
-			return;
-		}
-
-		if (job.repeatInterval) {
-			// Recurring job - schedule next run
-			const nextRunAt = getNextCronDate(job.repeatInterval);
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-		} else {
-			// One-time job - mark as completed
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.COMPLETED,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-			job.status = JobStatus.COMPLETED;
-		}
-	}
-
-	/**
-	 * Handle job failure with exponential backoff retry logic.
-	 *
-	 * Increments `failCount` and calculates next retry time using exponential backoff:
-	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
-	 *
-	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
-	 * to `pending` status for retry. Stores error message in `failReason` field.
-	 *
-	 * @private
-	 * @param job - The job that failed
-	 * @param error - The error that caused the failure
-	 */
-	private async failJob(job: Job, error: Error): Promise<void> {
-		if (!this.collection || !isPersistedJob(job)) {
-			return;
-		}
-
-		const newFailCount = job.failCount + 1;
-
-		if (newFailCount >= this.options.maxRetries) {
-			// Permanent failure
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		} else {
-			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(
-				newFailCount,
-				this.options.baseRetryInterval,
-				this.options.maxBackoffDelay,
-			);
-
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						failCount: newFailCount,
-						failReason: error.message,
-						nextRunAt,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		}
-	}
-
-	/**
-	 * Ensure the scheduler is initialized before operations.
-	 *
-	 * @private
-	 * @throws {ConnectionError} If scheduler not initialized or collection unavailable
-	 */
-	private ensureInitialized(): void {
-		if (!this.isInitialized || !this.collection) {
-			throw new ConnectionError('Monque not initialized. Call initialize() first.');
-		}
-	}
-
-	/**
-	 * Update heartbeats for all jobs claimed by this scheduler instance.
-	 *
-	 * This method runs periodically while the scheduler is running to indicate
-	 * that jobs are still being actively processed. Other instances use the
-	 * lastHeartbeat timestamp to detect stale jobs from crashed schedulers.
-	 *
-	 * @private
-	 */
-	private async updateHeartbeats(): Promise<void> {
-		if (!this.collection || !this.isRunning) {
-			return;
-		}
-
-		const now = new Date();
-
-		await this.collection.updateMany(
-			{
-				claimedBy: this.options.schedulerInstanceId,
-				status: JobStatus.PROCESSING,
-			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
-		);
-	}
-
-	/**
-	 * Set up MongoDB Change Stream for real-time job notifications.
-	 *
-	 * Change streams provide instant notifications when jobs are inserted or when
-	 * job status changes to pending (e.g., after a retry). This eliminates the
-	 * polling delay for reactive job processing.
-	 *
-	 * The change stream watches for:
-	 * - Insert operations (new jobs)
-	 * - Update operations where status field changes
-	 *
-	 * If change streams are unavailable (e.g., standalone MongoDB), the system
-	 * gracefully falls back to polling-only mode.
-	 *
-	 * @private
-	 */
-	private setupChangeStream(): void {
-		if (!this.collection || !this.isRunning) {
-			return;
-		}
-
-		try {
-			// Create change stream with pipeline to filter relevant events
-			const pipeline = [
-				{
-					$match: {
-						$or: [
-							{ operationType: 'insert' },
-							{
-								operationType: 'update',
-								'updateDescription.updatedFields.status': { $exists: true },
-							},
-						],
-					},
-				},
-			];
-
-			this.changeStream = this.collection.watch(pipeline, {
-				fullDocument: 'updateLookup',
-			});
-
-			// Handle change events
-			this.changeStream.on('change', (change) => {
-				this.handleChangeStreamEvent(change);
-			});
-
-			// Handle errors with reconnection
-			this.changeStream.on('error', (error: Error) => {
-				this.emit('changestream:error', { error });
-				this.handleChangeStreamError(error);
-			});
-
-			// Mark as connected
-			this.usingChangeStreams = true;
-			this.changeStreamReconnectAttempts = 0;
-			this.emit('changestream:connected', undefined);
-		} catch (error) {
-			// Change streams not available (e.g., standalone MongoDB)
-			this.usingChangeStreams = false;
-			const reason = error instanceof Error ? error.message : 'Unknown error';
-			this.emit('changestream:fallback', { reason });
-		}
-	}
-
-	/**
-	 * Handle a change stream event by triggering a debounced poll.
-	 *
-	 * Events are debounced to prevent "claim storms" when multiple changes arrive
-	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
-	 * collects multiple events and triggers a single poll.
-	 *
-	 * @private
-	 * @param change - The change stream event document
-	 */
-	private handleChangeStreamEvent(change: ChangeStreamDocument<Document>): void {
-		if (!this.isRunning) {
-			return;
-		}
-
-		// Trigger poll on insert (new job) or update where status changes
-		const isInsert = change.operationType === 'insert';
-		const isUpdate = change.operationType === 'update';
-
-		// Get fullDocument if available (for insert or with updateLookup option)
-		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
-		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
-
-		// For inserts: always trigger since new pending jobs need processing
-		// For updates: trigger if status changed to pending (retry/release scenario)
-		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
-
-		if (shouldTrigger) {
-			// Debounce poll triggers to avoid claim storms
-			if (this.changeStreamDebounceTimer) {
-				clearTimeout(this.changeStreamDebounceTimer);
-			}
-
-			this.changeStreamDebounceTimer = setTimeout(() => {
-				this.changeStreamDebounceTimer = null;
-				this.poll().catch((error: unknown) => {
-					this.emit('job:error', { error: error as Error });
-				});
-			}, 100);
-		}
-	}
-
-	/**
-	 * Handle change stream errors with exponential backoff reconnection.
-	 *
-	 * Attempts to reconnect up to `maxChangeStreamReconnectAttempts` times with
-	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
-	 * polling-only mode.
-	 *
-	 * @private
-	 * @param error - The error that caused the change stream failure
-	 */
-	private handleChangeStreamError(error: Error): void {
-		if (!this.isRunning) {
-			return;
-		}
-
-		this.changeStreamReconnectAttempts++;
-
-		if (this.changeStreamReconnectAttempts > this.maxChangeStreamReconnectAttempts) {
-			// Fall back to polling-only mode
-			this.usingChangeStreams = false;
-			this.emit('changestream:fallback', {
-				reason: `Exhausted ${this.maxChangeStreamReconnectAttempts} reconnection attempts: ${error.message}`,
-			});
-			return;
-		}
-
-		// Exponential backoff: 1s, 2s, 4s
-		const delay = 2 ** (this.changeStreamReconnectAttempts - 1) * 1000;
-
-		// Clear any existing reconnect timer before scheduling a new one
-		if (this.changeStreamReconnectTimer) {
-			clearTimeout(this.changeStreamReconnectTimer);
-		}
-
-		this.changeStreamReconnectTimer = setTimeout(() => {
-			this.changeStreamReconnectTimer = null;
-			if (this.isRunning) {
-				// Close existing change stream before reconnecting
-				if (this.changeStream) {
-					this.changeStream.close().catch(() => {});
-					this.changeStream = null;
-				}
-				this.setupChangeStream();
-			}
-		}, delay);
-	}
-
-	/**
-	 * Close the change stream cursor and emit closed event.
-	 *
-	 * @private
-	 */
-	private async closeChangeStream(): Promise<void> {
-		if (this.changeStream) {
-			try {
-				await this.changeStream.close();
-			} catch {
-				// Ignore close errors during shutdown
-			}
-			this.changeStream = null;
-
-			if (this.usingChangeStreams) {
-				this.emit('changestream:closed', undefined);
-			}
-		}
-
-		this.usingChangeStreams = false;
-		this.changeStreamReconnectAttempts = 0;
-	}
-
-	/**
-	 * Get array of active job IDs across all workers.
-	 *
-	 * @private
-	 * @returns Array of job ID strings currently being processed
-	 */
-	private getActiveJobs(): string[] {
-		const activeJobs: string[] = [];
-		for (const worker of this.workers.values()) {
-			activeJobs.push(...worker.activeJobs.keys());
-		}
-		return activeJobs;
-	}
-
-	/**
-	 * Get list of active job documents (for shutdown timeout error).
-	 *
-	 * @private
-	 * @returns Array of active Job objects
-	 */
-	private getActiveJobsList(): Job[] {
-		const activeJobs: Job[] = [];
-		for (const worker of this.workers.values()) {
-			activeJobs.push(...worker.activeJobs.values());
-		}
-		return activeJobs;
-	}
-
-	/**
-	 * Convert a MongoDB document to a typed PersistedJob object.
-	 *
-	 * Maps raw MongoDB document fields to the strongly-typed `PersistedJob<T>` interface,
-	 * ensuring type safety and handling optional fields (`lockedAt`, `failReason`, etc.).
-	 *
-	 * @private
-	 * @template T - The job data payload type
-	 * @param doc - The raw MongoDB document with `_id`
-	 * @returns A strongly-typed PersistedJob object with guaranteed `_id`
-	 */
-	private documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
-		const job: PersistedJob<T> = {
-			_id: doc._id,
-			name: doc['name'] as string,
-			data: doc['data'] as T,
-			status: doc['status'] as JobStatusType,
-			nextRunAt: doc['nextRunAt'] as Date,
-			failCount: doc['failCount'] as number,
-			createdAt: doc['createdAt'] as Date,
-			updatedAt: doc['updatedAt'] as Date,
-		};
-
-		// Only set optional properties if they exist
-		if (doc['lockedAt'] !== undefined) {
-			job.lockedAt = doc['lockedAt'] as Date | null;
-		}
-		if (doc['claimedBy'] !== undefined) {
-			job.claimedBy = doc['claimedBy'] as string | null;
-		}
-		if (doc['lastHeartbeat'] !== undefined) {
-			job.lastHeartbeat = doc['lastHeartbeat'] as Date | null;
-		}
-		if (doc['heartbeatInterval'] !== undefined) {
-			job.heartbeatInterval = doc['heartbeatInterval'] as number;
-		}
-		if (doc['failReason'] !== undefined) {
-			job.failReason = doc['failReason'] as string;
-		}
-		if (doc['repeatInterval'] !== undefined) {
-			job.repeatInterval = doc['repeatInterval'] as string;
-		}
-		if (doc['uniqueKey'] !== undefined) {
-			job.uniqueKey = doc['uniqueKey'] as string;
-		}
-
-		return job;
-	}
-
-	/**
-	 * Type-safe event emitter methods
-	 */
-	override emit<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]): boolean {
-		return super.emit(event, payload);
-	}
-
-	override on<K extends keyof MonqueEventMap>(
-		event: K,
-		listener: (payload: MonqueEventMap[K]) => void,
-	): this {
-		return super.on(event, listener);
-	}
-
-	override once<K extends keyof MonqueEventMap>(
-		event: K,
-		listener: (payload: MonqueEventMap[K]) => void,
-	): this {
-		return super.once(event, listener);
-	}
-
-	override off<K extends keyof MonqueEventMap>(
-		event: K,
-		listener: (payload: MonqueEventMap[K]) => void,
-	): this {
-		return super.off(event, listener);
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"check:exports": "publint && attw --pack .",
+		"clean": "rimraf dist coverage .turbo",
+		"type-check": "tsc --noEmit",
+		"pretest": "bun run type-check",
+		"test": "vitest run",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
+		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
+		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
+		"test:watch": "vitest",
+		"test:watch:unit": "vitest --config vitest.unit.config.ts",
+		"test:watch:integration": "vitest integration/",
+		"lint": "biome check src/"
+	},
+	"keywords": [
+		"job",
+		"queue",
+		"scheduler",
+		"mongodb",
+		"cron",
+		"background-jobs",
+		"typescript",
+		"distributed",
+		"task-queue",
+		"atomic",
+		"persistence"
+	],
+	"license": "ISC",
+	"dependencies": {
+		"cron-parser": "^5.4.0"
+	},
+	"peerDependencies": {
+		"mongodb": "^7.0.0"
+	},
+	"devDependencies": {
+		"@arethetypeswrong/cli": "^0.18.2",
+		"@faker-js/faker": "^10.2.0",
+		"@testcontainers/mongodb": "^11.11.0",
+		"@total-typescript/ts-reset": "^0.6.1",
+		"@types/bun": "^1.3.5",
+		"@vitest/coverage-v8": "^4.0.16",
+		"fishery": "^2.4.0",
+		"mongodb": "^7.0.0",
+		"publint": "^0.3.16",
+		"tsdown": "^0.18.4",
+		"typescript": "^5.9.3",
+		"vitest": "^4.0.16"
 	}
 }
 ````
 
 ## File: packages/core/README.md
 ````markdown
-# @monque/core
+<p align="center">
+  <img src="../../assets/logo.svg" width="180" alt="Monque logo" />
+</p>
 
-MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.
+<h1 align="center">@monque/core</h1>
+
+<p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
+
+> [!WARNING]
+> This package is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
 
 ## Installation
 
@@ -11012,7 +11547,7 @@ Creates a new Monque instance.
 - `enqueue(name, data, options?)` - Enqueue a job
 - `now(name, data)` - Enqueue for immediate processing
 - `schedule(cron, name, data)` - Schedule recurring job
-- `worker(name, handler, options?)` - Register a worker
+- `register(name, handler, options?)` - Register a worker
 - `start()` - Start processing jobs
 - `stop()` - Graceful shutdown
 - `isHealthy()` - Check scheduler health
@@ -11047,425 +11582,10 @@ When `TESTCONTAINERS_REUSE_ENABLE=true`, the MongoDB testcontainer persists betw
 
 To manually clean up reusable containers:
 ```bash
-docker stop $(docker ps -q --filter label=org.testcontainers=true)
+docker ps -q --filter label=org.testcontainers=true | while read -r id; do docker stop "$id"; done
 ```
 
 ## License
 
 ISC
-````
-
-## File: packages/core/tests/factories/job.factory.ts
-````typescript
-import { faker } from '@faker-js/faker';
-import { Factory } from 'fishery';
-import { ObjectId } from 'mongodb';
-
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
-import { JobStatus, type PersistedJob } from '@/jobs';
-
-/**
- * Transient parameters for JobFactory.
- * These don't end up in the built object but control factory behavior.
- */
-interface JobTransientParams {
-	/** Generate custom data shape instead of default email/userId */
-	withData?: Record<string, unknown>;
-}
-
-/**
- * Factory for creating test Job objects with realistic fake data.
- *
- * @example
- * ```typescript
- * // Basic usage - creates a pending job with random data
- * const job = JobFactory.build();
- *
- * // Override specific fields
- * const processingJob = JobFactory.build({ status: JobStatus.PROCESSING });
- *
- * // Use transient params for custom data
- * const emailJob = JobFactory.build({}, { transient: { withData: { to: 'test@example.com' } } });
- *
- * // Use status-specific helpers
- * const failed = JobFactoryHelpers.failed();
- * const processing = JobFactoryHelpers.processing();
- * ```
- */
-export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientParams>(
-	({ transientParams }) => {
-		const data = transientParams.withData ?? {
-			email: faker.internet.email(),
-			userId: faker.string.uuid(),
-		};
-
-		return {
-			_id: new ObjectId(faker.database.mongodbObjectId()),
-			name: TEST_CONSTANTS.JOB_NAME,
-			data,
-			status: JobStatus.PENDING,
-			failCount: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			nextRunAt: new Date(),
-		};
-	},
-);
-
-/** Convenience builders for common job states */
-export const JobFactoryHelpers = {
-	/** Build a job in PROCESSING state with lockedAt set */
-	processing: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.PROCESSING,
-			lockedAt: new Date(),
-			claimedBy: overrides?.claimedBy ?? 'test-instance-id',
-			lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
-			...overrides,
-		}),
-
-	/** Build a job in COMPLETED state */
-	completed: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.COMPLETED,
-			...overrides,
-		}),
-
-	/** Build a job in FAILED state with failCount and failReason */
-	failed: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.FAILED,
-			failCount: 10,
-			failReason: 'Max retries exceeded',
-			...overrides,
-		}),
-
-	/** Build a job with custom data payload */
-	withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
-		JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {
-			transient: { withData: data },
-		}) as PersistedJob<T>,
-};
-````
-
-## File: packages/core/vitest.config.ts
-````typescript
-import { fileURLToPath } from 'node:url';
-import { defineConfig, mergeConfig } from 'vitest/config';
-
-import rootConfig from '../../vitest.config.ts';
-
-export default mergeConfig(
-	rootConfig,
-	defineConfig({
-		resolve: {
-			alias: {
-				'@': fileURLToPath(new URL('./src', import.meta.url)),
-				'@tests': fileURLToPath(new URL('./tests', import.meta.url)),
-				'@test-utils': fileURLToPath(new URL('./tests/setup', import.meta.url)),
-			},
-		},
-		test: {
-			include: ['tests/**/*.test.ts'],
-			coverage: {
-				include: ['src/**/*.ts'],
-				exclude: [
-					// Type-only files with no runtime code
-					'src/**/types.ts',
-					'src/events/types.ts',
-					'src/workers/types.ts',
-					'src/scheduler/types.ts',
-				],
-			},
-			// Global setup for MongoDB Testcontainers (returns teardown function)
-			globalSetup: ['./tests/setup/global-setup.ts'],
-			// Seed faker for deterministic tests
-			setupFiles: ['./tests/setup/seed.ts'],
-			// Increase timeout for integration tests (container startup can be slow)
-			testTimeout: 30000,
-			hookTimeout: 60000,
-		},
-	}),
-);
-````
-
-## File: packages/core/src/index.ts
-````typescript
-// Types - Events
-export type { MonqueEventMap } from '@/events';
-// Types - Jobs
-export {
-	type EnqueueOptions,
-	type GetJobsFilter,
-	isCompletedJob,
-	isFailedJob,
-	isPendingJob,
-	isPersistedJob,
-	isProcessingJob,
-	isRecurringJob,
-	isValidJobStatus,
-	type Job,
-	type JobHandler,
-	JobStatus,
-	type JobStatusType,
-	type PersistedJob,
-	type ScheduleOptions,
-} from '@/jobs';
-// Types - Scheduler
-export type { MonqueOptions } from '@/scheduler';
-// Main class
-export { Monque } from '@/scheduler';
-// Errors
-// Utilities (for advanced use cases)
-export {
-	ConnectionError,
-	calculateBackoff,
-	calculateBackoffDelay,
-	DEFAULT_BASE_INTERVAL,
-	getNextCronDate,
-	InvalidCronError,
-	MonqueError,
-	ShutdownTimeoutError,
-	validateCronExpression,
-	WorkerRegistrationError,
-} from '@/shared';
-// Types - Workers
-export type { WorkerOptions } from '@/workers';
-````
-
-## File: packages/core/tests/setup/test-utils.ts
-````typescript
-/**
- * Test utilities for MongoDB integration tests.
- *
- * Provides helper functions for isolated test databases and cleanup.
- *
- * @example
- * ```typescript
- * import { getTestDb, cleanupTestDb } from './setup/test-utils';
- *
- * describe('MyTest', () => {
- *   let db: Db;
- *
- *   beforeAll(async () => {
- *     db = await getTestDb('my-test-suite');
- *   });
- *
- *   afterAll(async () => {
- *     await cleanupTestDb(db);
- *   });
- * });
- * ```
- */
-
-import type { Collection, Db, Document, ObjectId } from 'mongodb';
-
-import { getMongoClient } from '@tests/setup/mongodb.js';
-import type { Job } from '@/jobs';
-
-/**
- * Gets an isolated test database.
- * Each test file should use a unique testName to avoid conflicts.
- *
- * @param testName - A unique identifier for the test suite (used as database name suffix)
- * @returns A MongoDB Db instance for isolated testing
- */
-export async function getTestDb(testName: string): Promise<Db> {
-	const client = await getMongoClient();
-	// Sanitize test name for use as database name
-	const sanitizedName = testName.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-	return client.db(`monque_test_${sanitizedName}`);
-}
-
-/**
- * Drops the test database to clean up after test suite.
- * Call this in afterAll() to ensure test isolation.
- *
- * @param db - The database instance to drop
- */
-export async function cleanupTestDb(db: Db): Promise<void> {
-	await db.dropDatabase();
-}
-
-/**
- * Clears all documents from a specific collection without dropping it.
- * Useful for cleaning up between tests within the same suite.
- *
- * @param db - The database instance
- * @param collectionName - Name of the collection to clear
- */
-export async function clearCollection(db: Db, collectionName: string): Promise<void> {
-	await db.collection(collectionName).deleteMany({});
-}
-
-/**
- * Creates a unique collection name for test isolation.
- * Useful when running parallel tests that share a database.
- *
- * @param baseName - Base collection name
- * @returns Unique collection name with random suffix
- */
-export function uniqueCollectionName(baseName: string): string {
-	const suffix = Math.random().toString(36).substring(2, 8);
-
-	return `${baseName}_${suffix}`;
-}
-
-/**
- * Waits for a condition to be true with timeout.
- * Useful for testing async operations like job processing.
- *
- * @param condition - Async function that returns true when condition is met
- * @param options - Configuration for polling and timeout
- * @returns Promise that resolves when condition is true
- * @throws Error if timeout is exceeded
- */
-export async function waitFor(
-	condition: () => Promise<boolean>,
-	options: { timeout?: number; interval?: number } = {},
-): Promise<void> {
-	const { timeout = 10000, interval = 100 } = options;
-	const startTime = Date.now();
-
-	while (Date.now() - startTime < timeout) {
-		if (await condition()) {
-			return;
-		}
-
-		await new Promise((resolve) => setTimeout(resolve, interval));
-	}
-
-	const elapsed = Date.now() - startTime;
-	throw new Error(
-		`waitFor condition not met within ${timeout}ms (elapsed: ${elapsed}ms). ` +
-			`Consider increasing timeout or checking test conditions.`,
-	);
-}
-
-/**
- * Stops multiple Monque instances in parallel.
- * Useful for cleaning up in afterEach/afterAll.
- *
- * @param instances - Array of Monque instances or objects with a stop method
- */
-export async function stopMonqueInstances(
-	instances: { stop: () => Promise<void> }[],
-): Promise<void> {
-	await Promise.all(instances.map((i) => i.stop()));
-	// Clear the array in place
-	instances.length = 0;
-}
-
-/**
- * Updates a job's nextRunAt to now for immediate execution in tests.
- * Useful for triggering scheduled jobs immediately without waiting for their scheduled time.
- *
- * @param collection - The MongoDB collection containing the job
- * @param jobId - The ObjectId of the job to trigger
- */
-export async function triggerJobImmediately(
-	collection: Collection,
-	jobId: ObjectId,
-): Promise<void> {
-	await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
-}
-
-/**
- * Finds a job by a custom query and returns it typed as Job.
- * This helper eliminates the need for unsafe double-casting (as unknown as Job)
- * when querying jobs directly from the collection in tests.
- *
- * @param collection - The MongoDB collection containing jobs
- * @param query - MongoDB query to find the job
- * @returns The job if found, null otherwise
- *
- * @example
- * ```typescript
- * const job = await findJobByQuery<{ id: number }>(collection, { 'data.id': 1 });
- * expect(job?.status).toBe(JobStatus.PENDING);
- * ```
- */
-export async function findJobByQuery<T = unknown>(
-	collection: Collection,
-	query: Document,
-): Promise<Job<T> | null> {
-	const doc = await collection.findOne(query);
-	return doc as Job<T> | null;
-}
-````
-
-## File: packages/core/package.json
-````json
-{
-	"name": "@monque/core",
-	"version": "0.0.0",
-	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
-	"type": "module",
-	"packageManager": "bun@1.3.5",
-	"engines": {
-		"node": ">=20.0.0"
-	},
-	"publishConfig": {
-		"access": "public"
-	},
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"import": {
-				"types": "./dist/index.d.mts",
-				"default": "./dist/index.mjs"
-			},
-			"require": {
-				"types": "./dist/index.d.cts",
-				"default": "./dist/index.cjs"
-			}
-		}
-	},
-	"files": [
-		"dist"
-	],
-	"scripts": {
-		"build": "tsdown",
-		"check:exports": "publint && attw --pack .",
-		"clean": "rimraf dist coverage .turbo",
-		"type-check": "tsc --noEmit",
-		"pretest": "bun run type-check",
-		"test": "vitest run",
-		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
-		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
-		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
-		"test:watch": "vitest",
-		"test:watch:unit": "vitest --config vitest.unit.config.ts",
-		"test:watch:integration": "vitest integration/",
-		"lint": "biome check src/"
-	},
-	"keywords": [
-		"job",
-		"queue",
-		"scheduler",
-		"mongodb",
-		"cron",
-		"background-jobs"
-	],
-	"license": "ISC",
-	"dependencies": {
-		"cron-parser": "^5.4.0"
-	},
-	"peerDependencies": {
-		"mongodb": "^7.0.0"
-	},
-	"devDependencies": {
-		"@faker-js/faker": "^10.1.0",
-		"@testcontainers/mongodb": "^11.10.0",
-		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/bun": "^1.3.5",
-		"fishery": "^2.4.0",
-		"mongodb": "^7.0.0",
-		"tsdown": "^0.18.1",
-		"typescript": "^5.7.3"
-	}
-}
 ````
