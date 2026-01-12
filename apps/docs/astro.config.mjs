@@ -77,6 +77,10 @@ export default defineConfig({
 						{ label: 'Production Checklist', slug: 'advanced/production-checklist' },
 					],
 				},
+				{
+					label: 'Roadmap',
+					slug: 'roadmap',
+				},
 				typeDocSidebarGroup,
 			],
 			head: [
