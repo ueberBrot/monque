@@ -2,7 +2,7 @@
 "@monque/core": minor
 ---
 
-### API Rename: `worker()` → `register()`
+API Rename: `worker()` → `register()`
 
 The public method for registering job handlers has been renamed from `worker()` to `register()` for improved API clarity.
 

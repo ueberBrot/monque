@@ -2,7 +2,7 @@
 "@monque/core": minor
 ---
 
-### Upgrade Node.js Engine to >=22.0.0
+Upgrade Node.js Engine to >=22.0.0
 
 This release updates the `engines.node` requirement in `package.json` to `>=22.0.0`.
 
