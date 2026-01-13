@@ -48,13 +48,7 @@
 			"automerge": true,
 			"platformAutomerge": true
 		},
-		{
-			"description": "Keep Node.js version updates manual (major runtime change)",
-			"matchPackageNames": ["node"],
-			"matchManagers": ["github-actions"],
-			"automerge": false,
-			"separateMajorMinor": true
-		},
+
 		{
 			"description": "Group docs-site dependency updates",
 			"matchFileNames": ["apps/docs/**"],
@@ -77,6 +71,12 @@
 				"/^@faker-js//",
 				"/^fishery$/"
 			]
+		},
+		{
+			"description": "Keep Node.js version updates manual (major runtime change)",
+			"matchPackageNames": ["node"],
+			"automerge": false,
+			"separateMajorMinor": true
 		}
 	]
 }
