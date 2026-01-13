@@ -73,10 +73,10 @@
 			]
 		},
 		{
-			"description": "Keep Node.js version updates manual (major runtime change)",
+			"description": "Ignore minor/patch/pin updates for Node.js to keep ranges wide and avoid aggressive pinning",
 			"matchPackageNames": ["node"],
-			"automerge": false,
-			"separateMajorMinor": true
+			"matchUpdateTypes": ["minor", "patch", "pin"],
+			"enabled": false
 		}
 	]
 }
