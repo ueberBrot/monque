@@ -36,6 +36,9 @@ All source code should reside in the `src/` directory.
   - **NO Barrel Exports**: Do not use `export * from '...'`.
   - **Explicit Exports**: Always use named exports (e.g., `export { MyClass } from './MyClass'`).
   - This ensures better tree-shaking and clarity in the API surface.
+- **Path Aliases**:
+  - Use `@/` for imports from `src/`.
+  - Use `@test-utils/` for imports from `tests/setup/`.
 
 ### Testing Requirements
 
@@ -43,6 +46,9 @@ All source code should reside in the `src/` directory.
   - Located alongside source files or in `tests/unit/`.
   - Must mock external dependencies (e.g., MongoDB).
   - Run with `bun run test:unit`.
+- **Strictness**:
+  - Do NOT use the non-null assertion operator (`!`). Use explicit checks or safe access.
+  - Do NOT use `any` even in tests. Define proper mock types or usage of unknown/casting with care.
 
 - **Integration Tests**:
   - Located in `integration/`.
