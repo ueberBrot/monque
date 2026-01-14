@@ -159,6 +159,16 @@ Visit the documentation site for comprehensive guides:
 - [Quick Start Tutorial](https://ueberBrot.github.io/monque/getting-started/quick-start/)
 - [Core Concepts](https://ueberBrot.github.io/monque/core-concepts/jobs/)
 
+## Inspired by
+
+Monque draws inspiration from several excellent job scheduling libraries:
+
+- [Agenda](https://github.com/agenda/agenda) - The original MongoDB job scheduler
+- [Pulse](https://github.com/pulsecron/pulse) - A maintained fork of Agenda
+- [BullMQ](https://github.com/taskforcesh/bullmq) - Robust Redis-based queue system
+- [pg-boss](https://github.com/timgit/pg-boss) - Postgres-backed job queue
+- [graphile-worker](https://github.com/graphile/worker) - High-performance Postgres worker
+
 ## License
 
 ISC © Maurice de Bruyn
