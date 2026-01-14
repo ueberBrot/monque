@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
 
       - name: Install, build, and upload docs
         uses: withastro/action@fc88a7002f0c62327f26fb1b15f2a1d581249278 # v5
