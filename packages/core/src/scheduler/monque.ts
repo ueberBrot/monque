@@ -1112,6 +1112,7 @@ export class Monque extends EventEmitter {
 	 *
 	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
 	 * attempts to acquire jobs up to the worker's available concurrency slots.
+	 * Aborts early if the scheduler is stopping (`isRunning` is false).
 	 *
 	 * @private
 	 */
@@ -1130,6 +1131,9 @@ export class Monque extends EventEmitter {
 
 			// Try to acquire jobs up to available slots
 			for (let i = 0; i < availableSlots; i++) {
+				if (!this.isRunning) {
+					return;
+				}
 				const job = await this.acquireJob(name);
 
 				if (job) {
@@ -1153,12 +1157,14 @@ export class Monque extends EventEmitter {
 	 * - Has nextRunAt <= now
 	 * - Is not claimed by another instance (claimedBy is null/undefined)
 	 *
+	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
+	 *
 	 * @private
 	 * @param name - The job type to acquire
 	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
 	 */
 	private async acquireJob(name: string): Promise<PersistedJob | null> {
-		if (!this.collection) {
+		if (!this.collection || !this.isRunning) {
 			return null;
 		}
 
