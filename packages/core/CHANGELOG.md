@@ -4,7 +4,7 @@
 
 ### Minor Changes
 
-- [#7](https://github.com/ueberBrot/monque/pull/7) [`eab1ab7`](https://github.com/ueberBrot/monque/commit/eab1ab710db66f84ad5d7edb9f42864619a1276f) Thanks [@ueberBrot](https://github.com/ueberBrot)! - API Rename: `worker()` → `register()`
+- [#7](https://github.com/ueberBrot/monque/pull/7) [`eab1ab7`](https://github.com/ueberBrot/monque/commit/eab1ab710db66f84ad5d7edb9f42864619a1276f) Thanks [@ueberBrot](https://github.com/ochrstn)! - API Rename: `worker()` → `register()`
 
   The public method for registering job handlers has been renamed from `worker()` to `register()` for improved API clarity.
 
