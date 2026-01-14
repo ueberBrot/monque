@@ -12,6 +12,9 @@
   <a href="https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS" alt="Docs" />
   </a>
+  <a href="https://codecov.io/gh/ueberBrot/monque">
+    <img src="https://img.shields.io/codecov/c/github/ueberBrot/monque?style=for-the-badge&logo=codecov&logoColor=white" alt="Codecov" />
+  </a>
   <a href="https://github.com/ueberbrot/monque/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE" alt="License" />
   </a>
