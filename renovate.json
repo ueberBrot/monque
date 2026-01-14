@@ -77,6 +77,13 @@
 			"matchPackageNames": ["node"],
 			"matchUpdateTypes": ["minor", "patch", "pin"],
 			"enabled": false
+		},
+		{
+			"description": "Use major version only for Node.js in GitHub Actions (prevent full version pinning)",
+			"matchPackageNames": ["node"],
+			"matchManagers": ["github-actions"],
+			"matchUpdateTypes": ["major"],
+			"versioning": "regex:^(?<major>\\d+)(\\..*)?$"
 		}
 	]
 }
