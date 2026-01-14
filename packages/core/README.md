@@ -8,6 +8,9 @@
   <a href="https://www.npmjs.com/package/@monque/core">
     <img src="https://img.shields.io/npm/v/%40monque%2Fcore?style=for-the-badge&label=%40monque%2Fcore" alt="@monque/core version" />
   </a>
+  <a href="https://codecov.io/gh/ueberBrot/monque">
+    <img src="https://img.shields.io/codecov/c/github/ueberBrot/monque?style=for-the-badge&logo=codecov&logoColor=white" alt="Codecov" />
+  </a>
 </p>
 
 <p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
