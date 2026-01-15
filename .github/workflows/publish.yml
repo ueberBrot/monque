@@ -62,8 +62,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESETS_TOKEN }}
           # OIDC Trusted Publishing (npm)
-          # 1) Keep NPM_TOKEN empty (do not remove), to avoid writing "undefined" to .npmrc.
-          #    Ref: https://github.com/changesets/action/issues/542
-          # 2) Enable provenance.
-          NPM_TOKEN: ""
+          # Enable provenance.
           NPM_CONFIG_PROVENANCE: true
