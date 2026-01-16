@@ -109,20 +109,20 @@
 
 ### Integration Tests for User Story 2
 
-- [ ] T048 [P] [US2] Create integration test file `packages/core/tests/integration/cursor-pagination.test.ts`
-- [ ] T049 [US2] Add test: First page returns jobs + cursor + hasNextPage
-- [ ] T050 [US2] Add test: Subsequent pages with cursor continue correctly
-- [ ] T051 [US2] Add test: Forward/backward pagination works
-- [ ] T052 [US2] Add test: Jobs added during pagination appear correctly
-- [ ] T053 [US2] Add test: Jobs deleted during pagination don't break cursor
-- [ ] T054 [US2] Add test: Invalid cursor throws `InvalidCursorError`
-- [ ] T055 [US2] Add test: Large dataset (1000+ jobs) handles efficiently
+- [x] T048 [P] [US2] Create integration test file `packages/core/tests/integration/cursor-pagination.test.ts`
+- [x] T049 [US2] Add test: First page returns jobs + cursor + hasNextPage
+- [x] T050 [US2] Add test: Subsequent pages with cursor continue correctly
+- [x] T051 [US2] Add test: Forward/backward pagination works
+- [x] T052 [US2] Add test: Jobs added during pagination appear correctly
+- [x] T053 [US2] Add test: Jobs deleted during pagination don't break cursor
+- [x] T054 [US2] Add test: Invalid cursor throws `InvalidCursorError`
+- [x] T055 [US2] Add test: Large dataset (1000+ jobs) handles efficiently
 
 ### Implementation for User Story 2
 
-- [ ] T056 [US2] Implement `getJobsWithCursor<T>(options?)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T057 [US2] Export cursor pagination method from `packages/core/src/index.ts`
-- [ ] T058 [US2] Run integration tests and verify all pass
+- [x] T056 [US2] Implement `getJobsWithCursor<T>(options?)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T057 [US2] Export cursor pagination method from `packages/core/src/index.ts`
+- [x] T058 [US2] Run integration tests and verify all pass
 
 **Checkpoint**: Cursor-based pagination functional and tested
 
