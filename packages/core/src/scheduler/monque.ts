@@ -7,12 +7,17 @@ import {
 	type Db,
 	type DeleteResult,
 	type Document,
+	type Filter,
 	ObjectId,
 	type WithId,
 } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
+	CursorDirection,
+	type CursorDirectionType,
+	type CursorOptions,
+	type CursorPage,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	isPersistedJob,
@@ -33,8 +38,7 @@ import {
 } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
-// Helpers are used in public API methods, will be used in next phase
-// import { buildSelectorQuery, decodeCursor, encodeCursor } from './helpers.js';
+import { buildSelectorQuery, decodeCursor, encodeCursor } from './helpers.js';
 import type { MonqueOptions } from './types.js';
 
 /**
@@ -516,6 +520,117 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
+	 * Get a paginated list of jobs using opaque cursors.
+	 *
+	 * Provides stable pagination for large job lists. Supports forward and backward
+	 * navigation, filtering, and efficient database access via index-based cursor queries.
+	 *
+	 * @template T - The job data payload type
+	 * @param options - Pagination options (cursor, limit, direction, filter)
+	 * @returns Page of jobs with next/prev cursors
+	 * @throws {InvalidCursorError} If the provided cursor is malformed
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example List pending jobs
+	 * ```typescript
+	 * const page = await monque.getJobsWithCursor({
+	 *   limit: 20,
+	 *   filter: { status: 'pending' }
+	 * });
+	 * const jobs = page.jobs;
+	 *
+	 * // Get next page
+	 * if (page.hasNextPage) {
+	 *   const page2 = await monque.getJobsWithCursor({
+	 *     cursor: page.cursor,
+	 *     limit: 20
+	 *   });
+	 * }
+	 * ```
+	 */
+	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+		this.ensureInitialized();
+		if (!this.collection) {
+			throw new ConnectionError('Collection not available');
+		}
+
+		const limit = options.limit ?? 50;
+		// Default to forward if not specified.
+		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
+		let anchorId: ObjectId | null = null;
+
+		if (options.cursor) {
+			const decoded = decodeCursor(options.cursor);
+			anchorId = decoded.id;
+		}
+
+		// Build base query from filters
+		const query: Filter<Document> = options.filter ? buildSelectorQuery(options.filter) : {};
+
+		// Add cursor condition to query
+		const sortDir = direction === CursorDirection.FORWARD ? 1 : -1;
+
+		if (anchorId) {
+			if (direction === CursorDirection.FORWARD) {
+				query._id = { ...query._id, $gt: anchorId };
+			} else {
+				query._id = { ...query._id, $lt: anchorId };
+			}
+		}
+
+		// Fetch limit + 1 to detect hasNext/hasPrev
+		const fetchLimit = limit + 1;
+
+		// Sort: Always deterministic.
+		const docs = await this.collection
+			.find(query)
+			.sort({ _id: sortDir })
+			.limit(fetchLimit)
+			.toArray();
+
+		let hasMore = false;
+		if (docs.length > limit) {
+			hasMore = true;
+			docs.pop(); // Remove the extra item
+		}
+
+		if (direction === CursorDirection.BACKWARD) {
+			docs.reverse();
+		}
+
+		const jobs = docs.map((doc) => this.documentToPersistedJob<T>(doc as WithId<Document>));
+
+		let nextCursor: string | null = null;
+
+		if (jobs.length > 0) {
+			const lastJob = jobs[jobs.length - 1];
+			// Check for existence to satisfy strict null checks/noUncheckedIndexedAccess
+			if (lastJob) {
+				nextCursor = encodeCursor(lastJob._id, direction);
+			}
+		}
+
+		let hasNextPage = false;
+		let hasPreviousPage = false;
+
+		// Determine availability of next/prev pages
+		if (direction === CursorDirection.FORWARD) {
+			hasNextPage = hasMore;
+			hasPreviousPage = !!anchorId;
+		} else {
+			hasNextPage = !!anchorId;
+			hasPreviousPage = hasMore;
+		}
+
+		return {
+			jobs,
+			cursor: nextCursor,
+			hasNextPage,
+			hasPreviousPage,
+		};
+	}
+
+	/**
 	 * Cancel a pending or scheduled job.
 	 *
 	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
@@ -538,11 +653,11 @@ export class Monque extends EventEmitter {
 
 		const _id = new ObjectId(jobId);
 
-		// First check the current state to ensure valid transition
-		const currentJobDoc = await this.collection.findOne({ _id });
-		if (!currentJobDoc) return null;
+		// Fetch job first to allow emitting the full job object in the event
+		const jobDoc = await this.collection.findOne({ _id });
+		if (!jobDoc) return null;
 
-		const currentJob = currentJobDoc as unknown as WithId<Job>;
+		const currentJob = jobDoc as unknown as WithId<Job>;
 
 		if (currentJob.status === JobStatus.CANCELLED) {
 			return this.documentToPersistedJob(currentJob as WithId<Document>);
