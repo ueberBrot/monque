@@ -1,6 +1,6 @@
 ---
 trigger: glob
-globs: **/*.md
+globs: **/*.md,**/*.mdx
 ---
 
 # Documentation Rules
