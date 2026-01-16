@@ -198,6 +198,87 @@ describe('Monitor Job Lifecycle Events', () => {
 		});
 	});
 
+	describe('job:cancelled event', () => {
+		it('should emit job:cancelled when a job is cancelled', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const cancelledEvents: MonqueEventMap['job:cancelled'][] = [];
+			monque.on('job:cancelled', (payload) => {
+				cancelledEvents.push(payload);
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'cancel-me' });
+			await monque.cancelJob(job._id.toString());
+
+			expect(cancelledEvents).toHaveLength(1);
+			const event = cancelledEvents[0];
+			if (!event) throw new Error('Event not found');
+
+			expect(event.job._id?.toString()).toBe(job._id.toString());
+			expect(event.job.status).toBe(JobStatus.CANCELLED);
+		});
+	});
+
+	describe('job:retried event', () => {
+		it('should emit job:retried when a failing job is retried', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const retriedEvents: MonqueEventMap['job:retried'][] = [];
+			monque.on('job:retried', (payload) => {
+				retriedEvents.push(payload);
+			});
+
+			// Manually insert a failed job
+			const { insertedId } = await db.collection(collectionName).insertOne({
+				name: TEST_CONSTANTS.JOB_NAME,
+				data: { foo: 'bar' },
+				status: JobStatus.FAILED,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				failCount: 1,
+				failReason: 'Manual failure',
+			});
+
+			await monque.retryJob(insertedId.toString());
+
+			expect(retriedEvents).toHaveLength(1);
+			const event = retriedEvents[0];
+			if (!event) throw new Error('Event not found');
+
+			expect(event.job._id?.toString()).toBe(insertedId.toString());
+			expect(event.previousStatus).toBe(JobStatus.FAILED);
+		});
+	});
+
+	describe('job:deleted event', () => {
+		it('should emit job:deleted when a job is deleted', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const deletedEvents: MonqueEventMap['job:deleted'][] = [];
+			monque.on('job:deleted', (payload) => {
+				deletedEvents.push(payload);
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'delete-me' });
+			await monque.deleteJob(job._id.toString());
+
+			expect(deletedEvents).toHaveLength(1);
+			const event = deletedEvents[0];
+			if (!event) throw new Error('Event not found');
+
+			expect(event.jobId).toBe(job._id.toString());
+		});
+	});
+
 	describe('isHealthy()', () => {
 		it('should return true when running and initialized', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);

@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type {
-	ChangeStream,
-	ChangeStreamDocument,
-	Collection,
-	Db,
-	DeleteResult,
-	Document,
+import {
+	type ChangeStream,
+	type ChangeStreamDocument,
+	type Collection,
+	type Db,
+	type DeleteResult,
+	type Document,
 	ObjectId,
-	WithId,
+	type WithId,
 } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
@@ -27,6 +27,7 @@ import {
 	ConnectionError,
 	calculateBackoff,
 	getNextCronDate,
+	JobStateError,
 	MonqueError,
 	WorkerRegistrationError,
 } from '@/shared';
@@ -515,6 +516,240 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
+	 * Cancel a pending or scheduled job.
+	 *
+	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
+	 * If the job is already cancelled, this is a no-op and returns the job.
+	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
+	 *
+	 * @param jobId - The ID of the job to cancel
+	 * @returns The cancelled job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for cancellation
+	 *
+	 * @example Cancel a pending job
+	 * ```typescript
+	 * const job = await monque.enqueue('report', { type: 'daily' });
+	 * await monque.cancelJob(job._id.toString());
+	 * ```
+	 */
+	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		if (!this.collection) return null;
+
+		const _id = new ObjectId(jobId);
+
+		// First check the current state to ensure valid transition
+		const currentJobDoc = await this.collection.findOne({ _id });
+		if (!currentJobDoc) return null;
+
+		const currentJob = currentJobDoc as unknown as WithId<Job>;
+
+		if (currentJob.status === JobStatus.CANCELLED) {
+			return this.documentToPersistedJob(currentJob as WithId<Document>);
+		}
+
+		if (currentJob.status !== JobStatus.PENDING) {
+			throw new JobStateError(
+				`Cannot cancel job in status '${currentJob.status}'`,
+				jobId,
+				currentJob.status,
+				'cancel',
+			);
+		}
+
+		const result = await this.collection.findOneAndUpdate(
+			{ _id, status: JobStatus.PENDING },
+			{
+				$set: {
+					status: JobStatus.CANCELLED,
+					updatedAt: new Date(),
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			// Race condition: job changed state between check and update
+			// Recursive retry or re-fetch could be better, but throwing ensures safety
+			throw new JobStateError(
+				'Job status changed during cancellation attempt',
+				jobId,
+				'unknown',
+				'cancel',
+			);
+		}
+
+		const job = this.documentToPersistedJob(result as WithId<Document>);
+		this.emit('job:cancelled', { job });
+		return job;
+	}
+
+	/**
+	 * Retry a failed or cancelled job.
+	 *
+	 * Resets the job to 'pending' status, clears failure count/reason, and sets
+	 * nextRunAt to now (immediate retry). Emits a 'job:retried' event.
+	 *
+	 * @param jobId - The ID of the job to retry
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for retry (must be failed or cancelled)
+	 *
+	 * @example Retry a failed job
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   console.log(`Job ${job._id} failed, retrying manually...`);
+	 *   await monque.retryJob(job._id.toString());
+	 * });
+	 * ```
+	 */
+	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		if (!this.collection) return null;
+
+		const _id = new ObjectId(jobId);
+		const currentJob = await this.collection.findOne({ _id });
+
+		if (!currentJob) return null;
+
+		if (currentJob['status'] !== JobStatus.FAILED && currentJob['status'] !== JobStatus.CANCELLED) {
+			throw new JobStateError(
+				`Cannot retry job in status '${currentJob['status']}'`,
+				jobId,
+				currentJob['status'],
+				'retry',
+			);
+		}
+
+		const previousStatus = currentJob['status'] as 'failed' | 'cancelled';
+
+		const result = await this.collection.findOneAndUpdate(
+			{
+				_id,
+				status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
+			},
+			{
+				$set: {
+					status: JobStatus.PENDING,
+					failCount: 0,
+					nextRunAt: new Date(),
+					updatedAt: new Date(),
+				},
+				$unset: {
+					failReason: '',
+					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			throw new JobStateError('Job status changed during retry attempt', jobId, 'unknown', 'retry');
+		}
+
+		const job = this.documentToPersistedJob(result as WithId<Document>);
+		this.emit('job:retried', { job, previousStatus });
+		return job;
+	}
+
+	/**
+	 * Reschedule a pending job to run at a different time.
+	 *
+	 * Only works for jobs in 'pending' status.
+	 *
+	 * @param jobId - The ID of the job to reschedule
+	 * @param runAt - The new Date when the job should run
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is not in pending state
+	 *
+	 * @example Delay a job by 1 hour
+	 * ```typescript
+	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+	 * await monque.rescheduleJob(jobId, nextHour);
+	 * ```
+	 */
+	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		if (!this.collection) return null;
+
+		const _id = new ObjectId(jobId);
+		const currentJobDoc = await this.collection.findOne({ _id });
+
+		if (!currentJobDoc) return null;
+
+		const currentJob = currentJobDoc as unknown as WithId<Job>;
+
+		if (currentJob.status !== JobStatus.PENDING) {
+			throw new JobStateError(
+				`Cannot reschedule job in status '${currentJob.status}'`,
+				jobId,
+				currentJob.status,
+				'reschedule',
+			);
+		}
+
+		const result = await this.collection.findOneAndUpdate(
+			{ _id, status: JobStatus.PENDING },
+			{
+				$set: {
+					nextRunAt: runAt,
+					updatedAt: new Date(),
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			throw new JobStateError(
+				'Job status changed during reschedule attempt',
+				jobId,
+				'unknown',
+				'reschedule',
+			);
+		}
+
+		return this.documentToPersistedJob(result as WithId<Document>);
+	}
+
+	/**
+	 * Permanently delete a job.
+	 *
+	 * This action is irreversible. Emits a 'job:deleted' event upon success.
+	 * Can delete a job in any state.
+	 *
+	 * @param jobId - The ID of the job to delete
+	 * @returns true if deleted, false if job not found
+	 *
+	 * @example Delete a cleanup job
+	 * ```typescript
+	 * const deleted = await monque.deleteJob(jobId);
+	 * if (deleted) {
+	 *   console.log('Job permanently removed');
+	 * }
+	 * ```
+	 */
+	async deleteJob(jobId: string): Promise<boolean> {
+		this.ensureInitialized();
+		if (!this.collection) return false;
+
+		const _id = new ObjectId(jobId);
+
+		// Fetch job first to allow emitting the full job object in the event
+		const jobDoc = await this.collection.findOne({ _id });
+		if (!jobDoc) return false;
+
+		const result = await this.collection.deleteOne({ _id });
+
+		if (result.deletedCount > 0) {
+			this.emit('job:deleted', { jobId });
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Schedule a recurring job with a cron expression.
 	 *
 	 * Creates a job that automatically re-schedules itself based on the cron pattern.
@@ -558,6 +793,7 @@ export class Monque extends EventEmitter {
 	 * });
 	 * ```
 	 */
+
 	async schedule<T>(
 		cron: string,
 		name: string,

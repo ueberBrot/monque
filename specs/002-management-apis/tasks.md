@@ -72,29 +72,30 @@
 
 ### Integration Tests for User Story 1
 
-- [ ] T030 [P] [US1] Create integration test file `packages/core/tests/integration/management.test.ts`
-- [ ] T031 [US1] Add test: `cancelJob()` on pending job → status becomes cancelled, event emitted
-- [ ] T032 [US1] Add test: `cancelJob()` on processing job → throws JobStateError
-- [ ] T033 [US1] Add test: `cancelJob()` on already cancelled job → idempotent success
-- [ ] T034 [US1] Add test: `cancelJob()` on non-existent job → returns null
-- [ ] T035 [US1] Add test: `retryJob()` on failed job → status becomes pending, failCount resets
-- [ ] T036 [US1] Add test: `retryJob()` on cancelled job → status becomes pending
-- [ ] T037 [US1] Add test: `retryJob()` on pending/processing job → throws JobStateError
-- [ ] T038 [US1] Add test: `rescheduleJob()` on pending job → nextRunAt updated
-- [ ] T039 [US1] Add test: `rescheduleJob()` on non-pending job → throws JobStateError
-- [ ] T040 [US1] Add test: `deleteJob()` on any job → returns true
-- [ ] T041 [US1] Add test: `deleteJob()` on non-existent job → returns false
-- [ ] T041a [US1] Add test: `deleteJob()` on recurring job → removes job and verifies no special recurrence handling
+- [x] T030 [P] [US1] Create integration test file `packages/core/tests/integration/management.test.ts`
+- [x] T031 [US1] Add test: `cancelJob()` on pending job → status becomes cancelled, event emitted
+- [x] T032 [US1] Add test: `cancelJob()` on processing job → throws JobStateError
+- [x] T033 [US1] Add test: `cancelJob()` on already cancelled job → idempotent success
+- [x] T034 [US1] Add test: `cancelJob()` on non-existent job → returns null
+- [x] T035 [US1] Add test: `retryJob()` on failed job → status becomes pending, failCount resets
+- [x] T036 [US1] Add test: `retryJob()` on cancelled job → status becomes pending
+- [x] T037 [US1] Add test: `retryJob()` on pending/processing job → throws JobStateError
+- [x] T038 [US1] Add test: `rescheduleJob()` on pending job → nextRunAt updated
+- [x] T039 [US1] Add test: `rescheduleJob()` on non-pending job → throws JobStateError
+- [x] T040 [US1] Add test: `deleteJob()` on any job → returns true
+- [x] T041 [US1] Add test: `deleteJob()` on non-existent job → returns false
+- [x] T041a [US1] Add test: `deleteJob()` on recurring job → removes job and verifies no special recurrence handling
 
 ### Implementation for User Story 1
 
-- [ ] T042 [US1] Implement `cancelJob(id)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T043 [US1] Implement `retryJob(id)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T044 [US1] Implement `rescheduleJob(id, runAt)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T045 [US1] Implement `deleteJob(id)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T046 [US1] Export single-job methods from `packages/core/src/index.ts`
-- [ ] T047 [US1] Run integration tests and verify all pass
-- [ ] T047a [US1] Add observability test: verify all management operations emit expected events with correct payloads
+- [x] T042 [US1] Implement `cancelJob(id)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T043 [US1] Implement `retryJob(id)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T044 [US1] Implement `rescheduleJob(id, runAt)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T045 [US1] Implement `deleteJob(id)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T046 [US1] Export single-job methods from `packages/core/src/index.ts`
+- [x] T047 [US1] Run integration tests and verify all pass
+- [x] T047a [US1] Add observability test: verify all management operations emit expected events with correct payloads
+- [x] T047b [US1] Add explicit event tests in `packages/core/tests/integration/events.test.ts` for cancelled, retried, and deleted events
 
 **Checkpoint**: Single job management functional and tested—MVP complete
 
