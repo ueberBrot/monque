@@ -1,7 +1,9 @@
 import { ObjectId } from 'mongodb';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { JobFactory, JobFactoryHelpers } from '@tests/factories';
 import {
+	isCancelledJob,
 	isCompletedJob,
 	isFailedJob,
 	isPendingJob,
@@ -11,41 +13,31 @@ import {
 	isValidJobStatus,
 	type Job,
 	JobStatus,
-	type PersistedJob,
 } from '@/jobs';
 
 describe('job guards', () => {
 	let baseJob: Job;
 
 	beforeEach(() => {
-		baseJob = {
-			name: 'test-job',
-			data: { foo: 'bar' },
-			status: JobStatus.PENDING,
-			nextRunAt: new Date(),
-			failCount: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		};
+		baseJob = JobFactory.build();
 	});
 
 	describe('isPersistedJob', () => {
 		it('should return true for job with _id', () => {
-			const persistedJob: PersistedJob = {
-				...baseJob,
-				_id: new ObjectId(),
-			};
-
+			const persistedJob = JobFactory.build();
 			expect(isPersistedJob(persistedJob)).toBe(true);
 		});
 
 		it('should return false for job without _id', () => {
-			expect(isPersistedJob(baseJob)).toBe(false);
+			const jobWithoutId = { ...baseJob };
+			delete jobWithoutId._id;
+			expect(isPersistedJob(jobWithoutId)).toBe(false);
 		});
 
 		it('should return false when _id is undefined', () => {
-			// Job without _id property (same as baseJob)
-			expect(isPersistedJob(baseJob)).toBe(false);
+			const jobWithoutId = { ...baseJob };
+			delete jobWithoutId._id;
+			expect(isPersistedJob(jobWithoutId)).toBe(false);
 		});
 
 		it('should return false when _id is null', () => {
@@ -58,10 +50,7 @@ describe('job guards', () => {
 		});
 
 		it('should narrow type to PersistedJob when true', () => {
-			const job: Job = {
-				...baseJob,
-				_id: new ObjectId(),
-			};
+			const job = JobFactory.build();
 
 			if (isPersistedJob(job)) {
 				// This should compile without errors - TypeScript knows _id exists
@@ -112,87 +101,98 @@ describe('job guards', () => {
 
 	describe('isPendingJob', () => {
 		it('should return true when status is PENDING', () => {
-			const job: Job = { ...baseJob, status: JobStatus.PENDING };
+			const job = JobFactory.build({ status: JobStatus.PENDING });
 			expect(isPendingJob(job)).toBe(true);
 		});
 
 		it('should return false when status is not PENDING', () => {
-			expect(isPendingJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isPendingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
-			expect(isPendingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+			expect(isPendingJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isPendingJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isPendingJob(JobFactoryHelpers.failed())).toBe(false);
 		});
 	});
 
 	describe('isProcessingJob', () => {
 		it('should return true when status is PROCESSING', () => {
-			const job: Job = { ...baseJob, status: JobStatus.PROCESSING };
+			const job = JobFactoryHelpers.processing();
 			expect(isProcessingJob(job)).toBe(true);
 		});
 
 		it('should return false when status is not PROCESSING', () => {
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
-			expect(isProcessingJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+			expect(isProcessingJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isProcessingJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isProcessingJob(JobFactoryHelpers.failed())).toBe(false);
 		});
 	});
 
 	describe('isCompletedJob', () => {
 		it('should return true when status is COMPLETED', () => {
-			const job: Job = { ...baseJob, status: JobStatus.COMPLETED };
+			const job = JobFactoryHelpers.completed();
 			expect(isCompletedJob(job)).toBe(true);
 		});
 
 		it('should return false when status is not COMPLETED', () => {
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isCompletedJob({ ...baseJob, status: JobStatus.FAILED })).toBe(false);
+			expect(isCompletedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isCompletedJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isCompletedJob(JobFactoryHelpers.failed())).toBe(false);
 		});
 	});
 
 	describe('isFailedJob', () => {
 		it('should return true when status is FAILED', () => {
-			const job: Job = { ...baseJob, status: JobStatus.FAILED };
+			const job = JobFactoryHelpers.failed();
 			expect(isFailedJob(job)).toBe(true);
 		});
 
 		it('should return false when status is not FAILED', () => {
-			expect(isFailedJob({ ...baseJob, status: JobStatus.PENDING })).toBe(false);
-			expect(isFailedJob({ ...baseJob, status: JobStatus.PROCESSING })).toBe(false);
-			expect(isFailedJob({ ...baseJob, status: JobStatus.COMPLETED })).toBe(false);
+			expect(isFailedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isFailedJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isFailedJob(JobFactoryHelpers.completed())).toBe(false);
+		});
+	});
+
+	describe('isCancelledJob', () => {
+		it('should return true when status is CANCELLED', () => {
+			const job = JobFactoryHelpers.cancelled();
+			expect(isCancelledJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not CANCELLED', () => {
+			expect(isCancelledJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.failed())).toBe(false);
 		});
 	});
 
 	describe('isRecurringJob', () => {
 		it('should return true when repeatInterval is defined', () => {
-			const job: Job = { ...baseJob, repeatInterval: '0 * * * *' };
+			const job = JobFactory.build({ repeatInterval: '0 * * * *' });
 			expect(isRecurringJob(job)).toBe(true);
 		});
 
 		it('should return false when repeatInterval is undefined', () => {
-			const job: Job = { ...baseJob };
+			const job = JobFactory.build();
 			expect(isRecurringJob(job)).toBe(false);
 		});
 
 		it('should return false when repeatInterval is null', () => {
-			const job: Job = { ...baseJob, repeatInterval: null as unknown as string };
+			const job = JobFactory.build({ repeatInterval: null as unknown as string });
 			expect(isRecurringJob(job)).toBe(false);
 		});
 
 		it('should return true for empty string repeatInterval', () => {
 			// Even empty string means it's defined as recurring (though invalid cron)
-			const job: Job = { ...baseJob, repeatInterval: '' };
+			const job = JobFactory.build({ repeatInterval: '' });
 			expect(isRecurringJob(job)).toBe(true);
 		});
 	});
 
 	describe('combined usage', () => {
 		it('should allow combining multiple guards', () => {
-			const job: PersistedJob = {
-				...baseJob,
-				_id: new ObjectId(),
-				status: JobStatus.FAILED,
+			const job = JobFactoryHelpers.failed({
 				repeatInterval: '0 0 * * *',
-			};
+			});
 
 			expect(isPersistedJob(job)).toBe(true);
 			expect(isFailedJob(job)).toBe(true);
@@ -202,10 +202,10 @@ describe('job guards', () => {
 
 		it('should work in filter operations', () => {
 			const jobs: Job[] = [
-				{ ...baseJob, status: JobStatus.PENDING },
-				{ ...baseJob, status: JobStatus.PROCESSING },
-				{ ...baseJob, status: JobStatus.COMPLETED },
-				{ ...baseJob, status: JobStatus.FAILED },
+				JobFactory.build({ status: JobStatus.PENDING }),
+				JobFactoryHelpers.processing(),
+				JobFactoryHelpers.completed(),
+				JobFactoryHelpers.failed(),
 			];
 
 			const pendingJobs = jobs.filter(isPendingJob);

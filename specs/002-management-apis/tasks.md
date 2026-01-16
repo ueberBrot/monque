@@ -15,13 +15,13 @@
 
 **Purpose**: Add foundational types and infrastructure required by all user stories
 
-- [ ] T001 [P] Add `cancelled` to `JobStatus` const in `packages/core/src/jobs/types.ts`
-- [ ] T002 [P] Add `CursorDirection` const and type in `packages/core/src/jobs/types.ts`
-- [ ] T003 [P] Add `JobSelector` interface in `packages/core/src/jobs/types.ts`
-- [ ] T004 [P] Add `CursorOptions` interface in `packages/core/src/jobs/types.ts`
-- [ ] T005 [P] Add `CursorPage<T>` interface in `packages/core/src/jobs/types.ts`
-- [ ] T006 [P] Add `QueueStats` interface in `packages/core/src/jobs/types.ts`
-- [ ] T007 [P] Add `BulkOperationResult` interface in `packages/core/src/jobs/types.ts`
+- [x] T001 [P] Add `cancelled` to `JobStatus` const in `packages/core/src/jobs/types.ts`
+- [x] T002 [P] Add `CursorDirection` const and type in `packages/core/src/jobs/types.ts`
+- [x] T003 [P] Add `JobSelector` interface in `packages/core/src/jobs/types.ts`
+- [x] T004 [P] Add `CursorOptions` interface in `packages/core/src/jobs/types.ts`
+- [x] T005 [P] Add `CursorPage<T>` interface in `packages/core/src/jobs/types.ts`
+- [x] T006 [P] Add `QueueStats` interface in `packages/core/src/jobs/types.ts`
+- [x] T007 [P] Add `BulkOperationResult` interface in `packages/core/src/jobs/types.ts`
 
 **Checkpoint**: All new types defined—implementation phases can begin
 
@@ -33,32 +33,32 @@
 
 ### Implementation
 
-- [ ] T008 [P] Add `isCancelledJob<T>()` type guard in `packages/core/src/jobs/guards.ts`
-- [ ] T009 [P] Add `job:cancelled` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
-- [ ] T010 [P] Add `job:retried` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
-- [ ] T010a [P] Add `job:deleted` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
-- [ ] T011 [P] Add `JobStateError` class in `packages/core/src/shared/errors.ts`
-- [ ] T012 [P] Add `InvalidCursorError` class in `packages/core/src/shared/errors.ts`
-- [ ] T013 Add private `buildSelectorQuery()` helper in `packages/core/src/scheduler/monque.ts`
-- [ ] T014 Add private `encodeCursor()` helper in `packages/core/src/scheduler/monque.ts`
-- [ ] T015 Add private `decodeCursor()` helper in `packages/core/src/scheduler/monque.ts`
-- [ ] T016 Export new types and errors from `packages/core/src/index.ts`
+- [x] T008 [P] Add `isCancelledJob<T>()` type guard in `packages/core/src/jobs/guards.ts`
+- [x] T009 [P] Add `job:cancelled` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
+- [x] T010 [P] Add `job:retried` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
+- [x] T010a [P] Add `job:deleted` event to `MonqueEventMap` in `packages/core/src/events/types.ts`
+- [x] T011 [P] Add `JobStateError` class in `packages/core/src/shared/errors.ts`
+- [x] T012 [P] Add `InvalidCursorError` class in `packages/core/src/shared/errors.ts`
+- [x] T013 Add private `buildSelectorQuery()` helper in `packages/core/src/scheduler/helpers.ts`
+- [x] T014 Add private `encodeCursor()` helper in `packages/core/src/scheduler/helpers.ts`
+- [x] T015 Add private `decodeCursor()` helper in `packages/core/src/scheduler/helpers.ts`
+- [x] T016 Export new types and errors from `packages/core/src/index.ts`
 
 ### Unit Tests (Pure Logic – No DB Required)
 
-- [ ] T017 [P] Add unit tests for `isCancelledJob()` guard in `packages/core/tests/unit/guards.test.ts`
-- [ ] T018 [P] Add unit tests for `JobStateError` class in `packages/core/tests/unit/errors.test.ts`
-- [ ] T019 [P] Add unit tests for `InvalidCursorError` class in `packages/core/tests/unit/errors.test.ts`
-- [ ] T020 [P] Create `packages/core/tests/unit/cursor.test.ts` for cursor encoding tests
-- [ ] T021 [P] Add unit test: `encodeCursor()` produces valid base64url string
-- [ ] T022 [P] Add unit test: `decodeCursor()` returns correct ObjectId
-- [ ] T023 [P] Add unit test: `decodeCursor()` with invalid input throws `InvalidCursorError`
-- [ ] T024 [P] Create `packages/core/tests/unit/selector.test.ts` for filter query tests
-- [ ] T025 [P] Add unit test: `buildSelectorQuery()` with empty filter returns empty object
-- [ ] T026 [P] Add unit test: `buildSelectorQuery()` with name filter
-- [ ] T027 [P] Add unit test: `buildSelectorQuery()` with single status filter
-- [ ] T028 [P] Add unit test: `buildSelectorQuery()` with status array uses `$in`
-- [ ] T029 [P] Add unit test: `buildSelectorQuery()` with olderThan/newerThan uses `$lt`/`$gt`
+- [x] T017 [P] Add unit tests for `isCancelledJob()` guard in `packages/core/tests/unit/guards.test.ts`
+- [x] T018 [P] Add unit tests for `JobStateError` class in `packages/core/tests/unit/errors.test.ts`
+- [x] T019 [P] Add unit tests for `InvalidCursorError` class in `packages/core/tests/unit/errors.test.ts`
+- [x] T020 [P] Create `packages/core/tests/unit/cursor.test.ts` for cursor encoding tests
+- [x] T021 [P] Add unit test: `encodeCursor()` produces valid base64url string
+- [x] T022 [P] Add unit test: `decodeCursor()` returns correct ObjectId
+- [x] T023 [P] Add unit test: `decodeCursor()` with invalid input throws `InvalidCursorError`
+- [x] T024 [P] Create `packages/core/tests/unit/selector.test.ts` for filter query tests
+- [x] T025 [P] Add unit test: `buildSelectorQuery()` with empty filter returns empty object
+- [x] T026 [P] Add unit test: `buildSelectorQuery()` with name filter
+- [x] T027 [P] Add unit test: `buildSelectorQuery()` with single status filter
+- [x] T028 [P] Add unit test: `buildSelectorQuery()` with status array uses `$in`
+- [x] T029 [P] Add unit test: `buildSelectorQuery()` with olderThan/newerThan uses `$lt`/`$gt`
 
 **Checkpoint**: Foundation ready—user story implementation can now begin
 

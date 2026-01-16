@@ -1,6 +1,9 @@
 export {
+	AggregationTimeoutError,
 	ConnectionError,
 	InvalidCronError,
+	InvalidCursorError,
+	JobStateError,
 	MonqueError,
 	ShutdownTimeoutError,
 	WorkerRegistrationError,

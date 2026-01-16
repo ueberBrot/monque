@@ -13,10 +13,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { JobFactoryHelpers } from '@tests/factories';
 import {
+	AggregationTimeoutError,
 	ConnectionError,
 	InvalidCronError,
+	InvalidCursorError,
+	JobStateError,
 	MonqueError,
 	ShutdownTimeoutError,
 	WorkerRegistrationError,
@@ -197,6 +200,70 @@ describe('errors', () => {
 		it('should have a stack trace', () => {
 			const error = new WorkerRegistrationError('Error', 'job');
 			expect(error.stack).toBeDefined();
+		});
+	});
+
+	describe('JobStateError', () => {
+		it('should create an error with correct properties', () => {
+			const error = new JobStateError(
+				'Invalid state transition',
+				'job-123',
+				'processing',
+				'cancel',
+			);
+			expect(error.message).toBe('Invalid state transition');
+			expect(error.jobId).toBe('job-123');
+			expect(error.currentStatus).toBe('processing');
+			expect(error.attemptedAction).toBe('cancel');
+		});
+
+		it('should have name "JobStateError"', () => {
+			const error = new JobStateError('Error', 'id', 'status', 'cancel');
+			expect(error.name).toBe('JobStateError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new JobStateError('Error', 'id', 'status', 'cancel');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+	});
+
+	describe('InvalidCursorError', () => {
+		it('should create an error with message', () => {
+			const error = new InvalidCursorError('Invalid cursor');
+			expect(error.message).toBe('Invalid cursor');
+		});
+
+		it('should have name "InvalidCursorError"', () => {
+			const error = new InvalidCursorError('Error');
+			expect(error.name).toBe('InvalidCursorError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new InvalidCursorError('Error');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+	});
+
+	describe('AggregationTimeoutError', () => {
+		it('should create an error with default message', () => {
+			const error = new AggregationTimeoutError();
+			expect(error.message).toContain('exceeded 30 second timeout');
+		});
+
+		it('should create an error with custom message', () => {
+			const error = new AggregationTimeoutError('Custom timeout');
+			expect(error.message).toBe('Custom timeout');
+		});
+
+		it('should have name "AggregationTimeoutError"', () => {
+			const error = new AggregationTimeoutError();
+			expect(error.name).toBe('AggregationTimeoutError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new AggregationTimeoutError();
+			expect(error).toBeInstanceOf(MonqueError);
 		});
 	});
 

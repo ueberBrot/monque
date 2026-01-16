@@ -81,6 +81,13 @@ export const JobFactoryHelpers = {
 			...overrides,
 		}),
 
+	/** Build a job in CANCELLED state */
+	cancelled: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.CANCELLED,
+			...overrides,
+		}),
+
 	/** Build a job with custom data payload */
 	withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
 		JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {

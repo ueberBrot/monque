@@ -32,6 +32,8 @@ import {
 } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
+// Helpers are used in public API methods, will be used in next phase
+// import { buildSelectorQuery, decodeCursor, encodeCursor } from './helpers.js';
 import type { MonqueOptions } from './types.js';
 
 /**

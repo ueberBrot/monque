@@ -170,6 +170,27 @@ export function isFailedJob<T>(job: Job<T>): boolean {
 }
 
 /**
+ * Type guard to check if a job has been manually cancelled.
+ *
+ * A convenience helper for checking if a job was cancelled by an operator.
+ * Equivalent to `job.status === JobStatus.CANCELLED` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'cancelled'`
+ *
+ * @example Filter cancelled jobs
+ * ```typescript
+ * const jobs = await monque.getJobs();
+ * const cancelledJobs = jobs.filter(isCancelledJob);
+ * console.log(`${cancelledJobs.length} jobs were cancelled`);
+ * ```
+ */
+export function isCancelledJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.CANCELLED;
+}
+
+/**
  * Type guard to check if a job is a recurring scheduled job.
  *
  * A recurring job has a `repeatInterval` cron expression and will be automatically
