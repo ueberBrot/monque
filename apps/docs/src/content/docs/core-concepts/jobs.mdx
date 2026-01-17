@@ -39,10 +39,12 @@ For the full interface definition, see the [Job API Reference](/monque/api/inter
 stateDiagram-v2
     [*] --> pending: enqueue()
     pending --> processing: worker claims
+    pending --> cancelled: cancelJob()
     processing --> completed: success
     processing --> pending: failure (retries left)
     processing --> failed: max retries exceeded
     completed --> pending: recurring job reschedules
+    cancelled --> pending: retryJob()
 ```
 
 ### Status Definitions

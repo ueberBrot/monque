@@ -24,10 +24,8 @@ monque.start();
 ### Cancel a Pending Job
 
 ```typescript
-import { ObjectId } from 'mongodb';
-
-// Get a job ID (from events, API, or query)
-const jobId = new ObjectId('507f1f77bcf86cd799439011');
+// Get a job ID string (from events, API, or query)
+const jobId = '507f1f77bcf86cd799439011';
 
 // Cancel the job
 const cancelledJob = await monque.cancelJob(jobId);
@@ -259,7 +257,6 @@ A complete example showing how to build a simple job dashboard API:
 ```typescript
 import express from 'express';
 import { Monque, JobStatus, JobStateError } from '@monque/core';
-import { ObjectId } from 'mongodb';
 
 const app = express();
 app.use(express.json());
@@ -286,7 +283,7 @@ app.get('/api/stats', async (req, res) => {
 // POST /api/jobs/:id/cancel
 app.post('/api/jobs/:id/cancel', async (req, res) => {
   try {
-    const job = await monque.cancelJob(new ObjectId(req.params.id));
+    const job = await monque.cancelJob(req.params.id);
     if (job) {
       res.json({ success: true, job });
     } else {
@@ -304,7 +301,7 @@ app.post('/api/jobs/:id/cancel', async (req, res) => {
 // POST /api/jobs/:id/retry
 app.post('/api/jobs/:id/retry', async (req, res) => {
   try {
-    const job = await monque.retryJob(new ObjectId(req.params.id));
+    const job = await monque.retryJob(req.params.id);
     if (job) {
       res.json({ success: true, job });
     } else {
@@ -321,7 +318,7 @@ app.post('/api/jobs/:id/retry', async (req, res) => {
 
 // DELETE /api/jobs/:id
 app.delete('/api/jobs/:id', async (req, res) => {
-  const deleted = await monque.deleteJob(new ObjectId(req.params.id));
+  const deleted = await monque.deleteJob(req.params.id);
   res.json({ success: deleted });
 });
 

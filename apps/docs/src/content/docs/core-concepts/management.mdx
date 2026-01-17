@@ -1,0 +1,155 @@
+---
+title: Job Management
+description: Learn how to manage, monitor, and control jobs in Monque.
+---
+
+Monque serves a comprehensive set of APIs for managing jobs throughout their lifecycle.
+
+## Quick Reference
+
+| Method | Description |
+|--------|-------------|
+| [`cancelJob()`](/monque/api/classes/monque/#canceljob) | Cancel a single job |
+| [`retryJob()`](/monque/api/classes/monque/#retryjob) | Retry a job |
+| [`rescheduleJob()`](/monque/api/classes/monque/#reschedulejob) | Reschedule a job |
+| [`deleteJob()`](/monque/api/classes/monque/#deletejob) | Delete a job |
+| [`cancelJobs()`](/monque/api/classes/monque/#canceljobs) | Bulk cancel |
+| [`retryJobs()`](/monque/api/classes/monque/#retryjobs) | Bulk retry |
+| [`deleteJobs()`](/monque/api/classes/monque/#deletejobs) | Bulk delete |
+| [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor) | Paginated list |
+| [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats) | Queue statistics |
+
+## Single Job Operations
+
+Manage individual jobs using their unique ID.
+
+### Cancel a Job
+
+Use [`cancelJob()`](/monque/api/classes/monque/#canceljob) to prevent a pending or scheduled job from running.
+
+```typescript
+const job = await monque.cancelJob('job-id');
+```
+
+- **Effect**: Status becomes `cancelled`.
+- **Event**: Emits `job:cancelled`.
+- **Constraint**: Cannot cancel `processing`, `completed`, or `failed` jobs (unless they return to pending).
+
+### Retry a Job
+
+Use [`retryJob()`](/monque/api/classes/monque/#retryjob) to retry a failed or cancelled job immediately.
+
+```typescript
+const job = await monque.retryJob('job-id');
+```
+
+- **Effect**: Status becomes `pending`, `nextRunAt` set to now, failure count reset.
+- **Event**: Emits `job:retried`.
+
+### Reschedule a Job
+
+Use [`rescheduleJob()`](/monque/api/classes/monque/#reschedulejob) to change the execution time of a pending job.
+
+```typescript
+const nextHour = new Date(Date.now() + 3600000);
+const job = await monque.rescheduleJob('job-id', nextHour);
+```
+
+### Delete a Job
+
+Use [`deleteJob()`](/monque/api/classes/monque/#deletejob) to permanently remove a job from the queue.
+
+```typescript
+const success = await monque.deleteJob('job-id');
+```
+
+- **Effect**: Document is removed from MongoDB.
+- **Event**: Emits `job:deleted`.
+
+---
+
+## Bulk Operations
+
+Perform operations on multiple jobs matching a filter.
+
+### Bulk Cancel
+
+Use [`cancelJobs()`](/monque/api/classes/monque/#canceljobs) to cancel all pending jobs matching a criteria.
+
+```typescript
+const result = await monque.cancelJobs({
+  name: 'email-sender',
+  status: 'pending'
+});
+
+console.log(`Cancelled ${result.count} jobs`);
+```
+
+### Bulk Retry
+
+Use [`retryJobs()`](/monque/api/classes/monque/#retryjobs) to retry all failed jobs.
+
+```typescript
+const result = await monque.retryJobs({
+  status: 'failed'
+});
+```
+
+### Bulk Delete
+
+Use [`deleteJobs()`](/monque/api/classes/monque/#deletejobs) to clean up old jobs.
+
+```typescript
+const result = await monque.deleteJobs({
+  status: ['completed', 'cancelled'],
+  olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+});
+```
+
+---
+
+## Pagination
+
+Efficiently iterate through large sets of jobs using [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor).
+
+```typescript
+// First page
+const page1 = await monque.getJobsWithCursor({ limit: 50 });
+
+// Next page
+if (page1.hasNextPage && page1.cursor) {
+  const page2 = await monque.getJobsWithCursor({
+    cursor: page1.cursor,
+    limit: 50
+  });
+}
+```
+
+Supports filtering:
+
+```typescript
+const failedEmails = await monque.getJobsWithCursor({
+  filter: { name: 'email', status: 'failed' },
+  limit: 20
+});
+```
+
+---
+
+## Queue Statistics
+
+Get real-time insights into your queue health using [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats).
+
+```typescript
+const stats = await monque.getQueueStats();
+
+console.log('Pending:', stats.pending);
+console.log('Processing:', stats.processing);
+console.log('Failed:', stats.failed);
+```
+
+You can also scope statistics to a specific job name:
+
+```typescript
+const emailStats = await monque.getQueueStats({ name: 'email' });
+```

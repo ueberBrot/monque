@@ -184,16 +184,16 @@
 
 **Purpose**: Final validation and documentation
 
-- [ ] T079 [P] Run full integration test suite: `cd packages/core && bun run test:integration`
-- [ ] T080 [P] Run unit tests: `cd packages/core && bun run test:unit`
-- [ ] T081 [P] Run type-check: `cd packages/core && bun run type-check`
-- [ ] T082 [P] Run check:exports: `cd packages/core && bun run check:exports`
-- [ ] T083 Run full test suite with coverage: `bun run test:coverage`
-- [ ] T084 Validate quickstart.md examples compile and work
-- [ ] T085 Update `apps/docs` with all new documentation based on new APIs
-- [ ] T086 Update all `README.md` as needed
-- [ ] T087 Update all documentation as needed
-- [ ] T088 Create changeset for v1.1.0 release
+- [x] T079 [P] Run full integration test suite: `cd packages/core && bun run test:integration`
+- [x] T080 [P] Run unit tests: `cd packages/core && bun run test:unit`
+- [x] T081 [P] Run type-check: `cd packages/core && bun run type-check`
+- [x] T082 [P] Run check:exports: `cd packages/core && bun run check:exports`
+- [x] T083 Run full test suite with coverage: `bun run test:coverage`
+- [x] T084 Validate quickstart.md examples compile and work
+- [x] T085 Update `apps/docs` with all new documentation based on new APIs
+- [x] T086 Update all `README.md` as needed
+- [x] T087 Update all documentation as needed
+- [x] T088 Create changeset for v1.1.0 release
 
 ---
 
