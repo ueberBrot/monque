@@ -46,6 +46,7 @@ export function createMockCollection(): Collection<Document> {
 		deleteOne: vi.fn(),
 		deleteMany: vi.fn(),
 		countDocuments: vi.fn(),
+		aggregate: vi.fn(),
 		watch: vi.fn(),
 		createIndex: vi.fn(),
 	} as unknown as Collection<Document>;
