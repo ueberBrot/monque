@@ -1,6 +1,6 @@
 import { type Document, type Filter, ObjectId } from 'mongodb';
 
-import type { CursorDirectionType, JobSelector } from '@/jobs';
+import { CursorDirection, type CursorDirectionType, type JobSelector } from '@/jobs';
 import { InvalidCursorError } from '@/shared';
 
 /**
@@ -80,9 +80,9 @@ export function decodeCursor(cursor: string): {
 	let direction: CursorDirectionType;
 
 	if (prefix === 'F') {
-		direction = 'forward';
+		direction = CursorDirection.FORWARD;
 	} else if (prefix === 'B') {
-		direction = 'backward';
+		direction = CursorDirection.BACKWARD;
 	} else {
 		throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
 	}

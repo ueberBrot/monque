@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 
+import { CursorDirection } from '@/jobs';
 import { decodeCursor, encodeCursor } from '@/scheduler/helpers.js';
 import { InvalidCursorError } from '@/shared';
 
@@ -8,7 +9,7 @@ describe('cursor pagination helpers', () => {
 	describe('encodeCursor', () => {
 		it('should encode forward cursor with F prefix', () => {
 			const id = new ObjectId('507f1f77bcf86cd799439011');
-			const cursor = encodeCursor(id, 'forward');
+			const cursor = encodeCursor(id, CursorDirection.FORWARD);
 
 			expect(cursor.startsWith('F')).toBe(true);
 			// Verify it's base64url compatible
@@ -19,15 +20,15 @@ describe('cursor pagination helpers', () => {
 
 		it('should encode backward cursor with B prefix', () => {
 			const id = new ObjectId('507f1f77bcf86cd799439011');
-			const cursor = encodeCursor(id, 'backward');
+			const cursor = encodeCursor(id, CursorDirection.BACKWARD);
 
 			expect(cursor.startsWith('B')).toBe(true);
 		});
 
 		it('should be deterministic', () => {
 			const id = new ObjectId('507f1f77bcf86cd799439011');
-			const cursor1 = encodeCursor(id, 'forward');
-			const cursor2 = encodeCursor(id, 'forward');
+			const cursor1 = encodeCursor(id, CursorDirection.FORWARD);
+			const cursor2 = encodeCursor(id, CursorDirection.FORWARD);
 
 			expect(cursor1).toBe(cursor2);
 		});
@@ -36,21 +37,21 @@ describe('cursor pagination helpers', () => {
 	describe('decodeCursor', () => {
 		it('should decode forward cursor correctly', () => {
 			const id = new ObjectId('507f1f77bcf86cd799439011');
-			const cursor = encodeCursor(id, 'forward');
+			const cursor = encodeCursor(id, CursorDirection.FORWARD);
 
 			const result = decodeCursor(cursor);
 
-			expect(result.direction).toBe('forward');
+			expect(result.direction).toBe(CursorDirection.FORWARD);
 			expect(result.id.equals(id)).toBe(true);
 		});
 
 		it('should decode backward cursor correctly', () => {
 			const id = new ObjectId('507f1f77bcf86cd799439011');
-			const cursor = encodeCursor(id, 'backward');
+			const cursor = encodeCursor(id, CursorDirection.BACKWARD);
 
 			const result = decodeCursor(cursor);
 
-			expect(result.direction).toBe('backward');
+			expect(result.direction).toBe(CursorDirection.BACKWARD);
 			expect(result.id.equals(id)).toBe(true);
 		});
 
@@ -81,11 +82,11 @@ describe('cursor pagination helpers', () => {
 	describe('round trip', () => {
 		it('should preserve ID and direction after encode/decode', () => {
 			const originalId = new ObjectId();
-			const encoded = encodeCursor(originalId, 'forward');
+			const encoded = encodeCursor(originalId, CursorDirection.FORWARD);
 			const decoded = decodeCursor(encoded);
 
 			expect(decoded.id.toString()).toBe(originalId.toString());
-			expect(decoded.direction).toBe('forward');
+			expect(decoded.direction).toBe(CursorDirection.FORWARD);
 		});
 	});
 });
