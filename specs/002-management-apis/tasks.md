@@ -136,20 +136,20 @@
 
 ### Integration Tests for User Story 3
 
-- [ ] T059 [P] [US3] Create integration test file `packages/core/tests/integration/bulk-management.test.ts`
-- [ ] T060 [US3] Add test: `cancelJobs({ name, status })` → all matching cancelled
-- [ ] T061 [US3] Add test: `cancelJobs()` skips processing jobs, includes in errors
-- [ ] T062 [US3] Add test: `retryJobs({ status: 'failed' })` → all matching become pending
-- [ ] T063 [US3] Add test: `deleteJobs({ status, olderThan })` → removed
-- [ ] T064 [US3] Add test: Empty filter matches no jobs → count 0, no errors
+- [x] T059 [P] [US3] Create integration test file `packages/core/tests/integration/bulk-management.test.ts`
+- [x] T060 [US3] Add test: `cancelJobs({ name, status })` → all matching cancelled
+- [x] T061 [US3] Add test: `cancelJobs()` skips processing jobs, includes in errors
+- [x] T062 [US3] Add test: `retryJobs({ status: 'failed' })` → all matching become pending
+- [x] T063 [US3] Add test: `deleteJobs({ status, olderThan })` → removed
+- [x] T064 [US3] Add test: Empty filter matches no jobs → count 0, no errors
 
 ### Implementation for User Story 3
 
-- [ ] T065 [US3] Implement `cancelJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T066 [US3] Implement `retryJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T067 [US3] Implement `deleteJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T068 [US3] Export bulk methods from `packages/core/src/index.ts`
-- [ ] T069 [US3] Run integration tests and verify all pass
+- [x] T065 [US3] Implement `cancelJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T066 [US3] Implement `retryJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T067 [US3] Implement `deleteJobs(filter)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T068 [US3] Export bulk methods from `packages/core/src/index.ts`
+- [x] T069 [US3] Run integration tests and verify all pass
 
 **Checkpoint**: Bulk job management functional and tested
 

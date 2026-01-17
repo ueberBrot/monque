@@ -4,12 +4,14 @@ import type { Collection, Db, DeleteResult, Document, ObjectId, WithId } from 'm
 
 import type { MonqueEventMap } from '@/events';
 import {
+	type BulkOperationResult,
 	type CursorOptions,
 	type CursorPage,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	type Job,
 	type JobHandler,
+	type JobSelector,
 	JobStatus,
 	type JobStatusType,
 	type PersistedJob,
@@ -624,6 +626,77 @@ export class Monque extends EventEmitter {
 	async deleteJob(jobId: string): Promise<boolean> {
 		this.ensureInitialized();
 		return this.manager.deleteJob(jobId);
+	}
+
+	/**
+	 * Cancel multiple jobs matching the given filter.
+	 *
+	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
+	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * successfully cancelled jobs.
+	 *
+	 * @param filter - Selector for which jobs to cancel (name, status, date range)
+	 * @returns Result with count of cancelled jobs and any errors encountered
+	 *
+	 * @example Cancel all pending jobs for a queue
+	 * ```typescript
+	 * const result = await monque.cancelJobs({
+	 *   name: 'email-queue',
+	 *   status: 'pending'
+	 * });
+	 * console.log(`Cancelled ${result.count} jobs`);
+	 * ```
+	 */
+	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.cancelJobs(filter);
+	}
+
+	/**
+	 * Retry multiple jobs matching the given filter.
+	 *
+	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
+	 * are collected as errors in the result. Emits a 'jobs:retried' event with
+	 * the IDs of successfully retried jobs.
+	 *
+	 * @param filter - Selector for which jobs to retry (name, status, date range)
+	 * @returns Result with count of retried jobs and any errors encountered
+	 *
+	 * @example Retry all failed jobs
+	 * ```typescript
+	 * const result = await monque.retryJobs({
+	 *   status: 'failed'
+	 * });
+	 * console.log(`Retried ${result.count} jobs`);
+	 * ```
+	 */
+	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.retryJobs(filter);
+	}
+
+	/**
+	 * Delete multiple jobs matching the given filter.
+	 *
+	 * Deletes jobs in any status. Uses a batch delete for efficiency.
+	 * Does not emit individual 'job:deleted' events to avoid noise.
+	 *
+	 * @param filter - Selector for which jobs to delete (name, status, date range)
+	 * @returns Result with count of deleted jobs (errors array always empty for delete)
+	 *
+	 * @example Delete old completed jobs
+	 * ```typescript
+	 * const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+	 * const result = await monque.deleteJobs({
+	 *   status: 'completed',
+	 *   olderThan: weekAgo
+	 * });
+	 * console.log(`Deleted ${result.count} jobs`);
+	 * ```
+	 */
+	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.deleteJobs(filter);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
