@@ -1,5 +1,13 @@
 # @monque/core
 
+## 0.3.0
+
+### Minor Changes
+
+- [#67](https://github.com/ueberBrot/monque/pull/67) [`75fafcd`](https://github.com/ueberBrot/monque/commit/75fafcd474277de581d127bc6b60e73f04dff9dc) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: cron-parser (^5.4.0 → ^5.5.0)
+
 ## 0.2.0
 
 ### Minor Changes
