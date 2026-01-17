@@ -158,6 +158,34 @@ describe('JobProcessor', () => {
 			expect((failEvent?.payload as { error: Error })?.error?.message).toBe('Handler failed');
 		});
 
+		it('should coerce non-Error thrown values to Error objects', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 0 });
+			// Handler throws a non-Error value (string)
+			const handler = vi.fn().mockRejectedValue('String error message');
+			const worker: WorkerRegistration = {
+				handler,
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+
+			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.processJob(job, worker);
+
+			// Should have converted the string to an Error
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
+			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
+			const payload = failEvent?.payload as { error: Error };
+			expect(payload.error).toBeInstanceOf(Error);
+			expect(payload.error.message).toBe('String error message');
+		});
+
 		it('should track job in activeJobs during processing and remove after', async () => {
 			const job = JobFactoryHelpers.processing();
 			const handler = vi.fn().mockResolvedValue(undefined);

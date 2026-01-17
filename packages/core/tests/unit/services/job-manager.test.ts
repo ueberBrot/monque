@@ -267,4 +267,177 @@ describe('JobManager', () => {
 			expect((deleteEvent?.payload as { jobId: string })?.jobId).toBe(jobId.toString());
 		});
 	});
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Bulk Operations Tests
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	describe('cancelJobs', () => {
+		it('should cancel multiple pending jobs', async () => {
+			const job1 = JobFactory.build({ name: 'bulk-cancel' });
+			const job2 = JobFactory.build({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([job1, job2]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.mocked(ctx.mockCollection.findOneAndUpdate)
+				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job1._id }))
+				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job2._id }));
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:cancelled' }));
+		});
+
+		it('should include already cancelled jobs in count (idempotent)', async () => {
+			const cancelledJob = JobFactoryHelpers.cancelled({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([cancelledJob]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(1);
+			expect(result.errors).toHaveLength(0);
+			// findOneAndUpdate should NOT be called for already cancelled jobs
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should collect errors for jobs in invalid state', async () => {
+			const processingJob = JobFactoryHelpers.processing({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([processingJob]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Cannot cancel job in status 'processing'/);
+		});
+
+		it('should handle race condition when job status changes during bulk cancel', async () => {
+			const pendingJob = JobFactory.build({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			// findOneAndUpdate returns null because status changed
+			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Job status changed during cancellation/);
+		});
+	});
+
+	describe('retryJobs', () => {
+		it('should retry multiple failed jobs', async () => {
+			const failedJob1 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+			const failedJob2 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([failedJob1, failedJob2]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.mocked(ctx.mockCollection.findOneAndUpdate)
+				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
+				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
+
+			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:retried' }));
+		});
+
+		it('should collect errors for jobs in invalid state for retry', async () => {
+			const pendingJob = JobFactory.build({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.retryJobs({ name: 'bulk-retry' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Cannot retry job in status 'pending'/);
+		});
+
+		it('should handle race condition when job status changes during bulk retry', async () => {
+			const failedJob = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([failedJob]),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			// findOneAndUpdate returns null because status changed
+			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+
+			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Job status changed during retry attempt/);
+		});
+	});
+
+	describe('deleteJobs', () => {
+		it('should delete multiple jobs matching filter', async () => {
+			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
+				deletedCount: 5,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJobs({ status: JobStatus.COMPLETED });
+
+			expect(result.count).toBe(5);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		it('should return zero count when no jobs match', async () => {
+			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
+				deletedCount: 0,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJobs({ name: 'non-existent' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(0);
+		});
+	});
 });

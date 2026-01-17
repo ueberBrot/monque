@@ -133,6 +133,20 @@ describe('ChangeStreamHandler', () => {
 	});
 
 	describe('handleError', () => {
+		it('should return early if scheduler is not running', () => {
+			vi.mocked(ctx.isRunning).mockReturnValue(false);
+
+			const error = new Error('Connection lost');
+			handler.handleError(error);
+
+			// Should not increment reconnect attempts or emit fallback
+			// (We can't directly assert on reconnectAttempts, but we verify
+			// no fallback event is emitted which would happen after max attempts)
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'changestream:fallback' }),
+			);
+		});
+
 		it('should emit error event', () => {
 			const mockChangeStream = new EventEmitter();
 			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
