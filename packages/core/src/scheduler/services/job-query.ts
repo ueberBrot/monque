@@ -6,9 +6,12 @@ import {
 	type CursorOptions,
 	type CursorPage,
 	type GetJobsFilter,
+	type JobSelector,
+	JobStatus,
 	type PersistedJob,
+	type QueueStats,
 } from '@/jobs';
-import { ConnectionError } from '@/shared';
+import { AggregationTimeoutError, ConnectionError } from '@/shared';
 
 import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
 import type { SchedulerContext } from './types.js';
@@ -249,5 +252,149 @@ export class JobQueryService {
 			hasNextPage,
 			hasPreviousPage,
 		};
+	}
+
+	/**
+	 * Get aggregate statistics for the job queue.
+	 *
+	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
+	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * @param filter - Optional filter to scope statistics by job name
+	 * @returns Promise resolving to queue statistics
+	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
+	 * @throws {ConnectionError} If database operation fails
+	 *
+	 * @example Get overall queue statistics
+	 * ```typescript
+	 * const stats = await monque.getQueueStats();
+	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
+	 * ```
+	 *
+	 * @example Get statistics for a specific job type
+	 * ```typescript
+	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
+	 * console.log(`${emailStats.total} email jobs in queue`);
+	 * ```
+	 */
+	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		const matchStage: Document = {};
+
+		if (filter?.name) {
+			matchStage['name'] = filter.name;
+		}
+
+		const pipeline: Document[] = [
+			// Optional match stage for filtering by name
+			...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+			// Facet to calculate counts and avg processing duration in parallel
+			{
+				$facet: {
+					// Count by status
+					statusCounts: [
+						{
+							$group: {
+								_id: '$status',
+								count: { $sum: 1 },
+							},
+						},
+					],
+					// Calculate average processing duration for completed jobs
+					avgDuration: [
+						{
+							$match: {
+								status: JobStatus.COMPLETED,
+								lockedAt: { $ne: null },
+							},
+						},
+						{
+							$group: {
+								_id: null,
+								avgMs: {
+									$avg: {
+										$subtract: ['$updatedAt', '$lockedAt'],
+									},
+								},
+							},
+						},
+					],
+					// Total count
+					total: [{ $count: 'count' }],
+				},
+			},
+		];
+
+		try {
+			const results = await this.ctx.collection.aggregate(pipeline, { maxTimeMS: 30000 }).toArray();
+
+			const result = results[0];
+
+			// Initialize with zeros
+			const stats: QueueStats = {
+				pending: 0,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 0,
+			};
+
+			if (!result) {
+				return stats;
+			}
+
+			// Map status counts to stats
+			const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
+			for (const entry of statusCounts) {
+				const status = entry._id;
+				const count = entry.count;
+
+				switch (status) {
+					case JobStatus.PENDING:
+						stats.pending = count;
+						break;
+					case JobStatus.PROCESSING:
+						stats.processing = count;
+						break;
+					case JobStatus.COMPLETED:
+						stats.completed = count;
+						break;
+					case JobStatus.FAILED:
+						stats.failed = count;
+						break;
+					case JobStatus.CANCELLED:
+						stats.cancelled = count;
+						break;
+				}
+			}
+
+			// Extract total
+			const totalResult = result['total'] as Array<{ count: number }>;
+			if (totalResult.length > 0 && totalResult[0]) {
+				stats.total = totalResult[0].count;
+			}
+
+			// Extract average processing duration
+			const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
+			if (avgDurationResult.length > 0 && avgDurationResult[0]) {
+				const avgMs = avgDurationResult[0].avgMs;
+				if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
+					stats.avgProcessingDurationMs = Math.round(avgMs);
+				}
+			}
+
+			return stats;
+		} catch (error) {
+			// Check for timeout error
+			if (error instanceof Error && error.message.includes('exceeded time limit')) {
+				throw new AggregationTimeoutError();
+			}
+
+			const message = error instanceof Error ? error.message : 'Unknown error during getQueueStats';
+			throw new ConnectionError(
+				`Failed to get queue stats: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
 	}
 }
