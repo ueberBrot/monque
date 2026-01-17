@@ -15,6 +15,7 @@ import {
 	JobStatus,
 	type JobStatusType,
 	type PersistedJob,
+	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
 import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
@@ -820,6 +821,34 @@ export class Monque extends EventEmitter {
 		return this.query.getJobsWithCursor<T>(options);
 	}
 
+	/**
+	 * Get aggregate statistics for the job queue.
+	 *
+	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
+	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * @param filter - Optional filter to scope statistics by job name
+	 * @returns Promise resolving to queue statistics
+	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
+	 * @throws {ConnectionError} If database operation fails
+	 *
+	 * @example Get overall queue statistics
+	 * ```typescript
+	 * const stats = await monque.getQueueStats();
+	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
+	 * ```
+	 *
+	 * @example Get statistics for a specific job type
+	 * ```typescript
+	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
+	 * console.log(`${emailStats.total} email jobs in queue`);
+	 * ```
+	 */
+	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		this.ensureInitialized();
+		return this.query.getQueueStats(filter);
+	}
+
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Public API - Worker Registration
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -1036,6 +1065,7 @@ export class Monque extends EventEmitter {
 	 * await monque.stop();
 	 * ```
 	 */
+
 	async stop(): Promise<void> {
 		if (!this.isRunning) {
 			return;

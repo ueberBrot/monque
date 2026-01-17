@@ -163,18 +163,18 @@
 
 ### Integration Tests for User Story 4
 
-- [ ] T070 [P] [US4] Create integration test file `packages/core/tests/integration/statistics.test.ts`
-- [ ] T071 [US4] Add test: Empty queue returns zero counts
-- [ ] T072 [US4] Add test: Mixed status jobs return correct counts
-- [ ] T073 [US4] Add test: Filter by name scopes statistics
-- [ ] T074 [US4] Add test: Average processing duration calculated correctly
-- [ ] T075 [US4] Add test: Performance test – 100K jobs returns in <5s
+- [x] T070 [P] [US4] Create integration test file `packages/core/tests/integration/statistics.test.ts`
+- [x] T071 [US4] Add test: Empty queue returns zero counts
+- [x] T072 [US4] Add test: Mixed status jobs return correct counts
+- [x] T073 [US4] Add test: Filter by name scopes statistics
+- [x] T074 [US4] Add test: Average processing duration calculated correctly
+- [x] T075 [US4] Add test: Performance test – 100K jobs returns in <5s
 
 ### Implementation for User Story 4
 
-- [ ] T076 [US4] Implement `getQueueStats(filter?)` method in `packages/core/src/scheduler/monque.ts`
-- [ ] T077 [US4] Export statistics method from `packages/core/src/index.ts`
-- [ ] T078 [US4] Run integration tests and verify all pass
+- [x] T076 [US4] Implement `getQueueStats(filter?)` method in `packages/core/src/scheduler/monque.ts`
+- [x] T077 [US4] Export statistics method from `packages/core/src/index.ts`
+- [x] T078 [US4] Run integration tests and verify all pass
 
 **Checkpoint**: Queue statistics functional and tested
 
@@ -190,8 +190,10 @@
 - [ ] T082 [P] Run check:exports: `cd packages/core && bun run check:exports`
 - [ ] T083 Run full test suite with coverage: `bun run test:coverage`
 - [ ] T084 Validate quickstart.md examples compile and work
-- [ ] T085 Update package README with new APIs
-- [ ] T086 Create changeset for v1.1.0 release
+- [ ] T085 Update `apps/docs` with all new documentation based on new APIs
+- [ ] T086 Update all `README.md` as needed
+- [ ] T087 Update all documentation as needed
+- [ ] T088 Create changeset for v1.1.0 release
 
 ---
 
