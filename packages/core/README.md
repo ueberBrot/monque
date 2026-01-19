@@ -15,9 +15,6 @@
 
 <p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
 
-> [!WARNING]
-> This package is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
-
 ## Installation
 
 Using Bun:
