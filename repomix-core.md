@@ -13331,60 +13331,6 @@ describe('job guards', () => {
 });
 ````
 
-## File: packages/core/CHANGELOG.md
-````markdown
-# @monque/core
-
-## 0.2.0
-
-### Minor Changes
-
-- [#7](https://github.com/ueberBrot/monque/pull/7) [`eab1ab7`](https://github.com/ueberBrot/monque/commit/eab1ab710db66f84ad5d7edb9f42864619a1276f) Thanks [@ochrstn](https://github.com/ochrstn)! - API Rename: `worker()` → `register()`
-
-  The public method for registering job handlers has been renamed from `worker()` to `register()` for improved API clarity.
-
-  **Before:**
-
-  ```typescript
-  monque.worker("send-email", async (job) => {
-    await sendEmail(job.data);
-  });
-  ```
-
-  **After:**
-
-  ```typescript
-  monque.register("send-email", async (job) => {
-    await sendEmail(job.data);
-  });
-  ```
-
-  This is a **breaking change** for users upgrading from earlier versions. Update all `monque.worker()` calls to `monque.register()`.
-
-- [#29](https://github.com/ueberBrot/monque/pull/29) [`5ac7759`](https://github.com/ueberBrot/monque/commit/5ac775965f9f2ab27211b02d7b048613e48705b2) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Upgrade Node.js Engine to >=22.0.0
-
-  This release updates the `engines.node` requirement in `package.json` to `>=22.0.0`.
-
-  **Breaking Change:** Users on Node.js versions older than 22.0.0 will no longer be able to install or use this package. Please upgrade to Node.js 22 (LTS) or later.
-
-### Patch Changes
-
-- [#48](https://github.com/ueberBrot/monque/pull/48) [`f37b90d`](https://github.com/ueberBrot/monque/commit/f37b90d51ab2773c405c34d423ce1810bbe50273) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Fix race condition in `poll()` where jobs could be processed after shutdown was initiated.
-
-## 0.1.0
-
-### Minor Changes
-
-- [`fe193bb`](https://github.com/ueberBrot/monque/commit/fe193bb3d840667dded3c3ea093a464d3b1852ba) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Initial pre-release of Monque core.
-
-  - MongoDB-backed scheduler with atomic claiming/locking to prevent duplicate processing across multiple instances.
-  - Workers + concurrency controls for background job processing.
-  - Enqueue immediate jobs and schedule recurring jobs via 5-field cron expressions.
-  - Built-in retries with configurable exponential backoff.
-  - Heartbeats, stale job detection, and recovery on startup.
-  - Event-driven observability for job lifecycle events (with change streams support and polling as a safety net).
-````
-
 ## File: packages/core/src/shared/errors.ts
 ````typescript
 import type { Job } from '@/jobs';
@@ -14635,6 +14581,74 @@ describe('Monitor Job Lifecycle Events', () => {
 });
 ````
 
+## File: packages/core/CHANGELOG.md
+````markdown
+# @monque/core
+
+## 1.0.0
+
+### Major Changes
+
+- [#72](https://github.com/ueberBrot/monque/pull/72) [`448bc3e`](https://github.com/ueberBrot/monque/commit/448bc3ee2fddc1e7f5911331fec19e8995ac44ff) Thanks [@ueberBrot](https://github.com/ueberBrot)! - v1.0.0 Stable Release
+
+## 0.3.0
+
+### Minor Changes
+
+- [#67](https://github.com/ueberBrot/monque/pull/67) [`75fafcd`](https://github.com/ueberBrot/monque/commit/75fafcd474277de581d127bc6b60e73f04dff9dc) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: cron-parser (^5.4.0 → ^5.5.0)
+
+## 0.2.0
+
+### Minor Changes
+
+- [#7](https://github.com/ueberBrot/monque/pull/7) [`eab1ab7`](https://github.com/ueberBrot/monque/commit/eab1ab710db66f84ad5d7edb9f42864619a1276f) Thanks [@ochrstn](https://github.com/ochrstn)! - API Rename: `worker()` → `register()`
+
+  The public method for registering job handlers has been renamed from `worker()` to `register()` for improved API clarity.
+
+  **Before:**
+
+  ```typescript
+  monque.worker("send-email", async (job) => {
+    await sendEmail(job.data);
+  });
+  ```
+
+  **After:**
+
+  ```typescript
+  monque.register("send-email", async (job) => {
+    await sendEmail(job.data);
+  });
+  ```
+
+  This is a **breaking change** for users upgrading from earlier versions. Update all `monque.worker()` calls to `monque.register()`.
+
+- [#29](https://github.com/ueberBrot/monque/pull/29) [`5ac7759`](https://github.com/ueberBrot/monque/commit/5ac775965f9f2ab27211b02d7b048613e48705b2) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Upgrade Node.js Engine to >=22.0.0
+
+  This release updates the `engines.node` requirement in `package.json` to `>=22.0.0`.
+
+  **Breaking Change:** Users on Node.js versions older than 22.0.0 will no longer be able to install or use this package. Please upgrade to Node.js 22 (LTS) or later.
+
+### Patch Changes
+
+- [#48](https://github.com/ueberBrot/monque/pull/48) [`f37b90d`](https://github.com/ueberBrot/monque/commit/f37b90d51ab2773c405c34d423ce1810bbe50273) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Fix race condition in `poll()` where jobs could be processed after shutdown was initiated.
+
+## 0.1.0
+
+### Minor Changes
+
+- [`fe193bb`](https://github.com/ueberBrot/monque/commit/fe193bb3d840667dded3c3ea093a464d3b1852ba) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Initial pre-release of Monque core.
+
+  - MongoDB-backed scheduler with atomic claiming/locking to prevent duplicate processing across multiple instances.
+  - Workers + concurrency controls for background job processing.
+  - Enqueue immediate jobs and schedule recurring jobs via 5-field cron expressions.
+  - Built-in retries with configurable exponential backoff.
+  - Heartbeats, stale job detection, and recovery on startup.
+  - Event-driven observability for job lifecycle events (with change streams support and polling as a safety net).
+````
+
 ## File: packages/core/README.md
 ````markdown
 <p align="center">
@@ -14653,9 +14667,6 @@ describe('Monitor Job Lifecycle Events', () => {
 </p>
 
 <p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
-
-> [!WARNING]
-> This package is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
 
 ## Installation
 
@@ -16109,7 +16120,7 @@ export class Monque extends EventEmitter {
 ````json
 {
 	"name": "@monque/core",
-	"version": "0.2.0",
+	"version": "1.0.0",
 	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {
@@ -16139,655 +16150,9 @@ export class Monque extends EventEmitter {
 				"types": "./dist/index.d.mts",
 				"default": "./dist/index.mjs"
 			},
-		);
-
-		// Index for job lookup by name
-		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
-
-		// Compound index for finding jobs claimed by a specific scheduler instance.
-		// Used for heartbeat updates and cleanup on shutdown.
-		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
-
-		// Compound index for monitoring/debugging via heartbeat timestamps.
-		// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
-		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
-
-		// Compound index for atomic claim queries.
-		// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
-		await this.collection.createIndex(
-			{ status: 1, nextRunAt: 1, claimedBy: 1 },
-			{ background: true },
-		);
-
-		// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
-		await this.collection.createIndex(
-			{ status: 1, lockedAt: 1, lastHeartbeat: 1 },
-			{ background: true },
-		);
-	}
-
-	/**
-	 * Recover stale jobs that were left in 'processing' status.
-	 * A job is considered stale if its `lockedAt` timestamp exceeds the configured `lockTimeout`.
-	 * Stale jobs are reset to 'pending' so they can be picked up by workers again.
-	 */
-	private async recoverStaleJobs(): Promise<void> {
-		if (!this.collection) {
-			return;
-		}
-
-		const staleThreshold = new Date(Date.now() - this.options.lockTimeout);
-
-		const result = await this.collection.updateMany(
-			{
-				status: JobStatus.PROCESSING,
-				lockedAt: { $lt: staleThreshold },
-			},
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					updatedAt: new Date(),
-				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-					heartbeatInterval: '',
-				},
-			},
-		);
-
-		if (result.modifiedCount > 0) {
-			// Emit event for recovered jobs
-			this.emit('stale:recovered', {
-				count: result.modifiedCount,
-			});
-		}
-	}
-
-	/**
-	 * Clean up old completed and failed jobs based on retention policy.
-	 *
-	 * - Removes completed jobs older than `jobRetention.completed`
-	 * - Removes failed jobs older than `jobRetention.failed`
-	 *
-	 * The cleanup runs concurrently for both statuses if configured.
-	 *
-	 * @returns Promise resolving when all deletion operations complete
-	 */
-	private async cleanupJobs(): Promise<void> {
-		if (!this.collection || !this.options.jobRetention) {
-			return;
-		}
-
-		const { completed, failed } = this.options.jobRetention;
-		const now = Date.now();
-		const deletions: Promise<DeleteResult>[] = [];
-
-		if (completed) {
-			const cutoff = new Date(now - completed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.COMPLETED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (failed) {
-			const cutoff = new Date(now - failed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.FAILED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (deletions.length > 0) {
-			await Promise.all(deletions);
-		}
-	}
-
-	/**
-	 * Enqueue a job for processing.
-	 *
-	 * Jobs are stored in MongoDB and processed by registered workers. Supports
-	 * delayed execution via `runAt` and deduplication via `uniqueKey`.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. Completed or failed jobs don't block new jobs with the same key.
-	 *
-	 * Failed jobs are automatically retried with exponential backoff up to `maxRetries`
-	 * (default: 10 attempts). The delay between retries is calculated as `2^failCount × baseRetryInterval`.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @param options - Scheduling and deduplication options
-	 * @returns Promise resolving to the created or existing job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Basic job enqueueing
-	 * ```typescript
-	 * await monque.enqueue('send-email', {
-	 *   to: 'user@example.com',
-	 *   subject: 'Welcome!',
-	 *   body: 'Thanks for signing up.'
-	 * });
-	 * ```
-	 *
-	 * @example Delayed execution
-	 * ```typescript
-	 * const oneHourLater = new Date(Date.now() + 3600000);
-	 * await monque.enqueue('reminder', { message: 'Check in!' }, {
-	 *   runAt: oneHourLater
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicates with unique key
-	 * ```typescript
-	 * await monque.enqueue('sync-user', { userId: '123' }, {
-	 *   uniqueKey: 'sync-user-123'
-	 * });
-	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
-	 * ```
-	 */
-	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-		this.ensureInitialized();
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt: options.runAt ?? now,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to enqueue job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to enqueue job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof ConnectionError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			throw new ConnectionError(
-				`Failed to enqueue job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Enqueue a job for immediate processing.
-	 *
-	 * Convenience method equivalent to `enqueue(name, data, { runAt: new Date() })`.
-	 * Jobs are picked up on the next poll cycle (typically within 1 second based on `pollInterval`).
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @returns Promise resolving to the created job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Send email immediately
-	 * ```typescript
-	 * await monque.now('send-email', {
-	 *   to: 'admin@example.com',
-	 *   subject: 'Alert',
-	 *   body: 'Immediate attention required'
-	 * });
-	 * ```
-	 *
-	 * @example Process order in background
-	 * ```typescript
-	 * const order = await createOrder(data);
-	 * await monque.now('process-order', { orderId: order.id });
-	 * return order; // Return immediately, processing happens async
-	 * ```
-	 */
-	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-		return this.enqueue(name, data, { runAt: new Date() });
-	}
-
-	/**
-	 * Schedule a recurring job with a cron expression.
-	 *
-	 * Creates a job that automatically re-schedules itself based on the cron pattern.
-	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
-	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
-	 * After successful completion, the job is reset to `pending` status and scheduled
-	 * for its next run based on the cron expression.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. This prevents duplicate scheduled jobs on application restart.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param cron - Cron expression (5 fields or predefined expression)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler on each run
-	 * @param options - Scheduling options (uniqueKey for deduplication)
-	 * @returns Promise resolving to the created job document with `repeatInterval` set
-	 * @throws {InvalidCronError} If cron expression is invalid
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Hourly cleanup job
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'cleanup-temp-files', {
-	 *   directory: '/tmp/uploads'
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicate scheduled jobs with unique key
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'hourly-report', { type: 'sales' }, {
-	 *   uniqueKey: 'hourly-report-sales'
-	 * });
-	 * // Subsequent calls with same uniqueKey return existing pending/processing job
-	 * ```
-	 *
-	 * @example Daily report at midnight (using predefined expression)
-	 * ```typescript
-	 * await monque.schedule('@daily', 'daily-report', {
-	 *   reportType: 'sales',
-	 *   recipients: ['analytics@example.com']
-	 * });
-	 * ```
-	 */
-	async schedule<T>(
-		cron: string,
-		name: string,
-		data: T,
-		options: ScheduleOptions = {},
-	): Promise<PersistedJob<T>> {
-		this.ensureInitialized();
-
-		// Validate cron and get next run date (throws InvalidCronError if invalid)
-		const nextRunAt = getNextCronDate(cron);
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt,
-			repeatInterval: cron,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to schedule job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError(
-						'Failed to schedule job: findOneAndUpdate returned no document',
-					);
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to schedule job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof MonqueError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(
-				`Failed to schedule job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Register a worker to process jobs of a specific type.
-	 *
-	 * Workers can be registered before or after calling `start()`. Each worker
-	 * processes jobs concurrently up to its configured concurrency limit (default: 5).
-	 *
-	 * The handler function receives the full job object including metadata (`_id`, `status`,
-	 * `failCount`, etc.). If the handler throws an error, the job is retried with exponential
-	 * backoff up to `maxRetries` times. After exhausting retries, the job is marked as `failed`.
-	 *
-	 * Events are emitted during job processing: `job:start`, `job:complete`, `job:fail`, and `job:error`.
-	 *
-	 * **Duplicate Registration**: By default, registering a worker for a job name that already has
-	 * a worker will throw a `WorkerRegistrationError`. This fail-fast behavior prevents accidental
-	 * replacement of handlers. To explicitly replace a worker, pass `{ replace: true }`.
-	 *
-	 * @template T - The job data payload type for type-safe access to `job.data`
-	 * @param name - Job type identifier to handle
-	 * @param handler - Async function to execute for each job
-	 * @param options - Worker configuration
-	 * @param options.concurrency - Maximum concurrent jobs for this worker (default: `defaultConcurrency`)
-	 * @param options.replace - When `true`, replace existing worker instead of throwing error
-	 * @throws {WorkerRegistrationError} When a worker is already registered for `name` and `replace` is not `true`
-	 *
-	 * @example Basic email worker
-	 * ```typescript
-	 * interface EmailJob {
-	 *   to: string;
-	 *   subject: string;
-	 *   body: string;
-	 * }
-	 *
-	 * monque.register<EmailJob>('send-email', async (job) => {
-	 *   await emailService.send(job.data.to, job.data.subject, job.data.body);
-	 * });
-	 * ```
-	 *
-	 * @example Worker with custom concurrency
-	 * ```typescript
-	 * // Limit to 2 concurrent video processing jobs (resource-intensive)
-	 * monque.register('process-video', async (job) => {
-	 *   await videoProcessor.transcode(job.data.videoId);
-	 * }, { concurrency: 2 });
-	 * ```
-	 *
-	 * @example Replacing an existing worker
-	 * ```typescript
-	 * // Replace the existing handler for 'send-email'
-	 * monque.register('send-email', newEmailHandler, { replace: true });
-	 * ```
-	 *
-	 * @example Worker with error handling
-	 * ```typescript
-	 * monque.register('sync-user', async (job) => {
-	 *   try {
-	 *     await externalApi.syncUser(job.data.userId);
-	 *   } catch (error) {
-	 *     // Job will retry with exponential backoff
-	 *     // Delay = 2^failCount × baseRetryInterval (default: 1000ms)
-	 *     throw new Error(`Sync failed: ${error.message}`);
-	 *   }
-	 * });
-	 * ```
-	 */
-	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
-		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
-
-		// Check for existing worker and throw unless replace is explicitly true
-		if (this.workers.has(name) && options.replace !== true) {
-			throw new WorkerRegistrationError(
-				`Worker already registered for job name "${name}". Use { replace: true } to replace.`,
-				name,
-			);
-		}
-
-		this.workers.set(name, {
-			handler: handler as JobHandler,
-			concurrency,
-			activeJobs: new Map(),
-		});
-	}
-
-	/**
-	 * Start polling for and processing jobs.
-	 *
-	 * Begins polling MongoDB at the configured interval (default: 1 second) to pick up
-	 * pending jobs and dispatch them to registered workers. Must call `initialize()` first.
-	 * Workers can be registered before or after calling `start()`.
-	 *
-	 * Jobs are processed concurrently up to each worker's configured concurrency limit.
-	 * The scheduler continues running until `stop()` is called.
-	 *
-	 * @example Basic startup
-	 * ```typescript
-	 * const monque = new Monque(db);
-	 * await monque.initialize();
-	 *
-	 * monque.register('send-email', emailHandler);
-	 * monque.register('process-order', orderHandler);
-	 *
-	 * monque.start(); // Begin processing jobs
-	 * ```
-	 *
-	 * @example With event monitoring
-	 * ```typescript
-	 * monque.on('job:start', (job) => {
-	 *   logger.info(`Starting job ${job.name}`);
-	 * });
-	 *
-	 * monque.on('job:complete', ({ job, duration }) => {
-	 *   metrics.recordJobDuration(job.name, duration);
-	 * });
-	 *
-	 * monque.on('job:fail', ({ job, error, willRetry }) => {
-	 *   logger.error(`Job ${job.name} failed:`, error);
-	 *   if (!willRetry) {
-	 *     alerting.sendAlert(`Job permanently failed: ${job.name}`);
-	 *   }
-	 * });
-	 *
-	 * monque.start();
-	 * ```
-	 *
-	 * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
-	 */
-	start(): void {
-		if (this.isRunning) {
-			return;
-		}
-
-		if (!this.isInitialized) {
-			throw new ConnectionError('Monque not initialized. Call initialize() before start().');
-		}
-
-		this.isRunning = true;
-
-		// Set up change streams as the primary notification mechanism
-		this.setupChangeStream();
-
-		// Set up polling as backup (runs at configured interval)
-		this.pollIntervalId = setInterval(() => {
-			this.poll().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-		}, this.options.pollInterval);
-
-		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(() => {
-			this.updateHeartbeats().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-		}, this.options.heartbeatInterval);
-
-		// Start cleanup interval if retention is configured
-		if (this.options.jobRetention) {
-			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
-
-			// Run immediately on start
-			this.cleanupJobs().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
-			});
-
-			this.cleanupIntervalId = setInterval(() => {
-				this.cleanupJobs().catch((error: unknown) => {
-					this.emit('job:error', { error: error as Error });
-				});
-			}, interval);
-		}
-
-		// Run initial poll immediately to pick up any existing jobs
-		this.poll().catch((error: unknown) => {
-			this.emit('job:error', { error: error as Error });
-		});
-	}
-
-	/**
-	 * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
-	 *
-	 * Stops polling for new jobs and waits for all active jobs to finish processing.
-	 * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
-	 * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
-	 * On timeout, jobs still in progress are left as `processing` for stale job recovery.
-	 *
-	 * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
-	 *
-	 * @returns Promise that resolves when all jobs complete or timeout is reached
-	 *
-	 * @example Graceful application shutdown
-	 * ```typescript
-	 * process.on('SIGTERM', async () => {
-	 *   console.log('Shutting down gracefully...');
-	 *   await monque.stop(); // Wait for jobs to complete
-	 *   await mongoClient.close();
-	 *   process.exit(0);
-	 * });
-	 * ```
-	 *
-	 * @example With timeout handling
-	 * ```typescript
-	 * monque.on('job:error', ({ error }) => {
-	 *   if (error.name === 'ShutdownTimeoutError') {
-	 *     logger.warn('Forced shutdown after timeout:', error.incompleteJobs);
-	 *   }
-	 * });
-	 *
-	 * await monque.stop();
-	 * ```
-	 */
-	async stop(): Promise<void> {
-		if (!this.isRunning) {
-			return;
-		}
-
-		this.isRunning = false;
-
-		// Close change stream
-		await this.closeChangeStream();
-
-		// Clear debounce timer
-		if (this.changeStreamDebounceTimer) {
-			clearTimeout(this.changeStreamDebounceTimer);
-			this.changeStreamDebounceTimer = null;
-		}
-
-		// Clear reconnection timer
-		if (this.changeStreamReconnectTimer) {
-			clearTimeout(this.changeStreamReconnectTimer);
-			this.changeStreamReconnectTimer = null;
-		}
-
-		if (this.cleanupIntervalId) {
-			clearInterval(this.cleanupIntervalId);
-			this.cleanupIntervalId = null;
-		}
-
-		// Clear polling interval
-		if (this.pollIntervalId) {
-			clearInterval(this.pollIntervalId);
-			this.pollIntervalId = null;
-		}
-
-		// Clear heartbeat interval
-		if (this.heartbeatIntervalId) {
-			clearInterval(this.heartbeatIntervalId);
-			this.heartbeatIntervalId = null;
-		}
-
-		// Wait for all active jobs to complete (with timeout)
-		const activeJobs = this.getActiveJobs();
-		if (activeJobs.length === 0) {
-			return;
-		}
-
-		// Create a promise that resolves when all jobs are done
-		let checkInterval: ReturnType<typeof setInterval> | undefined;
-		const waitForJobs = new Promise<undefined>((resolve) => {
-			checkInterval = setInterval(() => {
-				if (this.getActiveJobs().length === 0) {
-					clearInterval(checkInterval);
-					resolve(undefined);
-				}
-			}, 100);
-		});
-
-		// Race between job completion and timeout
-		const timeout = new Promise<'timeout'>((resolve) => {
-			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
-		});
-
-		let result: undefined | 'timeout';
-
-		try {
-			result = await Promise.race([waitForJobs, timeout]);
-		} finally {
-			if (checkInterval) {
-				clearInterval(checkInterval);
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
 			}
 		}
 	},
@@ -16824,7 +16189,7 @@ export class Monque extends EventEmitter {
 	],
 	"license": "ISC",
 	"dependencies": {
-		"cron-parser": "^5.4.0"
+		"cron-parser": "^5.5.0"
 	},
 	"peerDependencies": {
 		"mongodb": "^7.0.0"
