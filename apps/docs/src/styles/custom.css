@@ -84,16 +84,15 @@
 /* Nova Theme Configuration & Specific Overrides */
 
 /* Primary Action Buttons (Green) */
-.nova-link-button-primary {
-	background-color: var(--monque-primary) !important;
-	color: #052e16 !important; /* Extremely dark green/black for high contrast */
-	border-color: var(--monque-primary) !important;
-	font-weight: 700;
-}
-
-.nova-link-button-primary:hover {
+/* Target Nova Theme's hardcoded Tailwind classes on the primary hero button */
+.nova-link-button-primary,
+.hero a.bg-black,
+.nova-link-button-primary:hover,
+.hero a.bg-black:hover,
+.hero a.bg-black:focus {
 	background-color: var(--monque-primary-hover) !important;
 	border-color: var(--monque-primary-hover) !important;
+	text-decoration: none !important;
 	box-shadow: 0 0 15px rgba(17, 225, 103, 0.3) !important; /* Glow effect */
 }
 

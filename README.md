@@ -31,9 +31,6 @@
   📚 <a href="https://ueberBrot.github.io/monque/"><b>Documentation</b></a> | 🚀 <a href="https://ueberBrot.github.io/monque/getting-started/quick-start/"><b>Quick Start</b></a>
 </p>
 
-> [!CAUTION]
-> Monque is currently in **pre-release**. The public API may change between releases. Expect breaking changes until `1.0.0`.
-
 ## Packages
 
 | Package                         | Description                                 |
