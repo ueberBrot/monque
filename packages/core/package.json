@@ -1,6 +1,6 @@
 {
 	"name": "@monque/core",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {
