@@ -1,5 +1,18 @@
 # @monque/core
 
+## 1.1.0
+
+### Minor Changes
+
+- [#75](https://github.com/ueberBrot/monque/pull/75) [`ebb3a23`](https://github.com/ueberBrot/monque/commit/ebb3a230ec1cd59f381cd22dca19d71b0e568829) Thanks [@ueberBrot](https://github.com/ueberBrot)! - **Management APIs**: Introduced a comprehensive suite of management APIs for monitoring and controlling job queues:
+
+  - **Single Job Management**: `cancelJob`, `retryJob`, `rescheduleJob`, `deleteJob`
+  - **Bulk Operations**: `cancelJobs`, `retryJobs`, `deleteJobs` with rich filtering
+  - **Cursor Pagination**: `getJobsWithCursor` for stable, efficient iteration over large datasets
+  - **Statistics**: `getQueueStats` for monitoring queue health and performance
+
+  **Events**: New events for observability include `job:cancelled`, `job:retried`, and `job:deleted`.
+
 ## 1.0.0
 
 ### Major Changes
