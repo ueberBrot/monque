@@ -92,13 +92,16 @@ export function decodeCursor(cursor: string): {
 		const hex = buffer.toString('hex');
 		// standard ObjectID is 12 bytes = 24 hex chars
 		if (hex.length !== 24) {
-			throw new Error('Invalid length');
+			throw new InvalidCursorError('Invalid length');
 		}
 
 		const id = new ObjectId(hex);
 
 		return { id, direction };
-	} catch (_error) {
+	} catch (error) {
+		if (error instanceof InvalidCursorError) {
+			throw error;
+		}
 		throw new InvalidCursorError('Invalid cursor payload');
 	}
 }

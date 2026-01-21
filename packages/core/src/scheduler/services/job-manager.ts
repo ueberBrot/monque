@@ -230,10 +230,6 @@ export class JobManager {
 	async deleteJob(jobId: string): Promise<boolean> {
 		const _id = new ObjectId(jobId);
 
-		// Fetch job first to allow emitting the full job object in the event
-		const jobDoc = await this.ctx.collection.findOne({ _id });
-		if (!jobDoc) return false;
-
 		const result = await this.ctx.collection.deleteOne({ _id });
 
 		if (result.deletedCount > 0) {
@@ -272,11 +268,10 @@ export class JobManager {
 		const errors: Array<{ jobId: string; error: string }> = [];
 		const cancelledIds: string[] = [];
 
-		// Find all matching jobs
+		// Find all matching jobs and stream them to avoid memory pressure
 		const cursor = this.ctx.collection.find(baseQuery);
-		const jobs = await cursor.toArray();
 
-		for (const doc of jobs) {
+		for await (const doc of cursor) {
 			const job = doc as unknown as WithId<Job>;
 			const jobId = job._id.toString();
 
@@ -354,9 +349,8 @@ export class JobManager {
 		const retriedIds: string[] = [];
 
 		const cursor = this.ctx.collection.find(baseQuery);
-		const jobs = await cursor.toArray();
 
-		for (const doc of jobs) {
+		for await (const doc of cursor) {
 			const job = doc as unknown as WithId<Job>;
 			const jobId = job._id.toString();
 

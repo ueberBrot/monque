@@ -32,8 +32,8 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ _id: jobId, name: 'cancel-test' });
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId, name: 'cancel-test' });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(cancelledJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(cancelledJob);
 
 			const job = await manager.cancelJob(jobId.toString());
 
@@ -43,7 +43,7 @@ describe('JobManager', () => {
 		});
 
 		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.cancelJob(new ObjectId().toString());
 
@@ -54,7 +54,7 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValue(processingJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValue(processingJob);
 
 			await expect(manager.cancelJob(jobId.toString())).rejects.toThrow(JobStateError);
 		});
@@ -63,7 +63,7 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(cancelledJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
 
 			const job = await manager.cancelJob(jobId.toString());
 
@@ -78,8 +78,8 @@ describe('JobManager', () => {
 			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
 			const retriedJob = JobFactory.build({ _id: jobId, failCount: 0 });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(failedJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(retriedJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
 
 			const job = await manager.retryJob(jobId.toString());
 
@@ -92,8 +92,8 @@ describe('JobManager', () => {
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
 			const retriedJob = JobFactory.build({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(cancelledJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(retriedJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
 
 			const job = await manager.retryJob(jobId.toString());
 
@@ -104,13 +104,13 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const pendingJob = JobFactory.build({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 
 			await expect(manager.retryJob(jobId.toString())).rejects.toThrow(JobStateError);
 		});
 
 		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.retryJob(new ObjectId().toString());
 
@@ -125,8 +125,8 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ _id: jobId });
 			const rescheduledJob = JobFactory.build({ _id: jobId, nextRunAt: newRunAt });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(rescheduledJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(rescheduledJob);
 
 			const job = await manager.rescheduleJob(jobId.toString(), newRunAt);
 
@@ -137,7 +137,7 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(processingJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			await expect(manager.rescheduleJob(jobId.toString(), new Date())).rejects.toThrow(
 				JobStateError,
@@ -145,7 +145,7 @@ describe('JobManager', () => {
 		});
 
 		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.rescheduleJob(new ObjectId().toString(), new Date());
 
@@ -159,9 +159,9 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ _id: jobId });
 
 			// First findOne returns pending job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(JobStateError);
@@ -177,9 +177,9 @@ describe('JobManager', () => {
 			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
 
 			// First findOne returns failed job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(failedJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
 			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(JobStateError);
@@ -194,9 +194,9 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ _id: jobId });
 
 			// First findOne returns pending job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const error = await manager
 				.rescheduleJob(jobId.toString(), newRunAt)
@@ -211,10 +211,8 @@ describe('JobManager', () => {
 	describe('deleteJob', () => {
 		it('should delete job and return true', async () => {
 			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
 				deletedCount: 1,
 				acknowledged: true,
 			});
@@ -226,36 +224,20 @@ describe('JobManager', () => {
 		});
 
 		it('should return false for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
+				deletedCount: 0,
+				acknowledged: true,
+			});
 
 			const result = await manager.deleteJob(new ObjectId().toString());
 
 			expect(result).toBe(false);
 		});
 
-		it('should return false when job deleted between findOne and deleteOne (race condition)', async () => {
-			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			// Another process deleted the job between findOne and deleteOne
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
-				deletedCount: 0,
-				acknowledged: true,
-			});
-
-			const result = await manager.deleteJob(jobId.toString());
-
-			expect(result).toBe(false);
-			expect(ctx.emitHistory.find((e) => e.event === 'job:deleted')).toBeUndefined();
-		});
-
 		it('should emit job:deleted event with jobId', async () => {
 			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId, name: 'delete-test' });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
 				deletedCount: 1,
 				acknowledged: true,
 			});
@@ -278,13 +260,16 @@ describe('JobManager', () => {
 			const job2 = JobFactory.build({ name: 'bulk-cancel' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([job1, job2]),
+				[Symbol.asyncIterator]: async function* () {
+					yield job1;
+					yield job2;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate)
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
 				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job1._id }))
 				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job2._id }));
 
@@ -299,10 +284,12 @@ describe('JobManager', () => {
 			const cancelledJob = JobFactoryHelpers.cancelled({ name: 'bulk-cancel' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([cancelledJob]),
+				[Symbol.asyncIterator]: async function* () {
+					yield cancelledJob;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -318,10 +305,12 @@ describe('JobManager', () => {
 			const processingJob = JobFactoryHelpers.processing({ name: 'bulk-cancel' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([processingJob]),
+				[Symbol.asyncIterator]: async function* () {
+					yield processingJob;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -336,14 +325,16 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ name: 'bulk-cancel' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
+				[Symbol.asyncIterator]: async function* () {
+					yield pendingJob;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 			// findOneAndUpdate returns null because status changed
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
 
@@ -359,13 +350,16 @@ describe('JobManager', () => {
 			const failedJob2 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([failedJob1, failedJob2]),
+				[Symbol.asyncIterator]: async function* () {
+					yield failedJob1;
+					yield failedJob2;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate)
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
 				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
 				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
 
@@ -380,10 +374,12 @@ describe('JobManager', () => {
 			const pendingJob = JobFactory.build({ name: 'bulk-retry' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
+				[Symbol.asyncIterator]: async function* () {
+					yield pendingJob;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -398,14 +394,16 @@ describe('JobManager', () => {
 			const failedJob = JobFactoryHelpers.failed({ name: 'bulk-retry' });
 
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([failedJob]),
+				[Symbol.asyncIterator]: async function* () {
+					yield failedJob;
+				},
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 			// findOneAndUpdate returns null because status changed
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const result = await manager.retryJobs({ status: JobStatus.FAILED });
 
@@ -417,7 +415,7 @@ describe('JobManager', () => {
 
 	describe('deleteJobs', () => {
 		it('should delete multiple jobs matching filter', async () => {
-			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'deleteMany').mockResolvedValueOnce({
 				deletedCount: 5,
 				acknowledged: true,
 			});
@@ -435,7 +433,7 @@ describe('JobManager', () => {
 		});
 
 		it('should return zero count when no jobs match', async () => {
-			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'deleteMany').mockResolvedValueOnce({
 				deletedCount: 0,
 				acknowledged: true,
 			});

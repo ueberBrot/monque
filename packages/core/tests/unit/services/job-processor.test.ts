@@ -27,7 +27,7 @@ describe('JobProcessor', () => {
 
 	describe('poll', () => {
 		it('should not poll if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			await processor.poll();
 
@@ -42,11 +42,10 @@ describe('JobProcessor', () => {
 			};
 			ctx.workers.set('test-job', testWorker);
 
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
 
 			await processor.poll();
 
-			// Should have tried to acquire jobs (up to concurrency limit)
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
 		});
 
@@ -61,14 +60,13 @@ describe('JobProcessor', () => {
 
 			await processor.poll();
 
-			// Should not try to acquire for a fully loaded worker
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('acquireJob', () => {
 		it('should return null if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			const job = await processor.acquireJob('test-job');
 
@@ -78,7 +76,7 @@ describe('JobProcessor', () => {
 
 		it('should atomically claim a pending job', async () => {
 			const pendingJob = JobFactory.build({ name: 'test-job' });
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(pendingJob);
 
 			const job = await processor.acquireJob('test-job');
 
@@ -101,7 +99,7 @@ describe('JobProcessor', () => {
 		});
 
 		it('should return null when no jobs available', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			const job = await processor.acquireJob('test-job');
 
@@ -119,7 +117,7 @@ describe('JobProcessor', () => {
 				activeJobs: new Map<string, PersistedJob>(),
 			};
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -143,7 +141,7 @@ describe('JobProcessor', () => {
 				activeJobs: new Map<string, PersistedJob>(),
 			};
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -160,7 +158,6 @@ describe('JobProcessor', () => {
 
 		it('should coerce non-Error thrown values to Error objects', async () => {
 			const job = JobFactoryHelpers.processing({ failCount: 0 });
-			// Handler throws a non-Error value (string)
 			const handler = vi.fn().mockRejectedValue('String error message');
 			const worker: WorkerRegistration = {
 				handler,
@@ -168,7 +165,7 @@ describe('JobProcessor', () => {
 				activeJobs: new Map<string, PersistedJob>(),
 			};
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -178,7 +175,6 @@ describe('JobProcessor', () => {
 
 			await processor.processJob(job, worker);
 
-			// Should have converted the string to an Error
 			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
 			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
 			const payload = failEvent?.payload as { error: Error };
@@ -195,7 +191,7 @@ describe('JobProcessor', () => {
 				activeJobs: new Map<string, PersistedJob>(),
 			};
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -205,7 +201,6 @@ describe('JobProcessor', () => {
 
 			await processor.processJob(job, worker);
 
-			// After processing, job should be removed from activeJobs
 			expect(worker.activeJobs.size).toBe(0);
 		});
 	});
@@ -214,7 +209,7 @@ describe('JobProcessor', () => {
 		it('should mark one-time job as completed', async () => {
 			const job = JobFactoryHelpers.processing();
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -227,9 +222,7 @@ describe('JobProcessor', () => {
 			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
 				{ _id: job._id },
 				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.COMPLETED,
-					}),
+					$set: expect.objectContaining({ status: JobStatus.COMPLETED }),
 				}),
 			);
 		});
@@ -237,7 +230,7 @@ describe('JobProcessor', () => {
 		it('should reschedule recurring job with next cron date', async () => {
 			const job = JobFactoryHelpers.processing({ repeatInterval: '0 * * * *' });
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -250,10 +243,7 @@ describe('JobProcessor', () => {
 			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
 				{ _id: job._id },
 				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.PENDING,
-						failCount: 0,
-					}),
+					$set: expect.objectContaining({ status: JobStatus.PENDING, failCount: 0 }),
 				}),
 			);
 		});
@@ -261,7 +251,6 @@ describe('JobProcessor', () => {
 
 	describe('completeJob - edge cases', () => {
 		it('should return early for non-persisted jobs (no _id)', async () => {
-			// Create a job without _id (not persisted)
 			const nonPersistedJob = {
 				name: 'test-job',
 				data: {},
@@ -274,14 +263,12 @@ describe('JobProcessor', () => {
 
 			await processor.completeJob(nonPersistedJob);
 
-			// Should not have tried to update the database
 			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
 		});
 	});
 
 	describe('failJob - edge cases', () => {
 		it('should return early for non-persisted jobs (no _id)', async () => {
-			// Create a job without _id (not persisted)
 			const nonPersistedJob = {
 				name: 'test-job',
 				data: {},
@@ -295,7 +282,6 @@ describe('JobProcessor', () => {
 			const error = new Error('Test error');
 			await processor.failJob(nonPersistedJob, error);
 
-			// Should not have tried to update the database
 			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
 		});
 	});
@@ -305,7 +291,7 @@ describe('JobProcessor', () => {
 			const job = JobFactoryHelpers.processing({ failCount: 0 });
 			const error = new Error('Test failure');
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -328,10 +314,10 @@ describe('JobProcessor', () => {
 		});
 
 		it('should mark job as failed when max retries exceeded', async () => {
-			const job = JobFactoryHelpers.processing({ failCount: 2 }); // maxRetries = 3 in DEFAULT_TEST_OPTIONS
+			const job = JobFactoryHelpers.processing({ failCount: 2 });
 			const error = new Error('Final failure');
 
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
 				modifiedCount: 1,
 				acknowledged: true,
 				upsertedId: null,
@@ -356,7 +342,7 @@ describe('JobProcessor', () => {
 
 	describe('updateHeartbeats', () => {
 		it('should not update if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			await processor.updateHeartbeats();
 
@@ -364,7 +350,7 @@ describe('JobProcessor', () => {
 		});
 
 		it('should update lastHeartbeat for all jobs claimed by this instance', async () => {
-			vi.mocked(ctx.mockCollection.updateMany).mockResolvedValue({
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValue({
 				modifiedCount: 2,
 				acknowledged: true,
 				upsertedId: null,
@@ -375,14 +361,9 @@ describe('JobProcessor', () => {
 			await processor.updateHeartbeats();
 
 			expect(ctx.mockCollection.updateMany).toHaveBeenCalledWith(
-				{
-					claimedBy: 'test-instance-id',
-					status: JobStatus.PROCESSING,
-				},
+				{ claimedBy: 'test-instance-id', status: JobStatus.PROCESSING },
 				expect.objectContaining({
-					$set: expect.objectContaining({
-						lastHeartbeat: expect.any(Date),
-					}),
+					$set: expect.objectContaining({ lastHeartbeat: expect.any(Date) }),
 				}),
 			);
 		});

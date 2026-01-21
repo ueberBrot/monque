@@ -246,7 +246,7 @@ export class JobStateError extends MonqueError {
     message: string,
     public readonly jobId: string,
     public readonly currentStatus: string,
-    public readonly attemptedAction: 'cancel' | 'retry' | 'delete',
+    public readonly attemptedAction: 'cancel' | 'retry' | 'reschedule',
   ) {
     super(message);
     this.name = 'JobStateError';
@@ -417,5 +417,5 @@ stateDiagram-v2
 
 **Notes:**
 - `processing` jobs cannot be cancelled (returns error)
-- `completed` jobs cannot be cancelled or retried (idempotent no-op)
+- `completed` jobs cannot be cancelled or retried (throws error)
 - All jobs can be deleted regardless of status

@@ -67,7 +67,7 @@ describe('Monque', () => {
 		});
 
 		it('should throw ConnectionError if initialization fails', async () => {
-			vi.mocked(mockDb.collection).mockImplementationOnce(() => {
+			vi.spyOn(mockDb, 'collection').mockImplementationOnce(() => {
 				throw new Error('DB Connection Failed');
 			});
 

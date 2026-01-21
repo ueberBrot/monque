@@ -60,8 +60,8 @@ export function createMockCollection(): Collection<Document> {
  * const ctx = createMockContext();
  * const scheduler = new JobScheduler(ctx);
  *
- * // Mock collection responses using JobFactory
- * vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(JobFactory.build());
+ * // Mock collection responses using vi.spyOn and JobFactory
+ * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
  *
  * // Assert on emitted events
  * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });

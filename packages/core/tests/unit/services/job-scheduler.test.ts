@@ -32,7 +32,7 @@ describe('JobScheduler', () => {
 	describe('enqueue', () => {
 		it('should insert a new job with correct properties', async () => {
 			const insertedId = new ObjectId();
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
@@ -40,7 +40,7 @@ describe('JobScheduler', () => {
 			const job = await scheduler.enqueue('test-job', { value: 42 });
 
 			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
 			const insertedDoc = insertCall?.[0];
 
 			expect(insertedDoc).toMatchObject({
@@ -58,14 +58,14 @@ describe('JobScheduler', () => {
 			const insertedId = new ObjectId();
 			const runAt = new Date(Date.now() + 3600000); // 1 hour later
 
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
 
 			const job = await scheduler.enqueue('delayed-job', { x: 1 }, { runAt });
 
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
 			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
 
 			expect(insertedDoc['nextRunAt']).toEqual(runAt);
@@ -78,7 +78,7 @@ describe('JobScheduler', () => {
 				uniqueKey: 'user-123',
 			});
 
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(existingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
 
 			const job = await scheduler.enqueue('unique-job', { id: 123 }, { uniqueKey: 'user-123' });
 
@@ -88,7 +88,7 @@ describe('JobScheduler', () => {
 		});
 
 		it('should throw ConnectionError when insertOne fails', async () => {
-			vi.mocked(ctx.mockCollection.insertOne).mockRejectedValueOnce(
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockRejectedValueOnce(
 				new Error('Database connection lost'),
 			);
 
@@ -97,7 +97,7 @@ describe('JobScheduler', () => {
 		});
 
 		it('should throw ConnectionError when findOneAndUpdate returns null', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			await expect(scheduler.enqueue('unique-job', {}, { uniqueKey: 'key' })).rejects.toThrow(
 				ConnectionError,
@@ -106,14 +106,14 @@ describe('JobScheduler', () => {
 
 		it('should set uniqueKey on job document when provided', async () => {
 			const insertedId = new ObjectId();
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
 
 			// Without uniqueKey (uses regular insert)
 			await scheduler.enqueue('job', { x: 1 });
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
 			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
 
 			expect(insertedDoc['uniqueKey']).toBeUndefined();
@@ -125,7 +125,7 @@ describe('JobScheduler', () => {
 			const insertedId = new ObjectId();
 			const beforeCall = new Date();
 
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
@@ -143,7 +143,7 @@ describe('JobScheduler', () => {
 		it('should create job with repeatInterval and calculated nextRunAt', async () => {
 			const insertedId = new ObjectId();
 
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
@@ -151,7 +151,7 @@ describe('JobScheduler', () => {
 			const job = await scheduler.schedule('0 * * * *', 'hourly-job', { report: 'sales' });
 
 			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
 			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
 
 			expect(insertedDoc['repeatInterval']).toBe('0 * * * *');
@@ -172,7 +172,7 @@ describe('JobScheduler', () => {
 				repeatInterval: '0 0 * * *',
 			});
 
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(existingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
 
 			const job = await scheduler.schedule(
 				'0 0 * * *',
@@ -188,7 +188,7 @@ describe('JobScheduler', () => {
 		it('should support predefined cron expressions like @daily', async () => {
 			const insertedId = new ObjectId();
 
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,
 				acknowledged: true,
 			});
@@ -199,7 +199,7 @@ describe('JobScheduler', () => {
 		});
 
 		it('should throw ConnectionError when schedule with uniqueKey returns null', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
 			await expect(
 				scheduler.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),
@@ -210,7 +210,7 @@ describe('JobScheduler', () => {
 		});
 
 		it('should throw ConnectionError when insertOne fails', async () => {
-			vi.mocked(ctx.mockCollection.insertOne).mockRejectedValueOnce(
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockRejectedValueOnce(
 				new Error('Database write failed'),
 			);
 

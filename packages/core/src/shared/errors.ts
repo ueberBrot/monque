@@ -163,7 +163,7 @@ export class JobStateError extends MonqueError {
 		message: string,
 		public readonly jobId: string,
 		public readonly currentStatus: string,
-		public readonly attemptedAction: 'cancel' | 'retry' | 'delete' | 'reschedule',
+		public readonly attemptedAction: 'cancel' | 'retry' | 'reschedule',
 	) {
 		super(message);
 		this.name = 'JobStateError';

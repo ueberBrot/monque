@@ -31,7 +31,7 @@ describe('JobQueryService', () => {
 			const jobId = new ObjectId();
 			const job = JobFactory.build({ _id: jobId, name: 'found-job' });
 
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(job);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(job);
 
 			const result = await queryService.getJob(jobId);
 
@@ -41,7 +41,7 @@ describe('JobQueryService', () => {
 		});
 
 		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const result = await queryService.getJob(new ObjectId());
 
@@ -49,7 +49,7 @@ describe('JobQueryService', () => {
 		});
 
 		it('should throw ConnectionError when database operation fails', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockRejectedValueOnce(
+			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce(
 				new Error('Database connection lost'),
 			);
 
@@ -59,7 +59,7 @@ describe('JobQueryService', () => {
 		});
 
 		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockRejectedValueOnce('String error');
+			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce('String error');
 
 			await expect(queryService.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
 		});
@@ -76,7 +76,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(jobs),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -94,7 +94,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce([]),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -111,7 +111,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce([]),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -128,7 +128,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce([]),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -146,7 +146,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce([]),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -165,7 +165,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce(new Error('Database timeout')),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -182,7 +182,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -200,7 +200,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(jobs),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -227,7 +227,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(jobs),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -244,7 +244,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce(new Error('Database error')),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -258,7 +258,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
 			};
 
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
 
@@ -286,7 +286,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -307,7 +307,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce([]),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -333,7 +333,7 @@ describe('JobQueryService', () => {
 				]),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -350,7 +350,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce(new Error('operation exceeded time limit')),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -362,7 +362,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -376,7 +376,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -396,7 +396,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 
@@ -420,7 +420,7 @@ describe('JobQueryService', () => {
 				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
 			};
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
 				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 			);
 

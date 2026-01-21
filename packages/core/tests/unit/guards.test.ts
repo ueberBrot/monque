@@ -83,6 +83,11 @@ describe('job guards', () => {
 			expect(isValidJobStatus('failed')).toBe(true);
 		});
 
+		it('should return true for CANCELLED status', () => {
+			expect(isValidJobStatus(JobStatus.CANCELLED)).toBe(true);
+			expect(isValidJobStatus('cancelled')).toBe(true);
+		});
+
 		it('should return false for invalid string', () => {
 			expect(isValidJobStatus('invalid')).toBe(false);
 			expect(isValidJobStatus('PENDING')).toBe(false);

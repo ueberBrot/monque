@@ -71,8 +71,8 @@ describe('Management APIs: Queue Statistics', () => {
 			];
 			await db.collection(collectionName).insertMany(completedDocs);
 
-			const failedDocs = [JobFactoryHelpers.failed({ name: queueName, data: { task: 7 } })];
-			await db.collection(collectionName).insertMany(failedDocs);
+			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 7 } });
+			await db.collection(collectionName).insertOne(failedDoc);
 
 			const cancelledDocs = [
 				JobFactoryHelpers.cancelled({ name: queueName, data: { task: 8 } }),

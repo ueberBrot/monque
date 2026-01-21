@@ -31,7 +31,7 @@ describe('ChangeStreamHandler', () => {
 
 	describe('setup', () => {
 		it('should not setup if scheduler is not running', () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			handler.setup();
 
@@ -40,7 +40,7 @@ describe('ChangeStreamHandler', () => {
 
 		it('should create change stream and emit connected event', () => {
 			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -53,7 +53,7 @@ describe('ChangeStreamHandler', () => {
 		});
 
 		it('should emit fallback event when watch throws', () => {
-			vi.mocked(ctx.mockCollection.watch).mockImplementation(() => {
+			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
 				throw new Error('Change streams not available');
 			});
 
@@ -68,7 +68,7 @@ describe('ChangeStreamHandler', () => {
 	describe('handleEvent', () => {
 		it('should not trigger poll if scheduler is not running', () => {
 			vi.useFakeTimers();
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			const changeEvent = {
 				operationType: 'insert' as const,
@@ -134,7 +134,7 @@ describe('ChangeStreamHandler', () => {
 
 	describe('handleError', () => {
 		it('should return early if scheduler is not running', () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
 			const error = new Error('Connection lost');
 			handler.handleError(error);
@@ -149,7 +149,7 @@ describe('ChangeStreamHandler', () => {
 
 		it('should emit error event', () => {
 			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -171,12 +171,13 @@ describe('ChangeStreamHandler', () => {
 			const mockChangeStream = Object.assign(new EventEmitter(), {
 				close: vi.fn().mockResolvedValue(undefined),
 			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
 			handler.setup();
-			const initialWatchCalls = vi.mocked(ctx.mockCollection.watch).mock.calls.length;
+			const initialWatchCalls = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
+				.length;
 
 			// Emit error
 			mockChangeStream.emit('error', new Error('First error'));
@@ -185,9 +186,9 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(1000);
 
 			// closeSync may be called, then watch should be called again
-			expect(vi.mocked(ctx.mockCollection.watch).mock.calls.length).toBeGreaterThan(
-				initialWatchCalls,
-			);
+			expect(
+				(ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls.length,
+			).toBeGreaterThan(initialWatchCalls);
 		});
 
 		it('should emit fallback event after exhausting reconnection attempts', () => {
@@ -195,7 +196,7 @@ describe('ChangeStreamHandler', () => {
 			const mockChangeStream = Object.assign(new EventEmitter(), {
 				close: vi.fn().mockResolvedValue(undefined),
 			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -225,7 +226,7 @@ describe('ChangeStreamHandler', () => {
 				on: vi.fn(),
 				close: vi.fn().mockResolvedValue(undefined),
 			};
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -245,7 +246,7 @@ describe('ChangeStreamHandler', () => {
 				on: vi.fn(),
 				close: vi.fn().mockResolvedValue(undefined),
 			};
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -295,7 +296,7 @@ describe('ChangeStreamHandler', () => {
 			const mockChangeStream = Object.assign(new EventEmitter(), {
 				close: vi.fn().mockResolvedValue(undefined),
 			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -311,7 +312,8 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(5000);
 
 			// Should not have tried to setup again
-			const watchCallsAfterClose = vi.mocked(ctx.mockCollection.watch).mock.calls.length;
+			const watchCallsAfterClose = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
+				.length;
 			expect(watchCallsAfterClose).toBe(1); // Only the initial setup
 		});
 	});
@@ -323,7 +325,7 @@ describe('ChangeStreamHandler', () => {
 
 		it('should return true after successful setup', () => {
 			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
 
@@ -333,7 +335,7 @@ describe('ChangeStreamHandler', () => {
 		});
 
 		it('should return false after falling back to polling', () => {
-			vi.mocked(ctx.mockCollection.watch).mockImplementation(() => {
+			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
 				throw new Error('Not available');
 			});
 

@@ -12,11 +12,9 @@ import type { MonqueOptions } from '../types.js';
  * Required options have their defaults filled in, while truly optional
  * options (`maxBackoffDelay`, `jobRetention`) remain optional.
  */
-export type ResolvedMonqueOptions = Required<
-	Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>
-> &
-	Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
-
+export interface ResolvedMonqueOptions
+	extends Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>>,
+		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'> {}
 /**
  * Shared context provided to all internal Monque services.
  *
