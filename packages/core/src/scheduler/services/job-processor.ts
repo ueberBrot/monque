@@ -98,6 +98,10 @@ export class JobProcessor {
 			},
 		);
 
+		if (!this.ctx.isRunning()) {
+			return null;
+		}
+
 		if (!result) {
 			return null;
 		}
