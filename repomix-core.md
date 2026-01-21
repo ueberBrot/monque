@@ -113,6 +113,7 @@ packages/
         cursor.test.ts
         errors.test.ts
         guards.test.ts
+        monque.test.ts
         selector.test.ts
         shutdown-race.test.ts
     CHANGELOG.md
@@ -131,237 +132,6 @@ packages/
 export type { MonqueEventMap } from './types.js';
 ````
 
-## File: packages/core/src/scheduler/services/change-stream-handler.ts
-````typescript
-import type { ChangeStream, ChangeStreamDocument, Document } from 'mongodb';
-
-import { JobStatus } from '@/jobs';
-
-import type { SchedulerContext } from './types.js';
-
-/**
- * Internal service for MongoDB Change Stream lifecycle.
- *
- * Provides real-time job notifications when available, with automatic
- * reconnection and graceful fallback to polling-only mode.
- *
- * @internal Not part of public API.
- */
-export class ChangeStreamHandler {
-	/** MongoDB Change Stream for real-time job notifications */
-	private changeStream: ChangeStream | null = null;
-
-	/** Number of consecutive reconnection attempts */
-	private reconnectAttempts = 0;
-
-	/** Maximum reconnection attempts before falling back to polling-only mode */
-	private readonly maxReconnectAttempts = 3;
-
-	/** Debounce timer for change stream event processing */
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/** Timer ID for reconnection with exponential backoff */
-	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/** Whether the scheduler is currently using change streams */
-	private usingChangeStreams = false;
-
-	constructor(
-		private readonly ctx: SchedulerContext,
-		private readonly onPoll: () => Promise<void>,
-	) {}
-
-	/**
-	 * Set up MongoDB Change Stream for real-time job notifications.
-	 *
-	 * Change streams provide instant notifications when jobs are inserted or when
-	 * job status changes to pending (e.g., after a retry). This eliminates the
-	 * polling delay for reactive job processing.
-	 *
-	 * The change stream watches for:
-	 * - Insert operations (new jobs)
-	 * - Update operations where status field changes
-	 *
-	 * If change streams are unavailable (e.g., standalone MongoDB), the system
-	 * gracefully falls back to polling-only mode.
-	 */
-	setup(): void {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		try {
-			// Create change stream with pipeline to filter relevant events
-			const pipeline = [
-				{
-					$match: {
-						$or: [
-							{ operationType: 'insert' },
-							{
-								operationType: 'update',
-								'updateDescription.updatedFields.status': { $exists: true },
-							},
-						],
-					},
-				},
-			];
-
-			this.changeStream = this.ctx.collection.watch(pipeline, {
-				fullDocument: 'updateLookup',
-			});
-
-			// Handle change events
-			this.changeStream.on('change', (change) => {
-				this.handleEvent(change);
-			});
-
-			// Handle errors with reconnection
-			this.changeStream.on('error', (error: Error) => {
-				this.ctx.emit('changestream:error', { error });
-				this.handleError(error);
-			});
-
-			// Mark as connected
-			this.usingChangeStreams = true;
-			this.reconnectAttempts = 0;
-			this.ctx.emit('changestream:connected', undefined);
-		} catch (error) {
-			// Change streams not available (e.g., standalone MongoDB)
-			this.usingChangeStreams = false;
-			const reason = error instanceof Error ? error.message : 'Unknown error';
-			this.ctx.emit('changestream:fallback', { reason });
-		}
-	}
-
-	/**
-	 * Handle a change stream event by triggering a debounced poll.
-	 *
-	 * Events are debounced to prevent "claim storms" when multiple changes arrive
-	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
-	 * collects multiple events and triggers a single poll.
-	 *
-	 * @param change - The change stream event document
-	 */
-	handleEvent(change: ChangeStreamDocument<Document>): void {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		// Trigger poll on insert (new job) or update where status changes
-		const isInsert = change.operationType === 'insert';
-		const isUpdate = change.operationType === 'update';
-
-		// Get fullDocument if available (for insert or with updateLookup option)
-		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
-		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
-
-		// For inserts: always trigger since new pending jobs need processing
-		// For updates: trigger if status changed to pending (retry/release scenario)
-		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
-
-		if (shouldTrigger) {
-			// Debounce poll triggers to avoid claim storms
-			if (this.debounceTimer) {
-				clearTimeout(this.debounceTimer);
-			}
-
-			this.debounceTimer = setTimeout(() => {
-				this.debounceTimer = null;
-				this.onPoll().catch((error: unknown) => {
-					this.ctx.emit('job:error', { error: error as Error });
-				});
-			}, 100);
-		}
-	}
-
-	/**
-	 * Handle change stream errors with exponential backoff reconnection.
-	 *
-	 * Attempts to reconnect up to `maxReconnectAttempts` times with
-	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
-	 * polling-only mode.
-	 *
-	 * @param error - The error that caused the change stream failure
-	 */
-	handleError(error: Error): void {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		this.reconnectAttempts++;
-
-		if (this.reconnectAttempts > this.maxReconnectAttempts) {
-			// Fall back to polling-only mode
-			this.usingChangeStreams = false;
-			this.ctx.emit('changestream:fallback', {
-				reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
-			});
-			return;
-		}
-
-		// Exponential backoff: 1s, 2s, 4s
-		const delay = 2 ** (this.reconnectAttempts - 1) * 1000;
-
-		// Clear any existing reconnect timer before scheduling a new one
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
-		}
-
-		this.reconnectTimer = setTimeout(() => {
-			this.reconnectTimer = null;
-			if (this.ctx.isRunning()) {
-				// Close existing change stream before reconnecting
-				if (this.changeStream) {
-					this.changeStream.close().catch(() => {});
-					this.changeStream = null;
-				}
-				this.setup();
-			}
-		}, delay);
-	}
-
-	/**
-	 * Close the change stream cursor and emit closed event.
-	 */
-	async close(): Promise<void> {
-		// Clear debounce timer
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-			this.debounceTimer = null;
-		}
-
-		// Clear reconnection timer
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
-			this.reconnectTimer = null;
-		}
-
-		if (this.changeStream) {
-			try {
-				await this.changeStream.close();
-			} catch {
-				// Ignore close errors during shutdown
-			}
-			this.changeStream = null;
-
-			if (this.usingChangeStreams) {
-				this.ctx.emit('changestream:closed', undefined);
-			}
-		}
-
-		this.usingChangeStreams = false;
-		this.reconnectAttempts = 0;
-	}
-
-	/**
-	 * Check if change streams are currently active.
-	 */
-	isActive(): boolean {
-		return this.usingChangeStreams;
-	}
-}
-````
-
 ## File: packages/core/src/scheduler/services/index.ts
 ````typescript
 // Services
@@ -372,307 +142,6 @@ export { JobQueryService } from './job-query.js';
 export { JobScheduler } from './job-scheduler.js';
 // Types
 export type { ResolvedMonqueOptions, SchedulerContext } from './types.js';
-````
-
-## File: packages/core/src/scheduler/services/job-processor.ts
-````typescript
-import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
-import { calculateBackoff, getNextCronDate } from '@/shared';
-import type { WorkerRegistration } from '@/workers';
-
-import type { SchedulerContext } from './types.js';
-
-/**
- * Internal service for job processing and execution.
- *
- * Manages the poll loop, atomic job acquisition, handler execution,
- * and job completion/failure with exponential backoff retry logic.
- *
- * @internal Not part of public API.
- */
-export class JobProcessor {
-	constructor(private readonly ctx: SchedulerContext) {}
-
-	/**
-	 * Poll for available jobs and process them.
-	 *
-	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
-	 * attempts to acquire jobs up to the worker's available concurrency slots.
-	 * Aborts early if the scheduler is stopping (`isRunning` is false).
-	 */
-	async poll(): Promise<void> {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		for (const [name, worker] of this.ctx.workers) {
-			// Check if worker has capacity
-			const availableSlots = worker.concurrency - worker.activeJobs.size;
-
-			if (availableSlots <= 0) {
-				continue;
-			}
-
-			// Try to acquire jobs up to available slots
-			for (let i = 0; i < availableSlots; i++) {
-				if (!this.ctx.isRunning()) {
-					return;
-				}
-				const job = await this.acquireJob(name);
-
-				if (job) {
-					this.processJob(job, worker).catch((error: unknown) => {
-						this.ctx.emit('job:error', { error: error as Error, job });
-					});
-				} else {
-					// No more jobs available for this worker
-					break;
-				}
-			}
-		}
-	}
-
-	/**
-	 * Atomically acquire a pending job for processing using the claimedBy pattern.
-	 *
-	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
-	 * instance can claim a job. The query ensures the job is:
-	 * - In pending status
-	 * - Has nextRunAt <= now
-	 * - Is not claimed by another instance (claimedBy is null/undefined)
-	 *
-	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
-	 *
-	 * @param name - The job type to acquire
-	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
-	 */
-	async acquireJob(name: string): Promise<PersistedJob | null> {
-		if (!this.ctx.isRunning()) {
-			return null;
-		}
-
-		const now = new Date();
-
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.ctx.instanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.ctx.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
-
-		if (!result) {
-			return null;
-		}
-
-		return this.ctx.documentToPersistedJob(result);
-	}
-
-	/**
-	 * Execute a job using its registered worker handler.
-	 *
-	 * Tracks the job as active during processing, emits lifecycle events, and handles
-	 * both success and failure cases. On success, calls `completeJob()`. On failure,
-	 * calls `failJob()` which implements exponential backoff retry logic.
-	 *
-	 * @param job - The job to process
-	 * @param worker - The worker registration containing the handler and active job tracking
-	 */
-	async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
-		const jobId = job._id.toString();
-		worker.activeJobs.set(jobId, job);
-
-		const startTime = Date.now();
-		this.ctx.emit('job:start', job);
-
-		try {
-			await worker.handler(job);
-
-			// Job completed successfully
-			const duration = Date.now() - startTime;
-			await this.completeJob(job);
-			this.ctx.emit('job:complete', { job, duration });
-		} catch (error) {
-			// Job failed
-			const err = error instanceof Error ? error : new Error(String(error));
-			await this.failJob(job, err);
-
-			const willRetry = job.failCount + 1 < this.ctx.options.maxRetries;
-			this.ctx.emit('job:fail', { job, error: err, willRetry });
-		} finally {
-			worker.activeJobs.delete(jobId);
-		}
-	}
-
-	/**
-	 * Mark a job as completed successfully.
-	 *
-	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
-	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
-	 * Clears `lockedAt` and `failReason` fields in both cases.
-	 *
-	 * @param job - The job that completed successfully
-	 */
-	async completeJob(job: Job): Promise<void> {
-		if (!isPersistedJob(job)) {
-			return;
-		}
-
-		if (job.repeatInterval) {
-			// Recurring job - schedule next run
-			const nextRunAt = getNextCronDate(job.repeatInterval);
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-		} else {
-			// One-time job - mark as completed
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.COMPLETED,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-			job.status = JobStatus.COMPLETED;
-		}
-	}
-
-	/**
-	 * Handle job failure with exponential backoff retry logic.
-	 *
-	 * Increments `failCount` and calculates next retry time using exponential backoff:
-	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
-	 *
-	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
-	 * to `pending` status for retry. Stores error message in `failReason` field.
-	 *
-	 * @param job - The job that failed
-	 * @param error - The error that caused the failure
-	 */
-	async failJob(job: Job, error: Error): Promise<void> {
-		if (!isPersistedJob(job)) {
-			return;
-		}
-
-		const newFailCount = job.failCount + 1;
-
-		if (newFailCount >= this.ctx.options.maxRetries) {
-			// Permanent failure
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		} else {
-			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(
-				newFailCount,
-				this.ctx.options.baseRetryInterval,
-				this.ctx.options.maxBackoffDelay,
-			);
-
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						failCount: newFailCount,
-						failReason: error.message,
-						nextRunAt,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		}
-	}
-
-	/**
-	 * Update heartbeats for all jobs claimed by this scheduler instance.
-	 *
-	 * This method runs periodically while the scheduler is running to indicate
-	 * that jobs are still being actively processed.
-	 *
-	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
-	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
-	 */
-	async updateHeartbeats(): Promise<void> {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		const now = new Date();
-
-		await this.ctx.collection.updateMany(
-			{
-				claimedBy: this.ctx.instanceId,
-				status: JobStatus.PROCESSING,
-			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
-		);
-	}
-}
 ````
 
 ## File: packages/core/src/scheduler/services/job-scheduler.ts
@@ -943,60 +412,6 @@ export class JobScheduler {
 			);
 		}
 	}
-}
-````
-
-## File: packages/core/src/scheduler/services/types.ts
-````typescript
-import type { Collection, Document, WithId } from 'mongodb';
-
-import type { MonqueEventMap } from '@/events';
-import type { PersistedJob } from '@/jobs';
-import type { WorkerRegistration } from '@/workers';
-
-import type { MonqueOptions } from '../types.js';
-
-/**
- * Resolved Monque options with all defaults applied.
- *
- * Required options have their defaults filled in, while truly optional
- * options (`maxBackoffDelay`, `jobRetention`) remain optional.
- */
-export type ResolvedMonqueOptions = Required<
-	Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>
-> &
-	Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
-
-/**
- * Shared context provided to all internal Monque services.
- *
- * Contains references to shared state, configuration, and utilities
- * needed by service methods. Passed to service constructors to enable
- * access to the collection, options, and event emission.
- *
- * @internal Not part of public API.
- */
-export interface SchedulerContext {
-	/** MongoDB collection for jobs */
-	collection: Collection<Document>;
-
-	/** Resolved scheduler options with defaults applied */
-	options: ResolvedMonqueOptions;
-
-	/** Unique identifier for this scheduler instance (for claiming jobs) */
-	instanceId: string;
-
-	/** Registered workers by job name */
-	workers: Map<string, WorkerRegistration>;
-
-	/** Whether the scheduler is currently running */
-	isRunning: () => boolean;
-
-	/** Type-safe event emitter */
-	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
-
-	/** Convert MongoDB document to typed PersistedJob */
-	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }
 ````
 
@@ -1279,12 +694,6 @@ function handleCronParseError(expression: string, error: unknown): never {
 }
 ````
 
-## File: packages/core/src/shared/utils/index.ts
-````typescript
-export { calculateBackoff } from './backoff.js';
-export { getNextCronDate } from './cron.js';
-````
-
 ## File: packages/core/src/workers/index.ts
 ````typescript
 export type { WorkerOptions, WorkerRegistration } from './types.js';
@@ -1293,378 +702,6 @@ export type { WorkerOptions, WorkerRegistration } from './types.js';
 ## File: packages/core/src/reset.d.ts
 ````typescript
 import '@total-typescript/ts-reset';
-````
-
-## File: packages/core/tests/integration/bulk-management.test.ts
-````typescript
-import {
-	cleanupTestDb,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-} from '@test-utils/test-utils';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-
-import { JobFactoryHelpers } from '@tests/factories';
-import { type Job, JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('Management APIs: Bulk Operations', () => {
-	let db: Db;
-	let monque: Monque;
-	const monqueInstances: Monque[] = [];
-	const queueName = 'bulk-management-test-queue';
-
-	beforeAll(async () => {
-		db = await getTestDb('bulk-management-api');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-	});
-
-	describe('cancelJobs', () => {
-		test('cancels all matching jobs by name and status', async () => {
-			const collectionName = uniqueCollectionName('bulk_cancel_match');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create jobs to cancel
-			await monque.enqueue(queueName, { task: 1 });
-			await monque.enqueue(queueName, { task: 2 });
-			await monque.enqueue(queueName, { task: 3 });
-			// Create a job with different name that should NOT be cancelled
-			await monque.enqueue('other-queue', { task: 4 });
-
-			const result = await monque.cancelJobs({
-				name: queueName,
-				status: JobStatus.PENDING,
-			});
-
-			expect(result.count).toBe(3);
-			expect(result.errors).toHaveLength(0);
-
-			// Verify in DB
-			const cancelledDocs = await db.collection(collectionName).find({ name: queueName }).toArray();
-			const cancelled = cancelledDocs as unknown as Job[];
-			expect(cancelled.every((job) => job.status === JobStatus.CANCELLED)).toBe(true);
-
-			// Verify other queue job is still pending
-			const otherDoc = await db.collection(collectionName).findOne({ name: 'other-queue' });
-			const other = otherDoc as unknown as Job | null;
-			expect(other?.status).toBe(JobStatus.PENDING);
-		});
-
-		test('skips processing jobs and includes them in errors', async () => {
-			const collectionName = uniqueCollectionName('bulk_cancel_skip');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create a pending job
-			await monque.enqueue(queueName, { task: 1 });
-			// Create a processing job (directly in DB)
-			const processingDoc = JobFactoryHelpers.processing({
-				name: queueName,
-				data: { task: 2 },
-			});
-			await db.collection(collectionName).insertOne(processingDoc);
-
-			const result = await monque.cancelJobs({
-				name: queueName,
-			});
-
-			// Only the pending one should be cancelled
-			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toContain('processing');
-		});
-
-		test('returns count 0 for empty filter with no matches', async () => {
-			const collectionName = uniqueCollectionName('bulk_cancel_empty');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const result = await monque.cancelJobs({
-				name: 'non-existent-queue',
-			});
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		test('cancels jobs matching status array', async () => {
-			const collectionName = uniqueCollectionName('bulk_cancel_array');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await monque.enqueue(queueName, { task: 1 });
-			await monque.enqueue(queueName, { task: 2 });
-
-			const result = await monque.cancelJobs({
-				status: [JobStatus.PENDING],
-			});
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		test('emits jobs:cancelled event with job IDs', async () => {
-			const collectionName = uniqueCollectionName('bulk_cancel_event');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await monque.enqueue(queueName, { task: 1 });
-			await monque.enqueue(queueName, { task: 2 });
-
-			let emittedPayload: { jobIds: string[]; count: number } | undefined;
-			monque.on('jobs:cancelled', (payload) => {
-				emittedPayload = payload;
-			});
-
-			await monque.cancelJobs({ name: queueName });
-
-			expect(emittedPayload).toBeDefined();
-			expect(emittedPayload?.count).toBe(2);
-			expect(emittedPayload?.jobIds).toHaveLength(2);
-		});
-	});
-
-	describe('retryJobs', () => {
-		test('retries all failed jobs matching filter', async () => {
-			const collectionName = uniqueCollectionName('bulk_retry_failed');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create failed jobs directly in DB
-			const failedDocs = [
-				JobFactoryHelpers.failed({ name: queueName, data: { task: 1 } }),
-				JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } }),
-				JobFactoryHelpers.failed({ name: queueName, data: { task: 3 } }),
-			];
-			await db.collection(collectionName).insertMany(failedDocs);
-
-			const result = await monque.retryJobs({
-				status: JobStatus.FAILED,
-			});
-
-			expect(result.count).toBe(3);
-			expect(result.errors).toHaveLength(0);
-
-			// Verify in DB all are now pending
-			const retriedDocs = await db.collection(collectionName).find({}).toArray();
-			const retried = retriedDocs as unknown as Job[];
-			expect(retried.every((job) => job.status === JobStatus.PENDING)).toBe(true);
-			expect(retried.every((job) => job.failCount === 0)).toBe(true);
-		});
-
-		test('retries cancelled jobs as well', async () => {
-			const collectionName = uniqueCollectionName('bulk_retry_cancelled');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create and cancel jobs
-			await monque.enqueue(queueName, { task: 1 });
-			await monque.enqueue(queueName, { task: 2 });
-			await monque.cancelJobs({ name: queueName });
-
-			const result = await monque.retryJobs({
-				status: JobStatus.CANCELLED,
-			});
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		test('skips pending and processing jobs', async () => {
-			const collectionName = uniqueCollectionName('bulk_retry_skip');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create pending job
-			await monque.enqueue(queueName, { task: 1 });
-			// Create a failed job
-			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } });
-			await db.collection(collectionName).insertOne(failedDoc);
-
-			// Try to retry by name (includes both pending and failed)
-			const result = await monque.retryJobs({
-				name: queueName,
-			});
-
-			// Only the failed job should be retried
-			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(1);
-		});
-
-		test('emits jobs:retried event with job IDs', async () => {
-			const collectionName = uniqueCollectionName('bulk_retry_event');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const failedDocs = [
-				JobFactoryHelpers.failed({ name: queueName, data: { task: 1 } }),
-				JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } }),
-			];
-			await db.collection(collectionName).insertMany(failedDocs);
-
-			let emittedPayload: { jobIds: string[]; count: number } | undefined;
-			monque.on('jobs:retried', (payload) => {
-				emittedPayload = payload;
-			});
-
-			await monque.retryJobs({ status: JobStatus.FAILED });
-
-			expect(emittedPayload).toBeDefined();
-			expect(emittedPayload?.count).toBe(2);
-			expect(emittedPayload?.jobIds).toHaveLength(2);
-		});
-	});
-
-	describe('deleteJobs', () => {
-		test('deletes jobs matching status and olderThan', async () => {
-			const collectionName = uniqueCollectionName('bulk_delete_older');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create completed jobs with old createdAt
-			const oldDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
-			const oldDocs = [
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 1 }, createdAt: oldDate }),
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 2 }, createdAt: oldDate }),
-			];
-			await db.collection(collectionName).insertMany(oldDocs);
-
-			// Create a recent completed job that should NOT be deleted
-			const recentDoc = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 3 },
-				createdAt: new Date(),
-			});
-			await db.collection(collectionName).insertOne(recentDoc);
-
-			const result = await monque.deleteJobs({
-				status: JobStatus.COMPLETED,
-				olderThan: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-			});
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-
-			// Verify only the recent job remains
-			const remaining = await db.collection(collectionName).countDocuments();
-			expect(remaining).toBe(1);
-		});
-
-		test('deletes jobs newer than specified date', async () => {
-			const collectionName = uniqueCollectionName('bulk_delete_newer');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create an old completed job
-			const oldDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-			const oldDoc = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 1 },
-				createdAt: oldDate,
-			});
-			await db.collection(collectionName).insertOne(oldDoc);
-
-			// Create recent completed jobs
-			const recentDocs = [
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 2 } }),
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 3 } }),
-			];
-			await db.collection(collectionName).insertMany(recentDocs);
-
-			const result = await monque.deleteJobs({
-				status: JobStatus.COMPLETED,
-				newerThan: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-			});
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-
-			// Verify only the old job remains
-			const remaining = await db.collection(collectionName).countDocuments();
-			expect(remaining).toBe(1);
-		});
-
-		test('returns count 0 when no jobs match', async () => {
-			const collectionName = uniqueCollectionName('bulk_delete_empty');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const result = await monque.deleteJobs({
-				name: 'non-existent-queue',
-			});
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		test('can delete jobs in any status', async () => {
-			const collectionName = uniqueCollectionName('bulk_delete_any');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create jobs in various statuses
-			await monque.enqueue(queueName, { task: 1 }); // pending
-			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } });
-			await db.collection(collectionName).insertOne(failedDoc);
-			const completedDoc = JobFactoryHelpers.completed({ name: queueName, data: { task: 3 } });
-			await db.collection(collectionName).insertOne(completedDoc);
-
-			const result = await monque.deleteJobs({
-				name: queueName,
-			});
-
-			expect(result.count).toBe(3);
-			expect(result.errors).toHaveLength(0);
-
-			const remaining = await db.collection(collectionName).countDocuments();
-			expect(remaining).toBe(0);
-		});
-
-		test('does not emit events for bulk delete', async () => {
-			// Bulk delete is a batch operation, individual events would be too noisy
-			const collectionName = uniqueCollectionName('bulk_delete_no_event');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await monque.enqueue(queueName, { task: 1 });
-			await monque.enqueue(queueName, { task: 2 });
-
-			let eventCount = 0;
-			monque.on('job:deleted', () => {
-				eventCount++;
-			});
-
-			await monque.deleteJobs({ name: queueName });
-
-			// Individual job:deleted events should NOT be emitted for bulk delete
-			expect(eventCount).toBe(0);
-		});
-	});
-});
 ````
 
 ## File: packages/core/tests/integration/cursor-pagination.test.ts
@@ -4024,290 +3061,6 @@ describe('Stale Job Recovery', () => {
 });
 ````
 
-## File: packages/core/tests/integration/statistics.test.ts
-````typescript
-import {
-	cleanupTestDb,
-	getTestDb,
-	stopMonqueInstances,
-	uniqueCollectionName,
-} from '@test-utils/test-utils';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
-
-import { JobFactory, JobFactoryHelpers } from '@tests/factories';
-import { JobStatus } from '@/jobs';
-import { Monque } from '@/scheduler';
-
-describe('Management APIs: Queue Statistics', () => {
-	let db: Db;
-	let monque: Monque;
-	const monqueInstances: Monque[] = [];
-	const queueName = 'statistics-test-queue';
-
-	beforeAll(async () => {
-		db = await getTestDb('statistics-api');
-	});
-
-	afterAll(async () => {
-		await cleanupTestDb(db);
-	});
-
-	afterEach(async () => {
-		await stopMonqueInstances(monqueInstances);
-	});
-
-	describe('getQueueStats', () => {
-		test('returns zero counts for empty queue', async () => {
-			const collectionName = uniqueCollectionName('stats_empty');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const stats = await monque.getQueueStats();
-
-			expect(stats.pending).toBe(0);
-			expect(stats.processing).toBe(0);
-			expect(stats.completed).toBe(0);
-			expect(stats.failed).toBe(0);
-			expect(stats.cancelled).toBe(0);
-			expect(stats.total).toBe(0);
-			expect(stats.avgProcessingDurationMs).toBeUndefined();
-		});
-
-		test('returns correct counts for mixed status jobs', async () => {
-			const collectionName = uniqueCollectionName('stats_mixed');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create jobs in various statuses
-			await monque.enqueue(queueName, { task: 1 }); // pending
-			await monque.enqueue(queueName, { task: 2 }); // pending
-			await monque.enqueue(queueName, { task: 3 }); // pending
-
-			// Insert jobs directly into DB for other statuses
-			const processingDoc = JobFactoryHelpers.processing({
-				name: queueName,
-				data: { task: 4 },
-			});
-			await db.collection(collectionName).insertOne(processingDoc);
-
-			const completedDocs = [
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 5 } }),
-				JobFactoryHelpers.completed({ name: queueName, data: { task: 6 } }),
-			];
-			await db.collection(collectionName).insertMany(completedDocs);
-
-			const failedDocs = [JobFactoryHelpers.failed({ name: queueName, data: { task: 7 } })];
-			await db.collection(collectionName).insertMany(failedDocs);
-
-			const cancelledDocs = [
-				JobFactoryHelpers.cancelled({ name: queueName, data: { task: 8 } }),
-				JobFactoryHelpers.cancelled({ name: queueName, data: { task: 9 } }),
-			];
-			await db.collection(collectionName).insertMany(cancelledDocs);
-
-			const stats = await monque.getQueueStats();
-
-			expect(stats.pending).toBe(3);
-			expect(stats.processing).toBe(1);
-			expect(stats.completed).toBe(2);
-			expect(stats.failed).toBe(1);
-			expect(stats.cancelled).toBe(2);
-			expect(stats.total).toBe(9);
-		});
-
-		test('filters statistics by job name', async () => {
-			const collectionName = uniqueCollectionName('stats_filter_name');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create jobs with different names
-			await monque.enqueue('email-queue', { task: 1 });
-			await monque.enqueue('email-queue', { task: 2 });
-			await monque.enqueue('sms-queue', { task: 3 });
-
-			const completedEmail = JobFactoryHelpers.completed({
-				name: 'email-queue',
-				data: { task: 4 },
-			});
-			await db.collection(collectionName).insertOne(completedEmail);
-
-			const completedSms = JobFactoryHelpers.completed({
-				name: 'sms-queue',
-				data: { task: 5 },
-			});
-			await db.collection(collectionName).insertOne(completedSms);
-
-			// Get stats for email-queue only
-			const emailStats = await monque.getQueueStats({ name: 'email-queue' });
-
-			expect(emailStats.pending).toBe(2);
-			expect(emailStats.completed).toBe(1);
-			expect(emailStats.total).toBe(3);
-
-			// Get stats for sms-queue
-			const smsStats = await monque.getQueueStats({ name: 'sms-queue' });
-
-			expect(smsStats.pending).toBe(1);
-			expect(smsStats.completed).toBe(1);
-			expect(smsStats.total).toBe(2);
-		});
-
-		test('calculates average processing duration correctly', async () => {
-			const collectionName = uniqueCollectionName('stats_avg_duration');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create completed jobs with known processing durations
-			const now = new Date();
-
-			// Job 1: 1000ms processing time
-			const job1 = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 1 },
-				lockedAt: new Date(now.getTime() - 1000),
-				updatedAt: now,
-			});
-
-			// Job 2: 2000ms processing time
-			const job2 = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 2 },
-				lockedAt: new Date(now.getTime() - 2000),
-				updatedAt: now,
-			});
-
-			// Job 3: 3000ms processing time
-			const job3 = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 3 },
-				lockedAt: new Date(now.getTime() - 3000),
-				updatedAt: now,
-			});
-
-			await db.collection(collectionName).insertMany([job1, job2, job3]);
-
-			const stats = await monque.getQueueStats();
-
-			// Average of 1000, 2000, 3000 = 2000ms
-			expect(stats.avgProcessingDurationMs).toBeDefined();
-			expect(stats.avgProcessingDurationMs).toBe(2000);
-			expect(stats.completed).toBe(3);
-		});
-
-		test('handles jobs without lockedAt in avg calculation', async () => {
-			const collectionName = uniqueCollectionName('stats_no_locked');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const now = new Date();
-
-			// Job with lockedAt
-			const jobWithLockedAt = JobFactoryHelpers.completed({
-				name: queueName,
-				data: { task: 1 },
-				lockedAt: new Date(now.getTime() - 1000),
-				updatedAt: now,
-			});
-
-			// Job without lockedAt (simulates edge case)
-			const jobWithoutLockedAt = {
-				...JobFactoryHelpers.completed({
-					name: queueName,
-					data: { task: 2 },
-				}),
-				lockedAt: null,
-			};
-
-			await db.collection(collectionName).insertMany([jobWithLockedAt, jobWithoutLockedAt]);
-
-			const stats = await monque.getQueueStats();
-
-			// Should only count the job with lockedAt in average
-			expect(stats.completed).toBe(2);
-			// avgProcessingDurationMs should be based only on jobs with lockedAt
-			expect(stats.avgProcessingDurationMs).toBeDefined();
-			expect(stats.avgProcessingDurationMs).toBe(1000);
-		});
-
-		test('handles large dataset efficiently', async () => {
-			const collectionName = uniqueCollectionName('stats_large');
-			monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			// Create 100K jobs - 20K per status using buildList
-			const countPerStatus = 20_000;
-
-			// Build job arrays using factory buildList
-			const pendingJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.PENDING,
-			});
-			const processingJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.PROCESSING,
-				lockedAt: new Date(),
-				claimedBy: 'test-instance',
-			});
-			const completedJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.COMPLETED,
-			});
-			const failedJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.FAILED,
-				failCount: 10,
-			});
-			const cancelledJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.CANCELLED,
-			});
-
-			// Insert in batches of 10K to avoid memory issues
-			const batchSize = 10_000;
-			const allJobs = [
-				...pendingJobs,
-				...processingJobs,
-				...completedJobs,
-				...failedJobs,
-				...cancelledJobs,
-			];
-
-			for (let i = 0; i < allJobs.length; i += batchSize) {
-				const batch = allJobs.slice(i, i + batchSize);
-				await db.collection(collectionName).insertMany(batch);
-			}
-
-			// Verify job count
-			const count = await db.collection(collectionName).countDocuments();
-			expect(count).toBe(100_000);
-
-			// Measure performance
-			const startTime = Date.now();
-			const stats = await monque.getQueueStats();
-			const duration = Date.now() - startTime;
-
-			// Must complete within 5 seconds per spec
-			expect(duration).toBeLessThan(5000);
-
-			// Verify correct distribution (20K each)
-			expect(stats.pending).toBe(20_000);
-			expect(stats.processing).toBe(20_000);
-			expect(stats.completed).toBe(20_000);
-			expect(stats.failed).toBe(20_000);
-			expect(stats.cancelled).toBe(20_000);
-			expect(stats.total).toBe(100_000);
-		}, 30000); // 30 second timeout for the test itself
-	});
-});
-````
-
 ## File: packages/core/tests/setup/constants.ts
 ````typescript
 /**
@@ -4727,242 +3480,6 @@ export async function findJobByQuery<T = unknown>(
 	const doc = await collection.findOne(query);
 	return doc as Job<T> | null;
 }
-````
-
-## File: packages/core/tests/unit/services/job-scheduler.test.ts
-````typescript
-/**
- * Unit tests for JobScheduler service.
- *
- * Tests job enqueueing, immediate dispatch (now), and cron scheduling.
- * Uses mock SchedulerContext to test in isolation from MongoDB.
- */
-
-import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createMockContext, JobFactory } from '@tests/factories';
-import { JobStatus } from '@/jobs';
-import { JobScheduler } from '@/scheduler/services/job-scheduler.js';
-import type { SchedulerContext } from '@/scheduler/services/types.js';
-import { ConnectionError, InvalidCronError } from '@/shared';
-
-describe('JobScheduler', () => {
-	let ctx: SchedulerContext & {
-		mockCollection: ReturnType<typeof createMockContext>['mockCollection'];
-	};
-	let scheduler: JobScheduler;
-
-	beforeEach(() => {
-		ctx = createMockContext();
-		scheduler = new JobScheduler(ctx);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	describe('enqueue', () => {
-		it('should insert a new job with correct properties', async () => {
-			const insertedId = new ObjectId();
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			const job = await scheduler.enqueue('test-job', { value: 42 });
-
-			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
-			const insertedDoc = insertCall?.[0];
-
-			expect(insertedDoc).toMatchObject({
-				name: 'test-job',
-				data: { value: 42 },
-				status: JobStatus.PENDING,
-				failCount: 0,
-			});
-			expect(job._id).toEqual(insertedId);
-			expect(job.name).toBe('test-job');
-			expect(job.data).toEqual({ value: 42 });
-		});
-
-		it('should use runAt option for delayed execution', async () => {
-			const insertedId = new ObjectId();
-			const runAt = new Date(Date.now() + 3600000); // 1 hour later
-
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			const job = await scheduler.enqueue('delayed-job', { x: 1 }, { runAt });
-
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
-			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
-
-			expect(insertedDoc['nextRunAt']).toEqual(runAt);
-			expect(job.nextRunAt).toEqual(runAt);
-		});
-
-		it('should use findOneAndUpdate for jobs with uniqueKey (deduplication)', async () => {
-			const existingJob = JobFactory.build({
-				name: 'unique-job',
-				uniqueKey: 'user-123',
-			});
-
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(existingJob);
-
-			const job = await scheduler.enqueue('unique-job', { id: 123 }, { uniqueKey: 'user-123' });
-
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
-			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
-			expect(job._id).toEqual(existingJob._id);
-		});
-
-		it('should throw ConnectionError when insertOne fails', async () => {
-			vi.mocked(ctx.mockCollection.insertOne).mockRejectedValueOnce(
-				new Error('Database connection lost'),
-			);
-
-			await expect(scheduler.enqueue('failing-job', {})).rejects.toThrow(ConnectionError);
-			await expect(scheduler.enqueue('failing-job', {})).rejects.toThrow(/Failed to enqueue job/);
-		});
-
-		it('should throw ConnectionError when findOneAndUpdate returns null', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			await expect(scheduler.enqueue('unique-job', {}, { uniqueKey: 'key' })).rejects.toThrow(
-				ConnectionError,
-			);
-		});
-
-		it('should set uniqueKey on job document when provided', async () => {
-			const insertedId = new ObjectId();
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			// Without uniqueKey (uses regular insert)
-			await scheduler.enqueue('job', { x: 1 });
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
-			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
-
-			expect(insertedDoc['uniqueKey']).toBeUndefined();
-		});
-	});
-
-	describe('now', () => {
-		it('should enqueue job with immediate runAt', async () => {
-			const insertedId = new ObjectId();
-			const beforeCall = new Date();
-
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			const job = await scheduler.now('immediate-job', { urgent: true });
-			const afterCall = new Date();
-
-			expect(job._id).toEqual(insertedId);
-			expect(job.nextRunAt.getTime()).toBeGreaterThanOrEqual(beforeCall.getTime());
-			expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(afterCall.getTime());
-		});
-	});
-
-	describe('schedule', () => {
-		it('should create job with repeatInterval and calculated nextRunAt', async () => {
-			const insertedId = new ObjectId();
-
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			const job = await scheduler.schedule('0 * * * *', 'hourly-job', { report: 'sales' });
-
-			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
-			const insertCall = vi.mocked(ctx.mockCollection.insertOne).mock.calls[0];
-			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
-
-			expect(insertedDoc['repeatInterval']).toBe('0 * * * *');
-			expect(insertedDoc['name']).toBe('hourly-job');
-			expect(job.repeatInterval).toBe('0 * * * *');
-		});
-
-		it('should throw InvalidCronError for invalid cron expression', async () => {
-			await expect(scheduler.schedule('invalid cron', 'bad-job', {})).rejects.toThrow(
-				InvalidCronError,
-			);
-		});
-
-		it('should use findOneAndUpdate for scheduled jobs with uniqueKey', async () => {
-			const existingJob = JobFactory.build({
-				name: 'recurring-job',
-				uniqueKey: 'daily-report',
-				repeatInterval: '0 0 * * *',
-			});
-
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(existingJob);
-
-			const job = await scheduler.schedule(
-				'0 0 * * *',
-				'recurring-job',
-				{ type: 'daily' },
-				{ uniqueKey: 'daily-report' },
-			);
-
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
-			expect(job._id).toEqual(existingJob._id);
-		});
-
-		it('should support predefined cron expressions like @daily', async () => {
-			const insertedId = new ObjectId();
-
-			vi.mocked(ctx.mockCollection.insertOne).mockResolvedValueOnce({
-				insertedId,
-				acknowledged: true,
-			});
-
-			const job = await scheduler.schedule('@daily', 'daily-job', {});
-
-			expect(job.repeatInterval).toBe('@daily');
-		});
-
-		it('should throw ConnectionError when schedule with uniqueKey returns null', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			await expect(
-				scheduler.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),
-			).rejects.toThrow(ConnectionError);
-			await expect(
-				scheduler.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),
-			).rejects.toThrow(/findOneAndUpdate returned no document/);
-		});
-
-		it('should throw ConnectionError when insertOne fails', async () => {
-			vi.mocked(ctx.mockCollection.insertOne).mockRejectedValueOnce(
-				new Error('Database write failed'),
-			);
-
-			await expect(scheduler.schedule('0 * * * *', 'failing-schedule', {})).rejects.toThrow(
-				ConnectionError,
-			);
-			await expect(scheduler.schedule('0 * * * *', 'failing-schedule', {})).rejects.toThrow(
-				/Failed to schedule job/,
-			);
-		});
-
-		it('should preserve InvalidCronError without wrapping in ConnectionError', async () => {
-			// InvalidCronError extends MonqueError, so it should be re-thrown as-is
-			await expect(scheduler.schedule('invalid cron', 'bad-job', {})).rejects.toThrow(
-				InvalidCronError,
-			);
-		});
-	});
-});
 ````
 
 ## File: packages/core/tests/unit/backoff.test.ts
@@ -5632,340 +4149,6 @@ export default defineConfig({
 });
 ````
 
-## File: packages/core/src/events/types.ts
-````typescript
-import type { Job } from '@/jobs';
-
-/**
- * Event payloads for Monque lifecycle events.
- */
-export interface MonqueEventMap {
-	/**
-	 * Emitted when a job begins processing.
-	 */
-	'job:start': Job;
-
-	/**
-	 * Emitted when a job finishes successfully.
-	 */
-	'job:complete': {
-		job: Job;
-		/** Processing duration in milliseconds */
-		duration: number;
-	};
-
-	/**
-	 * Emitted when a job fails (may retry).
-	 */
-	'job:fail': {
-		job: Job;
-		error: Error;
-		/** Whether the job will be retried */
-		willRetry: boolean;
-	};
-
-	/**
-	 * Emitted for unexpected errors during processing.
-	 */
-	'job:error': {
-		error: Error;
-		job?: Job;
-	};
-
-	/**
-	 * Emitted when stale jobs are recovered on startup.
-	 */
-	'stale:recovered': {
-		count: number;
-	};
-
-	/**
-	 * Emitted when the change stream is successfully connected.
-	 */
-	'changestream:connected': undefined;
-
-	/**
-	 * Emitted when a change stream error occurs.
-	 */
-	'changestream:error': {
-		error: Error;
-	};
-
-	/**
-	 * Emitted when the change stream is closed.
-	 */
-	'changestream:closed': undefined;
-
-	/**
-	 * Emitted when falling back from change streams to polling-only mode.
-	 */
-	'changestream:fallback': {
-		reason: string;
-	};
-	/**
-	 * Emitted when a job is manually cancelled.
-	 */
-	'job:cancelled': {
-		job: Job;
-	};
-
-	/**
-	 * Emitted when a job is manually retried.
-	 */
-	'job:retried': {
-		job: Job;
-		previousStatus: 'failed' | 'cancelled';
-	};
-
-	/**
-	 * Emitted when a job is manually deleted.
-	 */
-	'job:deleted': {
-		jobId: string;
-	};
-
-	/**
-	 * Emitted when multiple jobs are cancelled in bulk.
-	 */
-	'jobs:cancelled': {
-		jobIds: string[];
-		count: number;
-	};
-
-	/**
-	 * Emitted when multiple jobs are retried in bulk.
-	 */
-	'jobs:retried': {
-		jobIds: string[];
-		count: number;
-	};
-}
-````
-
-## File: packages/core/src/jobs/guards.ts
-````typescript
-import type { Job, JobStatusType, PersistedJob } from './types.js';
-import { JobStatus } from './types.js';
-
-/**
- * Type guard to check if a job has been persisted to MongoDB.
- *
- * A persisted job is guaranteed to have an `_id` field, which means it has been
- * successfully inserted into the database. This is useful when you need to ensure
- * a job can be updated or referenced by its ID.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job has a valid `_id`, narrowing the type to `PersistedJob<T>`
- *
- * @example Basic usage
- * ```typescript
- * const job: Job<EmailData> = await monque.enqueue('send-email', emailData);
- *
- * if (isPersistedJob(job)) {
- *   // TypeScript knows job._id exists
- *   console.log(`Job ID: ${job._id.toString()}`);
- * }
- * ```
- *
- * @example In a conditional
- * ```typescript
- * function logJobId(job: Job) {
- *   if (!isPersistedJob(job)) {
- *     console.log('Job not yet persisted');
- *     return;
- *   }
- *   // TypeScript knows job is PersistedJob here
- *   console.log(`Processing job ${job._id.toString()}`);
- * }
- * ```
- */
-export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
-	return '_id' in job && job._id !== undefined && job._id !== null;
-}
-
-/**
- * Type guard to check if a value is a valid job status.
- *
- * Validates that a value is one of the four valid job statuses: `'pending'`,
- * `'processing'`, `'completed'`, or `'failed'`. Useful for runtime validation
- * of user input or external data.
- *
- * @param value - The value to check
- * @returns `true` if the value is a valid `JobStatusType`, narrowing the type
- *
- * @example Validating user input
- * ```typescript
- * function filterByStatus(status: string) {
- *   if (!isValidJobStatus(status)) {
- *     throw new Error(`Invalid status: ${status}`);
- *   }
- *   // TypeScript knows status is JobStatusType here
- *   return db.jobs.find({ status });
- * }
- * ```
- *
- * @example Runtime validation
- * ```typescript
- * const statusFromApi = externalData.status;
- *
- * if (isValidJobStatus(statusFromApi)) {
- *   job.status = statusFromApi;
- * } else {
- *   job.status = JobStatus.PENDING;
- * }
- * ```
- */
-export function isValidJobStatus(value: unknown): value is JobStatusType {
-	return typeof value === 'string' && Object.values(JobStatus).includes(value as JobStatusType);
-}
-
-/**
- * Type guard to check if a job is in pending status.
- *
- * A convenience helper for checking if a job is waiting to be processed.
- * Equivalent to `job.status === JobStatus.PENDING` but with better semantics.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job status is `'pending'`
- *
- * @example Filter pending jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const pendingJobs = jobs.filter(isPendingJob);
- * console.log(`${pendingJobs.length} jobs waiting to be processed`);
- * ```
- *
- * @example Conditional logic
- * ```typescript
- * if (isPendingJob(job)) {
- *   await monque.now(job.name, job.data);
- * }
- * ```
- */
-export function isPendingJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.PENDING;
-}
-
-/**
- * Type guard to check if a job is currently being processed.
- *
- * A convenience helper for checking if a job is actively running.
- * Equivalent to `job.status === JobStatus.PROCESSING` but with better semantics.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job status is `'processing'`
- *
- * @example Monitor active jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const activeJobs = jobs.filter(isProcessingJob);
- * console.log(`${activeJobs.length} jobs currently running`);
- * ```
- */
-export function isProcessingJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.PROCESSING;
-}
-
-/**
- * Type guard to check if a job has completed successfully.
- *
- * A convenience helper for checking if a job finished without errors.
- * Equivalent to `job.status === JobStatus.COMPLETED` but with better semantics.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job status is `'completed'`
- *
- * @example Find completed jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const completedJobs = jobs.filter(isCompletedJob);
- * console.log(`${completedJobs.length} jobs completed successfully`);
- * ```
- */
-export function isCompletedJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.COMPLETED;
-}
-
-/**
- * Type guard to check if a job has permanently failed.
- *
- * A convenience helper for checking if a job exhausted all retries.
- * Equivalent to `job.status === JobStatus.FAILED` but with better semantics.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job status is `'failed'`
- *
- * @example Handle failed jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const failedJobs = jobs.filter(isFailedJob);
- *
- * for (const job of failedJobs) {
- *   console.error(`Job ${job.name} failed: ${job.failReason}`);
- *   await sendAlert(job);
- * }
- * ```
- */
-export function isFailedJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.FAILED;
-}
-
-/**
- * Type guard to check if a job has been manually cancelled.
- *
- * A convenience helper for checking if a job was cancelled by an operator.
- * Equivalent to `job.status === JobStatus.CANCELLED` but with better semantics.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job status is `'cancelled'`
- *
- * @example Filter cancelled jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const cancelledJobs = jobs.filter(isCancelledJob);
- * console.log(`${cancelledJobs.length} jobs were cancelled`);
- * ```
- */
-export function isCancelledJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.CANCELLED;
-}
-
-/**
- * Type guard to check if a job is a recurring scheduled job.
- *
- * A recurring job has a `repeatInterval` cron expression and will be automatically
- * rescheduled after each successful completion.
- *
- * @template T - The type of the job's data payload
- * @param job - The job to check
- * @returns `true` if the job has a `repeatInterval` defined
- *
- * @example Filter recurring jobs
- * ```typescript
- * const jobs = await monque.getJobs();
- * const recurringJobs = jobs.filter(isRecurringJob);
- * console.log(`${recurringJobs.length} jobs will repeat automatically`);
- * ```
- *
- * @example Conditional cleanup
- * ```typescript
- * if (!isRecurringJob(job) && isCompletedJob(job)) {
- *   // Safe to delete one-time completed jobs
- *   await deleteJob(job._id);
- * }
- * ```
- */
-export function isRecurringJob<T>(job: Job<T>): boolean {
-	return job.repeatInterval !== undefined && job.repeatInterval !== null;
-}
-````
-
 ## File: packages/core/src/jobs/index.ts
 ````typescript
 // Guards
@@ -5999,1332 +4182,615 @@ export {
 } from './types.js';
 ````
 
-## File: packages/core/src/jobs/types.ts
+## File: packages/core/src/scheduler/services/change-stream-handler.ts
 ````typescript
-import type { ObjectId } from 'mongodb';
+import type { ChangeStream, ChangeStreamDocument, Document } from 'mongodb';
 
-/**
- * Represents the lifecycle states of a job in the queue.
- *
- * Jobs transition through states as follows:
- * - PENDING → PROCESSING (when picked up by a worker)
- * - PROCESSING → COMPLETED (on success)
- * - PROCESSING → PENDING (on failure, if retries remain)
- * - PROCESSING → FAILED (on failure, after max retries exhausted)
- *
- * @example
- * ```typescript
- * if (job.status === JobStatus.PENDING) {
- *   // job is waiting to be picked up
- * }
- * ```
- */
-export const JobStatus = {
-	/** Job is waiting to be picked up by a worker */
-	PENDING: 'pending',
-	/** Job is currently being executed by a worker */
-	PROCESSING: 'processing',
-	/** Job completed successfully */
-	COMPLETED: 'completed',
-	/** Job permanently failed after exhausting all retry attempts */
-	FAILED: 'failed',
-	/** Job was manually cancelled */
-	CANCELLED: 'cancelled',
-} as const;
-
-/**
- * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed'`
- */
-export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
-
-/**
- * Represents a job in the Monque queue.
- *
- * @template T - The type of the job's data payload
- *
- * @example
- * ```typescript
- * interface EmailJobData {
- *   to: string;
- *   subject: string;
- *   template: string;
- * }
- *
- * const job: Job<EmailJobData> = {
- *   name: 'send-email',
- *   data: { to: 'user@example.com', subject: 'Welcome!', template: 'welcome' },
- *   status: JobStatus.PENDING,
- *   nextRunAt: new Date(),
- *   failCount: 0,
- *   createdAt: new Date(),
- *   updatedAt: new Date(),
- * };
- * ```
- */
-export interface Job<T = unknown> {
-	/** MongoDB document identifier */
-	_id?: ObjectId;
-
-	/** Job type identifier, matches worker registration */
-	name: string;
-
-	/** Job payload - must be JSON-serializable */
-	data: T;
-
-	/** Current lifecycle state */
-	status: JobStatusType;
-
-	/** When the job should be processed */
-	nextRunAt: Date;
-
-	/** Timestamp when job was locked for processing */
-	lockedAt?: Date | null;
-
-	/**
-	 * Unique identifier of the scheduler instance that claimed this job.
-	 * Used for atomic claim pattern - ensures only one instance processes each job.
-	 * Set when a job is claimed, cleared when job completes or fails.
-	 */
-	claimedBy?: string | null;
-
-	/**
-	 * Timestamp of the last heartbeat update for this job.
-	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
-	 * Updated periodically while job is being processed.
-	 */
-	lastHeartbeat?: Date | null;
-
-	/**
-	 * Heartbeat interval in milliseconds for this job.
-	 * Stored on the job to allow recovery logic to use the correct timeout.
-	 */
-	heartbeatInterval?: number;
-
-	/** Number of failed attempts */
-	failCount: number;
-
-	/** Last failure error message */
-	failReason?: string;
-
-	/** Cron expression for recurring jobs */
-	repeatInterval?: string;
-
-	/** Deduplication key to prevent duplicate jobs */
-	uniqueKey?: string;
-
-	/** Job creation timestamp */
-	createdAt: Date;
-
-	/** Last modification timestamp */
-	updatedAt: Date;
-}
-
-/**
- * A job that has been persisted to MongoDB and has a guaranteed `_id`.
- * This is returned by `enqueue()`, `now()`, and `schedule()` methods.
- *
- * @template T - The type of the job's data payload
- */
-export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
-
-/**
- * Options for enqueueing a job.
- *
- * @example
- * ```typescript
- * await monque.enqueue('sync-user', { userId: '123' }, {
- *   uniqueKey: 'sync-user-123',
- *   runAt: new Date(Date.now() + 5000), // Run in 5 seconds
- * });
- * ```
- */
-export interface EnqueueOptions {
-	/**
-	 * Deduplication key. If a job with this key is already pending or processing,
-	 * the enqueue operation will not create a duplicate.
-	 */
-	uniqueKey?: string;
-
-	/**
-	 * When the job should be processed. Defaults to immediately (new Date()).
-	 */
-	runAt?: Date;
-}
-
-/**
- * Options for scheduling a recurring job.
- *
- * @example
- * ```typescript
- * await monque. schedule('0 * * * *', 'hourly-cleanup', { dir: '/tmp' }, {
- *   uniqueKey: 'hourly-cleanup-job',
- * });
- * ```
- */
-export interface ScheduleOptions {
-	/**
-	 * Deduplication key. If a job with this key is already pending or processing,
-	 * the schedule operation will not create a duplicate.
-	 */
-	uniqueKey?: string;
-}
-
-/**
- * Filter options for querying jobs.
- *
- * Use with `monque.getJobs()` to filter jobs by name, status, or limit results.
- *
- * @example
- * ```typescript
- * // Get all pending email jobs
- * const pendingEmails = await monque.getJobs({
- *   name: 'send-email',
- *   status: JobStatus.PENDING,
- * });
- *
- * // Get all failed or completed jobs (paginated)
- * const finishedJobs = await monque.getJobs({
- *   status: [JobStatus.COMPLETED, JobStatus.FAILED],
- *   limit: 50,
- *   skip: 100,
- * });
- * ```
- */
-export interface GetJobsFilter {
-	/** Filter by job type name */
-	name?: string;
-
-	/** Filter by status (single or multiple) */
-	status?: JobStatusType | JobStatusType[];
-
-	/** Maximum number of jobs to return (default: 100) */
-	limit?: number;
-
-	/** Number of jobs to skip for pagination */
-	skip?: number;
-}
-
-/**
- * Handler function signature for processing jobs.
- *
- * @template T - The type of the job's data payload
- *
- * @example
- * ```typescript
- * const emailHandler: JobHandler<EmailJobData> = async (job) => {
- *   await sendEmail(job.data.to, job.data.subject);
- * };
- * ```
- */
-export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
-
-/**
- * Valid cursor directions for pagination.
- *
- * @example
- * ```typescript
- * const direction = CursorDirection.FORWARD;
- * ```
- */
-export const CursorDirection = {
-	FORWARD: 'forward',
-	BACKWARD: 'backward',
-} as const;
-
-export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
-
-/**
- * Selector options for bulk operations.
- *
- * Used to select multiple jobs for operations like cancellation or deletion.
- *
- * @example
- * ```typescript
- * // Select all failed jobs older than 7 days
- * const selector: JobSelector = {
- *   status: JobStatus.FAILED,
- *   olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
- * };
- * ```
- */
-export interface JobSelector {
-	name?: string;
-	status?: JobStatusType | JobStatusType[];
-	olderThan?: Date;
-	newerThan?: Date;
-}
-
-/**
- * Options for cursor-based pagination.
- *
- * @example
- * ```typescript
- * const options: CursorOptions = {
- *   limit: 50,
- *   direction: CursorDirection.FORWARD,
- *   filter: { status: JobStatus.PENDING },
- * };
- * ```
- */
-export interface CursorOptions {
-	cursor?: string;
-	limit?: number;
-	direction?: CursorDirectionType;
-	filter?: Pick<GetJobsFilter, 'name' | 'status'>;
-}
-
-/**
- * Response structure for cursor-based pagination.
- *
- * @template T - The type of the job's data payload
- *
- * @example
- * ```typescript
- * const page = await monque.listJobs({ limit: 10 });
- * console.log(`Got ${page.jobs.length} jobs`);
- *
- * if (page.hasNextPage) {
- *   console.log(`Next cursor: ${page.cursor}`);
- * }
- * ```
- */
-export interface CursorPage<T = unknown> {
-	jobs: PersistedJob<T>[];
-	cursor: string | null;
-	hasNextPage: boolean;
-	hasPreviousPage: boolean;
-}
-
-/**
- * Aggregated statistics for the job queue.
- *
- * @example
- * ```typescript
- * const stats = await monque.getQueueStats();
- * console.log(`Total jobs: ${stats.total}`);
- * console.log(`Pending: ${stats.pending}`);
- * console.log(`Processing: ${stats.processing}`);
- * ```
- */
-export interface QueueStats {
-	pending: number;
-	processing: number;
-	completed: number;
-	failed: number;
-	cancelled: number;
-	total: number;
-	avgProcessingDurationMs?: number;
-}
-
-/**
- * Result of a bulk operation.
- *
- * @example
- * ```typescript
- * const result = await monque.cancelJobs(selector);
- * console.log(`Cancelled ${result.count} jobs`);
- *
- * if (result.errors.length > 0) {
- *   console.warn('Some jobs could not be cancelled:', result.errors);
- * }
- * ```
- */
-export interface BulkOperationResult {
-	count: number;
-	errors: Array<{ jobId: string; error: string }>;
-}
-````
-
-## File: packages/core/src/scheduler/services/job-manager.ts
-````typescript
-import { ObjectId, type WithId } from 'mongodb';
-
-import {
-	type BulkOperationResult,
-	type Job,
-	type JobSelector,
-	JobStatus,
-	type PersistedJob,
-} from '@/jobs';
-import { buildSelectorQuery } from '@/scheduler';
-import { JobStateError } from '@/shared';
+import { JobStatus } from '@/jobs';
 
 import type { SchedulerContext } from './types.js';
 
 /**
- * Internal service for job lifecycle management operations.
+ * Internal service for MongoDB Change Stream lifecycle.
  *
- * Provides atomic state transitions (cancel, retry, reschedule) and deletion.
- * Emits appropriate events on each operation.
+ * Provides real-time job notifications when available, with automatic
+ * reconnection and graceful fallback to polling-only mode.
  *
- * @internal Not part of public API - use Monque class methods instead.
+ * @internal Not part of public API.
  */
-export class JobManager {
+export class ChangeStreamHandler {
+	/** MongoDB Change Stream for real-time job notifications */
+	private changeStream: ChangeStream | null = null;
+
+	/** Number of consecutive reconnection attempts */
+	private reconnectAttempts = 0;
+
+	/** Maximum reconnection attempts before falling back to polling-only mode */
+	private readonly maxReconnectAttempts = 3;
+
+	/** Debounce timer for change stream event processing */
+	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Timer ID for reconnection with exponential backoff */
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Whether the scheduler is currently using change streams */
+	private usingChangeStreams = false;
+
+	constructor(
+		private readonly ctx: SchedulerContext,
+		private readonly onPoll: () => Promise<void>,
+	) {}
+
+	/**
+	 * Set up MongoDB Change Stream for real-time job notifications.
+	 *
+	 * Change streams provide instant notifications when jobs are inserted or when
+	 * job status changes to pending (e.g., after a retry). This eliminates the
+	 * polling delay for reactive job processing.
+	 *
+	 * The change stream watches for:
+	 * - Insert operations (new jobs)
+	 * - Update operations where status field changes
+	 *
+	 * If change streams are unavailable (e.g., standalone MongoDB), the system
+	 * gracefully falls back to polling-only mode.
+	 */
+	setup(): void {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		try {
+			// Create change stream with pipeline to filter relevant events
+			const pipeline = [
+				{
+					$match: {
+						$or: [
+							{ operationType: 'insert' },
+							{
+								operationType: 'update',
+								'updateDescription.updatedFields.status': { $exists: true },
+							},
+						],
+					},
+				},
+			];
+
+			this.changeStream = this.ctx.collection.watch(pipeline, {
+				fullDocument: 'updateLookup',
+			});
+
+			// Handle change events
+			this.changeStream.on('change', (change) => {
+				this.handleEvent(change);
+			});
+
+			// Handle errors with reconnection
+			this.changeStream.on('error', (error: Error) => {
+				this.ctx.emit('changestream:error', { error });
+				this.handleError(error);
+			});
+
+			// Mark as connected
+			this.usingChangeStreams = true;
+			this.reconnectAttempts = 0;
+			this.ctx.emit('changestream:connected', undefined);
+		} catch (error) {
+			// Change streams not available (e.g., standalone MongoDB)
+			this.usingChangeStreams = false;
+			const reason = error instanceof Error ? error.message : 'Unknown error';
+			this.ctx.emit('changestream:fallback', { reason });
+		}
+	}
+
+	/**
+	 * Handle a change stream event by triggering a debounced poll.
+	 *
+	 * Events are debounced to prevent "claim storms" when multiple changes arrive
+	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
+	 * collects multiple events and triggers a single poll.
+	 *
+	 * @param change - The change stream event document
+	 */
+	handleEvent(change: ChangeStreamDocument<Document>): void {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		// Trigger poll on insert (new job) or update where status changes
+		const isInsert = change.operationType === 'insert';
+		const isUpdate = change.operationType === 'update';
+
+		// Get fullDocument if available (for insert or with updateLookup option)
+		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
+		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
+
+		// For inserts: always trigger since new pending jobs need processing
+		// For updates: trigger if status changed to pending (retry/release scenario)
+		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
+
+		if (shouldTrigger) {
+			// Debounce poll triggers to avoid claim storms
+			if (this.debounceTimer) {
+				clearTimeout(this.debounceTimer);
+			}
+
+			this.debounceTimer = setTimeout(() => {
+				this.debounceTimer = null;
+				this.onPoll().catch((error: unknown) => {
+					this.ctx.emit('job:error', { error: error as Error });
+				});
+			}, 100);
+		}
+	}
+
+	/**
+	 * Handle change stream errors with exponential backoff reconnection.
+	 *
+	 * Attempts to reconnect up to `maxReconnectAttempts` times with
+	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
+	 * polling-only mode.
+	 *
+	 * @param error - The error that caused the change stream failure
+	 */
+	handleError(error: Error): void {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		this.reconnectAttempts++;
+
+		if (this.reconnectAttempts > this.maxReconnectAttempts) {
+			// Fall back to polling-only mode
+			this.usingChangeStreams = false;
+
+			if (this.reconnectTimer) {
+				clearTimeout(this.reconnectTimer);
+				this.reconnectTimer = null;
+			}
+
+			if (this.changeStream) {
+				this.changeStream.close().catch(() => {});
+				this.changeStream = null;
+			}
+
+			this.ctx.emit('changestream:fallback', {
+				reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
+			});
+
+			return;
+		}
+
+		// Exponential backoff: 1s, 2s, 4s
+		const delay = 2 ** (this.reconnectAttempts - 1) * 1000;
+
+		// Clear any existing reconnect timer before scheduling a new one
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+		}
+
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			if (this.ctx.isRunning()) {
+				// Close existing change stream before reconnecting
+				if (this.changeStream) {
+					this.changeStream.close().catch(() => {});
+					this.changeStream = null;
+				}
+				this.setup();
+			}
+		}, delay);
+	}
+
+	/**
+	 * Close the change stream cursor and emit closed event.
+	 */
+	async close(): Promise<void> {
+		// Clear debounce timer
+		if (this.debounceTimer) {
+			clearTimeout(this.debounceTimer);
+			this.debounceTimer = null;
+		}
+
+		// Clear reconnection timer
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
+		}
+
+		if (this.changeStream) {
+			try {
+				await this.changeStream.close();
+			} catch {
+				// Ignore close errors during shutdown
+			}
+			this.changeStream = null;
+
+			if (this.usingChangeStreams) {
+				this.ctx.emit('changestream:closed', undefined);
+			}
+		}
+
+		this.usingChangeStreams = false;
+		this.reconnectAttempts = 0;
+	}
+
+	/**
+	 * Check if change streams are currently active.
+	 */
+	isActive(): boolean {
+		return this.usingChangeStreams;
+	}
+}
+````
+
+## File: packages/core/src/scheduler/services/job-processor.ts
+````typescript
+import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
+import { calculateBackoff, getNextCronDate } from '@/shared';
+import type { WorkerRegistration } from '@/workers';
+
+import type { SchedulerContext } from './types.js';
+
+/**
+ * Internal service for job processing and execution.
+ *
+ * Manages the poll loop, atomic job acquisition, handler execution,
+ * and job completion/failure with exponential backoff retry logic.
+ *
+ * @internal Not part of public API.
+ */
+export class JobProcessor {
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
-	 * Cancel a pending or scheduled job.
+	 * Poll for available jobs and process them.
 	 *
-	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
-	 * If the job is already cancelled, this is a no-op and returns the job.
-	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
-	 *
-	 * @param jobId - The ID of the job to cancel
-	 * @returns The cancelled job, or null if not found
-	 * @throws {JobStateError} If job is in an invalid state for cancellation
-	 *
-	 * @example Cancel a pending job
-	 * ```typescript
-	 * const job = await monque.enqueue('report', { type: 'daily' });
-	 * await monque.cancelJob(job._id.toString());
-	 * ```
+	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
+	 * attempts to acquire jobs up to the worker's available concurrency slots.
+	 * Aborts early if the scheduler is stopping (`isRunning` is false).
 	 */
-	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-		const _id = new ObjectId(jobId);
-
-		// Fetch job first to allow emitting the full job object in the event
-		const jobDoc = await this.ctx.collection.findOne({ _id });
-		if (!jobDoc) return null;
-
-		const currentJob = jobDoc as unknown as WithId<Job>;
-
-		if (currentJob.status === JobStatus.CANCELLED) {
-			return this.ctx.documentToPersistedJob(currentJob);
+	async poll(): Promise<void> {
+		if (!this.ctx.isRunning()) {
+			return;
 		}
 
-		if (currentJob.status !== JobStatus.PENDING) {
-			throw new JobStateError(
-				`Cannot cancel job in status '${currentJob.status}'`,
-				jobId,
-				currentJob.status,
-				'cancel',
-			);
+		for (const [name, worker] of this.ctx.workers) {
+			// Check if worker has capacity
+			const availableSlots = worker.concurrency - worker.activeJobs.size;
+
+			if (availableSlots <= 0) {
+				continue;
+			}
+
+			// Try to acquire jobs up to available slots
+			for (let i = 0; i < availableSlots; i++) {
+				if (!this.ctx.isRunning()) {
+					return;
+				}
+				const job = await this.acquireJob(name);
+
+				if (job) {
+					this.processJob(job, worker).catch((error: unknown) => {
+						this.ctx.emit('job:error', { error: error as Error, job });
+					});
+				} else {
+					// No more jobs available for this worker
+					break;
+				}
+			}
 		}
-
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id, status: JobStatus.PENDING },
-			{
-				$set: {
-					status: JobStatus.CANCELLED,
-					updatedAt: new Date(),
-				},
-			},
-			{ returnDocument: 'after' },
-		);
-
-		if (!result) {
-			// Race condition: job changed state between check and update
-			throw new JobStateError(
-				'Job status changed during cancellation attempt',
-				jobId,
-				'unknown',
-				'cancel',
-			);
-		}
-
-		const job = this.ctx.documentToPersistedJob(result);
-		this.ctx.emit('job:cancelled', { job });
-		return job;
 	}
 
 	/**
-	 * Retry a failed or cancelled job.
+	 * Atomically acquire a pending job for processing using the claimedBy pattern.
 	 *
-	 * Resets the job to 'pending' status, clears failure count/reason, and sets
-	 * nextRunAt to now (immediate retry). Emits a 'job:retried' event.
+	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
+	 * instance can claim a job. The query ensures the job is:
+	 * - In pending status
+	 * - Has nextRunAt <= now
+	 * - Is not claimed by another instance (claimedBy is null/undefined)
 	 *
-	 * @param jobId - The ID of the job to retry
-	 * @returns The updated job, or null if not found
-	 * @throws {JobStateError} If job is in an invalid state for retry (must be failed or cancelled)
+	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
 	 *
-	 * @example Retry a failed job
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   console.log(`Job ${job._id} failed, retrying manually...`);
-	 *   await monque.retryJob(job._id.toString());
-	 * });
-	 * ```
+	 * @param name - The job type to acquire
+	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
 	 */
-	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-		const _id = new ObjectId(jobId);
-		const currentJob = await this.ctx.collection.findOne({ _id });
-
-		if (!currentJob) return null;
-
-		if (currentJob['status'] !== JobStatus.FAILED && currentJob['status'] !== JobStatus.CANCELLED) {
-			throw new JobStateError(
-				`Cannot retry job in status '${currentJob['status']}'`,
-				jobId,
-				currentJob['status'],
-				'retry',
-			);
+	async acquireJob(name: string): Promise<PersistedJob | null> {
+		if (!this.ctx.isRunning()) {
+			return null;
 		}
 
-		const previousStatus = currentJob['status'] as 'failed' | 'cancelled';
+		const now = new Date();
 
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{
-				_id,
-				status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
+				name,
+				status: JobStatus.PENDING,
+				nextRunAt: { $lte: now },
+				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
 			},
 			{
 				$set: {
-					status: JobStatus.PENDING,
-					failCount: 0,
-					nextRunAt: new Date(),
-					updatedAt: new Date(),
-				},
-				$unset: {
-					failReason: '',
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
+					status: JobStatus.PROCESSING,
+					claimedBy: this.ctx.instanceId,
+					lockedAt: now,
+					lastHeartbeat: now,
+					heartbeatInterval: this.ctx.options.heartbeatInterval,
+					updatedAt: now,
 				},
 			},
-			{ returnDocument: 'after' },
-		);
-
-		if (!result) {
-			throw new JobStateError('Job status changed during retry attempt', jobId, 'unknown', 'retry');
-		}
-
-		const job = this.ctx.documentToPersistedJob(result);
-		this.ctx.emit('job:retried', { job, previousStatus });
-		return job;
-	}
-
-	/**
-	 * Reschedule a pending job to run at a different time.
-	 *
-	 * Only works for jobs in 'pending' status.
-	 *
-	 * @param jobId - The ID of the job to reschedule
-	 * @param runAt - The new Date when the job should run
-	 * @returns The updated job, or null if not found
-	 * @throws {JobStateError} If job is not in pending state
-	 *
-	 * @example Delay a job by 1 hour
-	 * ```typescript
-	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
-	 * await monque.rescheduleJob(jobId, nextHour);
-	 * ```
-	 */
-	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
-		const _id = new ObjectId(jobId);
-		const currentJobDoc = await this.ctx.collection.findOne({ _id });
-
-		if (!currentJobDoc) return null;
-
-		const currentJob = currentJobDoc as unknown as WithId<Job>;
-
-		if (currentJob.status !== JobStatus.PENDING) {
-			throw new JobStateError(
-				`Cannot reschedule job in status '${currentJob.status}'`,
-				jobId,
-				currentJob.status,
-				'reschedule',
-			);
-		}
-
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id, status: JobStatus.PENDING },
 			{
-				$set: {
-					nextRunAt: runAt,
-					updatedAt: new Date(),
-				},
+				sort: { nextRunAt: 1 },
+				returnDocument: 'after',
 			},
-			{ returnDocument: 'after' },
 		);
 
+		if (!this.ctx.isRunning()) {
+			return null;
+		}
+
 		if (!result) {
-			throw new JobStateError(
-				'Job status changed during reschedule attempt',
-				jobId,
-				'unknown',
-				'reschedule',
-			);
+			return null;
 		}
 
 		return this.ctx.documentToPersistedJob(result);
 	}
 
 	/**
-	 * Permanently delete a job.
+	 * Execute a job using its registered worker handler.
 	 *
-	 * This action is irreversible. Emits a 'job:deleted' event upon success.
-	 * Can delete a job in any state.
+	 * Tracks the job as active during processing, emits lifecycle events, and handles
+	 * both success and failure cases. On success, calls `completeJob()`. On failure,
+	 * calls `failJob()` which implements exponential backoff retry logic.
 	 *
-	 * @param jobId - The ID of the job to delete
-	 * @returns true if deleted, false if job not found
-	 *
-	 * @example Delete a cleanup job
-	 * ```typescript
-	 * const deleted = await monque.deleteJob(jobId);
-	 * if (deleted) {
-	 *   console.log('Job permanently removed');
-	 * }
-	 * ```
+	 * @param job - The job to process
+	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
-	async deleteJob(jobId: string): Promise<boolean> {
-		const _id = new ObjectId(jobId);
+	async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
+		const jobId = job._id.toString();
+		worker.activeJobs.set(jobId, job);
 
-		// Fetch job first to allow emitting the full job object in the event
-		const jobDoc = await this.ctx.collection.findOne({ _id });
-		if (!jobDoc) return false;
+		const startTime = Date.now();
+		this.ctx.emit('job:start', job);
 
-		const result = await this.ctx.collection.deleteOne({ _id });
+		try {
+			await worker.handler(job);
 
-		if (result.deletedCount > 0) {
-			this.ctx.emit('job:deleted', { jobId });
-			return true;
+			// Job completed successfully
+			const duration = Date.now() - startTime;
+			await this.completeJob(job);
+			this.ctx.emit('job:complete', { job, duration });
+		} catch (error) {
+			// Job failed
+			const err = error instanceof Error ? error : new Error(String(error));
+			await this.failJob(job, err);
+
+			const willRetry = job.failCount + 1 < this.ctx.options.maxRetries;
+			this.ctx.emit('job:fail', { job, error: err, willRetry });
+		} finally {
+			worker.activeJobs.delete(jobId);
 		}
-
-		return false;
-	}
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Bulk Operations
-	// ─────────────────────────────────────────────────────────────────────────────
-
-	/**
-	 * Cancel multiple jobs matching the given filter.
-	 *
-	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
-	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
-	 * successfully cancelled jobs.
-	 *
-	 * @param filter - Selector for which jobs to cancel (name, status, date range)
-	 * @returns Result with count of cancelled jobs and any errors encountered
-	 *
-	 * @example Cancel all pending jobs for a queue
-	 * ```typescript
-	 * const result = await monque.cancelJobs({
-	 *   name: 'email-queue',
-	 *   status: 'pending'
-	 * });
-	 * console.log(`Cancelled ${result.count} jobs`);
-	 * ```
-	 */
-	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const cancelledIds: string[] = [];
-
-		// Find all matching jobs
-		const cursor = this.ctx.collection.find(baseQuery);
-		const jobs = await cursor.toArray();
-
-		for (const doc of jobs) {
-			const job = doc as unknown as WithId<Job>;
-			const jobId = job._id.toString();
-
-			if (job.status !== JobStatus.PENDING && job.status !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot cancel job in status '${job.status}'`,
-				});
-				continue;
-			}
-
-			// Skip already cancelled jobs (idempotent)
-			if (job.status === JobStatus.CANCELLED) {
-				cancelledIds.push(jobId);
-				continue;
-			}
-
-			// Atomically update to cancelled
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PENDING },
-				{
-					$set: {
-						status: JobStatus.CANCELLED,
-						updatedAt: new Date(),
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			if (result) {
-				cancelledIds.push(jobId);
-			} else {
-				// Race condition: status changed
-				errors.push({
-					jobId,
-					error: 'Job status changed during cancellation',
-				});
-			}
-		}
-
-		if (cancelledIds.length > 0) {
-			this.ctx.emit('jobs:cancelled', {
-				jobIds: cancelledIds,
-				count: cancelledIds.length,
-			});
-		}
-
-		return {
-			count: cancelledIds.length,
-			errors,
-		};
 	}
 
 	/**
-	 * Retry multiple jobs matching the given filter.
+	 * Mark a job as completed successfully.
 	 *
-	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
-	 * are collected as errors in the result. Emits a 'jobs:retried' event with
-	 * the IDs of successfully retried jobs.
+	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
+	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
+	 * Clears `lockedAt` and `failReason` fields in both cases.
 	 *
-	 * @param filter - Selector for which jobs to retry (name, status, date range)
-	 * @returns Result with count of retried jobs and any errors encountered
-	 *
-	 * @example Retry all failed jobs
-	 * ```typescript
-	 * const result = await monque.retryJobs({
-	 *   status: 'failed'
-	 * });
-	 * console.log(`Retried ${result.count} jobs`);
-	 * ```
+	 * @param job - The job that completed successfully
 	 */
-	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const retriedIds: string[] = [];
+	async completeJob(job: Job): Promise<void> {
+		if (!isPersistedJob(job)) {
+			return;
+		}
 
-		const cursor = this.ctx.collection.find(baseQuery);
-		const jobs = await cursor.toArray();
-
-		for (const doc of jobs) {
-			const job = doc as unknown as WithId<Job>;
-			const jobId = job._id.toString();
-
-			if (job.status !== JobStatus.FAILED && job.status !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot retry job in status '${job.status}'`,
-				});
-				continue;
-			}
-
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{
-					_id: job._id,
-					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
-				},
+		if (job.repeatInterval) {
+			// Recurring job - schedule next run
+			const nextRunAt = getNextCronDate(job.repeatInterval);
+			await this.ctx.collection.updateOne(
+				{ _id: job._id },
 				{
 					$set: {
 						status: JobStatus.PENDING,
+						nextRunAt,
 						failCount: 0,
-						nextRunAt: new Date(),
 						updatedAt: new Date(),
 					},
 					$unset: {
-						failReason: '',
 						lockedAt: '',
 						claimedBy: '',
 						lastHeartbeat: '',
+						heartbeatInterval: '',
+						failReason: '',
 					},
 				},
-				{ returnDocument: 'after' },
 			);
-
-			if (result) {
-				retriedIds.push(jobId);
-			} else {
-				errors.push({
-					jobId,
-					error: 'Job status changed during retry attempt',
-				});
-			}
-		}
-
-		if (retriedIds.length > 0) {
-			this.ctx.emit('jobs:retried', {
-				jobIds: retriedIds,
-				count: retriedIds.length,
-			});
-		}
-
-		return {
-			count: retriedIds.length,
-			errors,
-		};
-	}
-
-	/**
-	 * Delete multiple jobs matching the given filter.
-	 *
-	 * Deletes jobs in any status. Uses a batch delete for efficiency.
-	 * Does not emit individual 'job:deleted' events to avoid noise.
-	 *
-	 * @param filter - Selector for which jobs to delete (name, status, date range)
-	 * @returns Result with count of deleted jobs (errors array always empty for delete)
-	 *
-	 * @example Delete old completed jobs
-	 * ```typescript
-	 * const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-	 * const result = await monque.deleteJobs({
-	 *   status: 'completed',
-	 *   olderThan: weekAgo
-	 * });
-	 * console.log(`Deleted ${result.count} jobs`);
-	 * ```
-	 */
-	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const query = buildSelectorQuery(filter);
-
-		// Use deleteMany for efficiency
-		const result = await this.ctx.collection.deleteMany(query);
-
-		return {
-			count: result.deletedCount,
-			errors: [],
-		};
-	}
-}
-````
-
-## File: packages/core/src/scheduler/services/job-query.ts
-````typescript
-import type { Document, Filter, ObjectId, WithId } from 'mongodb';
-
-import {
-	CursorDirection,
-	type CursorDirectionType,
-	type CursorOptions,
-	type CursorPage,
-	type GetJobsFilter,
-	type JobSelector,
-	JobStatus,
-	type PersistedJob,
-	type QueueStats,
-} from '@/jobs';
-import { AggregationTimeoutError, ConnectionError } from '@/shared';
-
-import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
-import type { SchedulerContext } from './types.js';
-
-/**
- * Internal service for job query operations.
- *
- * Provides read-only access to jobs with filtering and cursor-based pagination.
- * All queries use efficient index-backed access patterns.
- *
- * @internal Not part of public API - use Monque class methods instead.
- */
-export class JobQueryService {
-	constructor(private readonly ctx: SchedulerContext) {}
-
-	/**
-	 * Get a single job by its MongoDB ObjectId.
-	 *
-	 * Useful for retrieving job details when you have a job ID from events,
-	 * logs, or stored references.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param id - The job's ObjectId
-	 * @returns Promise resolving to the job if found, null otherwise
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Look up job from event
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   // Later, retrieve the job to check its status
-	 *   const currentJob = await monque.getJob(job._id);
-	 *   console.log(`Job status: ${currentJob?.status}`);
-	 * });
-	 * ```
-	 *
-	 * @example Admin endpoint
-	 * ```typescript
-	 * app.get('/jobs/:id', async (req, res) => {
-	 *   const job = await monque.getJob(new ObjectId(req.params.id));
-	 *   if (!job) {
-	 *     return res.status(404).json({ error: 'Job not found' });
-	 *   }
-	 *   res.json(job);
-	 * });
-	 * ```
-	 */
-	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
-		try {
-			const doc = await this.ctx.collection.findOne({ _id: id });
-			if (!doc) {
-				return null;
-			}
-			return this.ctx.documentToPersistedJob<T>(doc as WithId<Document>);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
-			throw new ConnectionError(
-				`Failed to get job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Query jobs from the queue with optional filters.
-	 *
-	 * Provides read-only access to job data for monitoring, debugging, and
-	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param filter - Optional filter criteria
-	 * @returns Promise resolving to array of matching jobs
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Get all pending jobs
-	 * ```typescript
-	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
-	 * console.log(`${pendingJobs.length} jobs waiting`);
-	 * ```
-	 *
-	 * @example Get failed email jobs
-	 * ```typescript
-	 * const failedEmails = await monque.getJobs({
-	 *   name: 'send-email',
-	 *   status: JobStatus.FAILED,
-	 * });
-	 * for (const job of failedEmails) {
-	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
-	 * }
-	 * ```
-	 *
-	 * @example Paginated job listing
-	 * ```typescript
-	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
-	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
-	 * ```
-	 *
-	 * @example Use with type guards from @monque/core
-	 * ```typescript
-	 * import { isPendingJob, isRecurringJob } from '@monque/core';
-	 *
-	 * const jobs = await monque.getJobs();
-	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
-	 * ```
-	 */
-	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-		const query: Document = {};
-
-		if (filter.name !== undefined) {
-			query['name'] = filter.name;
-		}
-
-		if (filter.status !== undefined) {
-			if (Array.isArray(filter.status)) {
-				query['status'] = { $in: filter.status };
-			} else {
-				query['status'] = filter.status;
-			}
-		}
-
-		const limit = filter.limit ?? 100;
-		const skip = filter.skip ?? 0;
-
-		try {
-			const cursor = this.ctx.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
-
-			const docs = await cursor.toArray();
-			return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
-			throw new ConnectionError(
-				`Failed to query jobs: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Get a paginated list of jobs using opaque cursors.
-	 *
-	 * Provides stable pagination for large job lists. Supports forward and backward
-	 * navigation, filtering, and efficient database access via index-based cursor queries.
-	 *
-	 * @template T - The job data payload type
-	 * @param options - Pagination options (cursor, limit, direction, filter)
-	 * @returns Page of jobs with next/prev cursors
-	 * @throws {InvalidCursorError} If the provided cursor is malformed
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example List pending jobs
-	 * ```typescript
-	 * const page = await monque.getJobsWithCursor({
-	 *   limit: 20,
-	 *   filter: { status: 'pending' }
-	 * });
-	 * const jobs = page.jobs;
-	 *
-	 * // Get next page
-	 * if (page.hasNextPage) {
-	 *   const page2 = await monque.getJobsWithCursor({
-	 *     cursor: page.cursor,
-	 *     limit: 20
-	 *   });
-	 * }
-	 * ```
-	 */
-	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
-		const limit = options.limit ?? 50;
-		// Default to forward if not specified.
-		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
-		let anchorId: ObjectId | null = null;
-
-		if (options.cursor) {
-			const decoded = decodeCursor(options.cursor);
-			anchorId = decoded.id;
-		}
-
-		// Build base query from filters
-		const query: Filter<Document> = options.filter ? buildSelectorQuery(options.filter) : {};
-
-		// Add cursor condition to query
-		const sortDir = direction === CursorDirection.FORWARD ? 1 : -1;
-
-		if (anchorId) {
-			if (direction === CursorDirection.FORWARD) {
-				query._id = { ...query._id, $gt: anchorId };
-			} else {
-				query._id = { ...query._id, $lt: anchorId };
-			}
-		}
-
-		// Fetch limit + 1 to detect hasNext/hasPrev
-		const fetchLimit = limit + 1;
-
-		// Sort: Always deterministic.
-		const docs = await this.ctx.collection
-			.find(query)
-			.sort({ _id: sortDir })
-			.limit(fetchLimit)
-			.toArray();
-
-		let hasMore = false;
-		if (docs.length > limit) {
-			hasMore = true;
-			docs.pop(); // Remove the extra item
-		}
-
-		if (direction === CursorDirection.BACKWARD) {
-			docs.reverse();
-		}
-
-		const jobs = docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc as WithId<Document>));
-
-		let nextCursor: string | null = null;
-
-		if (jobs.length > 0) {
-			const lastJob = jobs[jobs.length - 1];
-			// Check for existence to satisfy strict null checks/noUncheckedIndexedAccess
-			if (lastJob) {
-				nextCursor = encodeCursor(lastJob._id, direction);
-			}
-		}
-
-		let hasNextPage = false;
-		let hasPreviousPage = false;
-
-		// Determine availability of next/prev pages
-		if (direction === CursorDirection.FORWARD) {
-			hasNextPage = hasMore;
-			hasPreviousPage = !!anchorId;
 		} else {
-			hasNextPage = !!anchorId;
-			hasPreviousPage = hasMore;
+			// One-time job - mark as completed
+			await this.ctx.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.COMPLETED,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+						failReason: '',
+					},
+				},
+			);
+			job.status = JobStatus.COMPLETED;
 		}
-
-		return {
-			jobs,
-			cursor: nextCursor,
-			hasNextPage,
-			hasPreviousPage,
-		};
 	}
 
 	/**
-	 * Get aggregate statistics for the job queue.
+	 * Handle job failure with exponential backoff retry logic.
 	 *
-	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
-	 * Returns counts per status and optional average processing duration for completed jobs.
+	 * Increments `failCount` and calculates next retry time using exponential backoff:
+	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
 	 *
-	 * @param filter - Optional filter to scope statistics by job name
-	 * @returns Promise resolving to queue statistics
-	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
-	 * @throws {ConnectionError} If database operation fails
+	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
+	 * to `pending` status for retry. Stores error message in `failReason` field.
 	 *
-	 * @example Get overall queue statistics
-	 * ```typescript
-	 * const stats = await monque.getQueueStats();
-	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
-	 * ```
-	 *
-	 * @example Get statistics for a specific job type
-	 * ```typescript
-	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
-	 * console.log(`${emailStats.total} email jobs in queue`);
-	 * ```
+	 * @param job - The job that failed
+	 * @param error - The error that caused the failure
 	 */
-	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
-		const matchStage: Document = {};
-
-		if (filter?.name) {
-			matchStage['name'] = filter.name;
+	async failJob(job: Job, error: Error): Promise<void> {
+		if (!isPersistedJob(job)) {
+			return;
 		}
 
-		const pipeline: Document[] = [
-			// Optional match stage for filtering by name
-			...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
-			// Facet to calculate counts and avg processing duration in parallel
+		const newFailCount = job.failCount + 1;
+
+		if (newFailCount >= this.ctx.options.maxRetries) {
+			// Permanent failure
+			await this.ctx.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.FAILED,
+						failCount: newFailCount,
+						failReason: error.message,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+					},
+				},
+			);
+		} else {
+			// Schedule retry with exponential backoff
+			const nextRunAt = calculateBackoff(
+				newFailCount,
+				this.ctx.options.baseRetryInterval,
+				this.ctx.options.maxBackoffDelay,
+			);
+
+			await this.ctx.collection.updateOne(
+				{ _id: job._id },
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: newFailCount,
+						failReason: error.message,
+						nextRunAt,
+						updatedAt: new Date(),
+					},
+					$unset: {
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+						heartbeatInterval: '',
+					},
+				},
+			);
+		}
+	}
+
+	/**
+	 * Update heartbeats for all jobs claimed by this scheduler instance.
+	 *
+	 * This method runs periodically while the scheduler is running to indicate
+	 * that jobs are still being actively processed.
+	 *
+	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
+	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
+	 */
+	async updateHeartbeats(): Promise<void> {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		const now = new Date();
+
+		await this.ctx.collection.updateMany(
 			{
-				$facet: {
-					// Count by status
-					statusCounts: [
-						{
-							$group: {
-								_id: '$status',
-								count: { $sum: 1 },
-							},
-						},
-					],
-					// Calculate average processing duration for completed jobs
-					avgDuration: [
-						{
-							$match: {
-								status: JobStatus.COMPLETED,
-								lockedAt: { $ne: null },
-							},
-						},
-						{
-							$group: {
-								_id: null,
-								avgMs: {
-									$avg: {
-										$subtract: ['$updatedAt', '$lockedAt'],
-									},
-								},
-							},
-						},
-					],
-					// Total count
-					total: [{ $count: 'count' }],
+				claimedBy: this.ctx.instanceId,
+				status: JobStatus.PROCESSING,
+			},
+			{
+				$set: {
+					lastHeartbeat: now,
+					updatedAt: now,
 				},
 			},
-		];
-
-		try {
-			const results = await this.ctx.collection.aggregate(pipeline, { maxTimeMS: 30000 }).toArray();
-
-			const result = results[0];
-
-			// Initialize with zeros
-			const stats: QueueStats = {
-				pending: 0,
-				processing: 0,
-				completed: 0,
-				failed: 0,
-				cancelled: 0,
-				total: 0,
-			};
-
-			if (!result) {
-				return stats;
-			}
-
-			// Map status counts to stats
-			const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
-			for (const entry of statusCounts) {
-				const status = entry._id;
-				const count = entry.count;
-
-				switch (status) {
-					case JobStatus.PENDING:
-						stats.pending = count;
-						break;
-					case JobStatus.PROCESSING:
-						stats.processing = count;
-						break;
-					case JobStatus.COMPLETED:
-						stats.completed = count;
-						break;
-					case JobStatus.FAILED:
-						stats.failed = count;
-						break;
-					case JobStatus.CANCELLED:
-						stats.cancelled = count;
-						break;
-				}
-			}
-
-			// Extract total
-			const totalResult = result['total'] as Array<{ count: number }>;
-			if (totalResult.length > 0 && totalResult[0]) {
-				stats.total = totalResult[0].count;
-			}
-
-			// Extract average processing duration
-			const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
-			if (avgDurationResult.length > 0 && avgDurationResult[0]) {
-				const avgMs = avgDurationResult[0].avgMs;
-				if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
-					stats.avgProcessingDurationMs = Math.round(avgMs);
-				}
-			}
-
-			return stats;
-		} catch (error) {
-			// Check for timeout error
-			if (error instanceof Error && error.message.includes('exceeded time limit')) {
-				throw new AggregationTimeoutError();
-			}
-
-			const message = error instanceof Error ? error.message : 'Unknown error during getQueueStats';
-			throw new ConnectionError(
-				`Failed to get queue stats: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
+		);
 	}
 }
 ````
 
-## File: packages/core/src/scheduler/helpers.ts
+## File: packages/core/src/scheduler/services/types.ts
 ````typescript
-import { type Document, type Filter, ObjectId } from 'mongodb';
+import type { Collection, Document, WithId } from 'mongodb';
 
-import { CursorDirection, type CursorDirectionType, type JobSelector } from '@/jobs';
-import { InvalidCursorError } from '@/shared';
+import type { MonqueEventMap } from '@/events';
+import type { PersistedJob } from '@/jobs';
+import type { WorkerRegistration } from '@/workers';
 
-/**
- * Build a MongoDB query filter from a JobSelector.
- *
- * Translates the high-level `JobSelector` interface into a MongoDB `Filter<Document>`.
- * Handles array values for status (using `$in`) and date range filtering.
- *
- * @param filter - The user-provided job selector
- * @returns A standard MongoDB filter object
- */
-export function buildSelectorQuery(filter: JobSelector): Filter<Document> {
-	const query: Filter<Document> = {};
-
-	if (filter.name) {
-		query['name'] = filter.name;
-	}
-
-	if (filter.status) {
-		if (Array.isArray(filter.status)) {
-			query['status'] = { $in: filter.status };
-		} else {
-			query['status'] = filter.status;
-		}
-	}
-
-	if (filter.olderThan || filter.newerThan) {
-		query['createdAt'] = {};
-		if (filter.olderThan) {
-			query['createdAt'].$lt = filter.olderThan;
-		}
-		if (filter.newerThan) {
-			query['createdAt'].$gt = filter.newerThan;
-		}
-	}
-
-	return query;
-}
+import type { MonqueOptions } from '../types.js';
 
 /**
- * Encode an ObjectId and direction into an opaque cursor string.
+ * Resolved Monque options with all defaults applied.
  *
- * Format: `prefix` + `base64url(objectId)`
- * Prefix: 'F' (forward) or 'B' (backward)
- *
- * @param id - The job ID to use as the cursor anchor (exclusive)
- * @param direction - 'forward' or 'backward'
- * @returns Base64url-encoded cursor string
+ * Required options have their defaults filled in, while truly optional
+ * options (`maxBackoffDelay`, `jobRetention`) remain optional.
  */
-export function encodeCursor(id: ObjectId, direction: CursorDirectionType): string {
-	const prefix = direction === 'forward' ? 'F' : 'B';
-	const buffer = Buffer.from(id.toHexString(), 'hex');
-
-	return prefix + buffer.toString('base64url');
-}
-
+export interface ResolvedMonqueOptions
+	extends Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>>,
+		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'> {}
 /**
- * Decode an opaque cursor string into an ObjectId and direction.
+ * Shared context provided to all internal Monque services.
  *
- * Validates format and returns the components.
+ * Contains references to shared state, configuration, and utilities
+ * needed by service methods. Passed to service constructors to enable
+ * access to the collection, options, and event emission.
  *
- * @param cursor - The opaque cursor string
- * @returns The decoded ID and direction
- * @throws {InvalidCursorError} If the cursor format is invalid or ID is malformed
+ * @internal Not part of public API.
  */
-export function decodeCursor(cursor: string): {
-	id: ObjectId;
-	direction: CursorDirectionType;
-} {
-	if (!cursor || cursor.length < 2) {
-		throw new InvalidCursorError('Cursor is empty or too short');
-	}
+export interface SchedulerContext {
+	/** MongoDB collection for jobs */
+	collection: Collection<Document>;
 
-	const prefix = cursor.charAt(0);
-	const payload = cursor.slice(1);
+	/** Resolved scheduler options with defaults applied */
+	options: ResolvedMonqueOptions;
 
-	let direction: CursorDirectionType;
+	/** Unique identifier for this scheduler instance (for claiming jobs) */
+	instanceId: string;
 
-	if (prefix === 'F') {
-		direction = CursorDirection.FORWARD;
-	} else if (prefix === 'B') {
-		direction = CursorDirection.BACKWARD;
-	} else {
-		throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
-	}
+	/** Registered workers by job name */
+	workers: Map<string, WorkerRegistration>;
 
-	try {
-		const buffer = Buffer.from(payload, 'base64url');
-		const hex = buffer.toString('hex');
-		// standard ObjectID is 12 bytes = 24 hex chars
-		if (hex.length !== 24) {
-			throw new Error('Invalid length');
-		}
+	/** Whether the scheduler is currently running */
+	isRunning: () => boolean;
 
-		const id = new ObjectId(hex);
+	/** Type-safe event emitter */
+	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
 
-		return { id, direction };
-	} catch (_error) {
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+	/** Convert MongoDB document to typed PersistedJob */
+	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }
 ````
 
-## File: packages/core/src/scheduler/index.ts
+## File: packages/core/src/shared/utils/index.ts
 ````typescript
-// helpers
-export { buildSelectorQuery, decodeCursor, encodeCursor } from './helpers.js';
-// Main class and options
-export { Monque } from './monque.js';
-export type { MonqueOptions } from './types.js';
-````
-
-## File: packages/core/src/shared/index.ts
-````typescript
-export {
-	AggregationTimeoutError,
-	ConnectionError,
-	InvalidCronError,
-	InvalidCursorError,
-	JobStateError,
-	MonqueError,
-	ShutdownTimeoutError,
-	WorkerRegistrationError,
-} from './errors.js';
 export {
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
 	DEFAULT_MAX_BACKOFF_DELAY,
-} from './utils/backoff.js';
-export { getNextCronDate, validateCronExpression } from './utils/cron.js';
+} from './backoff.js';
+export { getNextCronDate, validateCronExpression } from './cron.js';
 ````
 
 ## File: packages/core/src/workers/types.ts
@@ -7423,125 +4889,6 @@ export {
 } from '@/shared';
 // Types - Workers
 export type { WorkerOptions } from '@/workers';
-````
-
-## File: packages/core/tests/factories/context.ts
-````typescript
-/**
- * Factory for creating mock SchedulerContext for service unit tests.
- *
- * Provides a reusable mock context with vi.fn() stubs for all methods,
- * allowing tests to verify internal service behavior without MongoDB.
- */
-
-import type { Collection, Document, WithId } from 'mongodb';
-import { vi } from 'vitest';
-
-import type { MonqueEventMap } from '@/events';
-import type { JobStatusType, PersistedJob } from '@/jobs';
-import type { ResolvedMonqueOptions, SchedulerContext } from '@/scheduler/services/types.js';
-import type { WorkerRegistration } from '@/workers';
-
-/**
- * Default resolved options for tests.
- */
-export const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
-	collectionName: 'test_jobs',
-	pollInterval: 1000,
-	maxRetries: 3,
-	baseRetryInterval: 100,
-	shutdownTimeout: 5000,
-	defaultConcurrency: 5,
-	lockTimeout: 30000,
-	recoverStaleJobs: true,
-	schedulerInstanceId: 'test-instance-id',
-	heartbeatInterval: 1000,
-	maxBackoffDelay: undefined,
-	jobRetention: undefined,
-};
-
-/**
- * Create a mock MongoDB collection with vi.fn() stubs.
- */
-export function createMockCollection(): Collection<Document> {
-	return {
-		insertOne: vi.fn(),
-		insertMany: vi.fn(),
-		findOne: vi.fn(),
-		find: vi.fn(),
-		findOneAndUpdate: vi.fn(),
-		updateOne: vi.fn(),
-		updateMany: vi.fn(),
-		deleteOne: vi.fn(),
-		deleteMany: vi.fn(),
-		countDocuments: vi.fn(),
-		aggregate: vi.fn(),
-		watch: vi.fn(),
-		createIndex: vi.fn(),
-	} as unknown as Collection<Document>;
-}
-
-/**
- * Create a mock SchedulerContext for testing internal services.
- *
- * @example
- * ```typescript
- * const ctx = createMockContext();
- * const scheduler = new JobScheduler(ctx);
- *
- * // Mock collection responses using JobFactory
- * vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(JobFactory.build());
- *
- * // Assert on emitted events
- * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });
- * ```
- */
-export function createMockContext(overrides: Partial<SchedulerContext> = {}): SchedulerContext & {
-	mockCollection: Collection<Document>;
-	emitHistory: Array<{ event: string; payload: unknown }>;
-} {
-	const mockCollection = createMockCollection();
-	const emitHistory: Array<{ event: string; payload: unknown }> = [];
-	const workers = new Map<string, WorkerRegistration>();
-
-	const ctx: SchedulerContext = {
-		collection: mockCollection,
-		options: { ...DEFAULT_TEST_OPTIONS },
-		instanceId: 'test-instance-id',
-		workers,
-		isRunning: vi.fn(() => true),
-		emit: vi.fn(<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
-			emitHistory.push({ event, payload });
-			return true;
-		}),
-		documentToPersistedJob: <T>(doc: WithId<Document>): PersistedJob<T> => {
-			return {
-				_id: doc._id,
-				name: doc['name'] as string,
-				data: doc['data'] as T,
-				status: doc['status'] as JobStatusType,
-				nextRunAt: doc['nextRunAt'] as Date,
-				failCount: doc['failCount'] as number,
-				createdAt: doc['createdAt'] as Date,
-				updatedAt: doc['updatedAt'] as Date,
-				...(doc['uniqueKey'] && { uniqueKey: doc['uniqueKey'] as string }),
-				...(doc['repeatInterval'] && { repeatInterval: doc['repeatInterval'] as string }),
-				...(doc['lockedAt'] && { lockedAt: doc['lockedAt'] as Date }),
-				...(doc['claimedBy'] && { claimedBy: doc['claimedBy'] as string }),
-				...(doc['failReason'] && { failReason: doc['failReason'] as string }),
-			};
-		},
-		...overrides,
-	};
-
-	return { ...ctx, mockCollection, emitHistory };
-}
-````
-
-## File: packages/core/tests/factories/index.ts
-````typescript
-export { createMockCollection, createMockContext, DEFAULT_TEST_OPTIONS } from './context.js';
-export { JobFactory, JobFactoryHelpers } from './job.factory.js';
 ````
 
 ## File: packages/core/tests/integration/atomic-claim.test.ts
@@ -7958,6 +5305,377 @@ describe('atomic job claiming', () => {
 
 			// Job should have been processed
 			expect(processed).toBe(true);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/integration/bulk-management.test.ts
+````typescript
+import {
+	cleanupTestDb,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+} from '@test-utils/test-utils';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
+
+import { JobFactoryHelpers } from '@tests/factories';
+import { type Job, JobStatus } from '@/jobs';
+import { Monque } from '@/scheduler';
+
+describe('Management APIs: Bulk Operations', () => {
+	let db: Db;
+	let monque: Monque;
+	const monqueInstances: Monque[] = [];
+	const queueName = 'bulk-management-test-queue';
+
+	beforeAll(async () => {
+		db = await getTestDb('bulk-management-api');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+	});
+
+	describe('cancelJobs', () => {
+		test('cancels all matching jobs by name and status', async () => {
+			const collectionName = uniqueCollectionName('bulk_cancel_match');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create jobs to cancel
+			await monque.enqueue(queueName, { task: 1 });
+			await monque.enqueue(queueName, { task: 2 });
+			await monque.enqueue(queueName, { task: 3 });
+			// Create a job with different name that should NOT be cancelled
+			await monque.enqueue('other-queue', { task: 4 });
+
+			const result = await monque.cancelJobs({
+				name: queueName,
+				status: JobStatus.PENDING,
+			});
+
+			expect(result.count).toBe(3);
+			expect(result.errors).toHaveLength(0);
+
+			// Verify in DB
+			const cancelledDocs = await db.collection(collectionName).find({ name: queueName }).toArray();
+			const cancelled = cancelledDocs as unknown as Job[];
+			expect(cancelled.every((job) => job.status === JobStatus.CANCELLED)).toBe(true);
+
+			// Verify other queue job is still pending
+			const otherDoc = await db.collection(collectionName).findOne({ name: 'other-queue' });
+			const other = otherDoc as unknown as Job | null;
+			expect(other?.status).toBe(JobStatus.PENDING);
+		});
+
+		test('skips processing jobs and includes them in errors', async () => {
+			const collectionName = uniqueCollectionName('bulk_cancel_skip');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create a pending job
+			await monque.enqueue(queueName, { task: 1 });
+			// Create a processing job (directly in DB)
+			const processingDoc = JobFactoryHelpers.processing({
+				name: queueName,
+				data: { task: 2 },
+			});
+			await db.collection(collectionName).insertOne(processingDoc);
+
+			const result = await monque.cancelJobs({
+				name: queueName,
+			});
+
+			// Only the pending one should be cancelled
+			expect(result.count).toBe(1);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toContain('processing');
+		});
+
+		test('returns count 0 for empty filter with no matches', async () => {
+			const collectionName = uniqueCollectionName('bulk_cancel_empty');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const result = await monque.cancelJobs({
+				name: 'non-existent-queue',
+			});
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		test('cancels jobs matching status array', async () => {
+			const collectionName = uniqueCollectionName('bulk_cancel_array');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			await monque.enqueue(queueName, { task: 1 });
+			await monque.enqueue(queueName, { task: 2 });
+
+			const result = await monque.cancelJobs({
+				status: [JobStatus.PENDING],
+			});
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		test('emits jobs:cancelled event with job IDs', async () => {
+			const collectionName = uniqueCollectionName('bulk_cancel_event');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			await monque.enqueue(queueName, { task: 1 });
+			await monque.enqueue(queueName, { task: 2 });
+
+			let emittedPayload: { jobIds: string[]; count: number } | undefined;
+			monque.on('jobs:cancelled', (payload) => {
+				emittedPayload = payload;
+			});
+
+			await monque.cancelJobs({ name: queueName });
+
+			expect(emittedPayload).toBeDefined();
+			expect(emittedPayload?.count).toBe(2);
+			expect(emittedPayload?.jobIds).toHaveLength(2);
+		});
+	});
+
+	describe('retryJobs', () => {
+		test('retries all failed jobs matching filter', async () => {
+			const collectionName = uniqueCollectionName('bulk_retry_failed');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create failed jobs directly in DB
+			const failedDocs = [
+				JobFactoryHelpers.failed({ name: queueName, data: { task: 1 } }),
+				JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } }),
+				JobFactoryHelpers.failed({ name: queueName, data: { task: 3 } }),
+			];
+			await db.collection(collectionName).insertMany(failedDocs);
+
+			const result = await monque.retryJobs({
+				status: JobStatus.FAILED,
+			});
+
+			expect(result.count).toBe(3);
+			expect(result.errors).toHaveLength(0);
+
+			// Verify in DB all are now pending
+			const retriedDocs = await db.collection(collectionName).find({}).toArray();
+			const retried = retriedDocs as unknown as Job[];
+			expect(retried.every((job) => job.status === JobStatus.PENDING)).toBe(true);
+			expect(retried.every((job) => job.failCount === 0)).toBe(true);
+		});
+
+		test('retries cancelled jobs as well', async () => {
+			const collectionName = uniqueCollectionName('bulk_retry_cancelled');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create and cancel jobs
+			await monque.enqueue(queueName, { task: 1 });
+			await monque.enqueue(queueName, { task: 2 });
+			await monque.cancelJobs({ name: queueName });
+
+			const result = await monque.retryJobs({
+				status: JobStatus.CANCELLED,
+			});
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		test('skips pending and processing jobs', async () => {
+			const collectionName = uniqueCollectionName('bulk_retry_skip');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create pending job
+			await monque.enqueue(queueName, { task: 1 });
+			// Create a failed job
+			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } });
+			await db.collection(collectionName).insertOne(failedDoc);
+
+			// Try to retry by name (includes both pending and failed)
+			const result = await monque.retryJobs({
+				name: queueName,
+			});
+
+			// Only the failed job should be retried
+			expect(result.count).toBe(1);
+			expect(result.errors).toHaveLength(1);
+		});
+
+		test('emits jobs:retried event with job IDs', async () => {
+			const collectionName = uniqueCollectionName('bulk_retry_event');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const failedDocs = [
+				JobFactoryHelpers.failed({ name: queueName, data: { task: 1 } }),
+				JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } }),
+			];
+			await db.collection(collectionName).insertMany(failedDocs);
+
+			let emittedPayload: { jobIds: string[]; count: number } | undefined;
+			monque.on('jobs:retried', (payload) => {
+				emittedPayload = payload;
+			});
+
+			await monque.retryJobs({ status: JobStatus.FAILED });
+
+			expect(emittedPayload).toBeDefined();
+			expect(emittedPayload?.count).toBe(2);
+			expect(emittedPayload?.jobIds).toHaveLength(2);
+		});
+	});
+
+	describe('deleteJobs', () => {
+		test('deletes jobs matching status and olderThan', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_older');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create completed jobs with old createdAt
+			const oldDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+			const oldDocs = [
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 1 }, createdAt: oldDate }),
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 2 }, createdAt: oldDate }),
+			];
+			await db.collection(collectionName).insertMany(oldDocs);
+
+			// Create a recent completed job that should NOT be deleted
+			const recentDoc = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 3 },
+				createdAt: new Date(),
+			});
+			await db.collection(collectionName).insertOne(recentDoc);
+
+			const result = await monque.deleteJobs({
+				status: JobStatus.COMPLETED,
+				olderThan: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+			});
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+
+			// Verify only the recent job remains
+			const remaining = await db.collection(collectionName).countDocuments();
+			expect(remaining).toBe(1);
+		});
+
+		test('deletes jobs newer than specified date', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_newer');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create an old completed job
+			const oldDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+			const oldDoc = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 1 },
+				createdAt: oldDate,
+			});
+			await db.collection(collectionName).insertOne(oldDoc);
+
+			// Create recent completed jobs
+			const recentDocs = [
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 2 } }),
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 3 } }),
+			];
+			await db.collection(collectionName).insertMany(recentDocs);
+
+			const result = await monque.deleteJobs({
+				status: JobStatus.COMPLETED,
+				newerThan: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+			});
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+
+			// Verify only the old job remains
+			const remaining = await db.collection(collectionName).countDocuments();
+			expect(remaining).toBe(1);
+		});
+
+		test('returns count 0 when no jobs match', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_empty');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const result = await monque.deleteJobs({
+				name: 'non-existent-queue',
+			});
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		test('can delete jobs in any status', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_any');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create jobs in various statuses
+			await monque.enqueue(queueName, { task: 1 }); // pending
+			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 2 } });
+			await db.collection(collectionName).insertOne(failedDoc);
+			const completedDoc = JobFactoryHelpers.completed({ name: queueName, data: { task: 3 } });
+			await db.collection(collectionName).insertOne(completedDoc);
+
+			const result = await monque.deleteJobs({
+				name: queueName,
+			});
+
+			expect(result.count).toBe(3);
+			expect(result.errors).toHaveLength(0);
+
+			const remaining = await db.collection(collectionName).countDocuments();
+			expect(remaining).toBe(0);
+		});
+
+		test('emits jobs:deleted event with count', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_event');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			await monque.enqueue(queueName, { task: 1 });
+			await monque.enqueue(queueName, { task: 2 });
+
+			let emittedPayload: { count: number } | undefined;
+			monque.on('jobs:deleted', (payload) => {
+				emittedPayload = payload;
+			});
+
+			await monque.deleteJobs({ name: queueName });
+
+			expect(emittedPayload).toBeDefined();
+			expect(emittedPayload?.count).toBe(2);
 		});
 	});
 });
@@ -11080,1484 +8798,47 @@ describe('stop() - Graceful Shutdown', () => {
 });
 ````
 
-## File: packages/core/tests/unit/services/change-stream-handler.test.ts
+## File: packages/core/tests/integration/statistics.test.ts
 ````typescript
-/**
- * Unit tests for ChangeStreamHandler service.
- *
- * Tests change stream setup, event handling, error recovery with exponential backoff,
- * and graceful fallback to polling. This is where we properly test the internal
- * change stream behavior that was previously accessed via private properties.
- */
+import {
+	cleanupTestDb,
+	getTestDb,
+	stopMonqueInstances,
+	uniqueCollectionName,
+} from '@test-utils/test-utils';
+import type { Db } from 'mongodb';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 
-import { EventEmitter } from 'node:events';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createMockContext } from '@tests/factories';
+import { JobFactory, JobFactoryHelpers } from '@tests/factories';
 import { JobStatus } from '@/jobs';
-import { ChangeStreamHandler } from '@/scheduler/services/change-stream-handler.js';
+import { Monque } from '@/scheduler';
 
-describe('ChangeStreamHandler', () => {
-	let ctx: ReturnType<typeof createMockContext>;
-	let onPoll: () => Promise<void>;
-	let handler: ChangeStreamHandler;
+describe('Management APIs: Queue Statistics', () => {
+	let db: Db;
+	let monque: Monque;
+	const monqueInstances: Monque[] = [];
+	const queueName = 'statistics-test-queue';
 
-	beforeEach(() => {
-		ctx = createMockContext();
-		onPoll = vi.fn().mockResolvedValue(undefined) as unknown as () => Promise<void>;
-		handler = new ChangeStreamHandler(ctx, onPoll);
+	beforeAll(async () => {
+		db = await getTestDb('statistics-api');
 	});
 
-	afterEach(() => {
-		vi.clearAllMocks();
-		vi.useRealTimers();
+	afterAll(async () => {
+		await cleanupTestDb(db);
 	});
 
-	describe('setup', () => {
-		it('should not setup if scheduler is not running', () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			handler.setup();
-
-			expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
-		});
-
-		it('should create change stream and emit connected event', () => {
-			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			expect(ctx.mockCollection.watch).toHaveBeenCalled();
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({ event: 'changestream:connected' }),
-			);
-		});
-
-		it('should emit fallback event when watch throws', () => {
-			vi.mocked(ctx.mockCollection.watch).mockImplementation(() => {
-				throw new Error('Change streams not available');
-			});
-
-			handler.setup();
-
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({ event: 'changestream:fallback' }),
-			);
-		});
-	});
-
-	describe('handleEvent', () => {
-		it('should not trigger poll if scheduler is not running', () => {
-			vi.useFakeTimers();
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			const changeEvent = {
-				operationType: 'insert' as const,
-				fullDocument: { status: JobStatus.PENDING },
-			};
-
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(200);
-
-			expect(onPoll).not.toHaveBeenCalled();
-		});
-
-		it('should trigger poll on insert event (debounced)', async () => {
-			vi.useFakeTimers();
-			const changeEvent = {
-				operationType: 'insert' as const,
-				fullDocument: { status: JobStatus.PENDING },
-			};
-
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-
-			// Debounce should prevent immediate call
-			expect(onPoll).not.toHaveBeenCalled();
-
-			// After debounce window, poll should be called
-			vi.advanceTimersByTime(150);
-			expect(onPoll).toHaveBeenCalledOnce();
-		});
-
-		it('should trigger poll on update event with status change to pending', async () => {
-			vi.useFakeTimers();
-			const changeEvent = {
-				operationType: 'update' as const,
-				fullDocument: { status: JobStatus.PENDING },
-				updateDescription: { updatedFields: { status: JobStatus.PENDING } },
-			};
-
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(150);
-
-			expect(onPoll).toHaveBeenCalledOnce();
-		});
-
-		it('should debounce multiple rapid events', async () => {
-			vi.useFakeTimers();
-			const changeEvent = {
-				operationType: 'insert' as const,
-				fullDocument: { status: JobStatus.PENDING },
-			};
-
-			// Trigger multiple events rapidly
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(50);
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(50);
-			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(150);
-
-			// Should only call once due to debouncing
-			expect(onPoll).toHaveBeenCalledOnce();
-		});
-	});
-
-	describe('handleError', () => {
-		it('should return early if scheduler is not running', () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			const error = new Error('Connection lost');
-			handler.handleError(error);
-
-			// Should not increment reconnect attempts or emit fallback
-			// (We can't directly assert on reconnectAttempts, but we verify
-			// no fallback event is emitted which would happen after max attempts)
-			expect(ctx.emitHistory).not.toContainEqual(
-				expect.objectContaining({ event: 'changestream:fallback' }),
-			);
-		});
-
-		it('should emit error event', () => {
-			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			const error = new Error('Connection lost');
-			mockChangeStream.emit('error', error);
-
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({
-					event: 'changestream:error',
-					payload: { error },
-				}),
-			);
-		});
-
-		it('should attempt reconnection with exponential backoff', () => {
-			vi.useFakeTimers();
-			const mockChangeStream = Object.assign(new EventEmitter(), {
-				close: vi.fn().mockResolvedValue(undefined),
-			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-			const initialWatchCalls = vi.mocked(ctx.mockCollection.watch).mock.calls.length;
-
-			// Emit error
-			mockChangeStream.emit('error', new Error('First error'));
-
-			// Should schedule reconnect after 1s (2^0 * 1000)
-			vi.advanceTimersByTime(1000);
-
-			// closeSync may be called, then watch should be called again
-			expect(vi.mocked(ctx.mockCollection.watch).mock.calls.length).toBeGreaterThan(
-				initialWatchCalls,
-			);
-		});
-
-		it('should emit fallback event after exhausting reconnection attempts', () => {
-			vi.useFakeTimers();
-			const mockChangeStream = Object.assign(new EventEmitter(), {
-				close: vi.fn().mockResolvedValue(undefined),
-			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			// Emit 4 errors (maxReconnectAttempts is 3)
-			for (let i = 0; i < 4; i++) {
-				mockChangeStream.emit('error', new Error(`Error ${i + 1}`));
-				// Advance past the exponential backoff
-				vi.advanceTimersByTime(10000);
-			}
-
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({
-					event: 'changestream:fallback',
-					payload: expect.objectContaining({
-						reason: expect.stringContaining('Exhausted'),
-					}),
-				}),
-			);
-		});
-	});
-
-	describe('close', () => {
-		it('should close change stream and emit closed event', async () => {
-			const mockChangeStream = {
-				on: vi.fn(),
-				close: vi.fn().mockResolvedValue(undefined),
-			};
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-			await handler.close();
-
-			expect(mockChangeStream.close).toHaveBeenCalled();
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({ event: 'changestream:closed' }),
-			);
-		});
-
-		it('should clear debounce and reconnect timers', async () => {
-			vi.useFakeTimers();
-
-			const mockChangeStream = {
-				on: vi.fn(),
-				close: vi.fn().mockResolvedValue(undefined),
-			};
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-			await handler.close();
-
-			// Verify no pending timers would cause issues
-			vi.advanceTimersByTime(10000);
-
-			expect(onPoll).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('handleEvent - error handling', () => {
-		it('should emit job:error if poll throws', async () => {
-			vi.useFakeTimers();
-			const pollError = new Error('Poll failed');
-			const failingOnPoll = vi.fn().mockRejectedValue(pollError);
-
-			const handlerWithFailingPoll = new ChangeStreamHandler(ctx, failingOnPoll);
-
-			const changeEvent = {
-				operationType: 'insert' as const,
-				fullDocument: { status: JobStatus.PENDING },
-			};
-
-			handlerWithFailingPoll.handleEvent(
-				changeEvent as unknown as Parameters<typeof handler.handleEvent>[0],
-			);
-			vi.advanceTimersByTime(150);
-
-			// Wait for the promise rejection to be handled
-			await vi.runAllTimersAsync();
-
-			expect(ctx.emitHistory).toContainEqual(
-				expect.objectContaining({
-					event: 'job:error',
-					payload: expect.objectContaining({ error: pollError }),
-				}),
-			);
-		});
-	});
-
-	describe('close with active timers', () => {
-		it('should clear reconnect timer during close', async () => {
-			vi.useFakeTimers();
-			const mockChangeStream = Object.assign(new EventEmitter(), {
-				close: vi.fn().mockResolvedValue(undefined),
-			});
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			// Trigger an error to start reconnect timer
-			mockChangeStream.emit('error', new Error('Connection lost'));
-
-			// Close before reconnect timer fires
-			await handler.close();
-
-			// Advance past the reconnect delay to verify timer was cleared
-			vi.advanceTimersByTime(5000);
-
-			// Should not have tried to setup again
-			const watchCallsAfterClose = vi.mocked(ctx.mockCollection.watch).mock.calls.length;
-			expect(watchCallsAfterClose).toBe(1); // Only the initial setup
-		});
-	});
-
-	describe('isActive', () => {
-		it('should return false before setup', () => {
-			expect(handler.isActive()).toBe(false);
-		});
-
-		it('should return true after successful setup', () => {
-			const mockChangeStream = new EventEmitter();
-			vi.mocked(ctx.mockCollection.watch).mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			expect(handler.isActive()).toBe(true);
-		});
-
-		it('should return false after falling back to polling', () => {
-			vi.mocked(ctx.mockCollection.watch).mockImplementation(() => {
-				throw new Error('Not available');
-			});
-
-			handler.setup();
-
-			expect(handler.isActive()).toBe(false);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/services/job-manager.test.ts
-````typescript
-/**
- * Unit tests for JobManager service.
- *
- * Tests job management operations: cancel, retry, reschedule, delete.
- * Uses mock SchedulerContext to test state transition logic in isolation.
- */
-
-import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
-import { JobStatus } from '@/jobs';
-import { JobManager } from '@/scheduler/services/job-manager.js';
-import { JobStateError } from '@/shared';
-
-describe('JobManager', () => {
-	let ctx: ReturnType<typeof createMockContext>;
-	let manager: JobManager;
-
-	beforeEach(() => {
-		ctx = createMockContext();
-		manager = new JobManager(ctx);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	describe('cancelJob', () => {
-		it('should cancel a pending job', async () => {
-			const jobId = new ObjectId();
-			const pendingJob = JobFactory.build({ _id: jobId, name: 'cancel-test' });
-			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId, name: 'cancel-test' });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(cancelledJob);
-
-			const job = await manager.cancelJob(jobId.toString());
-
-			expect(job).not.toBeNull();
-			expect(job?.status).toBe(JobStatus.CANCELLED);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:cancelled' }));
-		});
-
-		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
-
-			const job = await manager.cancelJob(new ObjectId().toString());
-
-			expect(job).toBeNull();
-		});
-
-		it('should throw JobStateError when cancelling a processing job', async () => {
-			const jobId = new ObjectId();
-			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValue(processingJob);
-
-			await expect(manager.cancelJob(jobId.toString())).rejects.toThrow(JobStateError);
-		});
-
-		it('should return existing job if already cancelled', async () => {
-			const jobId = new ObjectId();
-			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(cancelledJob);
-
-			const job = await manager.cancelJob(jobId.toString());
-
-			expect(job?.status).toBe(JobStatus.CANCELLED);
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('retryJob', () => {
-		it('should retry a failed job', async () => {
-			const jobId = new ObjectId();
-			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
-			const retriedJob = JobFactory.build({ _id: jobId, failCount: 0 });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(failedJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(retriedJob);
-
-			const job = await manager.retryJob(jobId.toString());
-
-			expect(job?.status).toBe(JobStatus.PENDING);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:retried' }));
-		});
-
-		it('should retry a cancelled job', async () => {
-			const jobId = new ObjectId();
-			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
-			const retriedJob = JobFactory.build({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(cancelledJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(retriedJob);
-
-			const job = await manager.retryJob(jobId.toString());
-
-			expect(job?.status).toBe(JobStatus.PENDING);
-		});
-
-		it('should throw JobStateError when retrying a pending job', async () => {
-			const jobId = new ObjectId();
-			const pendingJob = JobFactory.build({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-
-			await expect(manager.retryJob(jobId.toString())).rejects.toThrow(JobStateError);
-		});
-
-		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
-
-			const job = await manager.retryJob(new ObjectId().toString());
-
-			expect(job).toBeNull();
-		});
-	});
-
-	describe('rescheduleJob', () => {
-		it('should reschedule a pending job to new time', async () => {
-			const jobId = new ObjectId();
-			const newRunAt = new Date(Date.now() + 3600000);
-			const pendingJob = JobFactory.build({ _id: jobId });
-			const rescheduledJob = JobFactory.build({ _id: jobId, nextRunAt: newRunAt });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(rescheduledJob);
-
-			const job = await manager.rescheduleJob(jobId.toString(), newRunAt);
-
-			expect(job?.nextRunAt).toEqual(newRunAt);
-		});
-
-		it('should throw JobStateError when rescheduling a processing job', async () => {
-			const jobId = new ObjectId();
-			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(processingJob);
-
-			await expect(manager.rescheduleJob(jobId.toString(), new Date())).rejects.toThrow(
-				JobStateError,
-			);
-		});
-
-		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
-
-			const job = await manager.rescheduleJob(new ObjectId().toString(), new Date());
-
-			expect(job).toBeNull();
-		});
-	});
-
-	describe('cancelJob - race conditions', () => {
-		it('should throw JobStateError when job status changes during cancellation', async () => {
-			const jobId = new ObjectId();
-			const pendingJob = JobFactory.build({ _id: jobId });
-
-			// First findOne returns pending job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(JobStateError);
-			expect((error as JobStateError).message).toMatch(
-				/Job status changed during cancellation attempt/,
-			);
-		});
-	});
-
-	describe('retryJob - race conditions', () => {
-		it('should throw JobStateError when job status changes during retry', async () => {
-			const jobId = new ObjectId();
-			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
-
-			// First findOne returns failed job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(failedJob);
-			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(JobStateError);
-			expect((error as JobStateError).message).toMatch(/Job status changed during retry attempt/);
-		});
-	});
-
-	describe('rescheduleJob - race conditions', () => {
-		it('should throw JobStateError when job status changes during reschedule', async () => {
-			const jobId = new ObjectId();
-			const newRunAt = new Date(Date.now() + 3600000);
-			const pendingJob = JobFactory.build({ _id: jobId });
-
-			// First findOne returns pending job
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(pendingJob);
-			// But findOneAndUpdate returns null (another process changed the status)
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const error = await manager
-				.rescheduleJob(jobId.toString(), newRunAt)
-				.catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(JobStateError);
-			expect((error as JobStateError).message).toMatch(
-				/Job status changed during reschedule attempt/,
-			);
-		});
-	});
-
-	describe('deleteJob', () => {
-		it('should delete job and return true', async () => {
-			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
-				deletedCount: 1,
-				acknowledged: true,
-			});
-
-			const result = await manager.deleteJob(jobId.toString());
-
-			expect(result).toBe(true);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:deleted' }));
-		});
-
-		it('should return false for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
-
-			const result = await manager.deleteJob(new ObjectId().toString());
-
-			expect(result).toBe(false);
-		});
-
-		it('should return false when job deleted between findOne and deleteOne (race condition)', async () => {
-			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			// Another process deleted the job between findOne and deleteOne
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
-				deletedCount: 0,
-				acknowledged: true,
-			});
-
-			const result = await manager.deleteJob(jobId.toString());
-
-			expect(result).toBe(false);
-			expect(ctx.emitHistory.find((e) => e.event === 'job:deleted')).toBeUndefined();
-		});
-
-		it('should emit job:deleted event with jobId', async () => {
-			const jobId = new ObjectId();
-			const jobDoc = JobFactory.build({ _id: jobId, name: 'delete-test' });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(jobDoc);
-			vi.mocked(ctx.mockCollection.deleteOne).mockResolvedValueOnce({
-				deletedCount: 1,
-				acknowledged: true,
-			});
-
-			await manager.deleteJob(jobId.toString());
-
-			const deleteEvent = ctx.emitHistory.find((e) => e.event === 'job:deleted');
-			expect(deleteEvent).toBeDefined();
-			expect((deleteEvent?.payload as { jobId: string })?.jobId).toBe(jobId.toString());
-		});
-	});
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// Bulk Operations Tests
-	// ─────────────────────────────────────────────────────────────────────────────
-
-	describe('cancelJobs', () => {
-		it('should cancel multiple pending jobs', async () => {
-			const job1 = JobFactory.build({ name: 'bulk-cancel' });
-			const job2 = JobFactory.build({ name: 'bulk-cancel' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([job1, job2]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate)
-				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job1._id }))
-				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job2._id }));
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:cancelled' }));
-		});
-
-		it('should include already cancelled jobs in count (idempotent)', async () => {
-			const cancelledJob = JobFactoryHelpers.cancelled({ name: 'bulk-cancel' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([cancelledJob]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(0);
-			// findOneAndUpdate should NOT be called for already cancelled jobs
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-
-		it('should collect errors for jobs in invalid state', async () => {
-			const processingJob = JobFactoryHelpers.processing({ name: 'bulk-cancel' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([processingJob]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Cannot cancel job in status 'processing'/);
-		});
-
-		it('should handle race condition when job status changes during bulk cancel', async () => {
-			const pendingJob = JobFactory.build({ name: 'bulk-cancel' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			// findOneAndUpdate returns null because status changed
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Job status changed during cancellation/);
-		});
-	});
-
-	describe('retryJobs', () => {
-		it('should retry multiple failed jobs', async () => {
-			const failedJob1 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
-			const failedJob2 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([failedJob1, failedJob2]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			vi.mocked(ctx.mockCollection.findOneAndUpdate)
-				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
-				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
-
-			const result = await manager.retryJobs({ status: JobStatus.FAILED });
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:retried' }));
-		});
-
-		it('should collect errors for jobs in invalid state for retry', async () => {
-			const pendingJob = JobFactory.build({ name: 'bulk-retry' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([pendingJob]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await manager.retryJobs({ name: 'bulk-retry' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Cannot retry job in status 'pending'/);
-		});
-
-		it('should handle race condition when job status changes during bulk retry', async () => {
-			const failedJob = JobFactoryHelpers.failed({ name: 'bulk-retry' });
-
-			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([failedJob]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			// findOneAndUpdate returns null because status changed
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const result = await manager.retryJobs({ status: JobStatus.FAILED });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Job status changed during retry attempt/);
-		});
-	});
-
-	describe('deleteJobs', () => {
-		it('should delete multiple jobs matching filter', async () => {
-			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
-				deletedCount: 5,
-				acknowledged: true,
-			});
-
-			const result = await manager.deleteJobs({ status: JobStatus.COMPLETED });
-
-			expect(result.count).toBe(5);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		it('should return zero count when no jobs match', async () => {
-			vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValueOnce({
-				deletedCount: 0,
-				acknowledged: true,
-			});
-
-			const result = await manager.deleteJobs({ name: 'non-existent' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(0);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/services/job-processor.test.ts
-````typescript
-/**
- * Unit tests for JobProcessor service.
- *
- * Tests job polling, acquisition, processing, completion, and failure handling.
- * Uses mock SchedulerContext to test processing logic in isolation.
- */
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
-import { JobStatus, type PersistedJob } from '@/jobs';
-import { JobProcessor } from '@/scheduler/services/job-processor.js';
-import type { WorkerRegistration } from '@/workers';
-
-describe('JobProcessor', () => {
-	let ctx: ReturnType<typeof createMockContext>;
-	let processor: JobProcessor;
-
-	beforeEach(() => {
-		ctx = createMockContext();
-		processor = new JobProcessor(ctx);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	describe('poll', () => {
-		it('should not poll if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			await processor.poll();
-
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-
-		it('should poll for each registered worker with available capacity', async () => {
-			const testWorker: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 2,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-			ctx.workers.set('test-job', testWorker);
-
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
-
-			await processor.poll();
-
-			// Should have tried to acquire jobs (up to concurrency limit)
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
-		});
-
-		it('should skip workers at max concurrency', async () => {
-			const job = JobFactory.build();
-			const testWorker: WorkerRegistration = {
-				handler: vi.fn(),
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>([['job-1', job]]),
-			};
-			ctx.workers.set('test-job', testWorker);
-
-			await processor.poll();
-
-			// Should not try to acquire for a fully loaded worker
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('acquireJob', () => {
-		it('should return null if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			const job = await processor.acquireJob('test-job');
-
-			expect(job).toBeNull();
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-
-		it('should atomically claim a pending job', async () => {
-			const pendingJob = JobFactory.build({ name: 'test-job' });
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(pendingJob);
-
-			const job = await processor.acquireJob('test-job');
-
-			expect(job).not.toBeNull();
-			expect(job?.name).toBe('test-job');
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				expect.objectContaining({
-					name: 'test-job',
-					status: JobStatus.PENDING,
-					$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-				}),
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.PROCESSING,
-						claimedBy: 'test-instance-id',
-					}),
-				}),
-				expect.any(Object),
-			);
-		});
-
-		it('should return null when no jobs available', async () => {
-			vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValueOnce(null);
-
-			const job = await processor.acquireJob('test-job');
-
-			expect(job).toBeNull();
-		});
-	});
-
-	describe('processJob', () => {
-		it('should execute handler and emit job:start and job:complete events', async () => {
-			const job = JobFactoryHelpers.processing();
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.processJob(job, worker);
-
-			expect(handler).toHaveBeenCalledWith(job);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:start' }));
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:complete' }));
-		});
-
-		it('should call failJob and emit job:fail on handler error', async () => {
-			const job = JobFactoryHelpers.processing({ failCount: 0 });
-			const handler = vi.fn().mockRejectedValue(new Error('Handler failed'));
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.processJob(job, worker);
-
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
-			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
-			expect((failEvent?.payload as { error: Error })?.error?.message).toBe('Handler failed');
-		});
-
-		it('should coerce non-Error thrown values to Error objects', async () => {
-			const job = JobFactoryHelpers.processing({ failCount: 0 });
-			// Handler throws a non-Error value (string)
-			const handler = vi.fn().mockRejectedValue('String error message');
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.processJob(job, worker);
-
-			// Should have converted the string to an Error
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
-			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
-			const payload = failEvent?.payload as { error: Error };
-			expect(payload.error).toBeInstanceOf(Error);
-			expect(payload.error.message).toBe('String error message');
-		});
-
-		it('should track job in activeJobs during processing and remove after', async () => {
-			const job = JobFactoryHelpers.processing();
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.processJob(job, worker);
-
-			// After processing, job should be removed from activeJobs
-			expect(worker.activeJobs.size).toBe(0);
-		});
-	});
-
-	describe('completeJob', () => {
-		it('should mark one-time job as completed', async () => {
-			const job = JobFactoryHelpers.processing();
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.completeJob(job);
-
-			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
-				{ _id: job._id },
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.COMPLETED,
-					}),
-				}),
-			);
-		});
-
-		it('should reschedule recurring job with next cron date', async () => {
-			const job = JobFactoryHelpers.processing({ repeatInterval: '0 * * * *' });
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.completeJob(job);
-
-			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
-				{ _id: job._id },
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.PENDING,
-						failCount: 0,
-					}),
-				}),
-			);
-		});
-	});
-
-	describe('completeJob - edge cases', () => {
-		it('should return early for non-persisted jobs (no _id)', async () => {
-			// Create a job without _id (not persisted)
-			const nonPersistedJob = {
-				name: 'test-job',
-				data: {},
-				status: JobStatus.PROCESSING,
-				nextRunAt: new Date(),
-				failCount: 0,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			} as unknown as Parameters<typeof processor.completeJob>[0];
-
-			await processor.completeJob(nonPersistedJob);
-
-			// Should not have tried to update the database
-			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('failJob - edge cases', () => {
-		it('should return early for non-persisted jobs (no _id)', async () => {
-			// Create a job without _id (not persisted)
-			const nonPersistedJob = {
-				name: 'test-job',
-				data: {},
-				status: JobStatus.PROCESSING,
-				nextRunAt: new Date(),
-				failCount: 0,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			} as unknown as Parameters<typeof processor.failJob>[0];
-
-			const error = new Error('Test error');
-			await processor.failJob(nonPersistedJob, error);
-
-			// Should not have tried to update the database
-			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('failJob', () => {
-		it('should schedule retry with increased failCount when retries remain', async () => {
-			const job = JobFactoryHelpers.processing({ failCount: 0 });
-			const error = new Error('Test failure');
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.failJob(job, error);
-
-			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
-				{ _id: job._id },
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.PENDING,
-						failCount: 1,
-						failReason: 'Test failure',
-					}),
-				}),
-			);
-		});
-
-		it('should mark job as failed when max retries exceeded', async () => {
-			const job = JobFactoryHelpers.processing({ failCount: 2 }); // maxRetries = 3 in DEFAULT_TEST_OPTIONS
-			const error = new Error('Final failure');
-
-			vi.mocked(ctx.mockCollection.updateOne).mockResolvedValue({
-				modifiedCount: 1,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 1,
-			});
-
-			await processor.failJob(job, error);
-
-			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
-				{ _id: job._id },
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.FAILED,
-						failCount: 3,
-						failReason: 'Final failure',
-					}),
-				}),
-			);
-		});
-	});
-
-	describe('updateHeartbeats', () => {
-		it('should not update if scheduler is not running', async () => {
-			vi.mocked(ctx.isRunning).mockReturnValue(false);
-
-			await processor.updateHeartbeats();
-
-			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
-		});
-
-		it('should update lastHeartbeat for all jobs claimed by this instance', async () => {
-			vi.mocked(ctx.mockCollection.updateMany).mockResolvedValue({
-				modifiedCount: 2,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 2,
-			});
-
-			await processor.updateHeartbeats();
-
-			expect(ctx.mockCollection.updateMany).toHaveBeenCalledWith(
-				{
-					claimedBy: 'test-instance-id',
-					status: JobStatus.PROCESSING,
-				},
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						lastHeartbeat: expect.any(Date),
-					}),
-				}),
-			);
-		});
-	});
-});
-````
-
-## File: packages/core/tests/unit/services/job-query.test.ts
-````typescript
-/**
- * Unit tests for JobQueryService.
- *
- * Tests job querying: getJob, getJobs, getJobsWithCursor.
- * Uses mock SchedulerContext to test query building in isolation.
- */
-
-import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { createMockContext, JobFactory } from '@tests/factories';
-import { JobStatus } from '@/jobs';
-import { JobQueryService } from '@/scheduler/services/job-query.js';
-import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
-
-describe('JobQueryService', () => {
-	let ctx: ReturnType<typeof createMockContext>;
-	let queryService: JobQueryService;
-
-	beforeEach(() => {
-		ctx = createMockContext();
-		queryService = new JobQueryService(ctx);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
-	describe('getJob', () => {
-		it('should return job by ObjectId', async () => {
-			const jobId = new ObjectId();
-			const job = JobFactory.build({ _id: jobId, name: 'found-job' });
-
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(job);
-
-			const result = await queryService.getJob(jobId);
-
-			expect(result).not.toBeNull();
-			expect(result?.name).toBe('found-job');
-			expect(ctx.mockCollection.findOne).toHaveBeenCalledWith({ _id: jobId });
-		});
-
-		it('should return null for non-existent job', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockResolvedValueOnce(null);
-
-			const result = await queryService.getJob(new ObjectId());
-
-			expect(result).toBeNull();
-		});
-
-		it('should throw ConnectionError when database operation fails', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockRejectedValueOnce(
-				new Error('Database connection lost'),
-			);
-
-			const error = await queryService.getJob(new ObjectId()).catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to get job/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			vi.mocked(ctx.mockCollection.findOne).mockRejectedValueOnce('String error');
-
-			await expect(queryService.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
-		});
-	});
-
-	describe('getJobs', () => {
-		it('should return all jobs when no filter provided', async () => {
-			const jobs = JobFactory.buildList(2);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await queryService.getJobs();
-
-			expect(result).toHaveLength(2);
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({});
-		});
-
-		it('should apply status filter', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ status: JobStatus.PENDING });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ status: JobStatus.PENDING });
-		});
-
-		it('should apply name filter', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ name: 'specific-job' });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ name: 'specific-job' });
-		});
-
-		it('should apply limit and skip', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ limit: 10, skip: 20 });
-
-			expect(mockCursor.limit).toHaveBeenCalledWith(10);
-			expect(mockCursor.skip).toHaveBeenCalledWith(20);
-		});
-
-		it('should apply status array filter with $in operator', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ status: [JobStatus.PENDING, JobStatus.PROCESSING] });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
-				status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-			});
-		});
-
-		it('should throw ConnectionError when database operation fails', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database timeout')),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const error = await queryService.getJobs().catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to query jobs/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await expect(queryService.getJobs()).rejects.toThrow(ConnectionError);
-		});
-	});
-
-	describe('getJobsWithCursor', () => {
-		it('should return page with jobs and cursor info', async () => {
-			const jobs = JobFactory.buildList(2);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-			expect(page.jobs).toHaveLength(2);
-			expect(page.hasNextPage).toBe(false);
-			expect(page.hasPreviousPage).toBe(false);
-		});
-
-		it('should throw InvalidCursorError for malformed cursor', async () => {
-			await expect(
-				queryService.getJobsWithCursor({ cursor: 'invalid-base64-cursor' }),
-			).rejects.toThrow(InvalidCursorError);
-		});
-
-		it('should detect hasNextPage when more results exist', async () => {
-			// Return 11 jobs when limit is 10 (fetches limit + 1 to detect next page)
-			const jobs = JobFactory.buildList(11);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-			expect(page.jobs).toHaveLength(10); // Should trim to limit
-			expect(page.hasNextPage).toBe(true);
-		});
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
 	});
 
 	describe('getQueueStats', () => {
-		it('should return queue statistics with status counts', async () => {
-			const mockAggregateResult = [
-				{
-					statusCounts: [
-						{ _id: 'pending', count: 5 },
-						{ _id: 'processing', count: 2 },
-						{ _id: 'completed', count: 10 },
-						{ _id: 'failed', count: 1 },
-						{ _id: 'cancelled', count: 0 },
-					],
-					avgDuration: [{ avgMs: 150.5 }],
-					total: [{ count: 18 }],
-				},
-			];
+		test('returns zero counts for empty queue', async () => {
+			const collectionName = uniqueCollectionName('stats_empty');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
 
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
-			};
-
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
-
-			expect(stats.pending).toBe(5);
-			expect(stats.processing).toBe(2);
-			expect(stats.completed).toBe(10);
-			expect(stats.failed).toBe(1);
-			expect(stats.cancelled).toBe(0);
-			expect(stats.total).toBe(18);
-			expect(stats.avgProcessingDurationMs).toBe(151); // Rounded from 150.5
-		});
-
-		it('should return empty stats when aggregation result is undefined', async () => {
-			// Edge case: aggregation returns empty array (no first result)
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
+			const stats = await monque.getQueueStats();
 
 			expect(stats.pending).toBe(0);
 			expect(stats.processing).toBe(0);
@@ -12568,89 +8849,470 @@ describe('JobQueryService', () => {
 			expect(stats.avgProcessingDurationMs).toBeUndefined();
 		});
 
-		it('should apply name filter when provided', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						statusCounts: [],
-						avgDuration: [],
-						total: [{ count: 0 }],
-					},
-				]),
-			};
+		test('returns correct counts for mixed status jobs', async () => {
+			const collectionName = uniqueCollectionName('stats_mixed');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
+			// Create jobs in various statuses
+			await monque.enqueue(queueName, { task: 1 }); // pending
+			await monque.enqueue(queueName, { task: 2 }); // pending
+			await monque.enqueue(queueName, { task: 3 }); // pending
 
-			await queryService.getQueueStats({ name: 'email-job' });
+			// Insert jobs directly into DB for other statuses
+			const processingDoc = JobFactoryHelpers.processing({
+				name: queueName,
+				data: { task: 4 },
+			});
+			await db.collection(collectionName).insertOne(processingDoc);
 
-			expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(
-				expect.arrayContaining([expect.objectContaining({ $match: { name: 'email-job' } })]),
-				{ maxTimeMS: 30000 },
-			);
-		});
-
-		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(new Error('operation exceeded time limit')),
-			};
-
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
-		});
-
-		it('should throw ConnectionError when aggregation fails with other errors', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
-			};
-
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const error = await queryService.getQueueStats().catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to get queue stats/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
-			};
-
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueStats()).rejects.toThrow(ConnectionError);
-		});
-
-		it('should handle empty avgDuration result gracefully', async () => {
-			const mockAggregateResult = [
-				{
-					statusCounts: [{ _id: 'pending', count: 3 }],
-					avgDuration: [], // No completed jobs with lockedAt
-					total: [{ count: 3 }],
-				},
+			const completedDocs = [
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 5 } }),
+				JobFactoryHelpers.completed({ name: queueName, data: { task: 6 } }),
 			];
+			await db.collection(collectionName).insertMany(completedDocs);
 
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
-			};
+			const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 7 } });
+			await db.collection(collectionName).insertOne(failedDoc);
 
-			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
+			const cancelledDocs = [
+				JobFactoryHelpers.cancelled({ name: queueName, data: { task: 8 } }),
+				JobFactoryHelpers.cancelled({ name: queueName, data: { task: 9 } }),
+			];
+			await db.collection(collectionName).insertMany(cancelledDocs);
 
-			const stats = await queryService.getQueueStats();
+			const stats = await monque.getQueueStats();
 
 			expect(stats.pending).toBe(3);
-			expect(stats.total).toBe(3);
-			expect(stats.avgProcessingDurationMs).toBeUndefined();
+			expect(stats.processing).toBe(1);
+			expect(stats.completed).toBe(2);
+			expect(stats.failed).toBe(1);
+			expect(stats.cancelled).toBe(2);
+			expect(stats.total).toBe(9);
+		});
+
+		test('filters statistics by job name', async () => {
+			const collectionName = uniqueCollectionName('stats_filter_name');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create jobs with different names
+			await monque.enqueue('email-queue', { task: 1 });
+			await monque.enqueue('email-queue', { task: 2 });
+			await monque.enqueue('sms-queue', { task: 3 });
+
+			const completedEmail = JobFactoryHelpers.completed({
+				name: 'email-queue',
+				data: { task: 4 },
+			});
+			await db.collection(collectionName).insertOne(completedEmail);
+
+			const completedSms = JobFactoryHelpers.completed({
+				name: 'sms-queue',
+				data: { task: 5 },
+			});
+			await db.collection(collectionName).insertOne(completedSms);
+
+			// Get stats for email-queue only
+			const emailStats = await monque.getQueueStats({ name: 'email-queue' });
+
+			expect(emailStats.pending).toBe(2);
+			expect(emailStats.completed).toBe(1);
+			expect(emailStats.total).toBe(3);
+
+			// Get stats for sms-queue
+			const smsStats = await monque.getQueueStats({ name: 'sms-queue' });
+
+			expect(smsStats.pending).toBe(1);
+			expect(smsStats.completed).toBe(1);
+			expect(smsStats.total).toBe(2);
+		});
+
+		test('calculates average processing duration correctly', async () => {
+			const collectionName = uniqueCollectionName('stats_avg_duration');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create completed jobs with known processing durations
+			const now = new Date();
+
+			// Job 1: 1000ms processing time
+			const job1 = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 1 },
+				lockedAt: new Date(now.getTime() - 1000),
+				updatedAt: now,
+			});
+
+			// Job 2: 2000ms processing time
+			const job2 = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 2 },
+				lockedAt: new Date(now.getTime() - 2000),
+				updatedAt: now,
+			});
+
+			// Job 3: 3000ms processing time
+			const job3 = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 3 },
+				lockedAt: new Date(now.getTime() - 3000),
+				updatedAt: now,
+			});
+
+			await db.collection(collectionName).insertMany([job1, job2, job3]);
+
+			const stats = await monque.getQueueStats();
+
+			// Average of 1000, 2000, 3000 = 2000ms
+			expect(stats.avgProcessingDurationMs).toBeDefined();
+			expect(stats.avgProcessingDurationMs).toBe(2000);
+			expect(stats.completed).toBe(3);
+		});
+
+		test('handles jobs without lockedAt in avg calculation', async () => {
+			const collectionName = uniqueCollectionName('stats_no_locked');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const now = new Date();
+
+			// Job with lockedAt
+			const jobWithLockedAt = JobFactoryHelpers.completed({
+				name: queueName,
+				data: { task: 1 },
+				lockedAt: new Date(now.getTime() - 1000),
+				updatedAt: now,
+			});
+
+			// Job without lockedAt (simulates edge case)
+			const jobWithoutLockedAt = {
+				...JobFactoryHelpers.completed({
+					name: queueName,
+					data: { task: 2 },
+				}),
+				lockedAt: null,
+			};
+
+			await db.collection(collectionName).insertMany([jobWithLockedAt, jobWithoutLockedAt]);
+
+			const stats = await monque.getQueueStats();
+
+			// Should only count the job with lockedAt in average
+			expect(stats.completed).toBe(2);
+			// avgProcessingDurationMs should be based only on jobs with lockedAt
+			expect(stats.avgProcessingDurationMs).toBeDefined();
+			expect(stats.avgProcessingDurationMs).toBe(1000);
+		});
+
+		test('handles large dataset efficiently', async () => {
+			const collectionName = uniqueCollectionName('stats_large');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			// Create 100K jobs - 20K per status using buildList
+			const countPerStatus = 20_000;
+
+			// Build job arrays using factory buildList
+			const pendingJobs = JobFactory.buildList(countPerStatus, {
+				name: queueName,
+				status: JobStatus.PENDING,
+			});
+			const processingJobs = JobFactory.buildList(countPerStatus, {
+				name: queueName,
+				status: JobStatus.PROCESSING,
+				lockedAt: new Date(),
+				claimedBy: 'test-instance',
+			});
+			const completedJobs = JobFactory.buildList(countPerStatus, {
+				name: queueName,
+				status: JobStatus.COMPLETED,
+			});
+			const failedJobs = JobFactory.buildList(countPerStatus, {
+				name: queueName,
+				status: JobStatus.FAILED,
+				failCount: 10,
+			});
+			const cancelledJobs = JobFactory.buildList(countPerStatus, {
+				name: queueName,
+				status: JobStatus.CANCELLED,
+			});
+
+			// Insert in batches of 10K to avoid memory issues
+			const batchSize = 10_000;
+			const allJobs = [
+				...pendingJobs,
+				...processingJobs,
+				...completedJobs,
+				...failedJobs,
+				...cancelledJobs,
+			];
+
+			for (let i = 0; i < allJobs.length; i += batchSize) {
+				const batch = allJobs.slice(i, i + batchSize);
+				await db.collection(collectionName).insertMany(batch);
+			}
+
+			// Verify job count
+			const count = await db.collection(collectionName).countDocuments();
+			expect(count).toBe(100_000);
+
+			// Measure performance
+			const startTime = Date.now();
+			const stats = await monque.getQueueStats();
+			const duration = Date.now() - startTime;
+
+			// Must complete within 5 seconds per spec
+			expect(duration).toBeLessThan(5000);
+
+			// Verify correct distribution (20K each)
+			expect(stats.pending).toBe(20_000);
+			expect(stats.processing).toBe(20_000);
+			expect(stats.completed).toBe(20_000);
+			expect(stats.failed).toBe(20_000);
+			expect(stats.cancelled).toBe(20_000);
+			expect(stats.total).toBe(100_000);
+		}, 30000); // 30 second timeout for the test itself
+	});
+});
+````
+
+## File: packages/core/tests/unit/services/job-scheduler.test.ts
+````typescript
+/**
+ * Unit tests for JobScheduler service.
+ *
+ * Tests job enqueueing, immediate dispatch (now), and cron scheduling.
+ * Uses mock SchedulerContext to test in isolation from MongoDB.
+ */
+
+import { ObjectId } from 'mongodb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockContext, JobFactory } from '@tests/factories';
+import { JobStatus } from '@/jobs';
+import { JobScheduler } from '@/scheduler/services/job-scheduler.js';
+import type { SchedulerContext } from '@/scheduler/services/types.js';
+import { ConnectionError, InvalidCronError } from '@/shared';
+
+describe('JobScheduler', () => {
+	let ctx: SchedulerContext & {
+		mockCollection: ReturnType<typeof createMockContext>['mockCollection'];
+	};
+	let scheduler: JobScheduler;
+
+	beforeEach(() => {
+		ctx = createMockContext();
+		scheduler = new JobScheduler(ctx);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	describe('enqueue', () => {
+		it('should insert a new job with correct properties', async () => {
+			const insertedId = new ObjectId();
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			const job = await scheduler.enqueue('test-job', { value: 42 });
+
+			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
+			const insertedDoc = insertCall?.[0];
+
+			expect(insertedDoc).toMatchObject({
+				name: 'test-job',
+				data: { value: 42 },
+				status: JobStatus.PENDING,
+				failCount: 0,
+			});
+			expect(job._id).toEqual(insertedId);
+			expect(job.name).toBe('test-job');
+			expect(job.data).toEqual({ value: 42 });
+		});
+
+		it('should use runAt option for delayed execution', async () => {
+			const insertedId = new ObjectId();
+			const runAt = new Date(Date.now() + 3600000); // 1 hour later
+
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			const job = await scheduler.enqueue('delayed-job', { x: 1 }, { runAt });
+
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
+			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
+
+			expect(insertedDoc['nextRunAt']).toEqual(runAt);
+			expect(job.nextRunAt).toEqual(runAt);
+		});
+
+		it('should use findOneAndUpdate for jobs with uniqueKey (deduplication)', async () => {
+			const existingJob = JobFactory.build({
+				name: 'unique-job',
+				uniqueKey: 'user-123',
+			});
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
+
+			const job = await scheduler.enqueue('unique-job', { id: 123 }, { uniqueKey: 'user-123' });
+
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
+			expect(job._id).toEqual(existingJob._id);
+		});
+
+		it('should throw ConnectionError when insertOne fails', async () => {
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockRejectedValueOnce(
+				new Error('Database connection lost'),
+			);
+
+			await expect(scheduler.enqueue('failing-job', {})).rejects.toThrow(ConnectionError);
+			await expect(scheduler.enqueue('failing-job', {})).rejects.toThrow(/Failed to enqueue job/);
+		});
+
+		it('should throw ConnectionError when findOneAndUpdate returns null', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			await expect(scheduler.enqueue('unique-job', {}, { uniqueKey: 'key' })).rejects.toThrow(
+				ConnectionError,
+			);
+		});
+
+		it('should set uniqueKey on job document when provided', async () => {
+			const insertedId = new ObjectId();
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			// Without uniqueKey (uses regular insert)
+			await scheduler.enqueue('job', { x: 1 });
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
+			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
+
+			expect(insertedDoc['uniqueKey']).toBeUndefined();
+		});
+	});
+
+	describe('now', () => {
+		it('should enqueue job with immediate runAt', async () => {
+			const insertedId = new ObjectId();
+			const beforeCall = new Date();
+
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			const job = await scheduler.now('immediate-job', { urgent: true });
+			const afterCall = new Date();
+
+			expect(job._id).toEqual(insertedId);
+			expect(job.nextRunAt.getTime()).toBeGreaterThanOrEqual(beforeCall.getTime());
+			expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(afterCall.getTime());
+		});
+	});
+
+	describe('schedule', () => {
+		it('should create job with repeatInterval and calculated nextRunAt', async () => {
+			const insertedId = new ObjectId();
+
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			const job = await scheduler.schedule('0 * * * *', 'hourly-job', { report: 'sales' });
+
+			expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
+			const insertCall = (ctx.mockCollection.insertOne as ReturnType<typeof vi.fn>).mock.calls[0];
+			const insertedDoc = insertCall?.[0] as Record<string, unknown>;
+
+			expect(insertedDoc['repeatInterval']).toBe('0 * * * *');
+			expect(insertedDoc['name']).toBe('hourly-job');
+			expect(job.repeatInterval).toBe('0 * * * *');
+		});
+
+		it('should throw InvalidCronError for invalid cron expression', async () => {
+			await expect(scheduler.schedule('invalid cron', 'bad-job', {})).rejects.toThrow(
+				InvalidCronError,
+			);
+		});
+
+		it('should use findOneAndUpdate for scheduled jobs with uniqueKey', async () => {
+			const existingJob = JobFactory.build({
+				name: 'recurring-job',
+				uniqueKey: 'daily-report',
+				repeatInterval: '0 0 * * *',
+			});
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
+
+			const job = await scheduler.schedule(
+				'0 0 * * *',
+				'recurring-job',
+				{ type: 'daily' },
+				{ uniqueKey: 'daily-report' },
+			);
+
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+			expect(job._id).toEqual(existingJob._id);
+		});
+
+		it('should support predefined cron expressions like @daily', async () => {
+			const insertedId = new ObjectId();
+
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+				insertedId,
+				acknowledged: true,
+			});
+
+			const job = await scheduler.schedule('@daily', 'daily-job', {});
+
+			expect(job.repeatInterval).toBe('@daily');
+		});
+
+		it('should throw ConnectionError when schedule with uniqueKey returns null', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			await expect(
+				scheduler.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),
+			).rejects.toThrow(ConnectionError);
+			await expect(
+				scheduler.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),
+			).rejects.toThrow(/findOneAndUpdate returned no document/);
+		});
+
+		it('should throw ConnectionError when insertOne fails', async () => {
+			vi.spyOn(ctx.mockCollection, 'insertOne').mockRejectedValueOnce(
+				new Error('Database write failed'),
+			);
+
+			await expect(scheduler.schedule('0 * * * *', 'failing-schedule', {})).rejects.toThrow(
+				ConnectionError,
+			);
+			await expect(scheduler.schedule('0 * * * *', 'failing-schedule', {})).rejects.toThrow(
+				/Failed to schedule job/,
+			);
+		});
+
+		it('should preserve InvalidCronError without wrapping in ConnectionError', async () => {
+			// InvalidCronError extends MonqueError, so it should be re-thrown as-is
+			await expect(scheduler.schedule('invalid cron', 'bad-job', {})).rejects.toThrow(
+				InvalidCronError,
+			);
 		});
 	});
 });
@@ -13109,455 +9771,1469 @@ describe('errors', () => {
 });
 ````
 
-## File: packages/core/tests/unit/guards.test.ts
+## File: packages/core/tests/unit/monque.test.ts
 ````typescript
-import { ObjectId } from 'mongodb';
-import { beforeEach, describe, expect, it } from 'vitest';
+/**
+ * Unit tests for Monque class.
+ *
+ * Tests top-level initialization, state management, and orchestration.
+ * Internal services are tested in their respective unit tests.
+ */
 
-import { JobFactory, JobFactoryHelpers } from '@tests/factories';
-import {
-	isCancelledJob,
-	isCompletedJob,
-	isFailedJob,
-	isPendingJob,
-	isPersistedJob,
-	isProcessingJob,
-	isRecurringJob,
-	isValidJobStatus,
-	type Job,
-	JobStatus,
-} from '@/jobs';
+import type { Collection, Db, ObjectId } from 'mongodb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('job guards', () => {
-	let baseJob: Job;
+import { Monque } from '@/scheduler/monque.js';
+import { ConnectionError, WorkerRegistrationError } from '@/shared';
+
+// Mock the services to avoid instantiating them
+vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@/scheduler/services/index.js')>();
+	return {
+		...actual,
+		JobScheduler: vi.fn(),
+		JobManager: vi.fn(),
+		JobQueryService: vi.fn(),
+		JobProcessor: vi.fn(),
+		ChangeStreamHandler: vi.fn(),
+	};
+});
+
+describe('Monque', () => {
+	let mockDb: Db;
+	let mockCollection: Collection;
+	let monque: Monque;
 
 	beforeEach(() => {
-		baseJob = JobFactory.build();
+		mockCollection = {
+			createIndex: vi.fn().mockResolvedValue('index_name'),
+			updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
+			deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
+		} as unknown as Collection;
+
+		mockDb = {
+			collection: vi.fn().mockReturnValue(mockCollection),
+		} as unknown as Db;
+
+		monque = new Monque(mockDb);
 	});
 
-	describe('isPersistedJob', () => {
-		it('should return true for job with _id', () => {
-			const persistedJob = JobFactory.build();
-			expect(isPersistedJob(persistedJob)).toBe(true);
-		});
-
-		it('should return false for job without _id', () => {
-			const jobWithoutId = { ...baseJob };
-			delete jobWithoutId._id;
-			expect(isPersistedJob(jobWithoutId)).toBe(false);
-		});
-
-		it('should return false when _id is undefined', () => {
-			const jobWithoutId = { ...baseJob };
-			delete jobWithoutId._id;
-			expect(isPersistedJob(jobWithoutId)).toBe(false);
-		});
-
-		it('should return false when _id is null', () => {
-			const jobWithNullId = {
-				...baseJob,
-				_id: null as unknown as ObjectId,
-			};
-
-			expect(isPersistedJob(jobWithNullId)).toBe(false);
-		});
-
-		it('should narrow type to PersistedJob when true', () => {
-			const job = JobFactory.build();
-
-			if (isPersistedJob(job)) {
-				// This should compile without errors - TypeScript knows _id exists
-				const id: ObjectId = job._id;
-				expect(id).toBeInstanceOf(ObjectId);
-			} else {
-				throw new Error('Should have been persisted');
-			}
-		});
+	afterEach(() => {
+		vi.clearAllMocks();
 	});
 
-	describe('isValidJobStatus', () => {
-		it('should return true for PENDING status', () => {
-			expect(isValidJobStatus(JobStatus.PENDING)).toBe(true);
-			expect(isValidJobStatus('pending')).toBe(true);
+	describe('initialize', () => {
+		it('should initialize successfully', async () => {
+			await monque.initialize();
+
+			expect(mockDb.collection).toHaveBeenCalledWith('monque_jobs');
+			expect(mockCollection.createIndex).toHaveBeenCalled();
 		});
 
-		it('should return true for PROCESSING status', () => {
-			expect(isValidJobStatus(JobStatus.PROCESSING)).toBe(true);
-			expect(isValidJobStatus('processing')).toBe(true);
+		it('should be idempotent (multiple calls do nothing)', async () => {
+			await monque.initialize();
+			// Clear mocks to verify second call triggers nothing
+			vi.clearAllMocks();
+
+			await monque.initialize();
+
+			expect(mockDb.collection).not.toHaveBeenCalled();
+			expect(mockCollection.createIndex).not.toHaveBeenCalled();
 		});
 
-		it('should return true for COMPLETED status', () => {
-			expect(isValidJobStatus(JobStatus.COMPLETED)).toBe(true);
-			expect(isValidJobStatus('completed')).toBe(true);
-		});
-
-		it('should return true for FAILED status', () => {
-			expect(isValidJobStatus(JobStatus.FAILED)).toBe(true);
-			expect(isValidJobStatus('failed')).toBe(true);
-		});
-
-		it('should return false for invalid string', () => {
-			expect(isValidJobStatus('invalid')).toBe(false);
-			expect(isValidJobStatus('PENDING')).toBe(false);
-			expect(isValidJobStatus('')).toBe(false);
-		});
-
-		it('should return false for non-string types', () => {
-			expect(isValidJobStatus(123)).toBe(false);
-			expect(isValidJobStatus(null)).toBe(false);
-			expect(isValidJobStatus(undefined)).toBe(false);
-			expect(isValidJobStatus({})).toBe(false);
-			expect(isValidJobStatus([])).toBe(false);
-			expect(isValidJobStatus(true)).toBe(false);
-		});
-	});
-
-	describe('isPendingJob', () => {
-		it('should return true when status is PENDING', () => {
-			const job = JobFactory.build({ status: JobStatus.PENDING });
-			expect(isPendingJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not PENDING', () => {
-			expect(isPendingJob(JobFactoryHelpers.processing())).toBe(false);
-			expect(isPendingJob(JobFactoryHelpers.completed())).toBe(false);
-			expect(isPendingJob(JobFactoryHelpers.failed())).toBe(false);
-		});
-	});
-
-	describe('isProcessingJob', () => {
-		it('should return true when status is PROCESSING', () => {
-			const job = JobFactoryHelpers.processing();
-			expect(isProcessingJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not PROCESSING', () => {
-			expect(isProcessingJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
-			expect(isProcessingJob(JobFactoryHelpers.completed())).toBe(false);
-			expect(isProcessingJob(JobFactoryHelpers.failed())).toBe(false);
-		});
-	});
-
-	describe('isCompletedJob', () => {
-		it('should return true when status is COMPLETED', () => {
-			const job = JobFactoryHelpers.completed();
-			expect(isCompletedJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not COMPLETED', () => {
-			expect(isCompletedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
-			expect(isCompletedJob(JobFactoryHelpers.processing())).toBe(false);
-			expect(isCompletedJob(JobFactoryHelpers.failed())).toBe(false);
-		});
-	});
-
-	describe('isFailedJob', () => {
-		it('should return true when status is FAILED', () => {
-			const job = JobFactoryHelpers.failed();
-			expect(isFailedJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not FAILED', () => {
-			expect(isFailedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
-			expect(isFailedJob(JobFactoryHelpers.processing())).toBe(false);
-			expect(isFailedJob(JobFactoryHelpers.completed())).toBe(false);
-		});
-	});
-
-	describe('isCancelledJob', () => {
-		it('should return true when status is CANCELLED', () => {
-			const job = JobFactoryHelpers.cancelled();
-			expect(isCancelledJob(job)).toBe(true);
-		});
-
-		it('should return false when status is not CANCELLED', () => {
-			expect(isCancelledJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
-			expect(isCancelledJob(JobFactoryHelpers.processing())).toBe(false);
-			expect(isCancelledJob(JobFactoryHelpers.completed())).toBe(false);
-			expect(isCancelledJob(JobFactoryHelpers.failed())).toBe(false);
-		});
-	});
-
-	describe('isRecurringJob', () => {
-		it('should return true when repeatInterval is defined', () => {
-			const job = JobFactory.build({ repeatInterval: '0 * * * *' });
-			expect(isRecurringJob(job)).toBe(true);
-		});
-
-		it('should return false when repeatInterval is undefined', () => {
-			const job = JobFactory.build();
-			expect(isRecurringJob(job)).toBe(false);
-		});
-
-		it('should return false when repeatInterval is null', () => {
-			const job = JobFactory.build({ repeatInterval: null as unknown as string });
-			expect(isRecurringJob(job)).toBe(false);
-		});
-
-		it('should return true for empty string repeatInterval', () => {
-			// Even empty string means it's defined as recurring (though invalid cron)
-			const job = JobFactory.build({ repeatInterval: '' });
-			expect(isRecurringJob(job)).toBe(true);
-		});
-	});
-
-	describe('combined usage', () => {
-		it('should allow combining multiple guards', () => {
-			const job = JobFactoryHelpers.failed({
-				repeatInterval: '0 0 * * *',
+		it('should throw ConnectionError if initialization fails', async () => {
+			vi.spyOn(mockDb, 'collection').mockImplementationOnce(() => {
+				throw new Error('DB Connection Failed');
 			});
 
-			expect(isPersistedJob(job)).toBe(true);
-			expect(isFailedJob(job)).toBe(true);
-			expect(isRecurringJob(job)).toBe(true);
-			expect(isPendingJob(job)).toBe(false);
+			await expect(monque.initialize()).rejects.toThrow(ConnectionError);
+		});
+	});
+
+	describe('uninitialized state', () => {
+		it('should throw ConnectionError when calling public methods before initialize', async () => {
+			// Enqueue
+			await expect(monque.enqueue('test', {})).rejects.toThrow(ConnectionError);
+			// Schedule
+			await expect(monque.schedule('* * * * *', 'test', {})).rejects.toThrow(ConnectionError);
+			// Get
+			await expect(monque.getJob(new Object() as unknown as ObjectId)).rejects.toThrow(
+				ConnectionError,
+			);
+			// Management
+			await expect(monque.cancelJob('123')).rejects.toThrow(ConnectionError);
 		});
 
-		it('should work in filter operations', () => {
-			const jobs: Job[] = [
-				JobFactory.build({ status: JobStatus.PENDING }),
-				JobFactoryHelpers.processing(),
-				JobFactoryHelpers.completed(),
-				JobFactoryHelpers.failed(),
-			];
+		it('should throw ConnectionError when accessing internal services', () => {
+			// Accessing private getters via casting to unknown (simulating internal usage or bugs)
+			expect(() => (monque as unknown as Record<string, unknown>)['scheduler']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['manager']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['query']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['processor']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['changeStreamHandler']).toThrow(
+				ConnectionError,
+			);
+		});
+	});
 
-			const pendingJobs = jobs.filter(isPendingJob);
-			const failedJobs = jobs.filter(isFailedJob);
+	describe('worker registration', () => {
+		it('should register a worker', () => {
+			const handler = async () => {};
+			monque.register('test-job', handler);
 
-			expect(pendingJobs).toHaveLength(1);
-			expect(failedJobs).toHaveLength(1);
+			// We can't easily inspect private map, but we verify it doesn't throw
+		});
+
+		it('should throw WorkerRegistrationError on duplicate registration', () => {
+			const handler = async () => {};
+			monque.register('test-job', handler);
+
+			expect(() => {
+				monque.register('test-job', handler);
+			}).toThrow(WorkerRegistrationError);
+		});
+
+		it('should allow replacing worker with { replace: true }', () => {
+			const handler1 = async () => {};
+			const handler2 = async () => {};
+
+			monque.register('test-job', handler1);
+
+			expect(() => {
+				monque.register('test-job', handler2, { replace: true });
+			}).not.toThrow();
+		});
+	});
+
+	describe('delegation', () => {
+		beforeEach(async () => {
+			await monque.initialize();
+		});
+
+		it('should delegate enqueue to scheduler', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+
+			await monque.enqueue('test', { foo: 'bar' });
+			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' }, {});
+		});
+
+		it('should delegate now to scheduler', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { now: spy };
+
+			await monque.now('test', { foo: 'bar' });
+			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' });
+		});
+
+		it('should delegate schedule to scheduler', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { schedule: spy };
+
+			await monque.schedule('* * * * *', 'test', {});
+			expect(spy).toHaveBeenCalledWith('* * * * *', 'test', {}, {});
+		});
+
+		it('should delegate getJob to query service', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_query'] = { getJob: spy };
+
+			const id = new Object();
+			await monque.getJob(id as unknown as ObjectId);
+			expect(spy).toHaveBeenCalledWith(id);
+		});
+
+		it('should delegate getJobs to query service', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_query'] = { getJobs: spy };
+
+			await monque.getJobs({ limit: 10 });
+			expect(spy).toHaveBeenCalledWith({ limit: 10 });
+		});
+
+		it('should delegate getQueueStats to query service', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_query'] = { getQueueStats: spy };
+
+			await monque.getQueueStats();
+			expect(spy).toHaveBeenCalledWith(undefined);
+		});
+
+		it('should delegate cancelJob to manager', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_manager'] = { cancelJob: spy };
+
+			await monque.cancelJob('123');
+			expect(spy).toHaveBeenCalledWith('123');
+		});
+
+		it('should delegate retryJob to manager', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_manager'] = { retryJob: spy };
+
+			await monque.retryJob('123');
+			expect(spy).toHaveBeenCalledWith('123');
+		});
+
+		it('should delegate deleteJob to manager', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_manager'] = { deleteJob: spy };
+
+			await monque.deleteJob('123');
+			expect(spy).toHaveBeenCalledWith('123');
 		});
 	});
 });
 ````
 
-## File: packages/core/src/shared/errors.ts
+## File: packages/core/src/events/types.ts
 ````typescript
 import type { Job } from '@/jobs';
 
 /**
- * Base error class for all Monque-related errors.
+ * Event payloads for Monque lifecycle events.
+ */
+export interface MonqueEventMap {
+	/**
+	 * Emitted when a job begins processing.
+	 */
+	'job:start': Job;
+
+	/**
+	 * Emitted when a job finishes successfully.
+	 */
+	'job:complete': {
+		job: Job;
+		/** Processing duration in milliseconds */
+		duration: number;
+	};
+
+	/**
+	 * Emitted when a job fails (may retry).
+	 */
+	'job:fail': {
+		job: Job;
+		error: Error;
+		/** Whether the job will be retried */
+		willRetry: boolean;
+	};
+
+	/**
+	 * Emitted for unexpected errors during processing.
+	 */
+	'job:error': {
+		error: Error;
+		job?: Job;
+	};
+
+	/**
+	 * Emitted when stale jobs are recovered on startup.
+	 */
+	'stale:recovered': {
+		count: number;
+	};
+
+	/**
+	 * Emitted when the change stream is successfully connected.
+	 */
+	'changestream:connected': undefined;
+
+	/**
+	 * Emitted when a change stream error occurs.
+	 */
+	'changestream:error': {
+		error: Error;
+	};
+
+	/**
+	 * Emitted when the change stream is closed.
+	 */
+	'changestream:closed': undefined;
+
+	/**
+	 * Emitted when falling back from change streams to polling-only mode.
+	 */
+	'changestream:fallback': {
+		reason: string;
+	};
+	/**
+	 * Emitted when a job is manually cancelled.
+	 */
+	'job:cancelled': {
+		job: Job;
+	};
+
+	/**
+	 * Emitted when a job is manually retried.
+	 */
+	'job:retried': {
+		job: Job;
+		previousStatus: 'failed' | 'cancelled';
+	};
+
+	/**
+	 * Emitted when a job is manually deleted.
+	 */
+	'job:deleted': {
+		jobId: string;
+	};
+
+	/**
+	 * Emitted when multiple jobs are cancelled in bulk.
+	 */
+	'jobs:cancelled': {
+		jobIds: string[];
+		count: number;
+	};
+
+	/**
+	 * Emitted when multiple jobs are retried in bulk.
+	 */
+	'jobs:retried': {
+		jobIds: string[];
+		count: number;
+	};
+
+	/**
+	 * Emitted when multiple jobs are deleted in bulk.
+	 */
+	'jobs:deleted': {
+		count: number;
+	};
+}
+````
+
+## File: packages/core/src/jobs/guards.ts
+````typescript
+import type { Job, JobStatusType, PersistedJob } from './types.js';
+import { JobStatus } from './types.js';
+
+/**
+ * Type guard to check if a job has been persisted to MongoDB.
  *
- * @example
+ * A persisted job is guaranteed to have an `_id` field, which means it has been
+ * successfully inserted into the database. This is useful when you need to ensure
+ * a job can be updated or referenced by its ID.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job has a valid `_id`, narrowing the type to `PersistedJob<T>`
+ *
+ * @example Basic usage
  * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof MonqueError) {
- *     console.error('Monque error:', error.message);
+ * const job: Job<EmailData> = await monque.enqueue('send-email', emailData);
+ *
+ * if (isPersistedJob(job)) {
+ *   // TypeScript knows job._id exists
+ *   console.log(`Job ID: ${job._id.toString()}`);
+ * }
+ * ```
+ *
+ * @example In a conditional
+ * ```typescript
+ * function logJobId(job: Job) {
+ *   if (!isPersistedJob(job)) {
+ *     console.log('Job not yet persisted');
+ *     return;
  *   }
+ *   // TypeScript knows job is PersistedJob here
+ *   console.log(`Processing job ${job._id.toString()}`);
  * }
  * ```
  */
-export class MonqueError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'MonqueError';
-		// Maintains proper stack trace for where our error was thrown (only available on V8)
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, MonqueError);
-		}
-	}
+export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
+	return '_id' in job && job._id !== undefined && job._id !== null;
 }
 
 /**
- * Error thrown when an invalid cron expression is provided.
+ * Type guard to check if a value is a valid job status.
  *
- * @example
+ * Validates that a value is one of the five valid job statuses: `'pending'`,
+ * `'processing'`, `'completed'`, `'failed'`, or `'cancelled'`. Useful for runtime validation
+ * of user input or external data.
+ *
+ * @param value - The value to check
+ * @returns `true` if the value is a valid `JobStatusType`, narrowing the type
+ *
+ * @example Validating user input
  * ```typescript
- * try {
- *   await monque.schedule('invalid cron', 'job', data);
- * } catch (error) {
- *   if (error instanceof InvalidCronError) {
- *     console.error('Invalid expression:', error.expression);
+ * function filterByStatus(status: string) {
+ *   if (!isValidJobStatus(status)) {
+ *     throw new Error(`Invalid status: ${status}`);
  *   }
+ *   // TypeScript knows status is JobStatusType here
+ *   return db.jobs.find({ status });
+ * }
+ * ```
+ *
+ * @example Runtime validation
+ * ```typescript
+ * const statusFromApi = externalData.status;
+ *
+ * if (isValidJobStatus(statusFromApi)) {
+ *   job.status = statusFromApi;
+ * } else {
+ *   job.status = JobStatus.PENDING;
  * }
  * ```
  */
-export class InvalidCronError extends MonqueError {
-	constructor(
-		public readonly expression: string,
-		message: string,
-	) {
-		super(message);
-		this.name = 'InvalidCronError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidCronError);
-		}
-	}
+export function isValidJobStatus(value: unknown): value is JobStatusType {
+	return typeof value === 'string' && Object.values(JobStatus).includes(value as JobStatusType);
 }
 
 /**
- * Error thrown when there's a database connection issue.
+ * Type guard to check if a job is in pending status.
  *
- * @example
+ * A convenience helper for checking if a job is waiting to be processed.
+ * Equivalent to `job.status === JobStatus.PENDING` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'pending'`
+ *
+ * @example Filter pending jobs
  * ```typescript
- * try {
- *   await monque.enqueue('job', data);
- * } catch (error) {
- *   if (error instanceof ConnectionError) {
- *     console.error('Database connection lost');
- *   }
+ * const jobs = await monque.getJobs();
+ * const pendingJobs = jobs.filter(isPendingJob);
+ * console.log(`${pendingJobs.length} jobs waiting to be processed`);
+ * ```
+ *
+ * @example Conditional logic
+ * ```typescript
+ * if (isPendingJob(job)) {
+ *   await monque.now(job.name, job.data);
  * }
  * ```
  */
-export class ConnectionError extends MonqueError {
-	constructor(message: string, options?: { cause?: Error }) {
-		super(message);
-		this.name = 'ConnectionError';
-		if (options?.cause) {
-			this.cause = options.cause;
-		}
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ConnectionError);
-		}
-	}
+export function isPendingJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.PENDING;
 }
 
 /**
- * Error thrown when graceful shutdown times out.
- * Includes information about jobs that were still in progress.
+ * Type guard to check if a job is currently being processed.
  *
- * @example
+ * A convenience helper for checking if a job is actively running.
+ * Equivalent to `job.status === JobStatus.PROCESSING` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'processing'`
+ *
+ * @example Monitor active jobs
  * ```typescript
- * try {
- *   await monque.stop();
- * } catch (error) {
- *   if (error instanceof ShutdownTimeoutError) {
- *     console.error('Incomplete jobs:', error.incompleteJobs.length);
- *   }
- * }
+ * const jobs = await monque.getJobs();
+ * const activeJobs = jobs.filter(isProcessingJob);
+ * console.log(`${activeJobs.length} jobs currently running`);
  * ```
  */
-export class ShutdownTimeoutError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly incompleteJobs: Job[],
-	) {
-		super(message);
-		this.name = 'ShutdownTimeoutError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ShutdownTimeoutError);
-		}
-	}
+export function isProcessingJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.PROCESSING;
 }
 
 /**
- * Error thrown when attempting to register a worker for a job name
- * that already has a registered worker, without explicitly allowing replacement.
+ * Type guard to check if a job has completed successfully.
  *
- * @example
+ * A convenience helper for checking if a job finished without errors.
+ * Equivalent to `job.status === JobStatus.COMPLETED` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'completed'`
+ *
+ * @example Find completed jobs
  * ```typescript
- * try {
- *   monque.register('send-email', handler1);
- *   monque.register('send-email', handler2); // throws
- * } catch (error) {
- *   if (error instanceof WorkerRegistrationError) {
- *     console.error('Worker already registered for:', error.jobName);
- *   }
- * }
- *
- * // To intentionally replace a worker:
- * monque.register('send-email', handler2, { replace: true });
+ * const jobs = await monque.getJobs();
+ * const completedJobs = jobs.filter(isCompletedJob);
+ * console.log(`${completedJobs.length} jobs completed successfully`);
  * ```
  */
-export class WorkerRegistrationError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly jobName: string,
-	) {
-		super(message);
-		this.name = 'WorkerRegistrationError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, WorkerRegistrationError);
-		}
-	}
+export function isCompletedJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.COMPLETED;
 }
 
 /**
- * Error thrown when a state transition is invalid.
+ * Type guard to check if a job has permanently failed.
  *
- * @example
+ * A convenience helper for checking if a job exhausted all retries.
+ * Equivalent to `job.status === JobStatus.FAILED` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'failed'`
+ *
+ * @example Handle failed jobs
  * ```typescript
- * try {
- *   await monque.cancelJob(jobId);
- * } catch (error) {
- *   if (error instanceof JobStateError) {
- *      console.error(`Cannot cancel job in state: ${error.currentStatus}`);
- *   }
+ * const jobs = await monque.getJobs();
+ * const failedJobs = jobs.filter(isFailedJob);
+ *
+ * for (const job of failedJobs) {
+ *   console.error(`Job ${job.name} failed: ${job.failReason}`);
+ *   await sendAlert(job);
  * }
  * ```
  */
-export class JobStateError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly jobId: string,
-		public readonly currentStatus: string,
-		public readonly attemptedAction: 'cancel' | 'retry' | 'delete' | 'reschedule',
-	) {
-		super(message);
-		this.name = 'JobStateError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, JobStateError);
-		}
-	}
+export function isFailedJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.FAILED;
 }
 
 /**
- * Error thrown when a pagination cursor is invalid or malformed.
+ * Type guard to check if a job has been manually cancelled.
  *
- * @example
+ * A convenience helper for checking if a job was cancelled by an operator.
+ * Equivalent to `job.status === JobStatus.CANCELLED` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'cancelled'`
+ *
+ * @example Filter cancelled jobs
  * ```typescript
- * try {
- *   await monque.listJobs({ cursor: 'invalid-cursor' });
- * } catch (error) {
- *   if (error instanceof InvalidCursorError) {
- *     console.error('Invalid cursor provided');
- *   }
- * }
+ * const jobs = await monque.getJobs();
+ * const cancelledJobs = jobs.filter(isCancelledJob);
+ * console.log(`${cancelledJobs.length} jobs were cancelled`);
  * ```
  */
-export class InvalidCursorError extends MonqueError {
-	constructor(message: string) {
-		super(message);
-		this.name = 'InvalidCursorError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidCursorError);
-		}
-	}
+export function isCancelledJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.CANCELLED;
 }
 
 /**
- * Error thrown when a statistics aggregation times out.
+ * Type guard to check if a job is a recurring scheduled job.
  *
- * @example
+ * A recurring job has a `repeatInterval` cron expression and will be automatically
+ * rescheduled after each successful completion.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job has a `repeatInterval` defined
+ *
+ * @example Filter recurring jobs
  * ```typescript
- * try {
- *   const stats = await monque.getQueueStats();
- * } catch (error) {
- *   if (error instanceof AggregationTimeoutError) {
- *     console.error('Stats took too long to calculate');
- *   }
+ * const jobs = await monque.getJobs();
+ * const recurringJobs = jobs.filter(isRecurringJob);
+ * console.log(`${recurringJobs.length} jobs will repeat automatically`);
+ * ```
+ *
+ * @example Conditional cleanup
+ * ```typescript
+ * if (!isRecurringJob(job) && isCompletedJob(job)) {
+ *   // Safe to delete one-time completed jobs
+ *   await deleteJob(job._id);
  * }
  * ```
  */
-export class AggregationTimeoutError extends MonqueError {
-	constructor(message: string = 'Statistics aggregation exceeded 30 second timeout') {
-		super(message);
-		this.name = 'AggregationTimeoutError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, AggregationTimeoutError);
+export function isRecurringJob<T>(job: Job<T>): boolean {
+	return job.repeatInterval !== undefined && job.repeatInterval !== null;
+}
+````
+
+## File: packages/core/src/jobs/types.ts
+````typescript
+import type { ObjectId } from 'mongodb';
+
+/**
+ * Represents the lifecycle states of a job in the queue.
+ *
+ * Jobs transition through states as follows:
+ * - PENDING → PROCESSING (when picked up by a worker)
+ * - PROCESSING → COMPLETED (on success)
+ * - PROCESSING → PENDING (on failure, if retries remain)
+ * - PROCESSING → FAILED (on failure, after max retries exhausted)
+ * - PENDING → CANCELLED (on manual cancellation)
+ *
+ * @example
+ * ```typescript
+ * if (job.status === JobStatus.PENDING) {
+ *   // job is waiting to be picked up
+ * }
+ * ```
+ */
+export const JobStatus = {
+	/** Job is waiting to be picked up by a worker */
+	PENDING: 'pending',
+	/** Job is currently being executed by a worker */
+	PROCESSING: 'processing',
+	/** Job completed successfully */
+	COMPLETED: 'completed',
+	/** Job permanently failed after exhausting all retry attempts */
+	FAILED: 'failed',
+	/** Job was manually cancelled */
+	CANCELLED: 'cancelled',
+} as const;
+
+/**
+ * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'`
+ */
+export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
+
+/**
+ * Represents a job in the Monque queue.
+ *
+ * @template T - The type of the job's data payload
+ *
+ * @example
+ * ```typescript
+ * interface EmailJobData {
+ *   to: string;
+ *   subject: string;
+ *   template: string;
+ * }
+ *
+ * const job: Job<EmailJobData> = {
+ *   name: 'send-email',
+ *   data: { to: 'user@example.com', subject: 'Welcome!', template: 'welcome' },
+ *   status: JobStatus.PENDING,
+ *   nextRunAt: new Date(),
+ *   failCount: 0,
+ *   createdAt: new Date(),
+ *   updatedAt: new Date(),
+ * };
+ * ```
+ */
+export interface Job<T = unknown> {
+	/** MongoDB document identifier */
+	_id?: ObjectId;
+
+	/** Job type identifier, matches worker registration */
+	name: string;
+
+	/** Job payload - must be JSON-serializable */
+	data: T;
+
+	/** Current lifecycle state */
+	status: JobStatusType;
+
+	/** When the job should be processed */
+	nextRunAt: Date;
+
+	/** Timestamp when job was locked for processing */
+	lockedAt?: Date | null;
+
+	/**
+	 * Unique identifier of the scheduler instance that claimed this job.
+	 * Used for atomic claim pattern - ensures only one instance processes each job.
+	 * Set when a job is claimed, cleared when job completes or fails.
+	 */
+	claimedBy?: string | null;
+
+	/**
+	 * Timestamp of the last heartbeat update for this job.
+	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
+	 * Updated periodically while job is being processed.
+	 */
+	lastHeartbeat?: Date | null;
+
+	/**
+	 * Heartbeat interval in milliseconds for this job.
+	 * Stored on the job to allow recovery logic to use the correct timeout.
+	 */
+	heartbeatInterval?: number;
+
+	/** Number of failed attempts */
+	failCount: number;
+
+	/** Last failure error message */
+	failReason?: string;
+
+	/** Cron expression for recurring jobs */
+	repeatInterval?: string;
+
+	/** Deduplication key to prevent duplicate jobs */
+	uniqueKey?: string;
+
+	/** Job creation timestamp */
+	createdAt: Date;
+
+	/** Last modification timestamp */
+	updatedAt: Date;
+}
+
+/**
+ * A job that has been persisted to MongoDB and has a guaranteed `_id`.
+ * This is returned by `enqueue()`, `now()`, and `schedule()` methods.
+ *
+ * @template T - The type of the job's data payload
+ */
+export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
+
+/**
+ * Options for enqueueing a job.
+ *
+ * @example
+ * ```typescript
+ * await monque.enqueue('sync-user', { userId: '123' }, {
+ *   uniqueKey: 'sync-user-123',
+ *   runAt: new Date(Date.now() + 5000), // Run in 5 seconds
+ * });
+ * ```
+ */
+export interface EnqueueOptions {
+	/**
+	 * Deduplication key. If a job with this key is already pending or processing,
+	 * the enqueue operation will not create a duplicate.
+	 */
+	uniqueKey?: string;
+
+	/**
+	 * When the job should be processed. Defaults to immediately (new Date()).
+	 */
+	runAt?: Date;
+}
+
+/**
+ * Options for scheduling a recurring job.
+ *
+ * @example
+ * ```typescript
+ * await monque. schedule('0 * * * *', 'hourly-cleanup', { dir: '/tmp' }, {
+ *   uniqueKey: 'hourly-cleanup-job',
+ * });
+ * ```
+ */
+export interface ScheduleOptions {
+	/**
+	 * Deduplication key. If a job with this key is already pending or processing,
+	 * the schedule operation will not create a duplicate.
+	 */
+	uniqueKey?: string;
+}
+
+/**
+ * Filter options for querying jobs.
+ *
+ * Use with `monque.getJobs()` to filter jobs by name, status, or limit results.
+ *
+ * @example
+ * ```typescript
+ * // Get all pending email jobs
+ * const pendingEmails = await monque.getJobs({
+ *   name: 'send-email',
+ *   status: JobStatus.PENDING,
+ * });
+ *
+ * // Get all failed or completed jobs (paginated)
+ * const finishedJobs = await monque.getJobs({
+ *   status: [JobStatus.COMPLETED, JobStatus.FAILED],
+ *   limit: 50,
+ *   skip: 100,
+ * });
+ * ```
+ */
+export interface GetJobsFilter {
+	/** Filter by job type name */
+	name?: string;
+
+	/** Filter by status (single or multiple) */
+	status?: JobStatusType | JobStatusType[];
+
+	/** Maximum number of jobs to return (default: 100) */
+	limit?: number;
+
+	/** Number of jobs to skip for pagination */
+	skip?: number;
+}
+
+/**
+ * Handler function signature for processing jobs.
+ *
+ * @template T - The type of the job's data payload
+ *
+ * @example
+ * ```typescript
+ * const emailHandler: JobHandler<EmailJobData> = async (job) => {
+ *   await sendEmail(job.data.to, job.data.subject);
+ * };
+ * ```
+ */
+export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
+
+/**
+ * Valid cursor directions for pagination.
+ *
+ * @example
+ * ```typescript
+ * const direction = CursorDirection.FORWARD;
+ * ```
+ */
+export const CursorDirection = {
+	FORWARD: 'forward',
+	BACKWARD: 'backward',
+} as const;
+
+export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
+
+/**
+ * Selector options for bulk operations.
+ *
+ * Used to select multiple jobs for operations like cancellation or deletion.
+ *
+ * @example
+ * ```typescript
+ * // Select all failed jobs older than 7 days
+ * const selector: JobSelector = {
+ *   status: JobStatus.FAILED,
+ *   olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+ * };
+ * ```
+ */
+export interface JobSelector {
+	name?: string;
+	status?: JobStatusType | JobStatusType[];
+	olderThan?: Date;
+	newerThan?: Date;
+}
+
+/**
+ * Options for cursor-based pagination.
+ *
+ * @example
+ * ```typescript
+ * const options: CursorOptions = {
+ *   limit: 50,
+ *   direction: CursorDirection.FORWARD,
+ *   filter: { status: JobStatus.PENDING },
+ * };
+ * ```
+ */
+export interface CursorOptions {
+	cursor?: string;
+	limit?: number;
+	direction?: CursorDirectionType;
+	filter?: Pick<GetJobsFilter, 'name' | 'status'>;
+}
+
+/**
+ * Response structure for cursor-based pagination.
+ *
+ * @template T - The type of the job's data payload
+ *
+ * @example
+ * ```typescript
+ * const page = await monque.listJobs({ limit: 10 });
+ * console.log(`Got ${page.jobs.length} jobs`);
+ *
+ * if (page.hasNextPage) {
+ *   console.log(`Next cursor: ${page.cursor}`);
+ * }
+ * ```
+ */
+export interface CursorPage<T = unknown> {
+	jobs: PersistedJob<T>[];
+	cursor: string | null;
+	hasNextPage: boolean;
+	hasPreviousPage: boolean;
+}
+
+/**
+ * Aggregated statistics for the job queue.
+ *
+ * @example
+ * ```typescript
+ * const stats = await monque.getQueueStats();
+ * console.log(`Total jobs: ${stats.total}`);
+ * console.log(`Pending: ${stats.pending}`);
+ * console.log(`Processing: ${stats.processing}`);
+ * console.log(`Failed: ${stats.failed}`);
+ * console.log(`Start to finish avg: ${stats.avgProcessingDurationMs}ms`);
+ * ```
+ */
+export interface QueueStats {
+	pending: number;
+	processing: number;
+	completed: number;
+	failed: number;
+	cancelled: number;
+	total: number;
+	avgProcessingDurationMs?: number;
+}
+
+/**
+ * Result of a bulk operation.
+ *
+ * @example
+ * ```typescript
+ * const result = await monque.cancelJobs(selector);
+ * console.log(`Cancelled ${result.count} jobs`);
+ *
+ * if (result.errors.length > 0) {
+ *   console.warn('Some jobs could not be cancelled:', result.errors);
+ * }
+ * ```
+ */
+export interface BulkOperationResult {
+	count: number;
+	errors: Array<{ jobId: string; error: string }>;
+}
+````
+
+## File: packages/core/src/scheduler/services/job-query.ts
+````typescript
+import type { Document, Filter, ObjectId, WithId } from 'mongodb';
+
+import {
+	CursorDirection,
+	type CursorDirectionType,
+	type CursorOptions,
+	type CursorPage,
+	type GetJobsFilter,
+	type JobSelector,
+	JobStatus,
+	type PersistedJob,
+	type QueueStats,
+} from '@/jobs';
+import { AggregationTimeoutError, ConnectionError } from '@/shared';
+
+import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
+import type { SchedulerContext } from './types.js';
+
+/**
+ * Internal service for job query operations.
+ *
+ * Provides read-only access to jobs with filtering and cursor-based pagination.
+ * All queries use efficient index-backed access patterns.
+ *
+ * @internal Not part of public API - use Monque class methods instead.
+ */
+export class JobQueryService {
+	constructor(private readonly ctx: SchedulerContext) {}
+
+	/**
+	 * Get a single job by its MongoDB ObjectId.
+	 *
+	 * Useful for retrieving job details when you have a job ID from events,
+	 * logs, or stored references.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param id - The job's ObjectId
+	 * @returns Promise resolving to the job if found, null otherwise
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Look up job from event
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   // Later, retrieve the job to check its status
+	 *   const currentJob = await monque.getJob(job._id);
+	 *   console.log(`Job status: ${currentJob?.status}`);
+	 * });
+	 * ```
+	 *
+	 * @example Admin endpoint
+	 * ```typescript
+	 * app.get('/jobs/:id', async (req, res) => {
+	 *   const job = await monque.getJob(new ObjectId(req.params.id));
+	 *   if (!job) {
+	 *     return res.status(404).json({ error: 'Job not found' });
+	 *   }
+	 *   res.json(job);
+	 * });
+	 * ```
+	 */
+	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
+		try {
+			const doc = await this.ctx.collection.findOne({ _id: id });
+			if (!doc) {
+				return null;
+			}
+			return this.ctx.documentToPersistedJob<T>(doc as WithId<Document>);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
+			throw new ConnectionError(
+				`Failed to get job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Query jobs from the queue with optional filters.
+	 *
+	 * Provides read-only access to job data for monitoring, debugging, and
+	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param filter - Optional filter criteria
+	 * @returns Promise resolving to array of matching jobs
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Get all pending jobs
+	 * ```typescript
+	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
+	 * console.log(`${pendingJobs.length} jobs waiting`);
+	 * ```
+	 *
+	 * @example Get failed email jobs
+	 * ```typescript
+	 * const failedEmails = await monque.getJobs({
+	 *   name: 'send-email',
+	 *   status: JobStatus.FAILED,
+	 * });
+	 * for (const job of failedEmails) {
+	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
+	 * }
+	 * ```
+	 *
+	 * @example Paginated job listing
+	 * ```typescript
+	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
+	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
+	 * ```
+	 *
+	 * @example Use with type guards from @monque/core
+	 * ```typescript
+	 * import { isPendingJob, isRecurringJob } from '@monque/core';
+	 *
+	 * const jobs = await monque.getJobs();
+	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
+	 * ```
+	 */
+	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
+		const query: Document = {};
+
+		if (filter.name !== undefined) {
+			query['name'] = filter.name;
+		}
+
+		if (filter.status !== undefined) {
+			if (Array.isArray(filter.status)) {
+				query['status'] = { $in: filter.status };
+			} else {
+				query['status'] = filter.status;
+			}
+		}
+
+		const limit = filter.limit ?? 100;
+		const skip = filter.skip ?? 0;
+
+		try {
+			const cursor = this.ctx.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
+
+			const docs = await cursor.toArray();
+			return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
+			throw new ConnectionError(
+				`Failed to query jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+	}
+
+	/**
+	 * Get a paginated list of jobs using opaque cursors.
+	 *
+	 * Provides stable pagination for large job lists. Supports forward and backward
+	 * navigation, filtering, and efficient database access via index-based cursor queries.
+	 *
+	 * @template T - The job data payload type
+	 * @param options - Pagination options (cursor, limit, direction, filter)
+	 * @returns Page of jobs with next/prev cursors
+	 * @throws {InvalidCursorError} If the provided cursor is malformed
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example List pending jobs
+	 * ```typescript
+	 * const page = await monque.getJobsWithCursor({
+	 *   limit: 20,
+	 *   filter: { status: 'pending' }
+	 * });
+	 * const jobs = page.jobs;
+	 *
+	 * // Get next page
+	 * if (page.hasNextPage) {
+	 *   const page2 = await monque.getJobsWithCursor({
+	 *     cursor: page.cursor,
+	 *     limit: 20
+	 *   });
+	 * }
+	 * ```
+	 */
+	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+		const limit = options.limit ?? 50;
+		// Default to forward if not specified.
+		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
+		let anchorId: ObjectId | null = null;
+
+		if (options.cursor) {
+			const decoded = decodeCursor(options.cursor);
+			anchorId = decoded.id;
+		}
+
+		// Build base query from filters
+		const query: Filter<Document> = options.filter ? buildSelectorQuery(options.filter) : {};
+
+		// Add cursor condition to query
+		const sortDir = direction === CursorDirection.FORWARD ? 1 : -1;
+
+		if (anchorId) {
+			if (direction === CursorDirection.FORWARD) {
+				query._id = { ...query._id, $gt: anchorId };
+			} else {
+				query._id = { ...query._id, $lt: anchorId };
+			}
+		}
+
+		// Fetch limit + 1 to detect hasNext/hasPrev
+		const fetchLimit = limit + 1;
+
+		// Sort: Always deterministic.
+		let docs: WithId<Document>[];
+		try {
+			docs = await this.ctx.collection
+				.find(query)
+				.sort({ _id: sortDir })
+				.limit(fetchLimit)
+				.toArray();
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : 'Unknown error during getJobsWithCursor';
+			throw new ConnectionError(
+				`Failed to query jobs with cursor: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
+
+		let hasMore = false;
+		if (docs.length > limit) {
+			hasMore = true;
+			docs.pop(); // Remove the extra item
+		}
+
+		if (direction === CursorDirection.BACKWARD) {
+			docs.reverse();
+		}
+
+		const jobs = docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc as WithId<Document>));
+
+		let nextCursor: string | null = null;
+
+		if (jobs.length > 0) {
+			const lastJob = jobs[jobs.length - 1];
+			// Check for existence to satisfy strict null checks/noUncheckedIndexedAccess
+			if (lastJob) {
+				nextCursor = encodeCursor(lastJob._id, direction);
+			}
+		}
+
+		let hasNextPage = false;
+		let hasPreviousPage = false;
+
+		// Determine availability of next/prev pages
+		if (direction === CursorDirection.FORWARD) {
+			hasNextPage = hasMore;
+			hasPreviousPage = !!anchorId;
+		} else {
+			hasNextPage = !!anchorId;
+			hasPreviousPage = hasMore;
+		}
+
+		return {
+			jobs,
+			cursor: nextCursor,
+			hasNextPage,
+			hasPreviousPage,
+		};
+	}
+
+	/**
+	 * Get aggregate statistics for the job queue.
+	 *
+	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
+	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * @param filter - Optional filter to scope statistics by job name
+	 * @returns Promise resolving to queue statistics
+	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
+	 * @throws {ConnectionError} If database operation fails
+	 *
+	 * @example Get overall queue statistics
+	 * ```typescript
+	 * const stats = await monque.getQueueStats();
+	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
+	 * ```
+	 *
+	 * @example Get statistics for a specific job type
+	 * ```typescript
+	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
+	 * console.log(`${emailStats.total} email jobs in queue`);
+	 * ```
+	 */
+	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		const matchStage: Document = {};
+
+		if (filter?.name) {
+			matchStage['name'] = filter.name;
+		}
+
+		const pipeline: Document[] = [
+			// Optional match stage for filtering by name
+			...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+			// Facet to calculate counts and avg processing duration in parallel
+			{
+				$facet: {
+					// Count by status
+					statusCounts: [
+						{
+							$group: {
+								_id: '$status',
+								count: { $sum: 1 },
+							},
+						},
+					],
+					// Calculate average processing duration for completed jobs
+					avgDuration: [
+						{
+							$match: {
+								status: JobStatus.COMPLETED,
+								lockedAt: { $ne: null },
+							},
+						},
+						{
+							$group: {
+								_id: null,
+								avgMs: {
+									$avg: {
+										$subtract: ['$updatedAt', '$lockedAt'],
+									},
+								},
+							},
+						},
+					],
+					// Total count
+					total: [{ $count: 'count' }],
+				},
+			},
+		];
+
+		try {
+			const results = await this.ctx.collection.aggregate(pipeline, { maxTimeMS: 30000 }).toArray();
+
+			const result = results[0];
+
+			// Initialize with zeros
+			const stats: QueueStats = {
+				pending: 0,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 0,
+			};
+
+			if (!result) {
+				return stats;
+			}
+
+			// Map status counts to stats
+			const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
+			for (const entry of statusCounts) {
+				const status = entry._id;
+				const count = entry.count;
+
+				switch (status) {
+					case JobStatus.PENDING:
+						stats.pending = count;
+						break;
+					case JobStatus.PROCESSING:
+						stats.processing = count;
+						break;
+					case JobStatus.COMPLETED:
+						stats.completed = count;
+						break;
+					case JobStatus.FAILED:
+						stats.failed = count;
+						break;
+					case JobStatus.CANCELLED:
+						stats.cancelled = count;
+						break;
+				}
+			}
+
+			// Extract total
+			const totalResult = result['total'] as Array<{ count: number }>;
+			if (totalResult.length > 0 && totalResult[0]) {
+				stats.total = totalResult[0].count;
+			}
+
+			// Extract average processing duration
+			const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
+			if (avgDurationResult.length > 0 && avgDurationResult[0]) {
+				const avgMs = avgDurationResult[0].avgMs;
+				if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
+					stats.avgProcessingDurationMs = Math.round(avgMs);
+				}
+			}
+
+			return stats;
+		} catch (error) {
+			// Check for timeout error
+			if (error instanceof Error && error.message.includes('exceeded time limit')) {
+				throw new AggregationTimeoutError();
+			}
+
+			const message = error instanceof Error ? error.message : 'Unknown error during getQueueStats';
+			throw new ConnectionError(
+				`Failed to get queue stats: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
 	}
 }
+````
+
+## File: packages/core/src/scheduler/helpers.ts
+````typescript
+import { type Document, type Filter, ObjectId } from 'mongodb';
+
+import { CursorDirection, type CursorDirectionType, type JobSelector } from '@/jobs';
+import { InvalidCursorError } from '@/shared';
+
+/**
+ * Build a MongoDB query filter from a JobSelector.
+ *
+ * Translates the high-level `JobSelector` interface into a MongoDB `Filter<Document>`.
+ * Handles array values for status (using `$in`) and date range filtering.
+ *
+ * @param filter - The user-provided job selector
+ * @returns A standard MongoDB filter object
+ */
+export function buildSelectorQuery(filter: JobSelector): Filter<Document> {
+	const query: Filter<Document> = {};
+
+	if (filter.name) {
+		query['name'] = filter.name;
+	}
+
+	if (filter.status) {
+		if (Array.isArray(filter.status)) {
+			query['status'] = { $in: filter.status };
+		} else {
+			query['status'] = filter.status;
+		}
+	}
+
+	if (filter.olderThan || filter.newerThan) {
+		query['createdAt'] = {};
+		if (filter.olderThan) {
+			query['createdAt'].$lt = filter.olderThan;
+		}
+		if (filter.newerThan) {
+			query['createdAt'].$gt = filter.newerThan;
+		}
+	}
+
+	return query;
+}
+
+/**
+ * Encode an ObjectId and direction into an opaque cursor string.
+ *
+ * Format: `prefix` + `base64url(objectId)`
+ * Prefix: 'F' (forward) or 'B' (backward)
+ *
+ * @param id - The job ID to use as the cursor anchor (exclusive)
+ * @param direction - 'forward' or 'backward'
+ * @returns Base64url-encoded cursor string
+ */
+export function encodeCursor(id: ObjectId, direction: CursorDirectionType): string {
+	const prefix = direction === 'forward' ? 'F' : 'B';
+	const buffer = Buffer.from(id.toHexString(), 'hex');
+
+	return prefix + buffer.toString('base64url');
+}
+
+/**
+ * Decode an opaque cursor string into an ObjectId and direction.
+ *
+ * Validates format and returns the components.
+ *
+ * @param cursor - The opaque cursor string
+ * @returns The decoded ID and direction
+ * @throws {InvalidCursorError} If the cursor format is invalid or ID is malformed
+ */
+export function decodeCursor(cursor: string): {
+	id: ObjectId;
+	direction: CursorDirectionType;
+} {
+	if (!cursor || cursor.length < 2) {
+		throw new InvalidCursorError('Cursor is empty or too short');
+	}
+
+	const prefix = cursor.charAt(0);
+	const payload = cursor.slice(1);
+
+	let direction: CursorDirectionType;
+
+	if (prefix === 'F') {
+		direction = CursorDirection.FORWARD;
+	} else if (prefix === 'B') {
+		direction = CursorDirection.BACKWARD;
+	} else {
+		throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
+	}
+
+	try {
+		const buffer = Buffer.from(payload, 'base64url');
+		const hex = buffer.toString('hex');
+		// standard ObjectID is 12 bytes = 24 hex chars
+		if (hex.length !== 24) {
+			throw new InvalidCursorError('Invalid length');
+		}
+
+		const id = new ObjectId(hex);
+
+		return { id, direction };
+	} catch (error) {
+		if (error instanceof InvalidCursorError) {
+			throw error;
+		}
+		throw new InvalidCursorError('Invalid cursor payload');
+	}
+}
+````
+
+## File: packages/core/src/scheduler/index.ts
+````typescript
+// helpers
+export { buildSelectorQuery } from './helpers.js';
+// Main class and options
+export { Monque } from './monque.js';
+export type { MonqueOptions } from './types.js';
+````
+
+## File: packages/core/src/shared/index.ts
+````typescript
+export {
+	AggregationTimeoutError,
+	ConnectionError,
+	InvalidCronError,
+	InvalidCursorError,
+	JobStateError,
+	MonqueError,
+	ShutdownTimeoutError,
+	WorkerRegistrationError,
+} from './errors.js';
+export {
+	calculateBackoff,
+	calculateBackoffDelay,
+	DEFAULT_BASE_INTERVAL,
+	DEFAULT_MAX_BACKOFF_DELAY,
+	getNextCronDate,
+	validateCronExpression,
+} from './utils';
+````
+
+## File: packages/core/tests/factories/index.ts
+````typescript
+export { createMockContext } from './context.js';
+export { JobFactory, JobFactoryHelpers } from './job.factory.js';
 ````
 
 ## File: packages/core/tests/factories/job.factory.ts
@@ -14576,6 +12252,2636 @@ describe('Monitor Job Lifecycle Events', () => {
 
 			// once() listener should have fired only once
 			expect(completeEvents).toHaveLength(1);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/services/change-stream-handler.test.ts
+````typescript
+/**
+ * Unit tests for ChangeStreamHandler service.
+ *
+ * Tests change stream setup, event handling, error recovery with exponential backoff,
+ * and graceful fallback to polling. This is where we properly test the internal
+ * change stream behavior that was previously accessed via private properties.
+ */
+
+import { EventEmitter } from 'node:events';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockContext } from '@tests/factories';
+import { JobStatus } from '@/jobs';
+import { ChangeStreamHandler } from '@/scheduler/services/change-stream-handler.js';
+
+describe('ChangeStreamHandler', () => {
+	let ctx: ReturnType<typeof createMockContext>;
+	let onPoll: () => Promise<void>;
+	let handler: ChangeStreamHandler;
+
+	beforeEach(() => {
+		ctx = createMockContext();
+		onPoll = vi.fn().mockResolvedValue(undefined) as unknown as () => Promise<void>;
+		handler = new ChangeStreamHandler(ctx, onPoll);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+		vi.useRealTimers();
+	});
+
+	describe('setup', () => {
+		it('should not setup if scheduler is not running', () => {
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			handler.setup();
+
+			expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+		});
+
+		it('should create change stream and emit connected event', () => {
+			const mockChangeStream = new EventEmitter();
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			expect(ctx.mockCollection.watch).toHaveBeenCalled();
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({ event: 'changestream:connected' }),
+			);
+		});
+
+		it('should emit fallback event when watch throws', () => {
+			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
+				throw new Error('Change streams not available');
+			});
+
+			handler.setup();
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({ event: 'changestream:fallback' }),
+			);
+		});
+	});
+
+	describe('handleEvent', () => {
+		it('should not trigger poll if scheduler is not running', () => {
+			vi.useFakeTimers();
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			const changeEvent = {
+				operationType: 'insert' as const,
+				fullDocument: { status: JobStatus.PENDING },
+			};
+
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(200);
+
+			expect(onPoll).not.toHaveBeenCalled();
+		});
+
+		it('should trigger poll on insert event (debounced)', async () => {
+			vi.useFakeTimers();
+			const changeEvent = {
+				operationType: 'insert' as const,
+				fullDocument: { status: JobStatus.PENDING },
+			};
+
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+
+			// Debounce should prevent immediate call
+			expect(onPoll).not.toHaveBeenCalled();
+
+			// After debounce window, poll should be called
+			vi.advanceTimersByTime(150);
+			expect(onPoll).toHaveBeenCalledOnce();
+		});
+
+		it('should trigger poll on update event with status change to pending', async () => {
+			vi.useFakeTimers();
+			const changeEvent = {
+				operationType: 'update' as const,
+				fullDocument: { status: JobStatus.PENDING },
+				updateDescription: { updatedFields: { status: JobStatus.PENDING } },
+			};
+
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(150);
+
+			expect(onPoll).toHaveBeenCalledOnce();
+		});
+
+		it('should debounce multiple rapid events', async () => {
+			vi.useFakeTimers();
+			const changeEvent = {
+				operationType: 'insert' as const,
+				fullDocument: { status: JobStatus.PENDING },
+			};
+
+			// Trigger multiple events rapidly
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(50);
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(50);
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(150);
+
+			// Should only call once due to debouncing
+			expect(onPoll).toHaveBeenCalledOnce();
+		});
+	});
+
+	describe('handleError', () => {
+		it('should return early if scheduler is not running', () => {
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			const error = new Error('Connection lost');
+			handler.handleError(error);
+
+			// Should not increment reconnect attempts or emit fallback
+			// (We can't directly assert on reconnectAttempts, but we verify
+			// no fallback event is emitted which would happen after max attempts)
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'changestream:fallback' }),
+			);
+		});
+
+		it('should emit error event', () => {
+			const mockChangeStream = new EventEmitter();
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			const error = new Error('Connection lost');
+			mockChangeStream.emit('error', error);
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'changestream:error',
+					payload: { error },
+				}),
+			);
+		});
+
+		it('should attempt reconnection with exponential backoff', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+			const initialWatchCalls = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
+				.length;
+
+			// Emit error
+			mockChangeStream.emit('error', new Error('First error'));
+
+			// Should schedule reconnect after 1s (2^0 * 1000)
+			vi.advanceTimersByTime(1000);
+
+			// closeSync may be called, then watch should be called again
+			expect(
+				(ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls.length,
+			).toBeGreaterThan(initialWatchCalls);
+		});
+
+		it('should emit fallback event after exhausting reconnection attempts', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			// Emit 4 errors (maxReconnectAttempts is 3)
+			for (let i = 0; i < 4; i++) {
+				mockChangeStream.emit('error', new Error(`Error ${i + 1}`));
+				// Advance past the exponential backoff
+				vi.advanceTimersByTime(10000);
+			}
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'changestream:fallback',
+					payload: expect.objectContaining({
+						reason: expect.stringContaining('Exhausted'),
+					}),
+				}),
+			);
+		});
+	});
+
+	describe('close', () => {
+		it('should close change stream and emit closed event', async () => {
+			const mockChangeStream = {
+				on: vi.fn(),
+				close: vi.fn().mockResolvedValue(undefined),
+			};
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+			await handler.close();
+
+			expect(mockChangeStream.close).toHaveBeenCalled();
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({ event: 'changestream:closed' }),
+			);
+		});
+
+		it('should clear debounce and reconnect timers', async () => {
+			vi.useFakeTimers();
+
+			const mockChangeStream = {
+				on: vi.fn(),
+				close: vi.fn().mockResolvedValue(undefined),
+			};
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+			await handler.close();
+
+			// Verify no pending timers would cause issues
+			vi.advanceTimersByTime(10000);
+
+			expect(onPoll).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('handleEvent - error handling', () => {
+		it('should emit job:error if poll throws', async () => {
+			vi.useFakeTimers();
+			const pollError = new Error('Poll failed');
+			const failingOnPoll = vi.fn().mockRejectedValue(pollError);
+
+			const handlerWithFailingPoll = new ChangeStreamHandler(ctx, failingOnPoll);
+
+			const changeEvent = {
+				operationType: 'insert' as const,
+				fullDocument: { status: JobStatus.PENDING },
+			};
+
+			handlerWithFailingPoll.handleEvent(
+				changeEvent as unknown as Parameters<typeof handler.handleEvent>[0],
+			);
+			vi.advanceTimersByTime(150);
+
+			// Wait for the promise rejection to be handled
+			await vi.runAllTimersAsync();
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'job:error',
+					payload: expect.objectContaining({ error: pollError }),
+				}),
+			);
+		});
+	});
+
+	describe('close with active timers', () => {
+		it('should clear reconnect timer during close', async () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			// Trigger an error to start reconnect timer
+			mockChangeStream.emit('error', new Error('Connection lost'));
+
+			// Close before reconnect timer fires
+			await handler.close();
+
+			// Advance past the reconnect delay to verify timer was cleared
+			vi.advanceTimersByTime(5000);
+
+			// Should not have tried to setup again
+			const watchCallsAfterClose = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
+				.length;
+			expect(watchCallsAfterClose).toBe(1); // Only the initial setup
+		});
+	});
+
+	describe('isActive', () => {
+		it('should return false before setup', () => {
+			expect(handler.isActive()).toBe(false);
+		});
+
+		it('should return true after successful setup', () => {
+			const mockChangeStream = new EventEmitter();
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			expect(handler.isActive()).toBe(true);
+		});
+
+		it('should return false after falling back to polling', () => {
+			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
+				throw new Error('Not available');
+			});
+
+			handler.setup();
+
+			expect(handler.isActive()).toBe(false);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/services/job-processor.test.ts
+````typescript
+/**
+ * Unit tests for JobProcessor service.
+ *
+ * Tests job polling, acquisition, processing, completion, and failure handling.
+ * Uses mock SchedulerContext to test processing logic in isolation.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
+import { JobStatus, type PersistedJob } from '@/jobs';
+import { JobProcessor } from '@/scheduler/services/job-processor.js';
+import type { WorkerRegistration } from '@/workers';
+
+describe('JobProcessor', () => {
+	let ctx: ReturnType<typeof createMockContext>;
+	let processor: JobProcessor;
+
+	beforeEach(() => {
+		ctx = createMockContext();
+		processor = new JobProcessor(ctx);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	describe('poll', () => {
+		it('should not poll if scheduler is not running', async () => {
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			await processor.poll();
+
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should poll for each registered worker with available capacity', async () => {
+			const testWorker: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 2,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+			ctx.workers.set('test-job', testWorker);
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
+
+			await processor.poll();
+
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
+		});
+
+		it('should skip workers at max concurrency', async () => {
+			const job = JobFactory.build();
+			const testWorker: WorkerRegistration = {
+				handler: vi.fn(),
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>([['job-1', job]]),
+			};
+			ctx.workers.set('test-job', testWorker);
+
+			await processor.poll();
+
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('acquireJob', () => {
+		it('should return null if scheduler is not running', async () => {
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			const job = await processor.acquireJob('test-job');
+
+			expect(job).toBeNull();
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should atomically claim a pending job', async () => {
+			const pendingJob = JobFactory.build({ name: 'test-job' });
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(pendingJob);
+
+			const job = await processor.acquireJob('test-job');
+
+			expect(job).not.toBeNull();
+			expect(job?.name).toBe('test-job');
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					name: 'test-job',
+					status: JobStatus.PENDING,
+					$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
+				}),
+				expect.objectContaining({
+					$set: expect.objectContaining({
+						status: JobStatus.PROCESSING,
+						claimedBy: 'test-instance-id',
+					}),
+				}),
+				expect.any(Object),
+			);
+		});
+
+		it('should return null when no jobs available', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const job = await processor.acquireJob('test-job');
+
+			expect(job).toBeNull();
+		});
+	});
+
+	describe('processJob', () => {
+		it('should execute handler and emit job:start and job:complete events', async () => {
+			const job = JobFactoryHelpers.processing();
+			const handler = vi.fn().mockResolvedValue(undefined);
+			const worker: WorkerRegistration = {
+				handler,
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.processJob(job, worker);
+
+			expect(handler).toHaveBeenCalledWith(job);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:start' }));
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:complete' }));
+		});
+
+		it('should call failJob and emit job:fail on handler error', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 0 });
+			const handler = vi.fn().mockRejectedValue(new Error('Handler failed'));
+			const worker: WorkerRegistration = {
+				handler,
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.processJob(job, worker);
+
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
+			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
+			expect((failEvent?.payload as { error: Error })?.error?.message).toBe('Handler failed');
+		});
+
+		it('should coerce non-Error thrown values to Error objects', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 0 });
+			const handler = vi.fn().mockRejectedValue('String error message');
+			const worker: WorkerRegistration = {
+				handler,
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.processJob(job, worker);
+
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:fail' }));
+			const failEvent = ctx.emitHistory.find((e) => e.event === 'job:fail');
+			const payload = failEvent?.payload as { error: Error };
+			expect(payload.error).toBeInstanceOf(Error);
+			expect(payload.error.message).toBe('String error message');
+		});
+
+		it('should track job in activeJobs during processing and remove after', async () => {
+			const job = JobFactoryHelpers.processing();
+			const handler = vi.fn().mockResolvedValue(undefined);
+			const worker: WorkerRegistration = {
+				handler,
+				concurrency: 1,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.processJob(job, worker);
+
+			expect(worker.activeJobs.size).toBe(0);
+		});
+	});
+
+	describe('completeJob', () => {
+		it('should mark one-time job as completed', async () => {
+			const job = JobFactoryHelpers.processing();
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.completeJob(job);
+
+			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
+				{ _id: job._id },
+				expect.objectContaining({
+					$set: expect.objectContaining({ status: JobStatus.COMPLETED }),
+				}),
+			);
+		});
+
+		it('should reschedule recurring job with next cron date', async () => {
+			const job = JobFactoryHelpers.processing({ repeatInterval: '0 * * * *' });
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.completeJob(job);
+
+			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
+				{ _id: job._id },
+				expect.objectContaining({
+					$set: expect.objectContaining({ status: JobStatus.PENDING, failCount: 0 }),
+				}),
+			);
+		});
+	});
+
+	describe('completeJob - edge cases', () => {
+		it('should return early for non-persisted jobs (no _id)', async () => {
+			const nonPersistedJob = {
+				name: 'test-job',
+				data: {},
+				status: JobStatus.PROCESSING,
+				nextRunAt: new Date(),
+				failCount: 0,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			} as unknown as Parameters<typeof processor.completeJob>[0];
+
+			await processor.completeJob(nonPersistedJob);
+
+			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('failJob - edge cases', () => {
+		it('should return early for non-persisted jobs (no _id)', async () => {
+			const nonPersistedJob = {
+				name: 'test-job',
+				data: {},
+				status: JobStatus.PROCESSING,
+				nextRunAt: new Date(),
+				failCount: 0,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			} as unknown as Parameters<typeof processor.failJob>[0];
+
+			const error = new Error('Test error');
+			await processor.failJob(nonPersistedJob, error);
+
+			expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('failJob', () => {
+		it('should schedule retry with increased failCount when retries remain', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 0 });
+			const error = new Error('Test failure');
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.failJob(job, error);
+
+			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
+				{ _id: job._id },
+				expect.objectContaining({
+					$set: expect.objectContaining({
+						status: JobStatus.PENDING,
+						failCount: 1,
+						failReason: 'Test failure',
+					}),
+				}),
+			);
+		});
+
+		it('should mark job as failed when max retries exceeded', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 2 });
+			const error = new Error('Final failure');
+
+			vi.spyOn(ctx.mockCollection, 'updateOne').mockResolvedValue({
+				modifiedCount: 1,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 1,
+			});
+
+			await processor.failJob(job, error);
+
+			expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
+				{ _id: job._id },
+				expect.objectContaining({
+					$set: expect.objectContaining({
+						status: JobStatus.FAILED,
+						failCount: 3,
+						failReason: 'Final failure',
+					}),
+				}),
+			);
+		});
+	});
+
+	describe('updateHeartbeats', () => {
+		it('should not update if scheduler is not running', async () => {
+			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
+
+			await processor.updateHeartbeats();
+
+			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
+		});
+
+		it('should update lastHeartbeat for all jobs claimed by this instance', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValue({
+				modifiedCount: 2,
+				acknowledged: true,
+				upsertedId: null,
+				upsertedCount: 0,
+				matchedCount: 2,
+			});
+
+			await processor.updateHeartbeats();
+
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledWith(
+				{ claimedBy: 'test-instance-id', status: JobStatus.PROCESSING },
+				expect.objectContaining({
+					$set: expect.objectContaining({ lastHeartbeat: expect.any(Date) }),
+				}),
+			);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/guards.test.ts
+````typescript
+import { ObjectId } from 'mongodb';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { JobFactory, JobFactoryHelpers } from '@tests/factories';
+import {
+	isCancelledJob,
+	isCompletedJob,
+	isFailedJob,
+	isPendingJob,
+	isPersistedJob,
+	isProcessingJob,
+	isRecurringJob,
+	isValidJobStatus,
+	type Job,
+	JobStatus,
+} from '@/jobs';
+
+describe('job guards', () => {
+	let baseJob: Job;
+
+	beforeEach(() => {
+		baseJob = JobFactory.build();
+	});
+
+	describe('isPersistedJob', () => {
+		it('should return true for job with _id', () => {
+			const persistedJob = JobFactory.build();
+			expect(isPersistedJob(persistedJob)).toBe(true);
+		});
+
+		it('should return false for job without _id', () => {
+			const jobWithoutId = { ...baseJob };
+			delete jobWithoutId._id;
+			expect(isPersistedJob(jobWithoutId)).toBe(false);
+		});
+
+		it('should return false when _id is undefined', () => {
+			const jobWithoutId = { ...baseJob };
+			delete jobWithoutId._id;
+			expect(isPersistedJob(jobWithoutId)).toBe(false);
+		});
+
+		it('should return false when _id is null', () => {
+			const jobWithNullId = {
+				...baseJob,
+				_id: null as unknown as ObjectId,
+			};
+
+			expect(isPersistedJob(jobWithNullId)).toBe(false);
+		});
+
+		it('should narrow type to PersistedJob when true', () => {
+			const job = JobFactory.build();
+
+			if (isPersistedJob(job)) {
+				// This should compile without errors - TypeScript knows _id exists
+				const id: ObjectId = job._id;
+				expect(id).toBeInstanceOf(ObjectId);
+			} else {
+				throw new Error('Should have been persisted');
+			}
+		});
+	});
+
+	describe('isValidJobStatus', () => {
+		it('should return true for PENDING status', () => {
+			expect(isValidJobStatus(JobStatus.PENDING)).toBe(true);
+			expect(isValidJobStatus('pending')).toBe(true);
+		});
+
+		it('should return true for PROCESSING status', () => {
+			expect(isValidJobStatus(JobStatus.PROCESSING)).toBe(true);
+			expect(isValidJobStatus('processing')).toBe(true);
+		});
+
+		it('should return true for COMPLETED status', () => {
+			expect(isValidJobStatus(JobStatus.COMPLETED)).toBe(true);
+			expect(isValidJobStatus('completed')).toBe(true);
+		});
+
+		it('should return true for FAILED status', () => {
+			expect(isValidJobStatus(JobStatus.FAILED)).toBe(true);
+			expect(isValidJobStatus('failed')).toBe(true);
+		});
+
+		it('should return true for CANCELLED status', () => {
+			expect(isValidJobStatus(JobStatus.CANCELLED)).toBe(true);
+			expect(isValidJobStatus('cancelled')).toBe(true);
+		});
+
+		it('should return false for invalid string', () => {
+			expect(isValidJobStatus('invalid')).toBe(false);
+			expect(isValidJobStatus('PENDING')).toBe(false);
+			expect(isValidJobStatus('')).toBe(false);
+		});
+
+		it('should return false for non-string types', () => {
+			expect(isValidJobStatus(123)).toBe(false);
+			expect(isValidJobStatus(null)).toBe(false);
+			expect(isValidJobStatus(undefined)).toBe(false);
+			expect(isValidJobStatus({})).toBe(false);
+			expect(isValidJobStatus([])).toBe(false);
+			expect(isValidJobStatus(true)).toBe(false);
+		});
+	});
+
+	describe('isPendingJob', () => {
+		it('should return true when status is PENDING', () => {
+			const job = JobFactory.build({ status: JobStatus.PENDING });
+			expect(isPendingJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not PENDING', () => {
+			expect(isPendingJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isPendingJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isPendingJob(JobFactoryHelpers.failed())).toBe(false);
+		});
+	});
+
+	describe('isProcessingJob', () => {
+		it('should return true when status is PROCESSING', () => {
+			const job = JobFactoryHelpers.processing();
+			expect(isProcessingJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not PROCESSING', () => {
+			expect(isProcessingJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isProcessingJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isProcessingJob(JobFactoryHelpers.failed())).toBe(false);
+		});
+	});
+
+	describe('isCompletedJob', () => {
+		it('should return true when status is COMPLETED', () => {
+			const job = JobFactoryHelpers.completed();
+			expect(isCompletedJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not COMPLETED', () => {
+			expect(isCompletedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isCompletedJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isCompletedJob(JobFactoryHelpers.failed())).toBe(false);
+		});
+	});
+
+	describe('isFailedJob', () => {
+		it('should return true when status is FAILED', () => {
+			const job = JobFactoryHelpers.failed();
+			expect(isFailedJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not FAILED', () => {
+			expect(isFailedJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isFailedJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isFailedJob(JobFactoryHelpers.completed())).toBe(false);
+		});
+	});
+
+	describe('isCancelledJob', () => {
+		it('should return true when status is CANCELLED', () => {
+			const job = JobFactoryHelpers.cancelled();
+			expect(isCancelledJob(job)).toBe(true);
+		});
+
+		it('should return false when status is not CANCELLED', () => {
+			expect(isCancelledJob(JobFactory.build({ status: JobStatus.PENDING }))).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.processing())).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.completed())).toBe(false);
+			expect(isCancelledJob(JobFactoryHelpers.failed())).toBe(false);
+		});
+	});
+
+	describe('isRecurringJob', () => {
+		it('should return true when repeatInterval is defined', () => {
+			const job = JobFactory.build({ repeatInterval: '0 * * * *' });
+			expect(isRecurringJob(job)).toBe(true);
+		});
+
+		it('should return false when repeatInterval is undefined', () => {
+			const job = JobFactory.build();
+			expect(isRecurringJob(job)).toBe(false);
+		});
+
+		it('should return false when repeatInterval is null', () => {
+			const job = JobFactory.build({ repeatInterval: null as unknown as string });
+			expect(isRecurringJob(job)).toBe(false);
+		});
+
+		it('should return true for empty string repeatInterval', () => {
+			// Even empty string means it's defined as recurring (though invalid cron)
+			const job = JobFactory.build({ repeatInterval: '' });
+			expect(isRecurringJob(job)).toBe(true);
+		});
+	});
+
+	describe('combined usage', () => {
+		it('should allow combining multiple guards', () => {
+			const job = JobFactoryHelpers.failed({
+				repeatInterval: '0 0 * * *',
+			});
+
+			expect(isPersistedJob(job)).toBe(true);
+			expect(isFailedJob(job)).toBe(true);
+			expect(isRecurringJob(job)).toBe(true);
+			expect(isPendingJob(job)).toBe(false);
+		});
+
+		it('should work in filter operations', () => {
+			const jobs: Job[] = [
+				JobFactory.build({ status: JobStatus.PENDING }),
+				JobFactoryHelpers.processing(),
+				JobFactoryHelpers.completed(),
+				JobFactoryHelpers.failed(),
+			];
+
+			const pendingJobs = jobs.filter(isPendingJob);
+			const failedJobs = jobs.filter(isFailedJob);
+
+			expect(pendingJobs).toHaveLength(1);
+			expect(failedJobs).toHaveLength(1);
+		});
+	});
+});
+````
+
+## File: packages/core/src/scheduler/services/job-manager.ts
+````typescript
+import { ObjectId, type WithId } from 'mongodb';
+
+import {
+	type BulkOperationResult,
+	type Job,
+	type JobSelector,
+	JobStatus,
+	type PersistedJob,
+} from '@/jobs';
+import { buildSelectorQuery } from '@/scheduler';
+import { JobStateError } from '@/shared';
+
+import type { SchedulerContext } from './types.js';
+
+/**
+ * Internal service for job lifecycle management operations.
+ *
+ * Provides atomic state transitions (cancel, retry, reschedule) and deletion.
+ * Emits appropriate events on each operation.
+ *
+ * @internal Not part of public API - use Monque class methods instead.
+ */
+export class JobManager {
+	constructor(private readonly ctx: SchedulerContext) {}
+
+	/**
+	 * Cancel a pending or scheduled job.
+	 *
+	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
+	 * If the job is already cancelled, this is a no-op and returns the job.
+	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
+	 *
+	 * @param jobId - The ID of the job to cancel
+	 * @returns The cancelled job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for cancellation
+	 *
+	 * @example Cancel a pending job
+	 * ```typescript
+	 * const job = await monque.enqueue('report', { type: 'daily' });
+	 * await monque.cancelJob(job._id.toString());
+	 * ```
+	 */
+	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		const _id = new ObjectId(jobId);
+
+		// Fetch job first to allow emitting the full job object in the event
+		const jobDoc = await this.ctx.collection.findOne({ _id });
+		if (!jobDoc) return null;
+
+		const currentJob = jobDoc as unknown as WithId<Job>;
+
+		if (currentJob.status === JobStatus.CANCELLED) {
+			return this.ctx.documentToPersistedJob(currentJob);
+		}
+
+		if (currentJob.status !== JobStatus.PENDING) {
+			throw new JobStateError(
+				`Cannot cancel job in status '${currentJob.status}'`,
+				jobId,
+				currentJob.status,
+				'cancel',
+			);
+		}
+
+		const result = await this.ctx.collection.findOneAndUpdate(
+			{ _id, status: JobStatus.PENDING },
+			{
+				$set: {
+					status: JobStatus.CANCELLED,
+					updatedAt: new Date(),
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			// Race condition: job changed state between check and update
+			throw new JobStateError(
+				'Job status changed during cancellation attempt',
+				jobId,
+				'unknown',
+				'cancel',
+			);
+		}
+
+		const job = this.ctx.documentToPersistedJob(result);
+		this.ctx.emit('job:cancelled', { job });
+		return job;
+	}
+
+	/**
+	 * Retry a failed or cancelled job.
+	 *
+	 * Resets the job to 'pending' status, clears failure count/reason, and sets
+	 * nextRunAt to now (immediate retry). Emits a 'job:retried' event.
+	 *
+	 * @param jobId - The ID of the job to retry
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for retry (must be failed or cancelled)
+	 *
+	 * @example Retry a failed job
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   console.log(`Job ${job._id} failed, retrying manually...`);
+	 *   await monque.retryJob(job._id.toString());
+	 * });
+	 * ```
+	 */
+	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		const _id = new ObjectId(jobId);
+		const currentJob = await this.ctx.collection.findOne({ _id });
+
+		if (!currentJob) return null;
+
+		if (currentJob['status'] !== JobStatus.FAILED && currentJob['status'] !== JobStatus.CANCELLED) {
+			throw new JobStateError(
+				`Cannot retry job in status '${currentJob['status']}'`,
+				jobId,
+				currentJob['status'],
+				'retry',
+			);
+		}
+
+		const previousStatus = currentJob['status'] as 'failed' | 'cancelled';
+
+		const result = await this.ctx.collection.findOneAndUpdate(
+			{
+				_id,
+				status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
+			},
+			{
+				$set: {
+					status: JobStatus.PENDING,
+					failCount: 0,
+					nextRunAt: new Date(),
+					updatedAt: new Date(),
+				},
+				$unset: {
+					failReason: '',
+					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			throw new JobStateError('Job status changed during retry attempt', jobId, 'unknown', 'retry');
+		}
+
+		const job = this.ctx.documentToPersistedJob(result);
+		this.ctx.emit('job:retried', { job, previousStatus });
+		return job;
+	}
+
+	/**
+	 * Reschedule a pending job to run at a different time.
+	 *
+	 * Only works for jobs in 'pending' status.
+	 *
+	 * @param jobId - The ID of the job to reschedule
+	 * @param runAt - The new Date when the job should run
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is not in pending state
+	 *
+	 * @example Delay a job by 1 hour
+	 * ```typescript
+	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+	 * await monque.rescheduleJob(jobId, nextHour);
+	 * ```
+	 */
+	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
+		const _id = new ObjectId(jobId);
+		const currentJobDoc = await this.ctx.collection.findOne({ _id });
+
+		if (!currentJobDoc) return null;
+
+		const currentJob = currentJobDoc as unknown as WithId<Job>;
+
+		if (currentJob.status !== JobStatus.PENDING) {
+			throw new JobStateError(
+				`Cannot reschedule job in status '${currentJob.status}'`,
+				jobId,
+				currentJob.status,
+				'reschedule',
+			);
+		}
+
+		const result = await this.ctx.collection.findOneAndUpdate(
+			{ _id, status: JobStatus.PENDING },
+			{
+				$set: {
+					nextRunAt: runAt,
+					updatedAt: new Date(),
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		if (!result) {
+			throw new JobStateError(
+				'Job status changed during reschedule attempt',
+				jobId,
+				'unknown',
+				'reschedule',
+			);
+		}
+
+		return this.ctx.documentToPersistedJob(result);
+	}
+
+	/**
+	 * Permanently delete a job.
+	 *
+	 * This action is irreversible. Emits a 'job:deleted' event upon success.
+	 * Can delete a job in any state.
+	 *
+	 * @param jobId - The ID of the job to delete
+	 * @returns true if deleted, false if job not found
+	 *
+	 * @example Delete a cleanup job
+	 * ```typescript
+	 * const deleted = await monque.deleteJob(jobId);
+	 * if (deleted) {
+	 *   console.log('Job permanently removed');
+	 * }
+	 * ```
+	 */
+	async deleteJob(jobId: string): Promise<boolean> {
+		const _id = new ObjectId(jobId);
+
+		const result = await this.ctx.collection.deleteOne({ _id });
+
+		if (result.deletedCount > 0) {
+			this.ctx.emit('job:deleted', { jobId });
+			return true;
+		}
+
+		return false;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Bulk Operations
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Cancel multiple jobs matching the given filter.
+	 *
+	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
+	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * successfully cancelled jobs.
+	 *
+	 * @param filter - Selector for which jobs to cancel (name, status, date range)
+	 * @returns Result with count of cancelled jobs and any errors encountered
+	 *
+	 * @example Cancel all pending jobs for a queue
+	 * ```typescript
+	 * const result = await monque.cancelJobs({
+	 *   name: 'email-queue',
+	 *   status: 'pending'
+	 * });
+	 * console.log(`Cancelled ${result.count} jobs`);
+	 * ```
+	 */
+	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		const baseQuery = buildSelectorQuery(filter);
+		const errors: Array<{ jobId: string; error: string }> = [];
+		const cancelledIds: string[] = [];
+
+		// Find all matching jobs and stream them to avoid memory pressure
+		const cursor = this.ctx.collection.find(baseQuery);
+
+		for await (const doc of cursor) {
+			const job = doc as unknown as WithId<Job>;
+			const jobId = job._id.toString();
+
+			if (job.status !== JobStatus.PENDING && job.status !== JobStatus.CANCELLED) {
+				errors.push({
+					jobId,
+					error: `Cannot cancel job in status '${job.status}'`,
+				});
+				continue;
+			}
+
+			// Skip already cancelled jobs (idempotent)
+			if (job.status === JobStatus.CANCELLED) {
+				cancelledIds.push(jobId);
+				continue;
+			}
+
+			// Atomically update to cancelled
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id: job._id, status: JobStatus.PENDING },
+				{
+					$set: {
+						status: JobStatus.CANCELLED,
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: 'after' },
+			);
+
+			if (result) {
+				cancelledIds.push(jobId);
+			} else {
+				// Race condition: status changed
+				errors.push({
+					jobId,
+					error: 'Job status changed during cancellation',
+				});
+			}
+		}
+
+		if (cancelledIds.length > 0) {
+			this.ctx.emit('jobs:cancelled', {
+				jobIds: cancelledIds,
+				count: cancelledIds.length,
+			});
+		}
+
+		return {
+			count: cancelledIds.length,
+			errors,
+		};
+	}
+
+	/**
+	 * Retry multiple jobs matching the given filter.
+	 *
+	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
+	 * are collected as errors in the result. Emits a 'jobs:retried' event with
+	 * the IDs of successfully retried jobs.
+	 *
+	 * @param filter - Selector for which jobs to retry (name, status, date range)
+	 * @returns Result with count of retried jobs and any errors encountered
+	 *
+	 * @example Retry all failed jobs
+	 * ```typescript
+	 * const result = await monque.retryJobs({
+	 *   status: 'failed'
+	 * });
+	 * console.log(`Retried ${result.count} jobs`);
+	 * ```
+	 */
+	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		const baseQuery = buildSelectorQuery(filter);
+		const errors: Array<{ jobId: string; error: string }> = [];
+		const retriedIds: string[] = [];
+
+		const cursor = this.ctx.collection.find(baseQuery);
+
+		for await (const doc of cursor) {
+			const job = doc as unknown as WithId<Job>;
+			const jobId = job._id.toString();
+
+			if (job.status !== JobStatus.FAILED && job.status !== JobStatus.CANCELLED) {
+				errors.push({
+					jobId,
+					error: `Cannot retry job in status '${job.status}'`,
+				});
+				continue;
+			}
+
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{
+					_id: job._id,
+					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
+				},
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: 0,
+						nextRunAt: new Date(),
+						updatedAt: new Date(),
+					},
+					$unset: {
+						failReason: '',
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+					},
+				},
+				{ returnDocument: 'after' },
+			);
+
+			if (result) {
+				retriedIds.push(jobId);
+			} else {
+				errors.push({
+					jobId,
+					error: 'Job status changed during retry attempt',
+				});
+			}
+		}
+
+		if (retriedIds.length > 0) {
+			this.ctx.emit('jobs:retried', {
+				jobIds: retriedIds,
+				count: retriedIds.length,
+			});
+		}
+
+		return {
+			count: retriedIds.length,
+			errors,
+		};
+	}
+
+	/**
+	 * Delete multiple jobs matching the given filter.
+	 *
+	 * Deletes jobs in any status. Uses a batch delete for efficiency.
+	 * Emits a 'jobs:deleted' event with the count of deleted jobs.
+	 * Does not emit individual 'job:deleted' events to avoid noise.
+	 *
+	 * @param filter - Selector for which jobs to delete (name, status, date range)
+	 * @returns Result with count of deleted jobs (errors array always empty for delete)
+	 *
+	 * @example Delete old completed jobs
+	 * ```typescript
+	 * const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+	 * const result = await monque.deleteJobs({
+	 *   status: 'completed',
+	 *   olderThan: weekAgo
+	 * });
+	 * console.log(`Deleted ${result.count} jobs`);
+	 * ```
+	 */
+	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		const query = buildSelectorQuery(filter);
+
+		// Use deleteMany for efficiency
+		const result = await this.ctx.collection.deleteMany(query);
+
+		if (result.deletedCount > 0) {
+			this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+		}
+
+		return {
+			count: result.deletedCount,
+			errors: [],
+		};
+	}
+}
+````
+
+## File: packages/core/src/shared/errors.ts
+````typescript
+import type { Job } from '@/jobs';
+
+/**
+ * Base error class for all Monque-related errors.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof MonqueError) {
+ *     console.error('Monque error:', error.message);
+ *   }
+ * }
+ * ```
+ */
+export class MonqueError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'MonqueError';
+		// Maintains proper stack trace for where our error was thrown (only available on V8)
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, MonqueError);
+		}
+	}
+}
+
+/**
+ * Error thrown when an invalid cron expression is provided.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.schedule('invalid cron', 'job', data);
+ * } catch (error) {
+ *   if (error instanceof InvalidCronError) {
+ *     console.error('Invalid expression:', error.expression);
+ *   }
+ * }
+ * ```
+ */
+export class InvalidCronError extends MonqueError {
+	constructor(
+		public readonly expression: string,
+		message: string,
+	) {
+		super(message);
+		this.name = 'InvalidCronError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, InvalidCronError);
+		}
+	}
+}
+
+/**
+ * Error thrown when there's a database connection issue.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('job', data);
+ * } catch (error) {
+ *   if (error instanceof ConnectionError) {
+ *     console.error('Database connection lost');
+ *   }
+ * }
+ * ```
+ */
+export class ConnectionError extends MonqueError {
+	constructor(message: string, options?: { cause?: Error }) {
+		super(message);
+		this.name = 'ConnectionError';
+		if (options?.cause) {
+			this.cause = options.cause;
+		}
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, ConnectionError);
+		}
+	}
+}
+
+/**
+ * Error thrown when graceful shutdown times out.
+ * Includes information about jobs that were still in progress.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.stop();
+ * } catch (error) {
+ *   if (error instanceof ShutdownTimeoutError) {
+ *     console.error('Incomplete jobs:', error.incompleteJobs.length);
+ *   }
+ * }
+ * ```
+ */
+export class ShutdownTimeoutError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly incompleteJobs: Job[],
+	) {
+		super(message);
+		this.name = 'ShutdownTimeoutError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, ShutdownTimeoutError);
+		}
+	}
+}
+
+/**
+ * Error thrown when attempting to register a worker for a job name
+ * that already has a registered worker, without explicitly allowing replacement.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   monque.register('send-email', handler1);
+ *   monque.register('send-email', handler2); // throws
+ * } catch (error) {
+ *   if (error instanceof WorkerRegistrationError) {
+ *     console.error('Worker already registered for:', error.jobName);
+ *   }
+ * }
+ *
+ * // To intentionally replace a worker:
+ * monque.register('send-email', handler2, { replace: true });
+ * ```
+ */
+export class WorkerRegistrationError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly jobName: string,
+	) {
+		super(message);
+		this.name = 'WorkerRegistrationError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, WorkerRegistrationError);
+		}
+	}
+}
+
+/**
+ * Error thrown when a state transition is invalid.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.cancelJob(jobId);
+ * } catch (error) {
+ *   if (error instanceof JobStateError) {
+ *      console.error(`Cannot cancel job in state: ${error.currentStatus}`);
+ *   }
+ * }
+ * ```
+ */
+export class JobStateError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly jobId: string,
+		public readonly currentStatus: string,
+		public readonly attemptedAction: 'cancel' | 'retry' | 'reschedule',
+	) {
+		super(message);
+		this.name = 'JobStateError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, JobStateError);
+		}
+	}
+}
+
+/**
+ * Error thrown when a pagination cursor is invalid or malformed.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.listJobs({ cursor: 'invalid-cursor' });
+ * } catch (error) {
+ *   if (error instanceof InvalidCursorError) {
+ *     console.error('Invalid cursor provided');
+ *   }
+ * }
+ * ```
+ */
+export class InvalidCursorError extends MonqueError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'InvalidCursorError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, InvalidCursorError);
+		}
+	}
+}
+
+/**
+ * Error thrown when a statistics aggregation times out.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   const stats = await monque.getQueueStats();
+ * } catch (error) {
+ *   if (error instanceof AggregationTimeoutError) {
+ *     console.error('Stats took too long to calculate');
+ *   }
+ * }
+ * ```
+ */
+export class AggregationTimeoutError extends MonqueError {
+	constructor(message: string = 'Statistics aggregation exceeded 30 second timeout') {
+		super(message);
+		this.name = 'AggregationTimeoutError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, AggregationTimeoutError);
+		}
+	}
+}
+````
+
+## File: packages/core/tests/factories/context.ts
+````typescript
+/**
+ * Factory for creating mock SchedulerContext for service unit tests.
+ *
+ * Provides a reusable mock context with vi.fn() stubs for all methods,
+ * allowing tests to verify internal service behavior without MongoDB.
+ */
+
+import type { Collection, Document, WithId } from 'mongodb';
+import { vi } from 'vitest';
+
+import type { MonqueEventMap } from '@/events';
+import type { JobStatusType, PersistedJob } from '@/jobs';
+import type { ResolvedMonqueOptions, SchedulerContext } from '@/scheduler/services/types.js';
+import type { WorkerRegistration } from '@/workers';
+
+/**
+ * Default resolved options for tests.
+ */
+const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
+	collectionName: 'test_jobs',
+	pollInterval: 1000,
+	maxRetries: 3,
+	baseRetryInterval: 100,
+	shutdownTimeout: 5000,
+	defaultConcurrency: 5,
+	lockTimeout: 30000,
+	recoverStaleJobs: true,
+	schedulerInstanceId: 'test-instance-id',
+	heartbeatInterval: 1000,
+	maxBackoffDelay: undefined,
+	jobRetention: undefined,
+};
+
+/**
+ * Create a mock MongoDB collection with vi.fn() stubs.
+ */
+function createMockCollection(): Collection<Document> {
+	return {
+		insertOne: vi.fn(),
+		insertMany: vi.fn(),
+		findOne: vi.fn(),
+		find: vi.fn(),
+		findOneAndUpdate: vi.fn(),
+		updateOne: vi.fn(),
+		updateMany: vi.fn(),
+		deleteOne: vi.fn(),
+		deleteMany: vi.fn(),
+		countDocuments: vi.fn(),
+		aggregate: vi.fn(),
+		watch: vi.fn(),
+		createIndex: vi.fn(),
+	} as unknown as Collection<Document>;
+}
+
+/**
+ * Create a mock SchedulerContext for testing internal services.
+ *
+ * @example
+ * ```typescript
+ * const ctx = createMockContext();
+ * const scheduler = new JobScheduler(ctx);
+ *
+ * // Mock collection responses using vi.spyOn and JobFactory
+ * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
+ *
+ * // Assert on emitted events
+ * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });
+ * ```
+ */
+export function createMockContext(overrides: Partial<SchedulerContext> = {}): SchedulerContext & {
+	mockCollection: Collection<Document>;
+	emitHistory: Array<{ event: string; payload: unknown }>;
+} {
+	const mockCollection = createMockCollection();
+	const emitHistory: Array<{ event: string; payload: unknown }> = [];
+	const workers = new Map<string, WorkerRegistration>();
+
+	const ctx: SchedulerContext = {
+		collection: mockCollection,
+		options: { ...DEFAULT_TEST_OPTIONS },
+		instanceId: 'test-instance-id',
+		workers,
+		isRunning: vi.fn(() => true),
+		emit: vi.fn(<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
+			emitHistory.push({ event, payload });
+			return true;
+		}),
+		documentToPersistedJob: <T>(doc: WithId<Document>): PersistedJob<T> => {
+			return {
+				_id: doc._id,
+				name: doc['name'] as string,
+				data: doc['data'] as T,
+				status: doc['status'] as JobStatusType,
+				nextRunAt: doc['nextRunAt'] as Date,
+				failCount: doc['failCount'] as number,
+				createdAt: doc['createdAt'] as Date,
+				updatedAt: doc['updatedAt'] as Date,
+				...(doc['uniqueKey'] && { uniqueKey: doc['uniqueKey'] as string }),
+				...(doc['repeatInterval'] && { repeatInterval: doc['repeatInterval'] as string }),
+				...(doc['lockedAt'] && { lockedAt: doc['lockedAt'] as Date }),
+				...(doc['claimedBy'] && { claimedBy: doc['claimedBy'] as string }),
+				...(doc['failReason'] && { failReason: doc['failReason'] as string }),
+			};
+		},
+		...overrides,
+	};
+
+	return { ...ctx, mockCollection, emitHistory };
+}
+````
+
+## File: packages/core/tests/unit/services/job-manager.test.ts
+````typescript
+/**
+ * Unit tests for JobManager service.
+ *
+ * Tests job management operations: cancel, retry, reschedule, delete.
+ * Uses mock SchedulerContext to test state transition logic in isolation.
+ */
+
+import { ObjectId } from 'mongodb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
+import { JobStatus } from '@/jobs';
+import { JobManager } from '@/scheduler/services/job-manager.js';
+import { JobStateError } from '@/shared';
+
+describe('JobManager', () => {
+	let ctx: ReturnType<typeof createMockContext>;
+	let manager: JobManager;
+
+	beforeEach(() => {
+		ctx = createMockContext();
+		manager = new JobManager(ctx);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	describe('cancelJob', () => {
+		it('should cancel a pending job', async () => {
+			const jobId = new ObjectId();
+			const pendingJob = JobFactory.build({ _id: jobId, name: 'cancel-test' });
+			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId, name: 'cancel-test' });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(cancelledJob);
+
+			const job = await manager.cancelJob(jobId.toString());
+
+			expect(job).not.toBeNull();
+			expect(job?.status).toBe(JobStatus.CANCELLED);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:cancelled' }));
+		});
+
+		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
+
+			const job = await manager.cancelJob(new ObjectId().toString());
+
+			expect(job).toBeNull();
+		});
+
+		it('should throw JobStateError when cancelling a processing job', async () => {
+			const jobId = new ObjectId();
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValue(processingJob);
+
+			await expect(manager.cancelJob(jobId.toString())).rejects.toThrow(JobStateError);
+		});
+
+		it('should return existing job if already cancelled', async () => {
+			const jobId = new ObjectId();
+			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
+
+			const job = await manager.cancelJob(jobId.toString());
+
+			expect(job?.status).toBe(JobStatus.CANCELLED);
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('retryJob', () => {
+		it('should retry a failed job', async () => {
+			const jobId = new ObjectId();
+			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
+			const retriedJob = JobFactory.build({ _id: jobId, failCount: 0 });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
+
+			const job = await manager.retryJob(jobId.toString());
+
+			expect(job?.status).toBe(JobStatus.PENDING);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:retried' }));
+		});
+
+		it('should retry a cancelled job', async () => {
+			const jobId = new ObjectId();
+			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
+			const retriedJob = JobFactory.build({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
+
+			const job = await manager.retryJob(jobId.toString());
+
+			expect(job?.status).toBe(JobStatus.PENDING);
+		});
+
+		it('should throw JobStateError when retrying a pending job', async () => {
+			const jobId = new ObjectId();
+			const pendingJob = JobFactory.build({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+
+			await expect(manager.retryJob(jobId.toString())).rejects.toThrow(JobStateError);
+		});
+
+		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
+
+			const job = await manager.retryJob(new ObjectId().toString());
+
+			expect(job).toBeNull();
+		});
+	});
+
+	describe('rescheduleJob', () => {
+		it('should reschedule a pending job to new time', async () => {
+			const jobId = new ObjectId();
+			const newRunAt = new Date(Date.now() + 3600000);
+			const pendingJob = JobFactory.build({ _id: jobId });
+			const rescheduledJob = JobFactory.build({ _id: jobId, nextRunAt: newRunAt });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(rescheduledJob);
+
+			const job = await manager.rescheduleJob(jobId.toString(), newRunAt);
+
+			expect(job?.nextRunAt).toEqual(newRunAt);
+		});
+
+		it('should throw JobStateError when rescheduling a processing job', async () => {
+			const jobId = new ObjectId();
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
+
+			await expect(manager.rescheduleJob(jobId.toString(), new Date())).rejects.toThrow(
+				JobStateError,
+			);
+		});
+
+		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
+
+			const job = await manager.rescheduleJob(new ObjectId().toString(), new Date());
+
+			expect(job).toBeNull();
+		});
+	});
+
+	describe('cancelJob - race conditions', () => {
+		it('should throw JobStateError when job status changes during cancellation', async () => {
+			const jobId = new ObjectId();
+			const pendingJob = JobFactory.build({ _id: jobId });
+
+			// First findOne returns pending job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			// But findOneAndUpdate returns null (another process changed the status)
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect((error as JobStateError).message).toMatch(
+				/Job status changed during cancellation attempt/,
+			);
+		});
+	});
+
+	describe('retryJob - race conditions', () => {
+		it('should throw JobStateError when job status changes during retry', async () => {
+			const jobId = new ObjectId();
+			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
+
+			// First findOne returns failed job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
+			// But findOneAndUpdate returns null (another process changed the status)
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect((error as JobStateError).message).toMatch(/Job status changed during retry attempt/);
+		});
+	});
+
+	describe('rescheduleJob - race conditions', () => {
+		it('should throw JobStateError when job status changes during reschedule', async () => {
+			const jobId = new ObjectId();
+			const newRunAt = new Date(Date.now() + 3600000);
+			const pendingJob = JobFactory.build({ _id: jobId });
+
+			// First findOne returns pending job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+			// But findOneAndUpdate returns null (another process changed the status)
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const error = await manager
+				.rescheduleJob(jobId.toString(), newRunAt)
+				.catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect((error as JobStateError).message).toMatch(
+				/Job status changed during reschedule attempt/,
+			);
+		});
+	});
+
+	describe('deleteJob', () => {
+		it('should delete job and return true', async () => {
+			const jobId = new ObjectId();
+
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
+				deletedCount: 1,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJob(jobId.toString());
+
+			expect(result).toBe(true);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:deleted' }));
+		});
+
+		it('should return false for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
+				deletedCount: 0,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJob(new ObjectId().toString());
+
+			expect(result).toBe(false);
+		});
+
+		it('should emit job:deleted event with jobId', async () => {
+			const jobId = new ObjectId();
+
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockResolvedValueOnce({
+				deletedCount: 1,
+				acknowledged: true,
+			});
+
+			await manager.deleteJob(jobId.toString());
+
+			const deleteEvent = ctx.emitHistory.find((e) => e.event === 'job:deleted');
+			expect(deleteEvent).toBeDefined();
+			expect((deleteEvent?.payload as { jobId: string })?.jobId).toBe(jobId.toString());
+		});
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Bulk Operations Tests
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	describe('cancelJobs', () => {
+		it('should cancel multiple pending jobs', async () => {
+			const job1 = JobFactory.build({ name: 'bulk-cancel' });
+			const job2 = JobFactory.build({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield job1;
+					yield job2;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job1._id }))
+				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job2._id }));
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:cancelled' }));
+		});
+
+		it('should include already cancelled jobs in count (idempotent)', async () => {
+			const cancelledJob = JobFactoryHelpers.cancelled({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield cancelledJob;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(1);
+			expect(result.errors).toHaveLength(0);
+			// findOneAndUpdate should NOT be called for already cancelled jobs
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should collect errors for jobs in invalid state', async () => {
+			const processingJob = JobFactoryHelpers.processing({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield processingJob;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Cannot cancel job in status 'processing'/);
+		});
+
+		it('should handle race condition when job status changes during bulk cancel', async () => {
+			const pendingJob = JobFactory.build({ name: 'bulk-cancel' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield pendingJob;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			// findOneAndUpdate returns null because status changed
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Job status changed during cancellation/);
+		});
+	});
+
+	describe('retryJobs', () => {
+		it('should retry multiple failed jobs', async () => {
+			const failedJob1 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+			const failedJob2 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield failedJob1;
+					yield failedJob2;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
+				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
+
+			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(result.count).toBe(2);
+			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:retried' }));
+		});
+
+		it('should collect errors for jobs in invalid state for retry', async () => {
+			const pendingJob = JobFactory.build({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield pendingJob;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await manager.retryJobs({ name: 'bulk-retry' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Cannot retry job in status 'pending'/);
+		});
+
+		it('should handle race condition when job status changes during bulk retry', async () => {
+			const failedJob = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+
+			const mockCursor = {
+				[Symbol.asyncIterator]: async function* () {
+					yield failedJob;
+				},
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			// findOneAndUpdate returns null because status changed
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.error).toMatch(/Job status changed during retry attempt/);
+		});
+	});
+
+	describe('deleteJobs', () => {
+		it('should delete multiple jobs matching filter', async () => {
+			vi.spyOn(ctx.mockCollection, 'deleteMany').mockResolvedValueOnce({
+				deletedCount: 5,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJobs({ status: JobStatus.COMPLETED });
+
+			expect(result.count).toBe(5);
+			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'jobs:deleted',
+					payload: { count: 5 },
+				}),
+			);
+		});
+
+		it('should return zero count when no jobs match', async () => {
+			vi.spyOn(ctx.mockCollection, 'deleteMany').mockResolvedValueOnce({
+				deletedCount: 0,
+				acknowledged: true,
+			});
+
+			const result = await manager.deleteJobs({ name: 'non-existent' });
+
+			expect(result.count).toBe(0);
+			expect(result.errors).toHaveLength(0);
+		});
+	});
+});
+````
+
+## File: packages/core/tests/unit/services/job-query.test.ts
+````typescript
+/**
+ * Unit tests for JobQueryService.
+ *
+ * Tests job querying: getJob, getJobs, getJobsWithCursor.
+ * Uses mock SchedulerContext to test query building in isolation.
+ */
+
+import { ObjectId } from 'mongodb';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createMockContext, JobFactory } from '@tests/factories';
+import { JobStatus } from '@/jobs';
+import { JobQueryService } from '@/scheduler/services/job-query.js';
+import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
+
+describe('JobQueryService', () => {
+	let ctx: ReturnType<typeof createMockContext>;
+	let queryService: JobQueryService;
+
+	beforeEach(() => {
+		ctx = createMockContext();
+		queryService = new JobQueryService(ctx);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	describe('getJob', () => {
+		it('should return job by ObjectId', async () => {
+			const jobId = new ObjectId();
+			const job = JobFactory.build({ _id: jobId, name: 'found-job' });
+
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(job);
+
+			const result = await queryService.getJob(jobId);
+
+			expect(result).not.toBeNull();
+			expect(result?.name).toBe('found-job');
+			expect(ctx.mockCollection.findOne).toHaveBeenCalledWith({ _id: jobId });
+		});
+
+		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
+
+			const result = await queryService.getJob(new ObjectId());
+
+			expect(result).toBeNull();
+		});
+
+		it('should throw ConnectionError when database operation fails', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce(
+				new Error('Database connection lost'),
+			);
+
+			const error = await queryService.getJob(new ObjectId()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to get job/);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce('String error');
+
+			await expect(queryService.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
+		});
+	});
+
+	describe('getJobs', () => {
+		it('should return all jobs when no filter provided', async () => {
+			const jobs = JobFactory.buildList(2);
+
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce(jobs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const result = await queryService.getJobs();
+
+			expect(result).toHaveLength(2);
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({});
+		});
+
+		it('should apply status filter', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobs({ status: JobStatus.PENDING });
+
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ status: JobStatus.PENDING });
+		});
+
+		it('should apply name filter', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobs({ name: 'specific-job' });
+
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ name: 'specific-job' });
+		});
+
+		it('should apply limit and skip', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobs({ limit: 10, skip: 20 });
+
+			expect(mockCursor.limit).toHaveBeenCalledWith(10);
+			expect(mockCursor.skip).toHaveBeenCalledWith(20);
+		});
+
+		it('should apply status array filter with $in operator', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobs({ status: [JobStatus.PENDING, JobStatus.PROCESSING] });
+
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
+				status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+			});
+		});
+
+		it('should throw ConnectionError when database operation fails', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce(new Error('Database timeout')),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const error = await queryService.getJobs().catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to query jobs/);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				skip: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await expect(queryService.getJobs()).rejects.toThrow(ConnectionError);
+		});
+	});
+
+	describe('getJobsWithCursor', () => {
+		it('should return page with jobs and cursor info', async () => {
+			const jobs = JobFactory.buildList(2);
+
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce(jobs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const page = await queryService.getJobsWithCursor({ limit: 10 });
+
+			expect(page.jobs).toHaveLength(2);
+			expect(page.hasNextPage).toBe(false);
+			expect(page.hasPreviousPage).toBe(false);
+		});
+
+		it('should throw InvalidCursorError for malformed cursor', async () => {
+			await expect(
+				queryService.getJobsWithCursor({ cursor: 'invalid-base64-cursor' }),
+			).rejects.toThrow(InvalidCursorError);
+		});
+
+		it('should detect hasNextPage when more results exist', async () => {
+			// Return 11 jobs when limit is 10 (fetches limit + 1 to detect next page)
+			const jobs = JobFactory.buildList(11);
+
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce(jobs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			const page = await queryService.getJobsWithCursor({ limit: 10 });
+
+			expect(page.jobs).toHaveLength(10); // Should trim to limit
+			expect(page.hasNextPage).toBe(true);
+		});
+
+		it('should throw ConnectionError when database operation fails', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce(new Error('Database error')),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+		});
+	});
+
+	describe('getQueueStats', () => {
+		it('should return queue statistics with status counts', async () => {
+			const mockAggregateResult = [
+				{
+					statusCounts: [
+						{ _id: 'pending', count: 5 },
+						{ _id: 'processing', count: 2 },
+						{ _id: 'completed', count: 10 },
+						{ _id: 'failed', count: 1 },
+						{ _id: 'cancelled', count: 0 },
+					],
+					avgDuration: [{ avgMs: 150.5 }],
+					total: [{ count: 18 }],
+				},
+			];
+
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const stats = await queryService.getQueueStats();
+
+			expect(stats.pending).toBe(5);
+			expect(stats.processing).toBe(2);
+			expect(stats.completed).toBe(10);
+			expect(stats.failed).toBe(1);
+			expect(stats.cancelled).toBe(0);
+			expect(stats.total).toBe(18);
+			expect(stats.avgProcessingDurationMs).toBe(151); // Rounded from 150.5
+		});
+
+		it('should return empty stats when aggregation result is undefined', async () => {
+			// Edge case: aggregation returns empty array (no first result)
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const stats = await queryService.getQueueStats();
+
+			expect(stats.pending).toBe(0);
+			expect(stats.processing).toBe(0);
+			expect(stats.completed).toBe(0);
+			expect(stats.failed).toBe(0);
+			expect(stats.cancelled).toBe(0);
+			expect(stats.total).toBe(0);
+			expect(stats.avgProcessingDurationMs).toBeUndefined();
+		});
+
+		it('should apply name filter when provided', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([
+					{
+						statusCounts: [],
+						avgDuration: [],
+						total: [{ count: 0 }],
+					},
+				]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await queryService.getQueueStats({ name: 'email-job' });
+
+			expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(
+				expect.arrayContaining([expect.objectContaining({ $match: { name: 'email-job' } })]),
+				{ maxTimeMS: 30000 },
+			);
+		});
+
+		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(new Error('operation exceeded time limit')),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
+		});
+
+		it('should throw ConnectionError when aggregation fails with other errors', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const error = await queryService.getQueueStats().catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to get queue stats/);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await expect(queryService.getQueueStats()).rejects.toThrow(ConnectionError);
+		});
+
+		it('should handle empty avgDuration result gracefully', async () => {
+			const mockAggregateResult = [
+				{
+					statusCounts: [{ _id: 'pending', count: 3 }],
+					avgDuration: [], // No completed jobs with lockedAt
+					total: [{ count: 3 }],
+				},
+			];
+
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const stats = await queryService.getQueueStats();
+
+			expect(stats.pending).toBe(3);
+			expect(stats.total).toBe(3);
+			expect(stats.avgProcessingDurationMs).toBeUndefined();
+		});
+
+		it('should handle NaN avgMs gracefully', async () => {
+			const mockAggregateResult = [
+				{
+					statusCounts: [],
+					avgDuration: [{ avgMs: Number.NaN }],
+					total: [{ count: 0 }],
+				},
+			];
+
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const stats = await queryService.getQueueStats();
+			expect(stats.avgProcessingDurationMs).toBeUndefined();
 		});
 	});
 });
@@ -16134,7 +16440,7 @@ export class Monque extends EventEmitter {
 	"homepage": "https://github.com/ueberBrot/monque#readme",
 	"sideEffects": false,
 	"type": "module",
-	"packageManager": "bun@1.3.5",
+	"packageManager": ">=bun@1.3.5",
 	"engines": {
 		"node": ">=22.0.0"
 	},
