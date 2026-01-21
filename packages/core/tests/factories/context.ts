@@ -16,7 +16,7 @@ import type { WorkerRegistration } from '@/workers';
 /**
  * Default resolved options for tests.
  */
-export const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
+const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 	collectionName: 'test_jobs',
 	pollInterval: 1000,
 	maxRetries: 3,
@@ -34,7 +34,7 @@ export const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 /**
  * Create a mock MongoDB collection with vi.fn() stubs.
  */
-export function createMockCollection(): Collection<Document> {
+function createMockCollection(): Collection<Document> {
 	return {
 		insertOne: vi.fn(),
 		insertMany: vi.fn(),
