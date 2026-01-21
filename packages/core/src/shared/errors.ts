@@ -143,3 +143,83 @@ export class WorkerRegistrationError extends MonqueError {
 		}
 	}
 }
+
+/**
+ * Error thrown when a state transition is invalid.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.cancelJob(jobId);
+ * } catch (error) {
+ *   if (error instanceof JobStateError) {
+ *      console.error(`Cannot cancel job in state: ${error.currentStatus}`);
+ *   }
+ * }
+ * ```
+ */
+export class JobStateError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly jobId: string,
+		public readonly currentStatus: string,
+		public readonly attemptedAction: 'cancel' | 'retry' | 'reschedule',
+	) {
+		super(message);
+		this.name = 'JobStateError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, JobStateError);
+		}
+	}
+}
+
+/**
+ * Error thrown when a pagination cursor is invalid or malformed.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.listJobs({ cursor: 'invalid-cursor' });
+ * } catch (error) {
+ *   if (error instanceof InvalidCursorError) {
+ *     console.error('Invalid cursor provided');
+ *   }
+ * }
+ * ```
+ */
+export class InvalidCursorError extends MonqueError {
+	constructor(message: string) {
+		super(message);
+		this.name = 'InvalidCursorError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, InvalidCursorError);
+		}
+	}
+}
+
+/**
+ * Error thrown when a statistics aggregation times out.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   const stats = await monque.getQueueStats();
+ * } catch (error) {
+ *   if (error instanceof AggregationTimeoutError) {
+ *     console.error('Stats took too long to calculate');
+ *   }
+ * }
+ * ```
+ */
+export class AggregationTimeoutError extends MonqueError {
+	constructor(message: string = 'Statistics aggregation exceeded 30 second timeout') {
+		super(message);
+		this.name = 'AggregationTimeoutError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, AggregationTimeoutError);
+		}
+	}
+}

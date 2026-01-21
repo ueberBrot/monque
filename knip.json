@@ -1,15 +1,15 @@
 {
-	"$schema": "https://unpkg.com/knip@5.76.0/schema.json",
-	"ignore": ["specs/**"],
+	"$schema": "./node_modules/knip/schema.json",
+	"ignore": ["specs/**", "repomix.config.ts"],
 	"ignoreBinaries": [],
-	"ignoreDependencies": [],
+	"ignoreDependencies": ["@fontsource/quicksand", "sharp"],
 	"workspaces": {
 		"apps/docs": {
 			"entry": [],
 			"project": []
 		},
 		"packages/*": {
-			"entry": ["src/index.ts"],
+			"entry": [],
 			"project": ["src/**/*.ts", "tests/**/*.ts"]
 		}
 	}

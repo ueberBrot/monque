@@ -61,6 +61,10 @@ await monque.enqueue('send-email', { to: 'user@example.com', subject: 'Hello' })
 // Schedule recurring jobs
 await monque.schedule('0 9 * * *', 'daily-report', { type: 'summary' });
 
+// Management
+await monque.cancelJob('job-id');
+const stats = await monque.getQueueStats();
+
 // Graceful shutdown
 await monque.stop();
 ```
@@ -92,6 +96,19 @@ Creates a new Monque instance.
 - `stop()` - Graceful shutdown
 - `isHealthy()` - Check scheduler health
 
+**Management:**
+- `getJob(id)` - Get job details
+- `getJobs(filter)` - List jobs
+- `getJobsWithCursor(options)` - Paginated list
+- `getQueueStats(filter?)` - Queue statistics
+- `cancelJob(id)` - Cancel a job
+- `retryJob(id)` - Retry a job
+- `rescheduleJob(id, date)` - Reschedule a job
+- `deleteJob(id)` - Delete a job
+- `cancelJobs(filter)` - Bulk cancel
+- `retryJobs(filter)` - Bulk retry
+- `deleteJobs(filter)` - Bulk delete
+
 ### Events
 
 ```typescript
@@ -99,6 +116,9 @@ monque.on('job:start', (job) => { /* job started */ });
 monque.on('job:complete', ({ job, duration }) => { /* job completed */ });
 monque.on('job:fail', ({ job, error, willRetry }) => { /* job failed */ });
 monque.on('job:error', ({ error, job? }) => { /* unexpected error */ });
+monque.on('job:cancelled', ({ job }) => { /* job cancelled */ });
+monque.on('job:retried', ({ job, previousStatus }) => { /* job retried */ });
+monque.on('job:deleted', ({ jobId }) => { /* job deleted */ });
 monque.on('stale:recovered', ({ count }) => { /* stale jobs recovered */ });
 ```
 

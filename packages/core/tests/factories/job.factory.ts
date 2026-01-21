@@ -55,6 +55,13 @@ export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientPara
 
 /** Convenience builders for common job states */
 export const JobFactoryHelpers = {
+	/** Build a job in PENDING state */
+	pending: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.PENDING,
+			...overrides,
+		}),
+
 	/** Build a job in PROCESSING state with lockedAt set */
 	processing: (overrides?: Partial<PersistedJob<unknown>>) =>
 		JobFactory.build({
@@ -78,6 +85,13 @@ export const JobFactoryHelpers = {
 			status: JobStatus.FAILED,
 			failCount: 10,
 			failReason: 'Max retries exceeded',
+			...overrides,
+		}),
+
+	/** Build a job in CANCELLED state */
+	cancelled: (overrides?: Partial<PersistedJob<unknown>>) =>
+		JobFactory.build({
+			status: JobStatus.CANCELLED,
 			...overrides,
 		}),
 

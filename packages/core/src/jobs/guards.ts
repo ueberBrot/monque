@@ -41,8 +41,8 @@ export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
 /**
  * Type guard to check if a value is a valid job status.
  *
- * Validates that a value is one of the four valid job statuses: `'pending'`,
- * `'processing'`, `'completed'`, or `'failed'`. Useful for runtime validation
+ * Validates that a value is one of the five valid job statuses: `'pending'`,
+ * `'processing'`, `'completed'`, `'failed'`, or `'cancelled'`. Useful for runtime validation
  * of user input or external data.
  *
  * @param value - The value to check
@@ -167,6 +167,27 @@ export function isCompletedJob<T>(job: Job<T>): boolean {
  */
 export function isFailedJob<T>(job: Job<T>): boolean {
 	return job.status === JobStatus.FAILED;
+}
+
+/**
+ * Type guard to check if a job has been manually cancelled.
+ *
+ * A convenience helper for checking if a job was cancelled by an operator.
+ * Equivalent to `job.status === JobStatus.CANCELLED` but with better semantics.
+ *
+ * @template T - The type of the job's data payload
+ * @param job - The job to check
+ * @returns `true` if the job status is `'cancelled'`
+ *
+ * @example Filter cancelled jobs
+ * ```typescript
+ * const jobs = await monque.getJobs();
+ * const cancelledJobs = jobs.filter(isCancelledJob);
+ * console.log(`${cancelledJobs.length} jobs were cancelled`);
+ * ```
+ */
+export function isCancelledJob<T>(job: Job<T>): boolean {
+	return job.status === JobStatus.CANCELLED;
 }
 
 /**

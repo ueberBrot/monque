@@ -8,6 +8,7 @@ import type { ObjectId } from 'mongodb';
  * - PROCESSING → COMPLETED (on success)
  * - PROCESSING → PENDING (on failure, if retries remain)
  * - PROCESSING → FAILED (on failure, after max retries exhausted)
+ * - PENDING → CANCELLED (on manual cancellation)
  *
  * @example
  * ```typescript
@@ -25,10 +26,12 @@ export const JobStatus = {
 	COMPLETED: 'completed',
 	/** Job permanently failed after exhausting all retry attempts */
 	FAILED: 'failed',
+	/** Job was manually cancelled */
+	CANCELLED: 'cancelled',
 } as const;
 
 /**
- * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed'`
+ * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'`
  */
 export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
 
@@ -212,3 +215,121 @@ export interface GetJobsFilter {
  * ```
  */
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
+
+/**
+ * Valid cursor directions for pagination.
+ *
+ * @example
+ * ```typescript
+ * const direction = CursorDirection.FORWARD;
+ * ```
+ */
+export const CursorDirection = {
+	FORWARD: 'forward',
+	BACKWARD: 'backward',
+} as const;
+
+export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
+
+/**
+ * Selector options for bulk operations.
+ *
+ * Used to select multiple jobs for operations like cancellation or deletion.
+ *
+ * @example
+ * ```typescript
+ * // Select all failed jobs older than 7 days
+ * const selector: JobSelector = {
+ *   status: JobStatus.FAILED,
+ *   olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+ * };
+ * ```
+ */
+export interface JobSelector {
+	name?: string;
+	status?: JobStatusType | JobStatusType[];
+	olderThan?: Date;
+	newerThan?: Date;
+}
+
+/**
+ * Options for cursor-based pagination.
+ *
+ * @example
+ * ```typescript
+ * const options: CursorOptions = {
+ *   limit: 50,
+ *   direction: CursorDirection.FORWARD,
+ *   filter: { status: JobStatus.PENDING },
+ * };
+ * ```
+ */
+export interface CursorOptions {
+	cursor?: string;
+	limit?: number;
+	direction?: CursorDirectionType;
+	filter?: Pick<GetJobsFilter, 'name' | 'status'>;
+}
+
+/**
+ * Response structure for cursor-based pagination.
+ *
+ * @template T - The type of the job's data payload
+ *
+ * @example
+ * ```typescript
+ * const page = await monque.listJobs({ limit: 10 });
+ * console.log(`Got ${page.jobs.length} jobs`);
+ *
+ * if (page.hasNextPage) {
+ *   console.log(`Next cursor: ${page.cursor}`);
+ * }
+ * ```
+ */
+export interface CursorPage<T = unknown> {
+	jobs: PersistedJob<T>[];
+	cursor: string | null;
+	hasNextPage: boolean;
+	hasPreviousPage: boolean;
+}
+
+/**
+ * Aggregated statistics for the job queue.
+ *
+ * @example
+ * ```typescript
+ * const stats = await monque.getQueueStats();
+ * console.log(`Total jobs: ${stats.total}`);
+ * console.log(`Pending: ${stats.pending}`);
+ * console.log(`Processing: ${stats.processing}`);
+ * console.log(`Failed: ${stats.failed}`);
+ * console.log(`Start to finish avg: ${stats.avgProcessingDurationMs}ms`);
+ * ```
+ */
+export interface QueueStats {
+	pending: number;
+	processing: number;
+	completed: number;
+	failed: number;
+	cancelled: number;
+	total: number;
+	avgProcessingDurationMs?: number;
+}
+
+/**
+ * Result of a bulk operation.
+ *
+ * @example
+ * ```typescript
+ * const result = await monque.cancelJobs(selector);
+ * console.log(`Cancelled ${result.count} jobs`);
+ *
+ * if (result.errors.length > 0) {
+ *   console.warn('Some jobs could not be cancelled:', result.errors);
+ * }
+ * ```
+ */
+export interface BulkOperationResult {
+	count: number;
+	errors: Array<{ jobId: string; error: string }>;
+}

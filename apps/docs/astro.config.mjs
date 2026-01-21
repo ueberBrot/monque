@@ -66,6 +66,7 @@ export default defineConfig({
 						{ label: 'Workers', slug: 'core-concepts/workers' },
 						{ label: 'Scheduling', slug: 'core-concepts/scheduling' },
 						{ label: 'Retry & Backoff', slug: 'core-concepts/retry' },
+						{ label: 'Job Management', slug: 'core-concepts/management' },
 					],
 				},
 				{

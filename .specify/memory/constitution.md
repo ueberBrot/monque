@@ -1,13 +1,13 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0
+Version change: 1.1.0 → 1.2.0
 
 Modified principles:
-- Architecture Guidelines (Atomic Locking specificity, Reactive Architecture addition)
+- Code Quality Standards (Added specific mention of Strict Null Checks)
 
 Added sections:
-- Reactive Architecture (under Architecture Guidelines)
+- VI. Documentation Standards (Living Documentation)
 
 Removed sections: N/A
 
@@ -29,6 +29,8 @@ All code MUST adhere to strict quality standards ensuring maintainability and re
 
 - **Type Safety First**: All code MUST be strictly typed. Use `unknown` instead of `any` for
   values of uncertain types, forcing explicit type narrowing.
+- **Strict Null Checks**: `strictNullChecks` MUST be enabled (via `strict: true`). Handle `null`
+  and `undefined` explicitly.
 - **Interfaces Over Types**: Prefer `interface` for object shapes. Use `type` only for
   TypeScript-specific features (unions, intersections, mapped types, conditional types).
 - **100% Test Coverage**: The project MUST aim for complete test coverage including:
@@ -97,6 +99,20 @@ All job processing and background tasks MUST implement resilience patterns:
 **Rationale**: Resilience patterns prevent cascade failures and ensure system stability under
 adverse conditions.
 
+### VI. Documentation Standards
+
+Documentation is a first-class citizen and will likely evolve with the code:
+
+- **Living Documentation**: Documentation MUST be treated as code and updated in the same
+  Pull Request as the feature implementation.
+- **Workspace Location**: All user-facing documentation MUST reside in the `@monque/docs` workspace
+  (or equivalent documentation app).
+- **Code Comments**: Public APIs MUST use JSDoc tags (`@param`, `@returns`, `@example`) to
+  enable IDE support and automated reference generation.
+
+**Rationale**: Outdated documentation erodes trust. Keeping documentation synchronized with code
+ensures it remains a reliable source of truth.
+
 ## API Design Principles
 
 APIs exposed by Monque packages MUST follow these extended guidelines:
@@ -125,4 +141,4 @@ This constitution supersedes all other development practices for the Monque proj
 - MINOR: New principle/section added or materially expanded guidance.
 - PATCH: Clarifications, wording fixes, non-semantic refinements.
 
-**Version**: 1.1.0 | **Ratified**: 2025-12-16 | **Last Amended**: 2025-12-22
+**Version**: 1.2.0 | **Ratified**: 2025-12-16 | **Last Amended**: 2026-01-15

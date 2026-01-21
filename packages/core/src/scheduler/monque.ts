@@ -1,37 +1,35 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type {
-	ChangeStream,
-	ChangeStreamDocument,
-	Collection,
-	Db,
-	DeleteResult,
-	Document,
-	ObjectId,
-	WithId,
-} from 'mongodb';
+import type { Collection, Db, DeleteResult, Document, ObjectId, WithId } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
+	type BulkOperationResult,
+	type CursorOptions,
+	type CursorPage,
 	type EnqueueOptions,
 	type GetJobsFilter,
-	isPersistedJob,
 	type Job,
 	type JobHandler,
+	type JobSelector,
 	JobStatus,
 	type JobStatusType,
 	type PersistedJob,
+	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
-import {
-	ConnectionError,
-	calculateBackoff,
-	getNextCronDate,
-	MonqueError,
-	WorkerRegistrationError,
-} from '@/shared';
+import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
+import {
+	ChangeStreamHandler,
+	JobManager,
+	JobProcessor,
+	JobQueryService,
+	JobScheduler,
+	type ResolvedMonqueOptions,
+	type SchedulerContext,
+} from './services/index.js';
 import type { MonqueOptions } from './types.js';
 
 /**
@@ -57,62 +55,43 @@ const DEFAULTS = {
  * stale job recovery, and event-driven observability. Built on native MongoDB driver.
  *
  * @example Complete lifecycle
- * ```;
-typescript
+ * ```typescript
+ * import { Monque } from '@monque/core';
+ * import { MongoClient } from 'mongodb';
  *
-
-import { Monque } from '@monque/core';
-
-*
-
-import { MongoClient } from 'mongodb';
-
-*
+ * const client = new MongoClient('mongodb://localhost:27017');
+ * await client.connect();
+ * const db = client.db('myapp');
  *
-const client = new MongoClient('mongodb://localhost:27017');
-* await client.connect()
-*
-const db = client.db('myapp');
-*
  * // Create instance with options
- *
-const monque = new Monque(db, {
+ * const monque = new Monque(db, {
  *   collectionName: 'jobs',
  *   pollInterval: 1000,
  *   maxRetries: 10,
  *   shutdownTimeout: 30000,
  * });
-*
+ *
  * // Initialize (sets up indexes and recovers stale jobs)
- * await monque.initialize()
-*
+ * await monque.initialize();
+ *
  * // Register workers with type safety
+ * type EmailJob = {
+ *   to: string;
+ *   subject: string;
+ *   body: string;
+ * };
  *
-type EmailJob = {};
-*   to: string
-*   subject: string
-*   body: string
-* }
+ * monque.register<EmailJob>('send-email', async (job) => {
+ *   await emailService.send(job.data.to, job.data.subject, job.data.body);
+ * });
  *
- * monque.register<EmailJob>('send-email', async (job) =>
-{
-	*   await emailService.send(job.data.to, job.data.subject, job.data.body)
-	*
-}
-)
-*
  * // Monitor events for observability
- * monque.on('job:complete', (
-{
-	job, duration;
-}
-) =>
-{
- *   logger.info(`Job $job.namecompleted in $durationms`);
+ * monque.on('job:complete', ({ job, duration }) => {
+ *   logger.info(`Job ${job.name} completed in ${duration}ms`);
  * });
  *
  * monque.on('job:fail', ({ job, error, willRetry }) => {
- *   logger.error(`Job $job.namefailed:`, error);
+ *   logger.error(`Job ${job.name} failed:`, error);
  * });
  *
  * // Start processing
@@ -135,8 +114,7 @@ type EmailJob = {};
  */
 export class Monque extends EventEmitter {
 	private readonly db: Db;
-	private readonly options: Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>> &
-		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>;
+	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
 	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -145,39 +123,12 @@ export class Monque extends EventEmitter {
 	private isRunning = false;
 	private isInitialized = false;
 
-	/**
-	 * MongoDB Change Stream for real-time job notifications.
-	 * When available, provides instant job processing without polling delay.
-	 */
-	private changeStream: ChangeStream | null = null;
-
-	/**
-	 * Number of consecutive reconnection attempts for change stream.
-	 * Used for exponential backoff during reconnection.
-	 */
-	private changeStreamReconnectAttempts = 0;
-
-	/**
-	 * Maximum reconnection attempts before falling back to polling-only mode.
-	 */
-	private readonly maxChangeStreamReconnectAttempts = 3;
-
-	/**
-	 * Debounce timer for change stream event processing.
-	 * Prevents claim storms when multiple events arrive in quick succession.
-	 */
-	private changeStreamDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/**
-	 * Whether the scheduler is currently using change streams for notifications.
-	 */
-	private usingChangeStreams = false;
-
-	/**
-	 * Timer ID for change stream reconnection with exponential backoff.
-	 * Tracked to allow cancellation during shutdown.
-	 */
-	private changeStreamReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	// Internal services (initialized in initialize())
+	private _scheduler: JobScheduler | null = null;
+	private _manager: JobManager | null = null;
+	private _query: JobQueryService | null = null;
+	private _processor: JobProcessor | null = null;
+	private _changeStreamHandler: ChangeStreamHandler | null = null;
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
@@ -220,6 +171,14 @@ export class Monque extends EventEmitter {
 				await this.recoverStaleJobs();
 			}
 
+			// Initialize services with shared context
+			const ctx = this.buildContext();
+			this._scheduler = new JobScheduler(ctx);
+			this._manager = new JobManager(ctx);
+			this._query = new JobQueryService(ctx);
+			this._processor = new JobProcessor(ctx);
+			this._changeStreamHandler = new ChangeStreamHandler(ctx, () => this.processor.poll());
+
 			this.isInitialized = true;
 		} catch (error) {
 			const message =
@@ -228,6 +187,74 @@ export class Monque extends EventEmitter {
 		}
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Service Accessors (throw if not initialized)
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** @throws {ConnectionError} if not initialized */
+	private get scheduler(): JobScheduler {
+		if (!this._scheduler) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._scheduler;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get manager(): JobManager {
+		if (!this._manager) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._manager;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get query(): JobQueryService {
+		if (!this._query) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._query;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get processor(): JobProcessor {
+		if (!this._processor) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._processor;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get changeStreamHandler(): ChangeStreamHandler {
+		if (!this._changeStreamHandler) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._changeStreamHandler;
+	}
+
+	/**
+	 * Build the shared context for internal services.
+	 */
+	private buildContext(): SchedulerContext {
+		if (!this.collection) {
+			throw new ConnectionError('Collection not initialized');
+		}
+
+		return {
+			collection: this.collection,
+			options: this.options,
+			instanceId: this.options.schedulerInstanceId,
+			workers: this.workers,
+			isRunning: () => this.isRunning,
+			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
+				this.emit(event, payload),
+			documentToPersistedJob: <T>(doc: WithId<Document>) => this.documentToPersistedJob<T>(doc),
+		};
+	}
 	/**
 	 * Create required MongoDB indexes for efficient job processing.
 	 *
@@ -370,6 +397,10 @@ export class Monque extends EventEmitter {
 		}
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Public API - Job Scheduling (delegates to JobScheduler)
+	// ─────────────────────────────────────────────────────────────────────────────
+
 	/**
 	 * Enqueue a job for processing.
 	 *
@@ -416,68 +447,7 @@ export class Monque extends EventEmitter {
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt: options.runAt ?? now,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to enqueue job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to enqueue job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof ConnectionError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			throw new ConnectionError(
-				`Failed to enqueue job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
+		return this.scheduler.enqueue(name, data, options);
 	}
 
 	/**
@@ -509,7 +479,8 @@ export class Monque extends EventEmitter {
 	 * ```
 	 */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-		return this.enqueue(name, data, { runAt: new Date() });
+		this.ensureInitialized();
+		return this.scheduler.now(name, data);
 	}
 
 	/**
@@ -563,75 +534,324 @@ export class Monque extends EventEmitter {
 		options: ScheduleOptions = {},
 	): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
-
-		// Validate cron and get next run date (throws InvalidCronError if invalid)
-		const nextRunAt = getNextCronDate(cron);
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt,
-			repeatInterval: cron,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey) {
-				if (!this.collection) {
-					throw new ConnectionError('Failed to schedule job: collection not available');
-				}
-
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError(
-						'Failed to schedule job: findOneAndUpdate returned no document',
-					);
-				}
-
-				return this.documentToPersistedJob<T>(result as WithId<Document>);
-			}
-
-			const result = await this.collection?.insertOne(job as Document);
-
-			if (!result) {
-				throw new ConnectionError('Failed to schedule job: collection not available');
-			}
-
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
-		} catch (error) {
-			if (error instanceof MonqueError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(
-				`Failed to schedule job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
+		return this.scheduler.schedule(cron, name, data, options);
 	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Public API - Job Management (delegates to JobManager)
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Cancel a pending or scheduled job.
+	 *
+	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
+	 * If the job is already cancelled, this is a no-op and returns the job.
+	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
+	 *
+	 * @param jobId - The ID of the job to cancel
+	 * @returns The cancelled job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for cancellation
+	 *
+	 * @example Cancel a pending job
+	 * ```typescript
+	 * const job = await monque.enqueue('report', { type: 'daily' });
+	 * await monque.cancelJob(job._id.toString());
+	 * ```
+	 */
+	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		return this.manager.cancelJob(jobId);
+	}
+
+	/**
+	 * Retry a failed or cancelled job.
+	 *
+	 * Resets the job to 'pending' status, clears failure count/reason, and sets
+	 * nextRunAt to now (immediate retry). Emits a 'job:retried' event.
+	 *
+	 * @param jobId - The ID of the job to retry
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is in an invalid state for retry (must be failed or cancelled)
+	 *
+	 * @example Retry a failed job
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   console.log(`Job ${job._id} failed, retrying manually...`);
+	 *   await monque.retryJob(job._id.toString());
+	 * });
+	 * ```
+	 */
+	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		return this.manager.retryJob(jobId);
+	}
+
+	/**
+	 * Reschedule a pending job to run at a different time.
+	 *
+	 * Only works for jobs in 'pending' status.
+	 *
+	 * @param jobId - The ID of the job to reschedule
+	 * @param runAt - The new Date when the job should run
+	 * @returns The updated job, or null if not found
+	 * @throws {JobStateError} If job is not in pending state
+	 *
+	 * @example Delay a job by 1 hour
+	 * ```typescript
+	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+	 * await monque.rescheduleJob(jobId, nextHour);
+	 * ```
+	 */
+	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
+		this.ensureInitialized();
+		return this.manager.rescheduleJob(jobId, runAt);
+	}
+
+	/**
+	 * Permanently delete a job.
+	 *
+	 * This action is irreversible. Emits a 'job:deleted' event upon success.
+	 * Can delete a job in any state.
+	 *
+	 * @param jobId - The ID of the job to delete
+	 * @returns true if deleted, false if job not found
+	 *
+	 * @example Delete a cleanup job
+	 * ```typescript
+	 * const deleted = await monque.deleteJob(jobId);
+	 * if (deleted) {
+	 *   console.log('Job permanently removed');
+	 * }
+	 * ```
+	 */
+	async deleteJob(jobId: string): Promise<boolean> {
+		this.ensureInitialized();
+		return this.manager.deleteJob(jobId);
+	}
+
+	/**
+	 * Cancel multiple jobs matching the given filter.
+	 *
+	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
+	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * successfully cancelled jobs.
+	 *
+	 * @param filter - Selector for which jobs to cancel (name, status, date range)
+	 * @returns Result with count of cancelled jobs and any errors encountered
+	 *
+	 * @example Cancel all pending jobs for a queue
+	 * ```typescript
+	 * const result = await monque.cancelJobs({
+	 *   name: 'email-queue',
+	 *   status: 'pending'
+	 * });
+	 * console.log(`Cancelled ${result.count} jobs`);
+	 * ```
+	 */
+	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.cancelJobs(filter);
+	}
+
+	/**
+	 * Retry multiple jobs matching the given filter.
+	 *
+	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
+	 * are collected as errors in the result. Emits a 'jobs:retried' event with
+	 * the IDs of successfully retried jobs.
+	 *
+	 * @param filter - Selector for which jobs to retry (name, status, date range)
+	 * @returns Result with count of retried jobs and any errors encountered
+	 *
+	 * @example Retry all failed jobs
+	 * ```typescript
+	 * const result = await monque.retryJobs({
+	 *   status: 'failed'
+	 * });
+	 * console.log(`Retried ${result.count} jobs`);
+	 * ```
+	 */
+	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.retryJobs(filter);
+	}
+
+	/**
+	 * Delete multiple jobs matching the given filter.
+	 *
+	 * Deletes jobs in any status. Uses a batch delete for efficiency.
+	 * Does not emit individual 'job:deleted' events to avoid noise.
+	 *
+	 * @param filter - Selector for which jobs to delete (name, status, date range)
+	 * @returns Result with count of deleted jobs (errors array always empty for delete)
+	 *
+	 * @example Delete old completed jobs
+	 * ```typescript
+	 * const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+	 * const result = await monque.deleteJobs({
+	 *   status: 'completed',
+	 *   olderThan: weekAgo
+	 * });
+	 * console.log(`Deleted ${result.count} jobs`);
+	 * ```
+	 */
+	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
+		this.ensureInitialized();
+		return this.manager.deleteJobs(filter);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Public API - Job Queries (delegates to JobQueryService)
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Get a single job by its MongoDB ObjectId.
+	 *
+	 * Useful for retrieving job details when you have a job ID from events,
+	 * logs, or stored references.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param id - The job's ObjectId
+	 * @returns Promise resolving to the job if found, null otherwise
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Look up job from event
+	 * ```typescript
+	 * monque.on('job:fail', async ({ job }) => {
+	 *   // Later, retrieve the job to check its status
+	 *   const currentJob = await monque.getJob(job._id);
+	 *   console.log(`Job status: ${currentJob?.status}`);
+	 * });
+	 * ```
+	 *
+	 * @example Admin endpoint
+	 * ```typescript
+	 * app.get('/jobs/:id', async (req, res) => {
+	 *   const job = await monque.getJob(new ObjectId(req.params.id));
+	 *   if (!job) {
+	 *     return res.status(404).json({ error: 'Job not found' });
+	 *   }
+	 *   res.json(job);
+	 * });
+	 * ```
+	 */
+	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
+		this.ensureInitialized();
+		return this.query.getJob<T>(id);
+	}
+
+	/**
+	 * Query jobs from the queue with optional filters.
+	 *
+	 * Provides read-only access to job data for monitoring, debugging, and
+	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
+	 *
+	 * @template T - The expected type of the job data payload
+	 * @param filter - Optional filter criteria
+	 * @returns Promise resolving to array of matching jobs
+	 * @throws {ConnectionError} If scheduler not initialized
+	 *
+	 * @example Get all pending jobs
+	 * ```typescript
+	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
+	 * console.log(`${pendingJobs.length} jobs waiting`);
+	 * ```
+	 *
+	 * @example Get failed email jobs
+	 * ```typescript
+	 * const failedEmails = await monque.getJobs({
+	 *   name: 'send-email',
+	 *   status: JobStatus.FAILED,
+	 * });
+	 * for (const job of failedEmails) {
+	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
+	 * }
+	 * ```
+	 *
+	 * @example Paginated job listing
+	 * ```typescript
+	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
+	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
+	 * ```
+	 *
+	 * @example Use with type guards from @monque/core
+	 * ```typescript
+	 * import { isPendingJob, isRecurringJob } from '@monque/core';
+	 *
+	 * const jobs = await monque.getJobs();
+	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
+	 * ```
+	 */
+	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
+		this.ensureInitialized();
+		return this.query.getJobs<T>(filter);
+	}
+
+	/**
+	 * Get a paginated list of jobs using opaque cursors.
+	 *
+	 * Provides stable pagination for large job lists. Supports forward and backward
+	 * navigation, filtering, and efficient database access via index-based cursor queries.
+	 *
+	 * @template T - The job data payload type
+	 * @param options - Pagination options (cursor, limit, direction, filter)
+	 * @returns Page of jobs with next/prev cursors
+	 * @throws {InvalidCursorError} If the provided cursor is malformed
+	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 *
+	 * @example List pending jobs
+	 * ```typescript
+	 * const page = await monque.getJobsWithCursor({
+	 *   limit: 20,
+	 *   filter: { status: 'pending' }
+	 * });
+	 * const jobs = page.jobs;
+	 *
+	 * // Get next page
+	 * if (page.hasNextPage) {
+	 *   const page2 = await monque.getJobsWithCursor({
+	 *     cursor: page.cursor,
+	 *     limit: 20
+	 *   });
+	 * }
+	 * ```
+	 */
+	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+		this.ensureInitialized();
+		return this.query.getJobsWithCursor<T>(options);
+	}
+
+	/**
+	 * Get aggregate statistics for the job queue.
+	 *
+	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
+	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * @param filter - Optional filter to scope statistics by job name
+	 * @returns Promise resolving to queue statistics
+	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
+	 * @throws {ConnectionError} If database operation fails
+	 *
+	 * @example Get overall queue statistics
+	 * ```typescript
+	 * const stats = await monque.getQueueStats();
+	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
+	 * ```
+	 *
+	 * @example Get statistics for a specific job type
+	 * ```typescript
+	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
+	 * console.log(`${emailStats.total} email jobs in queue`);
+	 * ```
+	 */
+	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		this.ensureInitialized();
+		return this.query.getQueueStats(filter);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Public API - Worker Registration
+	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
 	 * Register a worker to process jobs of a specific type.
@@ -715,6 +935,10 @@ export class Monque extends EventEmitter {
 		});
 	}
 
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Public API - Lifecycle
+	// ─────────────────────────────────────────────────────────────────────────────
+
 	/**
 	 * Start polling for and processing jobs.
 	 *
@@ -770,18 +994,18 @@ export class Monque extends EventEmitter {
 		this.isRunning = true;
 
 		// Set up change streams as the primary notification mechanism
-		this.setupChangeStream();
+		this.changeStreamHandler.setup();
 
 		// Set up polling as backup (runs at configured interval)
 		this.pollIntervalId = setInterval(() => {
-			this.poll().catch((error: unknown) => {
+			this.processor.poll().catch((error: unknown) => {
 				this.emit('job:error', { error: error as Error });
 			});
 		}, this.options.pollInterval);
 
 		// Start heartbeat interval for claimed jobs
 		this.heartbeatIntervalId = setInterval(() => {
-			this.updateHeartbeats().catch((error: unknown) => {
+			this.processor.updateHeartbeats().catch((error: unknown) => {
 				this.emit('job:error', { error: error as Error });
 			});
 		}, this.options.heartbeatInterval);
@@ -803,7 +1027,7 @@ export class Monque extends EventEmitter {
 		}
 
 		// Run initial poll immediately to pick up any existing jobs
-		this.poll().catch((error: unknown) => {
+		this.processor.poll().catch((error: unknown) => {
 			this.emit('job:error', { error: error as Error });
 		});
 	}
@@ -841,6 +1065,7 @@ export class Monque extends EventEmitter {
 	 * await monque.stop();
 	 * ```
 	 */
+
 	async stop(): Promise<void> {
 		if (!this.isRunning) {
 			return;
@@ -849,19 +1074,7 @@ export class Monque extends EventEmitter {
 		this.isRunning = false;
 
 		// Close change stream
-		await this.closeChangeStream();
-
-		// Clear debounce timer
-		if (this.changeStreamDebounceTimer) {
-			clearTimeout(this.changeStreamDebounceTimer);
-			this.changeStreamDebounceTimer = null;
-		}
-
-		// Clear reconnection timer
-		if (this.changeStreamReconnectTimer) {
-			clearTimeout(this.changeStreamReconnectTimer);
-			this.changeStreamReconnectTimer = null;
-		}
+		await this.changeStreamHandler.close();
 
 		if (this.cleanupIntervalId) {
 			clearInterval(this.cleanupIntervalId);
@@ -914,7 +1127,6 @@ export class Monque extends EventEmitter {
 
 		if (result === 'timeout') {
 			const incompleteJobs = this.getActiveJobsList();
-			const { ShutdownTimeoutError } = await import('@/shared/errors.js');
 
 			const error = new ShutdownTimeoutError(
 				`Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
@@ -974,394 +1186,9 @@ export class Monque extends EventEmitter {
 		return this.isRunning && this.isInitialized && this.collection !== null;
 	}
 
-	/**
-	 * Query jobs from the queue with optional filters.
-	 *
-	 * Provides read-only access to job data for monitoring, debugging, and
-	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param filter - Optional filter criteria
-	 * @returns Promise resolving to array of matching jobs
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Get all pending jobs
-	 * ```typescript
-	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
-	 * console.log(`${pendingJobs.length} jobs waiting`);
-	 * ```
-	 *
-	 * @example Get failed email jobs
-	 * ```typescript
-	 * const failedEmails = await monque.getJobs({
-	 *   name: 'send-email',
-	 *   status: JobStatus.FAILED,
-	 * });
-	 * for (const job of failedEmails) {
-	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
-	 * }
-	 * ```
-	 *
-	 * @example Paginated job listing
-	 * ```typescript
-	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
-	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
-	 * ```
-	 *
-	 * @example Use with type guards from @monque/core
-	 * ```typescript
-	 * import { isPendingJob, isRecurringJob } from '@monque/core';
-	 *
-	 * const jobs = await monque.getJobs();
-	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
-	 * ```
-	 */
-	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-		this.ensureInitialized();
-
-		if (!this.collection) {
-			throw new ConnectionError('Failed to query jobs: collection not available');
-		}
-
-		const query: Document = {};
-
-		if (filter.name !== undefined) {
-			query['name'] = filter.name;
-		}
-
-		if (filter.status !== undefined) {
-			if (Array.isArray(filter.status)) {
-				query['status'] = { $in: filter.status };
-			} else {
-				query['status'] = filter.status;
-			}
-		}
-
-		const limit = filter.limit ?? 100;
-		const skip = filter.skip ?? 0;
-
-		try {
-			const cursor = this.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
-
-			const docs = await cursor.toArray();
-			return docs.map((doc) => this.documentToPersistedJob<T>(doc));
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJobs';
-			throw new ConnectionError(
-				`Failed to query jobs: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Get a single job by its MongoDB ObjectId.
-	 *
-	 * Useful for retrieving job details when you have a job ID from events,
-	 * logs, or stored references.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param id - The job's ObjectId
-	 * @returns Promise resolving to the job if found, null otherwise
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Look up job from event
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   // Later, retrieve the job to check its status
-	 *   const currentJob = await monque.getJob(job._id);
-	 *   console.log(`Job status: ${currentJob?.status}`);
-	 * });
-	 * ```
-	 *
-	 * @example Admin endpoint
-	 * ```typescript
-	 * app.get('/jobs/:id', async (req, res) => {
-	 *   const job = await monque.getJob(new ObjectId(req.params.id));
-	 *   if (!job) {
-	 *     return res.status(404).json({ error: 'Job not found' });
-	 *   }
-	 *   res.json(job);
-	 * });
-	 * ```
-	 */
-	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
-		this.ensureInitialized();
-
-		if (!this.collection) {
-			throw new ConnectionError('Failed to get job: collection not available');
-		}
-
-		try {
-			const doc = await this.collection.findOne({ _id: id });
-			if (!doc) {
-				return null;
-			}
-			return this.documentToPersistedJob<T>(doc as WithId<Document>);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : 'Unknown error during getJob';
-			throw new ConnectionError(
-				`Failed to get job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
-	}
-
-	/**
-	 * Poll for available jobs and process them.
-	 *
-	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
-	 * attempts to acquire jobs up to the worker's available concurrency slots.
-	 * Aborts early if the scheduler is stopping (`isRunning` is false).
-	 *
-	 * @private
-	 */
-	private async poll(): Promise<void> {
-		if (!this.isRunning || !this.collection) {
-			return;
-		}
-
-		for (const [name, worker] of this.workers) {
-			// Check if worker has capacity
-			const availableSlots = worker.concurrency - worker.activeJobs.size;
-
-			if (availableSlots <= 0) {
-				continue;
-			}
-
-			// Try to acquire jobs up to available slots
-			for (let i = 0; i < availableSlots; i++) {
-				if (!this.isRunning) {
-					return;
-				}
-				const job = await this.acquireJob(name);
-
-				if (job) {
-					this.processJob(job, worker).catch((error: unknown) => {
-						this.emit('job:error', { error: error as Error, job });
-					});
-				} else {
-					// No more jobs available for this worker
-					break;
-				}
-			}
-		}
-	}
-
-	/**
-	 * Atomically acquire a pending job for processing using the claimedBy pattern.
-	 *
-	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
-	 * instance can claim a job. The query ensures the job is:
-	 * - In pending status
-	 * - Has nextRunAt <= now
-	 * - Is not claimed by another instance (claimedBy is null/undefined)
-	 *
-	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
-	 *
-	 * @private
-	 * @param name - The job type to acquire
-	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
-	 */
-	private async acquireJob(name: string): Promise<PersistedJob | null> {
-		if (!this.collection || !this.isRunning) {
-			return null;
-		}
-
-		const now = new Date();
-
-		const result = await this.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.options.schedulerInstanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
-
-		if (!result) {
-			return null;
-		}
-
-		return this.documentToPersistedJob(result as WithId<Document>);
-	}
-
-	/**
-	 * Execute a job using its registered worker handler.
-	 *
-	 * Tracks the job as active during processing, emits lifecycle events, and handles
-	 * both success and failure cases. On success, calls `completeJob()`. On failure,
-	 * calls `failJob()` which implements exponential backoff retry logic.
-	 *
-	 * @private
-	 * @param job - The job to process
-	 * @param worker - The worker registration containing the handler and active job tracking
-	 */
-	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
-		const jobId = job._id.toString();
-		worker.activeJobs.set(jobId, job);
-
-		const startTime = Date.now();
-		this.emit('job:start', job);
-
-		try {
-			await worker.handler(job);
-
-			// Job completed successfully
-			const duration = Date.now() - startTime;
-			await this.completeJob(job);
-			this.emit('job:complete', { job, duration });
-		} catch (error) {
-			// Job failed
-			const err = error instanceof Error ? error : new Error(String(error));
-			await this.failJob(job, err);
-
-			const willRetry = job.failCount + 1 < this.options.maxRetries;
-			this.emit('job:fail', { job, error: err, willRetry });
-		} finally {
-			worker.activeJobs.delete(jobId);
-		}
-	}
-
-	/**
-	 * Mark a job as completed successfully.
-	 *
-	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
-	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
-	 * Clears `lockedAt` and `failReason` fields in both cases.
-	 *
-	 * @private
-	 * @param job - The job that completed successfully
-	 */
-	private async completeJob(job: Job): Promise<void> {
-		if (!this.collection || !isPersistedJob(job)) {
-			return;
-		}
-
-		if (job.repeatInterval) {
-			// Recurring job - schedule next run
-			const nextRunAt = getNextCronDate(job.repeatInterval);
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-		} else {
-			// One-time job - mark as completed
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.COMPLETED,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-			job.status = JobStatus.COMPLETED;
-		}
-	}
-
-	/**
-	 * Handle job failure with exponential backoff retry logic.
-	 *
-	 * Increments `failCount` and calculates next retry time using exponential backoff:
-	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
-	 *
-	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
-	 * to `pending` status for retry. Stores error message in `failReason` field.
-	 *
-	 * @private
-	 * @param job - The job that failed
-	 * @param error - The error that caused the failure
-	 */
-	private async failJob(job: Job, error: Error): Promise<void> {
-		if (!this.collection || !isPersistedJob(job)) {
-			return;
-		}
-
-		const newFailCount = job.failCount + 1;
-
-		if (newFailCount >= this.options.maxRetries) {
-			// Permanent failure
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		} else {
-			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(
-				newFailCount,
-				this.options.baseRetryInterval,
-				this.options.maxBackoffDelay,
-			);
-
-			await this.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						failCount: newFailCount,
-						failReason: error.message,
-						nextRunAt,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
-		}
-	}
+	// ─────────────────────────────────────────────────────────────────────────────
+	// Private Helpers
+	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
 	 * Ensure the scheduler is initialized before operations.
@@ -1373,214 +1200,6 @@ export class Monque extends EventEmitter {
 		if (!this.isInitialized || !this.collection) {
 			throw new ConnectionError('Monque not initialized. Call initialize() first.');
 		}
-	}
-
-	/**
-	 * Update heartbeats for all jobs claimed by this scheduler instance.
-	 *
-	 * This method runs periodically while the scheduler is running to indicate
-	 * that jobs are still being actively processed.
-	 *
-	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
-	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
-	 *
-	 * @private
-	 */
-	private async updateHeartbeats(): Promise<void> {
-		if (!this.collection || !this.isRunning) {
-			return;
-		}
-
-		const now = new Date();
-
-		await this.collection.updateMany(
-			{
-				claimedBy: this.options.schedulerInstanceId,
-				status: JobStatus.PROCESSING,
-			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
-		);
-	}
-
-	/**
-	 * Set up MongoDB Change Stream for real-time job notifications.
-	 *
-	 * Change streams provide instant notifications when jobs are inserted or when
-	 * job status changes to pending (e.g., after a retry). This eliminates the
-	 * polling delay for reactive job processing.
-	 *
-	 * The change stream watches for:
-	 * - Insert operations (new jobs)
-	 * - Update operations where status field changes
-	 *
-	 * If change streams are unavailable (e.g., standalone MongoDB), the system
-	 * gracefully falls back to polling-only mode.
-	 *
-	 * @private
-	 */
-	private setupChangeStream(): void {
-		if (!this.collection || !this.isRunning) {
-			return;
-		}
-
-		try {
-			// Create change stream with pipeline to filter relevant events
-			const pipeline = [
-				{
-					$match: {
-						$or: [
-							{ operationType: 'insert' },
-							{
-								operationType: 'update',
-								'updateDescription.updatedFields.status': { $exists: true },
-							},
-						],
-					},
-				},
-			];
-
-			this.changeStream = this.collection.watch(pipeline, {
-				fullDocument: 'updateLookup',
-			});
-
-			// Handle change events
-			this.changeStream.on('change', (change) => {
-				this.handleChangeStreamEvent(change);
-			});
-
-			// Handle errors with reconnection
-			this.changeStream.on('error', (error: Error) => {
-				this.emit('changestream:error', { error });
-				this.handleChangeStreamError(error);
-			});
-
-			// Mark as connected
-			this.usingChangeStreams = true;
-			this.changeStreamReconnectAttempts = 0;
-			this.emit('changestream:connected', undefined);
-		} catch (error) {
-			// Change streams not available (e.g., standalone MongoDB)
-			this.usingChangeStreams = false;
-			const reason = error instanceof Error ? error.message : 'Unknown error';
-			this.emit('changestream:fallback', { reason });
-		}
-	}
-
-	/**
-	 * Handle a change stream event by triggering a debounced poll.
-	 *
-	 * Events are debounced to prevent "claim storms" when multiple changes arrive
-	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
-	 * collects multiple events and triggers a single poll.
-	 *
-	 * @private
-	 * @param change - The change stream event document
-	 */
-	private handleChangeStreamEvent(change: ChangeStreamDocument<Document>): void {
-		if (!this.isRunning) {
-			return;
-		}
-
-		// Trigger poll on insert (new job) or update where status changes
-		const isInsert = change.operationType === 'insert';
-		const isUpdate = change.operationType === 'update';
-
-		// Get fullDocument if available (for insert or with updateLookup option)
-		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
-		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
-
-		// For inserts: always trigger since new pending jobs need processing
-		// For updates: trigger if status changed to pending (retry/release scenario)
-		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
-
-		if (shouldTrigger) {
-			// Debounce poll triggers to avoid claim storms
-			if (this.changeStreamDebounceTimer) {
-				clearTimeout(this.changeStreamDebounceTimer);
-			}
-
-			this.changeStreamDebounceTimer = setTimeout(() => {
-				this.changeStreamDebounceTimer = null;
-				this.poll().catch((error: unknown) => {
-					this.emit('job:error', { error: error as Error });
-				});
-			}, 100);
-		}
-	}
-
-	/**
-	 * Handle change stream errors with exponential backoff reconnection.
-	 *
-	 * Attempts to reconnect up to `maxChangeStreamReconnectAttempts` times with
-	 * exponential backoff (base 1000ms). After exhausting retries, falls back to
-	 * polling-only mode.
-	 *
-	 * @private
-	 * @param error - The error that caused the change stream failure
-	 */
-	private handleChangeStreamError(error: Error): void {
-		if (!this.isRunning) {
-			return;
-		}
-
-		this.changeStreamReconnectAttempts++;
-
-		if (this.changeStreamReconnectAttempts > this.maxChangeStreamReconnectAttempts) {
-			// Fall back to polling-only mode
-			this.usingChangeStreams = false;
-			this.emit('changestream:fallback', {
-				reason: `Exhausted ${this.maxChangeStreamReconnectAttempts} reconnection attempts: ${error.message}`,
-			});
-			return;
-		}
-
-		// Exponential backoff: 1s, 2s, 4s
-		const delay = 2 ** (this.changeStreamReconnectAttempts - 1) * 1000;
-
-		// Clear any existing reconnect timer before scheduling a new one
-		if (this.changeStreamReconnectTimer) {
-			clearTimeout(this.changeStreamReconnectTimer);
-		}
-
-		this.changeStreamReconnectTimer = setTimeout(() => {
-			this.changeStreamReconnectTimer = null;
-			if (this.isRunning) {
-				// Close existing change stream before reconnecting
-				if (this.changeStream) {
-					this.changeStream.close().catch(() => {});
-					this.changeStream = null;
-				}
-				this.setupChangeStream();
-			}
-		}, delay);
-	}
-
-	/**
-	 * Close the change stream cursor and emit closed event.
-	 *
-	 * @private
-	 */
-	private async closeChangeStream(): Promise<void> {
-		if (this.changeStream) {
-			try {
-				await this.changeStream.close();
-			} catch {
-				// Ignore close errors during shutdown
-			}
-			this.changeStream = null;
-
-			if (this.usingChangeStreams) {
-				this.emit('changestream:closed', undefined);
-			}
-		}
-
-		this.usingChangeStreams = false;
-		this.changeStreamReconnectAttempts = 0;
 	}
 
 	/**

@@ -39,10 +39,12 @@ For the full interface definition, see the [Job API Reference](/monque/api/inter
 stateDiagram-v2
     [*] --> pending: enqueue()
     pending --> processing: worker claims
+    pending --> cancelled: cancelJob()
     processing --> completed: success
     processing --> pending: failure (retries left)
     processing --> failed: max retries exceeded
     completed --> pending: recurring job reschedules
+    cancelled --> pending: retryJob()
 ```
 
 ### Status Definitions
@@ -53,6 +55,7 @@ stateDiagram-v2
 | `processing` | A worker has claimed and is executing the job       |
 | `completed`  | Job finished successfully                           |
 | `failed`     | Job permanently failed after exhausting all retries |
+| `cancelled`  | Job was manually cancelled via cancelJob()          |
 
 ## Creating Jobs
 
@@ -269,13 +272,27 @@ The indexes Monque creates are:
 - `{ status: 1, nextRunAt: 1, claimedBy: 1 }` for the atomic claim query
 - `{ status: 1, lockedAt: 1, lastHeartbeat: 1 }` to support stale recovery queries
 
-### Manual Cleanup
+### Deleting Jobs
+
+You can use the deletion APIs for manual cleanup:
+
+- `deleteJob(jobId)`: Permanently delete a single job.
+- `deleteJobs(filter)`: Delete multiple jobs matching criteria (name, status, age).
+
+```typescript
+// Delete a specific job
+await monque.deleteJob(jobId);
+
+// Delete all failed jobs older than 7 days
+await monque.deleteJobs({
+  status: JobStatus.FAILED,
+  olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+});
+```
+
+### Advanced Custom Cleanup
 
 If you need more complex retention logic (e.g., keep important sales reports longer), implement a custom scheduled job that uses the MongoDB driver directly:
-
-<Aside type="note">
-  Monque does not expose a public `deleteJob` API in v1.0. Use the MongoDB driver for custom deletion logic.
-</Aside>
 
 ```typescript
 import { JobStatus } from '@monque/core';

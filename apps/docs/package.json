@@ -1,7 +1,6 @@
 {
 	"name": "@monque/docs",
 	"type": "module",
-	"packageManager": "bun@1.3.5",
 	"engines": {
 		"node": ">=22.0.0"
 	},
