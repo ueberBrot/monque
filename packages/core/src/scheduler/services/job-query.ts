@@ -309,8 +309,9 @@ export class JobQueryService {
 							},
 						},
 					],
-					// Calculate average processing duration for completed jobs
-					// Uses createdAt -> updatedAt since completeJob() unsets lockedAt
+					// Calculate average job lifetime for completed jobs.
+					// Uses createdAt → updatedAt (total lifetime = queue wait + processing)
+					// since completeJob() unsets lockedAt, making pure processing time unavailable.
 					avgDuration: [
 						{
 							$match: {

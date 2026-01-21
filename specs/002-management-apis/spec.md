@@ -49,7 +49,7 @@ An API consumer needs to paginate through potentially thousands of jobs efficien
 1. **Given** 150 jobs exist, **When** the consumer queries with `getJobsWithCursor({ limit: 50 })`, **Then** the first 50 jobs are returned along with a cursor pointing to the next batch.
 2. **Given** a cursor from a previous query, **When** the consumer passes it to `getJobsWithCursor({ cursor, limit: 50 })`, **Then** the next 50 jobs are returned without duplicates.
 3. **Given** new jobs are inserted during pagination, **When** the consumer continues with the same cursor direction, **Then** new jobs are appended naturally without disrupting the current page sequence.
-4. **Given** jobs are deleted during pagination, **When** the consumer resumes with a cursor, **Then** no errors occur and pagination continues from the stable cursor position.
+4. **Given** jobs are deleted during pagination (excluding the cursor anchor), **When** the consumer resumes with a cursor, **Then** no errors occur and pagination continues from the stable cursor position.
 5. **Given** an invalid or malformed cursor (e.g., non-base64, references a deleted job, schema version mismatch), **When** the consumer calls the method, **Then** an `InvalidCursorError` is returned. Note: Cursors do not expire by time; they become invalid only if the referenced `_id` no longer exists or cursor format is invalid.
 6. **Given** 100 jobs exist, **When** the consumer queries with `getJobsWithCursor({ direction: 'backward', limit: 20 })` without a cursor, **Then** the 20 newest jobs are returned with `hasNextPage: true` (older jobs exist).
 7. **Given** a backward cursor, **When** the consumer continues pagination, **Then** older jobs are returned and `hasPreviousPage` indicates newer jobs exist.
@@ -152,7 +152,7 @@ External tooling displays aggregate metrics for the job queue—total counts by 
 - **FR-018**: System MUST provide `getQueueStats(filter?)` method returning aggregate job metrics.
 - **FR-019**: Statistics MUST include count per status (pending, processing, completed, failed, cancelled).
 - **FR-020**: Statistics MUST include total job count and completed job count.
-- **FR-021**: Statistics MAY include average processing duration for completed jobs.
+- **FR-021**: Statistics MUST include average processing duration for completed jobs.
 - **FR-022**: Statistics MUST support filtering by job name.
 
 ### Key Entities

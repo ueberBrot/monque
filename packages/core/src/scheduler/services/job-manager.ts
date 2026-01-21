@@ -41,6 +41,8 @@ export class JobManager {
 	 * ```
 	 */
 	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		if (!ObjectId.isValid(jobId)) return null;
+
 		const _id = new ObjectId(jobId);
 
 		// Fetch job first to allow emitting the full job object in the event
@@ -107,6 +109,8 @@ export class JobManager {
 	 * ```
 	 */
 	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
+		if (!ObjectId.isValid(jobId)) return null;
+
 		const _id = new ObjectId(jobId);
 		const currentJob = await this.ctx.collection.findOne({ _id });
 
@@ -172,6 +176,8 @@ export class JobManager {
 	 * ```
 	 */
 	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
+		if (!ObjectId.isValid(jobId)) return null;
+
 		const _id = new ObjectId(jobId);
 		const currentJobDoc = await this.ctx.collection.findOne({ _id });
 
@@ -229,6 +235,8 @@ export class JobManager {
 	 * ```
 	 */
 	async deleteJob(jobId: string): Promise<boolean> {
+		if (!ObjectId.isValid(jobId)) return false;
+
 		const _id = new ObjectId(jobId);
 
 		const result = await this.ctx.collection.deleteOne({ _id });
