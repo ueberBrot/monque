@@ -5,7 +5,7 @@
  * Internal services are tested in their respective unit tests.
  */
 
-import type { Collection, Db, ObjectId } from 'mongodb';
+import { type Collection, type Db, ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Monque } from '@/scheduler/monque.js';
@@ -82,9 +82,7 @@ describe('Monque', () => {
 			// Schedule
 			await expect(monque.schedule('* * * * *', 'test', {})).rejects.toThrow(ConnectionError);
 			// Get
-			await expect(monque.getJob(new Object() as unknown as ObjectId)).rejects.toThrow(
-				ConnectionError,
-			);
+			await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
 			// Management
 			await expect(monque.cancelJob('123')).rejects.toThrow(ConnectionError);
 		});
