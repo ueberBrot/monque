@@ -206,11 +206,21 @@ export class JobQueryService {
 		const fetchLimit = limit + 1;
 
 		// Sort: Always deterministic.
-		const docs = await this.ctx.collection
-			.find(query)
-			.sort({ _id: sortDir })
-			.limit(fetchLimit)
-			.toArray();
+		let docs: WithId<Document>[];
+		try {
+			docs = await this.ctx.collection
+				.find(query)
+				.sort({ _id: sortDir })
+				.limit(fetchLimit)
+				.toArray();
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : 'Unknown error during getJobsWithCursor';
+			throw new ConnectionError(
+				`Failed to query jobs with cursor: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
 
 		let hasMore = false;
 		if (docs.length > limit) {

@@ -236,6 +236,34 @@ describe('JobQueryService', () => {
 			expect(page.jobs).toHaveLength(10); // Should trim to limit
 			expect(page.hasNextPage).toBe(true);
 		});
+
+		it('should throw ConnectionError when database operation fails', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce(new Error('Database error')),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
+			};
+
+			vi.mocked(ctx.mockCollection.find).mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+		});
 	});
 
 	describe('getQueueStats', () => {
@@ -376,6 +404,27 @@ describe('JobQueryService', () => {
 
 			expect(stats.pending).toBe(3);
 			expect(stats.total).toBe(3);
+			expect(stats.avgProcessingDurationMs).toBeUndefined();
+		});
+
+		it('should handle NaN avgMs gracefully', async () => {
+			const mockAggregateResult = [
+				{
+					statusCounts: [],
+					avgDuration: [{ avgMs: Number.NaN }],
+					total: [{ count: 0 }],
+				},
+			];
+
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+			};
+
+			vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const stats = await queryService.getQueueStats();
 			expect(stats.avgProcessingDurationMs).toBeUndefined();
 		});
 	});
