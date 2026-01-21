@@ -310,11 +310,11 @@ export class JobQueryService {
 						},
 					],
 					// Calculate average processing duration for completed jobs
+					// Uses createdAt -> updatedAt since completeJob() unsets lockedAt
 					avgDuration: [
 						{
 							$match: {
 								status: JobStatus.COMPLETED,
-								lockedAt: { $ne: null },
 							},
 						},
 						{
@@ -322,7 +322,7 @@ export class JobQueryService {
 								_id: null,
 								avgMs: {
 									$avg: {
-										$subtract: ['$updatedAt', '$lockedAt'],
+										$subtract: ['$updatedAt', '$createdAt'],
 									},
 								},
 							},

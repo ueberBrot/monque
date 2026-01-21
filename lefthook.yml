@@ -14,7 +14,3 @@ pre-commit:
     - name: lockfile-verify
       glob: "package.json"
       run: bun install --frozen-lockfile
-
-    - name: repomix-generate
-      glob: "{packages/core/**,repomix.config.ts}"
-      run: bun run repomix && git add repomix-core.md

@@ -118,7 +118,7 @@ External tooling displays aggregate metrics for the job queue—total counts by 
 - **FR-004a**: System MUST provide `rescheduleJob(id, runAt)` method that updates the `nextRunAt` field for a `pending` job.
 - **FR-004b**: System MUST prevent rescheduling jobs not in `pending` status, returning an error.
 - **FR-005**: System MUST provide `deleteJob(id)` method that removes a job document from the collection.
-- **FR-005a**: System MAY emit `job:deleted` event when a job is successfully deleted.
+- **FR-005a**: System MUST emit `job:deleted` event when a job is successfully deleted.
 - **FR-006**: System MUST emit `job:cancelled` event when a job is successfully cancelled.
 - **FR-007**: System MUST emit `job:retried` event when a job is successfully retried.
 

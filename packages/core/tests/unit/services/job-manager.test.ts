@@ -80,8 +80,21 @@ describe('JobManager', () => {
 
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
+			const expectedUnset = {
+				failReason: '',
+				lockedAt: '',
+				claimedBy: '',
+				lastHeartbeat: '',
+				heartbeatInterval: '',
+			};
 
 			const job = await manager.retryJob(jobId.toString());
+
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({ _id: jobId }),
+				expect.objectContaining({ $unset: expectedUnset }),
+				expect.anything(),
+			);
 
 			expect(job?.status).toBe(JobStatus.PENDING);
 			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:retried' }));
@@ -363,7 +376,21 @@ describe('JobManager', () => {
 				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
 				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
 
+			const expectedUnset = {
+				failReason: '',
+				lockedAt: '',
+				claimedBy: '',
+				lastHeartbeat: '',
+				heartbeatInterval: '',
+			};
+
 			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ $unset: expectedUnset }),
+				expect.anything(),
+			);
 
 			expect(result.count).toBe(2);
 			expect(result.errors).toHaveLength(0);

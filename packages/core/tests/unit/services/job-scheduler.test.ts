@@ -104,7 +104,7 @@ describe('JobScheduler', () => {
 			);
 		});
 
-		it('should set uniqueKey on job document when provided', async () => {
+		it('should omit uniqueKey when not provided', async () => {
 			const insertedId = new ObjectId();
 			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
 				insertedId,

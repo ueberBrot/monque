@@ -134,14 +134,14 @@ describe('Management APIs: Queue Statistics', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			// Create completed jobs with known processing durations
+			// Create completed jobs with known processing durations (createdAt -> updatedAt)
 			const now = new Date();
 
-			// Job 1: 1000ms processing time
+			// Job 1: 1000ms processing time (createdAt to updatedAt)
 			const job1 = JobFactoryHelpers.completed({
 				name: queueName,
 				data: { task: 1 },
-				lockedAt: new Date(now.getTime() - 1000),
+				createdAt: new Date(now.getTime() - 1000),
 				updatedAt: now,
 			});
 
@@ -149,7 +149,7 @@ describe('Management APIs: Queue Statistics', () => {
 			const job2 = JobFactoryHelpers.completed({
 				name: queueName,
 				data: { task: 2 },
-				lockedAt: new Date(now.getTime() - 2000),
+				createdAt: new Date(now.getTime() - 2000),
 				updatedAt: now,
 			});
 
@@ -157,7 +157,7 @@ describe('Management APIs: Queue Statistics', () => {
 			const job3 = JobFactoryHelpers.completed({
 				name: queueName,
 				data: { task: 3 },
-				lockedAt: new Date(now.getTime() - 3000),
+				createdAt: new Date(now.getTime() - 3000),
 				updatedAt: now,
 			});
 
@@ -171,7 +171,7 @@ describe('Management APIs: Queue Statistics', () => {
 			expect(stats.completed).toBe(3);
 		});
 
-		test('handles jobs without lockedAt in avg calculation', async () => {
+		test('includes all completed jobs in avg calculation regardless of lockedAt', async () => {
 			const collectionName = uniqueCollectionName('stats_no_locked');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -179,19 +179,22 @@ describe('Management APIs: Queue Statistics', () => {
 
 			const now = new Date();
 
-			// Job with lockedAt
+			// Job with lockedAt (1000ms processing time)
 			const jobWithLockedAt = JobFactoryHelpers.completed({
 				name: queueName,
 				data: { task: 1 },
-				lockedAt: new Date(now.getTime() - 1000),
+				createdAt: new Date(now.getTime() - 1000),
 				updatedAt: now,
+				lockedAt: new Date(now.getTime() - 500), // Has lockedAt but we don't use it
 			});
 
-			// Job without lockedAt (simulates edge case)
+			// Job without lockedAt (2000ms processing time)
 			const jobWithoutLockedAt = {
 				...JobFactoryHelpers.completed({
 					name: queueName,
 					data: { task: 2 },
+					createdAt: new Date(now.getTime() - 2000),
+					updatedAt: now,
 				}),
 				lockedAt: null,
 			};
@@ -200,11 +203,10 @@ describe('Management APIs: Queue Statistics', () => {
 
 			const stats = await monque.getQueueStats();
 
-			// Should only count the job with lockedAt in average
+			// Both jobs should be included in average: (1000 + 2000) / 2 = 1500ms
 			expect(stats.completed).toBe(2);
-			// avgProcessingDurationMs should be based only on jobs with lockedAt
 			expect(stats.avgProcessingDurationMs).toBeDefined();
-			expect(stats.avgProcessingDurationMs).toBe(1000);
+			expect(stats.avgProcessingDurationMs).toBe(1500);
 		});
 
 		test('handles large dataset efficiently', async () => {

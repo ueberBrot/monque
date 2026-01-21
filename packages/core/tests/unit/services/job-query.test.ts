@@ -387,7 +387,7 @@ describe('JobQueryService', () => {
 			const mockAggregateResult = [
 				{
 					statusCounts: [{ _id: 'pending', count: 3 }],
-					avgDuration: [], // No completed jobs with lockedAt
+					avgDuration: [], // No completed jobs
 					total: [{ count: 3 }],
 				},
 			];
