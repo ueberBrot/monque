@@ -129,12 +129,12 @@ console.log(`Queued ${retryResult.count} jobs for retry`);
 // Delete completed jobs older than 7 days
 const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-const deleteCount = await monque.deleteJobs({
+const result = await monque.deleteJobs({
   status: JobStatus.COMPLETED,
   olderThan: weekAgo,
 });
 
-console.log(`Deleted ${deleteCount} old completed jobs`);
+console.log(`Deleted ${result.count} old completed jobs`);
 ```
 
 ---

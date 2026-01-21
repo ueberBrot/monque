@@ -41,8 +41,8 @@ export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
 /**
  * Type guard to check if a value is a valid job status.
  *
- * Validates that a value is one of the four valid job statuses: `'pending'`,
- * `'processing'`, `'completed'`, or `'failed'`. Useful for runtime validation
+ * Validates that a value is one of the five valid job statuses: `'pending'`,
+ * `'processing'`, `'completed'`, `'failed'`, or `'cancelled'`. Useful for runtime validation
  * of user input or external data.
  *
  * @param value - The value to check

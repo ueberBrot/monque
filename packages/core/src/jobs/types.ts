@@ -8,6 +8,7 @@ import type { ObjectId } from 'mongodb';
  * - PROCESSING → COMPLETED (on success)
  * - PROCESSING → PENDING (on failure, if retries remain)
  * - PROCESSING → FAILED (on failure, after max retries exhausted)
+ * - PENDING → CANCELLED (on manual cancellation)
  *
  * @example
  * ```typescript
@@ -30,7 +31,7 @@ export const JobStatus = {
 } as const;
 
 /**
- * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed'`
+ * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'`
  */
 export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
 
@@ -301,6 +302,8 @@ export interface CursorPage<T = unknown> {
  * console.log(`Total jobs: ${stats.total}`);
  * console.log(`Pending: ${stats.pending}`);
  * console.log(`Processing: ${stats.processing}`);
+ * console.log(`Failed: ${stats.failed}`);
+ * console.log(`Start to finish avg: ${stats.avgProcessingDurationMs}ms`);
  * ```
  */
 export interface QueueStats {

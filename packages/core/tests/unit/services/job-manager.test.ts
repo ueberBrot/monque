@@ -426,6 +426,12 @@ describe('JobManager', () => {
 
 			expect(result.count).toBe(5);
 			expect(result.errors).toHaveLength(0);
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'jobs:deleted',
+					payload: { count: 5 },
+				}),
+			);
 		});
 
 		it('should return zero count when no jobs match', async () => {

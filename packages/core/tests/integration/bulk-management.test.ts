@@ -344,9 +344,8 @@ describe('Management APIs: Bulk Operations', () => {
 			expect(remaining).toBe(0);
 		});
 
-		test('does not emit events for bulk delete', async () => {
-			// Bulk delete is a batch operation, individual events would be too noisy
-			const collectionName = uniqueCollectionName('bulk_delete_no_event');
+		test('emits jobs:deleted event with count', async () => {
+			const collectionName = uniqueCollectionName('bulk_delete_event');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -354,15 +353,15 @@ describe('Management APIs: Bulk Operations', () => {
 			await monque.enqueue(queueName, { task: 1 });
 			await monque.enqueue(queueName, { task: 2 });
 
-			let eventCount = 0;
-			monque.on('job:deleted', () => {
-				eventCount++;
+			let emittedPayload: { count: number } | undefined;
+			monque.on('jobs:deleted', (payload) => {
+				emittedPayload = payload;
 			});
 
 			await monque.deleteJobs({ name: queueName });
 
-			// Individual job:deleted events should NOT be emitted for bulk delete
-			expect(eventCount).toBe(0);
+			expect(emittedPayload).toBeDefined();
+			expect(emittedPayload?.count).toBe(2);
 		});
 	});
 });

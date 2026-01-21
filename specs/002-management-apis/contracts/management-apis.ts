@@ -193,6 +193,20 @@ export interface ManagementEventMap {
 		job: Job;
 		previousStatus: 'failed' | 'cancelled';
 	};
+
+	'job:deleted': {
+		jobId: ObjectId;
+	};
+
+	'jobs:cancelled': {
+		jobIds: ObjectId[];
+		count: number;
+	};
+
+	'jobs:deleted': {
+		jobIds: ObjectId[];
+		count: number;
+	};
 }
 
 // =============================================================================

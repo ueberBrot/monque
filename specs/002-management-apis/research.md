@@ -22,11 +22,11 @@
 **Implementation**:
 ```typescript
 private encodeCursor(id: ObjectId): string {
-  return Buffer.from(id.toHexString()).toString('base64url');
+  return Buffer.from(id.toHexString(), 'hex').toString('base64url');
 }
 
 private decodeCursor(cursor: string): ObjectId {
-  const hex = Buffer.from(cursor, 'base64url').toString('utf8');
+  const hex = Buffer.from(cursor, 'base64url').toString('hex');
   return new ObjectId(hex);
 }
 ```

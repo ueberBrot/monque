@@ -103,4 +103,11 @@ export interface MonqueEventMap {
 		jobIds: string[];
 		count: number;
 	};
+
+	/**
+	 * Emitted when multiple jobs are deleted in bulk.
+	 */
+	'jobs:deleted': {
+		count: number;
+	};
 }

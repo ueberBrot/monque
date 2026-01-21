@@ -101,7 +101,7 @@ adverse conditions.
 
 ### VI. Documentation Standards
 
-Documentation is a first-class citizen and MUST likely evolve with the code:
+Documentation is a first-class citizen and will likely evolve with the code:
 
 - **Living Documentation**: Documentation MUST be treated as code and updated in the same
   Pull Request as the feature implementation.

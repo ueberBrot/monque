@@ -158,9 +158,21 @@ export class ChangeStreamHandler {
 		if (this.reconnectAttempts > this.maxReconnectAttempts) {
 			// Fall back to polling-only mode
 			this.usingChangeStreams = false;
+
+			if (this.reconnectTimer) {
+				clearTimeout(this.reconnectTimer);
+				this.reconnectTimer = null;
+			}
+
+			if (this.changeStream) {
+				this.changeStream.close().catch(() => {});
+				this.changeStream = null;
+			}
+
 			this.ctx.emit('changestream:fallback', {
 				reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
 			});
+
 			return;
 		}
 

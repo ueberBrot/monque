@@ -6,7 +6,7 @@
 ## Summary
 
 Extend `@monque/core` with Management APIs enabling external tooling to manage jobs. Implements:
-- **Single Job Management**: `cancelJob()`, `retryJob()`, `deleteJob()`
+- **Single Job Management**: `cancelJob()`, `retryJob()`, `deleteJob()`, `rescheduleJob()`
 - **Bulk Job Management**: `cancelJobs()`, `retryJobs()`, `deleteJobs()` with filters
 - **Cursor-Based Pagination**: `getJobsWithCursor()` with opaque cursors
 - **Statistics & Aggregation**: `getQueueStats()` using MongoDB aggregation

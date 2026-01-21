@@ -417,6 +417,7 @@ export class JobManager {
 	 * Delete multiple jobs matching the given filter.
 	 *
 	 * Deletes jobs in any status. Uses a batch delete for efficiency.
+	 * Emits a 'jobs:deleted' event with the count of deleted jobs.
 	 * Does not emit individual 'job:deleted' events to avoid noise.
 	 *
 	 * @param filter - Selector for which jobs to delete (name, status, date range)
@@ -437,6 +438,10 @@ export class JobManager {
 
 		// Use deleteMany for efficiency
 		const result = await this.ctx.collection.deleteMany(query);
+
+		if (result.deletedCount > 0) {
+			this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+		}
 
 		return {
 			count: result.deletedCount,

@@ -144,8 +144,8 @@ External tooling displays aggregate metrics for the job queue—total counts by 
 - **FR-015c**: Cursor encodes direction as first byte: `F` (forward) or `B` (backward).
 - **FR-015d**: Switching direction mid-pagination is not supported; consumers must start new pagination.
 - **FR-016**: System MUST return `hasNextPage` and `hasPreviousPage` indicators.
-- **FR-017**: System MUST decode and validate cursors, returning `InvalidCursorError` for malformed, deleted reference, or schema version mismatch.
-- **FR-017a**: Cursor decode MUST be O(1) constant time with no database query.
+- **FR-017**: System MUST decode and validate cursors. Existence checks for referenced jobs (deleted reference detection) MAY require database verification and return `InvalidCursorError` if performed.
+- **FR-017a**: Cursor decoding (base64/JSON parsing, signature, and version checks) MUST be O(1) constant time with no database access.
 
 #### Statistics & Aggregation
 
