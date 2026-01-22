@@ -95,12 +95,19 @@ As a developer, I want each job execution to run in its own unrelated context so
 - **FR-005**: Controllers MUST be instantiated via the Ts.ED Injector.
 - **FR-006**: System MUST create a discrete Dependency Injection Context for every job execution to ensure state isolation.
 - **FR-007**: System MUST integration with the framework's native `Init` and `Destroy` lifecycle phases to automatically manage connections.
-- **FR-008**: System MUST allow type-safe job payload definitions (e.g., via Generics or DTO validation).
+- **FR-008**: System MUST allow type-safe job payload definitions via TypeScript Generics (`Job<T>`).
+  - *Clarification*: Runtime schema validation (e.g., via `@tsed/schema`) is out of scope for v1.0. Type safety is compile-time only.
 
 ### Non-Functional Requirements
 
 - **NFR-001**: The Ts.ED integration layer overhead MUST be <10ms per job execution (excluding user handler time).
+  - *Measurement*: Benchmark 1000 no-op jobs comparing raw `Monque.register()` vs `MonqueModule` decorator registration. Average processing time difference must be <10ms.
 - **NFR-002**: The integration MUST use Ts.ED's native logger for all logging (info, warn, error levels), not a custom logging solution.
+
+### Release & Documentation
+
+- **Doc-001**: Public README.md MUST include sections: Installation, Configuration, API Reference, Testing.
+- **Doc-002**: `package.json` MUST support Ts.ED Marketplace discovery.
 
 ### Key Entities
 
@@ -143,6 +150,6 @@ As a developer, I want each job execution to run in its own unrelated context so
 
 ### Measurable Outcomes
 
-- **SC-001**: A new Ts.ED project can install and configure the plugin with < 10 lines of config code.
-- **SC-002**: 100% of standard Monque worker options (concurrency, etc.) can be configured via the `@Worker` decorator.
+- **SC-001**: A new Ts.ED project can install and configure the plugin with < 10 lines of functional configuration code in `Server.ts` (excluding imports).
+- **SC-002**: 100% of standard Monque worker options (concurrency, replace) can be configured via the `@Worker` decorator.
 - **SC-003**: Package is successfully built and publishable to NPM with the name `tsed-plugin-monque`.

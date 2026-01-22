@@ -47,6 +47,7 @@
 - [ ] T013 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
 - [ ] T014 [P] Implement WorkerStore, WorkerMetadata, CronMetadata interfaces in packages/tsed/src/contracts/worker-store.ts
 - [ ] T015 [P] Implement WorkerMethods handler interface in packages/tsed/src/contracts/worker-methods.ts
+- [ ] T015b [P] Add 'replace' option to WorkerDecoratorOptions interface in packages/tsed/src/contracts/worker-store.ts
 - [ ] T016 [P] Implement buildJobName utility function in packages/tsed/src/utils/build-job-name.ts
 - [ ] T017 [P] Implement resolveDatabase multi-strategy utility in packages/tsed/src/utils/resolve-database.ts
 - [ ] T018 [P] Implement getWorkerToken utility in packages/tsed/src/utils/get-worker-token.ts
@@ -122,7 +123,7 @@
 
 - [ ] T042 [US4] Add Ts.ED marketplace keywords to packages/tsed/package.json
 - [ ] T043 [US4] Add package description mentioning Ts.ED in packages/tsed/package.json
-- [ ] T044 [US4] Create README.md with installation and usage examples in packages/tsed/README.md
+- [ ] T044 [US4] Create README.md with Installation, Configuration, API Reference, Testing sections in packages/tsed/README.md
 
 **Checkpoint**: Package is discoverable in Ts.ED marketplace
 
@@ -143,6 +144,7 @@
 - [ ] T053 Validate quickstart.md scenarios work with implementation
 - [ ] T054 [US4] Sync README content to @monque/docs workspace per Constitution
 - [ ] T055 Verify NFR-001 (<10ms overhead) via simple benchmark test
+- [ ] T055b [P] Implement performance benchmark script for NFR-001 (1k no-op jobs) in packages/tsed/scripts/benchmark.ts
 - [ ] T056 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
 
 ---

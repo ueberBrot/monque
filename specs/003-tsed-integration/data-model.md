@@ -377,6 +377,17 @@ class MonqueService implements IMonqueService {
 
 ---
 
+## DI Scoping Rules
+
+The integration creates a **Discrete DI Context** for each job execution using `injector.runInContext()`.
+
+- **Context Type**: The context mimics a standard Ts.ED Request Scope.
+- **Request Scoped Providers**: Providers decorated with `@Scope(ProviderScope.REQUEST)` are instantiated freshly for each job.
+- **Singleton Providers**: Providers decorated with `@Scope(ProviderScope.SINGLETON)` (default) are shared across all jobs.
+- **Context Access**: The `Job` instance is available via dependency injection (future scope) or context accessor.
+
+---
+
 ## Constants
 
 ```typescript

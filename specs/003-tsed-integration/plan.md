@@ -16,9 +16,10 @@ Create a new `@monque/tsed` package that provides a Ts.ED integration for `@monq
 **Testing**: Vitest 4.x with PlatformTest + Testcontainers for integration tests
 **Target Platform**: Node.js server environments
 **Project Type**: Monorepo package (`packages/tsed/`)
-**Performance Goals**: Sub-millisecond decorator overhead, efficient worker registration at startup, <10ms integration layer overhead per job execution
+**Performance Goals**: Sub-millisecond decorator overhead. Overhead Benchmark: <10ms diff between raw Monque vs MonqueModule (avg of 1k no-ops).
 **Constraints**: Must support all three database resolution strategies (direct Db, factory, DI token), use Ts.ED native logger for all logging
 **Scale/Scope**: Expected to handle same throughput as `@monque/core` (thousands of jobs/second)
+**Release Strategy**: Standard Monorepo Changesets workflow. Package name: `@monque/tsed`.
 
 ## Constitution Check
 

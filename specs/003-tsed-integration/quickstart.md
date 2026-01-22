@@ -22,9 +22,10 @@ npm install @monque/tsed @monque/core mongodb
 import { Configuration } from "@tsed/di";
 import { PlatformExpress } from "@tsed/platform-express";
 import { MongoClient } from "mongodb";
-import "@monque/tsed"; // Side-effect import to register module
+import { MonqueModule } from "@monque/tsed";
 
 @Configuration({
+  imports: [MonqueModule],
   monque: {
     enabled: true,
     dbFactory: async () => {
@@ -32,7 +33,6 @@ import "@monque/tsed"; // Side-effect import to register module
       return client.db("myapp");
     },
     collectionName: "jobs",
-    pollInterval: 1000,
   },
 })
 export class Server {}

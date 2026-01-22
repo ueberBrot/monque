@@ -29,6 +29,7 @@
 	},
 	"linter": {
 		"enabled": true,
+		"includes": ["!!/specs"],
 		"rules": {
 			"recommended": true,
 			"correctness": {

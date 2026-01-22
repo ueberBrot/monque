@@ -44,14 +44,11 @@ export type WorkerControllerDecorator = (
 
 /**
  * Options for the @Worker method decorator.
+ *
+ * Maps to @monque/core WorkerOptions. All standard Monque worker options
+ * are exposed here for decorator-based configuration (SC-002).
  */
-export interface WorkerDecoratorOptions extends Pick<CoreWorkerOptions, 'concurrency'> {
-	/**
-	 * Maximum concurrent jobs for this worker.
-	 * Overrides the default concurrency from MonqueOptions.
-	 */
-	concurrency?: number;
-}
+export interface WorkerDecoratorOptions extends CoreWorkerOptions {}
 
 /**
  * Decorator signature for @Worker.
@@ -81,10 +78,12 @@ export type WorkerDecorator = (name: string, options?: WorkerDecoratorOptions) =
 
 /**
  * Options for the @Cron method decorator.
+ *
+ * Maps to @monque/core ScheduleOptions with additional metadata overrides.
  */
 export interface CronDecoratorOptions extends ScheduleOptions {
 	/**
-	 * Override the job name. Defaults to the method name.
+	 * Override job name (defaults to method name).
 	 */
 	name?: string;
 }
