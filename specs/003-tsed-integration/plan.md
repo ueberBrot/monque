@@ -11,9 +11,9 @@ Create a new `@monque/tsed` package that provides a Ts.ED integration for `@monq
 
 **Language/Version**: TypeScript 5.9+, Node.js 22+
 **Primary Dependencies**: `@tsed/core` ^8.0.0, `@tsed/di` ^8.0.0, `@tsed/schema` ^8.0.0, `@monque/core` ^1.0.0
-**Dev Dependencies**: `@tsed/platform-http` ^8.0.0 (for PlatformTest), `@testcontainers/mongodb`, `vitest`
+**Dev Dependencies**: `@tsed/platform-http` ^8.0.0 (for PlatformTest), `@tsed/testcontainers-mongo`, `vitest`
 **Storage**: MongoDB (via `@monque/core`)
-**Testing**: Vitest 4.x with PlatformTest + Testcontainers for integration tests
+**Testing**: Vitest 4.x with PlatformTest + `@tsed/testcontainers-mongo` for integration tests
 **Target Platform**: Node.js server environments
 **Project Type**: Monorepo package (`packages/tsed/`)
 **Performance Goals**: Sub-millisecond decorator overhead. Overhead Benchmark: <10ms diff between raw Monque vs MonqueModule (avg of 1k no-ops).
@@ -88,8 +88,6 @@ packages/tsed/
 │
 ├── tests/
 │   ├── setup/
-│   │   ├── global-setup.ts             # Testcontainers lifecycle
-│   │   ├── mongodb.ts                  # Testcontainers singleton
 │   │   └── test-utils.ts               # Helper functions
 │   │
 │   ├── unit/                           # Fast tests, no MongoDB

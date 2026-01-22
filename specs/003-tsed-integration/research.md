@@ -171,9 +171,9 @@ private async executeJob(workerInstance: any, methodName: string, job: Job) {
 
 ## 7. Testing Strategy
 
-### Decision: Unit tests with mocks + Integration tests with Testcontainers
+### Decision: Use `@tsed/testcontainers-mongo` for integration tests
 
-**Rationale**: Unit tests provide fast feedback for decorator/service logic. Integration tests with real MongoDB via Testcontainers ensure the full stack works correctly.
+**Rationale**: The official `@tsed/testcontainers-mongo` package provides a standardized way to spin up MongoDB containers for Ts.ED integration tests. Using this ensures compatibility with Ts.ED's testing utilities and reduces boilerplate code for container management.
 
 **Test categories**:
 1. **Unit tests** (`tests/unit/`):
@@ -185,21 +185,34 @@ private async executeJob(workerInstance: any, methodName: string, job: Job) {
    - Full DI bootstrap with PlatformTest
    - Worker registration and invocation
    - Cron job scheduling
+   - Uses `TestContainersMongo` for real database interaction
 
-**Patterns from PLAN.md**:
+**Patterns**:
 ```typescript
-// Unit test pattern
-vi.mock("@monque/core", () => ({
-  Monque: vi.fn().mockImplementation(() => ({
-    initialize: vi.fn().mockResolvedValue(undefined),
-    register: vi.fn(),
-    // ...
-  }))
-}));
+// Vitest Configuration
+export default defineConfig({
+  test: {
+    globalSetup: [import.meta.resolve("@tsed/testcontainers-mongo/vitest/setup")]
+  }
+});
 
 // Integration test pattern
-beforeEach(() => PlatformTest.create({ monque: { enabled: true, db: mockDb } }));
-afterEach(PlatformTest.reset);
+import { TestContainersMongo } from "@tsed/testcontainers-mongo";
+
+describe("Integration", () => {
+  beforeEach(async () => {
+    await TestContainersMongo.create();
+    // Get connection details if needed
+    const { url } = TestContainersMongo.getMongoConnectionOptions();
+    await PlatformTest.create({ 
+       monque: { url, ... } 
+    });
+  });
+  afterEach(async () => {
+    await TestContainersMongo.reset(); // cleans collections
+    await PlatformTest.reset();
+  });
+});
 ```
 
 ---
