@@ -23,13 +23,13 @@
 
 **Purpose**: Package initialization, build tooling, and test infrastructure
 
-- [ ] T001 Create package directory structure per plan.md in packages/tsed/
-- [ ] T002 Initialize package.json with dependencies (@tsed/core, @tsed/di, @tsed/schema ^8.0.0, @monque/core workspace:*) and devDependencies (@tsed/platform-http ^8.0.0 for PlatformTest, @tsed/testcontainers-mongo, vitest) in packages/tsed/package.json
-- [ ] T003 [P] Configure TypeScript with strict mode in packages/tsed/tsconfig.json
-- [ ] T004 [P] Configure tsdown build tool in packages/tsed/tsdown.config.ts
-- [ ] T005 [P] Configure Vitest with @tsed/testcontainers-mongo/vitest/setup in packages/tsed/vitest.config.ts
-- [ ] T006 [P] Configure Vitest for unit tests only in packages/tsed/vitest.unit.config.ts
-- [ ] T009 [P] Create test utilities helper in packages/tsed/tests/setup/test-utils.ts
+- [x] T001 Create package directory structure per plan.md in packages/tsed/
+- [x] T002 Initialize package.json with dependencies (@tsed/core, @tsed/di, @tsed/schema ^8.0.0, @monque/core workspace:*) and devDependencies (@tsed/platform-http ^8.0.0 for PlatformTest, @tsed/testcontainers-mongo, vitest) in packages/tsed/package.json
+- [x] T003 [P] Configure TypeScript with strict mode in packages/tsed/tsconfig.json
+- [x] T004 [P] Configure tsdown build tool in packages/tsed/tsdown.config.ts
+- [x] T005 [P] Configure Vitest with @tsed/testcontainers-mongo/vitest/setup in packages/tsed/vitest.config.ts
+- [x] T006 [P] Configure Vitest for unit tests only in packages/tsed/vitest.unit.config.ts
+- [x] T009 [P] Create test utilities helper in packages/tsed/tests/setup/test-utils.ts
 
 ---
 
