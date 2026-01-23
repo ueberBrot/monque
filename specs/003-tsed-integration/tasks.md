@@ -39,17 +39,17 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T010 Implement MONQUE Symbol constant in packages/tsed/src/constants/constants.ts
-- [ ] T011 [P] Implement MonqueTypes provider type constants in packages/tsed/src/constants/monque-types.ts
-- [ ] T012 [P] Implement MonqueTsedConfig interface with TsED augmentation in packages/tsed/src/config/config.ts
-- [ ] T013 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
-- [ ] T014 [P] Implement WorkerStore, WorkerMetadata, CronMetadata interfaces in packages/tsed/src/contracts/worker-store.ts
-- [ ] T015 [P] Implement WorkerMethods handler interface in packages/tsed/src/contracts/worker-methods.ts
-- [ ] T015b [P] Add 'replace' option to WorkerDecoratorOptions interface in packages/tsed/src/contracts/worker-store.ts
-- [ ] T016 [P] Implement buildJobName utility function in packages/tsed/src/utils/build-job-name.ts
-- [ ] T017 [P] Implement resolveDatabase multi-strategy utility in packages/tsed/src/utils/resolve-database.ts
-- [ ] T018 [P] Implement getWorkerToken utility in packages/tsed/src/utils/get-worker-token.ts
-- [ ] T019 Unit test for resolveDatabase in packages/tsed/tests/unit/utils/resolve-database.test.ts
+- [x] T010 Implement MONQUE Symbol constant in packages/tsed/src/constants/constants.ts
+- [x] T011 [P] Implement ProviderTypes provider type constants in packages/tsed/src/constants/monque-types.ts
+- [x] T012 [P] Implement MonqueTsedConfig interface with TsED augmentation in packages/tsed/src/config/config.ts
+- [x] T013 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
+- [x] T014 [P] Implement WorkerStore, WorkerMetadata, CronMetadata interfaces in packages/tsed/src/contracts/worker-store.ts
+- [x] T015 [P] Implement WorkerMethods handler interface in packages/tsed/src/contracts/worker-methods.ts
+- [x] T015b [P] Inherit WorkerDecoratorOptions from @monque/core WorkerOptions in packages/tsed/src/contracts/worker-store.ts
+- [x] T016 [P] Implement buildJobName utility function in packages/tsed/src/utils/build-job-name.ts
+- [x] T017 [P] Implement resolveDatabase multi-strategy utility in packages/tsed/src/utils/resolve-database.ts
+- [x] T018 [P] Implement getWorkerToken utility in packages/tsed/src/utils/get-worker-token.ts
+- [x] T019 Unit test for resolveDatabase in packages/tsed/tests/unit/utils/resolve-database.test.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -131,11 +131,11 @@
 
 **Purpose**: Barrel exports, documentation, and final validation
 
-- [ ] T045 [P] Create barrel exports for constants in packages/tsed/src/constants/index.ts
-- [ ] T046 [P] Create barrel exports for contracts in packages/tsed/src/contracts/index.ts
+- [x] T045 [P] Create barrel exports for constants in packages/tsed/src/constants/index.ts
+- [x] T046 [P] Create barrel exports for contracts in packages/tsed/src/contracts/index.ts
 - [ ] T047 [P] Create barrel exports for decorators in packages/tsed/src/decorators/index.ts
 - [ ] T048 [P] Create barrel exports for services in packages/tsed/src/services/index.ts
-- [ ] T049 [P] Create barrel exports for utils in packages/tsed/src/utils/index.ts
+- [x] T049 [P] Create barrel exports for utils in packages/tsed/src/utils/index.ts
 - [ ] T050 Create main barrel export (index.ts) with public API in packages/tsed/src/index.ts
 - [ ] T051 Run build and verify no TypeScript errors
 - [ ] T052 Run full test suite (unit + integration) and verify all pass

@@ -141,7 +141,7 @@ private async executeJob(workerInstance: any, methodName: string, job: Job) {
 **Rationale**: Following `@tsed/bullmq`, workers are discovered by scanning providers with specific types during `$onInit`. This enables declarative registration without explicit configuration.
 
 **Flow**:
-1. `@WorkerController` registers class with type `MonqueTypes.WORKER_CONTROLLER`
+1. `@WorkerController` registers class with type `ProviderTypes.WORKER_CONTROLLER`
 2. `@Worker`/`@Cron` decorators store method metadata via `Store.from(target.constructor)`
 3. `MonqueModule.$onInit()` collects all `WORKER_CONTROLLER` providers
 4. For each provider, extract metadata and call `monque.register()`

@@ -1,39 +1,23 @@
 /**
- * @monque/tsed - Metadata Contracts
+ * @monque/tsed - Worker Store Metadata
  *
  * Internal metadata structures used by decorators and the module.
- * These are not part of the public API but define the data contract
- * between decorators and the module.
+ * These define the data contract between decorators and MonqueModule.
  */
 
 import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monque/core';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Store Key
+// Worker Decorator Options
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Symbol used to store decorator metadata on class constructors.
- */
-export const MONQUE = Symbol.for('monque');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Provider Types
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Provider type constants for DI scanning.
+ * Options for the @Worker method decorator.
  *
- * Note: Using string constants instead of enums per Constitution guidelines.
+ * Maps to @monque/core WorkerOptions. All standard Monque worker options
+ * are exposed here for decorator-based configuration.
  */
-export const ProviderTypes = {
-	/** Provider type for @WorkerController decorated classes */
-	WORKER_CONTROLLER: 'monque:worker-controller',
-	/** Provider type for cron job handlers */
-	CRON: 'monque:cron',
-} as const;
-
-export type ProviderType = (typeof ProviderTypes)[keyof typeof ProviderTypes];
+export interface WorkerDecoratorOptions extends CoreWorkerOptions {}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker Metadata
@@ -41,6 +25,8 @@ export type ProviderType = (typeof ProviderTypes)[keyof typeof ProviderTypes];
 
 /**
  * Metadata for a single @Worker decorated method.
+ *
+ * Stored in the WorkerStore and used by MonqueModule to register workers.
  */
 export interface WorkerMetadata {
 	/**
@@ -57,15 +43,17 @@ export interface WorkerMetadata {
 	/**
 	 * Worker options forwarded to Monque.register().
 	 */
-	opts: CoreWorkerOptions;
+	opts: WorkerDecoratorOptions;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cron Metadata
+// Cron Decorator Options
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Options for the @Cron method decorator.
+ *
+ * Maps to @monque/core ScheduleOptions with additional metadata overrides.
  */
 export interface CronDecoratorOptions extends ScheduleOptions {
 	/**
@@ -74,8 +62,14 @@ export interface CronDecoratorOptions extends ScheduleOptions {
 	name?: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cron Metadata
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Metadata for a single @Cron decorated method.
+ *
+ * Stored in the WorkerStore and used by MonqueModule to schedule cron jobs.
  */
 export interface CronMetadata {
 	/**
@@ -107,6 +101,13 @@ export interface CronMetadata {
  * Complete metadata structure stored on @WorkerController classes.
  *
  * Accessed via `Store.from(Class).get(MONQUE)`.
+ *
+ * @example
+ * ```typescript
+ * const store = Store.from(EmailWorkers).get<WorkerStore>(MONQUE);
+ * console.log(store.namespace); // "email"
+ * console.log(store.workers); // [{ name: "send", method: "sendEmail", opts: {} }]
+ * ```
  */
 export interface WorkerStore {
 	/**
@@ -130,19 +131,4 @@ export interface WorkerStore {
 	 * Cron job registrations from @Cron decorators.
 	 */
 	cronJobs: CronMetadata[];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility Functions
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Build the full job name by combining namespace and name.
- *
- * @param namespace - Optional namespace from @WorkerController
- * @param name - Job name from @Worker or @Cron
- * @returns Full job name (e.g., "email.send" or just "send")
- */
-export function buildJobName(namespace: string | undefined, name: string): string {
-	return namespace ? `${namespace}.${name}` : name;
 }

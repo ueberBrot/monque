@@ -127,7 +127,7 @@ packages/tsed/
 
 | Principle | Status | Verification |
 |-----------|--------|--------------|
-| **I. Code Quality Standards** | PASS | Contracts use `interface` for object shapes, `type` only for unions. `MonqueTypes` uses `as const` pattern (no enums). Test strategy includes unit + integration coverage. |
+| **I. Code Quality Standards** | PASS | Contracts use `interface` for object shapes, `type` only for unions. `ProviderTypes` uses `as const` pattern (no enums). Test strategy includes unit + integration coverage. |
 | **II. Architecture Guidelines** | PASS | Uses @monque/core's event-driven design. MonqueModule implements graceful shutdown via `$onDestroy`. DI context per job ensures isolation. |
 | **III. Development Workflow** | PASS | Package at `packages/tsed/` follows monorepo structure. Uses workspace dependencies (`workspace:*`). Same tooling as core (tsdown, vitest). |
 | **IV. API Design Principles** | PASS | Simple: `@WorkerController/@Worker` is minimal setup. Extensible: options objects for advanced config. Framework-specific package keeps core agnostic. |
