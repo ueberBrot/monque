@@ -55,7 +55,7 @@
 		"lefthook": "^2.0.15",
 		"repomix": "^1.11.1",
 		"rimraf": "^6.1.2",
-		"turbo": "^2.7.5",
+		"turbo": "^2.7.6",
 		"typescript": "^5.9.3"
 	}
 }
