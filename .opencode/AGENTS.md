@@ -44,6 +44,7 @@ bun run test src/jobs/MyJob.test.ts
 
 ### TypeScript
 - **Strict Mode**: Enabled. No implicit `any`.
+- **No Non-Null Assertions**: Do not use `!` for non-null assertions. Use optional chaining or type guards.
 - **Type Imports**: Use `import type { ... }` for types to ensure proper transpilation.
 - **No Enums**: Use `as const` objects instead of TypeScript enums.
   ```typescript
@@ -90,7 +91,8 @@ monque/
 ├── apps/               # Example apps and documentation
 │   └── docs/           # Documentation site
 ├── packages/           # Shared libraries
-│   └── core/           # Main scheduler logic (@monque/core)
+│   ├── core/           # Main scheduler logic (@monque/core)
+│   └── tsed/           # Ts.ED integration (@monque/tsed)
 ├── biome.json          # Linter/Formatter config
 └── turbo.json          # Build pipeline config
 ```

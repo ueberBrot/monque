@@ -65,23 +65,23 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T020 [P] [US1] Unit test for @WorkerController decorator in packages/tsed/tests/unit/decorators/worker-controller.test.ts
-- [ ] T021 [P] [US1] Unit test for @Worker decorator in packages/tsed/tests/unit/decorators/worker.test.ts
-- [ ] T022 [P] [US2] Unit test for MonqueService in packages/tsed/tests/unit/services/monque-service.test.ts
-- [ ] T023 [P] [US1] Integration test for worker registration in packages/tsed/tests/integration/worker-registration.test.ts
+- [x] T020 [P] [US1] Unit test for @WorkerController decorator in packages/tsed/tests/unit/decorators/worker-controller.test.ts
+- [x] T021 [P] [US1] Unit test for @Worker decorator in packages/tsed/tests/unit/decorators/worker.test.ts
+- [x] T022 [P] [US2] Unit test for MonqueService in packages/tsed/tests/unit/services/monque-service.test.ts
+- [x] T023 [P] [US1] Integration test for worker registration in packages/tsed/tests/integration/worker-registration.test.ts
 
 ### Implementation for User Stories 1+2
 
-- [ ] T024 [P] [US1] Implement @WorkerController class decorator in packages/tsed/src/decorators/worker-controller.ts
-- [ ] T025 [P] [US1] Implement @Worker method decorator in packages/tsed/src/decorators/worker.ts
-- [ ] T026 [P] [US2] Implement @InjectMonque property decorator in packages/tsed/src/decorators/inject-monque.ts
-- [ ] T027 [US1] Implement collectWorkerMetadata utility in packages/tsed/src/utils/collect-worker-metadata.ts
-- [ ] T028 [US2] Implement MonqueService injectable wrapper in packages/tsed/src/services/monque-service.ts
-- [ ] T029 [US1] Implement MonqueModule with $onInit worker registration in packages/tsed/src/monque-module.ts
-- [ ] T030 [US1] Add duplicate job name validation in MonqueModule.$onInit in packages/tsed/src/monque-module.ts
-- [ ] T031 [US1] Add startup error handling (connection failure throws) in packages/tsed/src/monque-module.ts
-- [ ] T032 [US1] Implement MonqueModule.$onDestroy for graceful shutdown in packages/tsed/src/monque-module.ts
-- [ ] T033 [US1] Integration test for MonqueModule lifecycle in packages/tsed/tests/integration/monque-module.test.ts
+- [x] T024 [P] [US1] Implement @WorkerController class decorator in packages/tsed/src/decorators/worker-controller.ts
+- [x] T025 [P] [US1] Implement @Worker method decorator in packages/tsed/src/decorators/worker.ts
+- [x] T026 [P] [US2] Implement @InjectMonque property decorator in packages/tsed/src/decorators/inject-monque.ts
+- [x] T027 [US1] Implement collectWorkerMetadata utility in packages/tsed/src/utils/collect-worker-metadata.ts
+- [x] T028 [US2] Implement MonqueService injectable wrapper in packages/tsed/src/services/monque-service.ts
+- [x] T029 [US1] Implement MonqueModule with $onInit worker registration in packages/tsed/src/monque-module.ts
+- [x] T030 [US1] Add duplicate job name validation in MonqueModule.$onInit in packages/tsed/src/monque-module.ts
+- [x] T031 [US1] Add startup error handling (connection failure throws) in packages/tsed/src/monque-module.ts
+- [x] T032 [US1] Implement MonqueModule.$onDestroy for graceful shutdown in packages/tsed/src/monque-module.ts
+- [x] T033 [US1] Integration test for MonqueModule lifecycle in packages/tsed/tests/integration/monque-module.test.ts
 
 **Checkpoint**: At this point, @WorkerController with @Worker and DI injection should be fully functional
 
@@ -144,6 +144,17 @@
 - [ ] T055 Verify NFR-001 (<10ms overhead) via simple benchmark test
 - [ ] T055b [P] Implement performance benchmark script for NFR-001 (1k no-op jobs) in packages/tsed/scripts/benchmark.ts
 - [ ] T056 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
+
+---
+
+## Phase 7: CI/CD & Release
+
+**Purpose**: Ensure robust testing and deployment for the new package
+
+- [x] T057 Add granular test scripts to root package.json (unit/integration per package)
+- [x] T058 Update CI to optimize test execution (only changed packages in PRs)
+- [x] T059 Configure publishConfig in packages/tsed/package.json
+- [ ] T060 Verify Changesets release workflow handles multi-package publish
 
 ---
 

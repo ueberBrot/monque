@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/knip/schema.json",
-	"ignore": ["specs/**", "repomix.config.ts"],
+	"ignore": ["specs/**"],
 	"ignoreBinaries": [],
 	"ignoreDependencies": ["@fontsource/quicksand", "sharp"],
 	"workspaces": {

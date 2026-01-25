@@ -13,7 +13,7 @@ import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monqu
 /**
  * Options for the @WorkerController class decorator.
  */
-export type WorkerControllerOptions = {};
+export type WorkerControllerOptions = Record<string, never>;
 
 /**
  * Decorator signature for @WorkerController.

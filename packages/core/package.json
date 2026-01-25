@@ -53,7 +53,7 @@
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"test:watch:integration": "vitest integration/",
-		"lint": "biome check src/"
+		"lint": "biome check ."
 	},
 	"keywords": [
 		"job",

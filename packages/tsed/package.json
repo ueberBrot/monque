@@ -30,25 +30,33 @@
 		"test": "vitest run",
 		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
 		"test:integration": "bun run type-check && vitest run tests/integration --coverage.enabled=false",
-		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"test:watch:integration": "vitest tests/integration",
-		"lint": "biome check src/"
-	},
-	"dependencies": {
-		"@monque/core": "workspace:*",
-		"@tsed/core": "^8.23.0",
-		"@tsed/di": "^8.23.0",
-		"@tsed/schema": "^8.23.0"
+		"lint": "biome check ."
 	},
 	"peerDependencies": {
+		"@monque/core": "^1.1.0",
+		"@tsed/core": "^8.24.0",
+		"@tsed/di": "^8.24.0",
+		"@tsed/logger": "^8.0.4",
+		"@tsed/mongoose": "^8.24.0",
 		"mongodb": "^7.0.0"
 	},
+	"peerDependenciesMeta": {
+		"@tsed/mongoose": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
+		"@monque/core": "workspace:*",
 		"@testcontainers/mongodb": "^11.11.0",
-		"@tsed/platform-http": "^8.23.0",
-		"@tsed/testcontainers-mongo": "^8.23.0",
+		"@tsed/core": "^8.24.0",
+		"@tsed/di": "^8.24.0",
+		"@tsed/logger": "^8.0.4",
+		"@tsed/mongoose": "^8.24.0",
+		"@tsed/platform-http": "^8.24.0",
+		"@tsed/testcontainers-mongo": "^8.24.0",
 		"@types/bun": "^1.3.6",
 		"@vitest/coverage-v8": "^4.0.17",
 		"mongodb": "^7.0.0",

@@ -29,7 +29,6 @@
 	},
 	"linter": {
 		"enabled": true,
-		"includes": ["!!/specs"],
 		"rules": {
 			"recommended": true,
 			"correctness": {
@@ -45,6 +44,9 @@
 		"formatter": {
 			"quoteStyle": "single",
 			"semicolons": "always"
+		},
+		"parser": {
+			"unsafeParameterDecoratorsEnabled": true
 		}
 	},
 	"assist": {

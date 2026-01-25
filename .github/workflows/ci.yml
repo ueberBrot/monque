@@ -69,11 +69,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref || 'main' }}:${{ github.base_ref || 'main' }}
+
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
       - name: Run Tests
-        run: bun turbo test --filter=@monque/core
+        # Use Turbo to run tests only for changed packages and their dependents
+        # Fallback to running all tests if filter fails or on main branch
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            bun turbo test --filter="...[${{ github.base_ref }}]"
+          else
+            bun turbo test
+          fi
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5

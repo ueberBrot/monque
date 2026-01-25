@@ -1,8 +1,8 @@
 import type { Db } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { MonqueTsedConfig } from '../../../src/config/config.js';
-import { type InjectorFn, resolveDatabase } from '../../../src/utils/resolve-database.js';
+import type { MonqueTsedConfig } from '@/config';
+import { type InjectorFn, resolveDatabase } from '@/utils';
 
 describe('resolveDatabase', () => {
 	// Mock Db instance
@@ -114,6 +114,59 @@ describe('resolveDatabase', () => {
 			const result = await resolveDatabase(config, injectorFn);
 
 			expect(injectorFn).toHaveBeenCalledWith(TOKEN);
+			expect(result).toBe(mockDb);
+		});
+
+		it('should resolve from Mongoose Service (duck typing)', async () => {
+			const mockDb = createMockDb();
+			// Mock Mongoose Service structure
+			const mockMongooseService = {
+				get: vi.fn().mockReturnValue({
+					db: mockDb,
+				}),
+			};
+			const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+			const config: MonqueTsedConfig = { dbToken: 'MONGOOSE_SERVICE' };
+
+			const result = await resolveDatabase(config, injectorFn);
+
+			expect(injectorFn).toHaveBeenCalledWith('MONGOOSE_SERVICE');
+			expect(mockMongooseService.get).toHaveBeenCalledWith('default');
+			expect(result).toBe(mockDb);
+		});
+
+		it('should resolve from Mongoose Service with custom connection ID', async () => {
+			const mockDb = createMockDb();
+			const mockMongooseService = {
+				get: vi.fn().mockImplementation((id) => {
+					if (id === 'custom-conn') return { db: mockDb };
+					return null;
+				}),
+			};
+			const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+			const config: MonqueTsedConfig = {
+				dbToken: 'MONGOOSE_SERVICE',
+				mongooseConnectionId: 'custom-conn',
+			};
+
+			const result = await resolveDatabase(config, injectorFn);
+
+			expect(mockMongooseService.get).toHaveBeenCalledWith('custom-conn');
+			expect(result).toBe(mockDb);
+		});
+
+		it('should resolve from Mongoose Connection (duck typing)', async () => {
+			const mockDb = createMockDb();
+			// Mock Mongoose Connection structure
+			const mockMongooseConnection = {
+				db: mockDb,
+			};
+			const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseConnection);
+			const config: MonqueTsedConfig = { dbToken: 'MONGOOSE_CONNECTION' };
+
+			const result = await resolveDatabase(config, injectorFn);
+
+			expect(injectorFn).toHaveBeenCalledWith('MONGOOSE_CONNECTION');
 			expect(result).toBe(mockDb);
 		});
 	});

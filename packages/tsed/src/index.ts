@@ -1,16 +1,22 @@
-export { type MonqueTsedConfig, validateDatabaseConfig } from './config/index.js';
-export { MONQUE, type ProviderType, ProviderTypes } from './constants/index.js';
-export {
-	type CronDecoratorOptions,
-	type CronMetadata,
-	type WorkerDecoratorOptions,
-	type WorkerMetadata,
-	type WorkerMethods,
-	type WorkerStore,
-} from './contracts/index.js';
+export { type MonqueTsedConfig, validateDatabaseConfig } from './config';
+export { MONQUE, type ProviderType, ProviderTypes } from './constants';
+export type {
+	CronDecoratorOptions,
+	CronMetadata,
+	WorkerControllerOptions,
+	WorkerDecoratorOptions,
+	WorkerMetadata,
+	WorkerMethods,
+	WorkerStore,
+} from './decorators';
+export { InjectMonque, Worker, WorkerController } from './decorators';
+export { MonqueModule } from './monque-module.js';
+export { MonqueService } from './services';
 export {
 	buildJobName,
+	type CollectedWorkerMetadata,
+	collectWorkerMetadata,
 	getWorkerToken,
 	type InjectorFn,
 	resolveDatabase,
-} from './utils/index.js';
+} from './utils';

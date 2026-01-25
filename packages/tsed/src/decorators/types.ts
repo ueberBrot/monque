@@ -1,11 +1,44 @@
 /**
- * @monque/tsed - Worker Store Metadata
- *
- * Internal metadata structures used by decorators and the module.
- * These define the data contract between decorators and MonqueModule.
+ * @monque/tsed - Decorator Types
  */
 
-import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monque/core';
+import type { WorkerOptions as CoreWorkerOptions, Job, ScheduleOptions } from '@monque/core';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Worker Methods
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Interface for controller methods that handle jobs.
+ *
+ * Unlike `@tsed/bullmq`'s `JobMethods` which has a `handle(payload, job)` signature,
+ * we pass the full `Job` object directly to align with `@monque/core`'s handler pattern.
+ *
+ * @typeParam T - Type of the job data payload
+ * @typeParam R - Type of the return value (typically void or ignored)
+ *
+ * @example
+ * ```typescript
+ * @WorkerController("email")
+ * class EmailWorkers {
+ *   @Worker("send")
+ *   async sendEmail(job: Job<EmailPayload>): Promise<void> {
+ *     await mailer.send(job.data.to, job.data.subject, job.data.body);
+ *   }
+ * }
+ * ```
+ */
+export type WorkerMethods<T = unknown, R = unknown> = (job: Job<T>) => R | Promise<R>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Worker Controller
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for the @WorkerController class decorator.
+ * Reserved for future extensions.
+ */
+export type WorkerControllerOptions = Record<string, never>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker Decorator Options

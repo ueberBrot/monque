@@ -8,5 +8,5 @@ export default defineConfig({
 	sourcemap: true,
 	target: 'node22',
 	outDir: 'dist',
-	external: ['@tsed/core', '@tsed/di', '@tsed/schema', '@monque/core', 'mongodb'],
+	external: ['@tsed/core', '@tsed/di', '@tsed/schema', '@tsed/logger', '@monque/core', 'mongodb'],
 });

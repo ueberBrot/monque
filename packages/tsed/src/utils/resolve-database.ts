@@ -7,7 +7,9 @@
 import type { TokenProvider } from '@tsed/di';
 import type { Db } from 'mongodb';
 
-import type { MonqueTsedConfig } from '../config/config.js';
+import type { MonqueTsedConfig } from '@/config';
+
+import { isMongooseConnection, isMongooseService } from './guards.js';
 
 /**
  * Type for the injector function used to resolve DI tokens.
@@ -69,16 +71,34 @@ export async function resolveDatabase(
 			);
 		}
 
-		const db = injectorFn(config.dbToken as TokenProvider<Db>);
+		const resolved = injectorFn(config.dbToken);
 
-		if (!db) {
+		if (!resolved) {
 			throw new Error(
 				`Could not resolve database from token: ${String(config.dbToken)}. ` +
 					'Make sure the provider is registered in the DI container.',
 			);
 		}
 
-		return db;
+		if (isMongooseService(resolved)) {
+			// Check for Mongoose Service (duck typing)
+			// It has a get() method that returns a connection
+			const connectionId = config.mongooseConnectionId || 'default';
+			const connection = resolved.get(connectionId);
+
+			if (connection && 'db' in connection) {
+				return connection.db as Db;
+			}
+		}
+
+		if (isMongooseConnection(resolved)) {
+			// Check for Mongoose Connection (duck typing)
+			// It has a db property that is the native Db instance
+			return resolved.db as Db;
+		}
+
+		// Default: Assume it is a native Db instance
+		return resolved as Db;
 	}
 
 	// No strategy provided
