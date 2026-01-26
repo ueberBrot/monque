@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.1.1
+
+### Patch Changes
+
+- [#90](https://github.com/ueberBrot/monque/pull/90) [`0364f4b`](https://github.com/ueberBrot/monque/commit/0364f4b9452bc6b81961fce896ebcaeecbaafa58) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add missing LICENSE and optimize build configuration (source maps, quality gates) for better developer experience and reliability.
+
 ## 1.1.0
 
 ### Minor Changes
