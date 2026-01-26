@@ -84,4 +84,18 @@ describe('@Cron', () => {
 		expect(updatedStore.workers).toHaveLength(1);
 		expect(updatedStore.cronJobs).toHaveLength(1);
 	});
+
+	it('should handle missing cronJobs array in existing store', () => {
+		class TestClass {}
+		const store = Store.from(TestClass);
+		// Seed store with partial object missing 'cronJobs'
+		store.set(MONQUE, { type: 'controller' });
+
+		// Apply decorator manually
+		const decorator = Cron('* * * * *');
+		decorator(TestClass.prototype, 'cronMethod', {} as TypedPropertyDescriptor<unknown>);
+
+		const res = store.get<WorkerStore>(MONQUE);
+		expect(res.cronJobs).toHaveLength(1);
+	});
 });

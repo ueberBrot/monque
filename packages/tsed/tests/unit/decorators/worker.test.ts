@@ -131,5 +131,19 @@ describe('@Worker', () => {
 			// The @Worker decorator should create/merge into the store
 			expect(monqueStore?.workers).toHaveLength(1);
 		});
+
+		it('should handle missing workers array in existing store', () => {
+			class TestClass {}
+			const store = Store.from(TestClass);
+			// Seed store with partial object missing 'workers'
+			store.set(MONQUE, { type: 'controller' }); // no workers array
+
+			// Apply decorator manually
+			const decorator = Worker('test');
+			decorator(TestClass.prototype, 'method', {} as TypedPropertyDescriptor<unknown>);
+
+			const res = store.get<WorkerStore>(MONQUE);
+			expect(res.workers).toHaveLength(1);
+		});
 	});
 });

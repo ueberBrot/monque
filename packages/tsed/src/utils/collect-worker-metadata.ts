@@ -71,7 +71,7 @@ export function collectWorkerMetadata(
 	const namespace = workerStore.namespace;
 
 	// Collect regular workers
-	for (const worker of workerStore.workers || []) {
+	for (const worker of workerStore.workers) {
 		results.push({
 			fullName: buildJobName(namespace, worker.name),
 			method: worker.method,
@@ -81,7 +81,7 @@ export function collectWorkerMetadata(
 	}
 
 	// Collect cron jobs
-	for (const cron of workerStore.cronJobs || []) {
+	for (const cron of workerStore.cronJobs) {
 		results.push({
 			fullName: buildJobName(namespace, cron.name),
 			method: cron.method,

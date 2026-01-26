@@ -24,10 +24,11 @@ import { Inject } from '@tsed/di';
 import { MonqueService } from '@/services';
 
 /**
- * Property decorator that injects the MonqueService instance.
+ * Property/Parameter decorator that injects the MonqueService instance.
  *
  * This is a convenience decorator equivalent to `@Inject(MonqueService)`.
  */
-export function InjectMonque(): PropertyDecorator {
-	return Inject(MonqueService);
+export function InjectMonque(): PropertyDecorator & ParameterDecorator {
+	// biome-ignore lint/suspicious/noExplicitAny: TsED Inject return type is complex
+	return Inject(MonqueService) as any;
 }

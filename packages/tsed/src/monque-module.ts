@@ -31,7 +31,9 @@ import { ProviderTypes } from '@/constants';
 import { MonqueService } from '@/services';
 import { collectWorkerMetadata, resolveDatabase } from '@/utils';
 
-@Module()
+@Module({
+	imports: [MonqueService],
+})
 export class MonqueModule implements OnInit, OnDestroy {
 	protected injector: InjectorService;
 	protected monqueService: MonqueService;
@@ -57,12 +59,6 @@ export class MonqueModule implements OnInit, OnDestroy {
 
 		if (config?.enabled === false) {
 			this.logger.info('Monque integration is disabled');
-
-			return;
-		}
-
-		if (!config) {
-			this.logger.warn('Monque configuration not found, skipping initialization');
 
 			return;
 		}

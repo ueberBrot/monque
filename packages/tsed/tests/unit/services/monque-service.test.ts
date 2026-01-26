@@ -1,6 +1,7 @@
 /**
  * Unit tests for MonqueService (T022)
  */
+import { ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MonqueService } from '@/services';
@@ -163,6 +164,12 @@ describe('MonqueService', () => {
 				const validObjectId = '507f1f77bcf86cd799439011';
 				await service.getJob(validObjectId);
 				expect(mockMonque.getJob).toHaveBeenCalledWith(expect.anything());
+			});
+
+			it('should delegate getJob to monque with ObjectId', async () => {
+				const id = new ObjectId('507f1f77bcf86cd799439011');
+				await service.getJob(id);
+				expect(mockMonque.getJob).toHaveBeenCalledWith(id);
 			});
 
 			it('should delegate getJobs to monque', async () => {

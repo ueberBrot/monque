@@ -26,6 +26,7 @@ export default defineConfig({
 				'**/*.config.ts',
 				'**/*.config.js',
 				'**/index.ts',
+				'src/**/types.ts',
 			],
 		},
 		testTimeout: 5000,

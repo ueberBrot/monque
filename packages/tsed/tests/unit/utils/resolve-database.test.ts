@@ -169,6 +169,23 @@ describe('resolveDatabase', () => {
 			expect(injectorFn).toHaveBeenCalledWith('MONGOOSE_CONNECTION');
 			expect(result).toBe(mockDb);
 		});
+
+		it('should fall through if mongoose service returns invalid connection', async () => {
+			const mockMongooseService = {
+				get: vi.fn().mockReturnValue(null), // returns null connection
+			};
+			const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+			const config: MonqueTsedConfig = { dbToken: 'MONGOOSE_SERVICE' };
+
+			// Should fall through and return the service itself (which isn't a Db)
+			// But since we are asserting return type is Db, it will just return it.
+			// In real world this might fail later, but for unit test of this function
+			// we just want to verify it didn't crash or take the wrong branch.
+			const result = await resolveDatabase(config, injectorFn);
+
+			expect(mockMongooseService.get).toHaveBeenCalled();
+			expect(result).toBe(mockMongooseService);
+		});
 	});
 
 	describe('no strategy', () => {
