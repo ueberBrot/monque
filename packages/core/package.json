@@ -8,6 +8,7 @@
 		"url": "git+https://github.com/ueberBrot/monque.git",
 		"directory": "packages/core"
 	},
+	"license": "ISC",
 	"bugs": {
 		"url": "https://github.com/ueberBrot/monque/issues"
 	},
@@ -36,7 +37,8 @@
 		}
 	},
 	"files": [
-		"dist"
+		"dist",
+		"src"
 	],
 	"scripts": {
 		"build": "tsdown",
@@ -66,7 +68,6 @@
 		"atomic",
 		"persistence"
 	],
-	"license": "ISC",
 	"dependencies": {
 		"cron-parser": "^5.5.0"
 	},
@@ -85,6 +86,7 @@
 		"publint": "^0.3.17",
 		"tsdown": "^0.20.1",
 		"typescript": "^5.9.3",
+		"unplugin-unused": "^0.5.7",
 		"vitest": "^4.0.18"
 	}
 }
