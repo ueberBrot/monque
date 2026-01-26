@@ -17,6 +17,7 @@ import {
 	DIContext,
 	Inject,
 	InjectorService,
+	LOGGER,
 	Module,
 	type OnDestroy,
 	type OnInit,
@@ -24,7 +25,6 @@ import {
 	runInContext,
 	type TokenProvider,
 } from '@tsed/di';
-import { Logger } from '@tsed/logger';
 
 import { type MonqueTsedConfig, validateDatabaseConfig } from '@/config';
 import { ProviderTypes } from '@/constants';
@@ -35,7 +35,7 @@ import { collectWorkerMetadata, resolveDatabase } from '@/utils';
 export class MonqueModule implements OnInit, OnDestroy {
 	protected injector: InjectorService;
 	protected monqueService: MonqueService;
-	protected logger: Logger;
+	protected logger: LOGGER;
 	protected monqueConfig: MonqueTsedConfig;
 
 	protected monque: Monque | null = null;
@@ -43,7 +43,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 	constructor(
 		@Inject(InjectorService) injector: InjectorService,
 		@Inject(MonqueService) monqueService: MonqueService,
-		@Inject(Logger) logger: Logger,
+		@Inject(LOGGER) logger: LOGGER,
 		@Inject(Configuration) configuration: Configuration,
 	) {
 		this.injector = injector;

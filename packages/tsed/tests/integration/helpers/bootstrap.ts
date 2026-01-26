@@ -22,7 +22,7 @@ let db: Db | null = null;
 
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
 	// Start mongo server explicitly to ensure we get valid config
-	const { url } = await TestContainersMongo.startMongoServer();
+	const { url } = await TestContainersMongo.startMongoServer('mongo:8');
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 

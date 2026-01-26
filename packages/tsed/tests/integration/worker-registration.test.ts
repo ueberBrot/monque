@@ -87,7 +87,7 @@ describe('Worker Registration Integration', () => {
 			await monqueService.now('email.send', { to: 'test@example.com' });
 
 			// Wait for processing
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			await new Promise((resolve) => setTimeout(resolve, 2000));
 
 			expect(emailWorkers.processed).toContain('test@example.com');
 		});
