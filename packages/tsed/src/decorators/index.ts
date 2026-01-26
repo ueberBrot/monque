@@ -1,3 +1,4 @@
+export { Cron } from './cron.js';
 export { InjectMonque } from './inject-monque.js';
 export type {
 	CronDecoratorOptions,

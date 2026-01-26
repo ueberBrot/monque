@@ -82,9 +82,7 @@
 		"@vitest/coverage-v8": "^4.0.18",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.0.0",
-		"publint": "^0.3.17",
 		"tsdown": "^0.20.1",
-		"typescript": "^5.9.3",
 		"unplugin-unused": "^0.5.7",
 		"vitest": "^4.0.18"
 	}

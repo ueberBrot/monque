@@ -22,8 +22,7 @@ let db: Db | null = null;
 
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
 	// Start mongo server explicitly to ensure we get valid config
-	const config = await TestContainersMongo.startMongoServer();
-	const mongoOptions = Array.isArray(config) ? config[0] : config;
+	const { url } = await TestContainersMongo.startMongoServer();
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 
@@ -35,7 +34,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 		case 'dbFactory':
 			dbConfig = {
 				dbFactory: async () => {
-					client = new MongoClient(mongoOptions.url, { directConnection: true });
+					client = new MongoClient(url, { directConnection: true });
 					await client.connect();
 					db = client.db('test');
 					return db;
@@ -44,7 +43,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 			break;
 
 		case 'db':
-			client = new MongoClient(mongoOptions.url, { directConnection: true });
+			client = new MongoClient(url, { directConnection: true });
 			await client.connect();
 			db = client.db('test');
 			dbConfig = { db };
@@ -55,7 +54,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 			platformOptions['mongoose'] = [
 				{
 					id: 'default',
-					url: mongoOptions.url,
+					url,
 					connectionOptions: { directConnection: true },
 				},
 			];
@@ -64,6 +63,14 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 				mongooseConnectionId: 'default',
 			};
 			break;
+	}
+
+	// Clean database to ensure test isolation
+	if (connectionStrategy === 'dbFactory' || connectionStrategy === 'db') {
+		const tempClient = new MongoClient(url, { directConnection: true });
+		await tempClient.connect();
+		await tempClient.db('test').dropDatabase();
+		await tempClient.close();
 	}
 
 	const bstrp = PlatformTest.bootstrap(Server, {
@@ -77,11 +84,6 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 	});
 
 	await bstrp();
-
-	// Clean database to ensure test isolation
-	if (client) {
-		await client.db('test').dropDatabase();
-	}
 }
 
 export async function resetMonque(): Promise<void> {

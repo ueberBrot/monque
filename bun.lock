@@ -51,9 +51,7 @@
         "@vitest/coverage-v8": "^4.0.18",
         "fishery": "^2.4.0",
         "mongodb": "^7.0.0",
-        "publint": "^0.3.17",
         "tsdown": "^0.20.1",
-        "typescript": "^5.9.3",
         "unplugin-unused": "^0.5.7",
         "vitest": "^4.0.18",
       },
@@ -67,6 +65,7 @@
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@testcontainers/mongodb": "^11.11.0",
+        "@total-typescript/ts-reset": "^0.6.1",
         "@tsed/core": "^8.24.0",
         "@tsed/di": "^8.24.0",
         "@tsed/logger": "^8.0.4",
@@ -78,7 +77,6 @@
         "mongodb": "^7.0.0",
         "testcontainers": "^11.11.0",
         "tsdown": "^0.19.0",
-        "typescript": "^5.9.3",
         "vitest": "^4.0.17",
       },
       "peerDependencies": {

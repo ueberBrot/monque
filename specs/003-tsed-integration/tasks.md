@@ -95,17 +95,17 @@
 
 ### Tests for User Stories 3+5
 
-- [ ] T034 [P] [US3] Unit test for @Cron decorator in packages/tsed/tests/unit/decorators/cron.test.ts
-- [ ] T035 [P] [US3] Integration test for cron job scheduling in packages/tsed/tests/integration/cron-jobs.test.ts
+- [x] T034 [P] [US3] Unit test for @Cron decorator in packages/tsed/tests/unit/decorators/cron.test.ts
+- [x] T035 [P] [US3] Integration test for cron job scheduling in packages/tsed/tests/integration/cron-jobs.test.ts
 
 ### Implementation for User Stories 3+5
 
-- [ ] T036 [US3] Implement @Cron method decorator in packages/tsed/src/decorators/cron.ts
-- [ ] T037 [US3] Add cron job scheduling to MonqueModule.$onInit in packages/tsed/src/monque-module.ts
-- [ ] T038 [US5] Implement executeJob with DIContext isolation (runInContext) in packages/tsed/src/monque-module.ts
-- [ ] T039 [US5] Add job context cleanup in executeJob finally block in packages/tsed/src/monque-module.ts
-- [ ] T040 [US5] Add DI resolution error handling (mark job failed, log, continue) in packages/tsed/src/monque-module.ts
-- [ ] T041 [US5] Use Ts.ED native logger for all logging in MonqueModule in packages/tsed/src/monque-module.ts
+- [x] T036 [US3] Implement @Cron method decorator in packages/tsed/src/decorators/cron.ts
+- [x] T037 [US3] Add cron job scheduling to MonqueModule.$onInit in packages/tsed/src/monque-module.ts
+- [x] T038 [US5] Implement executeJob with DIContext isolation (runInContext) in packages/tsed/src/monque-module.ts
+- [x] T039 [US5] Add job context cleanup in executeJob finally block in packages/tsed/src/monque-module.ts
+- [x] T040 [US5] Add DI resolution error handling (mark job failed, log, continue) in packages/tsed/src/monque-module.ts
+- [x] T041 [US5] Use Ts.ED native logger for all logging in MonqueModule in packages/tsed/src/monque-module.ts
 
 **Checkpoint**: @Cron decorator and job isolation should be fully functional
 

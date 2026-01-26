@@ -44,7 +44,7 @@ bun run test src/jobs/MyJob.test.ts
 
 ### TypeScript
 - **Strict Mode**: Enabled. No implicit `any`.
-- **No Non-Null Assertions**: Do not use `!` for non-null assertions. Use optional chaining or type guards.
+- **No Non-Null Assertions**: Do not use `!` for Forbidden non-null assertion. Use optional chaining or type guards.
 - **Type Imports**: Use `import type { ... }` for types to ensure proper transpilation.
 - **No Enums**: Use `as const` objects instead of TypeScript enums.
   ```typescript

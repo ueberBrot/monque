@@ -14,11 +14,14 @@ import {
 } from '@monque/core';
 import {
 	Configuration,
+	DIContext,
 	Inject,
 	InjectorService,
 	Module,
 	type OnDestroy,
 	type OnInit,
+	ProviderScope,
+	runInContext,
 	type TokenProvider,
 } from '@tsed/di';
 import { Logger } from '@tsed/logger';
@@ -78,11 +81,11 @@ export class MonqueModule implements OnInit, OnDestroy {
 			this.monque = new Monque(db, options);
 			this.monqueService._setMonque(this.monque);
 
+			this.logger.info('Monque: Connecting to MongoDB...');
+			await this.monque.initialize();
+
 			await this.registerWorkers();
 
-			this.logger.info('Monque: Connecting to MongoDB...');
-
-			await this.monque.initialize();
 			await this.monque.start();
 
 			this.logger.info('Monque: Started successfully');
@@ -124,9 +127,10 @@ export class MonqueModule implements OnInit, OnDestroy {
 		for (const provider of workerControllers) {
 			const useClass = provider.useClass;
 			const workers = collectWorkerMetadata(useClass);
+			// Try to resolve singleton instance immediately
 			const instance = this.injector.get(provider.token);
 
-			if (!instance) {
+			if (!instance && provider.scope !== ProviderScope.REQUEST) {
 				this.logger.warn(
 					`Monque: Could not resolve instance for controller ${provider.name}. Skipping.`,
 				);
@@ -146,12 +150,40 @@ export class MonqueModule implements OnInit, OnDestroy {
 				registeredJobs.add(fullName);
 
 				const handler = async (job: Job) => {
-					// TODO: Add DIContext isolation for request-scoped providers support
-					const typedInstance = instance as Record<string, (job: Job) => unknown>;
+					const $ctx = new DIContext({
+						injector: this.injector,
+						id: job._id?.toString() || 'unknown',
+					});
+					$ctx.set('MONQUE_JOB', job);
+					$ctx.container.set(DIContext, $ctx);
 
-					if (typeof typedInstance[method] === 'function') {
-						await typedInstance[method](job);
-					}
+					await runInContext($ctx, async () => {
+						try {
+							let targetInstance = instance;
+							if (provider.scope === ProviderScope.REQUEST || !targetInstance) {
+								targetInstance = await this.injector.invoke(provider.token, {
+									locals: $ctx.container,
+								});
+							}
+
+							const typedInstance = targetInstance as Record<string, (job: Job) => unknown>;
+
+							if (typedInstance && typeof typedInstance[method] === 'function') {
+								await typedInstance[method](job);
+							}
+						} catch (error) {
+							this.logger.error({
+								event: 'MONQUE_JOB_ERROR',
+								jobName: fullName,
+								jobId: job._id,
+								message: `Error processing job ${fullName}`,
+								error,
+							});
+							throw error;
+						} finally {
+							await $ctx.destroy();
+						}
+					});
 				};
 
 				if (isCron && cronPattern) {
