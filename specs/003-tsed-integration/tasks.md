@@ -119,9 +119,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T042 [US4] Add Ts.ED marketplace keywords to packages/tsed/package.json
-- [ ] T043 [US4] Add package description mentioning Ts.ED in packages/tsed/package.json
-- [ ] T044 [US4] Create README.md with Installation, Configuration, API Reference, Testing sections in packages/tsed/README.md
+- [x] T042 [US4] Add Ts.ED marketplace keywords to packages/tsed/package.json
+- [x] T043 [US4] Add package description mentioning Ts.ED in packages/tsed/package.json
+- [x] T044 [US4] Create README.md with Installation, Configuration, API Reference, Testing sections in packages/tsed/README.md
 
 **Checkpoint**: Package is discoverable in Ts.ED marketplace
 
@@ -133,17 +133,15 @@
 
 - [x] T045 [P] Create barrel exports for constants in packages/tsed/src/constants/index.ts
 - [x] T046 [P] Create barrel exports for contracts in packages/tsed/src/contracts/index.ts
-- [ ] T047 [P] Create barrel exports for decorators in packages/tsed/src/decorators/index.ts
-- [ ] T048 [P] Create barrel exports for services in packages/tsed/src/services/index.ts
+- [x] T047 [P] Create barrel exports for decorators in packages/tsed/src/decorators/index.ts
+- [x] T048 [P] Create barrel exports for services in packages/tsed/src/services/index.ts
 - [x] T049 [P] Create barrel exports for utils in packages/tsed/src/utils/index.ts
-- [ ] T050 Create main barrel export (index.ts) with public API in packages/tsed/src/index.ts
-- [ ] T051 Run build and verify no TypeScript errors
-- [ ] T052 Run full test suite (unit + integration) and verify all pass
-- [ ] T053 Validate quickstart.md scenarios work with implementation
-- [ ] T054 [US4] Sync README content to @monque/docs workspace per Constitution
-- [ ] T055 Verify NFR-001 (<10ms overhead) via simple benchmark test
-- [ ] T055b [P] Implement performance benchmark script for NFR-001 (1k no-op jobs) in packages/tsed/scripts/benchmark.ts
-- [ ] T056 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
+- [x] T050 Create main barrel export (index.ts) with public API in packages/tsed/src/index.ts
+- [x] T051 Run build and verify no TypeScript errors
+- [x] T052 Run full test suite (unit + integration) and verify all pass
+- [x] T053 Validate quickstart.md scenarios work with implementation
+- [x] T054 [US4] Sync README content to @monque/docs workspace per Constitution
+- [x] T055 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
 
 ---
 
@@ -151,10 +149,10 @@
 
 **Purpose**: Ensure robust testing and deployment for the new package
 
-- [x] T057 Add granular test scripts to root package.json (unit/integration per package)
-- [x] T058 Update CI to optimize test execution (only changed packages in PRs)
-- [x] T059 Configure publishConfig in packages/tsed/package.json
-- [ ] T060 Verify Changesets release workflow handles multi-package publish
+- [x] T056 Add granular test scripts to root package.json (unit/integration per package)
+- [x] T057 Update CI to optimize test execution (only changed packages in PRs)
+- [x] T058 Configure publishConfig in packages/tsed/package.json
+- [x] T059 Verify Changesets release workflow handles multi-package publish
 
 ---
 

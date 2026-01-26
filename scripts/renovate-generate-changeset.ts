@@ -82,8 +82,7 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const depKeys = ['dependencies', 'optionalDependencies'] as const;
-	let sawPeerDependencyChange = false;
+	const depKeys = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const;
 	const packageBumps = new Map<string, BumpType>();
 	const packageSummaries = new Map<
 		string,
@@ -104,33 +103,20 @@ async function main(): Promise<void> {
 
 		let bump: BumpType = 'patch';
 		const updates: Array<{ depName: string; from: unknown; to: unknown }> = [];
-
-		// Peer dependency updates should be handled manually.
-		{
-			const prevPeers = isRecord(before.peerDependencies)
-				? (before.peerDependencies as Record<string, unknown>)
-				: {};
-			const nextPeers = isRecord(after.peerDependencies)
-				? (after.peerDependencies as Record<string, unknown>)
-				: {};
-
-			for (const depName of Object.keys(nextPeers)) {
-				const from = prevPeers[depName];
-				const to = nextPeers[depName];
-				if (from === undefined || to === undefined || from === to) continue;
-				sawPeerDependencyChange = true;
-			}
-		}
+		const seenDeps = new Set<string>();
 
 		for (const key of depKeys) {
 			const prev = isRecord(before[key]) ? (before[key] as Record<string, unknown>) : {};
 			const next = isRecord(after[key]) ? (after[key] as Record<string, unknown>) : {};
 
 			for (const depName of Object.keys(next)) {
+				if (seenDeps.has(depName)) continue;
+
 				const from = prev[depName];
 				const to = next[depName];
 				if (from === undefined || to === undefined || from === to) continue;
 
+				seenDeps.add(depName);
 				bump = maxBump(bump, semverDiffType(from, to));
 				updates.push({ depName, from, to });
 			}
@@ -140,11 +126,6 @@ async function main(): Promise<void> {
 
 		packageBumps.set(pkgName, bump);
 		packageSummaries.set(pkgName, updates);
-	}
-
-	if (sawPeerDependencyChange) {
-		console.log('Peer dependency changes detected; skipping auto-generated changeset.');
-		return;
 	}
 
 	if (packageBumps.size === 0) {

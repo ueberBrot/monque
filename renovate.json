@@ -48,7 +48,6 @@
 			"automerge": true,
 			"platformAutomerge": true
 		},
-
 		{
 			"description": "Group docs-site dependency updates",
 			"matchFileNames": ["apps/docs/**"],
@@ -58,10 +57,10 @@
 			"platformAutomerge": true
 		},
 		{
-			"description": "Group core package testing tool updates",
-			"matchFileNames": ["packages/core/**"],
+			"description": "Group package testing tool updates",
+			"matchFileNames": ["packages/core/**", "packages/tsed/**"],
 			"matchUpdateTypes": ["minor", "patch"],
-			"groupName": "core testing (non-major)",
+			"groupName": "package testing (non-major)",
 			"automerge": true,
 			"platformAutomerge": true,
 			"matchPackageNames": [
@@ -77,6 +76,22 @@
 			"matchPackageNames": ["node"],
 			"matchUpdateTypes": ["minor", "patch", "pin"],
 			"enabled": false
+		},
+		{
+			"description": "Group Ts.ED updates (manual)",
+			"matchFileNames": ["packages/tsed/**"],
+			"matchPackagePatterns": ["^@tsed/"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "tsed (non-major)",
+			"automerge": false
+		},
+		{
+			"description": "Group Monque updates (manual)",
+			"matchFileNames": ["packages/tsed/**"],
+			"matchPackagePatterns": ["^@monque/"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "monque (non-major)",
+			"automerge": false
 		}
 	]
 }

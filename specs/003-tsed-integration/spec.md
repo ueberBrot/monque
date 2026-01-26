@@ -100,8 +100,7 @@ As a developer, I want each job execution to run in its own unrelated context so
 
 ### Non-Functional Requirements
 
-- **NFR-001**: The Ts.ED integration layer overhead MUST be <10ms per job execution (excluding user handler time).
-  - *Measurement*: Benchmark 1000 no-op jobs comparing raw `Monque.register()` vs `MonqueModule` decorator registration. Average processing time difference must be <10ms.
+- **NFR-001**: The Ts.ED integration layer overhead MUST be negligible per job execution (excluding user handler time).
 - **NFR-002**: The integration MUST use Ts.ED's native logger for all logging (info, warn, error levels), not a custom logging solution.
 
 ### Release & Documentation

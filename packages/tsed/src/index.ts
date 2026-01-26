@@ -9,7 +9,7 @@ export type {
 	WorkerMethods,
 	WorkerStore,
 } from './decorators';
-export { InjectMonque, Worker, WorkerController } from './decorators';
+export { Cron, InjectMonque, Worker, WorkerController } from './decorators';
 export { MonqueModule } from './monque-module.js';
 export { MonqueService } from './services';
 export {

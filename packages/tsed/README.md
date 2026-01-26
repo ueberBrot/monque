@@ -148,7 +148,26 @@ Injectable wrapper for the main `Monque` instance.
 - `schedule(cron, name, data, opts)`
 - `now(name, data)`
 - `cancelJob(id)`
-- `getJob(id)`
+  - `getJob(id)`
+
+## Testing
+
+Use `@tsed/platform-http/testing` and `PlatformTest` to test your workers. You can mock `MonqueService` or use a real Mongo connection with Testcontainers.
+
+```typescript
+import { PlatformTest } from "@tsed/platform-http/testing";
+import { MonqueService } from "@monque/tsed";
+
+describe("EmailWorkers", () => {
+  beforeEach(PlatformTest.create);
+  afterEach(PlatformTest.reset);
+
+  it("should process email", async () => {
+     const service = PlatformTest.get(MonqueService);
+     // ... test logic ...
+  });
+});
+```
 
 ## License
 
