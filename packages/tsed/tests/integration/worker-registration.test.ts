@@ -65,7 +65,7 @@ describe('Worker Registration Integration', () => {
 			expect(job.name).toBe('cleanup');
 		});
 
-		it('should pass concurrency option to worker registration', async () => {
+		it('should enqueue a job with namespaced name', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 			const job = await monqueService.enqueue('email.welcome', { userId: 'user-1' });
 			expect(job).toBeDefined();

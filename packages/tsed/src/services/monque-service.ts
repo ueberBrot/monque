@@ -205,9 +205,20 @@ export class MonqueService {
 	 *
 	 * @param jobId - The job's ObjectId (as string or ObjectId)
 	 * @returns The job document, or null if not found
+	 * @throws MonqueError if jobId is an invalid hex string
 	 */
 	async getJob<T>(jobId: string | ObjectId): Promise<PersistedJob<T> | null> {
-		const id = typeof jobId === 'string' ? ObjectId.createFromHexString(jobId) : jobId;
+		let id: ObjectId;
+
+		if (typeof jobId === 'string') {
+			if (!ObjectId.isValid(jobId)) {
+				throw new MonqueError(`Invalid job ID format: ${jobId}`);
+			}
+			id = ObjectId.createFromHexString(jobId);
+		} else {
+			id = jobId;
+		}
+
 		return this.monque.getJob(id);
 	}
 

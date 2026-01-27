@@ -172,6 +172,12 @@ describe('MonqueService', () => {
 				expect(mockMonque.getJob).toHaveBeenCalledWith(id);
 			});
 
+			it('should throw MonqueError when calling getJob with invalid hex string', async () => {
+				await expect(service.getJob('invalid-hex-string')).rejects.toThrow(
+					'Invalid job ID format: invalid-hex-string',
+				);
+			});
+
 			it('should delegate getJobs to monque', async () => {
 				const filter = { limit: 10 };
 				await service.getJobs(filter);

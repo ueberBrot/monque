@@ -98,17 +98,19 @@ describe('MonqueModule Lifecycle Integration', () => {
 				return originalGet.call(this, token as Parameters<InjectorService['get']>[0]);
 			});
 
-			await bootstrapMonque({
-				imports: [UnresolvableController],
-				connectionStrategy: 'db',
-			});
+			try {
+				await bootstrapMonque({
+					imports: [UnresolvableController],
+					connectionStrategy: 'db',
+				});
 
-			// Cleanup
-			getSpy.mockRestore();
-
-			// If we reached here without error, the module handled the missing instance gracefully.
-			const service = PlatformTest.get<MonqueService>(MonqueService);
-			expect(service).toBeDefined();
+				// If we reached here without error, the module handled the missing instance gracefully.
+				const service = PlatformTest.get<MonqueService>(MonqueService);
+				expect(service).toBeDefined();
+			} finally {
+				// Cleanup
+				getSpy.mockRestore();
+			}
 		});
 
 		it('should invoke request scoped workers for each job', async () => {

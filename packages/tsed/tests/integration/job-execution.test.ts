@@ -6,7 +6,7 @@ import { Worker, WorkerController } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { waitFor } from '../test-utils.js';
-import { bootstrapMonque, getTestDb, resetMonque } from './helpers/bootstrap.js';
+import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 @WorkerController('execution')
 class ExecutionController {
@@ -43,24 +43,25 @@ describe('Job Execution Flow', () => {
 		});
 
 		const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-		const db = getTestDb();
-		const collection = db.collection('monque_jobs');
 
 		const job = await monqueService.enqueue('execution.success', {});
 
 		// Check Pending
-		const pendingJob = await collection.findOne({ _id: job._id });
+		const pendingJob = await monqueService.getJob(job._id.toString());
 		expect(pendingJob).not.toBeNull();
-		expect(pendingJob?.['status']).toBe('pending');
+		expect(pendingJob?.status).toBe('pending');
 
-		// Wait for completion
-		await waitFor(() => ExecutionController.processed.includes(job._id.toString()));
+		// Wait for completion via DB polling
+		await waitFor(async () => {
+			const persistedJob = await monqueService.getJob(job._id.toString());
+			return persistedJob?.status === 'completed' && persistedJob?.updatedAt !== undefined;
+		});
 
 		// Check Completed
-		const completedJob = await collection.findOne({ _id: job._id });
+		const completedJob = await monqueService.getJob(job._id.toString());
 		expect(completedJob).not.toBeNull();
-		expect(completedJob?.['status']).toBe('completed');
-		expect(completedJob?.['updatedAt']).toBeDefined();
+		expect(completedJob?.status).toBe('completed');
+		expect(completedJob?.updatedAt).toBeDefined();
 	});
 
 	it('should retry failed jobs (Pending -> Processing -> Failed -> Retry -> Completed)', async () => {
@@ -69,8 +70,6 @@ describe('Job Execution Flow', () => {
 			connectionStrategy: 'dbFactory',
 		});
 		const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-		const db = getTestDb();
-		const collection = db.collection('monque_jobs');
 
 		const job = await monqueService.enqueue('execution.fail-once', {});
 
@@ -78,16 +77,21 @@ describe('Job Execution Flow', () => {
 		await waitFor(() => ExecutionController.failCount === 1);
 
 		// At this point, the job should have failed and been rescheduled (backoff).
-		// We wait for it to be processed again.
+		// We wait for it to be processed again and complete.
+		await waitFor(
+			async () => {
+				const persistedJob = await monqueService.getJob(job._id.toString());
+				return persistedJob?.status === 'completed';
+			},
+			{
+				timeout: 10000,
+			},
+		);
 
-		await waitFor(() => ExecutionController.processed.includes(job._id.toString()), {
-			timeout: 10000,
-		});
-
-		const completedJob = await collection.findOne({ _id: job._id });
+		const completedJob = await monqueService.getJob(job._id.toString());
 		expect(completedJob).not.toBeNull();
-		expect(completedJob?.['status']).toBe('completed');
+		expect(completedJob?.status).toBe('completed');
 		// failedCount might be 1 (failed once)
-		expect(completedJob?.['failCount']).toBe(1);
+		expect(completedJob?.failCount).toBe(1);
 	});
 });

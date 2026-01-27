@@ -69,8 +69,25 @@ describe('Duplicate Validation & Idempotency', () => {
 			expect(job2._id.toString()).toBe(job1._id.toString());
 
 			// Verify only 1 document exists
-			const count = await collection.countDocuments({ name: 'idempotent.job' });
-			expect(count).toBe(1);
+			const stats = await monqueService.getQueueStats({ name: 'idempotent.job' });
+			expect(stats.total).toBe(1);
+
+			// Mark the job as completed
+			await collection.updateOne({ _id: job1._id }, { $set: { status: 'completed' } });
+
+			// Third Enqueue (Same uniqueKey, but previous job is completed)
+			const job3 = await monqueService.enqueue(
+				'idempotent.job',
+				{ foo: 'new' },
+				{ uniqueKey: 'unique-1' },
+			);
+
+			// Should return a NEW job (different ID)
+			expect(job3._id.toString()).not.toBe(job1._id.toString());
+
+			// Verify now 2 documents exist
+			const newStats = await monqueService.getQueueStats({ name: 'idempotent.job' });
+			expect(newStats.total).toBe(2);
 		});
 	});
 });

@@ -102,8 +102,7 @@ async function main(): Promise<void> {
 		if (!pkgName) continue;
 
 		let bump: BumpType = 'patch';
-		const updates: Array<{ depName: string; from: unknown; to: unknown }> = [];
-		const seenDeps = new Set<string>();
+		const updatesMap = new Map<string, { from: unknown; to: unknown; type: BumpType }>();
 
 		for (const key of depKeys) {
 			const prev = isRecord(before[key]) ? (before[key] as Record<string, unknown>) : {};
@@ -114,14 +113,23 @@ async function main(): Promise<void> {
 				const to = next[depName];
 				if (from === undefined || to === undefined || from === to) continue;
 
-				bump = maxBump(bump, semverDiffType(from, to));
+				const type = semverDiffType(from, to);
+				bump = maxBump(bump, type);
 
-				if (!seenDeps.has(depName)) {
-					seenDeps.add(depName);
-					updates.push({ depName, from, to });
+				const existing = updatesMap.get(depName);
+				const order: Record<BumpType, number> = { patch: 0, minor: 1, major: 2 };
+
+				if (!existing || order[type] > order[existing.type]) {
+					updatesMap.set(depName, { from, to, type });
 				}
 			}
 		}
+
+		const updates = Array.from(updatesMap.entries()).map(([depName, data]) => ({
+			depName,
+			from: data.from,
+			to: data.to,
+		}));
 
 		if (updates.length === 0) continue;
 

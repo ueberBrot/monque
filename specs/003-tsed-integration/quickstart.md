@@ -320,12 +320,15 @@ export class OrderController {
 }
 ```
 
-### Health Check Endpoint
+	### Health Check Endpoint
 
 ```typescript
+import { Controller, Inject } from "@tsed/di";
+import { Get } from "@tsed/schema";
+import { MonqueService } from "@monque/tsed";
+
 @Controller("/health")
 export class HealthController {
-  // Add import at top: import { Controller, Get, Inject } from "@tsed/common";
   @Inject()
   private monque: MonqueService;
 

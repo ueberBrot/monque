@@ -88,7 +88,7 @@ As a developer, I want each job execution to run in its own unrelated context so
 ### Functional Requirements
 
 - **FR-001**: The integration MUST be packaged as a separate NPM package (e.g., `packages/tsed` or `packages/tsed-plugin-monque`).
-- **FR-002**: The package name MUST be `tsed-plugin-monque` (or similar compliant name) to ensure Marketplace discovery.
+- **FR-002**: The package MUST enable Marketplace discovery by including "Ts.ED" in the `package.json` description and keywords, with a package name of `@monque/tsed`.
 - **FR-003**: System MUST expose a `@WorkerController(options)` decorator that registers a class as a container for job handlers.
 - **FR-003.1**: System MUST expose a `@Worker(queueName, options)` method decorator that registers the method as a handler for a specific queue.
 - **FR-004**: System MUST expose a `@Cron(expression, options)` method decorator for recurring schedules.
