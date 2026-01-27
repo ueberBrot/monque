@@ -16,7 +16,6 @@ The `@monque/tsed` package provides a seamless integration between [Monque](http
 | [`@Worker()`](/monque/api-tsed/functions/worker/) | Register a job handler |
 | [`@Cron()`](/monque/api-tsed/functions/cron/) | Register a scheduled job |
 | [`MonqueService`](/monque/api-tsed/classes/monqueservice/) | Injectable job management service |
-| [`@InjectMonque()`](/monque/api-tsed/functions/injectmonque/) | Property decorator to inject the service |
 
 ## Installation
 
@@ -178,18 +177,18 @@ export class ReportWorkers {
 
 ### 3. Enqueue Jobs
 
-Inject [`MonqueService`](/monque/api-tsed/classes/monqueservice/) into any Ts.ED Service or Controller to dispatch jobs. You can use either standard `@Inject()` or the specialized [`@InjectMonque()`](/monque/api-tsed/functions/injectmonque/) property decorator.
+Inject [`MonqueService`](/monque/api-tsed/classes/monqueservice/) into any Ts.ED Service or Controller to dispatch jobs.
 
 ```typescript
 import { Service, Inject } from "@tsed/di";
-import { MonqueService, InjectMonque } from "@monque/tsed";
+import { MonqueService } from "@monque/tsed";
 
 @Service()
 export class AuthService {
-  @InjectMonque()
+  @Inject()
   private monque: MonqueService;
 
-  async registerUser(user: any) {
+  async registerUser(user: { email: string }) {
     // Dispatch background job
     await this.monque.enqueue("email.send", {
       to: user.email,

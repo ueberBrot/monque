@@ -10,4 +10,8 @@ describe('getWorkerToken', () => {
 		expect(typeof token).toBe('symbol');
 		expect(token.toString()).toBe('Symbol(monque:worker:TestWorker)');
 	});
+
+	it('should throw an error for anonymous classes', () => {
+		expect(() => getWorkerToken(class {})).toThrow('Worker class must have a non-empty name');
+	});
 });

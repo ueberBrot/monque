@@ -86,7 +86,14 @@ export async function resolveDatabase(
 			const connectionId = config.mongooseConnectionId || 'default';
 			const connection = resolved.get(connectionId);
 
-			if (connection && 'db' in connection) {
+			if (!connection) {
+				throw new Error(
+					`MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
+						'Ensure the connection ID is correct and the connection is established.',
+				);
+			}
+
+			if ('db' in connection && connection.db) {
 				return connection.db as Db;
 			}
 		}
@@ -98,6 +105,12 @@ export async function resolveDatabase(
 		}
 
 		// Default: Assume it is a native Db instance
+		if (typeof resolved !== 'object' || resolved === null || !('collection' in resolved)) {
+			throw new Error(
+				`Resolved value from token "${String(config.dbToken)}" does not appear to be a valid MongoDB Db instance.`,
+			);
+		}
+
 		return resolved as Db;
 	}
 

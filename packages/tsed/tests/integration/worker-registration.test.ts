@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Worker as MonqueWorker, WorkerController } from '@/decorators';
 import { MonqueService } from '@/services';
 
+import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 @WorkerController('email')
@@ -87,7 +88,7 @@ describe('Worker Registration Integration', () => {
 			await monqueService.now('email.send', { to: 'test@example.com' });
 
 			// Wait for processing
-			await new Promise((resolve) => setTimeout(resolve, 2000));
+			await waitFor(() => emailWorkers.processed.includes('test@example.com'));
 
 			expect(emailWorkers.processed).toContain('test@example.com');
 		});

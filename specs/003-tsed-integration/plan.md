@@ -74,8 +74,7 @@ packages/tsed/
 │   │   ├── index.ts
 │   │   ├── worker-controller.ts        # @WorkerController class decorator
 │   │   ├── worker.ts                   # @Worker method decorator
-│   │   ├── cron.ts                     # @Cron method decorator
-│   │   └── inject-monque.ts            # @InjectMonque property decorator
+│   │   └── cron.ts                     # @Cron method decorator
 │   │
 │   ├── services/
 │   │   ├── index.ts

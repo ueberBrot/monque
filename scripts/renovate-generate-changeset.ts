@@ -110,15 +110,16 @@ async function main(): Promise<void> {
 			const next = isRecord(after[key]) ? (after[key] as Record<string, unknown>) : {};
 
 			for (const depName of Object.keys(next)) {
-				if (seenDeps.has(depName)) continue;
-
 				const from = prev[depName];
 				const to = next[depName];
 				if (from === undefined || to === undefined || from === to) continue;
 
-				seenDeps.add(depName);
 				bump = maxBump(bump, semverDiffType(from, to));
-				updates.push({ depName, from, to });
+
+				if (!seenDeps.has(depName)) {
+					seenDeps.add(depName);
+					updates.push({ depName, from, to });
+				}
 			}
 		}
 

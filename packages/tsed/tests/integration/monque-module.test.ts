@@ -7,6 +7,7 @@ import { Worker, WorkerController } from '@/decorators';
 import { MonqueModule } from '@/monque-module';
 import { MonqueService } from '@/services';
 
+import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 import { Server } from './helpers/Server.js';
 
@@ -89,13 +90,12 @@ describe('MonqueModule Lifecycle Integration', () => {
 			const originalGet = InjectorService.prototype.get;
 			const getSpy = vi.spyOn(InjectorService.prototype, 'get').mockImplementation(function (
 				this: InjectorService,
-				// biome-ignore lint/suspicious/noExplicitAny: Mocking generic method
-				token: any,
+				token: unknown,
 			) {
 				if (token === UnresolvableController) {
 					return undefined;
 				}
-				return originalGet.call(this, token);
+				return originalGet.call(this, token as Parameters<InjectorService['get']>[0]);
 			});
 
 			await bootstrapMonque({
@@ -126,13 +126,8 @@ describe('MonqueModule Lifecycle Integration', () => {
 			await service.enqueue('request-scoped.job', {});
 
 			// Wait for processing (simple poll)
-			await new Promise<void>((resolve) => {
-				const interval = setInterval(async () => {
-					if (RequestScopedController.processed) {
-						clearInterval(interval);
-						resolve();
-					}
-				}, 50);
+			await waitFor(() => RequestScopedController.processed, {
+				timeout: 5000,
 			});
 
 			expect(RequestScopedController.processed).toBe(true);
@@ -152,14 +147,7 @@ describe('MonqueModule Lifecycle Integration', () => {
 			await service.enqueue('error.throw', {});
 
 			// Wait for logger to be called
-			await new Promise<void>((resolve) => {
-				const interval = setInterval(() => {
-					if (errorSpy.mock.calls.length > 0) {
-						clearInterval(interval);
-						resolve();
-					}
-				}, 50);
-			});
+			await waitFor(() => errorSpy.mock.calls.length > 0, { timeout: 5000 });
 
 			expect(errorSpy).toHaveBeenCalledWith(
 				expect.objectContaining({

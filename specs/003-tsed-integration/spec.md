@@ -94,7 +94,7 @@ As a developer, I want each job execution to run in its own unrelated context so
 - **FR-004**: System MUST expose a `@Cron(expression, options)` method decorator for recurring schedules.
 - **FR-005**: Controllers MUST be instantiated via the Ts.ED Injector.
 - **FR-006**: System MUST create a discrete Dependency Injection Context for every job execution to ensure state isolation.
-- **FR-007**: System MUST integration with the framework's native `Init` and `Destroy` lifecycle phases to automatically manage connections.
+- **FR-007**: System MUST integrate with the framework's native `Init` and `Destroy` lifecycle phases to automatically manage connections.
 - **FR-008**: System MUST allow type-safe job payload definitions via TypeScript Generics (`Job<T>`).
   - *Clarification*: Runtime schema validation (e.g., via `@tsed/schema`) is out of scope for v1.0. Type safety is compile-time only.
 

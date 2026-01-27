@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Cron, WorkerController } from '@/decorators';
 import { MonqueService } from '@/services';
 
+import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 @WorkerController('cron-test')
@@ -49,7 +50,7 @@ describe('Cron Job Integration', () => {
 			await monqueService.now('cron-test.minutely-job', {});
 
 			// Wait for processing
-			await new Promise((resolve) => setTimeout(resolve, 2000));
+			await waitFor(() => CronTestWorkers.callCount >= 1);
 
 			expect(CronTestWorkers.callCount).toBe(1);
 		});

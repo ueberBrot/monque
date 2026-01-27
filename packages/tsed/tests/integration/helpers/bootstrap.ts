@@ -1,10 +1,11 @@
-import type { TokenProvider } from '@tsed/di';
+import { Provider, type TokenProvider } from '@tsed/di';
 import { MongooseModule, MongooseService } from '@tsed/mongoose';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { TestContainersMongo } from '@tsed/testcontainers-mongo';
 import { type Db, MongoClient } from 'mongodb';
 
 import type { MonqueTsedConfig } from '@/config';
+import { ProviderTypes } from '@/constants';
 import { MonqueModule } from '@/monque-module';
 
 import { Server } from './Server.js';
@@ -65,8 +66,8 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 			break;
 	}
 
-	// Clean database to ensure test isolation
-	if (connectionStrategy === 'dbFactory' || connectionStrategy === 'db') {
+	if (connectionStrategy !== 'mongoose') {
+		// Clean database to ensure test isolation
 		const tempClient = new MongoClient(url, { directConnection: true });
 		await tempClient.connect();
 		await tempClient.db('test').dropDatabase();
@@ -84,6 +85,10 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 	});
 
 	await bstrp();
+
+	if (connectionStrategy === 'mongoose') {
+		await getTestDb().dropDatabase();
+	}
 }
 
 export async function resetMonque(): Promise<void> {
@@ -93,6 +98,16 @@ export async function resetMonque(): Promise<void> {
 		client = null;
 		db = null;
 	}
+
+	// Clean up GlobalProviders to prevent leaking test controllers
+	Provider.Registry.forEach((provider, key) => {
+		if (
+			provider.type === ProviderTypes.WORKER_CONTROLLER &&
+			provider.token.name.startsWith('Ephemeral')
+		) {
+			Provider.Registry.delete(key);
+		}
+	});
 }
 
 export function getTestDb(): Db {

@@ -30,6 +30,7 @@ Import `MonqueModule` in your `Server.ts` and configure the connection:
 ```typescript
 import { Configuration } from "@tsed/di";
 import { MonqueModule } from "@monque/tsed";
+import { MongoClient } from "mongodb";
 import "@tsed/platform-express"; // or @tsed/platform-koa
 
 @Configuration({
@@ -40,7 +41,8 @@ import "@tsed/platform-express"; // or @tsed/platform-koa
     enabled: true,
     // Option 1: Provide existing Db instance via factory (Recommended)
     dbFactory: async () => {
-        const client = await MongoClient.connect(process.env.MONGO_URL);
+        const client = new MongoClient(process.env.MONGO_URL);
+        await client.connect();
         return client.db("my-app");
     },
     // Option 2: Use existing DI token
@@ -148,7 +150,7 @@ Injectable wrapper for the main `Monque` instance.
 - `schedule(cron, name, data, opts)`
 - `now(name, data)`
 - `cancelJob(id)`
-  - `getJob(id)`
+- `getJob(id)`
 
 ## Testing
 

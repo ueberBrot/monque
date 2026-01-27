@@ -6,7 +6,7 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs) -- *Well, framework names are required here as it's an integration.*
+- [x] No implementation details (languages, frameworks, APIs) — *Framework names are required here because this is an integration.*
 - [x] Focused on user value and business needs
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed

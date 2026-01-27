@@ -17,5 +17,11 @@
  * ```
  */
 export function getWorkerToken(target: new (...args: unknown[]) => unknown): symbol {
-	return Symbol.for(`monque:worker:${target.name}`);
+	const name = target.name?.trim();
+
+	if (!name) {
+		throw new Error('Worker class must have a non-empty name');
+	}
+
+	return Symbol.for(`monque:worker:${name}`);
 }

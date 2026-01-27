@@ -301,12 +301,14 @@ console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
 ### Access MonqueService in Controllers
 
 ```typescript
-import { Controller, Post, BodyParams } from "@tsed/di";
-import { InjectMonque, MonqueService } from "@monque/tsed";
+import { Controller, Inject } from "@tsed/di";
+import { Post } from "@tsed/schema";
+import { BodyParams } from "@tsed/platform-params";
+import { MonqueService } from "@monque/tsed";
 
 @Controller("/orders")
 export class OrderController {
-  @InjectMonque()
+  @Inject()
   private monque: MonqueService;
 
   @Post("/")
@@ -323,6 +325,7 @@ export class OrderController {
 ```typescript
 @Controller("/health")
 export class HealthController {
+  // Add import at top: import { Controller, Get, Inject } from "@tsed/common";
   @Inject()
   private monque: MonqueService;
 
@@ -431,7 +434,6 @@ describe("EmailWorkers Integration", () => {
 | `@WorkerController(namespace?)` | Class | Marks class as job handler container |
 | `@Worker(name, options?)` | Method | Registers method as job handler |
 | `@Cron(pattern, options?)` | Method | Registers method as scheduled cron job |
-| `@InjectMonque()` | Property | Injects MonqueService instance |
 
 ---
 

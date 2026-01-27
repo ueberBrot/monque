@@ -13,6 +13,7 @@ describe('Type Guards', () => {
 	const createMockDb = (): Db =>
 		({
 			databaseName: 'test-db',
+			collection: vi.fn(),
 		}) as unknown as Db;
 
 	describe('isMongooseService', () => {
@@ -67,6 +68,20 @@ describe('Type Guards', () => {
 		it('should return false for objects without db property', () => {
 			expect(isMongooseConnection({})).toBe(false);
 			expect(isMongooseConnection({ database: {} })).toBe(false);
+		});
+
+		it('should return false if db is not an object', () => {
+			expect(isMongooseConnection({ db: 'not-an-object' })).toBe(false);
+			expect(isMongooseConnection({ db: 123 })).toBe(false);
+		});
+
+		it('should return false if db is null', () => {
+			expect(isMongooseConnection({ db: null })).toBe(false);
+		});
+
+		it('should return false if db.collection is not a function', () => {
+			expect(isMongooseConnection({ db: {} })).toBe(false);
+			expect(isMongooseConnection({ db: { collection: 'not-a-function' } })).toBe(false);
 		});
 	});
 });

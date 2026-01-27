@@ -11,18 +11,12 @@ import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monqu
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Options for the @WorkerController class decorator.
- */
-export type WorkerControllerOptions = Record<string, never>;
-
-/**
  * Decorator signature for @WorkerController.
  *
  * Marks a class as containing worker methods and registers it with the DI container.
  *
  * @param namespace - Optional prefix for all job names in this controller.
  *                    When set, job names become "{namespace}.{name}".
- * @param options - Reserved for future options.
  *
  * @example
  * ```typescript
@@ -33,10 +27,7 @@ export type WorkerControllerOptions = Record<string, never>;
  * }
  * ```
  */
-export type WorkerControllerDecorator = (
-	namespace?: string,
-	options?: WorkerControllerOptions,
-) => ClassDecorator;
+export type WorkerControllerDecorator = (namespace?: string) => ClassDecorator;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @Worker
@@ -109,30 +100,3 @@ export interface CronDecoratorOptions extends ScheduleOptions {
  * ```
  */
 export type CronDecorator = (pattern: string, options?: CronDecoratorOptions) => MethodDecorator;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// @InjectMonque
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Decorator signature for @InjectMonque.
- *
- * Convenience decorator for injecting the MonqueService instance.
- * Equivalent to @Inject(MonqueService).
- *
- * @example
- * ```typescript
- * @Service()
- * export class UserService {
- *   @InjectMonque()
- *   private monque: MonqueService;
- *
- *   async createUser(data: CreateUserDto) {
- *     const user = await this.save(data);
- *     await this.monque.enqueue("email.send-welcome", { userId: user.id });
- *     return user;
- *   }
- * }
- * ```
- */
-export type InjectMonqueDecorator = () => PropertyDecorator;

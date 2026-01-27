@@ -170,21 +170,26 @@ describe('resolveDatabase', () => {
 			expect(result).toBe(mockDb);
 		});
 
-		it('should fall through if mongoose service returns invalid connection', async () => {
+		it('should throw if mongoose service returns invalid connection', async () => {
 			const mockMongooseService = {
 				get: vi.fn().mockReturnValue(null), // returns null connection
 			};
 			const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
 			const config: MonqueTsedConfig = { dbToken: 'MONGOOSE_SERVICE' };
 
-			// Should fall through and return the service itself (which isn't a Db)
-			// But since we are asserting return type is Db, it will just return it.
-			// In real world this might fail later, but for unit test of this function
-			// we just want to verify it didn't crash or take the wrong branch.
-			const result = await resolveDatabase(config, injectorFn);
+			await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
+				/MongooseService resolved from token.*MONGOOSE_SERVICE.*returned no connection/,
+			);
+		});
 
-			expect(mockMongooseService.get).toHaveBeenCalled();
-			expect(result).toBe(mockMongooseService);
+		it('should throw if resolved value is not a valid Db instance', async () => {
+			const invalidDb = { foo: 'bar' }; // No collection method
+			const injectorFn: InjectorFn = vi.fn().mockReturnValue(invalidDb);
+			const config: MonqueTsedConfig = { dbToken: 'INVALID_DB' };
+
+			await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
+				/Resolved value from token.*INVALID_DB.*does not appear to be a valid MongoDB Db instance/,
+			);
 		});
 	});
 

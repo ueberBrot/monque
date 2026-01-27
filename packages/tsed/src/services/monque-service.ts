@@ -32,6 +32,7 @@ import type {
 	QueueStats,
 	ScheduleOptions,
 } from '@monque/core';
+import { MonqueError } from '@monque/core';
 import { Injectable } from '@tsed/di';
 import { ObjectId } from 'mongodb';
 
@@ -63,10 +64,11 @@ export class MonqueService {
 	 */
 	get monque(): Monque {
 		if (!this._monque) {
-			throw new Error(
+			throw new MonqueError(
 				'MonqueService is not initialized. Ensure MonqueModule is imported and enabled.',
 			);
 		}
+
 		return this._monque;
 	}
 
@@ -205,7 +207,7 @@ export class MonqueService {
 	 * @returns The job document, or null if not found
 	 */
 	async getJob<T>(jobId: string | ObjectId): Promise<PersistedJob<T> | null> {
-		const id = typeof jobId === 'string' ? new ObjectId(jobId) : jobId;
+		const id = typeof jobId === 'string' ? ObjectId.createFromHexString(jobId) : jobId;
 		return this.monque.getJob(id);
 	}
 

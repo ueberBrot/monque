@@ -1,31 +1,76 @@
 import type { Job } from '@monque/core';
+import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Worker, WorkerController } from '@/decorators';
+import { MonqueService } from '@/services';
 
-import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
+import { bootstrapMonque, getTestDb, resetMonque } from './helpers/bootstrap.js';
 
-describe('Duplicate Worker Validation', () => {
+describe('Duplicate Validation & Idempotency', () => {
 	afterEach(resetMonque);
 
-	it('should throw error on duplicate job names', async () => {
-		@WorkerController('duplicate')
-		class DuplicateController1 {
-			@Worker('job')
-			async handler(_job: Job) {}
-		}
+	describe('Worker Registration', () => {
+		it('should throw error on duplicate job names', async () => {
+			@WorkerController('duplicate')
+			class EphemeralDuplicateController1 {
+				@Worker('job')
+				async handler(_job: Job) {}
+			}
 
-		@WorkerController('duplicate')
-		class DuplicateController2 {
-			@Worker('job')
-			async handler(_job: Job) {}
-		}
+			@WorkerController('duplicate')
+			class EphemeralDuplicateController2 {
+				@Worker('job')
+				async handler(_job: Job) {}
+			}
 
-		await expect(
-			bootstrapMonque({
-				imports: [DuplicateController1, DuplicateController2],
-				connectionStrategy: 'db',
-			}),
-		).rejects.toThrow(/Duplicate job registration detected/);
+			await expect(
+				bootstrapMonque({
+					imports: [EphemeralDuplicateController1, EphemeralDuplicateController2],
+					connectionStrategy: 'db',
+				}),
+			).rejects.toThrow(/Duplicate job registration detected/);
+		});
+	});
+
+	describe('Job Idempotency', () => {
+		it('should not enqueue duplicate jobs when uniqueKey is provided', async () => {
+			@WorkerController('idempotent')
+			class EphemeralIdempotentController {
+				@Worker('job')
+				async handler(_job: Job) {}
+			}
+
+			await bootstrapMonque({
+				imports: [EphemeralIdempotentController],
+				connectionStrategy: 'dbFactory',
+			});
+
+			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+			const db = getTestDb();
+			const collection = db.collection('monque_jobs');
+
+			// First Enqueue
+			const job1 = await monqueService.enqueue(
+				'idempotent.job',
+				{ foo: 'bar' },
+				{ uniqueKey: 'unique-1' },
+			);
+			expect(job1).toBeDefined();
+
+			// Second Enqueue (Duplicate)
+			const job2 = await monqueService.enqueue(
+				'idempotent.job',
+				{ foo: 'baz' },
+				{ uniqueKey: 'unique-1' },
+			);
+
+			// Should return the EXISTING job (job1)
+			expect(job2._id.toString()).toBe(job1._id.toString());
+
+			// Verify only 1 document exists
+			const count = await collection.countDocuments({ name: 'idempotent.job' });
+			expect(count).toBe(1);
+		});
 	});
 });

@@ -51,5 +51,12 @@ export function isMongooseService(value: unknown): value is MongooseService {
  * @param value The value to check
  */
 export function isMongooseConnection(value: unknown): value is MongooseConnection {
-	return typeof value === 'object' && value !== null && 'db' in value;
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'db' in value &&
+		typeof (value as MongooseConnection).db === 'object' &&
+		(value as MongooseConnection).db !== null &&
+		typeof (value as MongooseConnection).db.collection === 'function'
+	);
 }
