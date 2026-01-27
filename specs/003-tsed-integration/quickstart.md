@@ -320,7 +320,7 @@ export class OrderController {
 }
 ```
 
-	### Health Check Endpoint
+### Health Check Endpoint
 
 ```typescript
 import { Controller, Inject } from "@tsed/di";

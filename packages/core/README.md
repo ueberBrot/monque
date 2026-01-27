@@ -8,8 +8,17 @@
   <a href="https://www.npmjs.com/package/@monque/core">
     <img src="https://img.shields.io/npm/v/%40monque%2Fcore?style=for-the-badge&label=%40monque%2Fcore" alt="@monque/core version" />
   </a>
+  <a href="https://github.com/ueberBrot/monque/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/ci.yml?branch=main&style=for-the-badge&logo=github" alt="CI Status" />
+  </a>
   <a href="https://codecov.io/gh/ueberBrot/monque">
     <img src="https://img.shields.io/codecov/c/github/ueberBrot/monque?style=for-the-badge&logo=codecov&logoColor=white" alt="Codecov" />
+  </a>
+  <a href="https://opensource.org/licenses/ISC">
+    <img src="https://img.shields.io/badge/License-ISC-blue.svg?style=for-the-badge" alt="License: ISC" />
+  </a>
+  <a href="https://bun.sh">
+    <img src="https://img.shields.io/badge/Built%20with-Bun-fbf0df?style=for-the-badge&logo=bun&logoColor=black" alt="Built with Bun" />
   </a>
 </p>
 

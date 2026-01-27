@@ -85,6 +85,11 @@ describe('MonqueModule Lifecycle Integration', () => {
 	});
 
 	describe('Validation & Resolution Edge Cases', () => {
+		beforeEach(() => {
+			RequestScopedController.processed = false;
+			RequestScopedController.instanceCount = 0;
+		});
+
 		it('should warn and skip if worker instance cannot be resolved', async () => {
 			// Mock injector to fail resolution for UnresolvableController
 			const originalGet = InjectorService.prototype.get;

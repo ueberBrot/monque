@@ -76,7 +76,6 @@ describe('MonqueService', () => {
 			};
 
 			// Use internal method to set the monque instance
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(service as unknown as { _setMonque: (m: unknown) => void })._setMonque(mockMonque);
 		});
 
@@ -118,58 +117,69 @@ describe('MonqueService', () => {
 
 		describe('single job management', () => {
 			it('should delegate cancelJob to monque', async () => {
-				await service.cancelJob('job-1');
+				const result = await service.cancelJob('job-1');
 				expect(mockMonque.cancelJob).toHaveBeenCalledWith('job-1');
+				expect(result).toEqual({ _id: 'job-1', status: 'cancelled' });
 			});
 
 			it('should delegate retryJob to monque', async () => {
-				await service.retryJob('job-1');
+				const result = await service.retryJob('job-1');
 				expect(mockMonque.retryJob).toHaveBeenCalledWith('job-1');
+				expect(result).toEqual({ _id: 'job-1', status: 'pending' });
 			});
 
 			it('should delegate rescheduleJob to monque', async () => {
 				const newDate = new Date();
-				await service.rescheduleJob('job-1', newDate);
+				const result = await service.rescheduleJob('job-1', newDate);
 				expect(mockMonque.rescheduleJob).toHaveBeenCalledWith('job-1', newDate);
+				expect(result).toEqual({ _id: 'job-1' });
 			});
 
 			it('should delegate deleteJob to monque', async () => {
-				await service.deleteJob('job-1');
+				const result = await service.deleteJob('job-1');
 				expect(mockMonque.deleteJob).toHaveBeenCalledWith('job-1');
+				expect(result).toBe(true);
 			});
 		});
 
 		describe('bulk operations', () => {
 			it('should delegate cancelJobs to monque', async () => {
 				const filter = { name: 'test' };
-				await service.cancelJobs(filter);
+				const result = await service.cancelJobs(filter);
 				expect(mockMonque.cancelJobs).toHaveBeenCalledWith(filter);
+				expect(result).toEqual({ count: 5 });
 			});
 
 			it('should delegate retryJobs to monque', async () => {
 				const filter = { status: 'failed' } as const;
-				await service.retryJobs(filter);
+				const result = await service.retryJobs(filter);
 				expect(mockMonque.retryJobs).toHaveBeenCalledWith(filter);
+				expect(result).toEqual({ count: 3 });
 			});
 
 			it('should delegate deleteJobs to monque', async () => {
 				const filter = { name: 'old' };
-				await service.deleteJobs(filter);
+				const result = await service.deleteJobs(filter);
 				expect(mockMonque.deleteJobs).toHaveBeenCalledWith(filter);
+				expect(result).toEqual({ count: 10 });
 			});
 		});
 
 		describe('job queries', () => {
 			it('should delegate getJob to monque', async () => {
 				const validObjectId = '507f1f77bcf86cd799439011';
-				await service.getJob(validObjectId);
-				expect(mockMonque.getJob).toHaveBeenCalledWith(expect.anything());
+				const result = await service.getJob(validObjectId);
+				expect(mockMonque.getJob).toHaveBeenCalledWith(expect.any(ObjectId));
+				const calledArg = mockMonque.getJob.mock.calls[0]?.[0] as ObjectId | undefined;
+				expect(calledArg?.toHexString()).toBe(validObjectId);
+				expect(result).toEqual({ _id: 'job-1' });
 			});
 
 			it('should delegate getJob to monque with ObjectId', async () => {
 				const id = new ObjectId('507f1f77bcf86cd799439011');
-				await service.getJob(id);
+				const result = await service.getJob(id);
 				expect(mockMonque.getJob).toHaveBeenCalledWith(id);
+				expect(result).toEqual({ _id: 'job-1' });
 			});
 
 			it('should throw MonqueError when calling getJob with invalid hex string', async () => {
@@ -180,19 +190,22 @@ describe('MonqueService', () => {
 
 			it('should delegate getJobs to monque', async () => {
 				const filter = { limit: 10 };
-				await service.getJobs(filter);
+				const result = await service.getJobs(filter);
 				expect(mockMonque.getJobs).toHaveBeenCalledWith(filter);
+				expect(result).toEqual([{ _id: 'job-1' }]);
 			});
 
 			it('should delegate getJobsWithCursor to monque', async () => {
 				const options = { limit: 20 };
-				await service.getJobsWithCursor(options);
+				const result = await service.getJobsWithCursor(options);
 				expect(mockMonque.getJobsWithCursor).toHaveBeenCalledWith(options);
+				expect(result).toEqual({ data: [], cursor: null });
 			});
 
 			it('should delegate getQueueStats to monque', async () => {
-				await service.getQueueStats({ name: 'email' });
+				const result = await service.getQueueStats({ name: 'email' });
 				expect(mockMonque.getQueueStats).toHaveBeenCalledWith({ name: 'email' });
+				expect(result).toEqual({ pending: 5, completed: 10 });
 			});
 		});
 

@@ -59,7 +59,7 @@ As a maintainer, I want the package to follow Ts.ED naming conventions so that i
 
 **Acceptance Scenarios**:
 
-1. **Given** the package is built, **When** checking `package.json`, **Then** the name starts with `tsed-plugin-` or `@tsed/` and keywords/description include "Ts.ED".
+1. **Given** the package is built, **When** checking `package.json`, **Then** the name equals `@monque/tsed` (as per FR-002) and keywords/description include "Ts.ED".
 
 ---
 
@@ -151,4 +151,4 @@ As a developer, I want each job execution to run in its own unrelated context so
 
 - **SC-001**: A new Ts.ED project can install and configure the plugin with < 10 lines of functional configuration code in `Server.ts` (excluding imports).
 - **SC-002**: 100% of standard Monque worker options (concurrency, replace) can be configured via the `@Worker` decorator.
-- **SC-003**: Package is successfully built and publishable to NPM with the name `tsed-plugin-monque`.
+- **SC-003**: Package is successfully built and publishable to NPM with the name `@monque/tsed`.

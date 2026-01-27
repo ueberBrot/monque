@@ -92,5 +92,91 @@ describe('Worker Registration Integration', () => {
 
 			expect(emailWorkers.processed).toContain('test@example.com');
 		});
+
+		it('should invoke handler for non-namespaced worker', async () => {
+			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+			const systemWorkers = PlatformTest.get<SystemWorkers>(SystemWorkers);
+
+			await monqueService.now('cleanup', {});
+
+			await waitFor(() => systemWorkers.executed);
+
+			expect(systemWorkers.executed).toBe(true);
+		});
+	});
+
+	describe('Resilience', () => {
+		it('should handle max retries', async () => {
+			@WorkerController('resilience')
+			class ResilienceWorker {
+				static failCount = 0;
+				@MonqueWorker('fail')
+				async fail() {
+					ResilienceWorker.failCount++;
+					throw new Error('Persistent failure');
+				}
+			}
+
+			await bootstrapMonque({
+				imports: [ResilienceWorker],
+				connectionStrategy: 'dbFactory',
+				monqueConfig: {
+					maxRetries: 2,
+					baseRetryInterval: 10,
+					pollInterval: 100,
+				},
+			});
+
+			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+			const job = await monqueService.now('resilience.fail', {});
+
+			await waitFor(
+				async () => {
+					const persistedJob = await monqueService.getJob(job._id.toString());
+					return persistedJob?.status === 'failed';
+				},
+				{ timeout: 10000 },
+			);
+
+			const failedJob = await monqueService.getJob(job._id.toString());
+			expect(failedJob?.status).toBe('failed');
+			expect(failedJob?.failCount).toBe(2);
+			expect(ResilienceWorker.failCount).toBe(2);
+		});
+	});
+
+	describe('Lifecycle Integration', () => {
+		it('should wait for active jobs during stop()', async () => {
+			@WorkerController('lifecycle')
+			class LifecycleWorker {
+				static started = false;
+				static completed = false;
+				@MonqueWorker('long-running')
+				async longRunning() {
+					LifecycleWorker.started = true;
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					LifecycleWorker.completed = true;
+				}
+			}
+
+			await bootstrapMonque({
+				imports: [LifecycleWorker],
+				connectionStrategy: 'dbFactory',
+				monqueConfig: {
+					pollInterval: 100,
+				},
+			});
+
+			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+			await monqueService.now('lifecycle.long-running', {});
+
+			// Wait for it to start
+			await waitFor(() => LifecycleWorker.started);
+
+			// Stop while it's running
+			await monqueService.monque.stop();
+
+			expect(LifecycleWorker.completed).toBe(true);
+		});
 	});
 });
