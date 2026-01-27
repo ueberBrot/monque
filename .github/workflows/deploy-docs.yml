@@ -1,12 +1,11 @@
 name: Deploy Docs to GitHub Pages
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Release"]
     branches: [main]
-    paths:
-      - 'apps/docs/**'
-      - 'packages/core/CHANGELOG.md'
-      - '.github/workflows/deploy-docs.yml'
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
@@ -20,6 +19,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
