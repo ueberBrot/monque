@@ -83,7 +83,6 @@
 		"fishery": "^2.4.0",
 		"mongodb": "^7.0.0",
 		"tsdown": "^0.20.1",
-		"unplugin-unused": "^0.5.7",
 		"vitest": "^4.0.18"
 	}
 }
