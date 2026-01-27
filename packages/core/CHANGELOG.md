@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.1.2
+
+### Patch Changes
+
+- [#92](https://github.com/ueberBrot/monque/pull/92) [`e90bdb1`](https://github.com/ueberBrot/monque/commit/e90bdb1ef848398d08346e5bf165d146a8d710b5) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Remove ts-reset global type leakage from published source to prevent dependency errors and unintended global type changes in consumer projects.
+
 ## 1.1.1
 
 ### Patch Changes
