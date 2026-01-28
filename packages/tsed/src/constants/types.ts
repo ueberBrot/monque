@@ -3,7 +3,7 @@
  *
  * These constants are used to categorize providers registered with Ts.ED's
  * dependency injection container, enabling MonqueModule to discover and
- * register workers automatically.
+ * register jobs automatically.
  *
  * Note: Using string constants with `as const` instead of enums per
  * Constitution guidelines.

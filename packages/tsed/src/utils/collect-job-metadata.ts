@@ -2,7 +2,7 @@
  * Collect job metadata utility
  *
  * Collects all job metadata from a class decorated with @JobController.
- * Used by MonqueModule to discover and register all workers.
+ * Used by MonqueModule to discover and register all jobs.
  */
 import { Store } from '@tsed/core';
 

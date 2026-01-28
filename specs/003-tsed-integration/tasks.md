@@ -29,7 +29,7 @@
 - [x] T004 [P] Configure tsdown build tool in packages/tsed/tsdown.config.ts
 - [x] T005 [P] Configure Vitest with @tsed/testcontainers-mongo/vitest/setup in packages/tsed/vitest.config.ts
 - [x] T006 [P] Configure Vitest for unit tests only in packages/tsed/vitest.unit.config.ts
-- [x] T009 [P] Create test utilities helper in packages/tsed/tests/setup/test-utils.ts
+- [x] T007 [P] Create test utilities helper in packages/tsed/tests/setup/test-utils.ts
 
 ---
 
@@ -39,15 +39,14 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [x] T010 Implement MONQUE Symbol constant in packages/tsed/src/constants/constants.ts
-- [x] T011 [P] Implement ProviderTypes provider type constants in packages/tsed/src/constants/monque-types.ts
-- [x] T012 [P] Implement MonqueTsedConfig interface with TsED augmentation in packages/tsed/src/config/config.ts
-- [x] T013 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
-- [x] T014 [P] Implement JobStore, JobMetadata, CronMetadata interfaces in packages/tsed/src/decorators/types.ts
-- [x] T015 [P] Inherit JobDecoratorOptions from @monque/core WorkerOptions in packages/tsed/src/decorators/types.ts
-- [x] T018 [P] Implement getJobToken utility in packages/tsed/src/utils/get-job-token.ts
-
-- [x] T019 Unit test for resolveDatabase in packages/tsed/tests/unit/utils/resolve-database.test.ts
+- [x] T008 Implement MONQUE Symbol constant in packages/tsed/src/constants/constants.ts
+- [x] T009 [P] Implement ProviderTypes provider type constants in packages/tsed/src/constants/monque-types.ts
+- [x] T010 [P] Implement MonqueTsedConfig interface with TsED augmentation in packages/tsed/src/config/config.ts
+- [x] T011 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
+- [x] T012 [P] Implement JobStore, JobMetadata, CronMetadata interfaces in packages/tsed/src/decorators/types.ts
+- [x] T013 [P] Inherit JobDecoratorOptions from @monque/core WorkerOptions in packages/tsed/src/decorators/types.ts
+- [x] T014 [P] Implement getJobToken utility in packages/tsed/src/utils/get-job-token.ts
+- [x] T015 Unit test for resolveDatabase in packages/tsed/tests/unit/utils/resolve-database.test.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 
@@ -63,22 +62,22 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [x] T020 [P] [US1] Unit test for @JobController decorator in packages/tsed/tests/unit/decorators/job-controller.test.ts
-- [x] T021 [P] [US1] Unit test for @Job decorator in packages/tsed/tests/unit/decorators/job.test.ts
-- [x] T022 [P] [US2] Unit test for MonqueService in packages/tsed/tests/unit/services/monque-service.test.ts
-- [x] T023 [P] [US1] Integration test for job registration in packages/tsed/tests/integration/job-registration.test.ts
+- [x] T016 [P] [US1] Unit test for @JobController decorator in packages/tsed/tests/unit/decorators/job-controller.test.ts
+- [x] T017 [P] [US1] Unit test for @Job decorator in packages/tsed/tests/unit/decorators/job.test.ts
+- [x] T018 [P] [US2] Unit test for MonqueService in packages/tsed/tests/unit/services/monque-service.test.ts
+- [x] T019 [P] [US1] Integration test for job registration in packages/tsed/tests/integration/job-registration.test.ts
 
 ### Implementation for User Stories 1+2
 
-- [x] T024 [P] [US1] Implement @JobController class decorator in packages/tsed/src/decorators/job-controller.ts
-- [x] T025 [P] [US1] Implement @Job method decorator in packages/tsed/src/decorators/job.ts
-- [x] T026 [US1] Implement collectJobMetadata utility in packages/tsed/src/utils/collect-job-metadata.ts
-- [x] T027 [US2] Implement MonqueService injectable wrapper in packages/tsed/src/services/monque-service.ts
-- [x] T028 [US1] Implement MonqueModule with $onInit job registration in packages/tsed/src/monque-module.ts
-- [x] T029 [US1] Add duplicate job name validation in MonqueModule.$onInit in packages/tsed/src/monque-module.ts
-- [x] T030 [US1] Add startup error handling (connection failure throws) in packages/tsed/src/monque-module.ts
-- [x] T031 [US1] Implement MonqueModule.$onDestroy for graceful shutdown in packages/tsed/src/monque-module.ts
-- [x] T032 [US1] Integration test for MonqueModule lifecycle in packages/tsed/tests/integration/monque-module.test.ts
+- [x] T020 [P] [US1] Implement @JobController class decorator in packages/tsed/src/decorators/job-controller.ts
+- [x] T021 [P] [US1] Implement @Job method decorator in packages/tsed/src/decorators/job.ts
+- [x] T022 [US1] Implement collectJobMetadata utility in packages/tsed/src/utils/collect-job-metadata.ts
+- [x] T023 [US2] Implement MonqueService injectable wrapper in packages/tsed/src/services/monque-service.ts
+- [x] T024 [US1] Implement MonqueModule with $onInit job registration in packages/tsed/src/monque-module.ts
+- [x] T025 [US1] Add duplicate job name validation in MonqueModule.$onInit in packages/tsed/src/monque-module.ts
+- [x] T026 [US1] Add startup error handling (connection failure throws) in packages/tsed/src/monque-module.ts
+- [x] T027 [US1] Implement MonqueModule.$onDestroy for graceful shutdown in packages/tsed/src/monque-module.ts
+- [x] T028 [US1] Integration test for MonqueModule lifecycle in packages/tsed/tests/integration/monque-module.test.ts
 
 **Checkpoint**: At this point, @JobController with @Job and DI injection should be fully functional
 
@@ -92,17 +91,17 @@
 
 ### Tests for User Stories 3+5
 
-- [x] T033 [P] [US3] Unit test for @Cron decorator in packages/tsed/tests/unit/decorators/cron.test.ts
-- [x] T034 [P] [US3] Integration test for cron job scheduling in packages/tsed/tests/integration/cron-jobs.test.ts
+- [x] T029 [P] [US3] Unit test for @Cron decorator in packages/tsed/tests/unit/decorators/cron.test.ts
+- [x] T030 [P] [US3] Integration test for cron job scheduling in packages/tsed/tests/integration/cron-jobs.test.ts
 
 ### Implementation for User Stories 3+5
 
-- [x] T035 [US3] Implement @Cron method decorator in packages/tsed/src/decorators/cron.ts
-- [x] T036 [US3] Add cron job scheduling to MonqueModule.$onInit in packages/tsed/src/monque-module.ts
-- [x] T037 [US5] Implement executeJob with DIContext isolation (runInContext) in packages/tsed/src/monque-module.ts
-- [x] T038 [US5] Add job context cleanup in executeJob finally block in packages/tsed/src/monque-module.ts
-- [x] T039 [US5] Add DI resolution error handling (mark job failed, log, continue) in packages/tsed/src/monque-module.ts
-- [x] T040 [US5] Use Ts.ED native logger for all logging in MonqueModule in packages/tsed/src/monque-module.ts
+- [x] T031 [US3] Implement @Cron method decorator in packages/tsed/src/decorators/cron.ts
+- [x] T032 [US3] Add cron job scheduling to MonqueModule.$onInit in packages/tsed/src/monque-module.ts
+- [x] T033 [US5] Implement executeJob with DIContext isolation (runInContext) in packages/tsed/src/monque-module.ts
+- [x] T034 [US5] Add job context cleanup in executeJob finally block in packages/tsed/src/monque-module.ts
+- [x] T035 [US5] Add DI resolution error handling (mark job failed, log, continue) in packages/tsed/src/monque-module.ts
+- [x] T036 [US5] Use Ts.ED native logger for all logging in MonqueModule in packages/tsed/src/monque-module.ts
 
 **Checkpoint**: @Cron decorator and job isolation should be fully functional
 
@@ -116,9 +115,9 @@
 
 ### Implementation for User Story 4
 
-- [x] T041 [US4] Add Ts.ED marketplace keywords to packages/tsed/package.json
-- [x] T042 [US4] Add package description mentioning Ts.ED in packages/tsed/package.json
-- [x] T043 [US4] Create README.md with Installation, Configuration, API Reference, Testing sections in packages/tsed/README.md
+- [x] T037 [US4] Add Ts.ED marketplace keywords to packages/tsed/package.json
+- [x] T038 [US4] Add package description mentioning Ts.ED in packages/tsed/package.json
+- [x] T039 [US4] Create README.md with Installation, Configuration, API Reference, Testing sections in packages/tsed/README.md
 
 **Checkpoint**: Package is discoverable in Ts.ED marketplace
 
@@ -128,17 +127,17 @@
 
 **Purpose**: Barrel exports, documentation, and final validation
 
-- [x] T044 [P] Create barrel exports for constants in packages/tsed/src/constants/index.ts
-- [x] T045 [P] Create barrel exports for contracts in packages/tsed/src/contracts/index.ts
-- [x] T046 [P] Create barrel exports for decorators in packages/tsed/src/decorators/index.ts
-- [x] T047 [P] Create barrel exports for services in packages/tsed/src/services/index.ts
-- [x] T048 [P] Create barrel exports for utils in packages/tsed/src/utils/index.ts
-- [x] T049 Create main barrel export (index.ts) with public API in packages/tsed/src/index.ts
-- [x] T050 Run build and verify no TypeScript errors
-- [x] T051 Run full test suite (unit + integration) and verify all pass
-- [x] T052 Validate quickstart.md scenarios work with implementation
-- [x] T053 [US4] Sync README content to @monque/docs workspace per Constitution
-- [x] T054 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
+- [x] T040 [P] Create barrel exports for constants in packages/tsed/src/constants/index.ts
+- [x] T041 [P] Create barrel exports for contracts in packages/tsed/src/contracts/index.ts
+- [x] T042 [P] Create barrel exports for decorators in packages/tsed/src/decorators/index.ts
+- [x] T043 [P] Create barrel exports for services in packages/tsed/src/services/index.ts
+- [x] T044 [P] Create barrel exports for utils in packages/tsed/src/utils/index.ts
+- [x] T045 Create main barrel export (index.ts) with public API in packages/tsed/src/index.ts
+- [x] T046 Run build and verify no TypeScript errors
+- [x] T047 Run full test suite (unit + integration) and verify all pass
+- [x] T048 Validate quickstart.md scenarios work with implementation
+- [x] T049 [US4] Sync README content to @monque/docs workspace per Constitution
+- [x] T050 Create Ts.ED integration documentation in apps/docs/src/content/docs/integrations/tsed.mdx
 
 ---
 
@@ -146,10 +145,10 @@
 
 **Purpose**: Ensure robust testing and deployment for the new package
 
-- [x] T055 Add granular test scripts to root package.json (unit/integration per package)
-- [x] T056 Update CI to optimize test execution (only changed packages in PRs)
-- [x] T057 Configure publishConfig in packages/tsed/package.json
-- [x] T058 Verify Changesets release workflow handles multi-package publish
+- [x] T051 Add granular test scripts to root package.json (unit/integration per package)
+- [x] T052 Update CI to optimize test execution (only changed packages in PRs)
+- [x] T053 Configure publishConfig in packages/tsed/package.json
+- [x] T054 Verify Changesets release workflow handles multi-package publish
 
 ---
 
@@ -180,11 +179,11 @@
 
 ### Parallel Opportunities
 
-- All Setup tasks T003-T009 marked [P] can run in parallel
-- All Foundational tasks T011-T018 marked [P] can run in parallel
-- Phase 3 tests (T020-T023) can run in parallel
-- Phase 3 decorator implementations (T024-T025) can run in parallel
-- Phase 6 barrel exports (T044-T048) can run in parallel
+- All Setup tasks T003-T007 marked [P] can run in parallel
+- All Foundational tasks T009-T014 marked [P] can run in parallel
+- Phase 3 tests (T016-T019) can run in parallel
+- Phase 3 decorator implementations (T020-T021) can run in parallel
+- Phase 6 barrel exports (T040-T044) can run in parallel
 
 ---
 
@@ -192,14 +191,14 @@
 
 ```bash
 # Launch all tests first (TDD):
-Task: "Unit test for @JobController decorator" [T020]
-Task: "Unit test for @Job decorator" [T021]
-Task: "Unit test for MonqueService" [T022]
-Task: "Integration test for job registration" [T023]
+Task: "Unit test for @JobController decorator" [T016]
+Task: "Unit test for @Job decorator" [T017]
+Task: "Unit test for MonqueService" [T018]
+Task: "Integration test for job registration" [T019]
 
 # After tests fail, launch parallel decorator implementations:
-Task: "Implement @JobController class decorator" [T024]
-Task: "Implement @Job method decorator" [T025]
+Task: "Implement @JobController class decorator" [T020]
+Task: "Implement @Job method decorator" [T021]
 ```
 
 ---
@@ -213,5 +212,4 @@ Task: "Implement @Job method decorator" [T025]
 - Verify tests fail before implementing
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
-- Edge cases (connection failure, duplicate names, DI errors) are covered in T029, T030, T039
-
+- Edge cases (connection failure, duplicate names, DI errors) are covered in T025, T026, T035

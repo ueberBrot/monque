@@ -90,7 +90,6 @@ export class EmailJobs {
   }
 }
 ```
-```
 
 ### 3. Enqueue Jobs from Services
 

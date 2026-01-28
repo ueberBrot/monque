@@ -338,8 +338,7 @@ class MonqueService implements IMonqueService {
 │                      MonqueModule                           │
 │  - Implements OnInit, OnDestroy                             │
 │  - Creates Monque instance                                  │
- │  - Registers jobs from metadata                          │
-
+│  - Registers jobs from metadata                             │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐

@@ -45,7 +45,7 @@ describe('@Job', () => {
 			const monqueStore = store.get<JobStore>(MONQUE);
 
 			expect(monqueStore?.jobs).toHaveLength(3);
-			expect(monqueStore?.jobs.map((w) => w.name)).toEqual(['email', 'sms', 'push']);
+			expect(monqueStore?.jobs.map((job) => job.name)).toEqual(['email', 'sms', 'push']);
 		});
 	});
 

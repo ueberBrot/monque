@@ -131,8 +131,7 @@ packages/tsed/
 | **I. Code Quality Standards** | PASS | Contracts use `interface` for object shapes, `type` only for unions. `ProviderTypes` uses `as const` pattern (no enums). Test strategy includes unit + integration coverage. |
 | **II. Architecture Guidelines** | PASS | Uses @monque/core's event-driven design. MonqueModule implements graceful shutdown via `$onDestroy`. DI context per job ensures isolation. |
 | **III. Development Workflow** | PASS | Package at `packages/tsed/` follows monorepo structure. Uses workspace dependencies (`workspace:*`). Same tooling as core (tsdown, vitest). |
-| **IV. API Design Principles** | PASS | Simple: `@JobController/@Job` is minimal setup.
- Extensible: options objects for advanced config. Framework-specific package keeps core agnostic. |
+| **IV. API Design Principles** | PASS | Simple: `@JobController/@Job` is minimal setup. Extensible: options objects for advanced config. Framework-specific package keeps core agnostic. |
 | **V. Resilience Patterns** | PASS | Delegates to @monque/core for backoff, shutdown, idempotency. MonqueModule.$onDestroy calls monque.stop() for graceful shutdown. |
 | **VI. Documentation Standards** | PASS | Contracts include JSDoc with `@param`, `@returns`, `@example`. quickstart.md provides usage examples. README.md required in deliverables. |
 
