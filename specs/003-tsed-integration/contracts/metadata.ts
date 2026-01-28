@@ -27,8 +27,8 @@ export const MONQUE = Symbol.for('monque');
  * Note: Using string constants instead of enums per Constitution guidelines.
  */
 export const ProviderTypes = {
-	/** Provider type for @WorkerController decorated classes */
-	WORKER_CONTROLLER: 'monque:worker-controller',
+	/** Provider type for @JobController decorated classes */
+	JOB_CONTROLLER: 'monque:job-controller',
 	/** Provider type for cron job handlers */
 	CRON: 'monque:cron',
 } as const;
@@ -36,13 +36,13 @@ export const ProviderTypes = {
 export type ProviderType = (typeof ProviderTypes)[keyof typeof ProviderTypes];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker Metadata
+// Job Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Metadata for a single @Worker decorated method.
+ * Metadata for a single @Job decorated method.
  */
-export interface WorkerMetadata {
+export interface JobMetadata {
 	/**
 	 * Job name (without namespace prefix).
 	 * Combined with controller namespace to form full job name.
@@ -55,7 +55,7 @@ export interface WorkerMetadata {
 	method: string;
 
 	/**
-	 * Worker options forwarded to Monque.register().
+	 * Job options forwarded to Monque.register().
 	 */
 	opts: CoreWorkerOptions;
 }
@@ -100,18 +100,18 @@ export interface CronMetadata {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker Store
+// Job Store
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Complete metadata structure stored on @WorkerController classes.
+ * Complete metadata structure stored on @JobController classes.
  *
  * Accessed via `Store.from(Class).get(MONQUE)`.
  */
-export interface WorkerStore {
+export interface JobStore {
 	/**
 	 * Type identifier for the store.
-	 * Always "controller" for WorkerController.
+	 * Always "controller" for JobController.
 	 */
 	type: 'controller';
 
@@ -122,9 +122,9 @@ export interface WorkerStore {
 	namespace?: string;
 
 	/**
-	 * Worker method registrations from @Worker decorators.
+	 * Job method registrations from @Job decorators.
 	 */
-	workers: WorkerMetadata[];
+	jobs: JobMetadata[];
 
 	/**
 	 * Cron job registrations from @Cron decorators.
@@ -139,8 +139,8 @@ export interface WorkerStore {
 /**
  * Build the full job name by combining namespace and name.
  *
- * @param namespace - Optional namespace from @WorkerController
- * @param name - Job name from @Worker or @Cron
+ * @param namespace - Optional namespace from @JobController
+ * @param name - Job name from @Job or @Cron
  * @returns Full job name (e.g., "email.send" or just "send")
  */
 export function buildJobName(namespace: string | undefined, name: string): string {

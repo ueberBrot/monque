@@ -5,15 +5,15 @@ description: Use Monque with the Ts.ED framework
 
 import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
-The `@monque/tsed` package provides a seamless integration between [Monque](https://github.com/debruyn/monque) and [Ts.ED](https://tsed.io/), allowing you to define workers and cron jobs using decorators and leverage dependency injection.
+The `@monque/tsed` package provides a seamless integration between [Monque](https://github.com/debruyn/monque) and [Ts.ED](https://tsed.io/), allowing you to define jobs and cron jobs using decorators and leverage dependency injection.
 
 ## Quick Reference
 
 | Method / Type | Description |
 |---------------|-------------|
 | [`MonqueModule`](/monque/api-tsed/classes/monquemodule/) | Main Ts.ED module |
-| [`@WorkerController()`](/monque/api-tsed/functions/workercontroller/) | Register a worker controller |
-| [`@Worker()`](/monque/api-tsed/functions/worker/) | Register a job handler |
+| [`@JobController()`](/monque/api-tsed/functions/jobcontroller/) | Register a job controller |
+| [`@Job()`](/monque/api-tsed/functions/job/) | Register a job handler |
 | [`@Cron()`](/monque/api-tsed/functions/cron/) | Register a scheduled job |
 | [`MonqueService`](/monque/api-tsed/classes/monqueservice/) | Injectable job management service |
 
@@ -130,17 +130,17 @@ export class Server {}
 
 ## Usage
 
-### 1. Define a Worker Controller
+### 1. Define a Job Controller
 
-Create a class decorated with [`@WorkerController`](/monque/api-tsed/functions/workercontroller/). Related job handlers are grouped here, similar to how REST controllers group HTTP endpoints. Methods decorated with [`@Worker`](/monque/api-tsed/functions/worker/) will process jobs.
+Create a class decorated with [`@JobController`](/monque/api-tsed/functions/jobcontroller/). Related job handlers are grouped here, similar to how REST controllers group HTTP endpoints. Methods decorated with [`@Job`](/monque/api-tsed/functions/job/) will process jobs.
 
 ### Type Safety
 
 Monque is designed with type safety as a core principle. You can define job payloads using TypeScript interfaces and pass them as generics to the [`Job<T>`](/monque/api/interfaces/job/) type:
 
 ```typescript
-import { WorkerController, Worker } from "@monque/tsed";
-import type { Job } from "@monque/core";
+import { JobController, Job } from "@monque/tsed";
+import type { Job as MonqueJob } from "@monque/core";
 
 interface SendEmailPayload {
   to: string;
@@ -148,10 +148,10 @@ interface SendEmailPayload {
   templateId: string;
 }
 
-@WorkerController("email") // Optional namespace prefix: "email."
-export class EmailWorkers {
-  @Worker("send", { concurrency: 5 }) // Full job name: "email.send"
-  async sendEmail(job: Job<SendEmailPayload>) {
+@JobController("email") // Optional namespace prefix: "email."
+export class EmailJobs {
+  @Job("send", { concurrency: 5 }) // Full job name: "email.send"
+  async sendEmail(job: MonqueJob<SendEmailPayload>) {
     // job.data is fully typed
     const { to, subject } = job.data;
     console.log(`Sending email to ${to}...`);
@@ -164,10 +164,10 @@ export class EmailWorkers {
 Use the [`@Cron`](/monque/api-tsed/functions/cron/) decorator to schedule recurring tasks. Cron jobs are automatically registered and scheduled with Monque during the application's `$onInit` lifecycle phase.
 
 ```typescript
-import { WorkerController, Cron } from "@monque/tsed";
+import { JobController, Cron } from "@monque/tsed";
 
-@WorkerController()
-export class ReportWorkers {
+@JobController()
+export class ReportJobs {
   @Cron("0 0 * * *", { name: "daily-report" })
   async generateDailyReport() {
     console.log("Generating report...");
@@ -236,7 +236,7 @@ export class WorkerServer {}
   When `disableJobProcessing: true`:
   - The database connection is still established
   - `MonqueService` can enqueue jobs via `enqueue()`, `now()`, etc.
-  - Workers are **not** registered (even if `@Worker` decorators exist)
+  - Jobs are **not** registered (even if `@Job` decorators exist)
   - The polling loop is **not** started
   - `isHealthy()` returns `false` (since the scheduler isn't running)
 </Aside>
@@ -266,19 +266,19 @@ Commonly used methods:
 
 ## Testing
 
-Use `@tsed/platform-http/testing` and `PlatformTest` to test your workers. You can mock `MonqueService` or use a real MongoDB connection with `Testcontainers`.
+Use `@tsed/platform-http/testing` and `PlatformTest` to test your jobs. You can mock `MonqueService` or use a real MongoDB connection with `Testcontainers`.
 
 ```typescript
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { MonqueService } from "@monque/tsed";
 
-describe("EmailWorkers", () => {
+describe("EmailJobs", () => {
   beforeEach(PlatformTest.create);
   afterEach(PlatformTest.reset);
 
   it("should process email", async () => {
-     const service = PlatformTest.get(MonqueService);
-     // ... test logic ...
+      const service = PlatformTest.get(MonqueService);
+      // ... test logic ...
   });
 });
 ```

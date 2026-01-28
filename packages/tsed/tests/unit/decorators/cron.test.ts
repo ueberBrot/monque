@@ -3,18 +3,18 @@ import { describe, expect, it } from 'vitest';
 
 import { MONQUE } from '@/constants';
 import { Cron } from '@/decorators/cron';
-import type { WorkerStore } from '@/decorators/types';
-import { WorkerController } from '@/decorators/worker-controller';
+import { JobController } from '@/decorators/job-controller';
+import type { JobStore } from '@/decorators/types';
 
 describe('@Cron', () => {
 	it('should register a cron job in the store', () => {
-		@WorkerController('test')
+		@JobController('test')
 		class TestController {
 			@Cron('* * * * *')
 			testMethod() {}
 		}
 
-		const store = Store.from(TestController).get<WorkerStore>(MONQUE);
+		const store = Store.from(TestController).get<JobStore>(MONQUE);
 
 		expect(store).toBeDefined();
 		expect(store.cronJobs).toHaveLength(1);
@@ -27,13 +27,13 @@ describe('@Cron', () => {
 	});
 
 	it('should register a cron job with options', () => {
-		@WorkerController('test')
+		@JobController('test')
 		class TestController {
 			@Cron('0 0 * * *', { name: 'custom-name' })
 			dailyJob() {}
 		}
 
-		const store = Store.from(TestController).get<WorkerStore>(MONQUE);
+		const store = Store.from(TestController).get<JobStore>(MONQUE);
 
 		expect(store.cronJobs).toHaveLength(1);
 		expect(store.cronJobs[0]).toEqual({
@@ -47,7 +47,7 @@ describe('@Cron', () => {
 	});
 
 	it('should register multiple cron jobs', () => {
-		@WorkerController('test')
+		@JobController('test')
 		class TestController {
 			@Cron('* * * * *')
 			job1() {}
@@ -56,20 +56,20 @@ describe('@Cron', () => {
 			job2() {}
 		}
 
-		const store = Store.from(TestController).get<WorkerStore>(MONQUE);
+		const store = Store.from(TestController).get<JobStore>(MONQUE);
 
 		expect(store.cronJobs).toHaveLength(2);
 		expect(store.cronJobs[0]?.method).toBe('job1');
 		expect(store.cronJobs[1]?.method).toBe('job2');
 	});
 
-	it('should preserve existing workers in the store', () => {
+	it('should preserve existing jobs in the store', () => {
 		// Mock existing store
 		class TestTarget {}
 		const store = Store.from(TestTarget);
 		store.set(MONQUE, {
 			type: 'controller',
-			workers: [{ name: 'existing', method: 'existing', opts: {} }],
+			jobs: [{ name: 'existing', method: 'existing', opts: {} }],
 			cronJobs: [],
 		});
 
@@ -79,9 +79,9 @@ describe('@Cron', () => {
 			value: () => {},
 		} as TypedPropertyDescriptor<unknown>);
 
-		const updatedStore = store.get<WorkerStore>(MONQUE);
+		const updatedStore = store.get<JobStore>(MONQUE);
 
-		expect(updatedStore.workers).toHaveLength(1);
+		expect(updatedStore.jobs).toHaveLength(1);
 		expect(updatedStore.cronJobs).toHaveLength(1);
 	});
 
@@ -95,7 +95,7 @@ describe('@Cron', () => {
 		const decorator = Cron('* * * * *');
 		decorator(TestClass.prototype, 'cronMethod', {} as TypedPropertyDescriptor<unknown>);
 
-		const res = store.get<WorkerStore>(MONQUE);
+		const res = store.get<JobStore>(MONQUE);
 		expect(res.cronJobs).toHaveLength(1);
 	});
 });

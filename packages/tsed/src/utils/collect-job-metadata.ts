@@ -1,20 +1,20 @@
 /**
- * Collect worker metadata utility
+ * Collect job metadata utility
  *
- * Collects all worker metadata from a class decorated with @WorkerController.
+ * Collects all job metadata from a class decorated with @JobController.
  * Used by MonqueModule to discover and register all workers.
  */
 import { Store } from '@tsed/core';
 
 import { MONQUE } from '@/constants';
-import type { CronDecoratorOptions, WorkerDecoratorOptions, WorkerStore } from '@/decorators';
+import type { CronDecoratorOptions, JobDecoratorOptions, JobStore } from '@/decorators';
 
 import { buildJobName } from './build-job-name.js';
 
 /**
- * Collected worker registration info ready for Monque.register()
+ * Collected job registration info ready for Monque.register()
  */
-export interface CollectedWorkerMetadata {
+export interface CollectedJobMetadata {
 	/**
 	 * Full job name (with namespace prefix if applicable)
 	 */
@@ -26,9 +26,9 @@ export interface CollectedWorkerMetadata {
 	method: string;
 
 	/**
-	 * Worker options to pass to Monque.register()
+	 * Job options to pass to Monque.register()
 	 */
-	opts: WorkerDecoratorOptions | CronDecoratorOptions;
+	opts: JobDecoratorOptions | CronDecoratorOptions;
 
 	/**
 	 * Whether this is a cron job
@@ -42,14 +42,14 @@ export interface CollectedWorkerMetadata {
 }
 
 /**
- * Collect all worker metadata from a class.
+ * Collect all job metadata from a class.
  *
- * @param target - The class constructor (decorated with @WorkerController)
- * @returns Array of collected worker metadata ready for registration
+ * @param target - The class constructor (decorated with @JobController)
+ * @returns Array of collected job metadata ready for registration
  *
  * @example
  * ```typescript
- * const metadata = collectWorkerMetadata(EmailWorkers);
+ * const metadata = collectJobMetadata(EmailJobs);
  * // Returns:
  * // [
  * //   { fullName: "email.send", method: "sendEmail", opts: {}, isCron: false },
@@ -57,31 +57,31 @@ export interface CollectedWorkerMetadata {
  * // ]
  * ```
  */
-export function collectWorkerMetadata(
+export function collectJobMetadata(
 	target: new (...args: unknown[]) => unknown,
-): CollectedWorkerMetadata[] {
+): CollectedJobMetadata[] {
 	const store = Store.from(target);
-	const workerStore = store.get<WorkerStore>(MONQUE);
+	const jobStore = store.get<JobStore>(MONQUE);
 
-	if (!workerStore) {
+	if (!jobStore) {
 		return [];
 	}
 
-	const results: CollectedWorkerMetadata[] = [];
-	const namespace = workerStore.namespace;
+	const results: CollectedJobMetadata[] = [];
+	const namespace = jobStore.namespace;
 
-	// Collect regular workers
-	for (const worker of workerStore.workers) {
+	// Collect regular jobs
+	for (const job of jobStore.jobs) {
 		results.push({
-			fullName: buildJobName(namespace, worker.name),
-			method: worker.method,
-			opts: worker.opts,
+			fullName: buildJobName(namespace, job.name),
+			method: job.method,
+			opts: job.opts,
 			isCron: false,
 		});
 	}
 
 	// Collect cron jobs
-	for (const cron of workerStore.cronJobs) {
+	for (const cron of jobStore.cronJobs) {
 		results.push({
 			fullName: buildJobName(namespace, cron.name),
 			method: cron.method,

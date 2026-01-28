@@ -5,27 +5,27 @@
 import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monque/core';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker Decorator Options
+// Job Decorator Options
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Options for the @Worker method decorator.
+ * Options for the @Job method decorator.
  *
  * Maps to @monque/core WorkerOptions. All standard Monque worker options
  * are exposed here for decorator-based configuration.
  */
-export interface WorkerDecoratorOptions extends CoreWorkerOptions {}
+export interface JobDecoratorOptions extends CoreWorkerOptions {}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker Metadata
+// Job Metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Metadata for a single @Worker decorated method.
+ * Metadata for a single @Job decorated method.
  *
- * Stored in the WorkerStore and used by MonqueModule to register workers.
+ * Stored in the JobStore and used by MonqueModule to register workers.
  */
-export interface WorkerMetadata {
+export interface JobMetadata {
 	/**
 	 * Job name (without namespace prefix).
 	 * Combined with controller namespace to form full job name.
@@ -38,9 +38,9 @@ export interface WorkerMetadata {
 	method: string;
 
 	/**
-	 * Worker options forwarded to Monque.register().
+	 * Job options forwarded to Monque.register().
 	 */
-	opts: WorkerDecoratorOptions;
+	opts: JobDecoratorOptions;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ export interface CronDecoratorOptions extends ScheduleOptions {
 /**
  * Metadata for a single @Cron decorated method.
  *
- * Stored in the WorkerStore and used by MonqueModule to schedule cron jobs.
+ * Stored in the JobStore and used by MonqueModule to schedule cron jobs.
  */
 export interface CronMetadata {
 	/**
@@ -91,25 +91,25 @@ export interface CronMetadata {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Worker Store
+// Job Store
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Complete metadata structure stored on @WorkerController classes.
+ * Complete metadata structure stored on @JobController classes.
  *
  * Accessed via `Store.from(Class).get(MONQUE)`.
  *
  * @example
  * ```typescript
- * const store = Store.from(EmailWorkers).get<WorkerStore>(MONQUE);
+ * const store = Store.from(EmailJobs).get<JobStore>(MONQUE);
  * console.log(store.namespace); // "email"
- * console.log(store.workers); // [{ name: "send", method: "sendEmail", opts: {} }]
+ * console.log(store.jobs); // [{ name: "send", method: "sendEmail", opts: {} }]
  * ```
  */
-export interface WorkerStore {
+export interface JobStore {
 	/**
 	 * Type identifier for the store.
-	 * Always "controller" for WorkerController.
+	 * Always "controller" for JobController.
 	 */
 	type: 'controller';
 
@@ -120,9 +120,9 @@ export interface WorkerStore {
 	namespace?: string;
 
 	/**
-	 * Worker method registrations from @Worker decorators.
+	 * Job method registrations from @Job decorators.
 	 */
-	workers: WorkerMetadata[];
+	jobs: JobMetadata[];
 
 	/**
 	 * Cron job registrations from @Cron decorators.

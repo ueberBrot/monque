@@ -19,7 +19,7 @@ Configuration object passed to Ts.ED's `@Configuration` decorator.
 interface MonqueTsedConfig extends MonqueOptions {
   /**
    * Enable/disable the Monque module.
-   * When false, workers are not registered and lifecycle hooks are no-ops.
+   * When false, jobs are not registered and lifecycle hooks are no-ops.
    * @default true
    */
   enabled?: boolean;
@@ -55,15 +55,15 @@ interface MonqueTsedConfig extends MonqueOptions {
 
 ---
 
-### 2. WorkerStore (Decorator Metadata)
+### 2. JobStore (Decorator Metadata)
 
-Metadata structure stored on classes decorated with `@WorkerController`.
+Metadata structure stored on classes decorated with `@JobController`.
 
 ```typescript
-interface WorkerStore {
+interface JobStore {
   /**
    * Type identifier for the store.
-   * Always "controller" for WorkerController.
+   * Always "controller" for JobController.
    */
   type: "controller";
 
@@ -74,9 +74,9 @@ interface WorkerStore {
   namespace?: string;
 
   /**
-   * Worker method registrations from @Worker decorators.
+   * Job method registrations from @Job decorators.
    */
-  workers: WorkerMetadata[];
+  jobs: JobMetadata[];
 
   /**
    * Cron job registrations from @Cron decorators.
@@ -89,12 +89,12 @@ interface WorkerStore {
 
 ---
 
-### 3. WorkerMetadata
+### 3. JobMetadata
 
-Metadata for a single `@Worker`-decorated method.
+Metadata for a single `@Job`-decorated method.
 
 ```typescript
-interface WorkerMetadata {
+interface JobMetadata {
   /**
    * Job name (without namespace prefix).
    * Combined with controller namespace to form full job name.
@@ -107,12 +107,12 @@ interface WorkerMetadata {
   method: string;
 
   /**
-   * Worker options forwarded to Monque.register().
+   * Job options forwarded to Monque.register().
    */
-  opts: WorkerDecoratorOptions;
+  opts: JobDecoratorOptions;
 }
 
-interface WorkerDecoratorOptions extends WorkerOptions {
+interface JobDecoratorOptions extends WorkerOptions {
   /**
    * Inherits all options from @monque/core WorkerOptions:
    * - concurrency?: number
@@ -273,14 +273,14 @@ class MonqueService implements IMonqueService {
      v (TsED bootstrap)
 [Constructor]
      | - Build queue providers
-     | - Scan WorkerController providers
+     | - Scan JobController providers
      v
 [$onInit]
      | - Resolve database (db/dbFactory/dbToken)
      | - Validate no duplicate job registrations (throws if duplicates found)
      | - Create Monque instance
      | - Call monque.initialize() (throws if connection fails → abort startup)
-     | - Register all workers from metadata
+     | - Register all jobs from metadata
      | - Schedule all cron jobs
      | - Call monque.start()
      v
@@ -299,19 +299,19 @@ class MonqueService implements IMonqueService {
 ### Job Registration Flow
 
 ```
-@WorkerController("email")     @Worker("send")
+@JobController("email")     @Job("send")
          |                           |
          v                           v
    Store.set(MONQUE, {         Store.merge(MONQUE, {
-     type: "controller",         workers: [{
+     type: "controller",         jobs: [{
      namespace: "email",           name: "send",
-     workers: [],                  method: "sendEmail",
+     jobs: [],                  method: "sendEmail",
      cronJobs: []                  opts: {}
    })                            }]
          |                       })
          v                           |
    Injectable({                      |
-     type: WORKER_CONTROLLER         |
+     type: JOB_CONTROLLER         |
    })                                |
          \__________________________|
                     |
@@ -338,14 +338,15 @@ class MonqueService implements IMonqueService {
 │                      MonqueModule                           │
 │  - Implements OnInit, OnDestroy                             │
 │  - Creates Monque instance                                  │
-│  - Registers workers from metadata                          │
+ │  - Registers jobs from metadata                          │
+
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
               │               │               │
               v               v               v
     ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
-    │MonqueService│   │   Monque    │   │ WorkerCtrl  │
+    │MonqueService│   │   Monque    │   │  JobCtrl    │
     │  (wrapper)  │   │ (@monque/   │   │  providers  │
     │             │   │   core)     │   │             │
     └─────────────┘   └─────────────┘   └─────────────┘
@@ -353,7 +354,7 @@ class MonqueService implements IMonqueService {
           │ proxies to      │ manages         │ stores
           │                 v                 v
           │          ┌─────────────┐   ┌─────────────┐
-          └─────────>│    Jobs     │   │ WorkerStore │
+          └─────────>│    Jobs     │   │  JobStore   │
                      │  (MongoDB)  │   │  (metadata) │
                      └─────────────┘   └─────────────┘
 ```
@@ -379,7 +380,7 @@ export const MONQUE = Symbol.for("monque");
 
 // Provider types for DI scanning
 export const ProviderTypes = {
-  WORKER_CONTROLLER: "monque:worker-controller",
+  JOB_CONTROLLER: "monque:job-controller",
   CRON: "monque:cron",
 } as const;
 ```

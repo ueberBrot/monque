@@ -7,61 +7,61 @@
 import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monque/core';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @WorkerController
+// @JobController
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Decorator signature for @WorkerController.
+ * Decorator signature for @JobController.
  *
- * Marks a class as containing worker methods and registers it with the DI container.
+ * Marks a class as containing job methods and registers it with the DI container.
  *
  * @param namespace - Optional prefix for all job names in this controller.
  *                    When set, job names become "{namespace}.{name}".
  *
  * @example
  * ```typescript
- * @WorkerController("email")
- * export class EmailWorkers {
- *   @Worker("send")  // Registered as "email.send"
+ * @JobController("email")
+ * export class EmailJobs {
+ *   @Job("send")  // Registered as "email.send"
  *   async send(job: Job<EmailPayload>) { }
  * }
  * ```
  */
-export type WorkerControllerDecorator = (namespace?: string) => ClassDecorator;
+export type JobControllerDecorator = (namespace?: string) => ClassDecorator;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @Worker
+// @Job
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Options for the @Worker method decorator.
+ * Options for the @Job method decorator.
  *
  * Maps to @monque/core WorkerOptions. All standard Monque worker options
  * are exposed here for decorator-based configuration (SC-002).
  */
-export interface WorkerDecoratorOptions extends CoreWorkerOptions {}
+export interface JobDecoratorOptions extends CoreWorkerOptions {}
 
 /**
- * Decorator signature for @Worker.
+ * Decorator signature for @Job.
  *
  * Registers a method as a job handler. The method will be called when a job
  * with the matching name is picked up for processing.
  *
  * @param name - Job name (combined with controller namespace if present).
- * @param options - Worker configuration options.
+ * @param options - Job configuration options.
  *
  * @example
  * ```typescript
- * @WorkerController("notifications")
- * export class NotificationWorkers {
- *   @Worker("push", { concurrency: 10 })
+ * @JobController("notifications")
+ * export class NotificationJobs {
+ *   @Job("push", { concurrency: 10 })
  *   async sendPush(job: Job<PushPayload>) {
  *     await pushService.send(job.data);
  *   }
  * }
  * ```
  */
-export type WorkerDecorator = (name: string, options?: WorkerDecoratorOptions) => MethodDecorator;
+export type JobDecorator = (name: string, options?: JobDecoratorOptions) => MethodDecorator;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @Cron
@@ -90,8 +90,8 @@ export interface CronDecoratorOptions extends ScheduleOptions {
  *
  * @example
  * ```typescript
- * @WorkerController("reports")
- * export class ReportWorkers {
+ * @JobController("reports")
+ * export class ReportJobs {
  *   @Cron("0 9 * * *", { name: "daily-summary" })
  *   async generateDailySummary(job: Job) {
  *     // Runs at 9am daily, registered as "reports.daily-summary"

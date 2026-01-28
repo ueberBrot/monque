@@ -2,7 +2,7 @@ import { type Job, JobStatus, WorkerRegistrationError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { Worker, WorkerController } from '@/decorators';
+import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { bootstrapMonque, getTestDb, resetMonque } from './helpers/bootstrap.js';
@@ -10,17 +10,17 @@ import { bootstrapMonque, getTestDb, resetMonque } from './helpers/bootstrap.js'
 describe('Duplicate Validation & Idempotency', () => {
 	afterEach(resetMonque);
 
-	describe('Worker Registration', () => {
+	describe('Job Registration', () => {
 		it('should throw error on duplicate job names', async () => {
-			@WorkerController('duplicate')
+			@JobController('duplicate')
 			class EphemeralDuplicateController1 {
-				@Worker('job')
+				@MonqueJob('job')
 				async handler(_job: Job) {}
 			}
 
-			@WorkerController('duplicate')
+			@JobController('duplicate')
 			class EphemeralDuplicateController2 {
-				@Worker('job')
+				@MonqueJob('job')
 				async handler(_job: Job) {}
 			}
 
@@ -42,9 +42,9 @@ describe('Duplicate Validation & Idempotency', () => {
 
 	describe('Job Idempotency', () => {
 		it('should not enqueue duplicate jobs when uniqueKey is provided', async () => {
-			@WorkerController('idempotent')
+			@JobController('idempotent')
 			class EphemeralIdempotentController {
-				@Worker('job')
+				@MonqueJob('job')
 				async handler(_job: Job) {}
 			}
 

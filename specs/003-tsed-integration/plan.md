@@ -5,7 +5,8 @@
 
 ## Summary
 
-Create a new `@monque/tsed` package that provides a Ts.ED integration for `@monque/core`. The integration follows the patterns established by `@tsed/bullmq` and `@tsed/agenda`, offering decorator-based worker registration (`@WorkerController`, `@Worker`, `@Cron`), native lifecycle integration via `$onInit`/`$onDestroy` hooks, type-safe job definitions, and automatic DI context creation for job isolation.
+Create a new `@monque/tsed` package that provides a Ts.ED integration for `@monque/core`. The integration follows the patterns established by `@tsed/bullmq` and `@tsed/agenda`, offering decorator-based job registration (`@JobController`, `@Job`, `@Cron`)
+, native lifecycle integration via `$onInit`/`$onDestroy` hooks, type-safe job definitions, and automatic DI context creation for job isolation.
 
 ## Technical Context
 
@@ -56,53 +57,54 @@ specs/003-tsed-integration/
 packages/tsed/
 ├── src/
 │   ├── index.ts                        # Barrel exports
-│   ├── monque-module.ts                # Main module (lifecycle hooks, worker registration)
+│   ├── monque-module.ts                # Main module (lifecycle hooks, job registration)
 │   │
 │   ├── config/
-│   │   └── config.ts                   # MonqueTsedConfig + TsED augmentation
+│   │   ├── config.ts                   # Validation logic
+│   │   ├── index.ts                    # Barrel export
+│   │   └── types.ts                    # MonqueTsedConfig + TsED augmentation
 │   │
 │   ├── constants/
-│   │   ├── monque-types.ts             # Provider types (WORKER_CONTROLLER)
-│   │   └── constants.ts                # MONQUE Symbol for Store
-│   │
-│   ├── contracts/
-│   │   ├── index.ts
-│   │   ├── worker-methods.ts           # Worker handler interface
-│   │   ├── worker-store.ts             # Metadata stored by decorators
+│   │   ├── index.ts                    # Barrel export
+│   │   ├── constants.ts                # MONQUE Symbol for Store
+│   │   └── types.ts                    # Provider types (JOB_CONTROLLER)
 │   │
 │   ├── decorators/
-│   │   ├── index.ts
-│   │   ├── worker-controller.ts        # @WorkerController class decorator
-│   │   ├── worker.ts                   # @Worker method decorator
+│   │   ├── index.ts                    # Barrel export
+│   │   ├── types.ts                    # Metadata types and JobStore
+│   │   ├── job-controller.ts           # @JobController class decorator
+│   │   ├── job.ts                      # @Job method decorator
 │   │   └── cron.ts                     # @Cron method decorator
 │   │
 │   ├── services/
-│   │   ├── index.ts
+│   │   ├── index.ts                    # Barrel export
 │   │   └── monque-service.ts           # Injectable Monque wrapper
 │   │
 │   └── utils/
-│       ├── get-worker-token.ts         # Token generation
-│       ├── resolve-database.ts         # Multi-strategy DB resolution
-│       └── collect-worker-metadata.ts  # Collect method decorator metadata
+│       ├── index.ts                    # Barrel export
+│       ├── build-job-name.ts           # Name building logic
+│       ├── collect-job-metadata.ts     # Collect method decorator metadata
+│       ├── get-job-token.ts            # Token generation
+│       ├── guards.ts                   # Type guards
+│       └── resolve-database.ts         # Multi-strategy DB resolution
 │
 ├── tests/
-│   ├── setup/
-│   │   └── test-utils.ts               # Helper functions
-│   │
 │   ├── unit/                           # Fast tests, no MongoDB
+│   │   ├── config/
 │   │   ├── decorators/
-│   │   │   ├── worker-controller.test.ts
-│   │   │   ├── worker.test.ts
-│   │   │   └── cron.test.ts
+│   │   │   ├── cron.test.ts
+│   │   │   ├── job-controller.test.ts
+│   │   │   └── job.test.ts
 │   │   ├── services/
-│   │   │   └── monque-service.test.ts
 │   │   └── utils/
-│   │       └── resolve-database.test.ts
 │   │
 │   └── integration/                    # Full DI + MongoDB tests
+│       ├── cron-jobs.test.ts
+│       ├── duplicate-job.test.ts
+│       ├── job-execution.test.ts
+│       ├── job-registration.test.ts
 │       ├── monque-module.test.ts
-│       ├── worker-registration.test.ts
-│       └── cron-jobs.test.ts
+│       └── producer-only.test.ts
 │
 ├── package.json
 ├── tsconfig.json
@@ -129,7 +131,8 @@ packages/tsed/
 | **I. Code Quality Standards** | PASS | Contracts use `interface` for object shapes, `type` only for unions. `ProviderTypes` uses `as const` pattern (no enums). Test strategy includes unit + integration coverage. |
 | **II. Architecture Guidelines** | PASS | Uses @monque/core's event-driven design. MonqueModule implements graceful shutdown via `$onDestroy`. DI context per job ensures isolation. |
 | **III. Development Workflow** | PASS | Package at `packages/tsed/` follows monorepo structure. Uses workspace dependencies (`workspace:*`). Same tooling as core (tsdown, vitest). |
-| **IV. API Design Principles** | PASS | Simple: `@WorkerController/@Worker` is minimal setup. Extensible: options objects for advanced config. Framework-specific package keeps core agnostic. |
+| **IV. API Design Principles** | PASS | Simple: `@JobController/@Job` is minimal setup.
+ Extensible: options objects for advanced config. Framework-specific package keeps core agnostic. |
 | **V. Resilience Patterns** | PASS | Delegates to @monque/core for backoff, shutdown, idempotency. MonqueModule.$onDestroy calls monque.stop() for graceful shutdown. |
 | **VI. Documentation Standards** | PASS | Contracts include JSDoc with `@param`, `@returns`, `@example`. quickstart.md provides usage examples. README.md required in deliverables. |
 

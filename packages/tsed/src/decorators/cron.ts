@@ -1,7 +1,7 @@
 import { Store } from '@tsed/core';
 
 import { MONQUE } from '@/constants';
-import type { CronDecoratorOptions, CronMetadata, WorkerStore } from '@/decorators/types.js';
+import type { CronDecoratorOptions, CronMetadata, JobStore } from '@/decorators/types.js';
 
 /**
  * Method decorator that registers a method as a scheduled cron job.
@@ -11,8 +11,8 @@ import type { CronDecoratorOptions, CronMetadata, WorkerStore } from '@/decorato
  *
  * @example
  * ```typescript
- * @WorkerController()
- * class ReportWorkers {
+ * @JobController()
+ * class ReportJobs {
  *   @Cron("@daily", { timezone: "UTC" })
  *   async generateDailyReport() {
  *     // ...
@@ -41,9 +41,9 @@ export function Cron(pattern: string, options?: CronDecoratorOptions): MethodDec
 		const store = Store.from(targetConstructor);
 
 		// Get or initialize the MONQUE store
-		const existing = store.get<Partial<WorkerStore>>(MONQUE) || {
+		const existing = store.get<Partial<JobStore>>(MONQUE) || {
 			type: 'controller',
-			workers: [],
+			jobs: [],
 			cronJobs: [],
 		};
 

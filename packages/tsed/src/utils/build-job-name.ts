@@ -1,8 +1,8 @@
 /**
  * Build the full job name by combining namespace and name.
  *
- * @param namespace - Optional namespace from @WorkerController
- * @param name - Job name from @Worker or @Cron
+ * @param namespace - Optional namespace from @JobController
+ * @param name - Job name from @Job or @Cron
  * @returns Full job name (e.g., "email.send" or just "send")
  *
  * @example

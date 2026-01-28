@@ -43,11 +43,10 @@
 - [x] T011 [P] Implement ProviderTypes provider type constants in packages/tsed/src/constants/monque-types.ts
 - [x] T012 [P] Implement MonqueTsedConfig interface with TsED augmentation in packages/tsed/src/config/config.ts
 - [x] T013 [P] Implement validateDatabaseConfig function in packages/tsed/src/config/config.ts
-- [x] T014 [P] Implement WorkerStore, WorkerMetadata, CronMetadata interfaces in packages/tsed/src/contracts/worker-store.ts
-- [x] T015 [P] Inherit WorkerDecoratorOptions from @monque/core WorkerOptions in packages/tsed/src/contracts/worker-store.ts
-- [x] T016 [P] Implement buildJobName utility function in packages/tsed/src/utils/build-job-name.ts
-- [x] T017 [P] Implement resolveDatabase multi-strategy utility in packages/tsed/src/utils/resolve-database.ts
-- [x] T018 [P] Implement getWorkerToken utility in packages/tsed/src/utils/get-worker-token.ts
+- [x] T014 [P] Implement JobStore, JobMetadata, CronMetadata interfaces in packages/tsed/src/decorators/types.ts
+- [x] T015 [P] Inherit JobDecoratorOptions from @monque/core WorkerOptions in packages/tsed/src/decorators/types.ts
+- [x] T018 [P] Implement getJobToken utility in packages/tsed/src/utils/get-job-token.ts
+
 - [x] T019 Unit test for resolveDatabase in packages/tsed/tests/unit/utils/resolve-database.test.ts
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
@@ -56,32 +55,32 @@
 
 ## Phase 3: User Story 1+2 - Declarative Job Controllers with DI (Priority: P1) 🎯 MVP
 
-**Goal**: Enable developers to create @WorkerController classes with @Worker methods that participate in Ts.ED DI system
+**Goal**: Enable developers to create @JobController classes with @Job methods that participate in Ts.ED DI system
 
-**Independent Test**: Create a class decorated with `@WorkerController`. Define methods decorated with `@Worker`. Inject a service. Verify the methods are invoked when matching jobs are processed.
+**Independent Test**: Create a class decorated with `@JobController`. Define methods decorated with `@Job`. Inject a service. Verify the methods are invoked when matching jobs are processed.
 
 ### Tests for User Stories 1+2
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [x] T020 [P] [US1] Unit test for @WorkerController decorator in packages/tsed/tests/unit/decorators/worker-controller.test.ts
-- [x] T021 [P] [US1] Unit test for @Worker decorator in packages/tsed/tests/unit/decorators/worker.test.ts
+- [x] T020 [P] [US1] Unit test for @JobController decorator in packages/tsed/tests/unit/decorators/job-controller.test.ts
+- [x] T021 [P] [US1] Unit test for @Job decorator in packages/tsed/tests/unit/decorators/job.test.ts
 - [x] T022 [P] [US2] Unit test for MonqueService in packages/tsed/tests/unit/services/monque-service.test.ts
-- [x] T023 [P] [US1] Integration test for worker registration in packages/tsed/tests/integration/worker-registration.test.ts
+- [x] T023 [P] [US1] Integration test for job registration in packages/tsed/tests/integration/job-registration.test.ts
 
 ### Implementation for User Stories 1+2
 
-- [x] T024 [P] [US1] Implement @WorkerController class decorator in packages/tsed/src/decorators/worker-controller.ts
-- [x] T025 [P] [US1] Implement @Worker method decorator in packages/tsed/src/decorators/worker.ts
-- [x] T026 [US1] Implement collectWorkerMetadata utility in packages/tsed/src/utils/collect-worker-metadata.ts
+- [x] T024 [P] [US1] Implement @JobController class decorator in packages/tsed/src/decorators/job-controller.ts
+- [x] T025 [P] [US1] Implement @Job method decorator in packages/tsed/src/decorators/job.ts
+- [x] T026 [US1] Implement collectJobMetadata utility in packages/tsed/src/utils/collect-job-metadata.ts
 - [x] T027 [US2] Implement MonqueService injectable wrapper in packages/tsed/src/services/monque-service.ts
-- [x] T028 [US1] Implement MonqueModule with $onInit worker registration in packages/tsed/src/monque-module.ts
+- [x] T028 [US1] Implement MonqueModule with $onInit job registration in packages/tsed/src/monque-module.ts
 - [x] T029 [US1] Add duplicate job name validation in MonqueModule.$onInit in packages/tsed/src/monque-module.ts
 - [x] T030 [US1] Add startup error handling (connection failure throws) in packages/tsed/src/monque-module.ts
 - [x] T031 [US1] Implement MonqueModule.$onDestroy for graceful shutdown in packages/tsed/src/monque-module.ts
 - [x] T032 [US1] Integration test for MonqueModule lifecycle in packages/tsed/tests/integration/monque-module.test.ts
 
-**Checkpoint**: At this point, @WorkerController with @Worker and DI injection should be fully functional
+**Checkpoint**: At this point, @JobController with @Job and DI injection should be fully functional
 
 ---
 
@@ -193,14 +192,14 @@
 
 ```bash
 # Launch all tests first (TDD):
-Task: "Unit test for @WorkerController decorator" [T020]
-Task: "Unit test for @Worker decorator" [T021]
+Task: "Unit test for @JobController decorator" [T020]
+Task: "Unit test for @Job decorator" [T021]
 Task: "Unit test for MonqueService" [T022]
-Task: "Integration test for worker registration" [T023]
+Task: "Integration test for job registration" [T023]
 
 # After tests fail, launch parallel decorator implementations:
-Task: "Implement @WorkerController class decorator" [T024]
-Task: "Implement @Worker method decorator" [T025]
+Task: "Implement @JobController class decorator" [T024]
+Task: "Implement @Job method decorator" [T025]
 ```
 
 ---

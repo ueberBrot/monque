@@ -23,7 +23,7 @@ export interface MonqueTsedConfig extends MonqueOptions {
 	 * Enable or disable the Monque module.
 	 *
 	 * When disabled:
-	 * - Workers are not registered
+	 * - Jobs are not registered
 	 * - Lifecycle hooks are no-ops
 	 * - MonqueService throws on access
 	 *

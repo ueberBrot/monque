@@ -6,8 +6,8 @@
 **Created**: 2026-01-22
 
 ## Requirement Completeness
-- [x] CHK001 - Are the allowed configuration options for `@WorkerController` fully specified? [Completeness, Spec §FR-003]
-- [x] CHK002 - Is the behavior of `@Worker` decorator options (e.g., concurrency, priority) explicitly mapped to underlying Monque options? [Completeness, Spec §SC-002]
+- [x] CHK001 - Are the allowed configuration options for `@JobController` fully specified? [Completeness, Spec §FR-003]
+- [x] CHK002 - Is the behavior of `@Job` decorator options (e.g., concurrency, priority) explicitly mapped to underlying Monque options? [Completeness, Spec §SC-002]
 - [x] CHK003 - Are runtime validation requirements using `@tsed/schema` explicitly defined for job payloads? [Completeness, Spec §FR-008]
 - [x] CHK004 - Are requirements for the `MonqueModule` lifecycle hooks (`$onInit`, `$onDestroy`) fully documented? [Completeness, Spec §FR-007]
 - [x] CHK005 - Is the mechanism for registering the plugin in `Server.ts` (e.g., `imports` array) specified? [Completeness, Gap]
