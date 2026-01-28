@@ -1,6 +1,6 @@
 {
 	"name": "@monque/tsed",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Ts.ED integration for Monque - A robust, type-safe MongoDB job queue for TypeScript",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {
