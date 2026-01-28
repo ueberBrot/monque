@@ -22,7 +22,17 @@
   </a>
 </p>
 
-<p align="center">MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling.</p>
+A **robust, type-safe MongoDB job queue** for TypeScript with atomic locking, exponential backoff, and cron scheduling.
+
+## Features
+
+- 🔒 **Atomic Locking**: Mandatory `findOneAndUpdate` for safe job acquisition in distributed environments.
+- 📈 **Exponential Backoff**: Built-in retry logic with configurable backoff strategies.
+- 📅 **Cron Scheduling**: Native support for recurring jobs using standard cron syntax.
+- 🔍 **Type Safety**: Fully typed job payloads and worker definitions.
+- ⚡ **Event-Driven**: Comprehensive event system for monitoring and logging.
+- 🛠️ **Native Driver**: Uses the native MongoDB driver for maximum performance and compatibility.
+- 🛑 **Graceful Shutdown**: Ensures all in-progress jobs finish or are safely released before stopping.
 
 ## Installation
 
