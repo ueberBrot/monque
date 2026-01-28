@@ -1,0 +1,253 @@
+---
+title: Ts.ED Integration
+description: Use Monque with the Ts.ED framework
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+The `@monque/tsed` package provides a seamless integration between [Monque](https://github.com/debruyn/monque) and [Ts.ED](https://tsed.io/), allowing you to define workers and cron jobs using decorators and leverage dependency injection.
+
+## Quick Reference
+
+| Method / Type | Description |
+|---------------|-------------|
+| [`MonqueModule`](/monque/api-tsed/classes/monquemodule/) | Main Ts.ED module |
+| [`@WorkerController()`](/monque/api-tsed/functions/workercontroller/) | Register a worker controller |
+| [`@Worker()`](/monque/api-tsed/functions/worker/) | Register a job handler |
+| [`@Cron()`](/monque/api-tsed/functions/cron/) | Register a scheduled job |
+| [`MonqueService`](/monque/api-tsed/classes/monqueservice/) | Injectable job management service |
+
+## Installation
+
+<Tabs>
+  <TabItem label="bun">
+    ```bash
+    bun add @monque/tsed @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="npm">
+    ```bash
+    npm install @monque/tsed @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add @monque/tsed @monque/core mongodb
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add @monque/tsed @monque/core mongodb
+    ```
+  </TabItem>
+</Tabs>
+
+### Dependencies
+
+Monque requires several peer dependencies to be present in your project. While many modern package managers (like Bun or NPM 7+) install peer dependencies automatically, it is **highly recommended** to install them explicitly to ensure version consistency and avoid unexpected resolution issues.
+
+| Package | Version | Required |
+|---------|---------|----------|
+| `@monque/core` | `^1.1.0` | Yes |
+| `mongodb` | `^7.0.0` | Yes |
+| `@tsed/core` | `^8.24.0` | Yes |
+| `@tsed/di` | `^8.24.0` | Yes |
+| `@tsed/mongoose` | `^8.24.0` | Only for Mongoose integration |
+
+## Configuration
+
+Import `MonqueModule` in your `Server.ts` and configure the connection via the `@Configuration` decorator. Monque supports multiple database resolution strategies to fit your application's architecture.
+
+### Direct Strategy (Db instance)
+
+Use this if you already have a connected native MongoDB [`Db`](https://mongodb.github.io/node-mongodb-native/api-generated/db.html) instance available synchronously.
+
+```typescript
+import { Configuration } from "@tsed/di";
+import { MonqueModule } from "@monque/tsed";
+
+@Configuration({
+  imports: [MonqueModule],
+  monque: {
+    enabled: true,
+    db: myExistingDbInstance,
+  }
+})
+export class Server {}
+```
+
+### Factory Strategy (Async)
+
+The recommended approach if you need to establish a connection during application bootstrap. The factory supports async execution.
+
+```typescript
+// src/Server.ts
+import { Configuration } from "@tsed/di";
+import { MonqueModule } from "@monque/tsed";
+import "@tsed/platform-express";
+import { MongoClient } from "mongodb";
+
+@Configuration({
+  imports: [MonqueModule],
+  monque: {
+    enabled: true,
+    dbFactory: async () => {
+        const client = await MongoClient.connect(process.env.MONGO_URL!);
+        return client.db("my-app");
+    },
+    collectionName: "custom_jobs" // Optional: defaults to "monque_jobs"
+  }
+})
+export class Server {}
+```
+
+### Mongoose Strategy
+
+If your application already uses `@tsed/mongoose`, Monque can reuse the existing connection. It automatically extracts the native `Db` instance from the Mongoose connection registry. Monque does **not** need its own connection string in this case; it simply hooks into the established Mongoose pool.
+
+```typescript
+import { Configuration } from "@tsed/di";
+import { MongooseModule, MongooseService } from "@tsed/mongoose";
+import { MonqueModule } from "@monque/tsed";
+
+@Configuration({
+  imports: [
+    MongooseModule, // Establish Mongoose connections
+    MonqueModule    // Hooks into existing Mongoose connections
+  ],
+  mongoose: [{
+    id: "default",
+    url: "mongodb://localhost:27017/my-app" // Mongoose manages this connection
+  }],
+  monque: {
+    enabled: true,
+    dbToken: MongooseService,        // Reference the Mongoose service
+    mongooseConnectionId: "default" // Identify which connection to reuse
+  }
+})
+export class Server {}
+```
+
+## Usage
+
+### 1. Define a Worker Controller
+
+Create a class decorated with [`@WorkerController`](/monque/api-tsed/functions/workercontroller/). Related job handlers are grouped here, similar to how REST controllers group HTTP endpoints. Methods decorated with [`@Worker`](/monque/api-tsed/functions/worker/) will process jobs.
+
+### Type Safety
+
+Monque is designed with type safety as a core principle. You can define job payloads using TypeScript interfaces and pass them as generics to the [`Job<T>`](/monque/api/interfaces/job/) type:
+
+```typescript
+import { WorkerController, Worker } from "@monque/tsed";
+import type { Job } from "@monque/core";
+
+interface SendEmailPayload {
+  to: string;
+  subject: string;
+  templateId: string;
+}
+
+@WorkerController("email") // Optional namespace prefix: "email."
+export class EmailWorkers {
+  @Worker("send", { concurrency: 5 }) // Full job name: "email.send"
+  async sendEmail(job: Job<SendEmailPayload>) {
+    // job.data is fully typed
+    const { to, subject } = job.data;
+    console.log(`Sending email to ${to}...`);
+  }
+}
+```
+
+### 2. Schedule Jobs (Cron)
+
+Use the [`@Cron`](/monque/api-tsed/functions/cron/) decorator to schedule recurring tasks. Cron jobs are automatically registered and scheduled with Monque during the application's `$onInit` lifecycle phase.
+
+```typescript
+import { WorkerController, Cron } from "@monque/tsed";
+
+@WorkerController()
+export class ReportWorkers {
+  @Cron("0 0 * * *", { name: "daily-report" })
+  async generateDailyReport() {
+    console.log("Generating report...");
+  }
+}
+```
+
+### 3. Enqueue Jobs
+
+Inject [`MonqueService`](/monque/api-tsed/classes/monqueservice/) into any Ts.ED Service or Controller to dispatch jobs.
+
+```typescript
+import { Service, Inject } from "@tsed/di";
+import { MonqueService } from "@monque/tsed";
+
+@Service()
+export class AuthService {
+  @Inject()
+  private monque: MonqueService;
+
+  async registerUser(user: { email: string }) {
+    // Dispatch background job
+    await this.monque.enqueue("email.send", {
+      to: user.email,
+      subject: "Welcome!"
+    });
+  }
+}
+```
+
+## Job Isolation
+
+One of the key benefits of the Ts.ED integration is **Job Isolation**. Every job execution runs in its own dedicated `DIContext`. This ensures that:
+
+- **Request-scoped services** (scoped to `ProviderScope.REQUEST`) are fresh for each job execution.
+- State does not leak between different job executions.
+- You can use standard Ts.ED patterns for context-bound logic (e.g. `PlatformContext`).
+
+## API Reference
+
+### Services
+
+#### `MonqueService`
+
+An injectable wrapper for the main [`Monque`](/monque/api/classes/monque/) instance. It provides a DI-friendly way to manage jobs, delegating all calls to the underlying Monque engine.
+
+Commonly used methods:
+- [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
+- [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
+- [`now()`](/monque/api-tsed/classes/monqueservice/#now) - Run a job immediately.
+
+<Aside type="note">
+  `MonqueService` is a thin wrapper around the core engine. While the methods listed above are identical in behavior to their core counterparts, they are accessed through Ts.ED's dependency injection system. For a deep dive into the internal mechanics (locking, retries, etc.), refer to the [Core API Reference](/monque/api/classes/monque/).
+</Aside>
+
+<Aside type="tip">
+  For the complete list of available methods (including job management, bulk operations, and queries), check out the [Ts.ED API Reference](/monque/api-tsed/classes/monqueservice/).
+</Aside>
+
+## Testing
+
+Use `@tsed/platform-http/testing` and `PlatformTest` to test your workers. You can mock `MonqueService` or use a real MongoDB connection with `Testcontainers`.
+
+```typescript
+import { PlatformTest } from "@tsed/platform-http/testing";
+import { MonqueService } from "@monque/tsed";
+
+describe("EmailWorkers", () => {
+  beforeEach(PlatformTest.create);
+  afterEach(PlatformTest.reset);
+
+  it("should process email", async () => {
+     const service = PlatformTest.get(MonqueService);
+     // ... test logic ...
+  });
+});
+```
+
+## Next Steps
+
+- Explore [Core Concepts](/monque/core-concepts/jobs/) to understand how jobs work.
+- Learn about [Scheduling](/monque/core-concepts/scheduling/) recurring tasks.
+- Check the [Core API Reference](/monque/api/classes/monque/) for advanced job management.

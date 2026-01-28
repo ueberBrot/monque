@@ -6,7 +6,7 @@ import { defineConfig } from 'astro/config';
 import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import starlightThemeNova from 'starlight-theme-nova';
-import starlightTypeDoc, { typeDocSidebarGroup } from 'starlight-typedoc';
+import starlightTypeDoc from 'starlight-typedoc';
 
 import remarkMermaidToPre from './src/remark/remark-mermaid-to-pre.mjs';
 
@@ -79,10 +79,28 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Integrations',
+					items: [{ label: 'Ts.ED', slug: 'integrations/tsed' }],
+				},
+				{
 					label: 'Roadmap',
 					slug: 'roadmap',
 				},
-				typeDocSidebarGroup,
+				{
+					label: 'API Reference',
+					items: [
+						{
+							label: 'Core API',
+							autogenerate: { directory: 'api' },
+							collapsed: true,
+						},
+						{
+							label: 'Ts.ED API',
+							autogenerate: { directory: 'api-tsed' },
+							collapsed: true,
+						},
+					],
+				},
 			],
 			head: [
 				{
@@ -125,8 +143,27 @@ document.addEventListener('astro:after-swap', renderMermaid);
 					tsconfig: '../../packages/core/tsconfig.json',
 					output: 'api',
 					sidebar: {
-						label: 'API Reference',
-						collapsed: false,
+						label: 'Core API',
+						collapsed: true,
+					},
+					typeDoc: {
+						excludePrivate: true,
+						excludeProtected: true,
+						excludeInternal: true,
+						readme: 'none',
+						parametersFormat: 'table',
+						enumMembersFormat: 'table',
+						useCodeBlocks: true,
+						gitRevision: 'main',
+					},
+				}),
+				starlightTypeDoc({
+					entryPoints: ['../../packages/tsed/src/index.ts'],
+					tsconfig: '../../packages/tsed/tsconfig.json',
+					output: 'api-tsed',
+					sidebar: {
+						label: 'Ts.ED API',
+						collapsed: true,
 					},
 					typeDoc: {
 						excludePrivate: true,

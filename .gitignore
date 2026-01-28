@@ -45,3 +45,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Generated API Docs
 apps/docs/src/content/docs/api/
+apps/docs/src/content/docs/api-tsed/

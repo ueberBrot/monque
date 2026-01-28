@@ -6,7 +6,6 @@ interface RoadmapItem {
 	date?: string;
 	description?: string;
 	features?: string[];
-	strikethrough?: boolean;
 }
 
 interface Props {
@@ -20,7 +19,7 @@ void items;
 <div class="monque-roadmap">
 	{
 		items.map((item) => (
-			<div class={`roadmap-item status-${item.status} ${item.strikethrough ? 'is-strikethrough' : ''}`}>
+			<div class={`roadmap-item status-${item.status}`}>
 				<div class="roadmap-marker-container">
 					<div class="roadmap-marker" />
 					<div class="roadmap-line" />
@@ -132,15 +131,9 @@ void items;
 		background-color: var(--sl-color-gray-5);
 		border-color: var(--sl-color-gray-4);
 	}
-    .status-planned .roadmap-title {
+	.status-planned .roadmap-title {
         color: var(--sl-color-gray-3);
     }
-
-	/* Strikethrough */
-	.is-strikethrough .roadmap-content {
-		text-decoration: line-through;
-		opacity: 0.6;
-	}
 
 	/* --- Content --- */
 	.roadmap-content {

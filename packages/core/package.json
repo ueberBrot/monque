@@ -53,7 +53,7 @@
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"test:watch:integration": "vitest integration/",
-		"lint": "biome check src/"
+		"lint": "biome check ."
 	},
 	"keywords": [
 		"job",
@@ -75,7 +75,6 @@
 		"mongodb": "^7.0.0"
 	},
 	"devDependencies": {
-		"@arethetypeswrong/cli": "^0.18.2",
 		"@faker-js/faker": "^10.2.0",
 		"@testcontainers/mongodb": "^11.11.0",
 		"@total-typescript/ts-reset": "^0.6.1",
@@ -83,10 +82,7 @@
 		"@vitest/coverage-v8": "^4.0.18",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.0.0",
-		"publint": "^0.3.17",
 		"tsdown": "^0.20.1",
-		"typescript": "^5.9.3",
-		"unplugin-unused": "^0.5.7",
 		"vitest": "^4.0.18"
 	}
 }

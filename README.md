@@ -9,6 +9,9 @@
   <a href="https://www.npmjs.com/package/@monque/core">
     <img src="https://img.shields.io/npm/v/%40monque%2Fcore?style=for-the-badge&label=%40monque%2Fcore" alt="@monque/core version" />
   </a>
+  <a href="https://www.npmjs.com/package/@monque/tsed">
+    <img src="https://img.shields.io/npm/v/%40monque%2Ftsed?style=for-the-badge&label=%40monque%2Ftsed" alt="@monque/tsed version" />
+  </a>
   <a href="https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS" alt="Docs" />
   </a>
@@ -36,6 +39,7 @@
 | Package                         | Description                                 |
 | ------------------------------- | ------------------------------------------- |
 | [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
+| [@monque/tsed](./packages/tsed) | Native Ts.ED integration with decorators    |
 | [@monque/docs](./apps/docs)     | Documentation site                          |
 
 ## Features

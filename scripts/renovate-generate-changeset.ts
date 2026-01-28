@@ -82,8 +82,7 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const depKeys = ['dependencies', 'optionalDependencies'] as const;
-	let sawPeerDependencyChange = false;
+	const depKeys = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const;
 	const packageBumps = new Map<string, BumpType>();
 	const packageSummaries = new Map<
 		string,
@@ -103,24 +102,7 @@ async function main(): Promise<void> {
 		if (!pkgName) continue;
 
 		let bump: BumpType = 'patch';
-		const updates: Array<{ depName: string; from: unknown; to: unknown }> = [];
-
-		// Peer dependency updates should be handled manually.
-		{
-			const prevPeers = isRecord(before.peerDependencies)
-				? (before.peerDependencies as Record<string, unknown>)
-				: {};
-			const nextPeers = isRecord(after.peerDependencies)
-				? (after.peerDependencies as Record<string, unknown>)
-				: {};
-
-			for (const depName of Object.keys(nextPeers)) {
-				const from = prevPeers[depName];
-				const to = nextPeers[depName];
-				if (from === undefined || to === undefined || from === to) continue;
-				sawPeerDependencyChange = true;
-			}
-		}
+		const updatesMap = new Map<string, { from: unknown; to: unknown; type: BumpType }>();
 
 		for (const key of depKeys) {
 			const prev = isRecord(before[key]) ? (before[key] as Record<string, unknown>) : {};
@@ -131,20 +113,28 @@ async function main(): Promise<void> {
 				const to = next[depName];
 				if (from === undefined || to === undefined || from === to) continue;
 
-				bump = maxBump(bump, semverDiffType(from, to));
-				updates.push({ depName, from, to });
+				const type = semverDiffType(from, to);
+				bump = maxBump(bump, type);
+
+				const existing = updatesMap.get(depName);
+				const order: Record<BumpType, number> = { patch: 0, minor: 1, major: 2 };
+
+				if (!existing || order[type] > order[existing.type]) {
+					updatesMap.set(depName, { from, to, type });
+				}
 			}
 		}
+
+		const updates = Array.from(updatesMap.entries()).map(([depName, data]) => ({
+			depName,
+			from: data.from,
+			to: data.to,
+		}));
 
 		if (updates.length === 0) continue;
 
 		packageBumps.set(pkgName, bump);
 		packageSummaries.set(pkgName, updates);
-	}
-
-	if (sawPeerDependencyChange) {
-		console.log('Peer dependency changes detected; skipping auto-generated changeset.');
-		return;
 	}
 
 	if (packageBumps.size === 0) {

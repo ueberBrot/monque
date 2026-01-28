@@ -1,0 +1,55 @@
+/**
+ * @WorkerController class decorator
+ *
+ * Marks a class as containing worker methods and registers it with the Ts.ED DI container.
+ * Workers in the class will have their job names prefixed with the namespace.
+ *
+ * @param namespace - Optional prefix for all job names in this controller.
+ *                    When set, job names become "{namespace}.{name}".
+ *
+ * @example
+ * ```typescript
+ * @WorkerController("email")
+ * export class EmailWorkers {
+ *   @Worker("send")  // Registered as "email.send"
+ *   async send(job: Job<EmailPayload>) { }
+ * }
+ * ```
+ */
+import { Store, useDecorators } from '@tsed/core';
+import { Injectable } from '@tsed/di';
+
+import { MONQUE, ProviderTypes } from '@/constants';
+
+import type { WorkerStore } from './types.js';
+
+/**
+ * Class decorator that registers a class as a worker controller.
+ *
+ * @param namespace - Optional namespace prefix for job names
+ */
+export function WorkerController(namespace?: string): ClassDecorator {
+	return useDecorators(
+		// Register as injectable with custom provider type
+		Injectable({
+			type: ProviderTypes.WORKER_CONTROLLER,
+		}),
+		// Apply custom decorator to store metadata
+		(target: object) => {
+			const store = Store.from(target);
+
+			// Get existing store or create new one
+			const existing = store.get<Partial<WorkerStore>>(MONQUE) || {};
+
+			// Merge with new metadata, only include namespace if defined
+			const workerStore: WorkerStore = {
+				type: 'controller',
+				...(namespace !== undefined && { namespace }),
+				workers: existing.workers || [],
+				cronJobs: existing.cronJobs || [],
+			};
+
+			store.set(MONQUE, workerStore);
+		},
+	);
+}

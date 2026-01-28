@@ -1,0 +1,14 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"permission": {
+		"skill": {
+			"*": "allow"
+		}
+	},
+	"mcp": {
+		"tsed_Docs": {
+			"type": "remote",
+			"url": "https://gitmcp.io/tsedio/tsed"
+		}
+	}
+}

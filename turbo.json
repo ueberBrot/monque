@@ -11,18 +11,22 @@
 			"outputs": []
 		},
 		"type-check": {
+			"dependsOn": ["^build"],
 			"outputs": [],
 			"inputs": ["src/**", "tests/**", "tsconfig.json"]
 		},
 		"test": {
+			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
 		},
 		"test:unit": {
+			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
 		},
 		"test:integration": {
+			"dependsOn": ["^build"],
 			"outputs": ["coverage/**"],
 			"inputs": ["src/**", "tests/**"]
 		},
