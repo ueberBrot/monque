@@ -2,7 +2,7 @@
 "@monque/tsed": major
 ---
 
-Rename @Worker and @WorkerController to @Job and @JobController.
+Rename `@Worker` and `@WorkerController` to `@Job` and `@JobController`.
 
 This is a breaking change that aligns the terminology with the core package and general job queue conventions.
 
