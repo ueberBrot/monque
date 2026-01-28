@@ -3,18 +3,18 @@ export { MONQUE, type ProviderType, ProviderTypes } from './constants';
 export type {
 	CronDecoratorOptions,
 	CronMetadata,
-	WorkerDecoratorOptions,
-	WorkerMetadata,
-	WorkerStore,
+	JobDecoratorOptions,
+	JobMetadata,
+	JobStore,
 } from './decorators';
-export { Cron, Worker, WorkerController } from './decorators';
+export { Cron, Job, JobController } from './decorators';
 export { MonqueModule } from './monque-module.js';
 export { MonqueService } from './services';
 export {
 	buildJobName,
-	type CollectedWorkerMetadata,
-	collectWorkerMetadata,
-	getWorkerToken,
+	type CollectedJobMetadata,
+	collectJobMetadata,
+	getJobToken,
 	type InjectorFn,
 	resolveDatabase,
 } from './utils';

@@ -1,9 +1,9 @@
 export { buildJobName } from './build-job-name.js';
 export {
-	type CollectedWorkerMetadata,
-	collectWorkerMetadata,
-} from './collect-worker-metadata.js';
-export { getWorkerToken } from './get-worker-token.js';
+	type CollectedJobMetadata,
+	collectJobMetadata,
+} from './collect-job-metadata.js';
+export { getJobToken } from './get-job-token.js';
 export {
 	isMongooseConnection,
 	isMongooseService,

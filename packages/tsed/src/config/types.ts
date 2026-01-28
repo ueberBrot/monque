@@ -29,7 +29,7 @@ export interface MonqueTsedConfig extends MonqueOptions {
 	 * Enable or disable the Monque module.
 	 *
 	 * When disabled:
-	 * - Workers are not registered
+	 * - Jobs are not registered
 	 * - Lifecycle hooks are no-ops
 	 * - MonqueService throws on access
 	 *
@@ -116,7 +116,7 @@ export interface MonqueTsedConfig extends MonqueOptions {
 	 * Disable job processing on this instance.
 	 *
 	 * When true, the module will initialize the database connection (allowing you to
-	 * enqueue jobs via MonqueService) but will NOT register workers or start the
+	 * enqueue jobs via MonqueService) but will NOT register jobs or start the
 	 * polling loop. Useful for "Producer-only" nodes like API servers that only
 	 * enqueue jobs but don't process them.
 	 *
@@ -131,14 +131,14 @@ export interface MonqueTsedConfig extends MonqueOptions {
 	 * })
 	 * export class ApiServer {}
 	 *
-	 * // Worker Server (Consumer)
+	 * // Job Server (Consumer)
 	 * @Configuration({
 	 *   monque: {
 	 *     dbFactory: async () => client.db('myapp'),
 	 *     // disableJobProcessing defaults to false - processes jobs
 	 *   }
 	 * })
-	 * export class WorkerServer {}
+	 * export class JobServer {}
 	 * ```
 	 *
 	 * @default false

@@ -3,7 +3,7 @@ import { InjectorService, LOGGER, ProviderScope, Scope } from '@tsed/di';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { Worker, WorkerController } from '@/decorators';
+import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueModule } from '@/monque-module';
 import { MonqueService } from '@/services';
 
@@ -11,8 +11,8 @@ import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 import { Server } from './helpers/Server.js';
 
-// 1. Request Scoped Worker
-@WorkerController('request-scoped')
+// 1. Request Scoped Job
+@JobController('request-scoped')
 @Scope(ProviderScope.REQUEST)
 class RequestScopedController {
 	static processed = false;
@@ -22,25 +22,25 @@ class RequestScopedController {
 		RequestScopedController.instanceCount++;
 	}
 
-	@Worker('job')
+	@MonqueJob('job')
 	async handler(_job: Job) {
 		RequestScopedController.processed = true;
 	}
 }
 
-// 2. Error Throwing Worker
-@WorkerController('error')
+// 2. Error Throwing Job
+@JobController('error')
 class ErrorController {
-	@Worker('throw')
+	@MonqueJob('throw')
 	async handler(_job: Job) {
 		throw new Error('Intentional Failure');
 	}
 }
 
-// 3. Unresolvable Worker
-@WorkerController('unresolvable')
+// 3. Unresolvable Job
+@JobController('unresolvable')
 class UnresolvableController {
-	@Worker('job')
+	@MonqueJob('job')
 	async handler(_job: Job) {}
 }
 
@@ -90,7 +90,7 @@ describe('MonqueModule Lifecycle Integration', () => {
 			RequestScopedController.instanceCount = 0;
 		});
 
-		it('should warn and skip if worker instance cannot be resolved', async () => {
+		it('should warn and skip if job controller instance cannot be resolved', async () => {
 			// Mock injector to fail resolution for UnresolvableController
 			const originalGet = InjectorService.prototype.get;
 			const getSpy = vi.spyOn(InjectorService.prototype, 'get').mockImplementation(function (
@@ -118,7 +118,7 @@ describe('MonqueModule Lifecycle Integration', () => {
 			}
 		});
 
-		it('should invoke request scoped workers for each job', async () => {
+		it('should invoke request scoped job controllers for each job', async () => {
 			RequestScopedController.processed = false;
 			RequestScopedController.instanceCount = 0;
 
@@ -141,7 +141,7 @@ describe('MonqueModule Lifecycle Integration', () => {
 			expect(RequestScopedController.instanceCount).toBeGreaterThan(0);
 		});
 
-		it('should catch and log errors from workers', async () => {
+		it('should catch and log errors from job handlers', async () => {
 			await bootstrapMonque({
 				imports: [ErrorController],
 				connectionStrategy: 'db',
@@ -165,20 +165,19 @@ describe('MonqueModule Lifecycle Integration', () => {
 		});
 
 		it('should throw on duplicate job registration', async () => {
-			@WorkerController('duplicate')
+			@JobController('duplicate')
 			class DuplicateController1 {
-				@Worker('job')
+				@MonqueJob('job')
 				async handler(_job: Job) {}
 			}
 
-			@WorkerController('duplicate')
+			@JobController('duplicate')
 			class DuplicateController2 {
-				@Worker('job')
+				@MonqueJob('job')
 				async handler(_job: Job) {}
 			}
 
 			// We use a fresh bootstrap here because we want to fail during initialization
-			// bootstrapMonque helper usually catches errors? No, it awaits bstrp().
 			await expect(
 				bootstrapMonque({
 					imports: [DuplicateController1, DuplicateController2],

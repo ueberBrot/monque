@@ -2,7 +2,7 @@
  * MonqueModule - Main Integration Module
  *
  * Orchestrates the integration between Monque and Ts.ED.
- * Handles lifecycle hooks, configuration resolution, and worker registration.
+ * Handles lifecycle hooks, configuration resolution, and job registration.
  */
 
 import {
@@ -31,7 +31,7 @@ import {
 import { type MonqueTsedConfig, validateDatabaseConfig } from '@/config';
 import { ProviderTypes } from '@/constants';
 import { MonqueService } from '@/services';
-import { collectWorkerMetadata, resolveDatabase } from '@/utils';
+import { collectJobMetadata, resolveDatabase } from '@/utils';
 
 @Module({
 	imports: [MonqueService],
@@ -85,7 +85,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 			if (config.disableJobProcessing) {
 				this.logger.info('Monque: Job processing is disabled for this instance');
 			} else {
-				await this.registerWorkers();
+				await this.registerJobs();
 				await this.monque.start();
 				this.logger.info('Monque: Started successfully');
 			}
@@ -111,22 +111,22 @@ export class MonqueModule implements OnInit, OnDestroy {
 	}
 
 	/**
-	 * Discover and register all workers from @WorkerController providers
+	 * Discover and register all jobs from @JobController providers
 	 */
-	protected async registerWorkers(): Promise<void> {
+	protected async registerJobs(): Promise<void> {
 		if (!this.monque) {
 			throw new MonqueError('Monque instance not initialized');
 		}
 
 		const monque = this.monque;
-		const workerControllers = this.injector.getProviders(ProviderTypes.WORKER_CONTROLLER);
+		const jobControllers = this.injector.getProviders(ProviderTypes.JOB_CONTROLLER);
 		const registeredJobs = new Set<string>();
 
-		this.logger.info(`Monque: Found ${workerControllers.length} worker controllers`);
+		this.logger.info(`Monque: Found ${jobControllers.length} job controllers`);
 
-		for (const provider of workerControllers) {
+		for (const provider of jobControllers) {
 			const useClass = provider.useClass;
-			const workers = collectWorkerMetadata(useClass);
+			const jobs = collectJobMetadata(useClass);
 			// Try to resolve singleton instance immediately
 			const instance = this.injector.get(provider.token);
 
@@ -138,8 +138,8 @@ export class MonqueModule implements OnInit, OnDestroy {
 				continue;
 			}
 
-			for (const worker of workers) {
-				const { fullName, method, opts, isCron, cronPattern } = worker;
+			for (const job of jobs) {
+				const { fullName, method, opts, isCron, cronPattern } = job;
 
 				if (registeredJobs.has(fullName)) {
 					throw new WorkerRegistrationError(
@@ -193,7 +193,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 					monque.register(fullName, handler, opts as WorkerOptions);
 					await monque.schedule(cronPattern, fullName, {}, opts as ScheduleOptions);
 				} else {
-					this.logger.debug(`Monque: Registering worker "${fullName}"`);
+					this.logger.debug(`Monque: Registering job "${fullName}"`);
 					monque.register(fullName, handler, opts as WorkerOptions);
 				}
 			}

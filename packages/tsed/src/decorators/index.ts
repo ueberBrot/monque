@@ -1,10 +1,10 @@
 export { Cron } from './cron.js';
+export { Job } from './job.js';
+export { JobController } from './job-controller.js';
 export type {
 	CronDecoratorOptions,
 	CronMetadata,
-	WorkerDecoratorOptions,
-	WorkerMetadata,
-	WorkerStore,
+	JobDecoratorOptions,
+	JobMetadata,
+	JobStore,
 } from './types.js';
-export { Worker } from './worker.js';
-export { WorkerController } from './worker-controller.js';

@@ -26,8 +26,8 @@ A **Ts.ED** integration for **Monque**, a robust, type-safe MongoDB job queue fo
 
 ## Features
 
-- 🎯 **Decorator-based API**: `@WorkerController`, `@Worker`, and `@Cron` for declarative job handling.
-- 💉 **Dependency Injection**: Full support for Ts.ED DI (inject Services/Providers into your workers).
+- 🎯 **Decorator-based API**: `@JobController`, `@Job`, and `@Cron` for declarative job handling.
+- 💉 **Dependency Injection**: Full support for Ts.ED DI (inject Services/Providers into your jobs).
 - 🔒 **Job Isolation**: Each job execution runs in a dedicated `DIContext` with Request Scope support.
 - 🔍 **Type Safety**: Leverage TypeScript generics for fully typed job payloads.
 - ⚡ **Full Monque Power**: Complete access to all `@monque/core` features (backoff, heartbeats, atomic locking).
@@ -85,13 +85,13 @@ export class Server {}
 
 ## Usage
 
-### 1. Define a Worker Controller
+### 1. Define a Job Controller
 
-Create a class decorated with `@WorkerController`. Methods decorated with `@Worker` will process jobs.
+Create a class decorated with `@JobController`. Methods decorated with `@Job` will process jobs.
 
 ```typescript
-import { WorkerController, Worker } from "@monque/tsed";
-import { Job } from "@monque/core";
+import { JobController, Job } from "@monque/tsed";
+import { Job as MonqueJob } from "@monque/core";
 import { EmailService } from "./services/EmailService";
 
 interface EmailPayload {
@@ -99,12 +99,12 @@ interface EmailPayload {
   subject: string;
 }
 
-@WorkerController("email") // Namespace prefix: "email."
-export class EmailWorkers {
+@JobController("email") // Namespace prefix: "email."
+export class EmailJobs {
   constructor(private emailService: EmailService) {}
 
-  @Worker("send", { concurrency: 5 }) // Job name: "email.send"
-  async sendEmail(job: Job<EmailPayload>) {
+  @Job("send", { concurrency: 5 }) // Job name: "email.send"
+  async sendEmail(job: MonqueJob<EmailPayload>) {
     await this.emailService.send(
         job.data.to, 
         job.data.subject
@@ -118,10 +118,10 @@ export class EmailWorkers {
 Use the `@Cron` decorator to schedule recurring tasks.
 
 ```typescript
-import { WorkerController, Cron } from "@monque/tsed";
+import { JobController, Cron } from "@monque/tsed";
 
-@WorkerController()
-export class ReportWorkers {
+@JobController()
+export class ReportJobs {
   
   @Cron("0 0 * * *", { name: "daily-report" })
   async generateDailyReport() {
@@ -159,11 +159,11 @@ export class AuthService {
 
 ### Decorators
 
-#### `@WorkerController(namespace?: string)`
-Class decorator to register a worker controller.
-- `namespace`: Optional prefix for all worker names in this class.
+#### `@JobController(namespace?: string)`
+Class decorator to register a job controller.
+- `namespace`: Optional prefix for all job names in this class.
 
-#### `@Worker(name: string, options?: WorkerOptions)`
+#### `@Job(name: string, options?: WorkerOptions)`
 Method decorator to register a job handler.
 - `name`: Job name (combined with namespace).
 - `options`: Supports all `@monque/core` [WorkerOptions](../../packages/core/README.md#new-monque-db-options) (concurrency, lockTimeout, etc.).
@@ -206,7 +206,7 @@ Use `@tsed/platform-http/testing` and `PlatformTest` to test your workers. You c
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { MonqueService } from "@monque/tsed";
 
-describe("EmailWorkers", () => {
+describe("EmailJobs", () => {
   beforeEach(PlatformTest.create);
   afterEach(PlatformTest.reset);
 

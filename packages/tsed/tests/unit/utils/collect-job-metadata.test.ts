@@ -3,31 +3,31 @@ import { describe, expect, it } from 'vitest';
 
 import { MONQUE } from '@/constants';
 import { Cron } from '@/decorators/cron';
-import type { WorkerStore } from '@/decorators/types';
-import { WorkerController } from '@/decorators/worker-controller';
-import { collectWorkerMetadata } from '@/utils/collect-worker-metadata';
+import { JobController } from '@/decorators/job-controller';
+import type { JobStore } from '@/decorators/types';
+import { collectJobMetadata } from '@/utils/collect-job-metadata';
 
-describe('collectWorkerMetadata', () => {
-	it('should return empty array if no worker store exists', () => {
+describe('collectJobMetadata', () => {
+	it('should return empty array if no job store exists', () => {
 		class PlainClass {}
-		const metadata = collectWorkerMetadata(PlainClass);
+		const metadata = collectJobMetadata(PlainClass);
 		expect(metadata).toEqual([]);
 	});
 
-	it('should collect workers and cron jobs', () => {
-		@WorkerController('test')
+	it('should collect jobs and cron jobs', () => {
+		@JobController('test')
 		class TestController {
 			@Cron('* * * * *')
 			cronJob() {}
 		}
 
-		// Manually add a worker to the store to simulate mixed usage
-		// (Normally @Worker would do this, but we want to be explicit)
+		// Manually add a job to the store to simulate mixed usage
+		// (Normally @Job would do this, but we want to be explicit)
 		const store = Store.from(TestController);
-		const existing = store.get<Partial<WorkerStore>>(MONQUE) || {};
+		const existing = store.get<Partial<JobStore>>(MONQUE) || {};
 		store.set(MONQUE, {
 			...existing,
-			workers: [
+			jobs: [
 				{
 					name: 'worker-job',
 					method: 'workerMethod',
@@ -36,7 +36,7 @@ describe('collectWorkerMetadata', () => {
 			],
 		});
 
-		const metadata = collectWorkerMetadata(TestController);
+		const metadata = collectJobMetadata(TestController);
 
 		expect(metadata).toHaveLength(2);
 		expect(metadata).toEqual(

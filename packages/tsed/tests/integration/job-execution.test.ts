@@ -2,23 +2,23 @@ import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Worker, WorkerController } from '@/decorators';
+import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
-@WorkerController('execution')
+@JobController('execution')
 class ExecutionController {
 	static processed: string[] = [];
 	static failCount = 0;
 
-	@Worker('success')
+	@MonqueJob('success')
 	async success(job: Job) {
 		if (job._id) ExecutionController.processed.push(job._id.toString());
 	}
 
-	@Worker('fail-once')
+	@MonqueJob('fail-once')
 	async failOnce(job: Job) {
 		if (ExecutionController.failCount === 0) {
 			ExecutionController.failCount++;

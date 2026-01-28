@@ -1,17 +1,17 @@
 /**
- * @WorkerController class decorator
+ * @JobController class decorator
  *
- * Marks a class as containing worker methods and registers it with the Ts.ED DI container.
- * Workers in the class will have their job names prefixed with the namespace.
+ * Marks a class as containing job methods and registers it with the Ts.ED DI container.
+ * Jobs in the class will have their job names prefixed with the namespace.
  *
  * @param namespace - Optional prefix for all job names in this controller.
  *                    When set, job names become "{namespace}.{name}".
  *
  * @example
  * ```typescript
- * @WorkerController("email")
- * export class EmailWorkers {
- *   @Worker("send")  // Registered as "email.send"
+ * @JobController("email")
+ * export class EmailJobs {
+ *   @Job("send")  // Registered as "email.send"
  *   async send(job: Job<EmailPayload>) { }
  * }
  * ```
@@ -21,35 +21,35 @@ import { Injectable } from '@tsed/di';
 
 import { MONQUE, ProviderTypes } from '@/constants';
 
-import type { WorkerStore } from './types.js';
+import type { JobStore } from './types.js';
 
 /**
- * Class decorator that registers a class as a worker controller.
+ * Class decorator that registers a class as a job controller.
  *
  * @param namespace - Optional namespace prefix for job names
  */
-export function WorkerController(namespace?: string): ClassDecorator {
+export function JobController(namespace?: string): ClassDecorator {
 	return useDecorators(
 		// Register as injectable with custom provider type
 		Injectable({
-			type: ProviderTypes.WORKER_CONTROLLER,
+			type: ProviderTypes.JOB_CONTROLLER,
 		}),
 		// Apply custom decorator to store metadata
 		(target: object) => {
 			const store = Store.from(target);
 
 			// Get existing store or create new one
-			const existing = store.get<Partial<WorkerStore>>(MONQUE) || {};
+			const existing = store.get<Partial<JobStore>>(MONQUE) || {};
 
 			// Merge with new metadata, only include namespace if defined
-			const workerStore: WorkerStore = {
+			const jobStore: JobStore = {
 				type: 'controller',
 				...(namespace !== undefined && { namespace }),
-				workers: existing.workers || [],
+				jobs: existing.jobs || [],
 				cronJobs: existing.cronJobs || [],
 			};
 
-			store.set(MONQUE, workerStore);
+			store.set(MONQUE, jobStore);
 		},
 	);
 }

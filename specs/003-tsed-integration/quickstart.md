@@ -47,13 +47,13 @@ async function bootstrap() {
 bootstrap();
 ```
 
-### 2. Create a Worker Controller
+### 2. Create a Job Controller
 
 ```typescript
-// src/workers/EmailWorkers.ts
-import { WorkerController, Worker, Cron } from "@monque/tsed";
+// src/jobs/EmailJobs.ts
+import { JobController, Job, Cron } from "@monque/tsed";
 import { Inject } from "@tsed/di";
-import type { Job } from "@monque/core";
+import type { Job as MonqueJob } from "@monque/core";
 import { EmailService } from "../services/EmailService";
 
 interface WelcomeEmailPayload {
@@ -66,25 +66,25 @@ interface NotificationPayload {
   message: string;
 }
 
-@WorkerController("email")
-export class EmailWorkers {
+@JobController("email")
+export class EmailJobs {
   @Inject()
   private emailService: EmailService;
 
-  @Worker("send-welcome")
-  async sendWelcome(job: Job<WelcomeEmailPayload>) {
+  @Job("send-welcome")
+  async sendWelcome(job: MonqueJob<WelcomeEmailPayload>) {
     const { email } = job.data;
     await this.emailService.sendWelcome(email);
     console.log(`Welcome email sent to ${email}`);
   }
 
-  @Worker("send-notification", { concurrency: 10 })
-  async sendNotification(job: Job<NotificationPayload>) {
+  @Job("send-notification", { concurrency: 10 })
+  async sendNotification(job: MonqueJob<NotificationPayload>) {
     await this.emailService.sendNotification(job.data.userId, job.data.message);
   }
 
   @Cron("0 9 * * *", { name: "daily-digest" })
-  async sendDailyDigest(job: Job) {
+  async sendDailyDigest(job: MonqueJob) {
     // Runs at 9am daily, registered as "email.daily-digest"
     await this.emailService.sendDailyDigest();
   }
@@ -198,17 +198,18 @@ export class Server {}
 
 ## Advanced Usage
 
-### Workers Without Namespace
+### Jobs Without Namespace
 
 ```typescript
-@WorkerController() // No namespace
-export class SystemWorkers {
-  @Worker("cleanup")
-  async cleanup(job: Job) {
+@JobController() // No namespace
+export class SystemJobs {
+  @Job("cleanup")
+  async cleanup(job: MonqueJob) {
     // Registered as just "cleanup" (no prefix)
   }
 }
 ```
+
 
 ### Prevent Duplicate Jobs
 
@@ -389,7 +390,7 @@ import { PlatformTest } from "@tsed/platform-http/testing";
 import { MongoDBContainer } from "@testcontainers/mongodb";
 import { MongoClient } from "mongodb";
 
-describe("EmailWorkers Integration", () => {
+describe("EmailJobs Integration", () => {
   let container: MongoDBContainer;
   let client: MongoClient;
 
@@ -434,8 +435,8 @@ describe("EmailWorkers Integration", () => {
 
 | Decorator | Target | Description |
 |-----------|--------|-------------|
-| `@WorkerController(namespace?)` | Class | Marks class as job handler container |
-| `@Worker(name, options?)` | Method | Registers method as job handler |
+| `@JobController(namespace?)` | Class | Marks class as job handler container |
+| `@Job(name, options?)` | Method | Registers method as job handler |
 | `@Cron(pattern, options?)` | Method | Registers method as scheduled cron job |
 
 ---

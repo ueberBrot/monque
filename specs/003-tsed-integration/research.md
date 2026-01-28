@@ -33,22 +33,24 @@ This document captures research findings that informed the technical design of t
 
 ### Decision: Class + Method decorators with namespace support
 
-**Rationale**: Combining class-level `@WorkerController` with method-level `@Worker`/`@Cron` decorators allows grouping related jobs while maintaining clean separation of concerns. The namespace concept (from PLAN.md) prefixes job names for organization.
+**Rationale**: Combining class-level `@JobController` with method-level `@Job`/`@Cron` decorators allows grouping related jobs
+ while maintaining clean separation of concerns. The namespace concept (from PLAN.md) prefixes job names for organization.
 
 **Implementation approach**:
 
 ```typescript
 // Class decorator stores controller metadata
-@WorkerController("email")  // namespace = "email"
-class EmailWorkers {
-  @Worker("send")  // Registered as "email.send"
+@JobController("email")  // namespace = "email"
+export class EmailJobs {
+  @Job("send")  // Registered as "email.send"
+
   async send(job: Job<EmailPayload>) { }
 }
 ```
 
 **Key design decisions**:
-- `@WorkerController(namespace?)` - Optional namespace prefix
-- `@Worker(name, options?)` - Job handler, full name is `${namespace}.${name}` or just `name`
+- `@JobController(namespace?)` - Optional namespace prefix
+- `@Job(name, options?)` - Job handler, full name is `${namespace}.${name}` or just `name`
 - `@Cron(pattern, options?)` - Scheduled jobs with cron expressions
 
 **Alternatives considered**:
@@ -134,34 +136,33 @@ private async executeJob(workerInstance: any, methodName: string, job: Job) {
 
 ---
 
-## 5. Worker Registration Flow
+## 5. Job Registration Flow
 
-### Decision: Automatic discovery via provider type scanning
-
-**Rationale**: Following `@tsed/bullmq`, workers are discovered by scanning providers with specific types during `$onInit`. This enables declarative registration without explicit configuration.
+**Rationale**: Following `@tsed/bullmq`, jobs are discovered by scanning providers with specific types during `$onInit`. This enables declarative registration without explicit configuration.
 
 **Flow**:
-1. `@WorkerController` registers class with type `ProviderTypes.WORKER_CONTROLLER`
-2. `@Worker`/`@Cron` decorators store method metadata via `Store.from(target.constructor)`
-3. `MonqueModule.$onInit()` collects all `WORKER_CONTROLLER` providers
+1. `@JobController` registers class with type `ProviderTypes.JOB_CONTROLLER`
+2. `@Job`/`@Cron` decorators store method metadata via `Store.from(target.constructor)`
+3. `MonqueModule.$onInit()` collects all `JOB_CONTROLLER` providers
 4. For each provider, extract metadata and call `monque.register()`
 
 **Alternatives considered**:
-- Explicit worker array in config: Rejected - less ergonomic than decorator discovery
+- Explicit job array in config: Rejected - less ergonomic than decorator discovery
+
 - Runtime dynamic registration: Rejected - loses static analysis benefits
 
 ---
 
 ## 6. Cron Job Handling
 
-### Decision: Cron jobs are workers with repeatInterval
+### Decision: Cron jobs are jobs with repeatInterval
 
 **Rationale**: In `@monque/core`, scheduled jobs use `monque.schedule(cron, name, data)` which sets `repeatInterval`. The `@Cron` decorator should trigger the same behavior.
 
 **Implementation**:
 - `@Cron(pattern, options)` stores cron pattern in metadata
-- During `$onInit`, cron jobs are both registered as workers AND scheduled
-- Worker handles job execution; Monque handles rescheduling
+- During `$onInit`, cron jobs are both registered as jobs AND scheduled
+- Job handles execution; Monque handles rescheduling
 
 **Alternatives considered**:
 - Separate cron scheduler: Rejected - duplicates Monque's built-in scheduling
@@ -264,10 +265,10 @@ All technical unknowns have been resolved. The design follows established Ts.ED 
 async $onInit(): Promise<void> {
   // Validate no duplicate registrations
   const jobNames = new Set<string>();
-  for (const provider of workerControllers) {
-    const store = Store.from(provider.useClass).get<WorkerStore>(MONQUE);
-    for (const worker of store.workers) {
-      const fullName = buildJobName(store.namespace, worker.name);
+  for (const provider of jobControllers) {
+    const store = Store.from(provider.useClass).get<JobStore>(MONQUE);
+    for (const job of store.jobs) {
+      const fullName = buildJobName(store.namespace, job.name);
       if (jobNames.has(fullName)) {
         throw new Error(`Duplicate job registration: "${fullName}" is registered by multiple controllers`);
       }
@@ -323,9 +324,9 @@ export class MonqueModule implements OnInit, OnDestroy {
   private logger: Logger;
 
   async $onInit() {
-    this.logger.info(`Monque: Registering ${workerCount} workers...`);
+    this.logger.info(`Monque: Registering ${jobCount} jobs...`);
     // ...
-    this.logger.info(`Monque: Started with ${workerCount} workers`);
+    this.logger.info(`Monque: Started with ${jobCount} jobs`);
   }
 
   async $onDestroy() {

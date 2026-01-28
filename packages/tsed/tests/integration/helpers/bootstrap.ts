@@ -102,7 +102,7 @@ export async function resetMonque(): Promise<void> {
 	// Clean up GlobalProviders to prevent leaking test controllers
 	Provider.Registry.forEach((provider, key) => {
 		if (
-			provider.type === ProviderTypes.WORKER_CONTROLLER &&
+			provider.type === ProviderTypes.JOB_CONTROLLER &&
 			provider.token.name.startsWith('Ephemeral')
 		) {
 			Provider.Registry.delete(key);

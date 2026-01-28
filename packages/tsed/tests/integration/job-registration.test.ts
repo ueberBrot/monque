@@ -2,63 +2,63 @@ import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Worker as MonqueWorker, WorkerController } from '@/decorators';
+import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
-@WorkerController('email')
-class EmailWorkers {
+@JobController('email')
+class EmailJobs {
 	public processed: string[] = [];
 
-	@MonqueWorker('send')
+	@MonqueJob('send')
 	async sendEmail(job: Job<{ to: string }>) {
 		this.processed.push(job.data.to);
 		return { sent: true };
 	}
 
-	@MonqueWorker('welcome', { concurrency: 5 })
+	@MonqueJob('welcome', { concurrency: 5 })
 	async sendWelcome(job: Job<{ userId: string }>) {
 		this.processed.push(`welcome:${job.data.userId}`);
 		return 'welcome';
 	}
 }
 
-@WorkerController()
-class SystemWorkers {
+@JobController()
+class SystemJobs {
 	public executed = false;
 
-	@MonqueWorker('cleanup')
+	@MonqueJob('cleanup')
 	async cleanup() {
 		this.executed = true;
 	}
 }
 
-describe('Worker Registration Integration', () => {
+describe('Job Registration Integration', () => {
 	afterEach(resetMonque);
 
-	describe('Worker Discovery & Registration', () => {
+	describe('Job Discovery & Registration', () => {
 		beforeEach(async () => {
 			await bootstrapMonque({
-				imports: [EmailWorkers, SystemWorkers],
+				imports: [EmailJobs, SystemJobs],
 				connectionStrategy: 'dbFactory',
 			});
 		});
 
-		it('should discover WorkerController classes', () => {
+		it('should discover JobController classes', () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 			expect(monqueService).toBeDefined();
 		});
 
-		it('should register namespaced workers with correct names', async () => {
+		it('should register namespaced jobs with correct names', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 			const job = await monqueService.enqueue('email.send', { to: 'test@example.com' });
 			expect(job).toBeDefined();
 			expect(job.name).toBe('email.send');
 		});
 
-		it('should register workers without namespace using plain name', async () => {
+		it('should register jobs without namespace using plain name', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 			const job = await monqueService.enqueue('cleanup', {});
 			expect(job).toBeDefined();
@@ -76,49 +76,49 @@ describe('Worker Registration Integration', () => {
 	describe('Job Processing', () => {
 		beforeEach(async () => {
 			await bootstrapMonque({
-				imports: [EmailWorkers, SystemWorkers],
+				imports: [EmailJobs, SystemJobs],
 				connectionStrategy: 'dbFactory',
 			});
 		});
 
 		it('should invoke correct handler method when job is processed', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-			const emailWorkers = PlatformTest.get<EmailWorkers>(EmailWorkers);
+			const emailJobs = PlatformTest.get<EmailJobs>(EmailJobs);
 
 			await monqueService.now('email.send', { to: 'test@example.com' });
 
 			// Wait for processing
-			await waitFor(() => emailWorkers.processed.includes('test@example.com'));
+			await waitFor(() => emailJobs.processed.includes('test@example.com'));
 
-			expect(emailWorkers.processed).toContain('test@example.com');
+			expect(emailJobs.processed).toContain('test@example.com');
 		});
 
-		it('should invoke handler for non-namespaced worker', async () => {
+		it('should invoke handler for non-namespaced job', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-			const systemWorkers = PlatformTest.get<SystemWorkers>(SystemWorkers);
+			const systemJobs = PlatformTest.get<SystemJobs>(SystemJobs);
 
 			await monqueService.now('cleanup', {});
 
-			await waitFor(() => systemWorkers.executed);
+			await waitFor(() => systemJobs.executed);
 
-			expect(systemWorkers.executed).toBe(true);
+			expect(systemJobs.executed).toBe(true);
 		});
 	});
 
 	describe('Resilience', () => {
 		it('should handle max retries', async () => {
-			@WorkerController('resilience')
-			class ResilienceWorker {
+			@JobController('resilience')
+			class ResilienceJob {
 				static failCount = 0;
-				@MonqueWorker('fail')
+				@MonqueJob('fail')
 				async fail() {
-					ResilienceWorker.failCount++;
+					ResilienceJob.failCount++;
 					throw new Error('Persistent failure');
 				}
 			}
 
 			await bootstrapMonque({
-				imports: [ResilienceWorker],
+				imports: [ResilienceJob],
 				connectionStrategy: 'dbFactory',
 				monqueConfig: {
 					maxRetries: 2,
@@ -141,26 +141,26 @@ describe('Worker Registration Integration', () => {
 			const failedJob = await monqueService.getJob(job._id.toString());
 			expect(failedJob?.status).toBe(JobStatus.FAILED);
 			expect(failedJob?.failCount).toBe(2);
-			expect(ResilienceWorker.failCount).toBe(2);
+			expect(ResilienceJob.failCount).toBe(2);
 		});
 	});
 
 	describe('Lifecycle Integration', () => {
 		it('should wait for active jobs during stop()', async () => {
-			@WorkerController('lifecycle')
-			class LifecycleWorker {
+			@JobController('lifecycle')
+			class LifecycleJob {
 				static started = false;
 				static completed = false;
-				@MonqueWorker('long-running')
+				@MonqueJob('long-running')
 				async longRunning() {
-					LifecycleWorker.started = true;
+					LifecycleJob.started = true;
 					await new Promise((resolve) => setTimeout(resolve, 500));
-					LifecycleWorker.completed = true;
+					LifecycleJob.completed = true;
 				}
 			}
 
 			await bootstrapMonque({
-				imports: [LifecycleWorker],
+				imports: [LifecycleJob],
 				connectionStrategy: 'dbFactory',
 				monqueConfig: {
 					pollInterval: 100,
@@ -171,12 +171,12 @@ describe('Worker Registration Integration', () => {
 			await monqueService.now('lifecycle.long-running', {});
 
 			// Wait for it to start
-			await waitFor(() => LifecycleWorker.started);
+			await waitFor(() => LifecycleJob.started);
 
 			// Stop while it's running
 			await monqueService.monque.stop();
 
-			expect(LifecycleWorker.completed).toBe(true);
+			expect(LifecycleJob.completed).toBe(true);
 		});
 	});
 });

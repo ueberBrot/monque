@@ -9,19 +9,19 @@ import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Worker, WorkerController } from '@/decorators';
+import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, getTestDb, resetMonque } from './helpers/bootstrap.js';
 
-// Worker that tracks if it was ever called
-@WorkerController('producer-test')
+// Job controller that tracks if it was ever called
+@JobController('producer-test')
 class ProducerTestController {
 	static processed = false;
 	static processedCount = 0;
 
-	@Worker('job')
+	@MonqueJob('job')
 	async handler(_job: Job) {
 		ProducerTestController.processed = true;
 		ProducerTestController.processedCount++;
@@ -55,7 +55,7 @@ describe('Producer-only Mode (disableJobProcessing)', () => {
 			expect(job.name).toBe('producer-test.job');
 		});
 
-		it('should not process jobs even with workers defined', async () => {
+		it('should not process jobs even with jobs defined', async () => {
 			const service = PlatformTest.get<MonqueService>(MonqueService);
 
 			await service.enqueue('producer-test.job', { test: true });

@@ -2,19 +2,19 @@ import type { PersistedJob } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Cron, WorkerController } from '@/decorators';
+import { Cron, JobController } from '@/decorators';
 import { MonqueService } from '@/services';
 
 import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
-@WorkerController('cron-test')
-class CronTestWorkers {
+@JobController('cron-test')
+class CronTestJobs {
 	public static callCount = 0;
 
 	@Cron('* * * * *', { name: 'minutely-job' })
 	async runEveryMinute() {
-		CronTestWorkers.callCount++;
+		CronTestJobs.callCount++;
 	}
 }
 
@@ -23,9 +23,9 @@ describe('Cron Job Integration', () => {
 
 	describe('Cron Scheduling', () => {
 		beforeEach(async () => {
-			CronTestWorkers.callCount = 0;
+			CronTestJobs.callCount = 0;
 			await bootstrapMonque({
-				imports: [CronTestWorkers],
+				imports: [CronTestJobs],
 				connectionStrategy: 'dbFactory',
 			});
 		});
@@ -46,13 +46,13 @@ describe('Cron Job Integration', () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 
 			// Manually trigger the job to avoid waiting for cron
-			// The worker should be registered for 'minutely-job'
+			// The job should be registered for 'minutely-job'
 			await monqueService.now('cron-test.minutely-job', {});
 
 			// Wait for processing
-			await waitFor(() => CronTestWorkers.callCount >= 1);
+			await waitFor(() => CronTestJobs.callCount >= 1);
 
-			expect(CronTestWorkers.callCount).toBe(1);
+			expect(CronTestJobs.callCount).toBe(1);
 		});
 	});
 });

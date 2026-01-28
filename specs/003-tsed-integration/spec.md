@@ -3,35 +3,35 @@
 **Feature Branch**: `003-tsed-integration`
 **Created**: 2026-01-22
 **Status**: Draft
-**Input**: User description: Create a new integration for the ts.ed framework as a new package. Features: Decorator-based worker registration (@Worker, @Cron), Native lifecycle integration, Type-safe job definitions. Add plugin to Ts.ED marketplace via naming conventions.
+**Input**: User description: Create a new integration for the ts.ed framework as a new package. Features: Decorator-based worker registration (@Job, @Cron), Native lifecycle integration, Type-safe job definitions. Add plugin to Ts.ED marketplace via naming conventions.
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Declarative Worker Controllers (Priority: P1)
+### User Story 1 - Declarative Job Controllers (Priority: P1)
 
 As a Ts.ED developer, I want to group related job processors into a "Controller" class so that I can organize my background logic similar to how I organize HTTP endpoints.
 
 **Why this priority**: Aligning with Ts.ED's controller pattern makes adoption easier and code more structured.
 
-**Independent Test**: Create a class decorated with `@WorkerController`. Define methods decorated with `@Worker`. Verify the methods are invoked when matching jobs are processed.
+**Independent Test**: Create a class decorated with `@JobController`. Define methods decorated with `@Job`. Verify the methods are invoked when matching jobs are processed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a method decorated with `@Worker('send-email')` inside a `@WorkerController`, **When** a job is added to the 'send-email' queue, **Then** the method is executed with the job data.
+1. **Given** a method decorated with `@Job('send-email')` inside a `@JobController`, **When** a job is added to the 'send-email' queue, **Then** the method is executed with the job data.
 
 ---
 
-### User Story 2 - Dependency Injection in Worker Controllers (Priority: P1)
+### User Story 2 - Dependency Injection in Job Controllers (Priority: P1)
 
-As a developer, I want my Worker Controller classes to participate in the Ts.ED Dependency Injection (DI) system so that I can easily inject services.
+As a developer, I want my Job Controller classes to participate in the Ts.ED Dependency Injection (DI) system so that I can easily inject services.
 
 **Why this priority**: Essential for building real-world applications.
 
-**Independent Test**: Inject a Service into a `@WorkerController`. Verify use in `@Worker` method.
+**Independent Test**: Inject a Service into a `@JobController`. Verify use in `@Job` method.
 
 **Acceptance Scenarios**:
 
-1. **Given** a Service `MyService`, **When** injected into a `@WorkerController`, **Then** it is usable within `@Worker` methods.
+1. **Given** a Service `MyService`, **When** injected into a `@JobController`, **Then** it is usable within `@Job` methods.
 
 ---
 
@@ -89,8 +89,8 @@ As a developer, I want each job execution to run in its own unrelated context so
 
 - **FR-001**: The integration MUST be packaged as a separate NPM package (e.g., `packages/tsed` or `packages/tsed-plugin-monque`).
 - **FR-002**: The package MUST enable Marketplace discovery by including "Ts.ED" in the `package.json` description and keywords, with a package name of `@monque/tsed`.
-- **FR-003**: System MUST expose a `@WorkerController(options)` decorator that registers a class as a container for job handlers.
-- **FR-003.1**: System MUST expose a `@Worker(queueName, options)` method decorator that registers the method as a handler for a specific queue.
+- **FR-003**: System MUST expose a `@JobController(options)` decorator that registers a class as a container for job handlers.
+- **FR-003.1**: System MUST expose a `@Job(queueName, options)` method decorator that registers the method as a handler for a specific queue.
 - **FR-004**: System MUST expose a `@Cron(expression, options)` method decorator for recurring schedules.
 - **FR-005**: Controllers MUST be instantiated via the Ts.ED Injector.
 - **FR-006**: System MUST create a discrete Dependency Injection Context for every job execution to ensure state isolation.
@@ -111,7 +111,7 @@ As a developer, I want each job execution to run in its own unrelated context so
 ### Key Entities
 
 - **MonqueModule**: The main Ts.ED module configuration class that integrates Monque into the DI container.
-- **WorkerController**: A user-defined class decorated with `@WorkerController` containing method handlers.
+- **JobController**: A user-defined class decorated with `@JobController` containing method handlers.
 - **JobContext**: A distinct DI context created for each job execution to ensure isolation.
 
 ## Clarifications
@@ -121,12 +121,12 @@ As a developer, I want each job execution to run in its own unrelated context so
 - Q: Should the integration support multi-tenancy? → A: No, v1.0 assumes a single Monque instance per application.
 - Q: How are job payloads typed? → A: Via the generic `Job<T>` interface from `@monque/core`.
 - Q: What happens if a controller method throws? → A: The job is marked as failed by the Monque worker (standard behavior).
-- Q: Can I use `@Cron` on a non-controller class? → A: No, `@Cron` is only supported within the context of a `@WorkerController` or a registered Service.
+- Q: Can I use `@Cron` on a non-controller class? → A: No, `@Cron` is only supported within the context of a `@JobController` or a registered Service.
 - Q: What should happen when Monque connection fails during Ts.ED startup? → A: Fail startup (throw error).
 - Q: What happens if multiple classes register handlers for the same queue? → A: Fail at startup (duplicate error).
 - Q: What is the expected max job processing latency overhead from the Ts.ED integration layer? → A: <10ms per job.
 - Q: What level of observability/logging should the integration provide? → A: Standard (use Ts.ED logger, info/warn/error).
-- Q: How should the system handle DI resolution errors during worker instantiation? → A: Fail the job, log error, continue worker.
+- Q: How should the system handle DI resolution errors during Job Controller instantiation? → A: Fail the job, log error, continue worker.
 
 ## Assumptions
 
@@ -136,7 +136,7 @@ As a developer, I want each job execution to run in its own unrelated context so
 
 ### Scope Boundaries (v1.0)
 - **Multi-instance support**: Binding multiple Monque instances to different controllers is out of scope.
-- **Dynamic Workers**: Workers must be statically defined via decorators at startup.
+- **Dynamic Jobs**: Jobs must be statically defined via decorators at startup.
 - **Custom Decorators**: Users are expected to use provided decorators, not create custom ones for registration.
 
 ## Glossary
@@ -150,5 +150,5 @@ As a developer, I want each job execution to run in its own unrelated context so
 ### Measurable Outcomes
 
 - **SC-001**: A new Ts.ED project can install and configure the plugin with < 10 lines of functional configuration code in `Server.ts` (excluding imports).
-- **SC-002**: 100% of standard Monque worker options (concurrency, replace) can be configured via the `@Worker` decorator.
+- **SC-002**: 100% of standard Monque worker options (concurrency, replace) can be configured via the `@Job` decorator.
 - **SC-003**: Package is successfully built and publishable to NPM with the name `@monque/tsed`.
