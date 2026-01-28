@@ -22,13 +22,14 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 	maxRetries: 3,
 	baseRetryInterval: 100,
 	shutdownTimeout: 5000,
-	defaultConcurrency: 5,
+	workerConcurrency: 5,
 	lockTimeout: 30000,
 	recoverStaleJobs: true,
 	schedulerInstanceId: 'test-instance-id',
 	heartbeatInterval: 1000,
 	maxBackoffDelay: undefined,
 	jobRetention: undefined,
+	instanceConcurrency: undefined,
 };
 
 /**

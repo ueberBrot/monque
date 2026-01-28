@@ -9,7 +9,8 @@
  *   maxRetries: 10,
  *   baseRetryInterval: 1000,
  *   shutdownTimeout: 30000,
- *   defaultConcurrency: 5,
+ *   workerConcurrency: 5,      // Per-worker default
+ *   instanceConcurrency: 20,   // Global instance limit
  * });
  * ```
  */
@@ -56,7 +57,19 @@ export interface MonqueOptions {
 
 	/**
 	 * Default number of concurrent jobs per worker.
+	 *
+	 * This is the per-worker concurrency limit applied when a worker is registered
+	 * without specifying its own `concurrency` option.
+	 *
 	 * @default 5
+	 */
+	workerConcurrency?: number;
+
+	/**
+	 * Default number of concurrent jobs per worker.
+	 *
+	 * @default 5
+	 * @deprecated Use `workerConcurrency` instead. Will be removed in a future major version.
 	 */
 	defaultConcurrency?: number;
 
@@ -120,4 +133,33 @@ export interface MonqueOptions {
 				interval?: number;
 		  }
 		| undefined;
+
+	/**
+	 * Maximum number of concurrent jobs processed by this instance across all registered workers.
+	 *
+	 * If reached, the scheduler will stop claiming new jobs until active jobs complete.
+	 * Use this to prevent a single instance from overwhelming system resources.
+	 *
+	 * Note: This is an instance-level limit. Each worker still respects its own `concurrency`
+	 * setting, but the total across all workers cannot exceed this limit.
+	 *
+	 * @example
+	 * ```typescript
+	 * const monque = new Monque(db, {
+	 *   instanceConcurrency: 10, // Instance processes max 10 jobs total
+	 *   workerConcurrency: 5,    // Each worker defaults to 5 concurrent jobs
+	 * });
+	 *
+	 * // With 3 workers at concurrency 5, normally 15 jobs could run.
+	 * // With instanceConcurrency: 10, only 10 jobs run at any time.
+	 * ```
+	 */
+	instanceConcurrency?: number | undefined;
+
+	/**
+	 * Maximum number of concurrent jobs processed by this instance across all registered workers.
+	 *
+	 * @deprecated Use `instanceConcurrency` instead. Will be removed in a future major version.
+	 */
+	maxConcurrency?: number | undefined;
 }

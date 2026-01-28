@@ -24,7 +24,7 @@ import type { Db } from 'mongodb';
  * export class Server {}
  * ```
  */
-export interface MonqueTsedConfig extends Omit<MonqueOptions, 'db'> {
+export interface MonqueTsedConfig extends MonqueOptions {
 	/**
 	 * Enable or disable the Monque module.
 	 *
@@ -111,4 +111,37 @@ export interface MonqueTsedConfig extends Omit<MonqueOptions, 'db'> {
 	 * @default "default"
 	 */
 	mongooseConnectionId?: string;
+
+	/**
+	 * Disable job processing on this instance.
+	 *
+	 * When true, the module will initialize the database connection (allowing you to
+	 * enqueue jobs via MonqueService) but will NOT register workers or start the
+	 * polling loop. Useful for "Producer-only" nodes like API servers that only
+	 * enqueue jobs but don't process them.
+	 *
+	 * @example
+	 * ```typescript
+	 * // API Server (Producer-only)
+	 * @Configuration({
+	 *   monque: {
+	 *     dbFactory: async () => client.db('myapp'),
+	 *     disableJobProcessing: true, // Only enqueue, don't process
+	 *   }
+	 * })
+	 * export class ApiServer {}
+	 *
+	 * // Worker Server (Consumer)
+	 * @Configuration({
+	 *   monque: {
+	 *     dbFactory: async () => client.db('myapp'),
+	 *     // disableJobProcessing defaults to false - processes jobs
+	 *   }
+	 * })
+	 * export class WorkerServer {}
+	 * ```
+	 *
+	 * @default false
+	 */
+	disableJobProcessing?: boolean;
 }

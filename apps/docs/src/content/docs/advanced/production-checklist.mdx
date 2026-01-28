@@ -204,11 +204,11 @@ const monque = new Monque(db, {
 
 ## 6. Set Appropriate Concurrency
 
-Configure [`defaultConcurrency`](/monque/api/interfaces/monqueoptions/#defaultconcurrency) and per-worker concurrency based on your workload:
+Configure [`workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency) and per-worker concurrency based on your workload:
 
 ```typescript
 const monque = new Monque(db, {
-  defaultConcurrency: 5
+  workerConcurrency: 5
 });
 
 // CPU-bound: low concurrency
@@ -221,11 +221,77 @@ monque.register('api-sync', handler, { concurrency: 10 });
 monque.register('stripe-webhook', handler, { concurrency: 5 });
 ```
 
+### Instance-level Throttling
+
+Use [`instanceConcurrency`](/monque/api/interfaces/monqueoptions/#instanceconcurrency) to limit the total jobs processed by a single instance across all workers:
+
+```typescript
+const monque = new Monque(db, {
+  instanceConcurrency: 20,      // Instance-wide limit
+  workerConcurrency: 10         // Per-worker default
+});
+```
+
+This prevents a single instance from overwhelming system resources when running multiple high-concurrency workers.
+
 See [Concurrency Strategy](/monque/core-concepts/workers/#concurrency-strategy) for guidelines.
 
 ---
 
-## 7. Monitor Job Events
+## 7. Consider Producer-Consumer Architecture
+
+For high-scale deployments, separate job producers (API servers) from consumers (worker servers):
+
+### Benefits
+
+- **Independent Scaling**: Scale API and worker tiers separately based on load
+- **Resource Isolation**: API response times unaffected by background job processing
+- **Deployment Flexibility**: Deploy worker updates without touching API servers
+
+### Implementation
+
+**Ts.ED Integration:**
+
+```typescript
+// API Server (Producer-only)
+@Configuration({
+  monque: {
+    dbFactory: async () => client.db('myapp'),
+    disableJobProcessing: true  // Only enqueue, don't process
+  }
+})
+export class ApiServer {}
+
+// Worker Server (Consumer)
+@Configuration({
+  monque: {
+    dbFactory: async () => client.db('myapp'),
+    instanceConcurrency: 20  // Limit total concurrent jobs
+  }
+})
+export class WorkerServer {}
+```
+
+**Core Package:**
+
+```typescript
+// Producer: Initialize but don't start
+const producer = new Monque(db);
+await producer.initialize();
+// Don't call start() - just use enqueue()
+
+// Consumer: Full lifecycle
+const consumer = new Monque(db, { instanceConcurrency: 20 });
+consumer.register('my-job', handler);
+await consumer.initialize();
+await consumer.start();
+```
+
+See [Ts.ED Producer-only Mode](/monque/integrations/tsed/#producer-only-mode) for details.
+
+---
+
+## 8. Monitor Job Events
 
 Subscribe to events for observability:
 
@@ -263,7 +329,7 @@ See [`MonqueEventMap`](/monque/api/interfaces/monqueeventmap/) for all available
 
 ---
 
-## 8. Configure Job Retention
+## 9. Configure Job Retention
 
 Prevent unbounded database growth by configuring retention:
 
@@ -283,7 +349,7 @@ const monque = new Monque(db, {
 
 ---
 
-## 9. Ensure Index Permissions
+## 10. Ensure Index Permissions
 
 Monque creates MongoDB indexes during [`initialize()`](/monque/api/classes/monque/#initialize). Your database user must have index creation permissions.
 
@@ -310,6 +376,8 @@ See [Indexes](/monque/core-concepts/jobs/#indexes) for the complete list.
 - [ ] `SIGTERM` handler calls `monque.stop()`
 - [ ] `lockTimeout` is 2× longest job duration
 - [ ] Concurrency matches workload characteristics
+- [ ] `instanceConcurrency` configured if running multiple workers
+- [ ] Producer-consumer separation considered for high-scale deployments
 - [ ] Event handlers for `job:fail` and `stale:recovered`
 - [ ] Job retention is configured
 - [ ] Database user has index creation permissions (or indexes pre-created)

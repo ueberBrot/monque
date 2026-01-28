@@ -80,11 +80,13 @@ export class MonqueModule implements OnInit, OnDestroy {
 			this.logger.info('Monque: Connecting to MongoDB...');
 			await this.monque.initialize();
 
-			await this.registerWorkers();
-
-			await this.monque.start();
-
-			this.logger.info('Monque: Started successfully');
+			if (config.disableJobProcessing) {
+				this.logger.info('Monque: Job processing is disabled for this instance');
+			} else {
+				await this.registerWorkers();
+				await this.monque.start();
+				this.logger.info('Monque: Started successfully');
+			}
 		} catch (error) {
 			this.logger.error({
 				event: 'MONQUE_INIT_ERROR',

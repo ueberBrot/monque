@@ -41,7 +41,7 @@ const DEFAULTS = {
 	maxRetries: 10,
 	baseRetryInterval: 1000,
 	shutdownTimeout: 30000,
-	defaultConcurrency: 5,
+	workerConcurrency: 5,
 	lockTimeout: 1_800_000, // 30 minutes
 	recoverStaleJobs: true,
 	heartbeatInterval: 30000, // 30 seconds
@@ -139,10 +139,12 @@ export class Monque extends EventEmitter {
 			maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,
 			baseRetryInterval: options.baseRetryInterval ?? DEFAULTS.baseRetryInterval,
 			shutdownTimeout: options.shutdownTimeout ?? DEFAULTS.shutdownTimeout,
-			defaultConcurrency: options.defaultConcurrency ?? DEFAULTS.defaultConcurrency,
+			workerConcurrency:
+				options.workerConcurrency ?? options.defaultConcurrency ?? DEFAULTS.workerConcurrency,
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 			maxBackoffDelay: options.maxBackoffDelay,
+			instanceConcurrency: options.instanceConcurrency ?? options.maxConcurrency,
 			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 			jobRetention: options.jobRetention,
@@ -918,7 +920,7 @@ export class Monque extends EventEmitter {
 	 * ```
 	 */
 	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
-		const concurrency = options.concurrency ?? this.options.defaultConcurrency;
+		const concurrency = options.concurrency ?? this.options.workerConcurrency;
 
 		// Check for existing worker and throw unless replace is explicitly true
 		if (this.workers.has(name) && options.replace !== true) {

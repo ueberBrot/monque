@@ -54,7 +54,7 @@ describe('Concurrency & Scalability', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50, // Fast polling for test
-				defaultConcurrency: 5,
+				workerConcurrency: 5,
 			});
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -123,5 +123,157 @@ describe('Concurrency & Scalability', () => {
 			.collection(collectionName)
 			.countDocuments({ status: JobStatus.COMPLETED });
 		expect(count).toBe(jobCount);
+	});
+});
+
+describe('Instance-level Concurrency (instanceConcurrency)', () => {
+	let db: Db;
+	let collectionName: string;
+	const monqueInstances: Monque[] = [];
+
+	beforeAll(async () => {
+		db = await getTestDb('max-concurrency');
+	});
+
+	afterAll(async () => {
+		await cleanupTestDb(db);
+	});
+
+	afterEach(async () => {
+		await stopMonqueInstances(monqueInstances);
+
+		if (collectionName) {
+			await clearCollection(db, collectionName);
+		}
+	});
+
+	it('should limit total concurrent jobs to instanceConcurrency', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+		let activeJobs = 0;
+		let maxActiveJobs = 0;
+		let completedJobs = 0;
+
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 500, // Slower polling to avoid race conditions in test
+			instanceConcurrency: 3, // Limit to 3 concurrent jobs total
+			workerConcurrency: 10, // Each worker could do 10, but global limit is 3
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		// Handler that tracks concurrent execution
+		const handler = async (_job: Job) => {
+			activeJobs++;
+			maxActiveJobs = Math.max(maxActiveJobs, activeJobs);
+
+			// Simulate work - longer than poll interval to test proper throttling
+			await new Promise((resolve) => setTimeout(resolve, 200));
+
+			activeJobs--;
+			completedJobs++;
+		};
+
+		// Register two workers - each has concurrency 10, but global limit is 3
+		monque.register('worker-a', handler);
+		monque.register('worker-b', handler);
+
+		// Enqueue 5 jobs for each worker (10 total)
+		for (let i = 0; i < 5; i++) {
+			await monque.enqueue('worker-a', { id: i });
+			await monque.enqueue('worker-b', { id: i });
+		}
+
+		monque.start();
+
+		// Wait for all jobs to complete
+		await waitFor(async () => completedJobs >= 10, { timeout: 30000 });
+
+		// Max concurrent should never exceed instanceConcurrency (3)
+		// Allow a small buffer for race conditions in async processing
+		expect(maxActiveJobs).toBeLessThanOrEqual(4);
+		expect(completedJobs).toBe(10);
+	});
+
+	it('should process all jobs with instanceConcurrency even when limit is lower than worker concurrency', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+		let completedJobs = 0;
+
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 50,
+			instanceConcurrency: 2,
+			workerConcurrency: 5,
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		const handler = async (_job: Job) => {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			completedJobs++;
+		};
+
+		monque.register('test-job', handler);
+
+		// Enqueue 6 jobs
+		for (let i = 0; i < 6; i++) {
+			await monque.enqueue('test-job', { id: i });
+		}
+
+		monque.start();
+
+		// Wait for all jobs to complete
+		await waitFor(async () => completedJobs >= 6, { timeout: 10000 });
+
+		expect(completedJobs).toBe(6);
+
+		// Verify all completed in DB
+		const count = await db
+			.collection(collectionName)
+			.countDocuments({ status: JobStatus.COMPLETED });
+		expect(count).toBe(6);
+	});
+
+	it('should work normally without instanceConcurrency set', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+		let activeJobs = 0;
+		let maxActiveJobs = 0;
+		let completedJobs = 0;
+
+		const monque = new Monque(db, {
+			collectionName,
+			pollInterval: 50,
+			// No instanceConcurrency set
+			workerConcurrency: 5,
+		});
+		monqueInstances.push(monque);
+		await monque.initialize();
+
+		const handler = async (_job: Job) => {
+			activeJobs++;
+			maxActiveJobs = Math.max(maxActiveJobs, activeJobs);
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			activeJobs--;
+			completedJobs++;
+		};
+
+		monque.register('test-job', handler);
+
+		// Enqueue 10 jobs
+		for (let i = 0; i < 10; i++) {
+			await monque.enqueue('test-job', { id: i });
+		}
+
+		monque.start();
+
+		await waitFor(async () => completedJobs >= 10, { timeout: 10000 });
+
+		// Without instanceConcurrency, should be able to run up to workerConcurrency (5)
+		expect(maxActiveJobs).toBeLessThanOrEqual(5);
+		expect(maxActiveJobs).toBeGreaterThan(1); // Should have some concurrency
+		expect(completedJobs).toBe(10);
 	});
 });

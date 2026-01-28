@@ -16,7 +16,7 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 | [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
 | [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
 | [`now()`](/monque/api/classes/monque/#now) | Enqueue for immediate execution |
-| [`MonqueOptions.defaultConcurrency`](/monque/api/interfaces/monqueoptions/#defaultconcurrency) | Global concurrency default |
+| [`MonqueOptions.workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency) | Global concurrency default |
 
 ## Registering a Worker
 
@@ -55,7 +55,7 @@ Configure worker-specific settings via [`WorkerOptions`](/monque/api/interfaces/
 monque.register('heavy-computation', async (job) => {
   await compute(job.data);
 }, {
-  concurrency: 2 // Only 2 concurrent jobs (overrides defaultConcurrency)
+  concurrency: 2 // Only 2 concurrent jobs (overrides workerConcurrency)
 });
 ```
 
@@ -63,7 +63,7 @@ monque.register('heavy-computation', async (job) => {
 
 | Option        | Type     | Default                         | Description                             |
 | ------------- | -------- | ------------------------------- | --------------------------------------- |
-| `concurrency` | `number` | `5` (from `defaultConcurrency`) | Maximum concurrent jobs for this worker |
+| `concurrency` | `number` | `5` (from `workerConcurrency`)  | Maximum concurrent jobs for this worker |
 | `replace`     | `boolean` | `false`                         | Replace an existing worker with the same name instead of throwing |
 
 <Aside type="note">
@@ -172,7 +172,7 @@ Set in [`MonqueOptions`](/monque/api/interfaces/monqueoptions/):
 
 ```typescript
 const monque = new Monque(db, {
-  defaultConcurrency: 10 // All workers default to 10 concurrent jobs
+  workerConcurrency: 10 // All workers default to 10 concurrent jobs
 });
 ```
 
@@ -188,6 +188,28 @@ monque.register('video-transcode', handler, { concurrency: 2 });
 // External API calls: match rate limits
 monque.register('api-sync', handler, { concurrency: 5 });
 ```
+
+### Instance-level Concurrency
+
+Use [`instanceConcurrency`](/monque/api/interfaces/monqueoptions/#instanceconcurrency) to limit the total number of jobs processed by a single scheduler instance across all workers:
+
+```typescript
+const monque = new Monque(db, {
+  instanceConcurrency: 10,   // Instance processes max 10 jobs total
+  workerConcurrency: 5       // Each worker defaults to 5 concurrent jobs
+});
+
+// With 3 workers at concurrency 5, normally 15 jobs could run simultaneously.
+// With instanceConcurrency: 10, only 10 jobs run at any time across all workers.
+monque.register('emails', emailHandler);      // Up to 5 concurrent
+monque.register('notifications', notifyHandler); // Up to 5 concurrent
+monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
+// But total across all three never exceeds 10
+```
+
+<Aside type="tip">
+  Use `instanceConcurrency` to prevent a single instance from overwhelming system resources (CPU, memory, database connections) when running multiple high-concurrency workers.
+</Aside>
 
 ### Concurrency Strategy
 
