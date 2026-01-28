@@ -206,6 +206,43 @@ One of the key benefits of the Ts.ED integration is **Job Isolation**. Every job
 - State does not leak between different job executions.
 - You can use standard Ts.ED patterns for context-bound logic (e.g. `PlatformContext`).
 
+## Producer-only Mode
+
+In production environments, you may want to separate your API servers (producers) from your worker servers (consumers). Use `disableJobProcessing` to create producer-only instances:
+
+```typescript
+// API Server - Only enqueues jobs, doesn't process them
+@Configuration({
+  imports: [MonqueModule],
+  monque: {
+    dbFactory: async () => client.db("myapp"),
+    disableJobProcessing: true  // Producer-only mode
+  }
+})
+export class ApiServer {}
+
+// Worker Server - Processes jobs
+@Configuration({
+  imports: [MonqueModule],
+  monque: {
+    dbFactory: async () => client.db("myapp"),
+    // disableJobProcessing defaults to false
+  }
+})
+export class WorkerServer {}
+```
+
+<Aside type="note">
+  When `disableJobProcessing: true`:
+  - The database connection is still established
+  - `MonqueService` can enqueue jobs via `enqueue()`, `now()`, etc.
+  - Workers are **not** registered (even if `@Worker` decorators exist)
+  - The polling loop is **not** started
+  - `isHealthy()` returns `false` (since the scheduler isn't running)
+</Aside>
+
+This pattern enables horizontal scaling where API nodes focus on handling requests while dedicated worker nodes process background jobs.
+
 ## API Reference
 
 ### Services

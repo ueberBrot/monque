@@ -1,3 +1,5 @@
+import { MonqueError } from '@monque/core';
+
 /**
  * Generate a unique token for a worker controller.
  *
@@ -20,7 +22,7 @@ export function getWorkerToken(target: new (...args: unknown[]) => unknown): sym
 	const name = target.name?.trim();
 
 	if (!name) {
-		throw new Error('Worker class must have a non-empty name');
+		throw new MonqueError('Worker class must have a non-empty name');
 	}
 
 	return Symbol.for(`monque:worker:${name}`);

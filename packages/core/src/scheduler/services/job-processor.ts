@@ -16,23 +16,71 @@ export class JobProcessor {
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
+	 * Get the total number of active jobs across all workers.
+	 *
+	 * Used for instance-level throttling when `instanceConcurrency` is configured.
+	 */
+	private getTotalActiveJobs(): number {
+		let total = 0;
+		for (const worker of this.ctx.workers.values()) {
+			total += worker.activeJobs.size;
+		}
+		return total;
+	}
+
+	/**
+	 * Get the number of available slots considering the global instanceConcurrency limit.
+	 *
+	 * @param workerAvailableSlots - Available slots for the specific worker
+	 * @returns Number of slots available after applying global limit
+	 */
+	private getGloballyAvailableSlots(workerAvailableSlots: number): number {
+		const { instanceConcurrency } = this.ctx.options;
+
+		if (instanceConcurrency === undefined) {
+			return workerAvailableSlots;
+		}
+
+		const totalActive = this.getTotalActiveJobs();
+		const globalAvailable = instanceConcurrency - totalActive;
+
+		return Math.min(workerAvailableSlots, globalAvailable);
+	}
+
+	/**
 	 * Poll for available jobs and process them.
 	 *
 	 * Called at regular intervals (configured by `pollInterval`). For each registered worker,
 	 * attempts to acquire jobs up to the worker's available concurrency slots.
-	 * Aborts early if the scheduler is stopping (`isRunning` is false).
+	 * Aborts early if the scheduler is stopping (`isRunning` is false) or if
+	 * the instance-level `instanceConcurrency` limit is reached.
 	 */
 	async poll(): Promise<void> {
 		if (!this.ctx.isRunning()) {
 			return;
 		}
 
+		// Early exit if global instanceConcurrency is reached
+		const { instanceConcurrency } = this.ctx.options;
+
+		if (instanceConcurrency !== undefined && this.getTotalActiveJobs() >= instanceConcurrency) {
+			return;
+		}
+
 		for (const [name, worker] of this.ctx.workers) {
 			// Check if worker has capacity
-			const availableSlots = worker.concurrency - worker.activeJobs.size;
+			const workerAvailableSlots = worker.concurrency - worker.activeJobs.size;
+
+			if (workerAvailableSlots <= 0) {
+				continue;
+			}
+
+			// Apply global concurrency limit
+			const availableSlots = this.getGloballyAvailableSlots(workerAvailableSlots);
 
 			if (availableSlots <= 0) {
-				continue;
+				// Global limit reached, stop processing all workers
+				return;
 			}
 
 			// Try to acquire jobs up to available slots
@@ -40,9 +88,18 @@ export class JobProcessor {
 				if (!this.ctx.isRunning()) {
 					return;
 				}
+
+				// Re-check global limit before each acquisition
+				if (instanceConcurrency !== undefined && this.getTotalActiveJobs() >= instanceConcurrency) {
+					return;
+				}
+
 				const job = await this.acquireJob(name);
 
 				if (job) {
+					// Add to activeJobs immediately to correctly track concurrency
+					worker.activeJobs.set(job._id.toString(), job);
+
 					this.processJob(job, worker).catch((error: unknown) => {
 						this.ctx.emit('job:error', { error: error as Error, job });
 					});
@@ -121,8 +178,6 @@ export class JobProcessor {
 	 */
 	async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id.toString();
-		worker.activeJobs.set(jobId, job);
-
 		const startTime = Date.now();
 		this.ctx.emit('job:start', job);
 

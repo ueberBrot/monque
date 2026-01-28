@@ -1,3 +1,4 @@
+import { MonqueError } from '@monque/core';
 import { describe, expect, it } from 'vitest';
 
 import { validateDatabaseConfig } from '@/config';
@@ -19,19 +20,21 @@ describe('validateDatabaseConfig', () => {
 		expect(() => validateDatabaseConfig(config)).not.toThrow();
 	});
 
-	it('should throw if no strategies are provided', () => {
+	it('should throw MonqueError if no strategies are provided', () => {
 		const config = {} as MonqueTsedConfig;
+		expect(() => validateDatabaseConfig(config)).toThrow(MonqueError);
 		expect(() => validateDatabaseConfig(config)).toThrow(
 			"MonqueTsedConfig requires exactly one of 'db', 'dbFactory', or 'dbToken' to be set",
 		);
 	});
 
-	it('should throw if multiple strategies are provided', () => {
+	it('should throw MonqueError if multiple strategies are provided', () => {
 		const config = {
 			db: {},
 			dbFactory: () => ({}),
 		} as MonqueTsedConfig;
 
+		expect(() => validateDatabaseConfig(config)).toThrow(MonqueError);
 		expect(() => validateDatabaseConfig(config)).toThrow(
 			"MonqueTsedConfig accepts only one of 'db', 'dbFactory', or 'dbToken' - multiple were provided",
 		);

@@ -62,6 +62,106 @@ describe('JobProcessor', () => {
 
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
 		});
+
+		it('should exit early when instanceConcurrency is reached', async () => {
+			ctx.options.instanceConcurrency = 2;
+
+			const job1 = JobFactory.build();
+			const job2 = JobFactory.build();
+
+			const worker1: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 5,
+				activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
+			};
+			const worker2: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 5,
+				activeJobs: new Map<string, PersistedJob>([['job-2', job2]]),
+			};
+			ctx.workers.set('worker-1', worker1);
+			ctx.workers.set('worker-2', worker2);
+
+			await processor.poll();
+
+			// Should not attempt any acquisitions since instanceConcurrency (2) is already reached
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should limit job acquisition to available global slots', async () => {
+			ctx.options.instanceConcurrency = 3;
+
+			const job1 = JobFactory.build();
+			const newJob = JobFactory.build({ name: 'worker-2' });
+
+			const worker1: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 5,
+				activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
+			};
+			const worker2: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 5,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+			ctx.workers.set('worker-1', worker1);
+			ctx.workers.set('worker-2', worker2);
+
+			// Return job on first call, null on subsequent calls
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(newJob)
+				.mockResolvedValueOnce(null);
+
+			await processor.poll();
+
+			// With 1 active job and instanceConcurrency 3, only 2 more slots available globally
+			// Worker-1 has 4 worker slots but global limit is 2
+			// Should attempt acquisitions up to the global limit
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
+		});
+
+		it('should stop acquiring jobs when global limit is reached mid-poll', async () => {
+			ctx.options.instanceConcurrency = 2;
+
+			const newJob1 = JobFactory.build({ name: 'test-job' });
+			const newJob2 = JobFactory.build({ name: 'test-job' });
+
+			const worker: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 10,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+			ctx.workers.set('test-job', worker);
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(newJob1)
+				.mockResolvedValueOnce(newJob2)
+				.mockResolvedValue(null);
+
+			await processor.poll();
+
+			// Should acquire exactly 2 jobs (the instanceConcurrency limit)
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(2);
+		});
+
+		it('should work without instanceConcurrency (unlimited)', async () => {
+			// instanceConcurrency is undefined by default
+			expect(ctx.options.instanceConcurrency).toBeUndefined();
+
+			const testWorker: WorkerRegistration = {
+				handler: vi.fn().mockResolvedValue(undefined),
+				concurrency: 3,
+				activeJobs: new Map<string, PersistedJob>(),
+			};
+			ctx.workers.set('test-job', testWorker);
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
+
+			await processor.poll();
+
+			// Should try to acquire up to worker concurrency (3 attempts until null)
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	describe('acquireJob', () => {

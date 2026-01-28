@@ -10,11 +10,23 @@ import type { MonqueOptions } from '../types.js';
  * Resolved Monque options with all defaults applied.
  *
  * Required options have their defaults filled in, while truly optional
- * options (`maxBackoffDelay`, `jobRetention`) remain optional.
+ * options (`maxBackoffDelay`, `jobRetention`, `instanceConcurrency`) remain optional.
  */
 export interface ResolvedMonqueOptions
-	extends Required<Omit<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'>>,
-		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention'> {}
+	extends Required<
+			Omit<
+				MonqueOptions,
+				| 'maxBackoffDelay'
+				| 'jobRetention'
+				| 'instanceConcurrency'
+				| 'defaultConcurrency'
+				| 'maxConcurrency'
+			>
+		>,
+		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention' | 'instanceConcurrency'> {
+	// Ensure resolved options use the new naming convention
+	workerConcurrency: number;
+}
 /**
  * Shared context provided to all internal Monque services.
  *
