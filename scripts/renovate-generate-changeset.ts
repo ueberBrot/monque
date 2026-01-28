@@ -156,11 +156,9 @@ async function main(): Promise<void> {
 
 	const summaryLines: string[] = [];
 	for (const [pkgName, updates] of packageSummaries.entries()) {
-		const deps = updates
-			.slice(0, 6)
-			.map((u) => `${u.depName} (${String(u.from)} → ${String(u.to)})`)
-			.join(', ');
-		summaryLines.push(`- ${pkgName}: ${deps}`);
+		for (const u of updates) {
+			summaryLines.push(`- ${pkgName}: ${u.depName} (${String(u.from)} → ${String(u.to)})`);
+		}
 	}
 
 	const body = [
