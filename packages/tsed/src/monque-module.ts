@@ -8,9 +8,11 @@
 import {
 	type Job,
 	Monque,
+	MonqueError,
 	type MonqueOptions,
 	type ScheduleOptions,
 	type WorkerOptions,
+	WorkerRegistrationError,
 } from '@monque/core';
 import {
 	Configuration,
@@ -113,7 +115,7 @@ export class MonqueModule implements OnInit, OnDestroy {
 	 */
 	protected async registerWorkers(): Promise<void> {
 		if (!this.monque) {
-			throw new Error('Monque instance not initialized');
+			throw new MonqueError('Monque instance not initialized');
 		}
 
 		const monque = this.monque;
@@ -140,8 +142,9 @@ export class MonqueModule implements OnInit, OnDestroy {
 				const { fullName, method, opts, isCron, cronPattern } = worker;
 
 				if (registeredJobs.has(fullName)) {
-					throw new Error(
+					throw new WorkerRegistrationError(
 						`Monque: Duplicate job registration detected. Job "${fullName}" is already registered.`,
+						fullName,
 					);
 				}
 

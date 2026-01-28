@@ -114,7 +114,7 @@ describe('JobProcessor', () => {
 
 			await processor.poll();
 
-			// With 1 active job and maxConcurrency 3, only 2 more slots available globally
+			// With 1 active job and instanceConcurrency 3, only 2 more slots available globally
 			// Worker-1 has 4 worker slots but global limit is 2
 			// Should attempt acquisitions up to the global limit
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe('JobProcessor', () => {
 
 			await processor.poll();
 
-			// Should acquire exactly 2 jobs (the maxConcurrency limit)
+			// Should acquire exactly 2 jobs (the instanceConcurrency limit)
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(2);
 		});
 

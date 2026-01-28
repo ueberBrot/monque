@@ -4,6 +4,8 @@
  * Defines the configuration interface and TsED module augmentation.
  */
 
+import { MonqueError } from '@monque/core';
+
 import type { MonqueTsedConfig } from './types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,13 +49,13 @@ export function validateDatabaseConfig(config: MonqueTsedConfig): void {
 	const strategies = [config.db, config.dbFactory, config.dbToken].filter(Boolean);
 
 	if (strategies.length === 0) {
-		throw new Error(
+		throw new MonqueError(
 			"MonqueTsedConfig requires exactly one of 'db', 'dbFactory', or 'dbToken' to be set",
 		);
 	}
 
 	if (strategies.length > 1) {
-		throw new Error(
+		throw new MonqueError(
 			"MonqueTsedConfig accepts only one of 'db', 'dbFactory', or 'dbToken' - multiple were provided",
 		);
 	}

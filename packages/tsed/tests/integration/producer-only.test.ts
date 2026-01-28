@@ -5,7 +5,7 @@
  * but don't process them.
  */
 
-import type { Job } from '@monque/core';
+import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -81,7 +81,7 @@ describe('Producer-only Mode (disableJobProcessing)', () => {
 			const job = await db.collection('monque_jobs').findOne({ name: 'producer-test.job' });
 
 			expect(job).toBeDefined();
-			expect(job?.['status']).toBe('pending');
+			expect(job?.['status']).toBe(JobStatus.PENDING);
 		});
 
 		it('should report isHealthy as false', async () => {

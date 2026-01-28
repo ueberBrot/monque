@@ -16,7 +16,7 @@ This document defines the data structures and metadata used by the `@monque/tsed
 Configuration object passed to Ts.ED's `@Configuration` decorator.
 
 ```typescript
-interface MonqueTsedConfig extends Omit<MonqueOptions, 'db'> {
+interface MonqueTsedConfig extends MonqueOptions {
   /**
    * Enable/disable the Monque module.
    * When false, workers are not registered and lifecycle hooks are no-ops.

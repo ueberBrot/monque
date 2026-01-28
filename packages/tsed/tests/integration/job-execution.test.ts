@@ -1,4 +1,4 @@
-import type { Job } from '@monque/core';
+import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -49,18 +49,18 @@ describe('Job Execution Flow', () => {
 		// Check Pending
 		const pendingJob = await monqueService.getJob(job._id.toString());
 		expect(pendingJob).not.toBeNull();
-		expect(pendingJob?.status).toBe('pending');
+		expect(pendingJob?.status).toBe(JobStatus.PENDING);
 
 		// Wait for completion via DB polling
 		await waitFor(async () => {
 			const persistedJob = await monqueService.getJob(job._id.toString());
-			return persistedJob?.status === 'completed' && persistedJob?.updatedAt !== undefined;
+			return persistedJob?.status === JobStatus.COMPLETED && persistedJob?.updatedAt !== undefined;
 		});
 
 		// Check Completed
 		const completedJob = await monqueService.getJob(job._id.toString());
 		expect(completedJob).not.toBeNull();
-		expect(completedJob?.status).toBe('completed');
+		expect(completedJob?.status).toBe(JobStatus.COMPLETED);
 		expect(completedJob?.updatedAt).toBeDefined();
 	});
 
@@ -81,7 +81,7 @@ describe('Job Execution Flow', () => {
 		await waitFor(
 			async () => {
 				const persistedJob = await monqueService.getJob(job._id.toString());
-				return persistedJob?.status === 'completed';
+				return persistedJob?.status === JobStatus.COMPLETED;
 			},
 			{
 				timeout: 10000,
@@ -90,7 +90,7 @@ describe('Job Execution Flow', () => {
 
 		const completedJob = await monqueService.getJob(job._id.toString());
 		expect(completedJob).not.toBeNull();
-		expect(completedJob?.status).toBe('completed');
+		expect(completedJob?.status).toBe(JobStatus.COMPLETED);
 		// failedCount might be 1 (failed once)
 		expect(completedJob?.failCount).toBe(1);
 	});

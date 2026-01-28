@@ -1,4 +1,4 @@
-import type { Job } from '@monque/core';
+import { type Job, JobStatus } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -133,13 +133,13 @@ describe('Worker Registration Integration', () => {
 			await waitFor(
 				async () => {
 					const persistedJob = await monqueService.getJob(job._id.toString());
-					return persistedJob?.status === 'failed';
+					return persistedJob?.status === JobStatus.FAILED;
 				},
 				{ timeout: 10000 },
 			);
 
 			const failedJob = await monqueService.getJob(job._id.toString());
-			expect(failedJob?.status).toBe('failed');
+			expect(failedJob?.status).toBe(JobStatus.FAILED);
 			expect(failedJob?.failCount).toBe(2);
 			expect(ResilienceWorker.failCount).toBe(2);
 		});

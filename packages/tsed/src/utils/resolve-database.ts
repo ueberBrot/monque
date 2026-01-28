@@ -4,6 +4,7 @@
  * Multi-strategy database resolution for flexible MongoDB connection handling.
  */
 
+import { ConnectionError } from '@monque/core';
 import type { TokenProvider } from '@tsed/di';
 import type { Db } from 'mongodb';
 
@@ -66,7 +67,7 @@ export async function resolveDatabase(
 	// Strategy 3: DI token resolution
 	if (config.dbToken) {
 		if (!injectorFn) {
-			throw new Error(
+			throw new ConnectionError(
 				'MonqueTsedConfig.dbToken requires an injector function to resolve the database',
 			);
 		}
@@ -74,7 +75,7 @@ export async function resolveDatabase(
 		const resolved = injectorFn(config.dbToken);
 
 		if (!resolved) {
-			throw new Error(
+			throw new ConnectionError(
 				`Could not resolve database from token: ${String(config.dbToken)}. ` +
 					'Make sure the provider is registered in the DI container.',
 			);
@@ -87,7 +88,7 @@ export async function resolveDatabase(
 			const connection = resolved.get(connectionId);
 
 			if (!connection) {
-				throw new Error(
+				throw new ConnectionError(
 					`MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
 						'Ensure the connection ID is correct and the connection is established.',
 				);
@@ -106,7 +107,7 @@ export async function resolveDatabase(
 
 		// Default: Assume it is a native Db instance
 		if (typeof resolved !== 'object' || resolved === null || !('collection' in resolved)) {
-			throw new Error(
+			throw new ConnectionError(
 				`Resolved value from token "${String(config.dbToken)}" does not appear to be a valid MongoDB Db instance.`,
 			);
 		}
@@ -115,5 +116,5 @@ export async function resolveDatabase(
 	}
 
 	// No strategy provided
-	throw new Error("MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set");
+	throw new ConnectionError("MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set");
 }

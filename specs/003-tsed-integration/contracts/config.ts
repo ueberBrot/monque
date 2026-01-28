@@ -18,7 +18,7 @@ import type { Db } from 'mongodb';
  * Extends MonqueOptions with Ts.ED-specific settings for database resolution
  * and module behavior.
  */
-export interface MonqueTsedConfig extends Omit<MonqueOptions, 'db'> {
+export interface MonqueTsedConfig extends MonqueOptions {
 	/**
 	 * Enable or disable the Monque module.
 	 *

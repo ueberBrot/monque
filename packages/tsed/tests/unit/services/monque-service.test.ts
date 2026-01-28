@@ -1,6 +1,7 @@
 /**
  * Unit tests for MonqueService (T022)
  */
+import { JobStatus } from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -61,8 +62,8 @@ describe('MonqueService', () => {
 				enqueue: vi.fn().mockResolvedValue({ _id: 'job-1' }),
 				now: vi.fn().mockResolvedValue({ _id: 'job-2' }),
 				schedule: vi.fn().mockResolvedValue({ _id: 'job-3' }),
-				cancelJob: vi.fn().mockResolvedValue({ _id: 'job-1', status: 'cancelled' }),
-				retryJob: vi.fn().mockResolvedValue({ _id: 'job-1', status: 'pending' }),
+				cancelJob: vi.fn().mockResolvedValue({ _id: 'job-1', status: JobStatus.CANCELLED }),
+				retryJob: vi.fn().mockResolvedValue({ _id: 'job-1', status: JobStatus.PENDING }),
 				rescheduleJob: vi.fn().mockResolvedValue({ _id: 'job-1' }),
 				deleteJob: vi.fn().mockResolvedValue(true),
 				cancelJobs: vi.fn().mockResolvedValue({ count: 5 }),
@@ -119,13 +120,13 @@ describe('MonqueService', () => {
 			it('should delegate cancelJob to monque', async () => {
 				const result = await service.cancelJob('job-1');
 				expect(mockMonque.cancelJob).toHaveBeenCalledWith('job-1');
-				expect(result).toEqual({ _id: 'job-1', status: 'cancelled' });
+				expect(result).toEqual({ _id: 'job-1', status: JobStatus.CANCELLED });
 			});
 
 			it('should delegate retryJob to monque', async () => {
 				const result = await service.retryJob('job-1');
 				expect(mockMonque.retryJob).toHaveBeenCalledWith('job-1');
-				expect(result).toEqual({ _id: 'job-1', status: 'pending' });
+				expect(result).toEqual({ _id: 'job-1', status: JobStatus.PENDING });
 			});
 
 			it('should delegate rescheduleJob to monque', async () => {
@@ -151,7 +152,7 @@ describe('MonqueService', () => {
 			});
 
 			it('should delegate retryJobs to monque', async () => {
-				const filter = { status: 'failed' } as const;
+				const filter = { status: JobStatus.FAILED } as const;
 				const result = await service.retryJobs(filter);
 				expect(mockMonque.retryJobs).toHaveBeenCalledWith(filter);
 				expect(result).toEqual({ count: 3 });

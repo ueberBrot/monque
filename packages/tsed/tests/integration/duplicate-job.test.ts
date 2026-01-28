@@ -1,4 +1,4 @@
-import type { Job } from '@monque/core';
+import { type Job, JobStatus, WorkerRegistrationError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -23,6 +23,13 @@ describe('Duplicate Validation & Idempotency', () => {
 				@Worker('job')
 				async handler(_job: Job) {}
 			}
+
+			await expect(
+				bootstrapMonque({
+					imports: [EphemeralDuplicateController1, EphemeralDuplicateController2],
+					connectionStrategy: 'db',
+				}),
+			).rejects.toThrow(WorkerRegistrationError);
 
 			await expect(
 				bootstrapMonque({
@@ -73,7 +80,7 @@ describe('Duplicate Validation & Idempotency', () => {
 			expect(stats.total).toBe(1);
 
 			// Mark the job as completed
-			await collection.updateOne({ _id: job1._id }, { $set: { status: 'completed' } });
+			await collection.updateOne({ _id: job1._id }, { $set: { status: JobStatus.COMPLETED } });
 
 			// Third Enqueue (Same uniqueKey, but previous job is completed)
 			const job3 = await monqueService.enqueue(

@@ -150,14 +150,27 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 	it('should limit total concurrent jobs to instanceConcurrency', async () => {
 		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
-		let activeJobs = 0;
-		let maxActiveJobs = 0;
-		let completedJobs = 0;
+		const instanceConcurrency = 3;
+		const stats = {
+			active: 0,
+			max: 0,
+			completed: 0,
+			inc() {
+				this.active++;
+				if (this.active > this.max) {
+					this.max = this.active;
+				}
+			},
+			dec() {
+				this.active--;
+				this.completed++;
+			},
+		};
 
 		const monque = new Monque(db, {
 			collectionName,
 			pollInterval: 500, // Slower polling to avoid race conditions in test
-			instanceConcurrency: 3, // Limit to 3 concurrent jobs total
+			instanceConcurrency, // Limit to 3 concurrent jobs total
 			workerConcurrency: 10, // Each worker could do 10, but global limit is 3
 		});
 		monqueInstances.push(monque);
@@ -165,14 +178,12 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 
 		// Handler that tracks concurrent execution
 		const handler = async (_job: Job) => {
-			activeJobs++;
-			maxActiveJobs = Math.max(maxActiveJobs, activeJobs);
+			stats.inc();
 
 			// Simulate work - longer than poll interval to test proper throttling
 			await new Promise((resolve) => setTimeout(resolve, 200));
 
-			activeJobs--;
-			completedJobs++;
+			stats.dec();
 		};
 
 		// Register two workers - each has concurrency 10, but global limit is 3
@@ -188,12 +199,11 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		monque.start();
 
 		// Wait for all jobs to complete
-		await waitFor(async () => completedJobs >= 10, { timeout: 30000 });
+		await waitFor(async () => stats.completed >= 10, { timeout: 30000 });
 
 		// Max concurrent should never exceed instanceConcurrency (3)
-		// Allow a small buffer for race conditions in async processing
-		expect(maxActiveJobs).toBeLessThanOrEqual(4);
-		expect(completedJobs).toBe(10);
+		expect(stats.max).toBeLessThanOrEqual(instanceConcurrency);
+		expect(stats.completed).toBe(10);
 	});
 
 	it('should process all jobs with instanceConcurrency even when limit is lower than worker concurrency', async () => {
