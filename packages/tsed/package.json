@@ -69,9 +69,9 @@
 	},
 	"peerDependencies": {
 		"@monque/core": "^1.1.2",
-		"@tsed/core": "^8.24.0",
-		"@tsed/di": "^8.24.0",
-		"@tsed/mongoose": "^8.24.0",
+		"@tsed/core": "^8.24.1",
+		"@tsed/di": "^8.24.1",
+		"@tsed/mongoose": "^8.24.1",
 		"mongodb": "^7.0.0"
 	},
 	"peerDependenciesMeta": {
