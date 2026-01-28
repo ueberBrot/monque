@@ -70,6 +70,7 @@ jobs:
             ${{ runner.os }}-bun-
 
       - name: Fetch base branch
+        if: github.event_name == 'pull_request'
         run: git fetch origin ${{ github.base_ref || 'main' }}:${{ github.base_ref || 'main' }}
 
       - name: Install Dependencies
