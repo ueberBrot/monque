@@ -1,12 +1,12 @@
 name: Deploy Docs to GitHub Pages
 
 on:
-  workflow_run:
-    workflows: ["Release"]
+  push:
     branches: [main]
-    types:
-      - completed
+    paths:
+      - 'apps/docs/**'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -18,8 +18,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    name: Check Deployment Condition
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.decide.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 1
+
+      - name: Decide whether to deploy
+        id: decide
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "workflow_call" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            # On push, only deploy if there are no pending changesets
+            if [ -d .changeset ]; then
+              # Count .md files in .changeset excluding README.md
+              COUNT=$(find .changeset -name "*.md" ! -name "README.md" | wc -l | xargs)
+              if [ "$COUNT" -eq "0" ]; then
+                echo "should_deploy=true" >> $GITHUB_OUTPUT
+              else
+                echo "Pending changesets found. Documentation will be updated on release."
+                echo "should_deploy=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "should_deploy=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
   build:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
