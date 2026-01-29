@@ -1,5 +1,24 @@
 # @monque/tsed
 
+## 1.0.0
+
+### Major Changes
+
+- [#113](https://github.com/ueberBrot/monque/pull/113) [`94a25d0`](https://github.com/ueberBrot/monque/commit/94a25d0f64f394af72c06a5457db5431df996c45) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Rename `@Worker` and `@WorkerController` to `@Job` and `@JobController`.
+
+  This is a breaking change that aligns the terminology with the core package and general job queue conventions.
+
+  - Renamed `@Worker` decorator to `@Job`
+  - Renamed `@WorkerController` decorator to `@JobController`
+  - Renamed internal metadata types and store keys to use "Job" instead of "Worker" (e.g., `JobStore`, `JobMetadata`)
+  - Updated logging and constants to reflect the change
+  - Added `disableJobProcessing` option to run Ts.ED instances in producer-only mode. When enabled, the instance can enqueue jobs and manage schedules but will not process any jobs.
+
+### Patch Changes
+
+- Updated dependencies [[`9b7f44f`](https://github.com/ueberBrot/monque/commit/9b7f44f5c1f6b4aa4215e571189cc03cbaa49865)]:
+  - @monque/core@1.2.0
+
 ## 0.1.0
 
 ### Minor Changes
