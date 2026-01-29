@@ -1,5 +1,15 @@
 # @monque/core
 
+## 1.2.0
+
+### Minor Changes
+
+- [#112](https://github.com/ueberBrot/monque/pull/112) [`9b7f44f`](https://github.com/ueberBrot/monque/commit/9b7f44f5c1f6b4aa4215e571189cc03cbaa49865) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add instance-level concurrency throttling and deprecated old naming conventions.
+
+  - Added `instanceConcurrency` option (formerly `maxConcurrency`) to limit the total number of jobs processed concurrently across all workers on a single Monque instance.
+  - Added `workerConcurrency` as a clearer alias for `defaultConcurrency`.
+  - Deprecated `maxConcurrency` and `defaultConcurrency` in favor of the new explicit names. They will be removed in the next major version.
+
 ## 1.1.2
 
 ### Patch Changes
