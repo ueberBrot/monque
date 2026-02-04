@@ -8,57 +8,87 @@
 		"group:monorepos",
 		"helpers:pinGitHubActionDigests"
 	],
-	"enabledManagers": ["bun", "github-actions"],
+	"enabledManagers": [
+		"bun",
+		"github-actions"
+	],
 	"timezone": "Europe/Brussels",
-	"labels": ["dependencies"],
+	"labels": [
+		"dependencies"
+	],
 	"rangeStrategy": "bump",
 	"prConcurrentLimit": 4,
 	"prHourlyLimit": 2,
 	"lockFileMaintenance": {
 		"enabled": true,
-		"schedule": ["before 6am on monday"],
+		"schedule": [
+			"before 6am on monday"
+		],
 		"automerge": true,
 		"platformAutomerge": true
 	},
 	"packageRules": [
 		{
 			"description": "Do not automerge major updates",
-			"matchUpdateTypes": ["major"],
-			"addLabels": ["dependencies:major"],
+			"matchUpdateTypes": [
+				"major"
+			],
+			"addLabels": [
+				"dependencies:major"
+			],
 			"automerge": false
 		},
 		{
 			"description": "Do not automerge peer dependency changes (library API compatibility)",
-			"matchDepTypes": ["peerDependencies"],
+			"matchDepTypes": [
+				"peerDependencies"
+			],
 			"automerge": false
 		},
 		{
 			"description": "Automerge non-major dev dependency updates",
-			"matchDepTypes": ["devDependencies"],
-			"matchUpdateTypes": ["minor", "patch"],
+			"matchDepTypes": [
+				"devDependencies"
+			],
+			"matchUpdateTypes": [
+				"minor",
+				"patch"
+			],
 			"groupName": "devDependencies (non-major)",
 			"automerge": true,
 			"platformAutomerge": true
 		},
 		{
 			"description": "Group & automerge GitHub Actions digest updates",
-			"matchManagers": ["github-actions"],
-			"matchUpdateTypes": ["digest"],
+			"matchManagers": [
+				"github-actions"
+			],
+			"matchUpdateTypes": [
+				"digest"
+			],
 			"groupName": "github-actions",
 			"automerge": true,
 			"platformAutomerge": true
 		},
 		{
 			"description": "Group docs-site dependency updates",
-			"matchFileNames": ["apps/docs/**"],
-			"matchUpdateTypes": ["minor", "patch"],
+			"matchFileNames": [
+				"apps/docs/**"
+			],
+			"matchUpdateTypes": [
+				"minor",
+				"patch"
+			],
 			"groupName": "docs (non-major)",
 			"automerge": true,
 			"platformAutomerge": true
 		},
 		{
 			"description": "Group package testing tool updates",
-			"matchUpdateTypes": ["minor", "patch"],
+			"matchUpdateTypes": [
+				"minor",
+				"patch"
+			],
 			"groupName": "package testing (non-major)",
 			"automerge": true,
 			"platformAutomerge": true,
@@ -73,25 +103,45 @@
 		},
 		{
 			"description": "Ignore minor/patch/pin updates for Node.js to keep ranges wide and avoid aggressive pinning",
-			"matchPackageNames": ["node"],
-			"matchUpdateTypes": ["minor", "patch", "pin"],
+			"matchPackageNames": [
+				"node"
+			],
+			"matchUpdateTypes": [
+				"minor",
+				"patch",
+				"pin"
+			],
 			"enabled": false
 		},
 		{
 			"description": "Group Ts.ED updates (manual)",
-			"matchFileNames": ["packages/tsed/**"],
-			"matchPackagePatterns": ["^@tsed/"],
-			"matchUpdateTypes": ["minor", "patch"],
+			"matchFileNames": [
+				"packages/tsed/**"
+			],
+			"matchUpdateTypes": [
+				"minor",
+				"patch"
+			],
 			"groupName": "tsed (non-major)",
-			"automerge": false
+			"automerge": false,
+			"matchPackageNames": [
+				"/^@tsed//"
+			]
 		},
 		{
 			"description": "Group Monque updates (manual)",
-			"matchFileNames": ["packages/tsed/**"],
-			"matchPackagePatterns": ["^@monque/"],
-			"matchUpdateTypes": ["minor", "patch"],
+			"matchFileNames": [
+				"packages/tsed/**"
+			],
+			"matchUpdateTypes": [
+				"minor",
+				"patch"
+			],
 			"groupName": "monque (non-major)",
-			"automerge": false
+			"automerge": false,
+			"matchPackageNames": [
+				"/^@monque//"
+			]
 		}
 	]
 }
