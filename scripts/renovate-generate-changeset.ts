@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { glob, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 function sh(cmd: string, args: string[]): string {
 	return execFileSync(cmd, args, { encoding: 'utf8' }).trim();
@@ -106,8 +106,7 @@ async function main(): Promise<void> {
 	// If root changed, we must check all packages in packages/*
 	const packagesToScan = new Set<string>(packageJsonPaths.filter((p) => p.startsWith('packages/')));
 	if (isRootChanged) {
-		const allPackages = sh('ls', ['-d', 'packages/*/package.json']).split('\n');
-		for (const p of allPackages) {
+		for await (const p of glob('packages/*/package.json')) {
 			if (p) packagesToScan.add(p);
 		}
 	}
