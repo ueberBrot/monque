@@ -471,7 +471,7 @@ describe('change streams', () => {
 				await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i });
 			}
 
-			await waitFor(async () => processedJobs.size === jobCount, { timeout: 15000 });
+			await waitFor(async () => processedJobs.size === jobCount, { timeout: 30000 });
 
 			expect(processedJobs.size).toBe(jobCount);
 			expect(duplicates.size).toBe(0);

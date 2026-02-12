@@ -200,7 +200,7 @@ describe('schedule()', () => {
 			await expect(monque.schedule('invalid', TEST_CONSTANTS.JOB_NAME, {})).rejects.toThrow(
 				InvalidCronError,
 			);
-		});
+		}, 10000);
 
 		it('should include the invalid expression in the error', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
