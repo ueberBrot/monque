@@ -80,18 +80,18 @@
 		{
 			"description": "Group Ts.ED updates (manual)",
 			"matchFileNames": ["packages/tsed/**"],
-			"matchPackagePatterns": ["^@tsed/"],
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "tsed (non-major)",
-			"automerge": false
+			"automerge": false,
+			"matchPackageNames": ["/^@tsed//"]
 		},
 		{
 			"description": "Group Monque updates (manual)",
 			"matchFileNames": ["packages/tsed/**"],
-			"matchPackagePatterns": ["^@monque/"],
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "monque (non-major)",
-			"automerge": false
+			"automerge": false,
+			"matchPackageNames": ["/^@monque//"]
 		}
 	]
 }
