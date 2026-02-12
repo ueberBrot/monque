@@ -117,7 +117,7 @@ export function getTestDb(): Db {
 		const mongooseService = PlatformTest.get<MongooseService>(MongooseService);
 		if (mongooseService) {
 			const conn = mongooseService.get('default');
-			if (conn?.db) return conn.db;
+			if (conn?.db) return conn.db as unknown as Db;
 		}
 	} catch (_e) {
 		// Ignore
