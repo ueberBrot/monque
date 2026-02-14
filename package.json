@@ -76,7 +76,7 @@
 		"lefthook": "^2.1.1",
 		"publint": "^0.3.17",
 		"rimraf": "^6.1.2",
-		"turbo": "^2.8.7",
+		"turbo": "^2.8.8",
 		"typescript": "^5.9.3",
 		"unplugin-unused": "^0.5.7"
 	}
