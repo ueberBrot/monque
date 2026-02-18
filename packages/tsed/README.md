@@ -26,12 +26,12 @@ A **Ts.ED** integration for **Monque**, a robust, type-safe MongoDB job queue fo
 
 ## Features
 
-- 🎯 **Decorator-based API**: `@JobController`, `@Job`, and `@Cron` for declarative job handling.
-- 💉 **Dependency Injection**: Full support for Ts.ED DI (inject Services/Providers into your jobs).
-- 🔒 **Job Isolation**: Each job execution runs in a dedicated `DIContext` with Request Scope support.
-- 🔍 **Type Safety**: Leverage TypeScript generics for fully typed job payloads.
-- ⚡ **Full Monque Power**: Complete access to all `@monque/core` features (backoff, heartbeats, atomic locking).
-- 🛠️ **Seamless Integration**: Native lifecycle hooks support (`$onInit`, `$onDestroy`) for graceful scheduler management.
+- **Decorator-based API**: `@JobController`, `@Job`, and `@Cron` for declarative job handling.
+- **Dependency Injection**: Full support for Ts.ED DI (inject Services/Providers into your jobs).
+- **Job Isolation**: Each job execution runs in a dedicated `DIContext` with Request Scope support.
+- **Type Safety**: Leverage TypeScript generics for fully typed job payloads.
+- **Full Monque Power**: Complete access to all `@monque/core` features (backoff, heartbeats, atomic locking).
+- **Seamless Integration**: Native lifecycle hooks support (`$onInit`, `$onDestroy`) for graceful scheduler management.
 
 ## Installation
 

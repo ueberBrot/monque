@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  📚 <a href="https://ueberBrot.github.io/monque/"><b>Documentation</b></a> | 🚀 <a href="https://ueberBrot.github.io/monque/getting-started/quick-start/"><b>Quick Start</b></a>
+  <a href="https://ueberBrot.github.io/monque/"><b>Documentation</b></a> | <a href="https://ueberBrot.github.io/monque/getting-started/quick-start/"><b>Quick Start</b></a>
 </p>
 
 ## Packages
@@ -44,14 +44,14 @@
 
 ## Features
 
-- 🔒 **Atomic Locking** - Prevents duplicate job processing across multiple schedulers using MongoDB atomic operations
-- 💓 **Heartbeat Monitoring** - Automatic stale job detection and recovery
-- 🛡️ **Type-Safe** - Full TypeScript support with generics for job payloads
-- 🔌 **Framework Agnostic** - Works with any Node.js framework
-- 🔔 **Event-Driven** - Subscribe to job lifecycle events for observability and integrations
-- 📡 **Change Streams** - Real-time job notifications via MongoDB Change Streams (polling remains as a safety net)
-- ⏰ **Cron Scheduling** - Schedule recurring jobs with standard 5-field cron expressions
-- 🔄 **Exponential Backoff** - Automatic retries with configurable exponential backoff
+- **Atomic Locking** - Prevents duplicate job processing across multiple schedulers using MongoDB atomic operations
+- **Heartbeat Monitoring** - Automatic stale job detection and recovery
+- **Type-Safe** - Full TypeScript support with generics for job payloads
+- **Framework Agnostic** - Works with any Node.js framework
+- **Event-Driven** - Subscribe to job lifecycle events for observability and integrations
+- **Change Streams** - Real-time job notifications via MongoDB Change Streams (polling remains as a safety net)
+- **Cron Scheduling** - Schedule recurring jobs with standard 5-field cron expressions
+- **Exponential Backoff** - Automatic retries with configurable exponential backoff
 
 ## Quick Start
 
