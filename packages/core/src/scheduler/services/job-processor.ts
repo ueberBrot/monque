@@ -13,6 +13,9 @@ import type { SchedulerContext } from './types.js';
  * @internal Not part of public API.
  */
 export class JobProcessor {
+	/** Guard flag to prevent concurrent poll() execution */
+	private _isPolling = false;
+
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
@@ -56,10 +59,23 @@ export class JobProcessor {
 	 * the instance-level `instanceConcurrency` limit is reached.
 	 */
 	async poll(): Promise<void> {
-		if (!this.ctx.isRunning()) {
+		if (!this.ctx.isRunning() || this._isPolling) {
 			return;
 		}
 
+		this._isPolling = true;
+
+		try {
+			await this._doPoll();
+		} finally {
+			this._isPolling = false;
+		}
+	}
+
+	/**
+	 * Internal poll implementation.
+	 */
+	private async _doPoll(): Promise<void> {
 		// Early exit if global instanceConcurrency is reached
 		const { instanceConcurrency } = this.ctx.options;
 
