@@ -1,5 +1,16 @@
 # @monque/tsed
 
+## 2.0.0
+
+### Minor Changes
+
+- [#163](https://github.com/ueberBrot/monque/pull/163) [`2d542f6`](https://github.com/ueberBrot/monque/commit/2d542f6b78a8ff9b39ec06a7a5217a3bf05f3e02) Thanks [@ueberBrot](https://github.com/ueberBrot)! - - @monque/tsed: mongodb (^7.0.0 → ^7.1.0)
+
+### Patch Changes
+
+- Updated dependencies [[`b5fcaf8`](https://github.com/ueberBrot/monque/commit/b5fcaf8be2a49fb1ba97b8d3d9f28f00850f77a1), [`2f83396`](https://github.com/ueberBrot/monque/commit/2f833966d7798307deaa7a1e655e0623cfb42a3e)]:
+  - @monque/core@1.3.0
+
 ## 1.0.0
 
 ### Major Changes
