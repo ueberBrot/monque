@@ -64,9 +64,9 @@
 			"platformAutomerge": true,
 			"matchPackageNames": [
 				"/^vitest$/",
-				"/^@vitest//",
-				"/^@testcontainers//",
-				"/^@faker-js//",
+				"/^@vitest/",
+				"/^@testcontainers/",
+				"/^@faker-js/",
 				"/^fishery$/",
 				"@types/node"
 			]
@@ -83,7 +83,7 @@
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "tsed (non-major)",
 			"automerge": false,
-			"matchPackageNames": ["/^@tsed//"]
+			"matchPackageNames": ["/^@tsed/"]
 		},
 		{
 			"description": "Group Monque updates (manual)",
@@ -91,7 +91,7 @@
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "monque (non-major)",
 			"automerge": false,
-			"matchPackageNames": ["/^@monque//"]
+			"matchPackageNames": ["/^@monque/"]
 		}
 	]
 }
