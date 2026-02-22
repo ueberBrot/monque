@@ -58,6 +58,7 @@
 		},
 		{
 			"description": "Group package testing tool updates",
+			"matchFileNames": ["packages/core/**", "packages/tsed/**"],
 			"matchUpdateTypes": ["minor", "patch"],
 			"groupName": "package testing (non-major)",
 			"automerge": true,
