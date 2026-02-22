@@ -90,9 +90,9 @@
 		"@tsed/testcontainers-mongo": "^8.24.1",
 		"@types/node": "^22.0.0",
 		"@vitest/coverage-v8": "^4.0.18",
-		"mongodb": "^7.0.0",
-		"testcontainers": "^11.11.0",
-		"tsdown": "^0.20.1",
+		"mongodb": "^7.1.0",
+		"testcontainers": "^11.12.0",
+		"tsdown": "^0.20.3",
 		"vitest": "^4.0.18"
 	}
 }
