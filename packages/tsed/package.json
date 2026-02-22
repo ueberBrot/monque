@@ -72,7 +72,7 @@
 		"@tsed/core": "^8.24.1",
 		"@tsed/di": "^8.24.1",
 		"@tsed/mongoose": "^8.24.1",
-		"mongodb": "catalog:"
+		"mongodb": "^7.0.0"
 	},
 	"peerDependenciesMeta": {
 		"@tsed/mongoose": {
@@ -81,18 +81,18 @@
 	},
 	"devDependencies": {
 		"@monque/core": "workspace:*",
-		"@testcontainers/mongodb": "catalog:",
-		"@total-typescript/ts-reset": "catalog:",
+		"@testcontainers/mongodb": "^11.11.0",
+		"@total-typescript/ts-reset": "^0.6.1",
 		"@tsed/core": "^8.24.1",
 		"@tsed/di": "^8.24.1",
 		"@tsed/mongoose": "^8.24.1",
 		"@tsed/platform-http": "^8.24.1",
 		"@tsed/testcontainers-mongo": "^8.24.1",
-		"@types/node": "catalog:",
-		"@vitest/coverage-v8": "catalog:",
-		"mongodb": "catalog:",
+		"@types/node": "^22.0.0",
+		"@vitest/coverage-v8": "^4.0.18",
+		"mongodb": "^7.0.0",
 		"testcontainers": "^11.11.0",
-		"tsdown": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "^0.20.1",
+		"vitest": "^4.0.18"
 	}
 }

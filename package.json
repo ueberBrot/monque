@@ -19,21 +19,10 @@
 	"overrides": {
 		"mongodb": "^7.1.0"
 	},
-	"workspaces": {
-		"packages": [
-			"packages/*",
-			"apps/*"
-		],
-		"catalog": {
-			"@testcontainers/mongodb": "^11.11.0",
-			"@total-typescript/ts-reset": "^0.6.1",
-			"@types/node": "^22.0.0",
-			"@vitest/coverage-v8": "^4.0.18",
-			"mongodb": "^7.0.0",
-			"tsdown": "^0.20.1",
-			"vitest": "^4.0.18"
-		}
-	},
+	"workspaces": [
+		"packages/*",
+		"apps/*"
+	],
 	"scripts": {
 		"prepare": "lefthook install",
 		"build": "turbo build",
@@ -71,7 +60,7 @@
 		"@biomejs/biome": "^2.4.4",
 		"@changesets/changelog-github": "^0.5.2",
 		"@changesets/cli": "^2.29.8",
-		"@types/node": "catalog:",
+		"@types/node": "^22.0.0",
 		"knip": "^5.85.0",
 		"lefthook": "^2.1.1",
 		"publint": "^0.3.17",
