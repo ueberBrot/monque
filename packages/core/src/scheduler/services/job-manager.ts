@@ -1,12 +1,6 @@
-import { ObjectId, type WithId } from 'mongodb';
+import { ObjectId } from 'mongodb';
 
-import {
-	type BulkOperationResult,
-	type Job,
-	type JobSelector,
-	JobStatus,
-	type PersistedJob,
-} from '@/jobs';
+import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
 import { buildSelectorQuery } from '@/scheduler';
 import { JobStateError } from '@/shared';
 
@@ -49,17 +43,15 @@ export class JobManager {
 		const jobDoc = await this.ctx.collection.findOne({ _id });
 		if (!jobDoc) return null;
 
-		const currentJob = jobDoc as unknown as WithId<Job>;
-
-		if (currentJob.status === JobStatus.CANCELLED) {
-			return this.ctx.documentToPersistedJob(currentJob);
+		if (jobDoc['status'] === JobStatus.CANCELLED) {
+			return this.ctx.documentToPersistedJob(jobDoc);
 		}
 
-		if (currentJob.status !== JobStatus.PENDING) {
+		if (jobDoc['status'] !== JobStatus.PENDING) {
 			throw new JobStateError(
-				`Cannot cancel job in status '${currentJob.status}'`,
+				`Cannot cancel job in status '${jobDoc['status']}'`,
 				jobId,
-				currentJob.status,
+				jobDoc['status'],
 				'cancel',
 			);
 		}
@@ -183,13 +175,11 @@ export class JobManager {
 
 		if (!currentJobDoc) return null;
 
-		const currentJob = currentJobDoc as unknown as WithId<Job>;
-
-		if (currentJob.status !== JobStatus.PENDING) {
+		if (currentJobDoc['status'] !== JobStatus.PENDING) {
 			throw new JobStateError(
-				`Cannot reschedule job in status '${currentJob.status}'`,
+				`Cannot reschedule job in status '${currentJobDoc['status']}'`,
 				jobId,
-				currentJob.status,
+				currentJobDoc['status'],
 				'reschedule',
 			);
 		}
@@ -281,26 +271,25 @@ export class JobManager {
 		const cursor = this.ctx.collection.find(baseQuery);
 
 		for await (const doc of cursor) {
-			const job = doc as unknown as WithId<Job>;
-			const jobId = job._id.toString();
+			const jobId = doc._id.toString();
 
-			if (job.status !== JobStatus.PENDING && job.status !== JobStatus.CANCELLED) {
+			if (doc['status'] !== JobStatus.PENDING && doc['status'] !== JobStatus.CANCELLED) {
 				errors.push({
 					jobId,
-					error: `Cannot cancel job in status '${job.status}'`,
+					error: `Cannot cancel job in status '${doc['status']}'`,
 				});
 				continue;
 			}
 
 			// Skip already cancelled jobs (idempotent)
-			if (job.status === JobStatus.CANCELLED) {
+			if (doc['status'] === JobStatus.CANCELLED) {
 				cancelledIds.push(jobId);
 				continue;
 			}
 
 			// Atomically update to cancelled
 			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PENDING },
+				{ _id: doc._id, status: JobStatus.PENDING },
 				{
 					$set: {
 						status: JobStatus.CANCELLED,
@@ -360,20 +349,19 @@ export class JobManager {
 		const cursor = this.ctx.collection.find(baseQuery);
 
 		for await (const doc of cursor) {
-			const job = doc as unknown as WithId<Job>;
-			const jobId = job._id.toString();
+			const jobId = doc._id.toString();
 
-			if (job.status !== JobStatus.FAILED && job.status !== JobStatus.CANCELLED) {
+			if (doc['status'] !== JobStatus.FAILED && doc['status'] !== JobStatus.CANCELLED) {
 				errors.push({
 					jobId,
-					error: `Cannot retry job in status '${job.status}'`,
+					error: `Cannot retry job in status '${doc['status']}'`,
 				});
 				continue;
 			}
 
 			const result = await this.ctx.collection.findOneAndUpdate(
 				{
-					_id: job._id,
+					_id: doc._id,
 					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
 				},
 				{
