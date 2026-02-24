@@ -21,12 +21,16 @@ interface MonqueTestOptions {
 let client: MongoClient | null = null;
 let db: Db | null = null;
 
+function uniqueDbName(): string {
+	return `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
-	// Start mongo server explicitly to ensure we get valid config
 	const { url } = await TestContainersMongo.startMongoServer('mongo:8');
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 
+	const dbName = uniqueDbName();
 	let dbConfig: Partial<MonqueTsedConfig> = {};
 	const extraImports: unknown[] = [];
 	const platformOptions: Record<string, unknown> = {};
@@ -37,7 +41,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 				dbFactory: async () => {
 					client = new MongoClient(url, { directConnection: true });
 					await client.connect();
-					db = client.db('test');
+					db = client.db(dbName);
 					return db;
 				},
 			};
@@ -46,7 +50,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 		case 'db':
 			client = new MongoClient(url, { directConnection: true });
 			await client.connect();
-			db = client.db('test');
+			db = client.db(dbName);
 			dbConfig = { db };
 			break;
 
@@ -55,7 +59,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 			platformOptions['mongoose'] = [
 				{
 					id: 'default',
-					url,
+					url: `${url}/${dbName}`,
 					connectionOptions: { directConnection: true },
 				},
 			];
@@ -64,14 +68,6 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 				mongooseConnectionId: 'default',
 			};
 			break;
-	}
-
-	if (connectionStrategy !== 'mongoose') {
-		// Clean database to ensure test isolation
-		const tempClient = new MongoClient(url, { directConnection: true });
-		await tempClient.connect();
-		await tempClient.db('test').dropDatabase();
-		await tempClient.close();
 	}
 
 	const bstrp = PlatformTest.bootstrap(Server, {
@@ -85,13 +81,14 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 	});
 
 	await bstrp();
-
-	if (connectionStrategy === 'mongoose') {
-		await getTestDb().dropDatabase();
-	}
 }
 
 export async function resetMonque(): Promise<void> {
+	// Drop the unique db to clean up test data before closing the connection
+	if (db) {
+		await db.dropDatabase();
+	}
+
 	await PlatformTest.reset();
 	if (client) {
 		await client.close();
