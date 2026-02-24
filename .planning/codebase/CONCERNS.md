@@ -4,11 +4,9 @@
 
 ## Tech Debt
 
-**Unsafe `as unknown as` casts in production source code:**
-- Issue: `job-manager.ts` uses `as unknown as WithId<Job>` to cast raw MongoDB documents (4 occurrences), bypassing type safety at runtime boundaries
-- Files: `packages/core/src/scheduler/services/job-manager.ts` (lines 52, 186, 284, 363)
-- Impact: If the MongoDB document shape drifts from the `Job` interface (missing fields, wrong types), no runtime error is thrown — incorrect data silently propagates. This is especially dangerous since these casts are on user-facing operations (cancel, retry, reschedule, bulk ops).
-- Fix approach: Use `documentToPersistedJob()` (available on `SchedulerContext`) consistently for all document-to-type conversions, as done in `job-query.ts` and `job-processor.ts`. This centralizes the mapping and adds a single place to add runtime validation if needed.
+~~**Unsafe `as unknown as` casts in production source code:**~~
+- ~~Issue: `job-manager.ts` uses `as unknown as WithId<Job>` to cast raw MongoDB documents (4 occurrences), bypassing type safety at runtime boundaries~~
+- **Resolved (2026-02-24):** Replaced all 4 casts with bracket notation, consistent with the existing pattern in `retryJob`.
 
 **Deprecated option aliases still in active code paths:**
 - Issue: `defaultConcurrency` and `maxConcurrency` are deprecated but still resolved in the constructor with fallback logic
