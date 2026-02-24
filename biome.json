@@ -7,7 +7,15 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["**", "!!**/dist", "!!**/coverage", "!!**/.turbo", "!!**/.astro", "!!**/.agents"]
+		"includes": [
+			"**",
+			"!!**/dist",
+			"!!**/coverage",
+			"!!**/.turbo",
+			"!!**/.astro",
+			"!!**/.agents",
+			"!!**/.opencode"
+		]
 	},
 	"overrides": [
 		{
