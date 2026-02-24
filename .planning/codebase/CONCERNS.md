@@ -62,7 +62,7 @@
 ## Performance Bottlenecks
 
 **Sequential index creation during `initialize()`:**
-- Problem: 7 `createIndex()` calls are awaited sequentially
+- Problem: 7 `createIndex()` calls are awaited sequentially; not checked if indexes already exist before creation.
 - Files: `packages/core/src/scheduler/monque.ts` (lines 278-316)
 - Cause: Each index creation is a separate `await` — the indexes are independent and could be created concurrently
 - Improvement path: Use `Promise.all()` to create all indexes in parallel, or use `collection.createIndexes()` (plural) which accepts an array of index specifications in a single command.
