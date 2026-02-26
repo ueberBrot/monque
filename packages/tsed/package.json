@@ -88,7 +88,7 @@
 		"@tsed/mongoose": "^8.25.1",
 		"@tsed/platform-http": "^8.25.1",
 		"@tsed/testcontainers-mongo": "^8.25.1",
-		"@types/node": "^22.19.12",
+		"@types/node": "^22.19.13",
 		"@vitest/coverage-v8": "^4.0.18",
 		"mongodb": "^7.1.0",
 		"testcontainers": "^11.12.0",
