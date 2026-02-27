@@ -3,6 +3,42 @@ import type { Document, WithId } from 'mongodb';
 import type { JobStatusType, PersistedJob } from './types.js';
 
 /**
+ * Type-level exhaustiveness guard — ensures every key of {@link PersistedJob} is accounted
+ * for in the mapper below. If a new field is added to the `Job` interface but not listed
+ * here, TypeScript emits a compile error showing the missing key(s).
+ *
+ * @internal Compile-time only, tree-shaken in production.
+ */
+const _HANDLED_KEYS = [
+	'_id',
+	'name',
+	'data',
+	'status',
+	'nextRunAt',
+	'failCount',
+	'createdAt',
+	'updatedAt',
+	'lockedAt',
+	'claimedBy',
+	'lastHeartbeat',
+	'heartbeatInterval',
+	'failReason',
+	'repeatInterval',
+	'uniqueKey',
+] as const satisfies readonly (keyof PersistedJob)[];
+
+// Reverse check: ensure no PersistedJob key is missing from _HANDLED_KEYS
+type _AssertAllKeysHandled =
+	Exclude<keyof PersistedJob, (typeof _HANDLED_KEYS)[number]> extends never
+		? true
+		: {
+				error: 'documentToPersistedJob is missing keys';
+				missing: Exclude<keyof PersistedJob, (typeof _HANDLED_KEYS)[number]>;
+			};
+/** @internal Compile-time assertion — always `true` when all keys are handled. */
+export const _exhaustivenessCheck: _AssertAllKeysHandled = true;
+
+/**
  * Convert a raw MongoDB document to a strongly-typed {@link PersistedJob}.
  *
  * Maps required fields directly and conditionally includes optional fields

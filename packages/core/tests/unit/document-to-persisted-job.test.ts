@@ -1,8 +1,8 @@
-import type { Document, WithId } from 'mongodb';
+import { type Document, ObjectId, type WithId } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 
 import { JobFactory, JobFactoryHelpers } from '@tests/factories';
-import { documentToPersistedJob } from '@/jobs';
+import { documentToPersistedJob, JobStatus } from '@/jobs';
 
 /**
  * Round-trip test for documentToPersistedJob.
@@ -113,6 +113,77 @@ describe('documentToPersistedJob', () => {
 			expect(result.data.orderId).toBe('order-123');
 			expect(result.data.items).toEqual(['item-a', 'item-b']);
 			expect(result.data.total).toBe(99.99);
+		});
+	});
+
+	describe('exhaustiveness guard', () => {
+		it('maps all Job fields from a fully-populated MongoDB document', () => {
+			const now = new Date();
+			const doc: WithId<Document> = {
+				_id: new ObjectId(),
+				name: 'test-job',
+				data: { key: 'value' },
+				status: JobStatus.PROCESSING,
+				nextRunAt: now,
+				failCount: 3,
+				createdAt: now,
+				updatedAt: now,
+				lockedAt: now,
+				claimedBy: 'instance-1',
+				lastHeartbeat: now,
+				heartbeatInterval: 5000,
+				failReason: 'timeout',
+				repeatInterval: '0 * * * *',
+				uniqueKey: 'dedup-key',
+			};
+
+			const result = documentToPersistedJob<{ key: string }>(doc);
+
+			expect(result._id).toEqual(doc['_id']);
+			expect(result.name).toBe('test-job');
+			expect(result.data).toEqual({ key: 'value' });
+			expect(result.status).toBe(JobStatus.PROCESSING);
+			expect(result.nextRunAt).toEqual(now);
+			expect(result.failCount).toBe(3);
+			expect(result.createdAt).toEqual(now);
+			expect(result.updatedAt).toEqual(now);
+			expect(result.lockedAt).toEqual(now);
+			expect(result.claimedBy).toBe('instance-1');
+			expect(result.lastHeartbeat).toEqual(now);
+			expect(result.heartbeatInterval).toBe(5000);
+			expect(result.failReason).toBe('timeout');
+			expect(result.repeatInterval).toBe('0 * * * *');
+			expect(result.uniqueKey).toBe('dedup-key');
+		});
+
+		it('omits optional fields when not present in document', () => {
+			const now = new Date();
+			const doc: WithId<Document> = {
+				_id: new ObjectId(),
+				name: 'minimal-job',
+				data: null,
+				status: JobStatus.PENDING,
+				nextRunAt: now,
+				failCount: 0,
+				createdAt: now,
+				updatedAt: now,
+			};
+
+			const result = documentToPersistedJob<null>(doc);
+
+			// Required fields present
+			expect(result._id).toEqual(doc['_id']);
+			expect(result.name).toBe('minimal-job');
+			expect(result.failCount).toBe(0);
+
+			// Optional fields NOT present (not even as undefined)
+			expect('lockedAt' in result).toBe(false);
+			expect('claimedBy' in result).toBe(false);
+			expect('lastHeartbeat' in result).toBe(false);
+			expect('heartbeatInterval' in result).toBe(false);
+			expect('failReason' in result).toBe(false);
+			expect('repeatInterval' in result).toBe(false);
+			expect('uniqueKey' in result).toBe(false);
 		});
 	});
 });
