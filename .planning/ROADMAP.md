@@ -25,7 +25,10 @@ Systematic hardening pass resolving 9 non-breaking audit concerns across test co
   1. MonqueModule.registerJobs() tests cover scope resolution failure, duplicate job detection, partial registration error, and malformed metadata — all pass
   2. A unit test exercises the getQueueStats aggregation timeout path and verifies AggregationTimeoutError is thrown
   3. An integration test runs two Monque instances executing cleanup simultaneously on the same collection without data corruption or deadlocks
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — registerJobs() unit tests (TEST-01) + verify TEST-02 existing coverage
+- [ ] 01-02-PLAN.md — Concurrent cleanup integration test (TEST-03)
 
 ### Phase 2: Safety & Robustness
 **Goal**: Library consumers have opt-in protection against oversized payloads, instance ID collisions, and mapper drift
@@ -64,7 +67,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Test Coverage Foundation | 0/? | Not started | - |
+| 1. Test Coverage Foundation | 0/2 | Planning complete | - |
 | 2. Safety & Robustness | 0/? | Not started | - |
 | 3. Performance Optimization | 0/? | Not started | - |
 | 4. Structural Refactoring | 0/? | Not started | - |
