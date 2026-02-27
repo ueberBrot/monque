@@ -11,7 +11,7 @@ Systematic hardening pass resolving 9 non-breaking audit concerns across test co
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Test Coverage Foundation** - Fill test gaps for registerJobs, aggregation timeout, and concurrent cleanup
-- [ ] **Phase 2: Safety & Robustness** - Add payload size validation, instance collision detection, and mapper exhaustiveness guard
+- [x] **Phase 2: Safety & Robustness** - Add payload size validation, instance collision detection, and mapper exhaustiveness guard (completed 2026-02-27)
 - [ ] **Phase 3: Performance Optimization** - Bulk operations for cancel/retry and TTL-cached queue stats
 - [ ] **Phase 4: Structural Refactoring** - Reduce Monque facade size via JSDoc deduplication and optional LifecycleManager extraction
 
@@ -38,7 +38,7 @@ Plans:
   1. Configuring `maxPayloadSize` causes jobs exceeding the BSON byte limit to be rejected with a PayloadTooLargeError before MongoDB insertion
   2. Starting a second Monque instance with the same schedulerInstanceId while the first is active throws a ConnectionError (or warns), with no false positives after crash recovery
   3. Adding a new field to the Job interface without updating documentToPersistedJob produces a TypeScript compile error via the `satisfies` guard
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness guard (REFR-02)
 - [ ] 02-02-PLAN.md — Instance collision detection (SECR-02)
@@ -71,6 +71,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
-| 2. Safety & Robustness | 0/2 | Planned | - |
+| 2. Safety & Robustness | 2/2 | Complete   | 2026-02-27 |
 | 3. Performance Optimization | 0/? | Not started | - |
 | 4. Structural Refactoring | 0/? | Not started | - |

@@ -21,7 +21,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Security
 
 - [x] **SECR-01**: Optional maxPayloadSize option validates job data payload size before MongoDB insertion, using BSON.calculateObjectSize from the existing mongodb dependency
-- [ ] **SECR-02**: Startup check during initialize() warns or throws when another active instance is using the same schedulerInstanceId, using heartbeat staleness as the discriminator to avoid false positives after crash recovery
+- [x] **SECR-02**: Startup check during initialize() warns or throws when another active instance is using the same schedulerInstanceId, using heartbeat staleness as the discriminator to avoid false positives after crash recovery
 
 ### Refactoring
 
@@ -61,7 +61,7 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | TEST-02 | Phase 1: Test Coverage Foundation | Complete |
 | TEST-03 | Phase 1: Test Coverage Foundation | Complete |
 | SECR-01 | Phase 2: Safety & Robustness | Complete |
-| SECR-02 | Phase 2: Safety & Robustness | Pending |
+| SECR-02 | Phase 2: Safety & Robustness | Complete |
 | REFR-02 | Phase 2: Safety & Robustness | Complete |
 | PERF-01 | Phase 3: Performance Optimization | Pending |
 | PERF-02 | Phase 3: Performance Optimization | Pending |
