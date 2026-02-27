@@ -1,5 +1,23 @@
 # @monque/core
 
+## 1.4.0
+
+### Minor Changes
+
+- [#188](https://github.com/ueberBrot/monque/pull/188) [`9ce0ade`](https://github.com/ueberBrot/monque/commit/9ce0adebda2d47841a4420e94a440b62d10396a0) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Optimize MongoDB index creation by batching 7 sequential `createIndex()` calls into a single `createIndexes()` call. This reduces index creation from 7 round-trips to 1, significantly speeding up `initialize()` on first run.
+
+  Also adds `skipIndexCreation` option to `MonqueOptions` for production deployments where indexes are managed externally (e.g., via migrations or DBA tooling).
+
+### Patch Changes
+
+- [#187](https://github.com/ueberBrot/monque/pull/187) [`67c9d9a`](https://github.com/ueberBrot/monque/commit/67c9d9a2a5df6c493d5f51c15a33cd38db49cbe0) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Use atomic `findOneAndUpdate` with status preconditions in `completeJob` and `failJob` to prevent phantom events when the DB write is a no-op. Events are now only emitted when the transition actually occurred, and `willRetry` is derived from the actual DB document state.
+
+- [#173](https://github.com/ueberBrot/monque/pull/173) [`df0630a`](https://github.com/ueberBrot/monque/commit/df0630a5e5c84e3216f5b65a999ce618502f89ab) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace unsafe `as unknown as WithId<Job>` type casts in `job-manager` with bracket notation, consistent with the existing pattern in `retryJob`.
+
+- [#186](https://github.com/ueberBrot/monque/pull/186) [`5697370`](https://github.com/ueberBrot/monque/commit/5697370cf278302ffa6dcaaf0a4fb34ed9c3bc00) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace 7 unsafe `error as Error` casts with a new `toError()` utility that safely normalizes unknown caught values into proper `Error` instances, preventing silent type lies when non-Error values are thrown.
+
+- [#189](https://github.com/ueberBrot/monque/pull/189) [`1e32439`](https://github.com/ueberBrot/monque/commit/1e324395caf25309dfb7c40bc35edac60b8d80ad) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Extract `documentToPersistedJob` mapper into a standalone function for testability and add round-trip unit tests to guard against silent field-dropping when new Job fields are added.
+
 ## 1.3.0
 
 ### Minor Changes
