@@ -52,8 +52,7 @@ Recent decisions affecting current work:
 - [01-02]: Used 6s-old vs 100ms-recent timestamps for clear retention boundary testing
 - [01-02]: Verified specific surviving documents by name for stronger assertions
 - [02-01]: Used BSON.calculateObjectSize({ data }) to measure real serialized size before MongoDB insert
-- [02-01]: Exported _exhaustivenessCheck to satisfy noUnusedLocals without biome-ignore suppression
-- [02-01]: Used satisfies + Exclude type pattern for compile-time mapper key exhaustiveness
+- [02-01]: Relied on explicit `PersistedJob<T>` return type annotation for compile-time mapper exhaustiveness — TypeScript errors on missing required fields, round-trip tests catch optional field drift
 
 - [02-02]: Added findOne mock to existing monque.test.ts to fix 12 pre-existing failures caused by collision check calling collection.findOne
 

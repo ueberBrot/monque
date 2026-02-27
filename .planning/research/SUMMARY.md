@@ -23,7 +23,7 @@ Zero new dependencies. Every improvement uses tools already available in the pro
 - **`Map` + lazy expiration** — TTL cache for stats — ~30 lines, no timers, no event loop side effects
 - **`BSON.calculateObjectSize` from `mongodb`** — payload size validation — measures exact BSON bytes (what MongoDB actually stores), already available via peer dep
 - **`updateMany` (not `bulkWrite`)** — bulk cancel/retry — uniform updates don't need per-doc operations; single round trip
-- **TypeScript `satisfies` operator** — mapper robustness — compile-time exhaustiveness check, zero runtime cost
+- **Explicit `PersistedJob<T>` return type** — mapper robustness — compile-time exhaustiveness for required fields, zero runtime cost, zero extra type machinery
 - **Existing `findOne` on jobs collection** — instance collision detection — uses existing `{ claimedBy, status }` index, O(1) lookup
 
 ### Expected Features
@@ -37,7 +37,7 @@ Zero new dependencies. Every improvement uses tools already available in the pro
 
 **Should have (differentiators):**
 - **D-1: Facade size reduction** — JSDoc deduplication via `@see`/`@inheritdoc`, optional LifecycleManager extraction
-- **D-2: Mapper robustness** — compile-time `satisfies` guard + exhaustive round-trip test
+- **D-2: Mapper robustness** — explicit `PersistedJob<T>` return type + exhaustive round-trip tests
 
 **Defer (beyond this milestone):**
 - Prometheus/metrics export, per-job sizeLimit, persistent worker registry, dead-letter queue, job priority, job progress, job timeouts
@@ -73,9 +73,9 @@ Based on combined research, the milestone naturally splits into 4 phases ordered
 
 ### Phase 2: Safety Features
 **Rationale:** Low complexity, high impact. Each feature is independent (parallel-safe), adds a new option/error type, touches a single service. No merge conflicts between them.
-**Delivers:** `maxPayloadSize` option + `PayloadTooLargeError`, instance collision detection at startup, `JOB_FIELDS` compile-time guard for mapper.
+**Delivers:** `maxPayloadSize` option + `PayloadTooLargeError`, instance collision detection at startup, explicit `PersistedJob<T>` return type for mapper exhaustiveness.
 **Addresses:** TS-3 (payload validation), TS-4 (instance collision), D-2 (mapper robustness)
-**Avoids:** Pitfall #3 (false positives — heartbeat staleness), Pitfall #5 (JSON vs BSON — use `BSON.calculateObjectSize`), Pitfall #6 (breaking consumers — default `undefined`), Pitfall #7 (mapper drift — `satisfies` guard), Pitfall #12 (over-engineering — compile-time only)
+**Avoids:** Pitfall #3 (false positives — heartbeat staleness), Pitfall #5 (JSON vs BSON — use `BSON.calculateObjectSize`), Pitfall #6 (breaking consumers — default `undefined`), Pitfall #7 (mapper drift — explicit return type), Pitfall #12 (over-engineering — compile-time only)
 
 ### Phase 3: Performance Optimization
 **Rationale:** Medium complexity. Bulk ops touch `JobManager` internals and require updating existing unit test mocks. Stats caching is self-contained in `JobQueryService`. Both deliver measurable perf wins.
@@ -131,7 +131,7 @@ Phases with standard patterns (skip research):
 - MongoDB Node.js driver docs — `Collection.updateMany()`, `Collection.bulkWrite()`, `BSON.calculateObjectSize`
 - MongoDB docs — 16MB BSON document size limit, `MongoBulkWriteError` structure
 - BullMQ API Docs v5.70.1 — class hierarchy, retryJobs, clean, getJobCounts, sizeLimit
-- TypeScript 5.9 — `satisfies` operator for compile-time exhaustiveness
+- TypeScript strict mode — explicit return type annotations for compile-time exhaustiveness
 - Monque codebase audit — `.planning/codebase/CONCERNS.md`, `.planning/codebase/ARCHITECTURE.md`
 
 ### Secondary (MEDIUM confidence)

@@ -116,7 +116,7 @@ describe('documentToPersistedJob', () => {
 		});
 	});
 
-	describe('exhaustiveness guard', () => {
+	describe('complete field mapping', () => {
 		it('maps all Job fields from a fully-populated MongoDB document', () => {
 			const now = new Date();
 			const doc: WithId<Document> = {

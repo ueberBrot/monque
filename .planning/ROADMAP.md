@@ -11,7 +11,7 @@ Systematic hardening pass resolving 9 non-breaking audit concerns across test co
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Test Coverage Foundation** - Fill test gaps for registerJobs, aggregation timeout, and concurrent cleanup
-- [x] **Phase 2: Safety & Robustness** - Add payload size validation, instance collision detection, and mapper exhaustiveness guard (completed 2026-02-27)
+- [x] **Phase 2: Safety & Robustness** - Add payload size validation, instance collision detection, and mapper exhaustiveness via explicit return type (completed 2026-02-27)
 - [ ] **Phase 3: Performance Optimization** - Bulk operations for cancel/retry and TTL-cached queue stats
 - [ ] **Phase 4: Structural Refactoring** - Reduce Monque facade size via JSDoc deduplication and optional LifecycleManager extraction
 
@@ -37,10 +37,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Configuring `maxPayloadSize` causes jobs exceeding the BSON byte limit to be rejected with a PayloadTooLargeError before MongoDB insertion
   2. Starting a second Monque instance with the same schedulerInstanceId while the first is active throws a ConnectionError (or warns), with no false positives after crash recovery
-  3. Adding a new field to the Job interface without updating documentToPersistedJob produces a TypeScript compile error via the `satisfies` guard
+  3. Adding a new required field to the Job interface without updating documentToPersistedJob produces a TypeScript compile error via the explicit `PersistedJob<T>` return type annotation, and round-trip tests catch optional field drift
 **Plans:** 2/2 plans complete
 Plans:
-- [x] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness guard (REFR-02)
+- [x] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness via explicit return type (REFR-02)
 - [x] 02-02-PLAN.md — Instance collision detection (SECR-02)
 
 ### Phase 3: Performance Optimization

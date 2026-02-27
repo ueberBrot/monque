@@ -23,7 +23,7 @@ score: 6/6 must-haves verified
 | 3 | When maxPayloadSize is not configured, no size check occurs (backward compatible) | ✓ VERIFIED | `validatePayloadSize()` returns immediately if `maxSize === undefined` (L33-35). Unit test "skips validation when maxPayloadSize is undefined" passes with large data. |
 | 4 | Starting a second Monque instance with same schedulerInstanceId while first is active throws ConnectionError | ✓ VERIFIED | `checkInstanceCollision()` in `monque.ts:362-384` queries for processing jobs with recent heartbeat claimed by same ID. Called in `initialize()` at L181 after stale recovery. 8 unit tests + 3 integration tests pass. |
 | 5 | No false positive after crash recovery — stale heartbeats do not trigger collision detection | ✓ VERIFIED | `checkInstanceCollision()` runs AFTER `recoverStaleJobs()` (L176-181). Stale recovery resets old processing jobs to pending, so collision check finds nothing. Integration test "allows second instance after crash recovery (stale heartbeat)" verifies this with real MongoDB. |
-| 6 | Adding a new field to Job interface without updating documentToPersistedJob produces a TypeScript compile error | ✓ VERIFIED | `_HANDLED_KEYS` array with `satisfies readonly (keyof PersistedJob)[]` + `_AssertAllKeysHandled` type using `Exclude` in `document-to-persisted-job.ts:12-39`. Manual test: adding `testField: string` to `Job` produces compile error: `Type 'boolean' is not assignable to type '{ error: "documentToPersistedJob is missing keys"; missing: "testField"; }'`. |
+| 6 | Adding a new required field to Job interface without updating documentToPersistedJob produces a TypeScript compile error | ✓ VERIFIED | Explicit `PersistedJob<T>` return type annotation on the mapper function in `document-to-persisted-job.ts:17`. The object literal assigned to `const job: PersistedJob<T>` must satisfy all required fields — omitting one causes `tsc` to error. Round-trip tests (`document-to-persisted-job.test.ts:15-57`) catch optional field drift at runtime. Manual test: adding `testField: string` to `Job` produces compile error on the mapper's object literal. |
 
 **Score:** 6/6 truths verified
 
@@ -34,7 +34,7 @@ score: 6/6 must-haves verified
 | `packages/core/src/shared/errors.ts` | PayloadTooLargeError class | ✓ VERIFIED | L243-256: Class with `actualSize`, `maxSize` readonly properties, extends `MonqueError` |
 | `packages/core/src/scheduler/types.ts` | maxPayloadSize option | ✓ VERIFIED | L177-186: `maxPayloadSize?: number \| undefined` with TSDoc |
 | `packages/core/src/scheduler/services/job-scheduler.ts` | Size validation before insert | ✓ VERIFIED | L31-45: `validatePayloadSize()` using `BSON.calculateObjectSize`, called in `enqueue()` and `schedule()` |
-| `packages/core/src/jobs/document-to-persisted-job.ts` | Exhaustiveness guard via satisfies | ✓ VERIFIED | L12-39: `_HANDLED_KEYS` array + `_AssertAllKeysHandled` type assertion |
+| `packages/core/src/jobs/document-to-persisted-job.ts` | Exhaustiveness via explicit return type | ✓ VERIFIED | L17: `PersistedJob<T>` return type annotation — TypeScript errors on missing required fields in the object literal |
 | `packages/core/src/scheduler/monque.ts` | Instance collision detection | ✓ VERIFIED | L362-384: `checkInstanceCollision()`, called at L181 in `initialize()` |
 | `packages/core/src/scheduler/services/types.ts` | maxPayloadSize in ResolvedMonqueOptions | ✓ VERIFIED | L22,29: Excluded from `Required<Omit<...>>`, included in `Pick<...>` |
 | `packages/core/tests/unit/payload-size.test.ts` | Unit tests (≥40 lines) | ✓ VERIFIED | 69 lines, 4 tests, all passing |
@@ -48,7 +48,7 @@ score: 6/6 must-haves verified
 |------|----|-----|--------|---------|
 | `job-scheduler.ts` | `BSON.calculateObjectSize` | import from mongodb | ✓ WIRED | L1: `import { BSON, type Document } from 'mongodb'`; L37: `BSON.calculateObjectSize({ data } as Document)` |
 | `job-scheduler.ts` | `PayloadTooLargeError` | throws on oversized payload | ✓ WIRED | L10: imported from `@/shared`; L39-44: `throw new PayloadTooLargeError(...)` |
-| `document-to-persisted-job.ts` | `PersistedJob` | satisfies guard | ✓ WIRED | L28: `satisfies readonly (keyof PersistedJob)[]`; L32: `Exclude<keyof PersistedJob, ...>` |
+| `document-to-persisted-job.ts` | `PersistedJob` | explicit return type | ✓ WIRED | L17: `): PersistedJob<T>` return type annotation ensures required field completeness at compile time |
 | `monque.ts` | `collection.findOne` | heartbeat staleness query | ✓ WIRED | L371-375: `this.collection.findOne({ claimedBy: ..., status: ..., lastHeartbeat: { $gte: ... } })` |
 | `monque.ts` | `maxPayloadSize` | passed to ResolvedMonqueOptions | ✓ WIRED | L152: `maxPayloadSize: options.maxPayloadSize` in constructor |
 | `src/index.ts` | `PayloadTooLargeError` | public API export | ✓ WIRED | L46: exported from `@/shared` |
@@ -60,7 +60,7 @@ score: 6/6 must-haves verified
 |-------------|------------|-------------|--------|----------|
 | SECR-01 | 02-01-PLAN | Optional maxPayloadSize validates BSON size before insertion | ✓ SATISFIED | `validatePayloadSize()` in JobScheduler, `PayloadTooLargeError`, 4 unit tests |
 | SECR-02 | 02-02-PLAN | Startup collision check using heartbeat staleness | ✓ SATISFIED | `checkInstanceCollision()` in Monque.initialize(), 8 unit + 3 integration tests |
-| REFR-02 | 02-01-PLAN | Compile-time exhaustiveness guard on mapper | ✓ SATISFIED | `_HANDLED_KEYS` + `_AssertAllKeysHandled` type, verified via manual tsc test adding field to Job |
+| REFR-02 | 02-01-PLAN | Compile-time exhaustiveness on mapper via explicit return type | ✓ SATISFIED | `PersistedJob<T>` return type annotation, verified via manual tsc test adding required field to Job |
 
 No orphaned requirements found — all 3 requirement IDs (SECR-01, SECR-02, REFR-02) from REQUIREMENTS.md are covered by plans and verified.
 
@@ -77,7 +77,7 @@ No TODOs, FIXMEs, placeholders, empty implementations, or console.log calls in a
 None required. All three success criteria verified programmatically:
 1. Payload size validation — unit tests confirm throws/allows correctly
 2. Instance collision detection — unit + integration tests confirm throws/allows correctly
-3. Exhaustiveness guard — manual tsc invocation with added field produces expected compile error
+3. Exhaustiveness guard — explicit `PersistedJob<T>` return type annotation catches missing required fields at compile time, round-trip tests catch optional field drift
 
 ### Gaps Summary
 

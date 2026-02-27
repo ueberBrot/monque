@@ -55,7 +55,7 @@
 | `JobManager` | Cancel, retry, delete, bulk ops | `SchedulerContext` | **Unchanged** |
 | `JobQueryService` | getJob(s), cursor pagination, stats | `SchedulerContext` | **Minor** — add TTL cache for `getQueueStats` |
 | `ChangeStreamHandler` | Change stream lifecycle | `SchedulerContext`, poll trigger | **Unchanged** |
-| `documentToPersistedJob` | MongoDB doc to typed object | None (pure function) | **Harden** — schema-driven mapping |
+| `documentToPersistedJob` | MongoDB doc to typed object | None (pure function) | **Harden** — explicit return type for exhaustiveness |
 | `InstanceGuard` (NEW) | Collision detection at startup | `SchedulerContext.collection` | **New utility** |
 
 ### Data Flow (Post-Hardening)
@@ -154,48 +154,44 @@ export class LifecycleManager {
 
 ---
 
-## Pattern 2: Schema-Driven Document Mapping
+## Pattern 2: Mapper Exhaustiveness via Explicit Return Type
 
-**What:** Harden `documentToPersistedJob()` so adding a field to the `Job` interface causes a compile-time error if the mapper is not updated.
+**What:** Harden `documentToPersistedJob()` so adding a required field to the `Job` interface causes a compile-time error if the mapper is not updated.
 
 **Why not Zod/runtime validation:** The codebase has zero runtime schema libraries and the project philosophy is "no ORM, no Mongoose, native driver only." Adding Zod would introduce a dependency for a single mapping function. Overkill.
 
-**Recommended approach: Compile-time exhaustiveness via `satisfies`**
+**Recommended approach: Explicit `PersistedJob<T>` return type annotation**
 
-The mapper already lives in its own file (`jobs/document-to-persisted-job.ts`). The improvement is to make it type-safe against drift:
+The mapper already lives in its own file (`jobs/document-to-persisted-job.ts`). The function's explicit return type does all the work:
 
 ```typescript
-import type { Document, WithId } from 'mongodb';
-import type { Job, JobStatusType, PersistedJob } from './types.js';
+export function documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
+	const job: PersistedJob<T> = {
+		_id: doc._id,
+		name: doc['name'] as string,
+		data: doc['data'] as T,
+		status: doc['status'] as JobStatusType,
+		nextRunAt: doc['nextRunAt'] as Date,
+		failCount: doc['failCount'] as number,
+		createdAt: doc['createdAt'] as Date,
+		updatedAt: doc['updatedAt'] as Date,
+	};
 
-/**
- * Required fields that must always be present in the mapped output.
- * If a field is added to Job but not here, TypeScript will error.
- */
-type RequiredJobFields = Pick<Job, 'name' | 'data' | 'status' | 'nextRunAt' | 'failCount' | 'createdAt' | 'updatedAt'>;
+	// Optional fields conditionally set...
+	if (doc['lockedAt'] !== undefined) {
+		job.lockedAt = doc['lockedAt'] as Date | null;
+	}
+	// ... etc
 
-/**
- * Optional fields that are conditionally set.
- * The union of Required + Optional must equal Omit<Job, '_id'>.
- */
-type OptionalJobFields = Pick<Job, 'lockedAt' | 'claimedBy' | 'lastHeartbeat' | 'heartbeatInterval' | 'failReason' | 'repeatInterval' | 'uniqueKey'>;
-
-// Compile-time check: Required + Optional must cover all Job fields (minus _id)
-type _ExhaustiveCheck = Omit<Job, '_id'> extends RequiredJobFields & Partial<OptionalJobFields>
-	? RequiredJobFields & Partial<OptionalJobFields> extends Omit<Job, '_id'>
-		? true
-		: never  // A field in Required/Optional is not in Job
-	: never; // A field in Job is not in Required/Optional
-
-// This line causes a compile error if _ExhaustiveCheck is `never`
-const _: _ExhaustiveCheck = true;
+	return job;
+}
 ```
 
-**Alternative considered:** Generating the mapper from the `Job` type using mapped types. Rejected because the conditional logic (`if doc['field'] !== undefined`) can't be generated from types alone — each optional field needs explicit handling to avoid setting `undefined` values on the output object (which matters for MongoDB `$exists` queries).
+The `const job: PersistedJob<T> = { ... }` object literal must satisfy all required fields of `PersistedJob<T>`. If a new required field is added to `Job` and not included, TypeScript emits a compile error. For optional fields, round-trip tests (`PersistedJob -> Document -> PersistedJob` with `toEqual`) catch any missing mappings at runtime.
 
-**The compile-time guard approach is zero-runtime-cost.** If someone adds a field to `Job`, TypeScript will refuse to compile until they update the required/optional field lists, which forces them to update the mapper body.
+**Why this over more complex approaches:** Adding type-level key arrays, `satisfies` assertions, or `Exclude`-based checks duplicates information already present in the function body and return type. The explicit return type is the simplest mechanism that provides compile-time safety for required fields, with zero extra type machinery.
 
-**Confidence:** HIGH — this is a standard TypeScript exhaustiveness technique. No dependencies.
+**Confidence:** HIGH — this is standard TypeScript behavior. No dependencies, no extra types.
 
 ---
 
@@ -382,7 +378,7 @@ export async function checkInstanceCollision(
 ### Anti-Pattern 3: Runtime Schema Validation Library for Document Mapping
 **What:** Adding Zod, io-ts, or similar for `documentToPersistedJob`
 **Why bad:** Adds a runtime dependency, increases bundle size, introduces a new pattern inconsistent with the rest of the codebase. The mapping function is a single file with 15 field assignments.
-**Instead:** Compile-time exhaustiveness check using TypeScript's type system (zero runtime cost).
+**Instead:** Explicit `PersistedJob<T>` return type annotation — TypeScript's type system catches missing required fields at compile time (zero runtime cost), and round-trip tests catch optional field drift.
 
 ### Anti-Pattern 4: Separate Instance Registry Collection
 **What:** Creating a `monque_instances` collection for instance tracking
@@ -397,7 +393,7 @@ Based on dependency analysis between improvements:
 
 ```
 Phase 1: Foundation (no dependencies)
-  ├── 1a. documentToPersistedJob schema guard  [standalone, types-only change]
+  ├── 1a. documentToPersistedJob explicit return type  [standalone, types-only verification]
   ├── 1b. Instance collision check              [standalone, new file]
   └── 1c. maxPayloadSize validation             [standalone, additive option]
 
@@ -420,7 +416,7 @@ Phase 3: Structural (depends on understanding all services' final shape)
 **Dependencies between improvements:**
 
 ```
-documentToPersistedJob guard ──→ (none)
+documentToPersistedJob return type ──→ (none)
 Instance collision check     ──→ (none, uses existing collection + heartbeat fields)
 maxPayloadSize validation    ──→ (none, new option + check in JobScheduler)
 TTL cache for stats          ──→ (none, new option + cache in JobQueryService)
@@ -446,7 +442,7 @@ LifecycleManager extraction  ──→ (logically after all above, to avoid reba
 - Codebase analysis: `packages/core/src/scheduler/monque.ts` (1253 lines), `services/` directory, `jobs/document-to-persisted-job.ts`
 - Architecture doc: `.planning/codebase/ARCHITECTURE.md` (existing analysis from 2026-02-24)
 - Concerns doc: `.planning/codebase/CONCERNS.md` (audit from 2026-02-24)
-- TypeScript exhaustiveness patterns: standard `satisfies` and conditional type techniques (HIGH confidence — core language feature)
+- TypeScript exhaustiveness patterns: explicit return type annotations and structural type checking (HIGH confidence — core language feature)
 - TTL cache in service layer: repository/service-owned cache pattern (HIGH confidence — well-established architectural pattern)
 - Instance collision in job queues: Agenda.js `lockedAt` + `findAndModify` pattern as reference for MongoDB-native approach (MEDIUM confidence — adapted from similar library's pattern)
 - Facade lifecycle extraction: standard refactoring pattern for large facade classes (HIGH confidence — established software engineering practice)

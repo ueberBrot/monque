@@ -26,7 +26,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Refactoring
 
 - [ ] **REFR-01**: Monque facade class is reduced in size by deduplicating JSDoc documentation using @inheritdoc or @see tags, and optionally extracting timer/interval management into a LifecycleManager service
-- [x] **REFR-02**: documentToPersistedJob mapper uses a compile-time exhaustiveness guard (TypeScript satisfies operator) so that adding a new field to the Job interface produces a compile error if the mapper is not updated
+- [x] **REFR-02**: documentToPersistedJob mapper uses an explicit `PersistedJob<T>` return type annotation so that adding a new required field to the Job interface produces a compile error if the mapper is not updated, complemented by round-trip tests that catch optional field drift
 
 ## v2 Requirements
 
