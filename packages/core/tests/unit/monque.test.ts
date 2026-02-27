@@ -31,7 +31,7 @@ describe('Monque', () => {
 
 	beforeEach(() => {
 		mockCollection = {
-			createIndex: vi.fn().mockResolvedValue('index_name'),
+			createIndexes: vi.fn().mockResolvedValue(['index_name']),
 			updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
 			deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
 		} as unknown as Collection;
@@ -52,7 +52,7 @@ describe('Monque', () => {
 			await monque.initialize();
 
 			expect(mockDb.collection).toHaveBeenCalledWith('monque_jobs');
-			expect(mockCollection.createIndex).toHaveBeenCalled();
+			expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
 		});
 
 		it('should be idempotent (multiple calls do nothing)', async () => {
@@ -63,7 +63,7 @@ describe('Monque', () => {
 			await monque.initialize();
 
 			expect(mockDb.collection).not.toHaveBeenCalled();
-			expect(mockCollection.createIndex).not.toHaveBeenCalled();
+			expect(mockCollection.createIndexes).not.toHaveBeenCalled();
 		});
 
 		it('should throw ConnectionError if initialization fails', async () => {
@@ -72,6 +72,14 @@ describe('Monque', () => {
 			});
 
 			await expect(monque.initialize()).rejects.toThrow(ConnectionError);
+		});
+
+		it('should skip index creation when skipIndexCreation is true', async () => {
+			const skipMonque = new Monque(mockDb, { skipIndexCreation: true });
+			await skipMonque.initialize();
+
+			expect(mockDb.collection).toHaveBeenCalledWith('monque_jobs');
+			expect(mockCollection.createIndexes).not.toHaveBeenCalled();
 		});
 	});
 
