@@ -10,7 +10,7 @@ Systematic hardening pass resolving 9 non-breaking audit concerns across test co
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Test Coverage Foundation** - Fill test gaps for registerJobs, aggregation timeout, and concurrent cleanup
+- [x] **Phase 1: Test Coverage Foundation** - Fill test gaps for registerJobs, aggregation timeout, and concurrent cleanup
 - [ ] **Phase 2: Safety & Robustness** - Add payload size validation, instance collision detection, and mapper exhaustiveness guard
 - [ ] **Phase 3: Performance Optimization** - Bulk operations for cancel/retry and TTL-cached queue stats
 - [ ] **Phase 4: Structural Refactoring** - Reduce Monque facade size via JSDoc deduplication and optional LifecycleManager extraction
@@ -27,8 +27,8 @@ Systematic hardening pass resolving 9 non-breaking audit concerns across test co
   3. An integration test runs two Monque instances executing cleanup simultaneously on the same collection without data corruption or deadlocks
 **Plans:** 2 plans
 Plans:
-- [ ] 01-01-PLAN.md — registerJobs() unit tests (TEST-01) + verify TEST-02 existing coverage
-- [ ] 01-02-PLAN.md — Concurrent cleanup integration test (TEST-03)
+- [x] 01-01-PLAN.md — registerJobs() unit tests (TEST-01) + verify TEST-02 existing coverage
+- [x] 01-02-PLAN.md — Concurrent cleanup integration test (TEST-03)
 
 ### Phase 2: Safety & Robustness
 **Goal**: Library consumers have opt-in protection against oversized payloads, instance ID collisions, and mapper drift
@@ -67,7 +67,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Test Coverage Foundation | 0/2 | Planning complete | - |
+| 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
 | 2. Safety & Robustness | 0/? | Not started | - |
 | 3. Performance Optimization | 0/? | Not started | - |
 | 4. Structural Refactoring | 0/? | Not started | - |
