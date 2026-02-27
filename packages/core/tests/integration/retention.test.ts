@@ -133,6 +133,113 @@ describe('job retention', () => {
 		expect(recentJob).not.toBeNull();
 	});
 
+	it('should handle concurrent cleanup from two instances without data corruption', async () => {
+		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+		const retentionConfig = {
+			completed: 5000,
+			failed: 5000,
+			interval: 100,
+		};
+
+		const monque1 = new Monque(db, {
+			collectionName,
+			pollInterval: 1000,
+			jobRetention: retentionConfig,
+		});
+		const monque2 = new Monque(db, {
+			collectionName,
+			pollInterval: 1000,
+			jobRetention: retentionConfig,
+		});
+		monqueInstances.push(monque1, monque2);
+
+		const collection = db.collection(collectionName);
+
+		const now = new Date();
+		const oldDate = new Date(now.getTime() - 6000); // 6s ago — should be deleted
+		const recentDate = new Date(now.getTime() - 100); // 100ms ago — should survive
+
+		// Seed old completed jobs
+		await collection.insertOne(
+			JobFactoryHelpers.completed({ name: 'old-completed-1', updatedAt: oldDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.completed({ name: 'old-completed-2', updatedAt: oldDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.completed({ name: 'old-completed-3', updatedAt: oldDate }),
+		);
+
+		// Seed old failed jobs
+		await collection.insertOne(
+			JobFactoryHelpers.failed({ name: 'old-failed-1', updatedAt: oldDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.failed({ name: 'old-failed-2', updatedAt: oldDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.failed({ name: 'old-failed-3', updatedAt: oldDate }),
+		);
+
+		// Seed recent completed jobs
+		await collection.insertOne(
+			JobFactoryHelpers.completed({ name: 'recent-completed-1', updatedAt: recentDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.completed({ name: 'recent-completed-2', updatedAt: recentDate }),
+		);
+
+		// Seed recent failed jobs
+		await collection.insertOne(
+			JobFactoryHelpers.failed({ name: 'recent-failed-1', updatedAt: recentDate }),
+		);
+		await collection.insertOne(
+			JobFactoryHelpers.failed({ name: 'recent-failed-2', updatedAt: recentDate }),
+		);
+
+		// Start both instances concurrently
+		await monque1.initialize();
+		await monque2.initialize();
+		monque1.start();
+		monque2.start();
+
+		// Wait for cleanup to remove all old jobs
+		await waitFor(
+			async () => {
+				const oldCount = await collection.countDocuments({
+					name: { $regex: /^old-/ },
+				});
+				return oldCount === 0;
+			},
+			{ timeout: 5000, interval: 50 },
+		);
+
+		// Assert all 6 old jobs deleted
+		const oldCount = await collection.countDocuments({ name: { $regex: /^old-/ } });
+		expect(oldCount).toBe(0);
+
+		// Assert all 4 recent jobs survive
+		const recentCount = await collection.countDocuments({ name: { $regex: /^recent-/ } });
+		expect(recentCount).toBe(4);
+
+		// Assert total remaining is exactly 4 (no phantom documents)
+		const totalCount = await collection.countDocuments({});
+		expect(totalCount).toBe(4);
+
+		// Verify specific recent jobs exist by name
+		const recentCompleted1 = await collection.findOne({ name: 'recent-completed-1' });
+		expect(recentCompleted1).not.toBeNull();
+
+		const recentCompleted2 = await collection.findOne({ name: 'recent-completed-2' });
+		expect(recentCompleted2).not.toBeNull();
+
+		const recentFailed1 = await collection.findOne({ name: 'recent-failed-1' });
+		expect(recentFailed1).not.toBeNull();
+
+		const recentFailed2 = await collection.findOne({ name: 'recent-failed-2' });
+		expect(recentFailed2).not.toBeNull();
+	});
+
 	it('should not delete jobs if retention is not configured', async () => {
 		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 		const monque = new Monque(db, {
