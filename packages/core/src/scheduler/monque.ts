@@ -149,6 +149,7 @@ export class Monque extends EventEmitter {
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 			jobRetention: options.jobRetention,
 			skipIndexCreation: options.skipIndexCreation ?? false,
+			maxPayloadSize: options.maxPayloadSize,
 		};
 	}
 
@@ -175,6 +176,9 @@ export class Monque extends EventEmitter {
 			if (this.options.recoverStaleJobs) {
 				await this.recoverStaleJobs();
 			}
+
+			// Check for instance ID collisions (after stale recovery to avoid false positives)
+			await this.checkInstanceCollision();
 
 			// Initialize services with shared context
 			const ctx = this.buildContext();
@@ -343,6 +347,39 @@ export class Monque extends EventEmitter {
 			this.emit('stale:recovered', {
 				count: result.modifiedCount,
 			});
+		}
+	}
+
+	/**
+	 * Check if another active instance is using the same schedulerInstanceId.
+	 * Uses heartbeat staleness to distinguish active instances from crashed ones.
+	 *
+	 * Called after stale recovery to avoid false positives: stale recovery resets
+	 * jobs with old `lockedAt`, so only jobs with recent heartbeats remain.
+	 *
+	 * @throws {ConnectionError} If an active instance with the same ID is detected
+	 */
+	private async checkInstanceCollision(): Promise<void> {
+		if (!this.collection) {
+			return;
+		}
+
+		// Look for any job currently claimed by this instance ID
+		// that has a recent heartbeat (within 2× heartbeat interval = "alive" threshold)
+		const aliveThreshold = new Date(Date.now() - this.options.heartbeatInterval * 2);
+
+		const activeJob = await this.collection.findOne({
+			claimedBy: this.options.schedulerInstanceId,
+			status: JobStatus.PROCESSING,
+			lastHeartbeat: { $gte: aliveThreshold },
+		});
+
+		if (activeJob) {
+			throw new ConnectionError(
+				`Another active Monque instance is using schedulerInstanceId "${this.options.schedulerInstanceId}". ` +
+					`Found processing job "${activeJob['name']}" with recent heartbeat. ` +
+					`Use a unique schedulerInstanceId or wait for the other instance to stop.`,
+			);
 		}
 	}
 

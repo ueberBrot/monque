@@ -223,3 +223,34 @@ export class AggregationTimeoutError extends MonqueError {
 		}
 	}
 }
+
+/**
+ * Error thrown when a job payload exceeds the configured maximum BSON byte size.
+ *
+ * @example
+ * ```typescript
+ * const monque = new Monque(db, { maxPayloadSize: 1_000_000 }); // 1 MB
+ *
+ * try {
+ *   await monque.enqueue('job', hugePayload);
+ * } catch (error) {
+ *   if (error instanceof PayloadTooLargeError) {
+ *     console.error(`Payload ${error.actualSize} bytes exceeds limit ${error.maxSize} bytes`);
+ *   }
+ * }
+ * ```
+ */
+export class PayloadTooLargeError extends MonqueError {
+	constructor(
+		message: string,
+		public readonly actualSize: number,
+		public readonly maxSize: number,
+	) {
+		super(message);
+		this.name = 'PayloadTooLargeError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, PayloadTooLargeError);
+		}
+	}
+}

@@ -173,4 +173,15 @@ export interface MonqueOptions {
 	 * @default false
 	 */
 	skipIndexCreation?: boolean;
+
+	/**
+	 * Maximum allowed BSON byte size for job data payloads.
+	 *
+	 * When set, `enqueue()`, `now()`, and `schedule()` validate the payload size
+	 * using `BSON.calculateObjectSize()` before insertion. Jobs exceeding this limit
+	 * throw `PayloadTooLargeError`.
+	 *
+	 * When undefined, no size validation occurs.
+	 */
+	maxPayloadSize?: number | undefined;
 }
