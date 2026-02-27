@@ -40,8 +40,8 @@ Plans:
   3. Adding a new field to the Job interface without updating documentToPersistedJob produces a TypeScript compile error via the `satisfies` guard
 **Plans:** 2/2 plans complete
 Plans:
-- [ ] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness guard (REFR-02)
-- [ ] 02-02-PLAN.md — Instance collision detection (SECR-02)
+- [x] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness guard (REFR-02)
+- [x] 02-02-PLAN.md — Instance collision detection (SECR-02)
 
 ### Phase 3: Performance Optimization
 **Goal**: Bulk job operations and stats queries perform with O(1) DB round-trips instead of O(n)
