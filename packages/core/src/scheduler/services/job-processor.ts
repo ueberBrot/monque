@@ -228,9 +228,10 @@ export class JobProcessor {
 	/**
 	 * Mark a job as completed successfully using an atomic status transition.
 	 *
-	 * Uses `findOneAndUpdate` with a `status: processing` precondition to ensure the
-	 * transition only occurs if the job is still in the expected state. Returns `null`
-	 * if the job was concurrently modified (e.g., deleted).
+	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
+	 * preconditions to ensure the transition only occurs if the job is still owned by this
+	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
+	 * by another instance after stale recovery).
 	 *
 	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
 	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
@@ -248,7 +249,7 @@ export class JobProcessor {
 			// Recurring job - schedule next run
 			const nextRunAt = getNextCronDate(job.repeatInterval);
 			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 				{
 					$set: {
 						status: JobStatus.PENDING,
@@ -272,7 +273,7 @@ export class JobProcessor {
 
 		// One-time job - mark as completed
 		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id: job._id, status: JobStatus.PROCESSING },
+			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 			{
 				$set: {
 					status: JobStatus.COMPLETED,
@@ -295,9 +296,10 @@ export class JobProcessor {
 	/**
 	 * Handle job failure with exponential backoff retry logic using an atomic status transition.
 	 *
-	 * Uses `findOneAndUpdate` with a `status: processing` precondition to ensure the
-	 * transition only occurs if the job is still in the expected state. Returns `null`
-	 * if the job was concurrently modified (e.g., deleted).
+	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
+	 * preconditions to ensure the transition only occurs if the job is still owned by this
+	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
+	 * by another instance after stale recovery).
 	 *
 	 * Increments `failCount` and calculates next retry time using exponential backoff:
 	 * `nextRunAt = 2^failCount * baseRetryInterval` (capped by optional `maxBackoffDelay`).
@@ -319,7 +321,7 @@ export class JobProcessor {
 		if (newFailCount >= this.ctx.options.maxRetries) {
 			// Permanent failure
 			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 				{
 					$set: {
 						status: JobStatus.FAILED,
@@ -348,7 +350,7 @@ export class JobProcessor {
 		);
 
 		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id: job._id, status: JobStatus.PROCESSING },
+			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 			{
 				$set: {
 					status: JobStatus.PENDING,

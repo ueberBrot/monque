@@ -402,7 +402,7 @@ describe('JobProcessor', () => {
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.COMPLETED);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
 					$set: expect.objectContaining({ status: JobStatus.COMPLETED }),
 				}),
@@ -427,7 +427,7 @@ describe('JobProcessor', () => {
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.PENDING);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
 					$set: expect.objectContaining({ status: JobStatus.PENDING, failCount: 0 }),
 				}),
@@ -444,7 +444,7 @@ describe('JobProcessor', () => {
 
 			expect(result).toBeNull();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.any(Object),
 				{ returnDocument: 'after' },
 			);
@@ -483,7 +483,7 @@ describe('JobProcessor', () => {
 			expect(result?.status).toBe(JobStatus.PENDING);
 			expect(result?.failCount).toBe(1);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
 					$set: expect.objectContaining({
 						status: JobStatus.PENDING,
@@ -514,7 +514,7 @@ describe('JobProcessor', () => {
 			expect(result?.status).toBe(JobStatus.FAILED);
 			expect(result?.failCount).toBe(3);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
 					$set: expect.objectContaining({
 						status: JobStatus.FAILED,
@@ -536,7 +536,7 @@ describe('JobProcessor', () => {
 
 			expect(result).toBeNull();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING },
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.any(Object),
 				{ returnDocument: 'after' },
 			);
