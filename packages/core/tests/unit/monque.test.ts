@@ -34,6 +34,7 @@ describe('Monque', () => {
 			createIndexes: vi.fn().mockResolvedValue(['index_name']),
 			updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
 			deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
+			findOne: vi.fn().mockResolvedValue(null),
 		} as unknown as Collection;
 
 		mockDb = {
