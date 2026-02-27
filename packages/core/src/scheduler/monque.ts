@@ -7,13 +7,13 @@ import {
 	type BulkOperationResult,
 	type CursorOptions,
 	type CursorPage,
+	documentToPersistedJob,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	type Job,
 	type JobHandler,
 	type JobSelector,
 	JobStatus,
-	type JobStatusType,
 	type PersistedJob,
 	type QueueStats,
 	type ScheduleOptions,
@@ -257,7 +257,7 @@ export class Monque extends EventEmitter {
 			isRunning: () => this.isRunning,
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
-			documentToPersistedJob: <T>(doc: WithId<Document>) => this.documentToPersistedJob<T>(doc),
+			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}
 	/**
@@ -1221,55 +1221,6 @@ export class Monque extends EventEmitter {
 			activeJobs.push(...worker.activeJobs.values());
 		}
 		return activeJobs;
-	}
-
-	/**
-	 * Convert a MongoDB document to a typed PersistedJob object.
-	 *
-	 * Maps raw MongoDB document fields to the strongly-typed `PersistedJob<T>` interface,
-	 * ensuring type safety and handling optional fields (`lockedAt`, `failReason`, etc.).
-	 *
-	 * @private
-	 * @template T - The job data payload type
-	 * @param doc - The raw MongoDB document with `_id`
-	 * @returns A strongly-typed PersistedJob object with guaranteed `_id`
-	 */
-	private documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
-		const job: PersistedJob<T> = {
-			_id: doc._id,
-			name: doc['name'] as string,
-			data: doc['data'] as T,
-			status: doc['status'] as JobStatusType,
-			nextRunAt: doc['nextRunAt'] as Date,
-			failCount: doc['failCount'] as number,
-			createdAt: doc['createdAt'] as Date,
-			updatedAt: doc['updatedAt'] as Date,
-		};
-
-		// Only set optional properties if they exist
-		if (doc['lockedAt'] !== undefined) {
-			job.lockedAt = doc['lockedAt'] as Date | null;
-		}
-		if (doc['claimedBy'] !== undefined) {
-			job.claimedBy = doc['claimedBy'] as string | null;
-		}
-		if (doc['lastHeartbeat'] !== undefined) {
-			job.lastHeartbeat = doc['lastHeartbeat'] as Date | null;
-		}
-		if (doc['heartbeatInterval'] !== undefined) {
-			job.heartbeatInterval = doc['heartbeatInterval'] as number;
-		}
-		if (doc['failReason'] !== undefined) {
-			job.failReason = doc['failReason'] as string;
-		}
-		if (doc['repeatInterval'] !== undefined) {
-			job.repeatInterval = doc['repeatInterval'] as string;
-		}
-		if (doc['uniqueKey'] !== undefined) {
-			job.uniqueKey = doc['uniqueKey'] as string;
-		}
-
-		return job;
 	}
 
 	/**

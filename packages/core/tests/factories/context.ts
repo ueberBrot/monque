@@ -5,11 +5,11 @@
  * allowing tests to verify internal service behavior without MongoDB.
  */
 
-import type { Collection, Document, WithId } from 'mongodb';
+import type { Collection, Document } from 'mongodb';
 import { vi } from 'vitest';
 
 import type { MonqueEventMap } from '@/events';
-import type { JobHandler, JobStatusType, PersistedJob } from '@/jobs';
+import { documentToPersistedJob, type JobHandler, type PersistedJob } from '@/jobs';
 import type { ResolvedMonqueOptions, SchedulerContext } from '@/scheduler/services/types.js';
 import type { WorkerRegistration } from '@/workers';
 
@@ -87,23 +87,7 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
 			emitHistory.push({ event, payload });
 			return true;
 		}),
-		documentToPersistedJob: <T>(doc: WithId<Document>): PersistedJob<T> => {
-			return {
-				_id: doc._id,
-				name: doc['name'] as string,
-				data: doc['data'] as T,
-				status: doc['status'] as JobStatusType,
-				nextRunAt: doc['nextRunAt'] as Date,
-				failCount: doc['failCount'] as number,
-				createdAt: doc['createdAt'] as Date,
-				updatedAt: doc['updatedAt'] as Date,
-				...(doc['uniqueKey'] && { uniqueKey: doc['uniqueKey'] as string }),
-				...(doc['repeatInterval'] && { repeatInterval: doc['repeatInterval'] as string }),
-				...(doc['lockedAt'] && { lockedAt: doc['lockedAt'] as Date }),
-				...(doc['claimedBy'] && { claimedBy: doc['claimedBy'] as string }),
-				...(doc['failReason'] && { failReason: doc['failReason'] as string }),
-			};
-		},
+		documentToPersistedJob: documentToPersistedJob,
 		...overrides,
 	};
 

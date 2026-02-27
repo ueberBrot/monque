@@ -1,3 +1,5 @@
+// Mapper
+export { documentToPersistedJob } from './document-to-persisted-job.js';
 // Guards
 export {
 	isCancelledJob,
