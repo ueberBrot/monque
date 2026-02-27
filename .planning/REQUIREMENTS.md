@@ -11,7 +11,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **TEST-01**: Unit tests cover MonqueModule.registerJobs() edge cases — scope resolution failures, duplicate detection, partial registration errors, malformed metadata
 - [ ] **TEST-02**: getQueueStats aggregation timeout path has a dedicated unit test that validates AggregationTimeoutError is thrown when MongoDB returns a time limit error
-- [ ] **TEST-03**: Cleanup/retention feature has a test verifying concurrent Monque instances running cleanup simultaneously on the same collection behave correctly
+- [x] **TEST-03**: Cleanup/retention feature has a test verifying concurrent Monque instances running cleanup simultaneously on the same collection behave correctly
 
 ### Performance
 
@@ -59,7 +59,7 @@ Deferred to future milestones. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | TEST-01 | Phase 1: Test Coverage Foundation | Pending |
 | TEST-02 | Phase 1: Test Coverage Foundation | Pending |
-| TEST-03 | Phase 1: Test Coverage Foundation | Pending |
+| TEST-03 | Phase 1: Test Coverage Foundation | Complete |
 | SECR-01 | Phase 2: Safety & Robustness | Pending |
 | SECR-02 | Phase 2: Safety & Robustness | Pending |
 | REFR-02 | Phase 2: Safety & Robustness | Pending |
