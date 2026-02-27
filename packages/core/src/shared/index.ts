@@ -14,5 +14,6 @@ export {
 	DEFAULT_BASE_INTERVAL,
 	DEFAULT_MAX_BACKOFF_DELAY,
 	getNextCronDate,
+	toError,
 	validateCronExpression,
 } from './utils/index.js';

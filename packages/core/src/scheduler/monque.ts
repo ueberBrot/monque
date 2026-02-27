@@ -18,7 +18,7 @@ import {
 	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
+import { ConnectionError, ShutdownTimeoutError, toError, WorkerRegistrationError } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
 import {
@@ -1001,14 +1001,14 @@ export class Monque extends EventEmitter {
 		// Set up polling as backup (runs at configured interval)
 		this.pollIntervalId = setInterval(() => {
 			this.processor.poll().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
+				this.emit('job:error', { error: toError(error) });
 			});
 		}, this.options.pollInterval);
 
 		// Start heartbeat interval for claimed jobs
 		this.heartbeatIntervalId = setInterval(() => {
 			this.processor.updateHeartbeats().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
+				this.emit('job:error', { error: toError(error) });
 			});
 		}, this.options.heartbeatInterval);
 
@@ -1018,19 +1018,19 @@ export class Monque extends EventEmitter {
 
 			// Run immediately on start
 			this.cleanupJobs().catch((error: unknown) => {
-				this.emit('job:error', { error: error as Error });
+				this.emit('job:error', { error: toError(error) });
 			});
 
 			this.cleanupIntervalId = setInterval(() => {
 				this.cleanupJobs().catch((error: unknown) => {
-					this.emit('job:error', { error: error as Error });
+					this.emit('job:error', { error: toError(error) });
 				});
 			}, interval);
 		}
 
 		// Run initial poll immediately to pick up any existing jobs
 		this.processor.poll().catch((error: unknown) => {
-			this.emit('job:error', { error: error as Error });
+			this.emit('job:error', { error: toError(error) });
 		});
 	}
 

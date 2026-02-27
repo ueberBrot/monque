@@ -1,5 +1,5 @@
 import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
-import { calculateBackoff, getNextCronDate } from '@/shared';
+import { calculateBackoff, getNextCronDate, toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
 import type { SchedulerContext } from './types.js';
@@ -117,7 +117,7 @@ export class JobProcessor {
 					worker.activeJobs.set(job._id.toString(), job);
 
 					this.processJob(job, worker).catch((error: unknown) => {
-						this.ctx.emit('job:error', { error: error as Error, job });
+						this.ctx.emit('job:error', { error: toError(error), job });
 					});
 				} else {
 					// No more jobs available for this worker

@@ -1,6 +1,7 @@
 import type { ChangeStream, ChangeStreamDocument, Document } from 'mongodb';
 
 import { JobStatus } from '@/jobs';
+import { toError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -133,7 +134,7 @@ export class ChangeStreamHandler {
 			this.debounceTimer = setTimeout(() => {
 				this.debounceTimer = null;
 				this.onPoll().catch((error: unknown) => {
-					this.ctx.emit('job:error', { error: error as Error });
+					this.ctx.emit('job:error', { error: toError(error) });
 				});
 			}, 100);
 		}
