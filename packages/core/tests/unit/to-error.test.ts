@@ -69,4 +69,28 @@ describe('toError', () => {
 		expect(result).toBeInstanceOf(Error);
 		expect(result.message).toBe('custom message');
 	});
+
+	it('should return a safe fallback when String() conversion throws', () => {
+		const value = {
+			toString() {
+				throw new Error('broken toString');
+			},
+		};
+		const result = toError(value);
+
+		expect(result).toBeInstanceOf(Error);
+		expect(result.message).toBe('Unserializable value (broken toString)');
+	});
+
+	it('should handle a non-Error throw from String() conversion', () => {
+		const value = {
+			toString() {
+				throw 'raw string throw'; // eslint-disable-line no-throw-literal
+			},
+		};
+		const result = toError(value);
+
+		expect(result).toBeInstanceOf(Error);
+		expect(result.message).toBe('Unserializable value (unknown conversion failure)');
+	});
 });
