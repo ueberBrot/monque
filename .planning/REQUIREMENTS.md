@@ -57,15 +57,15 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TEST-01 | Phase 1 | Pending |
-| TEST-02 | Phase 1 | Pending |
-| TEST-03 | Phase 1 | Pending |
-| SECR-01 | Phase 2 | Pending |
-| SECR-02 | Phase 2 | Pending |
-| REFR-02 | Phase 2 | Pending |
-| PERF-01 | Phase 3 | Pending |
-| PERF-02 | Phase 3 | Pending |
-| REFR-01 | Phase 4 | Pending |
+| TEST-01 | Phase 1: Test Coverage Foundation | Pending |
+| TEST-02 | Phase 1: Test Coverage Foundation | Pending |
+| TEST-03 | Phase 1: Test Coverage Foundation | Pending |
+| SECR-01 | Phase 2: Safety & Robustness | Pending |
+| SECR-02 | Phase 2: Safety & Robustness | Pending |
+| REFR-02 | Phase 2: Safety & Robustness | Pending |
+| PERF-01 | Phase 3: Performance Optimization | Pending |
+| PERF-02 | Phase 3: Performance Optimization | Pending |
+| REFR-01 | Phase 4: Structural Refactoring | Pending |
 
 **Coverage:**
 - v1 requirements: 9 total
@@ -74,4 +74,4 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 after initial definition*
+*Last updated: 2026-02-27 after roadmap creation*
