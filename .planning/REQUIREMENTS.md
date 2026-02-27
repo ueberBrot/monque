@@ -20,13 +20,13 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SECR-01**: Optional maxPayloadSize option validates job data payload size before MongoDB insertion, using BSON.calculateObjectSize from the existing mongodb dependency
+- [x] **SECR-01**: Optional maxPayloadSize option validates job data payload size before MongoDB insertion, using BSON.calculateObjectSize from the existing mongodb dependency
 - [ ] **SECR-02**: Startup check during initialize() warns or throws when another active instance is using the same schedulerInstanceId, using heartbeat staleness as the discriminator to avoid false positives after crash recovery
 
 ### Refactoring
 
 - [ ] **REFR-01**: Monque facade class is reduced in size by deduplicating JSDoc documentation using @inheritdoc or @see tags, and optionally extracting timer/interval management into a LifecycleManager service
-- [ ] **REFR-02**: documentToPersistedJob mapper uses a compile-time exhaustiveness guard (TypeScript satisfies operator) so that adding a new field to the Job interface produces a compile error if the mapper is not updated
+- [x] **REFR-02**: documentToPersistedJob mapper uses a compile-time exhaustiveness guard (TypeScript satisfies operator) so that adding a new field to the Job interface produces a compile error if the mapper is not updated
 
 ## v2 Requirements
 
@@ -60,9 +60,9 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | TEST-01 | Phase 1: Test Coverage Foundation | Complete |
 | TEST-02 | Phase 1: Test Coverage Foundation | Complete |
 | TEST-03 | Phase 1: Test Coverage Foundation | Complete |
-| SECR-01 | Phase 2: Safety & Robustness | Pending |
+| SECR-01 | Phase 2: Safety & Robustness | Complete |
 | SECR-02 | Phase 2: Safety & Robustness | Pending |
-| REFR-02 | Phase 2: Safety & Robustness | Pending |
+| REFR-02 | Phase 2: Safety & Robustness | Complete |
 | PERF-01 | Phase 3: Performance Optimization | Pending |
 | PERF-02 | Phase 3: Performance Optimization | Pending |
 | REFR-01 | Phase 4: Structural Refactoring | Pending |
