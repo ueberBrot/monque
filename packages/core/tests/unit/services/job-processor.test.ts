@@ -7,10 +7,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
+import { createMockContext, createWorker, JobFactory, JobFactoryHelpers } from '@tests/factories';
 import { JobStatus, type PersistedJob } from '@/jobs';
 import { JobProcessor } from '@/scheduler/services/job-processor.js';
-import type { WorkerRegistration } from '@/workers';
 
 describe('JobProcessor', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -35,12 +34,7 @@ describe('JobProcessor', () => {
 		});
 
 		it('should poll for each registered worker with available capacity', async () => {
-			const testWorker: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 2,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-			ctx.workers.set('test-job', testWorker);
+			ctx.workers.set('test-job', createWorker({ concurrency: 2 }));
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
 
@@ -51,12 +45,13 @@ describe('JobProcessor', () => {
 
 		it('should skip workers at max concurrency', async () => {
 			const job = JobFactory.build();
-			const testWorker: WorkerRegistration = {
-				handler: vi.fn(),
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>([['job-1', job]]),
-			};
-			ctx.workers.set('test-job', testWorker);
+			ctx.workers.set(
+				'test-job',
+				createWorker({
+					concurrency: 1,
+					activeJobs: new Map<string, PersistedJob>([['job-1', job]]),
+				}),
+			);
 
 			await processor.poll();
 
@@ -69,18 +64,20 @@ describe('JobProcessor', () => {
 			const job1 = JobFactory.build();
 			const job2 = JobFactory.build();
 
-			const worker1: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 5,
-				activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
-			};
-			const worker2: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 5,
-				activeJobs: new Map<string, PersistedJob>([['job-2', job2]]),
-			};
-			ctx.workers.set('worker-1', worker1);
-			ctx.workers.set('worker-2', worker2);
+			ctx.workers.set(
+				'worker-1',
+				createWorker({
+					concurrency: 5,
+					activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
+				}),
+			);
+			ctx.workers.set(
+				'worker-2',
+				createWorker({
+					concurrency: 5,
+					activeJobs: new Map<string, PersistedJob>([['job-2', job2]]),
+				}),
+			);
 
 			await processor.poll();
 
@@ -94,18 +91,14 @@ describe('JobProcessor', () => {
 			const job1 = JobFactory.build();
 			const newJob = JobFactory.build({ name: 'worker-2' });
 
-			const worker1: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 5,
-				activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
-			};
-			const worker2: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 5,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-			ctx.workers.set('worker-1', worker1);
-			ctx.workers.set('worker-2', worker2);
+			ctx.workers.set(
+				'worker-1',
+				createWorker({
+					concurrency: 5,
+					activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
+				}),
+			);
+			ctx.workers.set('worker-2', createWorker({ concurrency: 5 }));
 
 			// Return job on first call, null on subsequent calls
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
@@ -126,12 +119,7 @@ describe('JobProcessor', () => {
 			const newJob1 = JobFactory.build({ name: 'test-job' });
 			const newJob2 = JobFactory.build({ name: 'test-job' });
 
-			const worker: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 10,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-			ctx.workers.set('test-job', worker);
+			ctx.workers.set('test-job', createWorker({ concurrency: 10 }));
 
 			const spy = vi
 				.spyOn(ctx.mockCollection, 'findOneAndUpdate')
@@ -158,12 +146,7 @@ describe('JobProcessor', () => {
 			// instanceConcurrency is undefined by default
 			expect(ctx.options.instanceConcurrency).toBeUndefined();
 
-			const testWorker: WorkerRegistration = {
-				handler: vi.fn().mockResolvedValue(undefined),
-				concurrency: 3,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
-			ctx.workers.set('test-job', testWorker);
+			ctx.workers.set('test-job', createWorker({ concurrency: 3 }));
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
 
@@ -226,11 +209,7 @@ describe('JobProcessor', () => {
 				data: job.data,
 			});
 			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker({ handler });
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(completedJob);
 
@@ -248,12 +227,7 @@ describe('JobProcessor', () => {
 				name: job.name,
 				data: job.data,
 			});
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker();
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(completedJob);
 
@@ -274,12 +248,9 @@ describe('JobProcessor', () => {
 				failCount: 1,
 				failReason: 'Handler failed',
 			});
-			const handler = vi.fn().mockRejectedValue(new Error('Handler failed'));
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker({
+				handler: vi.fn().mockRejectedValue(new Error('Handler failed')),
+			});
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(failedJob);
 
@@ -299,12 +270,9 @@ describe('JobProcessor', () => {
 				failCount: 1,
 				failReason: 'String error message',
 			});
-			const handler = vi.fn().mockRejectedValue('String error message');
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker({
+				handler: vi.fn().mockRejectedValue('String error message'),
+			});
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(failedJob);
 
@@ -324,12 +292,7 @@ describe('JobProcessor', () => {
 				name: job.name,
 				data: job.data,
 			});
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker();
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(completedJob);
 
@@ -340,12 +303,7 @@ describe('JobProcessor', () => {
 
 		it('should not emit job:complete when completeJob returns null (race condition)', async () => {
 			const job = JobFactoryHelpers.processing();
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker();
 
 			// completeJob returns null (job was deleted or status changed concurrently)
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
@@ -360,12 +318,9 @@ describe('JobProcessor', () => {
 
 		it('should not emit job:fail when failJob returns null (race condition)', async () => {
 			const job = JobFactoryHelpers.processing({ failCount: 0 });
-			const handler = vi.fn().mockRejectedValue(new Error('Handler failed'));
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker({
+				handler: vi.fn().mockRejectedValue(new Error('Handler failed')),
+			});
 
 			// failJob returns null (job was deleted or status changed concurrently)
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
@@ -385,12 +340,9 @@ describe('JobProcessor', () => {
 				data: job1.data,
 				failCount: 1,
 			});
-			const handler1 = vi.fn().mockRejectedValue(new Error('Fail'));
-			const worker1: WorkerRegistration = {
-				handler: handler1,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker1 = createWorker({
+				handler: vi.fn().mockRejectedValue(new Error('Fail')),
+			});
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
 
@@ -410,12 +362,9 @@ describe('JobProcessor', () => {
 				data: job2.data,
 				failCount: 3,
 			});
-			const handler2 = vi.fn().mockRejectedValue(new Error('Fail'));
-			const worker2: WorkerRegistration = {
-				handler: handler2,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker2 = createWorker({
+				handler: vi.fn().mockRejectedValue(new Error('Fail')),
+			});
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(permanentlyFailedJob);
 
@@ -427,12 +376,7 @@ describe('JobProcessor', () => {
 
 		it('should still remove job from activeJobs even when transition returns null', async () => {
 			const job = JobFactoryHelpers.processing();
-			const handler = vi.fn().mockResolvedValue(undefined);
-			const worker: WorkerRegistration = {
-				handler,
-				concurrency: 1,
-				activeJobs: new Map<string, PersistedJob>(),
-			};
+			const worker = createWorker();
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 
@@ -505,41 +449,14 @@ describe('JobProcessor', () => {
 				{ returnDocument: 'after' },
 			);
 		});
-	});
 
-	describe('completeJob - edge cases', () => {
 		it('should return null for non-persisted jobs (no _id)', async () => {
-			const nonPersistedJob = {
-				name: 'test-job',
-				data: {},
-				status: JobStatus.PROCESSING,
-				nextRunAt: new Date(),
-				failCount: 0,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			} as unknown as Parameters<typeof processor.completeJob>[0];
+			const { _id: _, ...jobWithoutId } = JobFactory.build();
+			const nonPersistedJob = jobWithoutId as unknown as Parameters<
+				typeof processor.completeJob
+			>[0];
 
 			const result = await processor.completeJob(nonPersistedJob);
-
-			expect(result).toBeNull();
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-	});
-
-	describe('failJob - edge cases', () => {
-		it('should return null for non-persisted jobs (no _id)', async () => {
-			const nonPersistedJob = {
-				name: 'test-job',
-				data: {},
-				status: JobStatus.PROCESSING,
-				nextRunAt: new Date(),
-				failCount: 0,
-				createdAt: new Date(),
-				updatedAt: new Date(),
-			} as unknown as Parameters<typeof processor.failJob>[0];
-
-			const error = new Error('Test error');
-			const result = await processor.failJob(nonPersistedJob, error);
 
 			expect(result).toBeNull();
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
@@ -623,6 +540,17 @@ describe('JobProcessor', () => {
 				expect.any(Object),
 				{ returnDocument: 'after' },
 			);
+		});
+
+		it('should return null for non-persisted jobs (no _id)', async () => {
+			const { _id: _, ...jobWithoutId } = JobFactory.build();
+			const nonPersistedJob = jobWithoutId as unknown as Parameters<typeof processor.failJob>[0];
+			const error = new Error('Test error');
+
+			const result = await processor.failJob(nonPersistedJob, error);
+
+			expect(result).toBeNull();
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
 		});
 	});
 
