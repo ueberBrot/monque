@@ -1,5 +1,5 @@
 /**
- * Factory for creating mock SchedulerContext for service unit tests.
+ * Factory for creating mock SchedulerContext and WorkerRegistration for service unit tests.
  *
  * Provides a reusable mock context with vi.fn() stubs for all methods,
  * allowing tests to verify internal service behavior without MongoDB.
@@ -9,7 +9,7 @@ import type { Collection, Document, WithId } from 'mongodb';
 import { vi } from 'vitest';
 
 import type { MonqueEventMap } from '@/events';
-import type { JobStatusType, PersistedJob } from '@/jobs';
+import type { JobHandler, JobStatusType, PersistedJob } from '@/jobs';
 import type { ResolvedMonqueOptions, SchedulerContext } from '@/scheduler/services/types.js';
 import type { WorkerRegistration } from '@/workers';
 
@@ -107,4 +107,27 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
 	};
 
 	return { ...ctx, mockCollection, emitHistory };
+}
+
+/**
+ * Create a mock WorkerRegistration for testing.
+ *
+ * @example
+ * ```typescript
+ * // Default: resolving handler, concurrency 1, no active jobs
+ * const worker = createWorker();
+ *
+ * // Custom handler and concurrency
+ * const worker = createWorker({ handler: vi.fn().mockRejectedValue(new Error('fail')), concurrency: 5 });
+ *
+ * // Pre-populate active jobs
+ * const worker = createWorker({ activeJobs: new Map([['id', job]]) });
+ * ```
+ */
+export function createWorker(overrides: Partial<WorkerRegistration> = {}): WorkerRegistration {
+	return {
+		handler: (overrides.handler as JobHandler) ?? vi.fn().mockResolvedValue(undefined),
+		concurrency: overrides.concurrency ?? 1,
+		activeJobs: overrides.activeJobs ?? new Map<string, PersistedJob>(),
+	};
 }

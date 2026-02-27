@@ -189,6 +189,10 @@ export class JobProcessor {
 	 * both success and failure cases. On success, calls `completeJob()`. On failure,
 	 * calls `failJob()` which implements exponential backoff retry logic.
 	 *
+	 * Events are only emitted when the underlying atomic status transition succeeds,
+	 * ensuring event consumers receive reliable, consistent data backed by the actual
+	 * database state.
+	 *
 	 * @param job - The job to process
 	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
@@ -202,39 +206,50 @@ export class JobProcessor {
 
 			// Job completed successfully
 			const duration = Date.now() - startTime;
-			await this.completeJob(job);
-			this.ctx.emit('job:complete', { job, duration });
+			const updatedJob = await this.completeJob(job);
+
+			if (updatedJob) {
+				this.ctx.emit('job:complete', { job: updatedJob, duration });
+			}
 		} catch (error) {
 			// Job failed
 			const err = error instanceof Error ? error : new Error(String(error));
-			await this.failJob(job, err);
+			const updatedJob = await this.failJob(job, err);
 
-			const willRetry = job.failCount + 1 < this.ctx.options.maxRetries;
-			this.ctx.emit('job:fail', { job, error: err, willRetry });
+			if (updatedJob) {
+				const willRetry = updatedJob.status === JobStatus.PENDING;
+				this.ctx.emit('job:fail', { job: updatedJob, error: err, willRetry });
+			}
 		} finally {
 			worker.activeJobs.delete(jobId);
 		}
 	}
 
 	/**
-	 * Mark a job as completed successfully.
+	 * Mark a job as completed successfully using an atomic status transition.
+	 *
+	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
+	 * preconditions to ensure the transition only occurs if the job is still owned by this
+	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
+	 * by another instance after stale recovery).
 	 *
 	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
 	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
 	 * Clears `lockedAt` and `failReason` fields in both cases.
 	 *
 	 * @param job - The job that completed successfully
+	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
-	async completeJob(job: Job): Promise<void> {
+	async completeJob(job: Job): Promise<PersistedJob | null> {
 		if (!isPersistedJob(job)) {
-			return;
+			return null;
 		}
 
 		if (job.repeatInterval) {
 			// Recurring job - schedule next run
 			const nextRunAt = getNextCronDate(job.repeatInterval);
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 				{
 					$set: {
 						status: JobStatus.PENDING,
@@ -250,52 +265,63 @@ export class JobProcessor {
 						failReason: '',
 					},
 				},
+				{ returnDocument: 'after' },
 			);
-		} else {
-			// One-time job - mark as completed
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.COMPLETED,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-						failReason: '',
-					},
-				},
-			);
-			job.status = JobStatus.COMPLETED;
+
+			return result ? this.ctx.documentToPersistedJob(result) : null;
 		}
+
+		// One-time job - mark as completed
+		const result = await this.ctx.collection.findOneAndUpdate(
+			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
+			{
+				$set: {
+					status: JobStatus.COMPLETED,
+					updatedAt: new Date(),
+				},
+				$unset: {
+					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+					heartbeatInterval: '',
+					failReason: '',
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		return result ? this.ctx.documentToPersistedJob(result) : null;
 	}
 
 	/**
-	 * Handle job failure with exponential backoff retry logic.
+	 * Handle job failure with exponential backoff retry logic using an atomic status transition.
+	 *
+	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
+	 * preconditions to ensure the transition only occurs if the job is still owned by this
+	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
+	 * by another instance after stale recovery).
 	 *
 	 * Increments `failCount` and calculates next retry time using exponential backoff:
-	 * `nextRunAt = 2^failCount × baseRetryInterval` (capped by optional `maxBackoffDelay`).
+	 * `nextRunAt = 2^failCount * baseRetryInterval` (capped by optional `maxBackoffDelay`).
 	 *
 	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
 	 * to `pending` status for retry. Stores error message in `failReason` field.
 	 *
 	 * @param job - The job that failed
 	 * @param error - The error that caused the failure
+	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
-	async failJob(job: Job, error: Error): Promise<void> {
+	async failJob(job: Job, error: Error): Promise<PersistedJob | null> {
 		if (!isPersistedJob(job)) {
-			return;
+			return null;
 		}
 
 		const newFailCount = job.failCount + 1;
 
 		if (newFailCount >= this.ctx.options.maxRetries) {
 			// Permanent failure
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
 				{
 					$set: {
 						status: JobStatus.FAILED,
@@ -310,34 +336,40 @@ export class JobProcessor {
 						heartbeatInterval: '',
 					},
 				},
-			);
-		} else {
-			// Schedule retry with exponential backoff
-			const nextRunAt = calculateBackoff(
-				newFailCount,
-				this.ctx.options.baseRetryInterval,
-				this.ctx.options.maxBackoffDelay,
+				{ returnDocument: 'after' },
 			);
 
-			await this.ctx.collection.updateOne(
-				{ _id: job._id },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						failCount: newFailCount,
-						failReason: error.message,
-						nextRunAt,
-						updatedAt: new Date(),
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
-				},
-			);
+			return result ? this.ctx.documentToPersistedJob(result) : null;
 		}
+
+		// Schedule retry with exponential backoff
+		const nextRunAt = calculateBackoff(
+			newFailCount,
+			this.ctx.options.baseRetryInterval,
+			this.ctx.options.maxBackoffDelay,
+		);
+
+		const result = await this.ctx.collection.findOneAndUpdate(
+			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
+			{
+				$set: {
+					status: JobStatus.PENDING,
+					failCount: newFailCount,
+					failReason: error.message,
+					nextRunAt,
+					updatedAt: new Date(),
+				},
+				$unset: {
+					lockedAt: '',
+					claimedBy: '',
+					lastHeartbeat: '',
+					heartbeatInterval: '',
+				},
+			},
+			{ returnDocument: 'after' },
+		);
+
+		return result ? this.ctx.documentToPersistedJob(result) : null;
 	}
 
 	/**
