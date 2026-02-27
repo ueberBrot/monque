@@ -162,4 +162,15 @@ export interface MonqueOptions {
 	 * @deprecated Use `instanceConcurrency` instead. Will be removed in a future major version.
 	 */
 	maxConcurrency?: number | undefined;
+
+	/**
+	 * Skip automatic index creation during initialization.
+	 *
+	 * When `true`, `initialize()` will not create MongoDB indexes. Use this in production
+	 * environments where indexes are managed externally (e.g., via migration scripts or DBA
+	 * tooling). See the production checklist for the full list of required indexes.
+	 *
+	 * @default false
+	 */
+	skipIndexCreation?: boolean;
 }

@@ -14,7 +14,7 @@ describe('Monque Shutdown Race Condition', () => {
 
 		// Create a partial mock of the collection
 		collection = {
-			createIndex: vi.fn(),
+			createIndexes: vi.fn(),
 			findOneAndUpdate: vi.fn(),
 			watch: vi.fn(),
 			updateMany: vi.fn(), // Needed for updateHeartbeats / recoverStaleJobs implicitly called

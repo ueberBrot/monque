@@ -148,6 +148,7 @@ export class Monque extends EventEmitter {
 			schedulerInstanceId: options.schedulerInstanceId ?? randomUUID(),
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 			jobRetention: options.jobRetention,
+			skipIndexCreation: options.skipIndexCreation ?? false,
 		};
 	}
 
@@ -165,8 +166,10 @@ export class Monque extends EventEmitter {
 		try {
 			this.collection = this.db.collection(this.options.collectionName);
 
-			// Create indexes for efficient queries
-			await this.createIndexes();
+			// Create indexes for efficient queries (unless externally managed)
+			if (!this.options.skipIndexCreation) {
+				await this.createIndexes();
+			}
 
 			// Recover stale jobs if enabled
 			if (this.options.recoverStaleJobs) {
@@ -274,14 +277,13 @@ export class Monque extends EventEmitter {
 			throw new ConnectionError('Collection not initialized');
 		}
 
-		// Compound index for job polling - status + nextRunAt for efficient queries
-		await this.collection.createIndex({ status: 1, nextRunAt: 1 }, { background: true });
-
-		// Partial unique index for deduplication - scoped by name + uniqueKey
-		// Only enforced where uniqueKey exists and status is pending/processing
-		await this.collection.createIndex(
-			{ name: 1, uniqueKey: 1 },
+		await this.collection.createIndexes([
+			// Compound index for job polling - status + nextRunAt for efficient queries
+			{ key: { status: 1, nextRunAt: 1 }, background: true },
+			// Partial unique index for deduplication - scoped by name + uniqueKey
+			// Only enforced where uniqueKey exists and status is pending/processing
 			{
+				key: { name: 1, uniqueKey: 1 },
 				unique: true,
 				partialFilterExpression: {
 					uniqueKey: { $exists: true },
@@ -289,31 +291,20 @@ export class Monque extends EventEmitter {
 				},
 				background: true,
 			},
-		);
-
-		// Index for job lookup by name
-		await this.collection.createIndex({ name: 1, status: 1 }, { background: true });
-
-		// Compound index for finding jobs claimed by a specific scheduler instance.
-		// Used for heartbeat updates and cleanup on shutdown.
-		await this.collection.createIndex({ claimedBy: 1, status: 1 }, { background: true });
-
-		// Compound index for monitoring/debugging via heartbeat timestamps.
-		// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
-		await this.collection.createIndex({ lastHeartbeat: 1, status: 1 }, { background: true });
-
-		// Compound index for atomic claim queries.
-		// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
-		await this.collection.createIndex(
-			{ status: 1, nextRunAt: 1, claimedBy: 1 },
-			{ background: true },
-		);
-
-		// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
-		await this.collection.createIndex(
-			{ status: 1, lockedAt: 1, lastHeartbeat: 1 },
-			{ background: true },
-		);
+			// Index for job lookup by name
+			{ key: { name: 1, status: 1 }, background: true },
+			// Compound index for finding jobs claimed by a specific scheduler instance.
+			// Used for heartbeat updates and cleanup on shutdown.
+			{ key: { claimedBy: 1, status: 1 }, background: true },
+			// Compound index for monitoring/debugging via heartbeat timestamps.
+			// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
+			{ key: { lastHeartbeat: 1, status: 1 }, background: true },
+			// Compound index for atomic claim queries.
+			// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
+			{ key: { status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
+			// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
+			{ key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
+		]);
 	}
 
 	/**

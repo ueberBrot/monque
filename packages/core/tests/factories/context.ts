@@ -30,6 +30,7 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 	maxBackoffDelay: undefined,
 	jobRetention: undefined,
 	instanceConcurrency: undefined,
+	skipIndexCreation: false,
 };
 
 /**
@@ -49,7 +50,7 @@ function createMockCollection(): Collection<Document> {
 		countDocuments: vi.fn(),
 		aggregate: vi.fn(),
 		watch: vi.fn(),
-		createIndex: vi.fn(),
+		createIndexes: vi.fn(),
 	} as unknown as Collection<Document>;
 }
 
