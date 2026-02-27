@@ -38,7 +38,10 @@ Plans:
   1. Configuring `maxPayloadSize` causes jobs exceeding the BSON byte limit to be rejected with a PayloadTooLargeError before MongoDB insertion
   2. Starting a second Monque instance with the same schedulerInstanceId while the first is active throws a ConnectionError (or warns), with no false positives after crash recovery
   3. Adding a new field to the Job interface without updating documentToPersistedJob produces a TypeScript compile error via the `satisfies` guard
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Payload size validation (SECR-01) + mapper exhaustiveness guard (REFR-02)
+- [ ] 02-02-PLAN.md — Instance collision detection (SECR-02)
 
 ### Phase 3: Performance Optimization
 **Goal**: Bulk job operations and stats queries perform with O(1) DB round-trips instead of O(n)
@@ -68,6 +71,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
-| 2. Safety & Robustness | 0/? | Not started | - |
+| 2. Safety & Robustness | 0/2 | Planned | - |
 | 3. Performance Optimization | 0/? | Not started | - |
 | 4. Structural Refactoring | 0/? | Not started | - |
