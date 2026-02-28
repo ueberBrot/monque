@@ -103,7 +103,7 @@ try {
 }
 ```
 
-**Why stale recovery runs first:** A crashed instance leaves jobs in `processing` with a stale heartbeat. Running stale recovery before the collision check resets those jobs to `pending`, preventing false positives from crash-recovery scenarios.
+**Why stale recovery runs first:** A crashed instance leaves jobs in `processing` with a stale `lockedAt` timestamp. Stale recovery uses the job's `lockedAt` field and the configured `lockTimeout` to determine if a job's lock has expired—this is separate from heartbeat monitoring. Collision detection checks `lastHeartbeat` to detect actively running instances. By running stale recovery first, jobs with expired locks are reset to `pending` before the collision check runs, preventing false positives from crash-recovery scenarios.
 
 <Aside type="caution">
   Always use a unique `schedulerInstanceId` per running instance. Sharing an ID across active instances causes a `ConnectionError` on startup of the second instance.
