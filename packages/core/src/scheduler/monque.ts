@@ -432,132 +432,19 @@ export class Monque extends EventEmitter {
 	// Public API - Job Scheduling (delegates to JobScheduler)
 	// ─────────────────────────────────────────────────────────────────────────────
 
-	/**
-	 * Enqueue a job for processing.
-	 *
-	 * Jobs are stored in MongoDB and processed by registered workers. Supports
-	 * delayed execution via `runAt` and deduplication via `uniqueKey`.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. Completed or failed jobs don't block new jobs with the same key.
-	 *
-	 * Failed jobs are automatically retried with exponential backoff up to `maxRetries`
-	 * (default: 10 attempts). The delay between retries is calculated as `2^failCount × baseRetryInterval`.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @param options - Scheduling and deduplication options
-	 * @returns Promise resolving to the created or existing job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Basic job enqueueing
-	 * ```typescript
-	 * await monque.enqueue('send-email', {
-	 *   to: 'user@example.com',
-	 *   subject: 'Welcome!',
-	 *   body: 'Thanks for signing up.'
-	 * });
-	 * ```
-	 *
-	 * @example Delayed execution
-	 * ```typescript
-	 * const oneHourLater = new Date(Date.now() + 3600000);
-	 * await monque.enqueue('reminder', { message: 'Check in!' }, {
-	 *   runAt: oneHourLater
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicates with unique key
-	 * ```typescript
-	 * await monque.enqueue('sync-user', { userId: '123' }, {
-	 *   uniqueKey: 'sync-user-123'
-	 * });
-	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
-	 * ```
-	 */
+	/** {@inheritDoc JobScheduler.enqueue} */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 		return this.scheduler.enqueue(name, data, options);
 	}
 
-	/**
-	 * Enqueue a job for immediate processing.
-	 *
-	 * Convenience method equivalent to `enqueue(name, data, { runAt: new Date() })`.
-	 * Jobs are picked up on the next poll cycle (typically within 1 second based on `pollInterval`).
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler
-	 * @returns Promise resolving to the created job document
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Send email immediately
-	 * ```typescript
-	 * await monque.now('send-email', {
-	 *   to: 'admin@example.com',
-	 *   subject: 'Alert',
-	 *   body: 'Immediate attention required'
-	 * });
-	 * ```
-	 *
-	 * @example Process order in background
-	 * ```typescript
-	 * const order = await createOrder(data);
-	 * await monque.now('process-order', { orderId: order.id });
-	 * return order; // Return immediately, processing happens async
-	 * ```
-	 */
+	/** {@inheritDoc JobScheduler.now} */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 		return this.scheduler.now(name, data);
 	}
 
-	/**
-	 * Schedule a recurring job with a cron expression.
-	 *
-	 * Creates a job that automatically re-schedules itself based on the cron pattern.
-	 * Uses standard 5-field cron format: minute, hour, day of month, month, day of week.
-	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
-	 * After successful completion, the job is reset to `pending` status and scheduled
-	 * for its next run based on the cron expression.
-	 *
-	 * When a `uniqueKey` is provided, only one pending or processing job with that key
-	 * can exist. This prevents duplicate scheduled jobs on application restart.
-	 *
-	 * @template T - The job data payload type (must be JSON-serializable)
-	 * @param cron - Cron expression (5 fields or predefined expression)
-	 * @param name - Job type identifier, must match a registered worker
-	 * @param data - Job payload, will be passed to the worker handler on each run
-	 * @param options - Scheduling options (uniqueKey for deduplication)
-	 * @returns Promise resolving to the created job document with `repeatInterval` set
-	 * @throws {InvalidCronError} If cron expression is invalid
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example Hourly cleanup job
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'cleanup-temp-files', {
-	 *   directory: '/tmp/uploads'
-	 * });
-	 * ```
-	 *
-	 * @example Prevent duplicate scheduled jobs with unique key
-	 * ```typescript
-	 * await monque.schedule('0 * * * *', 'hourly-report', { type: 'sales' }, {
-	 *   uniqueKey: 'hourly-report-sales'
-	 * });
-	 * // Subsequent calls with same uniqueKey return existing pending/processing job
-	 * ```
-	 *
-	 * @example Daily report at midnight (using predefined expression)
-	 * ```typescript
-	 * await monque.schedule('@daily', 'daily-report', {
-	 *   reportType: 'sales',
-	 *   recipients: ['analytics@example.com']
-	 * });
-	 * ```
-	 */
+	/** {@inheritDoc JobScheduler.schedule} */
 	async schedule<T>(
 		cron: string,
 		name: string,
@@ -572,160 +459,43 @@ export class Monque extends EventEmitter {
 	// Public API - Job Management (delegates to JobManager)
 	// ─────────────────────────────────────────────────────────────────────────────
 
-	/**
-	 * Cancel a pending or scheduled job.
-	 *
-	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
-	 * If the job is already cancelled, this is a no-op and returns the job.
-	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
-	 *
-	 * @param jobId - The ID of the job to cancel
-	 * @returns The cancelled job, or null if not found
-	 * @throws {JobStateError} If job is in an invalid state for cancellation
-	 *
-	 * @example Cancel a pending job
-	 * ```typescript
-	 * const job = await monque.enqueue('report', { type: 'daily' });
-	 * await monque.cancelJob(job._id.toString());
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.cancelJob} */
 	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
 		return this.manager.cancelJob(jobId);
 	}
 
-	/**
-	 * Retry a failed or cancelled job.
-	 *
-	 * Resets the job to 'pending' status, clears failure count/reason, and sets
-	 * nextRunAt to now (immediate retry). Emits a 'job:retried' event.
-	 *
-	 * @param jobId - The ID of the job to retry
-	 * @returns The updated job, or null if not found
-	 * @throws {JobStateError} If job is in an invalid state for retry (must be failed or cancelled)
-	 *
-	 * @example Retry a failed job
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   console.log(`Job ${job._id} failed, retrying manually...`);
-	 *   await monque.retryJob(job._id.toString());
-	 * });
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.retryJob} */
 	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
 		return this.manager.retryJob(jobId);
 	}
 
-	/**
-	 * Reschedule a pending job to run at a different time.
-	 *
-	 * Only works for jobs in 'pending' status.
-	 *
-	 * @param jobId - The ID of the job to reschedule
-	 * @param runAt - The new Date when the job should run
-	 * @returns The updated job, or null if not found
-	 * @throws {JobStateError} If job is not in pending state
-	 *
-	 * @example Delay a job by 1 hour
-	 * ```typescript
-	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
-	 * await monque.rescheduleJob(jobId, nextHour);
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.rescheduleJob} */
 	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
 		return this.manager.rescheduleJob(jobId, runAt);
 	}
 
-	/**
-	 * Permanently delete a job.
-	 *
-	 * This action is irreversible. Emits a 'job:deleted' event upon success.
-	 * Can delete a job in any state.
-	 *
-	 * @param jobId - The ID of the job to delete
-	 * @returns true if deleted, false if job not found
-	 *
-	 * @example Delete a cleanup job
-	 * ```typescript
-	 * const deleted = await monque.deleteJob(jobId);
-	 * if (deleted) {
-	 *   console.log('Job permanently removed');
-	 * }
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.deleteJob} */
 	async deleteJob(jobId: string): Promise<boolean> {
 		this.ensureInitialized();
 		return this.manager.deleteJob(jobId);
 	}
 
-	/**
-	 * Cancel multiple jobs matching the given filter.
-	 *
-	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
-	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
-	 * successfully cancelled jobs.
-	 *
-	 * @param filter - Selector for which jobs to cancel (name, status, date range)
-	 * @returns Result with count of cancelled jobs and any errors encountered
-	 *
-	 * @example Cancel all pending jobs for a queue
-	 * ```typescript
-	 * const result = await monque.cancelJobs({
-	 *   name: 'email-queue',
-	 *   status: 'pending'
-	 * });
-	 * console.log(`Cancelled ${result.count} jobs`);
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.cancelJobs} */
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
 		return this.manager.cancelJobs(filter);
 	}
 
-	/**
-	 * Retry multiple jobs matching the given filter.
-	 *
-	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
-	 * are collected as errors in the result. Emits a 'jobs:retried' event with
-	 * the IDs of successfully retried jobs.
-	 *
-	 * @param filter - Selector for which jobs to retry (name, status, date range)
-	 * @returns Result with count of retried jobs and any errors encountered
-	 *
-	 * @example Retry all failed jobs
-	 * ```typescript
-	 * const result = await monque.retryJobs({
-	 *   status: 'failed'
-	 * });
-	 * console.log(`Retried ${result.count} jobs`);
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.retryJobs} */
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
 		return this.manager.retryJobs(filter);
 	}
 
-	/**
-	 * Delete multiple jobs matching the given filter.
-	 *
-	 * Deletes jobs in any status. Uses a batch delete for efficiency.
-	 * Does not emit individual 'job:deleted' events to avoid noise.
-	 *
-	 * @param filter - Selector for which jobs to delete (name, status, date range)
-	 * @returns Result with count of deleted jobs (errors array always empty for delete)
-	 *
-	 * @example Delete old completed jobs
-	 * ```typescript
-	 * const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-	 * const result = await monque.deleteJobs({
-	 *   status: 'completed',
-	 *   olderThan: weekAgo
-	 * });
-	 * console.log(`Deleted ${result.count} jobs`);
-	 * ```
-	 */
+	/** {@inheritDoc JobManager.deleteJobs} */
 	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
 		return this.manager.deleteJobs(filter);
@@ -735,146 +505,25 @@ export class Monque extends EventEmitter {
 	// Public API - Job Queries (delegates to JobQueryService)
 	// ─────────────────────────────────────────────────────────────────────────────
 
-	/**
-	 * Get a single job by its MongoDB ObjectId.
-	 *
-	 * Useful for retrieving job details when you have a job ID from events,
-	 * logs, or stored references.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param id - The job's ObjectId
-	 * @returns Promise resolving to the job if found, null otherwise
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Look up job from event
-	 * ```typescript
-	 * monque.on('job:fail', async ({ job }) => {
-	 *   // Later, retrieve the job to check its status
-	 *   const currentJob = await monque.getJob(job._id);
-	 *   console.log(`Job status: ${currentJob?.status}`);
-	 * });
-	 * ```
-	 *
-	 * @example Admin endpoint
-	 * ```typescript
-	 * app.get('/jobs/:id', async (req, res) => {
-	 *   const job = await monque.getJob(new ObjectId(req.params.id));
-	 *   if (!job) {
-	 *     return res.status(404).json({ error: 'Job not found' });
-	 *   }
-	 *   res.json(job);
-	 * });
-	 * ```
-	 */
+	/** {@inheritDoc JobQueryService.getJob} */
 	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
 		this.ensureInitialized();
 		return this.query.getJob<T>(id);
 	}
 
-	/**
-	 * Query jobs from the queue with optional filters.
-	 *
-	 * Provides read-only access to job data for monitoring, debugging, and
-	 * administrative purposes. Results are ordered by `nextRunAt` ascending.
-	 *
-	 * @template T - The expected type of the job data payload
-	 * @param filter - Optional filter criteria
-	 * @returns Promise resolving to array of matching jobs
-	 * @throws {ConnectionError} If scheduler not initialized
-	 *
-	 * @example Get all pending jobs
-	 * ```typescript
-	 * const pendingJobs = await monque.getJobs({ status: JobStatus.PENDING });
-	 * console.log(`${pendingJobs.length} jobs waiting`);
-	 * ```
-	 *
-	 * @example Get failed email jobs
-	 * ```typescript
-	 * const failedEmails = await monque.getJobs({
-	 *   name: 'send-email',
-	 *   status: JobStatus.FAILED,
-	 * });
-	 * for (const job of failedEmails) {
-	 *   console.error(`Job ${job._id} failed: ${job.failReason}`);
-	 * }
-	 * ```
-	 *
-	 * @example Paginated job listing
-	 * ```typescript
-	 * const page1 = await monque.getJobs({ limit: 50, skip: 0 });
-	 * const page2 = await monque.getJobs({ limit: 50, skip: 50 });
-	 * ```
-	 *
-	 * @example Use with type guards from @monque/core
-	 * ```typescript
-	 * import { isPendingJob, isRecurringJob } from '@monque/core';
-	 *
-	 * const jobs = await monque.getJobs();
-	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
-	 * ```
-	 */
+	/** {@inheritDoc JobQueryService.getJobs} */
 	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
 		this.ensureInitialized();
 		return this.query.getJobs<T>(filter);
 	}
 
-	/**
-	 * Get a paginated list of jobs using opaque cursors.
-	 *
-	 * Provides stable pagination for large job lists. Supports forward and backward
-	 * navigation, filtering, and efficient database access via index-based cursor queries.
-	 *
-	 * @template T - The job data payload type
-	 * @param options - Pagination options (cursor, limit, direction, filter)
-	 * @returns Page of jobs with next/prev cursors
-	 * @throws {InvalidCursorError} If the provided cursor is malformed
-	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
-	 *
-	 * @example List pending jobs
-	 * ```typescript
-	 * const page = await monque.getJobsWithCursor({
-	 *   limit: 20,
-	 *   filter: { status: 'pending' }
-	 * });
-	 * const jobs = page.jobs;
-	 *
-	 * // Get next page
-	 * if (page.hasNextPage) {
-	 *   const page2 = await monque.getJobsWithCursor({
-	 *     cursor: page.cursor,
-	 *     limit: 20
-	 *   });
-	 * }
-	 * ```
-	 */
+	/** {@inheritDoc JobQueryService.getJobsWithCursor} */
 	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
 		this.ensureInitialized();
 		return this.query.getJobsWithCursor<T>(options);
 	}
 
-	/**
-	 * Get aggregate statistics for the job queue.
-	 *
-	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
-	 * Returns counts per status and optional average processing duration for completed jobs.
-	 *
-	 * @param filter - Optional filter to scope statistics by job name
-	 * @returns Promise resolving to queue statistics
-	 * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
-	 * @throws {ConnectionError} If database operation fails
-	 *
-	 * @example Get overall queue statistics
-	 * ```typescript
-	 * const stats = await monque.getQueueStats();
-	 * console.log(`Pending: ${stats.pending}, Failed: ${stats.failed}`);
-	 * ```
-	 *
-	 * @example Get statistics for a specific job type
-	 * ```typescript
-	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
-	 * console.log(`${emailStats.total} email jobs in queue`);
-	 * ```
-	 */
+	/** {@inheritDoc JobQueryService.getQueueStats} */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
 		this.ensureInitialized();
 		return this.query.getQueueStats(filter);
