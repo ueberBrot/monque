@@ -183,6 +183,53 @@ describe('LifecycleManager', () => {
 				}),
 			);
 		});
+
+		it('should emit job:error when initial cleanupJobs rejects', async () => {
+			ctx.options.jobRetention = { completed: 60000, failed: 120000 };
+			manager = new LifecycleManager(ctx);
+
+			const cleanupError = new Error('Cleanup failed');
+			vi.spyOn(ctx.collection, 'deleteMany').mockRejectedValue(cleanupError);
+
+			manager.startTimers(callbacks());
+
+			// Wait for the initial cleanupJobs rejection to be handled
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'job:error',
+					payload: expect.objectContaining({ error: cleanupError }),
+				}),
+			);
+		});
+
+		it('should emit job:error when interval cleanupJobs rejects', async () => {
+			const retentionInterval = 5000;
+			ctx.options.jobRetention = {
+				completed: 60000,
+				failed: 120000,
+				interval: retentionInterval,
+			};
+			manager = new LifecycleManager(ctx);
+
+			const cleanupError = new Error('Cleanup failed');
+			vi.spyOn(ctx.collection, 'deleteMany')
+				.mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 })
+				.mockRejectedValueOnce(cleanupError);
+
+			manager.startTimers(callbacks());
+
+			// Advance by the retention interval to trigger the failing cleanup
+			await vi.advanceTimersByTimeAsync(retentionInterval);
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'job:error',
+					payload: expect.objectContaining({ error: cleanupError }),
+				}),
+			);
+		});
 	});
 
 	describe('stopTimers', () => {
