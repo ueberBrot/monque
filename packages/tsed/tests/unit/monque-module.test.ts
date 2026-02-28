@@ -130,7 +130,7 @@ describe('MonqueModule.registerJobs()', () => {
 	// 1. Scope resolution failure
 	// ─────────────────────────────────────────────────────────────────────────
 	describe('scope resolution failure', () => {
-		it('should warn and skip when injector cannot resolve a non-REQUEST scoped controller', () => {
+		it('should warn and skip when injector cannot resolve a non-REQUEST scoped controller', async () => {
 			const providers = [
 				{
 					token: Symbol('ControllerA'),
@@ -152,8 +152,8 @@ describe('MonqueModule.registerJobs()', () => {
 				},
 			]);
 
-			// Should NOT throw
-			expect(() => module.callRegisterJobs()).not.toThrow();
+			// Should NOT throw (or reject)
+			await module.callRegisterJobs();
 
 			// logger.warn should have been called with the provider name
 			expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('ControllerA'));
