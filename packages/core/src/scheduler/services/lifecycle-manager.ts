@@ -127,7 +127,7 @@ export class LifecycleManager {
 		const now = Date.now();
 		const deletions: Promise<DeleteResult>[] = [];
 
-		if (completed) {
+		if (completed != null) {
 			const cutoff = new Date(now - completed);
 			deletions.push(
 				this.ctx.collection.deleteMany({
@@ -137,7 +137,7 @@ export class LifecycleManager {
 			);
 		}
 
-		if (failed) {
+		if (failed != null) {
 			const cutoff = new Date(now - failed);
 			deletions.push(
 				this.ctx.collection.deleteMany({
