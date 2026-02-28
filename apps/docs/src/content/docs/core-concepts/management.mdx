@@ -171,9 +171,11 @@ const monque = new Monque(db, {
 
 Behaviour details:
 - Each unique filter (global vs. name-scoped) has its own cache entry.
+- The cache is size-capped at **100 entries**. When full, it uses an **LRU eviction policy**—the least-recently-used filter entry is evicted to make room for new entries.
+- Each per-filter entry adheres to the configured TTL (default 5s).
 - Cached results are returned without hitting MongoDB until the TTL expires.
 - The cache is cleared entirely when `stop()` is called.
-- Set `statsCacheTtlMs: 0` to disable caching and always run the aggregation live.
+- Set `statsCacheTtlMs: 0` to disable caching entirely and always run the aggregation live.
 
 ```typescript
 const monque = new Monque(db, {
