@@ -13,7 +13,7 @@ import type { PersistedJob } from './types.js';
  * @param doc - The raw MongoDB document with `_id`
  * @returns A strongly-typed PersistedJob object with guaranteed `_id`
  */
-export function documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
+export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): PersistedJob<T> {
 	const job: PersistedJob<T> = {
 		_id: doc._id,
 		name: doc['name'],
