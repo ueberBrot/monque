@@ -250,8 +250,9 @@ describe('MonqueModule.registerJobs()', () => {
 				return [];
 			});
 
-			await expect(module.callRegisterJobs()).rejects.toThrow(WorkerRegistrationError);
-			await expect(module.callRegisterJobs()).rejects.toThrow(/duplicate-job/i);
+			const registerJobsPromise = module.callRegisterJobs();
+			await expect(registerJobsPromise).rejects.toThrow(WorkerRegistrationError);
+			await expect(registerJobsPromise).rejects.toThrow(/duplicate-job/i);
 		});
 	});
 
