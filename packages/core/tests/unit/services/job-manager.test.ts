@@ -312,7 +312,7 @@ describe('JobManager', () => {
 			);
 		});
 
-		it('should override filter status to pending', async () => {
+		it('should return count 0 when filter status does not include pending', async () => {
 			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
 				modifiedCount: 0,
 				matchedCount: 0,
@@ -321,12 +321,29 @@ describe('JobManager', () => {
 				upsertedId: null,
 			});
 
-			await manager.cancelJobs({ status: JobStatus.PROCESSING });
+			const result = await manager.cancelJobs({ status: JobStatus.PROCESSING });
 
-			const overrideCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
-			expect(overrideCall).toBeDefined();
-			const [query] = overrideCall ?? [];
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
+		});
+
+		it('should cancel jobs when filter status includes pending', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 3,
+				matchedCount: 3,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
+
+			const result = await manager.cancelJobs({ status: JobStatus.PENDING });
+
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const call = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(call).toBeDefined();
+			const [query] = call ?? [];
 			expect(query).toEqual(expect.objectContaining({ status: 'pending' }));
+			expect(result).toEqual({ count: 3, errors: [] });
 		});
 	});
 
@@ -340,7 +357,7 @@ describe('JobManager', () => {
 				upsertedId: null,
 			});
 
-			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+			const result = await manager.retryJobs({});
 
 			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
 			const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
@@ -353,6 +370,32 @@ describe('JobManager', () => {
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({ event: 'jobs:retried', payload: { count: 5 } }),
 			);
+		});
+
+		it('should respect explicit status filter and intersect with retryable statuses', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 3,
+				matchedCount: 3,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
+
+			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(retryCall).toBeDefined();
+			const [query] = retryCall ?? [];
+			expect(query).toEqual(expect.objectContaining({ status: 'failed' }));
+			expect(result).toEqual({ count: 3, errors: [] });
+		});
+
+		it('should return count 0 when filter status does not include retryable statuses', async () => {
+			const result = await manager.retryJobs({ status: JobStatus.COMPLETED });
+
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
 		});
 
 		it('should return count 0 when no jobs match', async () => {

@@ -266,7 +266,13 @@ export class JobManager {
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		const query = buildSelectorQuery(filter);
 
-		// Override status to only target pending jobs regardless of filter
+		// Enforce allowed status, but respect explicit status filters
+		if (filter.status !== undefined) {
+			const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+			if (!requested.includes(JobStatus.PENDING)) {
+				return { count: 0, errors: [] };
+			}
+		}
 		query['status'] = JobStatus.PENDING;
 
 		try {
@@ -318,8 +324,21 @@ export class JobManager {
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		const query = buildSelectorQuery(filter);
 
-		// Override status to only target failed/cancelled jobs regardless of filter
-		query['status'] = { $in: [JobStatus.FAILED, JobStatus.CANCELLED] };
+		// Enforce allowed statuses, but respect explicit status filters
+		const retryable = [JobStatus.FAILED, JobStatus.CANCELLED] as const;
+		if (filter.status !== undefined) {
+			const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+			const allowed = requested.filter(
+				(status): status is (typeof retryable)[number] =>
+					status === JobStatus.FAILED || status === JobStatus.CANCELLED,
+			);
+			if (allowed.length === 0) {
+				return { count: 0, errors: [] };
+			}
+			query['status'] = allowed.length === 1 ? allowed[0] : { $in: allowed };
+		} else {
+			query['status'] = { $in: retryable };
+		}
 
 		const spreadWindowMs = 30_000; // 30s max spread for staggered retry
 
