@@ -21,6 +21,7 @@ vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
 		JobQueryService: vi.fn(),
 		JobProcessor: vi.fn(),
 		ChangeStreamHandler: vi.fn(),
+		LifecycleManager: vi.fn(),
 	};
 });
 
@@ -111,6 +112,9 @@ describe('Monque', () => {
 				ConnectionError,
 			);
 			expect(() => (monque as unknown as Record<string, unknown>)['changeStreamHandler']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['lifecycleManager']).toThrow(
 				ConnectionError,
 			);
 		});
