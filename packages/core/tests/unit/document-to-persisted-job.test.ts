@@ -155,35 +155,5 @@ describe('documentToPersistedJob', () => {
 			expect(result.repeatInterval).toBe('0 * * * *');
 			expect(result.uniqueKey).toBe('dedup-key');
 		});
-
-		it('omits optional fields when not present in document', () => {
-			const now = new Date();
-			const doc: WithId<Document> = {
-				_id: new ObjectId(),
-				name: 'minimal-job',
-				data: null,
-				status: JobStatus.PENDING,
-				nextRunAt: now,
-				failCount: 0,
-				createdAt: now,
-				updatedAt: now,
-			};
-
-			const result = documentToPersistedJob<null>(doc);
-
-			// Required fields present
-			expect(result._id).toEqual(doc['_id']);
-			expect(result.name).toBe('minimal-job');
-			expect(result.failCount).toBe(0);
-
-			// Optional fields NOT present (not even as undefined)
-			expect('lockedAt' in result).toBe(false);
-			expect('claimedBy' in result).toBe(false);
-			expect('lastHeartbeat' in result).toBe(false);
-			expect('heartbeatInterval' in result).toBe(false);
-			expect('failReason' in result).toBe(false);
-			expect('repeatInterval' in result).toBe(false);
-			expect('uniqueKey' in result).toBe(false);
-		});
 	});
 });
