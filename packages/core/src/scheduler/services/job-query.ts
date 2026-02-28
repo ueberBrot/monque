@@ -16,6 +16,11 @@ import { AggregationTimeoutError, ConnectionError } from '@/shared';
 import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
 import type { SchedulerContext } from './types.js';
 
+interface StatsCacheEntry {
+	data: QueueStats;
+	expiresAt: number;
+}
+
 /**
  * Internal service for job query operations.
  *
@@ -25,6 +30,9 @@ import type { SchedulerContext } from './types.js';
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobQueryService {
+	private readonly statsCache = new Map<string, StatsCacheEntry>();
+	private static readonly MAX_CACHE_SIZE = 100;
+
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
@@ -265,10 +273,22 @@ export class JobQueryService {
 	}
 
 	/**
+	 * Clear all cached getQueueStats() results.
+	 * Called on scheduler stop() for clean state on restart.
+	 * @internal
+	 */
+	clearStatsCache(): void {
+		this.statsCache.clear();
+	}
+
+	/**
 	 * Get aggregate statistics for the job queue.
 	 *
 	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
 	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * Results are cached per unique filter with a configurable TTL (default 5s).
+	 * Set `statsCacheTtlMs: 0` to disable caching.
 	 *
 	 * @param filter - Optional filter to scope statistics by job name
 	 * @returns Promise resolving to queue statistics
@@ -288,6 +308,16 @@ export class JobQueryService {
 	 * ```
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		const ttl = this.ctx.options.statsCacheTtlMs;
+		const cacheKey = filter?.name ?? '';
+
+		if (ttl > 0) {
+			const cached = this.statsCache.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				return { ...cached.data };
+			}
+		}
+
 		const matchStage: Document = {};
 
 		if (filter?.name) {
@@ -350,48 +380,63 @@ export class JobQueryService {
 				total: 0,
 			};
 
-			if (!result) {
-				return stats;
-			}
+			if (result) {
+				// Map status counts to stats
+				const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
+				for (const entry of statusCounts) {
+					const status = entry._id;
+					const count = entry.count;
 
-			// Map status counts to stats
-			const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
-			for (const entry of statusCounts) {
-				const status = entry._id;
-				const count = entry.count;
+					switch (status) {
+						case JobStatus.PENDING:
+							stats.pending = count;
+							break;
+						case JobStatus.PROCESSING:
+							stats.processing = count;
+							break;
+						case JobStatus.COMPLETED:
+							stats.completed = count;
+							break;
+						case JobStatus.FAILED:
+							stats.failed = count;
+							break;
+						case JobStatus.CANCELLED:
+							stats.cancelled = count;
+							break;
+					}
+				}
 
-				switch (status) {
-					case JobStatus.PENDING:
-						stats.pending = count;
-						break;
-					case JobStatus.PROCESSING:
-						stats.processing = count;
-						break;
-					case JobStatus.COMPLETED:
-						stats.completed = count;
-						break;
-					case JobStatus.FAILED:
-						stats.failed = count;
-						break;
-					case JobStatus.CANCELLED:
-						stats.cancelled = count;
-						break;
+				// Extract total
+				const totalResult = result['total'] as Array<{ count: number }>;
+				if (totalResult.length > 0 && totalResult[0]) {
+					stats.total = totalResult[0].count;
+				}
+
+				// Extract average processing duration
+				const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
+				if (avgDurationResult.length > 0 && avgDurationResult[0]) {
+					const avgMs = avgDurationResult[0].avgMs;
+					if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
+						stats.avgProcessingDurationMs = Math.round(avgMs);
+					}
 				}
 			}
 
-			// Extract total
-			const totalResult = result['total'] as Array<{ count: number }>;
-			if (totalResult.length > 0 && totalResult[0]) {
-				stats.total = totalResult[0].count;
-			}
-
-			// Extract average processing duration
-			const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
-			if (avgDurationResult.length > 0 && avgDurationResult[0]) {
-				const avgMs = avgDurationResult[0].avgMs;
-				if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
-					stats.avgProcessingDurationMs = Math.round(avgMs);
+			// Cache the result if TTL is enabled
+			if (ttl > 0) {
+				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
+				this.statsCache.delete(cacheKey);
+				// LRU eviction: if cache is still full after removing existing key, evict the oldest entry
+				if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
+					const oldestKey = this.statsCache.keys().next().value;
+					if (oldestKey !== undefined) {
+						this.statsCache.delete(oldestKey);
+					}
 				}
+				this.statsCache.set(cacheKey, {
+					data: { ...stats },
+					expiresAt: Date.now() + ttl,
+				});
 			}
 
 			return stats;

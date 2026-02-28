@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { Collection, Db, DeleteResult, Document, ObjectId, WithId } from 'mongodb';
+import type { Collection, Db, Document, ObjectId, WithId } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
@@ -18,7 +18,7 @@ import {
 	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, ShutdownTimeoutError, toError, WorkerRegistrationError } from '@/shared';
+import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
 import {
@@ -27,6 +27,7 @@ import {
 	JobProcessor,
 	JobQueryService,
 	JobScheduler,
+	LifecycleManager,
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
@@ -117,9 +118,6 @@ export class Monque extends EventEmitter {
 	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
-	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
-	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
-	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -129,6 +127,7 @@ export class Monque extends EventEmitter {
 	private _query: JobQueryService | null = null;
 	private _processor: JobProcessor | null = null;
 	private _changeStreamHandler: ChangeStreamHandler | null = null;
+	private _lifecycleManager: LifecycleManager | null = null;
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
@@ -149,6 +148,8 @@ export class Monque extends EventEmitter {
 			heartbeatInterval: options.heartbeatInterval ?? DEFAULTS.heartbeatInterval,
 			jobRetention: options.jobRetention,
 			skipIndexCreation: options.skipIndexCreation ?? false,
+			maxPayloadSize: options.maxPayloadSize,
+			statsCacheTtlMs: options.statsCacheTtlMs ?? 5000,
 		};
 	}
 
@@ -176,6 +177,9 @@ export class Monque extends EventEmitter {
 				await this.recoverStaleJobs();
 			}
 
+			// Check for instance ID collisions (after stale recovery to avoid false positives)
+			await this.checkInstanceCollision();
+
 			// Initialize services with shared context
 			const ctx = this.buildContext();
 			this._scheduler = new JobScheduler(ctx);
@@ -183,6 +187,7 @@ export class Monque extends EventEmitter {
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx);
 			this._changeStreamHandler = new ChangeStreamHandler(ctx, () => this.processor.poll());
+			this._lifecycleManager = new LifecycleManager(ctx);
 
 			this.isInitialized = true;
 		} catch (error) {
@@ -239,6 +244,15 @@ export class Monque extends EventEmitter {
 		}
 
 		return this._changeStreamHandler;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get lifecycleManager(): LifecycleManager {
+		if (!this._lifecycleManager) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._lifecycleManager;
 	}
 
 	/**
@@ -347,46 +361,35 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Clean up old completed and failed jobs based on retention policy.
+	 * Check if another active instance is using the same schedulerInstanceId.
+	 * Uses heartbeat staleness to distinguish active instances from crashed ones.
 	 *
-	 * - Removes completed jobs older than `jobRetention.completed`
-	 * - Removes failed jobs older than `jobRetention.failed`
+	 * Called after stale recovery to avoid false positives: stale recovery resets
+	 * jobs with old `lockedAt`, so only jobs with recent heartbeats remain.
 	 *
-	 * The cleanup runs concurrently for both statuses if configured.
-	 *
-	 * @returns Promise resolving when all deletion operations complete
+	 * @throws {ConnectionError} If an active instance with the same ID is detected
 	 */
-	private async cleanupJobs(): Promise<void> {
-		if (!this.collection || !this.options.jobRetention) {
+	private async checkInstanceCollision(): Promise<void> {
+		if (!this.collection) {
 			return;
 		}
 
-		const { completed, failed } = this.options.jobRetention;
-		const now = Date.now();
-		const deletions: Promise<DeleteResult>[] = [];
+		// Look for any job currently claimed by this instance ID
+		// that has a recent heartbeat (within 2× heartbeat interval = "alive" threshold)
+		const aliveThreshold = new Date(Date.now() - this.options.heartbeatInterval * 2);
 
-		if (completed) {
-			const cutoff = new Date(now - completed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.COMPLETED,
-					updatedAt: { $lt: cutoff },
-				}),
+		const activeJob = await this.collection.findOne({
+			claimedBy: this.options.schedulerInstanceId,
+			status: JobStatus.PROCESSING,
+			lastHeartbeat: { $gte: aliveThreshold },
+		});
+
+		if (activeJob) {
+			throw new ConnectionError(
+				`Another active Monque instance is using schedulerInstanceId "${this.options.schedulerInstanceId}". ` +
+					`Found processing job "${activeJob['name']}" with recent heartbeat. ` +
+					`Use a unique schedulerInstanceId or wait for the other instance to stop.`,
 			);
-		}
-
-		if (failed) {
-			const cutoff = new Date(now - failed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.FAILED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (deletions.length > 0) {
-			await Promise.all(deletions);
 		}
 	}
 
@@ -412,6 +415,7 @@ export class Monque extends EventEmitter {
 	 * @param options - Scheduling and deduplication options
 	 * @returns Promise resolving to the created or existing job document
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
 	 * @example Basic job enqueueing
 	 * ```typescript
@@ -437,6 +441,8 @@ export class Monque extends EventEmitter {
 	 * });
 	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
 	 * ```
+	 *
+	 * @see {@link JobScheduler.enqueue}
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
@@ -470,6 +476,8 @@ export class Monque extends EventEmitter {
 	 * await monque.now('process-order', { orderId: order.id });
 	 * return order; // Return immediately, processing happens async
 	 * ```
+	 *
+	 * @see {@link JobScheduler.now}
 	 */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
@@ -496,6 +504,7 @@ export class Monque extends EventEmitter {
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
 	 * @throws {InvalidCronError} If cron expression is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
 	 * @example Hourly cleanup job
 	 * ```typescript
@@ -519,6 +528,8 @@ export class Monque extends EventEmitter {
 	 *   recipients: ['analytics@example.com']
 	 * });
 	 * ```
+	 *
+	 * @see {@link JobScheduler.schedule}
 	 */
 	async schedule<T>(
 		cron: string,
@@ -550,6 +561,8 @@ export class Monque extends EventEmitter {
 	 * const job = await monque.enqueue('report', { type: 'daily' });
 	 * await monque.cancelJob(job._id.toString());
 	 * ```
+	 *
+	 * @see {@link JobManager.cancelJob}
 	 */
 	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
@@ -573,6 +586,8 @@ export class Monque extends EventEmitter {
 	 *   await monque.retryJob(job._id.toString());
 	 * });
 	 * ```
+	 *
+	 * @see {@link JobManager.retryJob}
 	 */
 	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
@@ -594,6 +609,8 @@ export class Monque extends EventEmitter {
 	 * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
 	 * await monque.rescheduleJob(jobId, nextHour);
 	 * ```
+	 *
+	 * @see {@link JobManager.rescheduleJob}
 	 */
 	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
@@ -616,6 +633,8 @@ export class Monque extends EventEmitter {
 	 *   console.log('Job permanently removed');
 	 * }
 	 * ```
+	 *
+	 * @see {@link JobManager.deleteJob}
 	 */
 	async deleteJob(jobId: string): Promise<boolean> {
 		this.ensureInitialized();
@@ -623,14 +642,15 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Cancel multiple jobs matching the given filter.
+	 * Cancel multiple jobs matching the given filter via a single updateMany call.
 	 *
-	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
-	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * Only cancels jobs in 'pending' status — the status guard is applied regardless
+	 * of what the filter specifies. Jobs in other states are silently skipped (not
+	 * matched by the query). Emits a 'jobs:cancelled' event with the count of
 	 * successfully cancelled jobs.
 	 *
 	 * @param filter - Selector for which jobs to cancel (name, status, date range)
-	 * @returns Result with count of cancelled jobs and any errors encountered
+	 * @returns Result with count of cancelled jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Cancel all pending jobs for a queue
 	 * ```typescript
@@ -640,6 +660,8 @@ export class Monque extends EventEmitter {
 	 * });
 	 * console.log(`Cancelled ${result.count} jobs`);
 	 * ```
+	 *
+	 * @see {@link JobManager.cancelJobs}
 	 */
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
@@ -647,14 +669,15 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Retry multiple jobs matching the given filter.
+	 * Retry multiple jobs matching the given filter via a single pipeline-style updateMany call.
 	 *
-	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
-	 * are collected as errors in the result. Emits a 'jobs:retried' event with
-	 * the IDs of successfully retried jobs.
+	 * Only retries jobs in 'failed' or 'cancelled' status — the status guard is applied
+	 * regardless of what the filter specifies. Jobs in other states are silently skipped.
+	 * Uses `$rand` for per-document staggered `nextRunAt` to avoid thundering herd on retry.
+	 * Emits a 'jobs:retried' event with the count of successfully retried jobs.
 	 *
 	 * @param filter - Selector for which jobs to retry (name, status, date range)
-	 * @returns Result with count of retried jobs and any errors encountered
+	 * @returns Result with count of retried jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Retry all failed jobs
 	 * ```typescript
@@ -663,6 +686,8 @@ export class Monque extends EventEmitter {
 	 * });
 	 * console.log(`Retried ${result.count} jobs`);
 	 * ```
+	 *
+	 * @see {@link JobManager.retryJobs}
 	 */
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
@@ -673,6 +698,7 @@ export class Monque extends EventEmitter {
 	 * Delete multiple jobs matching the given filter.
 	 *
 	 * Deletes jobs in any status. Uses a batch delete for efficiency.
+	 * Emits a 'jobs:deleted' event with the count of deleted jobs.
 	 * Does not emit individual 'job:deleted' events to avoid noise.
 	 *
 	 * @param filter - Selector for which jobs to delete (name, status, date range)
@@ -687,6 +713,8 @@ export class Monque extends EventEmitter {
 	 * });
 	 * console.log(`Deleted ${result.count} jobs`);
 	 * ```
+	 *
+	 * @see {@link JobManager.deleteJobs}
 	 */
 	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
@@ -727,6 +755,8 @@ export class Monque extends EventEmitter {
 	 *   res.json(job);
 	 * });
 	 * ```
+	 *
+	 * @see {@link JobQueryService.getJob}
 	 */
 	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
 		this.ensureInitialized();
@@ -774,6 +804,8 @@ export class Monque extends EventEmitter {
 	 * const jobs = await monque.getJobs();
 	 * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
 	 * ```
+	 *
+	 * @see {@link JobQueryService.getJobs}
 	 */
 	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
 		this.ensureInitialized();
@@ -808,6 +840,8 @@ export class Monque extends EventEmitter {
 	 *   });
 	 * }
 	 * ```
+	 *
+	 * @see {@link JobQueryService.getJobsWithCursor}
 	 */
 	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
 		this.ensureInitialized();
@@ -819,6 +853,9 @@ export class Monque extends EventEmitter {
 	 *
 	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
 	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * Results are cached per unique filter with a configurable TTL (default 5s).
+	 * Set `statsCacheTtlMs: 0` to disable caching.
 	 *
 	 * @param filter - Optional filter to scope statistics by job name
 	 * @returns Promise resolving to queue statistics
@@ -836,6 +873,8 @@ export class Monque extends EventEmitter {
 	 * const emailStats = await monque.getQueueStats({ name: 'send-email' });
 	 * console.log(`${emailStats.total} email jobs in queue`);
 	 * ```
+	 *
+	 * @see {@link JobQueryService.getQueueStats}
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
 		this.ensureInitialized();
@@ -989,39 +1028,10 @@ export class Monque extends EventEmitter {
 		// Set up change streams as the primary notification mechanism
 		this.changeStreamHandler.setup();
 
-		// Set up polling as backup (runs at configured interval)
-		this.pollIntervalId = setInterval(() => {
-			this.processor.poll().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-		}, this.options.pollInterval);
-
-		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(() => {
-			this.processor.updateHeartbeats().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-		}, this.options.heartbeatInterval);
-
-		// Start cleanup interval if retention is configured
-		if (this.options.jobRetention) {
-			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
-
-			// Run immediately on start
-			this.cleanupJobs().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-
-			this.cleanupIntervalId = setInterval(() => {
-				this.cleanupJobs().catch((error: unknown) => {
-					this.emit('job:error', { error: toError(error) });
-				});
-			}, interval);
-		}
-
-		// Run initial poll immediately to pick up any existing jobs
-		this.processor.poll().catch((error: unknown) => {
-			this.emit('job:error', { error: toError(error) });
+		// Delegate timer management to LifecycleManager
+		this.lifecycleManager.startTimers({
+			poll: () => this.processor.poll(),
+			updateHeartbeats: () => this.processor.updateHeartbeats(),
 		});
 	}
 
@@ -1066,25 +1076,18 @@ export class Monque extends EventEmitter {
 
 		this.isRunning = false;
 
-		// Close change stream
-		await this.changeStreamHandler.close();
+		// Clear stats cache for clean state on restart
+		this._query?.clearStatsCache();
 
-		if (this.cleanupIntervalId) {
-			clearInterval(this.cleanupIntervalId);
-			this.cleanupIntervalId = null;
+		// Close change stream — catch-and-ignore per shutdown cleanup guideline
+		try {
+			await this.changeStreamHandler.close();
+		} catch {
+			// ignore errors during shutdown cleanup
 		}
 
-		// Clear polling interval
-		if (this.pollIntervalId) {
-			clearInterval(this.pollIntervalId);
-			this.pollIntervalId = null;
-		}
-
-		// Clear heartbeat interval
-		if (this.heartbeatIntervalId) {
-			clearInterval(this.heartbeatIntervalId);
-			this.heartbeatIntervalId = null;
-		}
+		// Stop all lifecycle timers
+		this.lifecycleManager.stopTimers();
 
 		// Wait for all active jobs to complete (with timeout)
 		const activeJobs = this.getActiveJobs();

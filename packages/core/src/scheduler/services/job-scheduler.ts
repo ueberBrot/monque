@@ -1,4 +1,4 @@
-import type { Document } from 'mongodb';
+import { BSON, type Document } from 'mongodb';
 
 import {
 	type EnqueueOptions,
@@ -7,7 +7,7 @@ import {
 	type PersistedJob,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, getNextCronDate, MonqueError } from '@/shared';
+import { ConnectionError, getNextCronDate, MonqueError, PayloadTooLargeError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -21,6 +21,41 @@ import type { SchedulerContext } from './types.js';
  */
 export class JobScheduler {
 	constructor(private readonly ctx: SchedulerContext) {}
+
+	/**
+	 * Validate that the job data payload does not exceed the configured maximum BSON byte size.
+	 *
+	 * @param data - The job data payload to validate
+	 * @throws {PayloadTooLargeError} If the payload exceeds `maxPayloadSize`
+	 */
+	private validatePayloadSize(data: unknown): void {
+		const maxSize = this.ctx.options.maxPayloadSize;
+		if (maxSize === undefined) {
+			return;
+		}
+
+		let size: number;
+		try {
+			size = BSON.calculateObjectSize({ data } as Document);
+		} catch (error) {
+			const cause = error instanceof Error ? error : new Error(String(error));
+			const sizeError = new PayloadTooLargeError(
+				`Failed to calculate job payload size: ${cause.message}`,
+				-1,
+				maxSize,
+			);
+			sizeError.cause = cause;
+			throw sizeError;
+		}
+
+		if (size > maxSize) {
+			throw new PayloadTooLargeError(
+				`Job payload exceeds maximum size: ${size} bytes > ${maxSize} bytes`,
+				size,
+				maxSize,
+			);
+		}
+	}
 
 	/**
 	 * Enqueue a job for processing.
@@ -40,6 +75,7 @@ export class JobScheduler {
 	 * @param options - Scheduling and deduplication options
 	 * @returns Promise resolving to the created or existing job document
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
 	 * @example Basic job enqueueing
 	 * ```typescript
@@ -67,6 +103,7 @@ export class JobScheduler {
 	 * ```
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
+		this.validatePayloadSize(data);
 		const now = new Date();
 		const job: Omit<Job<T>, '_id'> = {
 			name,
@@ -174,6 +211,7 @@ export class JobScheduler {
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
 	 * @throws {InvalidCronError} If cron expression is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
+	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
 	 * @example Hourly cleanup job
 	 * ```typescript
@@ -204,6 +242,8 @@ export class JobScheduler {
 		data: T,
 		options: ScheduleOptions = {},
 	): Promise<PersistedJob<T>> {
+		this.validatePayloadSize(data);
+
 		// Validate cron and get next run date (throws InvalidCronError if invalid)
 		const nextRunAt = getNextCronDate(cron);
 

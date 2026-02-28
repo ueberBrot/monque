@@ -19,11 +19,15 @@ export interface ResolvedMonqueOptions
 				| 'maxBackoffDelay'
 				| 'jobRetention'
 				| 'instanceConcurrency'
+				| 'maxPayloadSize'
 				| 'defaultConcurrency'
 				| 'maxConcurrency'
 			>
 		>,
-		Pick<MonqueOptions, 'maxBackoffDelay' | 'jobRetention' | 'instanceConcurrency'> {
+		Pick<
+			MonqueOptions,
+			'maxBackoffDelay' | 'jobRetention' | 'instanceConcurrency' | 'maxPayloadSize'
+		> {
 	// Ensure resolved options use the new naming convention
 	workerConcurrency: number;
 }

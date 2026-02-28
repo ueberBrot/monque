@@ -31,6 +31,8 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 	jobRetention: undefined,
 	instanceConcurrency: undefined,
 	skipIndexCreation: false,
+	maxPayloadSize: undefined,
+	statsCacheTtlMs: 5000,
 };
 
 /**

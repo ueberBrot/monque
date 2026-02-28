@@ -268,175 +268,179 @@ describe('JobManager', () => {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	describe('cancelJobs', () => {
-		it('should cancel multiple pending jobs', async () => {
-			const job1 = JobFactory.build({ name: 'bulk-cancel' });
-			const job2 = JobFactory.build({ name: 'bulk-cancel' });
-
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield job1;
-					yield job2;
-				},
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
-				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job1._id }))
-				.mockResolvedValueOnce(JobFactoryHelpers.cancelled({ _id: job2._id }));
+		it('should cancel all pending jobs matching filter via updateMany', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 3,
+				matchedCount: 3,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
 			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
 
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:cancelled' }));
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const cancelCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(cancelCall).toBeDefined();
+			const [query, update] = cancelCall ?? [];
+			expect(query).toEqual(expect.objectContaining({ status: 'pending' }));
+			expect(update).toEqual(
+				expect.objectContaining({
+					$set: expect.objectContaining({ status: 'cancelled' }),
+				}),
+			);
+			expect(result).toEqual({ count: 3, errors: [] });
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({ event: 'jobs:cancelled', payload: { count: 3 } }),
+			);
 		});
 
-		it('should include already cancelled jobs in count (idempotent)', async () => {
-			const cancelledJob = JobFactoryHelpers.cancelled({ name: 'bulk-cancel' });
+		it('should return count 0 when no jobs match', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 0,
+				matchedCount: 0,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield cancelledJob;
-				},
-			};
+			const result = await manager.cancelJobs({ name: 'no-match' });
 
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'jobs:cancelled' }),
 			);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(0);
-			// findOneAndUpdate should NOT be called for already cancelled jobs
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
 		});
 
-		it('should collect errors for jobs in invalid state', async () => {
-			const processingJob = JobFactoryHelpers.processing({ name: 'bulk-cancel' });
+		it('should return count 0 when filter status does not include pending', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 0,
+				matchedCount: 0,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield processingJob;
-				},
-			};
+			const result = await manager.cancelJobs({ status: JobStatus.PROCESSING });
 
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Cannot cancel job in status 'processing'/);
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
 		});
 
-		it('should handle race condition when job status changes during bulk cancel', async () => {
-			const pendingJob = JobFactory.build({ name: 'bulk-cancel' });
+		it('should cancel jobs when filter status includes pending', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 3,
+				matchedCount: 3,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield pendingJob;
-				},
-			};
+			const result = await manager.cancelJobs({ status: JobStatus.PENDING });
 
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-			// findOneAndUpdate returns null because status changed
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
-
-			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Job status changed during cancellation/);
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const call = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(call).toBeDefined();
+			const [query] = call ?? [];
+			expect(query).toEqual(expect.objectContaining({ status: 'pending' }));
+			expect(result).toEqual({ count: 3, errors: [] });
 		});
 	});
 
 	describe('retryJobs', () => {
-		it('should retry multiple failed jobs', async () => {
-			const failedJob1 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
-			const failedJob2 = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+		it('should retry all failed/cancelled jobs via updateMany with pipeline', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 5,
+				matchedCount: 5,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield failedJob1;
-					yield failedJob2;
-				},
-			};
+			const result = await manager.retryJobs({});
 
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(retryCall).toBeDefined();
+			const [query, update] = retryCall ?? [];
+			expect(query).toEqual(expect.objectContaining({ status: { $in: ['failed', 'cancelled'] } }));
+			// Pipeline-style update: second argument must be an array
+			expect(Array.isArray(update)).toBe(true);
+			expect(result).toEqual({ count: 5, errors: [] });
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({ event: 'jobs:retried', payload: { count: 5 } }),
 			);
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
-				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob1._id }))
-				.mockResolvedValueOnce(JobFactory.build({ _id: failedJob2._id }));
+		});
 
-			const expectedUnset = {
-				failReason: '',
-				lockedAt: '',
-				claimedBy: '',
-				lastHeartbeat: '',
-				heartbeatInterval: '',
-			};
+		it('should respect explicit status filter and intersect with retryable statuses', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 3,
+				matchedCount: 3,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
 			const result = await manager.retryJobs({ status: JobStatus.FAILED });
 
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				expect.anything(),
-				expect.objectContaining({ $unset: expectedUnset }),
-				expect.anything(),
-			);
-
-			expect(result.count).toBe(2);
-			expect(result.errors).toHaveLength(0);
-			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'jobs:retried' }));
+			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+			const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(retryCall).toBeDefined();
+			const [query] = retryCall ?? [];
+			expect(query).toEqual(expect.objectContaining({ status: 'failed' }));
+			expect(result).toEqual({ count: 3, errors: [] });
 		});
 
-		it('should collect errors for jobs in invalid state for retry', async () => {
-			const pendingJob = JobFactory.build({ name: 'bulk-retry' });
+		it('should return count 0 when filter status does not include retryable statuses', async () => {
+			const result = await manager.retryJobs({ status: JobStatus.COMPLETED });
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield pendingJob;
-				},
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await manager.retryJobs({ name: 'bulk-retry' });
-
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Cannot retry job in status 'pending'/);
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
 		});
 
-		it('should handle race condition when job status changes during bulk retry', async () => {
-			const failedJob = JobFactoryHelpers.failed({ name: 'bulk-retry' });
+		it('should return count 0 when no jobs match', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 0,
+				matchedCount: 0,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			const mockCursor = {
-				[Symbol.asyncIterator]: async function* () {
-					yield failedJob;
-				},
-			};
+			const result = await manager.retryJobs({ name: 'no-match' });
 
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			expect(result).toEqual({ count: 0, errors: [] });
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'jobs:retried' }),
 			);
-			// findOneAndUpdate returns null because status changed
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+		});
 
-			const result = await manager.retryJobs({ status: JobStatus.FAILED });
+		it('should use pipeline-style update with $rand stagger', async () => {
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 1,
+				matchedCount: 1,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
 
-			expect(result.count).toBe(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toMatch(/Job status changed during retry attempt/);
+			await manager.retryJobs({ status: JobStatus.FAILED });
+
+			const pipelineCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(pipelineCall).toBeDefined();
+			const [, update] = pipelineCall ?? [];
+			const pipeline = update as Record<string, unknown>[];
+			const setStage = pipeline[0] as { $set: Record<string, unknown> };
+			expect(setStage).toHaveProperty('$set');
+			expect(setStage.$set).toHaveProperty('nextRunAt');
+			const nextRunAt = setStage.$set['nextRunAt'] as Record<string, unknown>;
+			expect(nextRunAt).toHaveProperty('$add');
+			const addExpr = nextRunAt['$add'] as unknown[];
+			expect(addExpr).toHaveLength(2);
+			const multiplyExpr = addExpr[1] as Record<string, unknown>;
+			expect(multiplyExpr).toHaveProperty('$multiply');
+			const multiplyArgs = multiplyExpr['$multiply'] as unknown[];
+			expect(multiplyArgs).toContainEqual({ $rand: {} });
 		});
 	});
 

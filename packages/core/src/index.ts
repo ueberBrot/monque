@@ -43,6 +43,7 @@ export {
 	InvalidCursorError,
 	JobStateError,
 	MonqueError,
+	PayloadTooLargeError,
 	ShutdownTimeoutError,
 	validateCronExpression,
 	WorkerRegistrationError,

@@ -183,6 +183,38 @@ await monque.enqueue('process-order', {
 });
 ```
 
+### Payload Size Validation
+
+Use `maxPayloadSize` to enforce a hard BSON byte limit on all job payloads. When set, `enqueue()`, `now()`, and `schedule()` measure the payload using `BSON.calculateObjectSize()` before insertion and throw `PayloadTooLargeError` if the limit is exceeded.
+
+```typescript
+import { Monque, PayloadTooLargeError } from '@monque/core';
+
+const monque = new Monque(db, {
+  maxPayloadSize: 100_000  // 100 KB hard limit
+});
+
+try {
+  await monque.enqueue('process-report', hugePayload);
+} catch (error) {
+  if (error instanceof PayloadTooLargeError) {
+    console.error(
+      `Payload too large: ${error.actualSize} bytes (limit: ${error.maxSize} bytes)`
+    );
+  }
+}
+```
+
+`PayloadTooLargeError` exposes two properties:
+- `actualSize` — measured BSON byte size of the payload
+- `maxSize` — the configured limit
+
+<Aside type="tip">
+  A good starting limit is `100_000` (100 KB). MongoDB's absolute document limit is 16 MB, but smaller payloads keep queues fast and memory usage predictable.
+</Aside>
+
+When `maxPayloadSize` is not set (the default), no validation is performed.
+
 ### Use Type-Safe Payloads
 
 Define interfaces for your job data:

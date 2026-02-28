@@ -5,6 +5,7 @@ export {
 	InvalidCursorError,
 	JobStateError,
 	MonqueError,
+	PayloadTooLargeError,
 	ShutdownTimeoutError,
 	WorkerRegistrationError,
 } from './errors.js';

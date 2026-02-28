@@ -21,6 +21,7 @@ vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
 		JobQueryService: vi.fn(),
 		JobProcessor: vi.fn(),
 		ChangeStreamHandler: vi.fn(),
+		LifecycleManager: vi.fn(),
 	};
 });
 
@@ -34,6 +35,7 @@ describe('Monque', () => {
 			createIndexes: vi.fn().mockResolvedValue(['index_name']),
 			updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
 			deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
+			findOne: vi.fn().mockResolvedValue(null),
 		} as unknown as Collection;
 
 		mockDb = {
@@ -110,6 +112,9 @@ describe('Monque', () => {
 				ConnectionError,
 			);
 			expect(() => (monque as unknown as Record<string, unknown>)['changeStreamHandler']).toThrow(
+				ConnectionError,
+			);
+			expect(() => (monque as unknown as Record<string, unknown>)['lifecycleManager']).toThrow(
 				ConnectionError,
 			);
 		});

@@ -1,6 +1,6 @@
 import type { Document, WithId } from 'mongodb';
 
-import type { JobStatusType, PersistedJob } from './types.js';
+import type { PersistedJob } from './types.js';
 
 /**
  * Convert a raw MongoDB document to a strongly-typed {@link PersistedJob}.
@@ -13,39 +13,39 @@ import type { JobStatusType, PersistedJob } from './types.js';
  * @param doc - The raw MongoDB document with `_id`
  * @returns A strongly-typed PersistedJob object with guaranteed `_id`
  */
-export function documentToPersistedJob<T>(doc: WithId<Document>): PersistedJob<T> {
+export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): PersistedJob<T> {
 	const job: PersistedJob<T> = {
 		_id: doc._id,
-		name: doc['name'] as string,
-		data: doc['data'] as T,
-		status: doc['status'] as JobStatusType,
-		nextRunAt: doc['nextRunAt'] as Date,
-		failCount: doc['failCount'] as number,
-		createdAt: doc['createdAt'] as Date,
-		updatedAt: doc['updatedAt'] as Date,
+		name: doc['name'],
+		data: doc['data'],
+		status: doc['status'],
+		nextRunAt: doc['nextRunAt'],
+		failCount: doc['failCount'],
+		createdAt: doc['createdAt'],
+		updatedAt: doc['updatedAt'],
 	};
 
 	// Only set optional properties if they exist
 	if (doc['lockedAt'] !== undefined) {
-		job.lockedAt = doc['lockedAt'] as Date | null;
+		job.lockedAt = doc['lockedAt'];
 	}
 	if (doc['claimedBy'] !== undefined) {
-		job.claimedBy = doc['claimedBy'] as string | null;
+		job.claimedBy = doc['claimedBy'];
 	}
 	if (doc['lastHeartbeat'] !== undefined) {
-		job.lastHeartbeat = doc['lastHeartbeat'] as Date | null;
+		job.lastHeartbeat = doc['lastHeartbeat'];
 	}
 	if (doc['heartbeatInterval'] !== undefined) {
-		job.heartbeatInterval = doc['heartbeatInterval'] as number;
+		job.heartbeatInterval = doc['heartbeatInterval'];
 	}
 	if (doc['failReason'] !== undefined) {
-		job.failReason = doc['failReason'] as string;
+		job.failReason = doc['failReason'];
 	}
 	if (doc['repeatInterval'] !== undefined) {
-		job.repeatInterval = doc['repeatInterval'] as string;
+		job.repeatInterval = doc['repeatInterval'];
 	}
 	if (doc['uniqueKey'] !== undefined) {
-		job.uniqueKey = doc['uniqueKey'] as string;
+		job.uniqueKey = doc['uniqueKey'];
 	}
 
 	return job;

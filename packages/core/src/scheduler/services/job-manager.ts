@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
 import { buildSelectorQuery } from '@/scheduler';
-import { JobStateError } from '@/shared';
+import { ConnectionError, JobStateError, MonqueError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -244,14 +244,15 @@ export class JobManager {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Cancel multiple jobs matching the given filter.
+	 * Cancel multiple jobs matching the given filter via a single updateMany call.
 	 *
-	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
-	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * Only cancels jobs in 'pending' status — the status guard is applied regardless
+	 * of what the filter specifies. Jobs in other states are silently skipped (not
+	 * matched by the query). Emits a 'jobs:cancelled' event with the count of
 	 * successfully cancelled jobs.
 	 *
 	 * @param filter - Selector for which jobs to cancel (name, status, date range)
-	 * @returns Result with count of cancelled jobs and any errors encountered
+	 * @returns Result with count of cancelled jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Cancel all pending jobs for a queue
 	 * ```typescript
@@ -263,75 +264,54 @@ export class JobManager {
 	 * ```
 	 */
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const cancelledIds: string[] = [];
+		const query = buildSelectorQuery(filter);
 
-		// Find all matching jobs and stream them to avoid memory pressure
-		const cursor = this.ctx.collection.find(baseQuery);
-
-		for await (const doc of cursor) {
-			const jobId = doc._id.toString();
-
-			if (doc['status'] !== JobStatus.PENDING && doc['status'] !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot cancel job in status '${doc['status']}'`,
-				});
-				continue;
+		// Enforce allowed status, but respect explicit status filters
+		if (filter.status !== undefined) {
+			const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+			if (!requested.includes(JobStatus.PENDING)) {
+				return { count: 0, errors: [] };
 			}
+		}
+		query['status'] = JobStatus.PENDING;
 
-			// Skip already cancelled jobs (idempotent)
-			if (doc['status'] === JobStatus.CANCELLED) {
-				cancelledIds.push(jobId);
-				continue;
-			}
-
-			// Atomically update to cancelled
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: doc._id, status: JobStatus.PENDING },
-				{
-					$set: {
-						status: JobStatus.CANCELLED,
-						updatedAt: new Date(),
-					},
+		try {
+			const result = await this.ctx.collection.updateMany(query, {
+				$set: {
+					status: JobStatus.CANCELLED,
+					updatedAt: new Date(),
 				},
-				{ returnDocument: 'after' },
-			);
-
-			if (result) {
-				cancelledIds.push(jobId);
-			} else {
-				// Race condition: status changed
-				errors.push({
-					jobId,
-					error: 'Job status changed during cancellation',
-				});
-			}
-		}
-
-		if (cancelledIds.length > 0) {
-			this.ctx.emit('jobs:cancelled', {
-				jobIds: cancelledIds,
-				count: cancelledIds.length,
 			});
-		}
 
-		return {
-			count: cancelledIds.length,
-			errors,
-		};
+			const count = result.modifiedCount;
+
+			if (count > 0) {
+				this.ctx.emit('jobs:cancelled', { count });
+			}
+
+			return { count, errors: [] };
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during cancelJobs';
+			throw new ConnectionError(
+				`Failed to cancel jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
+		}
 	}
 
 	/**
-	 * Retry multiple jobs matching the given filter.
+	 * Retry multiple jobs matching the given filter via a single pipeline-style updateMany call.
 	 *
-	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
-	 * are collected as errors in the result. Emits a 'jobs:retried' event with
-	 * the IDs of successfully retried jobs.
+	 * Only retries jobs in 'failed' or 'cancelled' status — the status guard is applied
+	 * regardless of what the filter specifies. Jobs in other states are silently skipped.
+	 * Uses `$rand` for per-document staggered `nextRunAt` to avoid thundering herd on retry.
+	 * Emits a 'jobs:retried' event with the count of successfully retried jobs.
 	 *
 	 * @param filter - Selector for which jobs to retry (name, status, date range)
-	 * @returns Result with count of retried jobs and any errors encountered
+	 * @returns Result with count of retried jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Retry all failed jobs
 	 * ```typescript
@@ -342,67 +322,60 @@ export class JobManager {
 	 * ```
 	 */
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const retriedIds: string[] = [];
+		const query = buildSelectorQuery(filter);
 
-		const cursor = this.ctx.collection.find(baseQuery);
-
-		for await (const doc of cursor) {
-			const jobId = doc._id.toString();
-
-			if (doc['status'] !== JobStatus.FAILED && doc['status'] !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot retry job in status '${doc['status']}'`,
-				});
-				continue;
+		// Enforce allowed statuses, but respect explicit status filters
+		const retryable = [JobStatus.FAILED, JobStatus.CANCELLED] as const;
+		if (filter.status !== undefined) {
+			const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+			const allowed = requested.filter(
+				(status): status is (typeof retryable)[number] =>
+					status === JobStatus.FAILED || status === JobStatus.CANCELLED,
+			);
+			if (allowed.length === 0) {
+				return { count: 0, errors: [] };
 			}
+			query['status'] = allowed.length === 1 ? allowed[0] : { $in: allowed };
+		} else {
+			query['status'] = { $in: retryable };
+		}
 
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{
-					_id: doc._id,
-					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
-				},
+		const spreadWindowMs = 30_000; // 30s max spread for staggered retry
+
+		try {
+			const result = await this.ctx.collection.updateMany(query, [
 				{
 					$set: {
 						status: JobStatus.PENDING,
 						failCount: 0,
-						nextRunAt: new Date(),
+						nextRunAt: {
+							$add: [new Date(), { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+						},
 						updatedAt: new Date(),
 					},
-					$unset: {
-						failReason: '',
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
 				},
-				{ returnDocument: 'after' },
-			);
+				{
+					$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat', 'heartbeatInterval'],
+				},
+			]);
 
-			if (result) {
-				retriedIds.push(jobId);
-			} else {
-				errors.push({
-					jobId,
-					error: 'Job status changed during retry attempt',
-				});
+			const count = result.modifiedCount;
+
+			if (count > 0) {
+				this.ctx.emit('jobs:retried', { count });
 			}
-		}
 
-		if (retriedIds.length > 0) {
-			this.ctx.emit('jobs:retried', {
-				jobIds: retriedIds,
-				count: retriedIds.length,
-			});
+			return { count, errors: [] };
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during retryJobs';
+			throw new ConnectionError(
+				`Failed to retry jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return {
-			count: retriedIds.length,
-			errors,
-		};
 	}
 
 	/**
@@ -428,16 +401,27 @@ export class JobManager {
 	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		const query = buildSelectorQuery(filter);
 
-		// Use deleteMany for efficiency
-		const result = await this.ctx.collection.deleteMany(query);
+		try {
+			// Use deleteMany for efficiency
+			const result = await this.ctx.collection.deleteMany(query);
 
-		if (result.deletedCount > 0) {
-			this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+			if (result.deletedCount > 0) {
+				this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+			}
+
+			return {
+				count: result.deletedCount,
+				errors: [],
+			};
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during deleteJobs';
+			throw new ConnectionError(
+				`Failed to delete jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return {
-			count: result.deletedCount,
-			errors: [],
-		};
 	}
 }
