@@ -79,4 +79,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
 | 2. Safety & Robustness | 2/2 | Complete   | 2026-02-27 |
 | 3. Performance Optimization | 2/2 | Complete | 2026-02-28 |
-| 4. Structural Refactoring | 0/? | Not started | - |
+| 4. Structural Refactoring | 0/2 | Not started | - |
