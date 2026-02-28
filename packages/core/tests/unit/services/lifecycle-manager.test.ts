@@ -106,14 +106,14 @@ describe('LifecycleManager', () => {
 		});
 
 		it('should skip cleanup when no jobRetention is configured', async () => {
-			// Default ctx has no jobRetention
-			manager.startTimers(callbacks());
-
+			// Default ctx has no jobRetention — spy must be in place before
+			// startTimers so any immediate cleanup call would be observed.
 			vi.spyOn(ctx.collection, 'deleteMany');
+
+			manager.startTimers(callbacks());
 
 			await vi.advanceTimersByTimeAsync(10000);
 
-			// deleteMany should only be called if there were cleanup operations
 			// With no jobRetention, cleanupJobs is never called
 			expect(ctx.collection.deleteMany).not.toHaveBeenCalled();
 		});
