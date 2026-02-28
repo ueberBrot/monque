@@ -1079,8 +1079,12 @@ export class Monque extends EventEmitter {
 		// Clear stats cache for clean state on restart
 		this._query?.clearStatsCache();
 
-		// Close change stream
-		await this.changeStreamHandler.close();
+		// Close change stream — catch-and-ignore per shutdown cleanup guideline
+		try {
+			await this.changeStreamHandler.close();
+		} catch {
+			// ignore errors during shutdown cleanup
+		}
 
 		// Stop all lifecycle timers
 		this.lifecycleManager.stopTimers();
