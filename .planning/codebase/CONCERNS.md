@@ -15,23 +15,22 @@
 - Impact: Two code paths for the same option increases maintenance burden and confuses new contributors
 - Fix approach: Remove deprecated options in the next major version. Meanwhile, emit a deprecation warning at construction time when these are used.
 
-**Unsafe `error as Error` casts in fire-and-forget catch handlers:**
-- Issue: 7 occurrences cast `unknown` error directly to `Error` without validation in `.catch()` callbacks on poll/heartbeat/cleanup intervals
-- Files: `packages/core/src/scheduler/monque.ts` (lines 1004, 1011, 1021, 1026, 1033), `packages/core/src/scheduler/services/job-processor.ts` (line 120), `packages/core/src/scheduler/services/change-stream-handler.ts` (line 136)
-- Impact: If a non-Error is thrown (e.g., string, MongoDB driver rejection), the `error as Error` cast means `error.message` and `error.stack` will be `undefined`, producing useless error events
-- Fix approach: Apply the same normalization pattern used in `processJob`: `const err = error instanceof Error ? error : new Error(String(error))`. Apply consistently across all `.catch()` handlers.
+~~**Unsafe `error as Error` casts in fire-and-forget catch handlers:**~~
+- ~~Issue: 7 occurrences cast `unknown` error directly to `Error` without validation in `.catch()` callbacks on poll/heartbeat/cleanup intervals~~
+- ~~Files: `packages/core/src/scheduler/monque.ts`, `packages/core/src/scheduler/services/job-processor.ts`, `packages/core/src/scheduler/services/change-stream-handler.ts`~~
+- **Resolved:** All 7 sites replaced with `toError()` utility from `packages/core/src/shared/utils/error.ts`, which implements `value instanceof Error ? value : new Error(String(value))`. Zero `error as Error` casts remain in production source.
 
-**`Monque` class is 1311 lines (mostly JSDoc):**
+**`Monque` class is ~1294 lines (mostly JSDoc):**
 - Issue: While logic is delegated to services, the facade class duplicates all JSDoc from the service layer and contains lifecycle/timer management
 - Files: `packages/core/src/scheduler/monque.ts`
 - Impact: Documentation maintenance burden — every API change requires updating JSDoc in two places (service + facade). The class itself is ~400 lines of logic + ~900 lines of comments/examples.
 - Fix approach: Consider using `@inheritdoc` or `@see` tags to reference service-level docs rather than duplicating. Alternatively, extract timer/interval management into a dedicated `LifecycleManager` service.
+- Note: Tracked as REFR-01, planned for Phase 4 (Structural Refactoring).
 
-**Direct job status mutation in `completeJob`:**
-- Issue: `job.status = JobStatus.COMPLETED` directly mutates the in-memory job object after the DB update
-- Files: `packages/core/src/scheduler/services/job-processor.ts` (line 272)
-- Impact: Only done for one-time (non-recurring) completed jobs. This means the `job:complete` event may emit a job with `COMPLETED` status, but the recurring path emits with the original `PROCESSING` status. Inconsistent event payloads.
-- Fix approach: Either always re-fetch the job after DB update, or normalize the status on the emitted object consistently for both recurring and one-time jobs.
+~~**Direct job status mutation in `completeJob`:**~~
+- ~~Issue: `job.status = JobStatus.COMPLETED` directly mutates the in-memory job object after the DB update~~
+- ~~Files: `packages/core/src/scheduler/services/job-processor.ts`~~
+- **Resolved:** Both recurring and one-time paths in `completeJob` now use `findOneAndUpdate` with `returnDocument: 'after'` and convert via `documentToPersistedJob`. No in-memory mutation — event payloads consistently reflect the post-DB-update document.
 
 ## Known Bugs
 
@@ -40,11 +39,11 @@
 
 ## Security Considerations
 
-**No input validation on job `data` payloads:**
-- Risk: `enqueue()` and `schedule()` accept arbitrary `data: T` and store it directly in MongoDB without size limits or sanitization
-- Files: `packages/core/src/scheduler/services/job-scheduler.ts` (lines 69-123)
-- Current mitigation: TypeScript generics provide compile-time safety for known callers
-- Recommendations: Add optional `maxPayloadSize` option. Consider validating that `data` is JSON-serializable before insertion to prevent BSON serialization errors at write time.
+~~**No input validation on job `data` payloads:**~~
+- ~~Risk: `enqueue()` and `schedule()` accept arbitrary `data: T` and store it directly in MongoDB without size limits or sanitization~~
+- ~~Files: `packages/core/src/scheduler/services/job-scheduler.ts` (lines 69-123)~~
+- ~~Current mitigation: TypeScript generics provide compile-time safety for known callers~~
+- ~~Recommendations: Add optional `maxPayloadSize` option. Consider validating that `data` is JSON-serializable before insertion to prevent BSON serialization errors at write time.~~
 - **Resolved (2026-02-28, Phase 2 Plan 01):** Optional `maxPayloadSize` option added. Uses `BSON.calculateObjectSize` from the existing mongodb dependency to validate payload size before insertion. Throws `PayloadTooLargeError` when exceeded.
 
 **No authentication/authorization on job operations:**
@@ -53,26 +52,25 @@
 - Current mitigation: This is expected for a library — authorization is the consumer's responsibility
 - Recommendations: Document this clearly. Consider adding optional middleware/hook pattern for consumers who need authorization checks.
 
-**`schedulerInstanceId` defaults to random UUID but is user-overridable:**
-- Risk: If two instances use the same `schedulerInstanceId`, they will conflict on job claims and heartbeat updates, potentially causing duplicate processing
-- Files: `packages/core/src/scheduler/monque.ts` (line 148), `packages/core/src/scheduler/types.ts` (line 92)
-- Current mitigation: Default is `randomUUID()` which is practically collision-free
-- Recommendations: Add a startup check that validates no other active instance is using the same ID (e.g., via a brief collection query for processing jobs with the same claimedBy).
+~~**`schedulerInstanceId` defaults to random UUID but is user-overridable:**~~
+- ~~Risk: If two instances use the same `schedulerInstanceId`, they will conflict on job claims and heartbeat updates, potentially causing duplicate processing~~
+- ~~Files: `packages/core/src/scheduler/monque.ts` (line 148), `packages/core/src/scheduler/types.ts` (line 92)~~
+- ~~Current mitigation: Default is `randomUUID()` which is practically collision-free~~
+- ~~Recommendations: Add a startup check that validates no other active instance is using the same ID (e.g., via a brief collection query for processing jobs with the same claimedBy).~~
 - **Resolved (2026-02-28, Phase 2 Plan 02):** Startup check during `initialize()` detects active instances using the same `schedulerInstanceId` via heartbeat staleness. Throws `ConnectionError` to prevent duplicate processing.
 
 ## Performance Bottlenecks
 
-**Sequential index creation during `initialize()`:**
-- Problem: 7 `createIndex()` calls are awaited sequentially; not checked if indexes already exist before creation.
-- Files: `packages/core/src/scheduler/monque.ts` (lines 278-316)
-- Cause: Each index creation is a separate `await` — the indexes are independent and could be created concurrently
-- Improvement path: Use `Promise.all()` to create all indexes in parallel, or use `collection.createIndexes()` (plural) which accepts an array of index specifications in a single command.
+~~**Sequential index creation during `initialize()`:**~~
+- ~~Problem: 7 `createIndex()` calls are awaited sequentially; not checked if indexes already exist before creation.~~
+- ~~Files: `packages/core/src/scheduler/monque.ts`~~
+- **Resolved:** Replaced 7 sequential `createIndex()` calls with a single `collection.createIndexes()` (plural) call containing all 7 index specifications in one array. Single MongoDB command, no sequential awaits.
 
-**Bulk operations use cursor iteration with individual updates:**
-- Problem: `cancelJobs()` and `retryJobs()` iterate a cursor and issue individual `findOneAndUpdate` calls per document
-- Files: `packages/core/src/scheduler/services/job-manager.ts` (lines 275-335, 355-418)
-- Cause: Each job needs an atomic state transition check, but valid-state jobs could be batched
-- Improvement path: For jobs already in the correct source state, use `updateMany` with the state filter as a first pass, then enumerate any that failed the state check individually. This would reduce DB round-trips from O(n) to O(1) for the common case.
+~~**Bulk operations use cursor iteration with individual updates:**~~
+- ~~Problem: `cancelJobs()` and `retryJobs()` iterate a cursor and issue individual `findOneAndUpdate` calls per document~~
+- ~~Files: `packages/core/src/scheduler/services/job-manager.ts` (lines 275-335, 355-418)~~
+- ~~Cause: Each job needs an atomic state transition check, but valid-state jobs could be batched~~
+- ~~Improvement path: For jobs already in the correct source state, use `updateMany` with the state filter as a first pass, then enumerate any that failed the state check individually. This would reduce DB round-trips from O(n) to O(1) for the common case.~~
 - **Resolved (2026-02-28, Phase 3 Plan 01):** Both `cancelJobs()` and `retryJobs()` replaced with single `updateMany` calls. Cancel uses status guard `{ status: 'pending' }`; retry uses pipeline-style updateMany with `$rand` stagger across 30s window. O(1) round-trips regardless of job count. Commit `4ccd27d4`.
 
 **`getQueueStats` aggregation pipeline runs uncached:**
