@@ -8,7 +8,7 @@ tags: [lifecycle-manager, timer-management, service-extraction, facade-pattern]
 requires:
   - phase: 04-structural-refactoring
     plan: 01
-    provides: "JSDoc-deduped monque.ts (943 lines) as starting point for extraction"
+    provides: "JSDoc-corrected monque.ts (943 lines before LifecycleManager extraction, then ~1030 after JSDoc restoration) as starting point for extraction"
 provides:
   - "LifecycleManager service managing poll, heartbeat, and cleanup timers"
   - "Further reduced Monque facade (865 lines, 33% total reduction)"

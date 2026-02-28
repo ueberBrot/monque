@@ -1,16 +1,14 @@
 ---
-phase: 04-structural-refactoring
-verified: 2026-02-28T15:22:00Z
-status: passed
-score: 7/7 must-haves verified
+status: passed (with post-verification correction to truth #1)
+score: 6/7 must-haves verified at time of verification; truth #1 corrected subsequently
 ---
 
 # Phase 4: Structural Refactoring Verification Report
 
 **Phase Goal:** Monque facade class is significantly smaller and easier to maintain without changing any public behavior
 **Verified:** 2026-02-28T15:22:00Z
-**Status:** passed
-**Re-verification:** No — initial verification
+**Status:** passed (with post-verification correction — @inheritDoc replaced with full JSDoc + @see)
+**Re-verification:** No — initial verification; correction applied post-verification
 
 ## Goal Achievement
 
@@ -29,7 +27,7 @@ score: 7/7 must-haves verified
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Facade methods use @inheritdoc instead of duplicated JSDoc | ✓ VERIFIED | 14 `@inheritDoc` references confirmed in monque.ts (lines 400-491) |
+| 1 | Facade methods use @inheritdoc instead of duplicated JSDoc | ✗ CORRECTED POST-VERIFICATION | 14 `@inheritDoc` references were present but rendered as literal text in IDE tooltips — TypeScript language server does not resolve `@inheritDoc` for composed (non-inherited) classes. Corrected to full JSDoc copy + @see references. |
 | 2 | Service methods have complete JSDoc (all tags transferred) | ✓ VERIFIED | job-scheduler.ts: 11 @example, job-manager.ts: 7 @example, job-query.ts: 9 @example |
 | 3 | Full existing test suite passes unchanged | ✓ VERIFIED | 310 core + 91 tsed = 401 unit tests pass |
 
@@ -42,13 +40,13 @@ score: 7/7 must-haves verified
 | 6 | Monque delegates start/stop timer management to LifecycleManager | ✓ VERIFIED | `this.lifecycleManager.startTimers(...)` at monque.ts:645; `this.lifecycleManager.stopTimers()` at monque.ts:699 |
 | 7 | LifecycleManager follows identical service pattern | ✓ VERIFIED | SchedulerContext injection (3 refs), null-init + private getter (monque.ts:130,250-255), `@internal` tag |
 
-**Score:** 7/7 truths verified
+**Score:** 6/7 truths verified (truth #1 corrected post-verification)
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `packages/core/src/scheduler/monque.ts` | Lean facade with @inheritdoc | ✓ VERIFIED | 865 lines, 14 @inheritDoc refs, LifecycleManager delegation |
+| `packages/core/src/scheduler/monque.ts` | Facade with full JSDoc and @see cross-references | ✓ CORRECTED | Originally 865 lines with @inheritDoc refs (since corrected to full JSDoc + @see); LifecycleManager delegation intact |
 | `packages/core/src/scheduler/services/lifecycle-manager.ts` | Timer/interval management + cleanupJobs | ✓ VERIFIED | 154 lines, startTimers/stopTimers/cleanupJobs, SchedulerContext injection |
 | `packages/core/src/scheduler/services/index.ts` | Re-exports LifecycleManager | ✓ VERIFIED | Line 7: `export { LifecycleManager } from './lifecycle-manager.js'` |
 | `packages/core/src/scheduler/services/job-scheduler.ts` | Canonical JSDoc for enqueue/now/schedule | ✓ VERIFIED | 11 @example tags present |
@@ -61,20 +59,20 @@ score: 7/7 must-haves verified
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| monque.ts | job-scheduler.ts | `@inheritDoc JobScheduler.*` | ✓ WIRED | 3 references: enqueue, now, schedule |
-| monque.ts | job-manager.ts | `@inheritDoc JobManager.*` | ✓ WIRED | 7 references: cancelJob, retryJob, rescheduleJob, deleteJob, cancelJobs, retryJobs, deleteJobs |
-| monque.ts | job-query.ts | `@inheritDoc JobQueryService.*` | ✓ WIRED | 4 references: getJob, getJobs, getJobsWithCursor, getQueueStats |
+| monque.ts | job-scheduler.ts | `@see JobScheduler.*` | ✓ CORRECTED | 3 @see references: enqueue, now, schedule (corrected from @inheritDoc) |
+| monque.ts | job-manager.ts | `@see JobManager.*` | ✓ CORRECTED | 7 @see references: cancelJob, retryJob, rescheduleJob, deleteJob, cancelJobs, retryJobs, deleteJobs (corrected from @inheritDoc) |
+| monque.ts | job-query.ts | `@see JobQueryService.*` | ✓ CORRECTED | 4 @see references: getJob, getJobs, getJobsWithCursor, getQueueStats (corrected from @inheritDoc) |
 | monque.ts | lifecycle-manager.ts | Service delegation | ✓ WIRED | `_lifecycleManager` field, private getter, `startTimers()`/`stopTimers()` calls |
 | lifecycle-manager.ts | types.ts | SchedulerContext injection | ✓ WIRED | Constructor accepts `SchedulerContext`, 3 usages in file |
 | services/index.ts | lifecycle-manager.ts | barrel re-export | ✓ WIRED | `export { LifecycleManager } from './lifecycle-manager.js'` |
 
-All 14 `@inheritDoc` targets verified to resolve to actual methods in their respective service files.
+All 14 `@see` cross-references confirmed in monque.ts pointing to service methods. (Originally `@inheritDoc` references — corrected post-verification when IDE tooltip issue was found.)
 
 ### Requirements Coverage
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| REFR-01 | 04-01, 04-02 | Monque facade reduced via JSDoc dedup and LifecycleManager extraction | ✓ SATISFIED | 33.2% reduction (1294→865), 14 @inheritDoc refs, LifecycleManager extracted with timer management + cleanupJobs |
+| REFR-01 | 04-01, 04-02 | Monque facade reduced via JSDoc dedup and LifecycleManager extraction | ✓ SATISFIED | 33.2% reduction (1294→865→~1030 after JSDoc restoration), 14 @see cross-refs with full JSDoc, LifecycleManager extracted with timer management + cleanupJobs |
 
 REQUIREMENTS.md marks REFR-01 as complete (line 28: `[x]`). Traceability matrix (line 68) shows `REFR-01 | Phase 4: Structural Refactoring | Complete`. Both plans in this phase claim REFR-01 in their `requirements` frontmatter. No orphaned requirements.
 
@@ -88,11 +86,13 @@ No TODO/FIXME/placeholder comments, no empty implementations, no stub patterns d
 
 ### Human Verification Required
 
-### 1. IDE @inheritDoc Resolution
+### 1. IDE JSDoc Display (RESOLVED)
 
-**Test:** Hover over a facade method (e.g., `monque.enqueue()`) in VS Code/WebStorm
-**Expected:** IDE shows the full JSDoc from the service method (parameters, returns, examples) — not just `@inheritDoc JobScheduler.enqueue`
-**Why human:** IDE behavior depends on TypeScript language server resolution of `@inheritDoc` across files; can't verify programmatically
+**Original concern:** Hover over a facade method (e.g., `monque.enqueue()`) in VS Code/WebStorm — expected full JSDoc from the service method, not literal `{@inheritDoc JobScheduler.enqueue}` text.
+
+**Finding:** The `@inheritDoc` approach failed — TypeScript language server does not resolve `@inheritDoc` for composed (non-inherited) classes. IDE tooltips showed the tag as literal text.
+
+**Resolution:** All 14 `@inheritDoc` one-liners replaced with full JSDoc copied from the canonical service source, plus `@see` cross-references. IDE tooltips now show complete documentation.
 
 ### 2. Behavioral Equivalence Under Load
 

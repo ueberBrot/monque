@@ -15,9 +15,10 @@ Reduce the Monque facade class (currently 1,294 lines) to improve maintainabilit
 
 ### JSDoc deduplication strategy
 - Move full JSDoc (all @param, @returns, @throws, @template, @example blocks) from facade methods to the corresponding service methods (JobScheduler, JobManager, JobQueryService, etc.)
-- Use `@inheritdoc` on facade methods pointing to service methods — TypeScript resolves full docs through the chain for IDE hover
-- Full transfer including @example blocks — service methods become the single source of truth
+- Service methods become the single source of truth for documentation
 - Keep the class-level JSDoc on Monque (lines 51-113, the lifecycle example) — it's the entry point for library consumers and not duplicated
+
+**Post-execution correction (2026-02-28):** The original plan used `@inheritDoc` on facade methods pointing to service methods. However, TypeScript's language server does NOT resolve `@inheritDoc` across unrelated classes that don't share an inheritance/implementation relationship. Since `Monque` uses composition (not inheritance) over `JobScheduler`, `JobManager`, and `JobQueryService`, the `@inheritDoc` tags rendered as literal text in IDE tooltips. The correct approach is to copy the full JSDoc from each service method directly onto the corresponding `Monque` facade method, with an added `@see` tag referencing the service method for traceability. This was corrected after phase completion.
 
 ### LifecycleManager extraction scope
 - Extract into LifecycleManager: poll interval, heartbeat interval, cleanup interval, and the `cleanupJobs()` method
