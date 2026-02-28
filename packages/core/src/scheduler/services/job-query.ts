@@ -16,6 +16,11 @@ import { AggregationTimeoutError, ConnectionError } from '@/shared';
 import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
 import type { SchedulerContext } from './types.js';
 
+interface StatsCacheEntry {
+	data: QueueStats;
+	expiresAt: number;
+}
+
 /**
  * Internal service for job query operations.
  *
@@ -25,6 +30,9 @@ import type { SchedulerContext } from './types.js';
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobQueryService {
+	private readonly statsCache = new Map<string, StatsCacheEntry>();
+	private static readonly MAX_CACHE_SIZE = 100;
+
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
@@ -265,10 +273,22 @@ export class JobQueryService {
 	}
 
 	/**
+	 * Clear all cached getQueueStats() results.
+	 * Called on scheduler stop() for clean state on restart.
+	 * @internal
+	 */
+	clearStatsCache(): void {
+		this.statsCache.clear();
+	}
+
+	/**
 	 * Get aggregate statistics for the job queue.
 	 *
 	 * Uses MongoDB aggregation pipeline for efficient server-side calculation.
 	 * Returns counts per status and optional average processing duration for completed jobs.
+	 *
+	 * Results are cached per unique filter with a configurable TTL (default 5s).
+	 * Set `statsCacheTtlMs: 0` to disable caching.
 	 *
 	 * @param filter - Optional filter to scope statistics by job name
 	 * @returns Promise resolving to queue statistics
@@ -288,6 +308,16 @@ export class JobQueryService {
 	 * ```
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+		const ttl = this.ctx.options.statsCacheTtlMs;
+		const cacheKey = filter?.name ?? '';
+
+		if (ttl > 0) {
+			const cached = this.statsCache.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				return cached.data;
+			}
+		}
+
 		const matchStage: Document = {};
 
 		if (filter?.name) {
@@ -351,6 +381,23 @@ export class JobQueryService {
 			};
 
 			if (!result) {
+				// Cache the result if TTL is enabled
+				if (ttl > 0) {
+					// LRU eviction: if cache is full, delete the oldest entry
+					if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
+						const oldestKey = this.statsCache.keys().next().value;
+						if (oldestKey !== undefined) {
+							this.statsCache.delete(oldestKey);
+						}
+					}
+					// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
+					this.statsCache.delete(cacheKey);
+					this.statsCache.set(cacheKey, {
+						data: stats,
+						expiresAt: Date.now() + ttl,
+					});
+				}
+
 				return stats;
 			}
 

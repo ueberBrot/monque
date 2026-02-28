@@ -150,6 +150,7 @@ export class Monque extends EventEmitter {
 			jobRetention: options.jobRetention,
 			skipIndexCreation: options.skipIndexCreation ?? false,
 			maxPayloadSize: options.maxPayloadSize,
+			statsCacheTtlMs: options.statsCacheTtlMs ?? 5000,
 		};
 	}
 
@@ -1102,6 +1103,9 @@ export class Monque extends EventEmitter {
 		}
 
 		this.isRunning = false;
+
+		// Clear stats cache for clean state on restart
+		this._query?.clearStatsCache();
 
 		// Close change stream
 		await this.changeStreamHandler.close();

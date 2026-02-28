@@ -184,4 +184,16 @@ export interface MonqueOptions {
 	 * When undefined, no size validation occurs.
 	 */
 	maxPayloadSize?: number | undefined;
+
+	/**
+	 * TTL in milliseconds for getQueueStats() result caching.
+	 *
+	 * When set to a positive value, repeated getQueueStats() calls with the same
+	 * filter return cached results instead of re-executing the aggregation pipeline.
+	 * Each unique filter (job name) maintains its own cache entry.
+	 *
+	 * Set to 0 to disable caching entirely.
+	 * @default 5000
+	 */
+	statsCacheTtlMs?: number;
 }
