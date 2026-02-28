@@ -1,5 +1,11 @@
 # @monque/tsed
 
+## 1.3.0
+
+### Minor Changes
+
+- [#192](https://github.com/ueberBrot/monque/pull/192) [`2cacd15`](https://github.com/ueberBrot/monque/commit/2cacd15b3be35563a2b7b64848dd0133cc062bca) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Update @monque/core peer dependency form ^1.3.0 to ^1.4.0
+
 ## 1.2.0
 
 ### Minor Changes
