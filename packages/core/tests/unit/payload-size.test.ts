@@ -59,6 +59,25 @@ describe('payload size validation', () => {
 		expect(result._id).toEqual(insertedId);
 	});
 
+	it('allows payload exactly equal to maxPayloadSize on enqueue', async () => {
+		const ctx = createMockContext();
+		const scheduler = new JobScheduler(ctx);
+
+		const testData = { key: 'value' };
+		// Mirror what validatePayloadSize computes: BSON.calculateObjectSize({ data })
+		const exactSize = BSON.calculateObjectSize({ data: testData });
+		ctx.options.maxPayloadSize = exactSize;
+
+		const insertedId = new ObjectId();
+		vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
+			insertedId,
+			acknowledged: true,
+		});
+
+		const result = await scheduler.enqueue('test-job', testData);
+		expect(result._id).toEqual(insertedId);
+	});
+
 	it('skips validation when maxPayloadSize is undefined', async () => {
 		const ctx = createMockContext();
 		// maxPayloadSize is undefined by default
