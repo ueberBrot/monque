@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { Collection, Db, DeleteResult, Document, ObjectId, WithId } from 'mongodb';
+import type { Collection, Db, Document, ObjectId, WithId } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
@@ -18,7 +18,7 @@ import {
 	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, ShutdownTimeoutError, toError, WorkerRegistrationError } from '@/shared';
+import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
 import {
@@ -27,6 +27,7 @@ import {
 	JobProcessor,
 	JobQueryService,
 	JobScheduler,
+	LifecycleManager,
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
@@ -117,9 +118,6 @@ export class Monque extends EventEmitter {
 	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
-	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
-	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
-	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -129,6 +127,7 @@ export class Monque extends EventEmitter {
 	private _query: JobQueryService | null = null;
 	private _processor: JobProcessor | null = null;
 	private _changeStreamHandler: ChangeStreamHandler | null = null;
+	private _lifecycleManager: LifecycleManager | null = null;
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
@@ -188,6 +187,7 @@ export class Monque extends EventEmitter {
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx);
 			this._changeStreamHandler = new ChangeStreamHandler(ctx, () => this.processor.poll());
+			this._lifecycleManager = new LifecycleManager(ctx);
 
 			this.isInitialized = true;
 		} catch (error) {
@@ -244,6 +244,15 @@ export class Monque extends EventEmitter {
 		}
 
 		return this._changeStreamHandler;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get lifecycleManager(): LifecycleManager {
+		if (!this._lifecycleManager) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._lifecycleManager;
 	}
 
 	/**
@@ -381,50 +390,6 @@ export class Monque extends EventEmitter {
 					`Found processing job "${activeJob['name']}" with recent heartbeat. ` +
 					`Use a unique schedulerInstanceId or wait for the other instance to stop.`,
 			);
-		}
-	}
-
-	/**
-	 * Clean up old completed and failed jobs based on retention policy.
-	 *
-	 * - Removes completed jobs older than `jobRetention.completed`
-	 * - Removes failed jobs older than `jobRetention.failed`
-	 *
-	 * The cleanup runs concurrently for both statuses if configured.
-	 *
-	 * @returns Promise resolving when all deletion operations complete
-	 */
-	private async cleanupJobs(): Promise<void> {
-		if (!this.collection || !this.options.jobRetention) {
-			return;
-		}
-
-		const { completed, failed } = this.options.jobRetention;
-		const now = Date.now();
-		const deletions: Promise<DeleteResult>[] = [];
-
-		if (completed) {
-			const cutoff = new Date(now - completed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.COMPLETED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (failed) {
-			const cutoff = new Date(now - failed);
-			deletions.push(
-				this.collection.deleteMany({
-					status: JobStatus.FAILED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (deletions.length > 0) {
-			await Promise.all(deletions);
 		}
 	}
 
@@ -676,39 +641,10 @@ export class Monque extends EventEmitter {
 		// Set up change streams as the primary notification mechanism
 		this.changeStreamHandler.setup();
 
-		// Set up polling as backup (runs at configured interval)
-		this.pollIntervalId = setInterval(() => {
-			this.processor.poll().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-		}, this.options.pollInterval);
-
-		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(() => {
-			this.processor.updateHeartbeats().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-		}, this.options.heartbeatInterval);
-
-		// Start cleanup interval if retention is configured
-		if (this.options.jobRetention) {
-			const interval = this.options.jobRetention.interval ?? DEFAULTS.retentionInterval;
-
-			// Run immediately on start
-			this.cleanupJobs().catch((error: unknown) => {
-				this.emit('job:error', { error: toError(error) });
-			});
-
-			this.cleanupIntervalId = setInterval(() => {
-				this.cleanupJobs().catch((error: unknown) => {
-					this.emit('job:error', { error: toError(error) });
-				});
-			}, interval);
-		}
-
-		// Run initial poll immediately to pick up any existing jobs
-		this.processor.poll().catch((error: unknown) => {
-			this.emit('job:error', { error: toError(error) });
+		// Delegate timer management to LifecycleManager
+		this.lifecycleManager.startTimers({
+			poll: () => this.processor.poll(),
+			updateHeartbeats: () => this.processor.updateHeartbeats(),
 		});
 	}
 
@@ -759,22 +695,8 @@ export class Monque extends EventEmitter {
 		// Close change stream
 		await this.changeStreamHandler.close();
 
-		if (this.cleanupIntervalId) {
-			clearInterval(this.cleanupIntervalId);
-			this.cleanupIntervalId = null;
-		}
-
-		// Clear polling interval
-		if (this.pollIntervalId) {
-			clearInterval(this.pollIntervalId);
-			this.pollIntervalId = null;
-		}
-
-		// Clear heartbeat interval
-		if (this.heartbeatIntervalId) {
-			clearInterval(this.heartbeatIntervalId);
-			this.heartbeatIntervalId = null;
-		}
+		// Stop all lifecycle timers
+		this.lifecycleManager.stopTimers();
 
 		// Wait for all active jobs to complete (with timeout)
 		const activeJobs = this.getActiveJobs();
