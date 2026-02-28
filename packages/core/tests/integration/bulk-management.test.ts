@@ -213,6 +213,13 @@ describe('Management APIs: Bulk Operations', () => {
 			// Only the failed job should be retried; pending silently skipped by status guard
 			expect(result.count).toBe(1);
 			expect(result.errors).toHaveLength(0);
+
+			// Verify the pending job was not changed
+			const pendingJob = await db
+				.collection(collectionName)
+				.findOne({ name: queueName, 'data.task': 1 });
+			expect(pendingJob).toBeDefined();
+			expect(pendingJob?.['status']).toBe(JobStatus.PENDING);
 		});
 
 		test('emits jobs:retried event with count', async () => {
