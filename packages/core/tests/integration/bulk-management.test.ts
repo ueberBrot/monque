@@ -62,7 +62,7 @@ describe('Management APIs: Bulk Operations', () => {
 			expect(other?.status).toBe(JobStatus.PENDING);
 		});
 
-		test('skips processing jobs and includes them in errors', async () => {
+		test('only cancels pending jobs, ignoring other statuses', async () => {
 			const collectionName = uniqueCollectionName('bulk_cancel_skip');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -81,10 +81,16 @@ describe('Management APIs: Bulk Operations', () => {
 				name: queueName,
 			});
 
-			// Only the pending one should be cancelled
+			// Only the pending one should be cancelled; processing silently skipped
 			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.error).toContain('processing');
+			expect(result.errors).toHaveLength(0);
+
+			// Verify processing job is untouched
+			const processingInDb = await db
+				.collection(collectionName)
+				.findOne({ _id: processingDoc._id });
+			const processing = processingInDb as unknown as Job | null;
+			expect(processing?.status).toBe(JobStatus.PROCESSING);
 		});
 
 		test('returns count 0 for empty filter with no matches', async () => {
@@ -118,7 +124,7 @@ describe('Management APIs: Bulk Operations', () => {
 			expect(result.errors).toHaveLength(0);
 		});
 
-		test('emits jobs:cancelled event with job IDs', async () => {
+		test('emits jobs:cancelled event with count', async () => {
 			const collectionName = uniqueCollectionName('bulk_cancel_event');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -127,7 +133,7 @@ describe('Management APIs: Bulk Operations', () => {
 			await monque.enqueue(queueName, { task: 1 });
 			await monque.enqueue(queueName, { task: 2 });
 
-			let emittedPayload: { jobIds: string[]; count: number } | undefined;
+			let emittedPayload: { count: number } | undefined;
 			monque.on('jobs:cancelled', (payload) => {
 				emittedPayload = payload;
 			});
@@ -136,7 +142,6 @@ describe('Management APIs: Bulk Operations', () => {
 
 			expect(emittedPayload).toBeDefined();
 			expect(emittedPayload?.count).toBe(2);
-			expect(emittedPayload?.jobIds).toHaveLength(2);
 		});
 	});
 
@@ -222,7 +227,7 @@ describe('Management APIs: Bulk Operations', () => {
 			];
 			await db.collection(collectionName).insertMany(failedDocs);
 
-			let emittedPayload: { jobIds: string[]; count: number } | undefined;
+			let emittedPayload: { count: number } | undefined;
 			monque.on('jobs:retried', (payload) => {
 				emittedPayload = payload;
 			});
@@ -231,7 +236,6 @@ describe('Management APIs: Bulk Operations', () => {
 
 			expect(emittedPayload).toBeDefined();
 			expect(emittedPayload?.count).toBe(2);
-			expect(emittedPayload?.jobIds).toHaveLength(2);
 		});
 	});
 

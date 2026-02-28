@@ -244,14 +244,15 @@ export class JobManager {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Cancel multiple jobs matching the given filter.
+	 * Cancel multiple jobs matching the given filter via a single updateMany call.
 	 *
-	 * Only cancels jobs in 'pending' status. Jobs in other states are collected
-	 * as errors in the result. Emits a 'jobs:cancelled' event with the IDs of
+	 * Only cancels jobs in 'pending' status — the status guard is applied regardless
+	 * of what the filter specifies. Jobs in other states are silently skipped (not
+	 * matched by the query). Emits a 'jobs:cancelled' event with the count of
 	 * successfully cancelled jobs.
 	 *
 	 * @param filter - Selector for which jobs to cancel (name, status, date range)
-	 * @returns Result with count of cancelled jobs and any errors encountered
+	 * @returns Result with count of cancelled jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Cancel all pending jobs for a queue
 	 * ```typescript
@@ -263,75 +264,37 @@ export class JobManager {
 	 * ```
 	 */
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const cancelledIds: string[] = [];
+		const query = buildSelectorQuery(filter);
 
-		// Find all matching jobs and stream them to avoid memory pressure
-		const cursor = this.ctx.collection.find(baseQuery);
+		// Override status to only target pending jobs regardless of filter
+		query['status'] = JobStatus.PENDING;
 
-		for await (const doc of cursor) {
-			const jobId = doc._id.toString();
+		const result = await this.ctx.collection.updateMany(query, {
+			$set: {
+				status: JobStatus.CANCELLED,
+				updatedAt: new Date(),
+			},
+		});
 
-			if (doc['status'] !== JobStatus.PENDING && doc['status'] !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot cancel job in status '${doc['status']}'`,
-				});
-				continue;
-			}
+		const count = result.modifiedCount;
 
-			// Skip already cancelled jobs (idempotent)
-			if (doc['status'] === JobStatus.CANCELLED) {
-				cancelledIds.push(jobId);
-				continue;
-			}
-
-			// Atomically update to cancelled
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: doc._id, status: JobStatus.PENDING },
-				{
-					$set: {
-						status: JobStatus.CANCELLED,
-						updatedAt: new Date(),
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			if (result) {
-				cancelledIds.push(jobId);
-			} else {
-				// Race condition: status changed
-				errors.push({
-					jobId,
-					error: 'Job status changed during cancellation',
-				});
-			}
+		if (count > 0) {
+			this.ctx.emit('jobs:cancelled', { count });
 		}
 
-		if (cancelledIds.length > 0) {
-			this.ctx.emit('jobs:cancelled', {
-				jobIds: cancelledIds,
-				count: cancelledIds.length,
-			});
-		}
-
-		return {
-			count: cancelledIds.length,
-			errors,
-		};
+		return { count, errors: [] };
 	}
 
 	/**
-	 * Retry multiple jobs matching the given filter.
+	 * Retry multiple jobs matching the given filter via a single pipeline-style updateMany call.
 	 *
-	 * Only retries jobs in 'failed' or 'cancelled' status. Jobs in other states
-	 * are collected as errors in the result. Emits a 'jobs:retried' event with
-	 * the IDs of successfully retried jobs.
+	 * Only retries jobs in 'failed' or 'cancelled' status — the status guard is applied
+	 * regardless of what the filter specifies. Jobs in other states are silently skipped.
+	 * Uses `$rand` for per-document staggered `nextRunAt` to avoid thundering herd on retry.
+	 * Emits a 'jobs:retried' event with the count of successfully retried jobs.
 	 *
 	 * @param filter - Selector for which jobs to retry (name, status, date range)
-	 * @returns Result with count of retried jobs and any errors encountered
+	 * @returns Result with count of retried jobs (errors array always empty for bulk ops)
 	 *
 	 * @example Retry all failed jobs
 	 * ```typescript
@@ -342,67 +305,36 @@ export class JobManager {
 	 * ```
 	 */
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-		const baseQuery = buildSelectorQuery(filter);
-		const errors: Array<{ jobId: string; error: string }> = [];
-		const retriedIds: string[] = [];
+		const query = buildSelectorQuery(filter);
 
-		const cursor = this.ctx.collection.find(baseQuery);
+		// Override status to only target failed/cancelled jobs regardless of filter
+		query['status'] = { $in: [JobStatus.FAILED, JobStatus.CANCELLED] };
 
-		for await (const doc of cursor) {
-			const jobId = doc._id.toString();
+		const spreadWindowMs = 30_000; // 30s max spread for staggered retry
 
-			if (doc['status'] !== JobStatus.FAILED && doc['status'] !== JobStatus.CANCELLED) {
-				errors.push({
-					jobId,
-					error: `Cannot retry job in status '${doc['status']}'`,
-				});
-				continue;
-			}
-
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{
-					_id: doc._id,
-					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
-				},
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						failCount: 0,
-						nextRunAt: new Date(),
-						updatedAt: new Date(),
+		const result = await this.ctx.collection.updateMany(query, [
+			{
+				$set: {
+					status: JobStatus.PENDING,
+					failCount: 0,
+					nextRunAt: {
+						$add: [new Date(), { $multiply: [{ $rand: {} }, spreadWindowMs] }],
 					},
-					$unset: {
-						failReason: '',
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						heartbeatInterval: '',
-					},
+					updatedAt: new Date(),
 				},
-				{ returnDocument: 'after' },
-			);
+			},
+			{
+				$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat', 'heartbeatInterval'],
+			},
+		]);
 
-			if (result) {
-				retriedIds.push(jobId);
-			} else {
-				errors.push({
-					jobId,
-					error: 'Job status changed during retry attempt',
-				});
-			}
+		const count = result.modifiedCount;
+
+		if (count > 0) {
+			this.ctx.emit('jobs:retried', { count });
 		}
 
-		if (retriedIds.length > 0) {
-			this.ctx.emit('jobs:retried', {
-				jobIds: retriedIds,
-				count: retriedIds.length,
-			});
-		}
-
-		return {
-			count: retriedIds.length,
-			errors,
-		};
+		return { count, errors: [] };
 	}
 
 	/**

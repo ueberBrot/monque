@@ -90,17 +90,17 @@ export interface MonqueEventMap {
 
 	/**
 	 * Emitted when multiple jobs are cancelled in bulk.
+	 * Contains only the count of affected jobs (no individual IDs for O(1) performance).
 	 */
 	'jobs:cancelled': {
-		jobIds: string[];
 		count: number;
 	};
 
 	/**
 	 * Emitted when multiple jobs are retried in bulk.
+	 * Contains only the count of affected jobs (no individual IDs for O(1) performance).
 	 */
 	'jobs:retried': {
-		jobIds: string[];
 		count: number;
 	};
 
