@@ -86,6 +86,29 @@ const job = await monque.enqueue('task', { foo: 'bar' });
 // job.claimedBy === 'worker-1' (or the UUID)
 ```
 
+### Instance Collision Detection
+
+Monque detects when two active instances share the same `schedulerInstanceId`. During `initialize()`, after stale recovery runs, it checks whether any job is currently `processing` with the same ID **and** has a recent heartbeat (within `2 × heartbeatInterval`). If one is found, a `ConnectionError` is thrown immediately.
+
+```typescript
+import { ConnectionError } from '@monque/core';
+
+try {
+  await monque.initialize();
+} catch (error) {
+  if (error instanceof ConnectionError) {
+    // Another live instance is using the same ID
+    console.error(error.message);
+  }
+}
+```
+
+**Why stale recovery runs first:** A crashed instance leaves jobs in `processing` with a stale heartbeat. Running stale recovery before the collision check resets those jobs to `pending`, preventing false positives from crash-recovery scenarios.
+
+<Aside type="caution">
+  Always use a unique `schedulerInstanceId` per running instance. Sharing an ID across active instances causes a `ConnectionError` on startup of the second instance.
+</Aside>
+
 ## Multi-Instance Deployment
 
 ### Scaling Horizontally

@@ -241,9 +241,12 @@ const monque = new Monque(db, {
   maxRetries: 10,
   baseRetryInterval: 1000,
   shutdownTimeout: 30000,
-  defaultConcurrency: 5,
+  workerConcurrency: 5,
+  instanceConcurrency: 20,
   lockTimeout: 1800000,
   heartbeatInterval: 30000,
+  maxPayloadSize: 100_000,   // Reject payloads over 100 KB
+  statsCacheTtlMs: 5000,     // Cache getQueueStats() results for 5 s
 });
 ```
 

@@ -156,3 +156,27 @@ You can also scope statistics to a specific job name:
 ```typescript
 const emailStats = await monque.getQueueStats({ name: 'email' });
 ```
+
+### Stats Caching
+
+`getQueueStats()` runs a MongoDB aggregation pipeline. To avoid re-running that pipeline on every call (e.g. in a metrics endpoint), Monque caches results with a TTL+LRU strategy.
+
+By default the TTL is **5 seconds**. Configure it via `statsCacheTtlMs`:
+
+```typescript
+const monque = new Monque(db, {
+  statsCacheTtlMs: 10_000  // Cache stats for 10 seconds
+});
+```
+
+Behaviour details:
+- Each unique filter (global vs. name-scoped) has its own cache entry.
+- Cached results are returned without hitting MongoDB until the TTL expires.
+- The cache is cleared entirely when `stop()` is called.
+- Set `statsCacheTtlMs: 0` to disable caching and always run the aggregation live.
+
+```typescript
+const monque = new Monque(db, {
+  statsCacheTtlMs: 0  // Always run live aggregation
+});
+```
