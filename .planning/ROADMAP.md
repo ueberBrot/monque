@@ -51,7 +51,10 @@ Plans:
   1. cancelJobs() and retryJobs() use updateMany (or bulkWrite) with proper status guards, completing in a single DB round-trip regardless of job count
   2. Repeated getQueueStats() calls within the TTL window return cached results without re-executing the aggregation pipeline
   3. Stats cache respects configurable `statsCacheTtlMs` option, clears on stop(), and does not grow unbounded
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Bulk cancelJobs/retryJobs via updateMany (PERF-01)
+- [ ] 03-02-PLAN.md — TTL+LRU cache for getQueueStats (PERF-02)
 
 ### Phase 4: Structural Refactoring
 **Goal**: Monque facade class is significantly smaller and easier to maintain without changing any public behavior
@@ -72,5 +75,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
 | 2. Safety & Robustness | 2/2 | Complete   | 2026-02-27 |
-| 3. Performance Optimization | 0/? | Not started | - |
+| 3. Performance Optimization | 0/2 | Planned | - |
 | 4. Structural Refactoring | 0/? | Not started | - |
