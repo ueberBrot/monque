@@ -159,43 +159,23 @@ describe('job retention', () => {
 		const oldDate = new Date(now.getTime() - 6000); // 6s ago — should be deleted
 		const recentDate = new Date(now.getTime() - 100); // 100ms ago — should survive
 
-		// Seed old completed jobs
-		await collection.insertOne(
+		// Seed jobs for retention test
+		await collection.insertMany([
+			// Old completed jobs (should be deleted)
 			JobFactoryHelpers.completed({ name: 'old-completed-1', updatedAt: oldDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.completed({ name: 'old-completed-2', updatedAt: oldDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.completed({ name: 'old-completed-3', updatedAt: oldDate }),
-		);
-
-		// Seed old failed jobs
-		await collection.insertOne(
+			// Old failed jobs (should be deleted)
 			JobFactoryHelpers.failed({ name: 'old-failed-1', updatedAt: oldDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.failed({ name: 'old-failed-2', updatedAt: oldDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.failed({ name: 'old-failed-3', updatedAt: oldDate }),
-		);
-
-		// Seed recent completed jobs
-		await collection.insertOne(
+			// Recent completed jobs (should survive)
 			JobFactoryHelpers.completed({ name: 'recent-completed-1', updatedAt: recentDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.completed({ name: 'recent-completed-2', updatedAt: recentDate }),
-		);
-
-		// Seed recent failed jobs
-		await collection.insertOne(
+			// Recent failed jobs (should survive)
 			JobFactoryHelpers.failed({ name: 'recent-failed-1', updatedAt: recentDate }),
-		);
-		await collection.insertOne(
 			JobFactoryHelpers.failed({ name: 'recent-failed-2', updatedAt: recentDate }),
-		);
+		]);
 
 		// Start both instances concurrently
 		await monque1.initialize();
