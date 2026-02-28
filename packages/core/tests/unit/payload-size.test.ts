@@ -1,11 +1,33 @@
-import { ObjectId } from 'mongodb';
-import { describe, expect, it, vi } from 'vitest';
+import { BSON, ObjectId } from 'mongodb';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext } from '@tests/factories';
 import { JobScheduler } from '@/scheduler/services/job-scheduler.js';
 import { PayloadTooLargeError } from '@/shared';
 
+// vi.mock hoisted to top of file - mock the mongodb module so we can control BSON.calculateObjectSize.
+// We wrap calculateObjectSize in a vi.fn so tests can temporarily override it with mockImplementationOnce.
+// The real function is captured inside importOriginal to avoid circular reference from the mock itself.
+var _realCalculateObjectSize: typeof import('mongodb').BSON.calculateObjectSize;
+vi.mock('mongodb', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('mongodb')>();
+	_realCalculateObjectSize = actual.BSON.calculateObjectSize;
+	return {
+		...actual,
+		BSON: {
+			...actual.BSON,
+			calculateObjectSize: vi.fn((...args: Parameters<typeof actual.BSON.calculateObjectSize>) =>
+				_realCalculateObjectSize(...args),
+			),
+		},
+	};
+});
+
 describe('payload size validation', () => {
+	afterEach(() => {
+		vi.mocked(BSON.calculateObjectSize).mockClear();
+	});
+
 	it('rejects payload exceeding maxPayloadSize on enqueue', async () => {
 		const ctx = createMockContext();
 		ctx.options.maxPayloadSize = 100;
@@ -64,6 +86,43 @@ describe('payload size validation', () => {
 
 		await expect(scheduler.schedule('0 * * * *', 'test-job', largeData)).rejects.toThrow(
 			PayloadTooLargeError,
+		);
+	});
+
+	it('wraps BSON calculation errors in PayloadTooLargeError', async () => {
+		const ctx = createMockContext();
+		ctx.options.maxPayloadSize = 1000;
+		const scheduler = new JobScheduler(ctx);
+
+		const bsonError = new Error('Cannot serialize circular structure');
+		vi.mocked(BSON.calculateObjectSize).mockImplementationOnce(() => {
+			throw bsonError;
+		});
+
+		const error = await scheduler.enqueue('test-job', { x: 1 }).catch((e: unknown) => e);
+
+		expect(error).toBeInstanceOf(PayloadTooLargeError);
+		expect((error as PayloadTooLargeError).actualSize).toBe(-1);
+		expect((error as PayloadTooLargeError).maxSize).toBe(1000);
+		expect((error as PayloadTooLargeError).message).toMatch(/Failed to calculate job payload size/);
+		expect((error as PayloadTooLargeError).cause).toBe(bsonError);
+	});
+
+	it('wraps non-Error BSON throws in a normalized cause', async () => {
+		const ctx = createMockContext();
+		ctx.options.maxPayloadSize = 1000;
+		const scheduler = new JobScheduler(ctx);
+
+		vi.mocked(BSON.calculateObjectSize).mockImplementationOnce(() => {
+			throw 'unexpected string thrown'; // eslint-disable-line no-throw-literal
+		});
+
+		const error = await scheduler.enqueue('test-job', { x: 1 }).catch((e: unknown) => e);
+
+		expect(error).toBeInstanceOf(PayloadTooLargeError);
+		expect((error as PayloadTooLargeError).cause).toBeInstanceOf(Error);
+		expect(((error as PayloadTooLargeError).cause as Error).message).toBe(
+			'unexpected string thrown',
 		);
 	});
 });

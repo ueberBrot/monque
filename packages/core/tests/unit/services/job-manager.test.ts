@@ -280,7 +280,9 @@ describe('JobManager', () => {
 			const result = await manager.cancelJobs({ name: 'bulk-cancel' });
 
 			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
-			const [query, update] = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0]!;
+			const cancelCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(cancelCall).toBeDefined();
+			const [query, update] = cancelCall ?? [];
 			expect(query).toEqual(expect.objectContaining({ status: 'pending' }));
 			expect(update).toEqual(
 				expect.objectContaining({
@@ -321,7 +323,9 @@ describe('JobManager', () => {
 
 			await manager.cancelJobs({ status: JobStatus.PROCESSING });
 
-			const [query] = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0]!;
+			const overrideCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(overrideCall).toBeDefined();
+			const [query] = overrideCall ?? [];
 			expect(query).toEqual(expect.objectContaining({ status: 'pending' }));
 		});
 	});
@@ -339,7 +343,9 @@ describe('JobManager', () => {
 			const result = await manager.retryJobs({ status: JobStatus.FAILED });
 
 			expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
-			const [query, update] = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0]!;
+			const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(retryCall).toBeDefined();
+			const [query, update] = retryCall ?? [];
 			expect(query).toEqual(expect.objectContaining({ status: { $in: ['failed', 'cancelled'] } }));
 			// Pipeline-style update: second argument must be an array
 			expect(Array.isArray(update)).toBe(true);
@@ -377,7 +383,9 @@ describe('JobManager', () => {
 
 			await manager.retryJobs({ status: JobStatus.FAILED });
 
-			const [, update] = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0]!;
+			const pipelineCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
+			expect(pipelineCall).toBeDefined();
+			const [, update] = pipelineCall ?? [];
 			const pipeline = update as Record<string, unknown>[];
 			const setStage = pipeline[0] as { $set: Record<string, unknown> };
 			expect(setStage).toHaveProperty('$set');

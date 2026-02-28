@@ -51,6 +51,7 @@ describe('Duplicate Validation & Idempotency', () => {
 			await bootstrapMonque({
 				imports: [EphemeralIdempotentController],
 				connectionStrategy: 'dbFactory',
+				monqueConfig: { statsCacheTtlMs: 0 },
 			});
 
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);

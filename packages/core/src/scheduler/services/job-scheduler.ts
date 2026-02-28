@@ -34,7 +34,20 @@ export class JobScheduler {
 			return;
 		}
 
-		const size = BSON.calculateObjectSize({ data } as Document);
+		let size: number;
+		try {
+			size = BSON.calculateObjectSize({ data } as Document);
+		} catch (error) {
+			const cause = error instanceof Error ? error : new Error(String(error));
+			const sizeError = new PayloadTooLargeError(
+				`Failed to calculate job payload size: ${cause.message}`,
+				-1,
+				maxSize,
+			);
+			sizeError.cause = cause;
+			throw sizeError;
+		}
+
 		if (size > maxSize) {
 			throw new PayloadTooLargeError(
 				`Job payload exceeds maximum size: ${size} bytes > ${maxSize} bytes`,
