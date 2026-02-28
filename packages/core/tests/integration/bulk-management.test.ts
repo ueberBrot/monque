@@ -193,7 +193,7 @@ describe('Management APIs: Bulk Operations', () => {
 			expect(result.errors).toHaveLength(0);
 		});
 
-		test('skips pending and processing jobs', async () => {
+		test('only retries failed/cancelled jobs, ignoring pending', async () => {
 			const collectionName = uniqueCollectionName('bulk_retry_skip');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -210,12 +210,12 @@ describe('Management APIs: Bulk Operations', () => {
 				name: queueName,
 			});
 
-			// Only the failed job should be retried
+			// Only the failed job should be retried; pending silently skipped by status guard
 			expect(result.count).toBe(1);
-			expect(result.errors).toHaveLength(1);
+			expect(result.errors).toHaveLength(0);
 		});
 
-		test('emits jobs:retried event with job IDs', async () => {
+		test('emits jobs:retried event with count', async () => {
 			const collectionName = uniqueCollectionName('bulk_retry_event');
 			monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
