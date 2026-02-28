@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 3 of 4 (Performance Optimization)
-Plan: 0 of ? in current phase
-Status: Phase 2 complete, ready for Phase 3
-Last activity: 2026-02-27 — Completed 02-02-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase 3 complete, ready for Phase 4
+Last activity: 2026-02-28 — Completed 03-02-PLAN.md
 
-Progress: [█████░░░░░] 50% (2/4 phases)
+Progress: [████████░░] 75% (3/4 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: ~3 min
-- Total execution time: ~12 min
+- Total plans completed: 6
+- Average duration: ~4 min
+- Total execution time: ~26 min
 
 **By Phase:**
 
@@ -29,15 +29,17 @@ Progress: [█████░░░░░] 50% (2/4 phases)
 |-------|-------|-------|----------|
 | 01-test-coverage-foundation | 2 | ~2 min | ~1 min |
 | 02-safety-robustness | 2 | ~10 min | ~5 min |
+| 03-performance-optimization | 2 | ~14 min | ~7 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01, 01-02, 02-01, 02-02
+- Last 5 plans: 01-02, 02-01, 02-02, 03-01, 03-02
 - Trend: Stable
 
 *Updated after each plan completion*
 | Phase 01 P02 | 1 min | 1 tasks | 1 files |
 | Phase 02 P01 | 6 min | 2 tasks | 11 files |
 | Phase 02 P02 | 4 min | 2 tasks | 3 files |
+| Phase 03 P02 | 7 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -55,6 +57,10 @@ Recent decisions affecting current work:
 - [02-01]: Relied on explicit `PersistedJob<T>` return type annotation for compile-time mapper exhaustiveness — TypeScript errors on missing required fields, round-trip tests catch optional field drift
 
 - [02-02]: Added findOne mock to existing monque.test.ts to fix 12 pre-existing failures caused by collision check calling collection.findOne
+- [03-02]: MAX_CACHE_SIZE=100 internal constant — one entry per distinct job name filter
+- [03-02]: Cache keyed by filter.name ?? '' — empty string for unfiltered queries
+- [03-02]: LRU via Map insertion order — re-queried entries re-inserted at end
+- [03-02]: No proactive cache invalidation after mutations — TTL-only per user decision
 
 ### Pending Todos
 
@@ -66,6 +72,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-27
-Stopped at: Completed 02-02-PLAN.md (Phase 2 complete)
-Resume file: .planning/phases/03-performance-optimization/
+Last session: 2026-02-28
+Stopped at: Completed 03-02-PLAN.md (Phase 3 complete)
+Resume file: .planning/phases/04-structural-cleanup/

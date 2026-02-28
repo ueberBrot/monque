@@ -15,8 +15,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Performance
 
-- [ ] **PERF-01**: cancelJobs() and retryJobs() use bulk MongoDB operations (updateMany or bulkWrite) instead of per-document cursor iteration, reducing DB round-trips from O(n) to O(1) for the common case
-- [ ] **PERF-02**: getQueueStats() results are cached with a configurable TTL (default 5s), eliminating redundant aggregation pipeline executions for repeated calls within the TTL window
+- [x] **PERF-01**: cancelJobs() and retryJobs() use bulk MongoDB operations (updateMany or bulkWrite) instead of per-document cursor iteration, reducing DB round-trips from O(n) to O(1) for the common case
+- [x] **PERF-02**: getQueueStats() results are cached with a configurable TTL (default 5s), eliminating redundant aggregation pipeline executions for repeated calls within the TTL window
 
 ### Security
 
@@ -63,8 +63,8 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | SECR-01 | Phase 2: Safety & Robustness | Complete |
 | SECR-02 | Phase 2: Safety & Robustness | Complete |
 | REFR-02 | Phase 2: Safety & Robustness | Complete |
-| PERF-01 | Phase 3: Performance Optimization | Pending |
-| PERF-02 | Phase 3: Performance Optimization | Pending |
+| PERF-01 | Phase 3: Performance Optimization | Complete |
+| PERF-02 | Phase 3: Performance Optimization | Complete |
 | REFR-01 | Phase 4: Structural Refactoring | Pending |
 
 **Coverage:**
@@ -74,4 +74,4 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-27 after roadmap creation*
+*Last updated: 2026-02-28 after Phase 3 completion*
