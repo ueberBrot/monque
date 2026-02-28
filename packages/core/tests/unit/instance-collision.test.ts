@@ -191,8 +191,8 @@ describe('Instance Collision Detection', () => {
 		expect(findOneSpy).toHaveBeenCalledTimes(2);
 
 		// Verify the two instances used different claimedBy (schedulerInstanceId) values
-		const call1Query = findOneSpy.mock.calls[0]![0] as { claimedBy: string };
-		const call2Query = findOneSpy.mock.calls[1]![0] as { claimedBy: string };
+		const call1Query = findOneSpy.mock.calls[0]?.[0] as { claimedBy: string };
+		const call2Query = findOneSpy.mock.calls[1]?.[0] as { claimedBy: string };
 		expect(call1Query.claimedBy).toEqual(expect.any(String));
 		expect(call2Query.claimedBy).toEqual(expect.any(String));
 		expect(call1Query.claimedBy).not.toBe(call2Query.claimedBy);

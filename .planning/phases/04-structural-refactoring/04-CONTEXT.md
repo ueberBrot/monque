@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Reduce the Monque facade class (currently 1,294 lines) to improve maintainability without changing any public behavior. Two strategies: JSDoc deduplication via `@inheritdoc` and LifecycleManager extraction. Requirement REFR-01. Success criteria: 40% line reduction, zero test modifications for behavioral equivalence.
+Reduce the Monque facade class (currently 1,294 lines) to improve maintainability without changing any public behavior. Two strategies: JSDoc deduplication (copy full JSDoc + @see) and LifecycleManager extraction. Requirement REFR-01. Success criteria: 40% line reduction, zero test modifications for behavioral equivalence.
 
 </domain>
 
@@ -44,7 +44,7 @@ Reduce the Monque facade class (currently 1,294 lines) to improve maintainabilit
 - Move facade's complete docs to service methods, replacing existing service docs where they exist
 - Full transfer: @param, @returns, @throws, @example, @template — everything moves
 - Service methods become the canonical source of documentation
-- Facade methods become lean @inheritdoc one-liners
+- Facade methods get full JSDoc copied (all @param, @returns, @throws, @example, @template) plus @see tags referencing service methods
 
 ### Private method documentation
 - Private methods on Monque keep their existing docs as-is (createIndexes index descriptions, recoverStaleJobs logic, etc.)
@@ -53,7 +53,7 @@ Reduce the Monque facade class (currently 1,294 lines) to improve maintainabilit
 - No trimming or restructuring of private method docs
 
 ### Claude's Discretion
-- Exact @inheritdoc syntax and whether to add a brief summary line alongside it
+- Exact @see syntax for traceability (e.g., @see {@link JobScheduler.method})
 - LifecycleManager internal API design (method names, how timer callbacks are passed)
 - How to structure the facade equivalence test
 - Whether to add any intermediate helper types for LifecycleManager
