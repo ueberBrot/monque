@@ -65,7 +65,7 @@ Plans:
   2. Full existing test suite passes with zero modifications (behavioral equivalence confirmed)
 **Plans:** 2 plans
 Plans:
-- [ ] 04-01-PLAN.md — JSDoc deduplication via @inheritdoc (subtractive, measurable)
+- [x] 04-01-PLAN.md — JSDoc deduplication via @inheritdoc (subtractive, measurable)
 - [ ] 04-02-PLAN.md — LifecycleManager extraction (timer/interval management + cleanupJobs)
 
 ## Progress
@@ -79,4 +79,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Test Coverage Foundation | 2/2 | Complete | 2026-02-27 |
 | 2. Safety & Robustness | 2/2 | Complete   | 2026-02-27 |
 | 3. Performance Optimization | 2/2 | Complete | 2026-02-28 |
-| 4. Structural Refactoring | 0/2 | Not started | - |
+| 4. Structural Refactoring | 1/2 | In progress | - |

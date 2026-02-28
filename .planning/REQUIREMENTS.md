@@ -25,7 +25,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Refactoring
 
-- [ ] **REFR-01**: Monque facade class is reduced in size by deduplicating JSDoc documentation using @inheritdoc or @see tags, and optionally extracting timer/interval management into a LifecycleManager service
+- [x] **REFR-01**: Monque facade class is reduced in size by deduplicating JSDoc documentation using @inheritdoc or @see tags, and optionally extracting timer/interval management into a LifecycleManager service
 - [x] **REFR-02**: documentToPersistedJob mapper uses an explicit `PersistedJob<T>` return type annotation so that adding a new required field to the Job interface produces a compile error if the mapper is not updated, complemented by round-trip tests that catch optional field drift
 
 ## v2 Requirements
@@ -65,7 +65,7 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | REFR-02 | Phase 2: Safety & Robustness | Complete |
 | PERF-01 | Phase 3: Performance Optimization | Complete |
 | PERF-02 | Phase 3: Performance Optimization | Complete |
-| REFR-01 | Phase 4: Structural Refactoring | Pending |
+| REFR-01 | Phase 4: Structural Refactoring | Complete |
 
 **Coverage:**
 - v1 requirements: 9 total
@@ -74,4 +74,4 @@ Deferred to future milestones. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-02-27*
-*Last updated: 2026-02-28 after Phase 3 completion*
+*Last updated: 2026-02-28 after Phase 4 Plan 01 completion*
