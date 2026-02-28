@@ -314,7 +314,7 @@ export class JobQueryService {
 		if (ttl > 0) {
 			const cached = this.statsCache.get(cacheKey);
 			if (cached && cached.expiresAt > Date.now()) {
-				return cached.data;
+				return { ...cached.data };
 			}
 		}
 
@@ -434,7 +434,7 @@ export class JobQueryService {
 				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
 				this.statsCache.delete(cacheKey);
 				this.statsCache.set(cacheKey, {
-					data: stats,
+					data: { ...stats },
 					expiresAt: Date.now() + ttl,
 				});
 			}
