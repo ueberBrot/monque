@@ -1,5 +1,18 @@
 # @monque/core
 
+## 1.5.0
+
+### Minor Changes
+
+- [#196](https://github.com/ueberBrot/monque/pull/196) [`6a37fc4`](https://github.com/ueberBrot/monque/commit/6a37fc49be87006bc3bd7aa76bf7ba49978b43b5) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add payload size validation, instance collision detection, bulk job operations, and stats caching.
+
+  - feat: BSON payload size validation with configurable `maxPayloadSize` and `PayloadTooLargeError`
+  - feat: instance collision detection — prevents duplicate `schedulerInstanceId` conflicts with `ConnectionError`
+  - feat: bulk `cancelJobs()`/`retryJobs()` via `updateMany` for O(1) DB round-trips
+  - feat: TTL+LRU cache for `getQueueStats()` with configurable `statsCacheTtlMs`
+  - refactor: extract `LifecycleManager` service for timer/interval management and `cleanupJobs`
+  - refactor: deduplicate facade JSDoc via `@inheritdoc` references (~40% line reduction in `Monque` class)
+
 ## 1.4.0
 
 ### Minor Changes
