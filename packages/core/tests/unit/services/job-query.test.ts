@@ -427,5 +427,149 @@ describe('JobQueryService', () => {
 			const stats = await queryService.getQueueStats();
 			expect(stats.avgProcessingDurationMs).toBeUndefined();
 		});
+
+		describe('getQueueStats caching', () => {
+			function mockAggregateResult(stats: Partial<Record<string, number>>) {
+				const statusCounts = Object.entries(stats)
+					.filter(([key]) => key !== 'total' && key !== 'avgMs')
+					.map(([_id, count]) => ({ _id, count }));
+
+				const mockAggregateCursor = {
+					toArray: vi.fn().mockResolvedValueOnce([
+						{
+							statusCounts,
+							avgDuration: [],
+							total: [{ count: stats['total'] ?? 0 }],
+						},
+					]),
+				};
+
+				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+					mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+				);
+			}
+
+			it('should return cached result on second call within TTL', async () => {
+				mockAggregateResult({ pending: 5, total: 5 });
+
+				const first = await queryService.getQueueStats();
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+
+				const second = await queryService.getQueueStats();
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+
+				expect(first.pending).toBe(5);
+				expect(second.pending).toBe(5);
+				expect(first.total).toBe(5);
+				expect(second.total).toBe(5);
+			});
+
+			it('should re-query after TTL expires', async () => {
+				ctx.options.statsCacheTtlMs = 50;
+				mockAggregateResult({ pending: 5, total: 5 });
+
+				const first = await queryService.getQueueStats();
+				expect(first.pending).toBe(5);
+
+				await new Promise((r) => setTimeout(r, 60));
+
+				mockAggregateResult({ pending: 10, total: 10 });
+				const second = await queryService.getQueueStats();
+
+				expect(second.pending).toBe(10);
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+			});
+
+			it('should cache per-filter (different name filters have separate entries)', async () => {
+				mockAggregateResult({ pending: 3, total: 3 });
+				await queryService.getQueueStats({ name: 'job-a' });
+
+				mockAggregateResult({ pending: 7, total: 7 });
+				await queryService.getQueueStats({ name: 'job-b' });
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+
+				const cachedA = await queryService.getQueueStats({ name: 'job-a' });
+				const cachedB = await queryService.getQueueStats({ name: 'job-b' });
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+				expect(cachedA.pending).toBe(3);
+				expect(cachedB.pending).toBe(7);
+			});
+
+			it('should not cache when statsCacheTtlMs is 0', async () => {
+				ctx.options.statsCacheTtlMs = 0;
+
+				mockAggregateResult({ pending: 5, total: 5 });
+				const first = await queryService.getQueueStats();
+
+				mockAggregateResult({ pending: 10, total: 10 });
+				const second = await queryService.getQueueStats();
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+				expect(first.pending).toBe(5);
+				expect(second.pending).toBe(10);
+			});
+
+			it('should separate unfiltered and filtered cache entries', async () => {
+				mockAggregateResult({ pending: 20, total: 20 });
+				await queryService.getQueueStats();
+
+				mockAggregateResult({ pending: 5, total: 5 });
+				await queryService.getQueueStats({ name: 'specific' });
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+
+				const cachedUnfiltered = await queryService.getQueueStats();
+				const cachedFiltered = await queryService.getQueueStats({ name: 'specific' });
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+				expect(cachedUnfiltered.total).toBe(20);
+				expect(cachedFiltered.total).toBe(5);
+			});
+
+			it('should evict oldest entry when cache exceeds max size', async () => {
+				ctx.options.statsCacheTtlMs = 60_000;
+
+				// Fill cache with 101 entries (exceeds MAX_CACHE_SIZE of 100)
+				for (let i = 0; i <= 100; i++) {
+					mockAggregateResult({ pending: i, total: i });
+					await queryService.getQueueStats({ name: `job-${i}` });
+				}
+
+				// job-0 was the first entry and should have been evicted
+				vi.mocked(ctx.mockCollection.aggregate).mockClear();
+				mockAggregateResult({ pending: 999, total: 999 });
+				const evicted = await queryService.getQueueStats({ name: 'job-0' });
+
+				// Should have hit DB (cache miss — evicted)
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+				expect(evicted.pending).toBe(999);
+
+				// Most recent entry should still be cached
+				vi.mocked(ctx.mockCollection.aggregate).mockClear();
+				const cached = await queryService.getQueueStats({ name: 'job-100' });
+				expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+				expect(cached.pending).toBe(100);
+			});
+
+			it('clearStatsCache should clear all cached entries', async () => {
+				mockAggregateResult({ pending: 5, total: 5 });
+				await queryService.getQueueStats();
+
+				// Verify cached
+				const cached = await queryService.getQueueStats();
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+				expect(cached.pending).toBe(5);
+
+				queryService.clearStatsCache();
+
+				mockAggregateResult({ pending: 99, total: 99 });
+				const afterClear = await queryService.getQueueStats();
+
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+				expect(afterClear.pending).toBe(99);
+			});
+		});
 	});
 });

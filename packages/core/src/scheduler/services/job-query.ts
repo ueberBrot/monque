@@ -380,65 +380,63 @@ export class JobQueryService {
 				total: 0,
 			};
 
-			if (!result) {
-				// Cache the result if TTL is enabled
-				if (ttl > 0) {
-					// LRU eviction: if cache is full, delete the oldest entry
-					if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
-						const oldestKey = this.statsCache.keys().next().value;
-						if (oldestKey !== undefined) {
-							this.statsCache.delete(oldestKey);
-						}
+			if (result) {
+				// Map status counts to stats
+				const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
+				for (const entry of statusCounts) {
+					const status = entry._id;
+					const count = entry.count;
+
+					switch (status) {
+						case JobStatus.PENDING:
+							stats.pending = count;
+							break;
+						case JobStatus.PROCESSING:
+							stats.processing = count;
+							break;
+						case JobStatus.COMPLETED:
+							stats.completed = count;
+							break;
+						case JobStatus.FAILED:
+							stats.failed = count;
+							break;
+						case JobStatus.CANCELLED:
+							stats.cancelled = count;
+							break;
 					}
-					// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
-					this.statsCache.delete(cacheKey);
-					this.statsCache.set(cacheKey, {
-						data: stats,
-						expiresAt: Date.now() + ttl,
-					});
 				}
 
-				return stats;
-			}
+				// Extract total
+				const totalResult = result['total'] as Array<{ count: number }>;
+				if (totalResult.length > 0 && totalResult[0]) {
+					stats.total = totalResult[0].count;
+				}
 
-			// Map status counts to stats
-			const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
-			for (const entry of statusCounts) {
-				const status = entry._id;
-				const count = entry.count;
-
-				switch (status) {
-					case JobStatus.PENDING:
-						stats.pending = count;
-						break;
-					case JobStatus.PROCESSING:
-						stats.processing = count;
-						break;
-					case JobStatus.COMPLETED:
-						stats.completed = count;
-						break;
-					case JobStatus.FAILED:
-						stats.failed = count;
-						break;
-					case JobStatus.CANCELLED:
-						stats.cancelled = count;
-						break;
+				// Extract average processing duration
+				const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
+				if (avgDurationResult.length > 0 && avgDurationResult[0]) {
+					const avgMs = avgDurationResult[0].avgMs;
+					if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
+						stats.avgProcessingDurationMs = Math.round(avgMs);
+					}
 				}
 			}
 
-			// Extract total
-			const totalResult = result['total'] as Array<{ count: number }>;
-			if (totalResult.length > 0 && totalResult[0]) {
-				stats.total = totalResult[0].count;
-			}
-
-			// Extract average processing duration
-			const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
-			if (avgDurationResult.length > 0 && avgDurationResult[0]) {
-				const avgMs = avgDurationResult[0].avgMs;
-				if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
-					stats.avgProcessingDurationMs = Math.round(avgMs);
+			// Cache the result if TTL is enabled
+			if (ttl > 0) {
+				// LRU eviction: if cache is full, delete the oldest entry
+				if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
+					const oldestKey = this.statsCache.keys().next().value;
+					if (oldestKey !== undefined) {
+						this.statsCache.delete(oldestKey);
+					}
 				}
+				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
+				this.statsCache.delete(cacheKey);
+				this.statsCache.set(cacheKey, {
+					data: stats,
+					expiresAt: Date.now() + ttl,
+				});
 			}
 
 			return stats;
