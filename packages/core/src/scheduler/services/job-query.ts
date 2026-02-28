@@ -424,15 +424,15 @@ export class JobQueryService {
 
 			// Cache the result if TTL is enabled
 			if (ttl > 0) {
-				// LRU eviction: if cache is full, delete the oldest entry
+				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
+				this.statsCache.delete(cacheKey);
+				// LRU eviction: if cache is still full after removing existing key, evict the oldest entry
 				if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
 					const oldestKey = this.statsCache.keys().next().value;
 					if (oldestKey !== undefined) {
 						this.statsCache.delete(oldestKey);
 					}
 				}
-				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
-				this.statsCache.delete(cacheKey);
 				this.statsCache.set(cacheKey, {
 					data: { ...stats },
 					expiresAt: Date.now() + ttl,

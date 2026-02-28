@@ -184,11 +184,17 @@ describe('Instance Collision Detection', () => {
 
 		findOneSpy.mockResolvedValue(null);
 
-		await expect(monque1.initialize()).resolves.toBeUndefined();
+		await monque1.initialize();
+		await monque2.initialize();
 
-		// Reset isInitialized flag by creating fresh instance
-		// (monque2 is a separate instance with its own random ID)
-		// The key point: findOne returns null because different UUIDs won't match
-		await expect(monque2.initialize()).resolves.toBeUndefined();
+		// findOne is called once per initialize() for the collision check
+		expect(findOneSpy).toHaveBeenCalledTimes(2);
+
+		// Verify the two instances used different claimedBy (schedulerInstanceId) values
+		const call1Query = findOneSpy.mock.calls[0]![0] as { claimedBy: string };
+		const call2Query = findOneSpy.mock.calls[1]![0] as { claimedBy: string };
+		expect(call1Query.claimedBy).toEqual(expect.any(String));
+		expect(call2Query.claimedBy).toEqual(expect.any(String));
+		expect(call1Query.claimedBy).not.toBe(call2Query.claimedBy);
 	});
 });
