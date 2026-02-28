@@ -63,7 +63,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Monque class file is reduced by at least 40% in line count through JSDoc deduplication (@see/@inheritdoc) and/or LifecycleManager extraction
   2. Full existing test suite passes with zero modifications (behavioral equivalence confirmed)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 04-01-PLAN.md — JSDoc deduplication via @inheritdoc (subtractive, measurable)
+- [ ] 04-02-PLAN.md — LifecycleManager extraction (timer/interval management + cleanupJobs)
 
 ## Progress
 
