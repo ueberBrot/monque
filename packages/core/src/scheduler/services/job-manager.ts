@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
 import { buildSelectorQuery } from '@/scheduler';
-import { JobStateError } from '@/shared';
+import { ConnectionError, JobStateError, MonqueError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -269,20 +269,31 @@ export class JobManager {
 		// Override status to only target pending jobs regardless of filter
 		query['status'] = JobStatus.PENDING;
 
-		const result = await this.ctx.collection.updateMany(query, {
-			$set: {
-				status: JobStatus.CANCELLED,
-				updatedAt: new Date(),
-			},
-		});
+		try {
+			const result = await this.ctx.collection.updateMany(query, {
+				$set: {
+					status: JobStatus.CANCELLED,
+					updatedAt: new Date(),
+				},
+			});
 
-		const count = result.modifiedCount;
+			const count = result.modifiedCount;
 
-		if (count > 0) {
-			this.ctx.emit('jobs:cancelled', { count });
+			if (count > 0) {
+				this.ctx.emit('jobs:cancelled', { count });
+			}
+
+			return { count, errors: [] };
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during cancelJobs';
+			throw new ConnectionError(
+				`Failed to cancel jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return { count, errors: [] };
 	}
 
 	/**
@@ -312,29 +323,40 @@ export class JobManager {
 
 		const spreadWindowMs = 30_000; // 30s max spread for staggered retry
 
-		const result = await this.ctx.collection.updateMany(query, [
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					failCount: 0,
-					nextRunAt: {
-						$add: [new Date(), { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+		try {
+			const result = await this.ctx.collection.updateMany(query, [
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: 0,
+						nextRunAt: {
+							$add: [new Date(), { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+						},
+						updatedAt: new Date(),
 					},
-					updatedAt: new Date(),
 				},
-			},
-			{
-				$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat', 'heartbeatInterval'],
-			},
-		]);
+				{
+					$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat', 'heartbeatInterval'],
+				},
+			]);
 
-		const count = result.modifiedCount;
+			const count = result.modifiedCount;
 
-		if (count > 0) {
-			this.ctx.emit('jobs:retried', { count });
+			if (count > 0) {
+				this.ctx.emit('jobs:retried', { count });
+			}
+
+			return { count, errors: [] };
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during retryJobs';
+			throw new ConnectionError(
+				`Failed to retry jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return { count, errors: [] };
 	}
 
 	/**
@@ -360,16 +382,27 @@ export class JobManager {
 	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		const query = buildSelectorQuery(filter);
 
-		// Use deleteMany for efficiency
-		const result = await this.ctx.collection.deleteMany(query);
+		try {
+			// Use deleteMany for efficiency
+			const result = await this.ctx.collection.deleteMany(query);
 
-		if (result.deletedCount > 0) {
-			this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+			if (result.deletedCount > 0) {
+				this.ctx.emit('jobs:deleted', { count: result.deletedCount });
+			}
+
+			return {
+				count: result.deletedCount,
+				errors: [],
+			};
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during deleteJobs';
+			throw new ConnectionError(
+				`Failed to delete jobs: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return {
-			count: result.deletedCount,
-			errors: [],
-		};
 	}
 }
