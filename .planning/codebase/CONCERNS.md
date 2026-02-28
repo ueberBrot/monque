@@ -1,7 +1,7 @@
 # Codebase Concerns
 
 **Analysis Date:** 2026-02-24
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-02-28 (Phase 4)
 
 ## Tech Debt
 
@@ -11,7 +11,7 @@
 
 **Deprecated option aliases still in active code paths:**
 - Issue: `defaultConcurrency` and `maxConcurrency` are deprecated but still resolved in the constructor with fallback logic
-- Files: `packages/core/src/scheduler/types.ts` (lines 72, 162), `packages/core/src/scheduler/monque.ts` (lines 143, 147)
+- Files: `packages/core/src/scheduler/types.ts` (lines 74, 164), `packages/core/src/scheduler/monque.ts` (lines 142, 146)
 - Impact: Two code paths for the same option increases maintenance burden and confuses new contributors
 - Fix approach: Remove deprecated options in the next major version. Meanwhile, emit a deprecation warning at construction time when these are used.
 
@@ -20,12 +20,12 @@
 - ~~Files: `packages/core/src/scheduler/monque.ts`, `packages/core/src/scheduler/services/job-processor.ts`, `packages/core/src/scheduler/services/change-stream-handler.ts`~~
 - **Resolved:** All 7 sites replaced with `toError()` utility from `packages/core/src/shared/utils/error.ts`, which implements `value instanceof Error ? value : new Error(String(value))`. Zero `error as Error` casts remain in production source.
 
-**`Monque` class is ~1294 lines (mostly JSDoc):**
-- Issue: While logic is delegated to services, the facade class duplicates all JSDoc from the service layer and contains lifecycle/timer management
-- Files: `packages/core/src/scheduler/monque.ts`
-- Impact: Documentation maintenance burden — every API change requires updating JSDoc in two places (service + facade). The class itself is ~400 lines of logic + ~900 lines of comments/examples.
-- Fix approach: Consider using `@inheritdoc` or `@see` tags to reference service-level docs rather than duplicating. Alternatively, extract timer/interval management into a dedicated `LifecycleManager` service.
-- Note: Tracked as REFR-01, planned for Phase 4 (Structural Refactoring).
+~~**`Monque` class is ~1294 lines (mostly JSDoc):**~~
+- ~~Issue: While logic is delegated to services, the facade class duplicates all JSDoc from the service layer and contains lifecycle/timer management~~
+- ~~Files: `packages/core/src/scheduler/monque.ts`~~
+- ~~Impact: Documentation maintenance burden — every API change requires updating JSDoc in two places (service + facade). The class itself is ~400 lines of logic + ~900 lines of comments/examples.~~
+- ~~Fix approach: Consider using `@inheritdoc` or `@see` tags to reference service-level docs rather than duplicating. Alternatively, extract timer/interval management into a dedicated `LifecycleManager` service.~~
+- **Resolved (2026-02-28, Phase 4):** Both approaches applied. 14 facade methods use `{@inheritDoc ServiceClass.method}` one-liners (Plan 01). Timer management (poll, heartbeat, cleanup intervals) and `cleanupJobs()` extracted to new `LifecycleManager` service (Plan 02). monque.ts reduced from 1294 → 865 lines (33% reduction, 429 lines removed). REFR-01 satisfied.
 
 ~~**Direct job status mutation in `completeJob`:**~~
 - ~~Issue: `job.status = JobStatus.COMPLETED` directly mutates the in-memory job object after the DB update~~
@@ -73,19 +73,19 @@
 - ~~Improvement path: For jobs already in the correct source state, use `updateMany` with the state filter as a first pass, then enumerate any that failed the state check individually. This would reduce DB round-trips from O(n) to O(1) for the common case.~~
 - **Resolved (2026-02-28, Phase 3 Plan 01):** Both `cancelJobs()` and `retryJobs()` replaced with single `updateMany` calls. Cancel uses status guard `{ status: 'pending' }`; retry uses pipeline-style updateMany with `$rand` stagger across 30s window. O(1) round-trips regardless of job count. Commit `4ccd27d4`.
 
-**`getQueueStats` aggregation pipeline runs uncached:**
-- Problem: Every call executes a full aggregation pipeline scan
-- Files: `packages/core/src/scheduler/services/job-query.ts` (lines 290-410)
-- Cause: No caching or debouncing mechanism for stats
-- Improvement path: Add optional TTL-based caching for stats (e.g., cache for 5 seconds). Stats rarely need to be real-time.
+~~**`getQueueStats` aggregation pipeline runs uncached:**~~
+- ~~Problem: Every call executes a full aggregation pipeline scan~~
+- ~~Files: `packages/core/src/scheduler/services/job-query.ts` (lines 290-410)~~
+- ~~Cause: No caching or debouncing mechanism for stats~~
+- ~~Improvement path: Add optional TTL-based caching for stats (e.g., cache for 5 seconds). Stats rarely need to be real-time.~~
 - **Resolved (2026-02-28, Phase 3 Plan 02):** TTL+LRU cache added to `getQueueStats()` with configurable `statsCacheTtlMs` (default 5s). Per-filter cache keying, MAX_CACHE_SIZE=100 with LRU eviction, cache cleared on `stop()`. Set TTL=0 to disable. Commit `cff288b5`.
 
 ## Fragile Areas
 
 **Shutdown race condition window:**
-- Files: `packages/core/src/scheduler/monque.ts` (lines 1071-1139)
-- Why fragile: The `stop()` method sets `isRunning = false` then clears intervals, but in-flight poll callbacks from the last interval tick may still be executing. The 100ms polling check interval for active jobs creates a tight timing window.
-- Safe modification: Always test shutdown scenarios with active long-running jobs. The existing `tests/unit/shutdown-race.test.ts` and `tests/integration/shutdown.test.ts` cover this — run them after any change to lifecycle management.
+- Files: `packages/core/src/scheduler/monque.ts` (lines 685-742), `packages/core/src/scheduler/services/lifecycle-manager.ts`
+- Why fragile: The `stop()` method sets `isRunning = false` then delegates `stopTimers()` to LifecycleManager, but in-flight poll callbacks from the last interval tick may still be executing. The 100ms polling check interval for active jobs creates a tight timing window. Timer ownership moved to LifecycleManager (Phase 4 Plan 02) but the race window itself is unchanged.
+- Safe modification: Always test shutdown scenarios with active long-running jobs. The existing `tests/unit/shutdown-race.test.ts` and `tests/integration/shutdown.test.ts` cover this — run them after any change to lifecycle management or LifecycleManager.
 - Test coverage: Good — dedicated shutdown race test exists
 
 **Change stream reconnection logic:**
@@ -159,4 +159,4 @@
 ---
 
 *Concerns audit: 2026-02-24*
-*Last updated: 2026-02-28 — Phase 1 (test coverage), Phase 2 (safety/robustness), Phase 3 (performance) concerns resolved*
+*Last updated: 2026-02-28 — Phase 1 (test coverage), Phase 2 (safety/robustness), Phase 3 (performance), Phase 4 (structural refactoring) concerns resolved*
