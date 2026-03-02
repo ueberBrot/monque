@@ -1,5 +1,13 @@
 # @monque/tsed
 
+## 1.4.0
+
+### Minor Changes
+
+- [#198](https://github.com/ueberBrot/monque/pull/198) [`47b6126`](https://github.com/ueberBrot/monque/commit/47b61264b7127fa8fd3c305b8b204a0e3a4bce6d) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/tsed: @monque/core (^1.4.0 → ^1.5.0)
+
 ## 1.3.0
 
 ### Minor Changes
