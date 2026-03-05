@@ -1,7 +1,7 @@
 # Codebase Concerns
 
 **Analysis Date:** 2026-02-24
-**Last Updated:** 2026-02-28 (Phase 4)
+**Last Updated:** 2026-03-05 (shutdown race fix)
 
 ## Tech Debt
 
@@ -82,11 +82,12 @@
 
 ## Fragile Areas
 
-**Shutdown race condition window:**
-- Files: `packages/core/src/scheduler/monque.ts` (lines 685-742), `packages/core/src/scheduler/services/lifecycle-manager.ts`
-- Why fragile: The `stop()` method sets `isRunning = false` then delegates `stopTimers()` to LifecycleManager, but in-flight poll callbacks from the last interval tick may still be executing. The 100ms polling check interval for active jobs creates a tight timing window. Timer ownership moved to LifecycleManager (Phase 4 Plan 02) but the race window itself is unchanged.
-- Safe modification: Always test shutdown scenarios with active long-running jobs. The existing `tests/unit/shutdown-race.test.ts` and `tests/integration/shutdown.test.ts` cover this — run them after any change to lifecycle management or LifecycleManager.
-- Test coverage: Good — dedicated shutdown race test exists
+~~**Shutdown race condition window:**~~
+- ~~Files: `packages/core/src/scheduler/monque.ts` (lines 685-742), `packages/core/src/scheduler/services/lifecycle-manager.ts`~~
+- ~~Why fragile: The `stop()` method sets `isRunning = false` then delegates `stopTimers()` to LifecycleManager, but in-flight poll callbacks from the last interval tick may still be executing. The 100ms polling check interval for active jobs creates a tight timing window. Timer ownership moved to LifecycleManager (Phase 4 Plan 02) but the race window itself is unchanged.~~
+- ~~Safe modification: Always test shutdown scenarios with active long-running jobs. The existing `tests/unit/shutdown-race.test.ts` and `tests/integration/shutdown.test.ts` cover this — run them after any change to lifecycle management or LifecycleManager.~~
+- ~~Test coverage: Good — dedicated shutdown race test exists~~
+- **Resolved (2026-03-05):** Reordered `stop()` to call `stopTimers()` BEFORE setting `isRunning = false`. This prevents queued poll callbacks from checking the flag before intervals are cleared, closing the race window.
 
 **Change stream reconnection logic:**
 - Files: `packages/core/src/scheduler/services/change-stream-handler.ts`
