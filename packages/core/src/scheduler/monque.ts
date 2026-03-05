@@ -1074,6 +1074,11 @@ export class Monque extends EventEmitter {
 			return;
 		}
 
+		// Stop all lifecycle timers FIRST to prevent new poll callbacks
+		// This closes the race window where a queued poll tick could
+		// check isRunning before the flag is set to false
+		this.lifecycleManager.stopTimers();
+
 		this.isRunning = false;
 
 		// Clear stats cache for clean state on restart
@@ -1085,9 +1090,6 @@ export class Monque extends EventEmitter {
 		} catch {
 			// ignore errors during shutdown cleanup
 		}
-
-		// Stop all lifecycle timers
-		this.lifecycleManager.stopTimers();
 
 		// Wait for all active jobs to complete (with timeout)
 		const activeJobs = this.getActiveJobs();
