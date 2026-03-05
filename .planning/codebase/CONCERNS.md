@@ -160,4 +160,4 @@
 ---
 
 *Concerns audit: 2026-02-24*
-*Last updated: 2026-02-28 — Phase 1 (test coverage), Phase 2 (safety/robustness), Phase 3 (performance), Phase 4 (structural refactoring) concerns resolved*
+*Last updated: 2026-03-05 — Shutdown race condition resolved*
