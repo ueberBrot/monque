@@ -60,7 +60,7 @@
 		"@biomejs/biome": "^2.4.6",
 		"@changesets/changelog-github": "^0.6.0",
 		"@changesets/cli": "^2.30.0",
-		"@types/node": "^22.19.13",
+		"@types/node": "^22.19.15",
 		"knip": "^5.85.0",
 		"lefthook": "^2.1.2",
 		"publint": "^0.3.18",
