@@ -40,7 +40,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.5.0",
+      "version": "1.5.1",
       "dependencies": {
         "cron-parser": "^5.5.0",
       },
@@ -79,7 +79,7 @@
         "vitest": "^4.0.18",
       },
       "peerDependencies": {
-        "@monque/core": "^1.5.0",
+        "@monque/core": "^1.5.1",
         "@tsed/core": "^8.25.1",
         "@tsed/di": "^8.25.1",
         "@tsed/mongoose": "^8.25.1",
