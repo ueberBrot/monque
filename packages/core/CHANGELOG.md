@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.5.1
+
+### Patch Changes
+
+- [#211](https://github.com/ueberBrot/monque/pull/211) [`7181215`](https://github.com/ueberBrot/monque/commit/7181215abac2b5cd231c63f10bf718f0314cc09f) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Close shutdown race condition window by stopping timers before setting isRunning flag
+
 ## 1.5.0
 
 ### Minor Changes
