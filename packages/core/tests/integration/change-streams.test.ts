@@ -10,6 +10,7 @@
  * - Change stream cleanup on shutdown
  */
 
+import { EventEmitter } from 'node:events';
 import { TEST_CONSTANTS } from '@test-utils/constants.js';
 import {
 	cleanupTestDb,
@@ -340,6 +341,46 @@ describe('change streams', () => {
 	});
 
 	describe('cleanup on shutdown', () => {
+		it('should not reconnect after stop() during reconnect backoff', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const originalCollectionFn = db.collection.bind(db);
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+
+			let watchCallCount = 0;
+			const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
+				const collection = originalCollectionFn(name, options);
+				vi.spyOn(collection, 'watch').mockImplementation(() => {
+					watchCallCount++;
+					return mockChangeStream as unknown as ReturnType<typeof collection.watch>;
+				});
+				return collection;
+			});
+
+			try {
+				const monque = new Monque(db, {
+					collectionName,
+					pollInterval: 10000,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
+
+				monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
+				monque.start();
+
+				mockChangeStream.emit('error', new Error('Connection lost'));
+				await monque.stop();
+
+				await new Promise((resolve) => setTimeout(resolve, 1200));
+
+				expect(watchCallCount).toBe(1);
+				expect(mockChangeStream.close).toHaveBeenCalledTimes(1);
+			} finally {
+				collectionSpy.mockRestore();
+			}
+		});
+
 		it('should close change stream cursor on stop()', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, {
