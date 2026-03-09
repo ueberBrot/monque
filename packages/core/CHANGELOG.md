@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.5.2
+
+### Patch Changes
+
+- [#227](https://github.com/ueberBrot/monque/pull/227) [`e9208ca`](https://github.com/ueberBrot/monque/commit/e9208ca5c985d84d023161560d5d3ba195394fe1) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Prevent change stream reconnection attempts from running after the scheduler stops. This clears pending reconnect timers during shutdown and adds coverage for the stop-during-backoff scenario.
+
 ## 1.5.1
 
 ### Patch Changes
