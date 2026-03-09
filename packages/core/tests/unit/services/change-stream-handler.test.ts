@@ -52,6 +52,23 @@ describe('ChangeStreamHandler', () => {
 			);
 		});
 
+		it('should forward change events from the stream to the handler', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = new EventEmitter();
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+			mockChangeStream.emit('change', {
+				operationType: 'insert',
+				fullDocument: { status: JobStatus.PENDING },
+			});
+			vi.advanceTimersByTime(150);
+
+			expect(onPoll).toHaveBeenCalledOnce();
+		});
+
 		it('should emit fallback event when watch throws', () => {
 			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
 				throw new Error('Change streams not available');
@@ -191,6 +208,46 @@ describe('ChangeStreamHandler', () => {
 			).toBeGreaterThan(initialWatchCalls);
 		});
 
+		it('should stop before scheduling reconnect if scheduler stops mid-handler', () => {
+			vi.useFakeTimers();
+			vi.spyOn(ctx, 'isRunning').mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+			handler.handleError(new Error('Connection lost'));
+			vi.runAllTimers();
+
+			expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'changestream:fallback' }),
+			);
+		});
+
+		it('should abort reconnect when scheduler stops before reconnect starts', () => {
+			vi.useFakeTimers();
+			vi.spyOn(ctx, 'isRunning')
+				.mockReturnValueOnce(true)
+				.mockReturnValueOnce(true)
+				.mockReturnValue(false);
+
+			handler.handleError(new Error('Connection lost'));
+			vi.advanceTimersByTime(1000);
+
+			expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+		});
+
+		it('should abort reconnect when scheduler stops after closing the stream', () => {
+			vi.useFakeTimers();
+			vi.spyOn(ctx, 'isRunning')
+				.mockReturnValueOnce(true)
+				.mockReturnValueOnce(true)
+				.mockReturnValueOnce(true)
+				.mockReturnValue(false);
+
+			handler.handleError(new Error('Connection lost'));
+			vi.advanceTimersByTime(1000);
+
+			expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+		});
+
 		it('should emit fallback event after exhausting reconnection attempts', () => {
 			vi.useFakeTimers();
 			const mockChangeStream = Object.assign(new EventEmitter(), {
@@ -214,6 +271,21 @@ describe('ChangeStreamHandler', () => {
 					event: 'changestream:fallback',
 					payload: expect.objectContaining({
 						reason: expect.stringContaining('Exhausted'),
+					}),
+				}),
+			);
+		});
+
+		it('should fallback after exhausting attempts without an active change stream', () => {
+			for (let i = 0; i < 4; i++) {
+				handler.handleError(new Error(`Error ${i + 1}`));
+			}
+
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'changestream:fallback',
+					payload: expect.objectContaining({
+						reason: expect.stringContaining('Exhausted 3 reconnection attempts'),
 					}),
 				}),
 			);
@@ -255,6 +327,19 @@ describe('ChangeStreamHandler', () => {
 
 			// Verify no pending timers would cause issues
 			vi.advanceTimersByTime(10000);
+
+			expect(onPoll).not.toHaveBeenCalled();
+		});
+
+		it('should clear an active debounce timer before it fires', async () => {
+			vi.useFakeTimers();
+
+			handler.handleEvent({
+				operationType: 'insert',
+				fullDocument: { status: JobStatus.PENDING },
+			} as unknown as Parameters<typeof handler.handleEvent>[0]);
+			await handler.close();
+			vi.advanceTimersByTime(150);
 
 			expect(onPoll).not.toHaveBeenCalled();
 		});
