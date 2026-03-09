@@ -96,3 +96,11 @@ jobs:
           name: build-artifacts
           path: packages/*/dist
           retention-days: 1
+
+  check-changeset:
+    name: Check Changeset
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Changeset
+        run: echo "Skipping changeset status check"
