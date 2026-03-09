@@ -56,6 +56,8 @@ export class ChangeStreamHandler {
 			return;
 		}
 
+		this.clearReconnectTimer();
+
 		try {
 			// Create change stream with pipeline to filter relevant events
 			const pipeline = [
@@ -160,15 +162,8 @@ export class ChangeStreamHandler {
 			// Fall back to polling-only mode
 			this.usingChangeStreams = false;
 
-			if (this.reconnectTimer) {
-				clearTimeout(this.reconnectTimer);
-				this.reconnectTimer = null;
-			}
-
-			if (this.changeStream) {
-				this.changeStream.close().catch(() => {});
-				this.changeStream = null;
-			}
+			this.clearReconnectTimer();
+			this.closeChangeStream();
 
 			this.ctx.emit('changestream:fallback', {
 				reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
@@ -181,21 +176,48 @@ export class ChangeStreamHandler {
 		const delay = 2 ** (this.reconnectAttempts - 1) * 1000;
 
 		// Clear any existing reconnect timer before scheduling a new one
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
+		this.clearReconnectTimer();
+
+		if (!this.ctx.isRunning()) {
+			return;
 		}
 
 		this.reconnectTimer = setTimeout(() => {
-			this.reconnectTimer = null;
-			if (this.ctx.isRunning()) {
-				// Close existing change stream before reconnecting
-				if (this.changeStream) {
-					this.changeStream.close().catch(() => {});
-					this.changeStream = null;
-				}
-				this.setup();
-			}
+			this.clearReconnectTimer();
+			this.reconnect();
 		}, delay);
+	}
+
+	private reconnect(): void {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		this.closeChangeStream();
+
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		this.setup();
+	}
+
+	private clearReconnectTimer(): void {
+		if (!this.reconnectTimer) {
+			return;
+		}
+
+		clearTimeout(this.reconnectTimer);
+		this.reconnectTimer = null;
+	}
+
+	private closeChangeStream(): void {
+		if (!this.changeStream) {
+			return;
+		}
+
+		this.changeStream.close().catch(() => {});
+		this.changeStream = null;
 	}
 
 	/**
@@ -209,10 +231,7 @@ export class ChangeStreamHandler {
 		}
 
 		// Clear reconnection timer
-		if (this.reconnectTimer) {
-			clearTimeout(this.reconnectTimer);
-			this.reconnectTimer = null;
-		}
+		this.clearReconnectTimer();
 
 		if (this.changeStream) {
 			try {
