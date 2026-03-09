@@ -89,11 +89,12 @@
 - ~~Test coverage: Good — dedicated shutdown race test exists~~
 - **Resolved (2026-03-05):** Reordered `stop()` to call `stopTimers()` BEFORE setting `isRunning = false`. This prevents queued poll callbacks from checking the flag before intervals are cleared, closing the race window.
 
-**Change stream reconnection logic:**
-- Files: `packages/core/src/scheduler/services/change-stream-handler.ts`
-- Why fragile: The reconnection uses `setTimeout` with exponential backoff, and the `setup()` method is called recursively. If the scheduler stops during a reconnection window, the timer must be properly cleared.
-- Safe modification: Always verify `isRunning()` before any reconnection action. The `close()` method properly clears all timers. Test with the change stream error scenarios in `tests/integration/change-streams.test.ts`.
-- Test coverage: Good — integration tests cover fallback, reconnection, and error scenarios
+~~**Change stream reconnection logic:**~~
+- ~~Files: `packages/core/src/scheduler/services/change-stream-handler.ts`~~
+- ~~Why fragile: The reconnection uses `setTimeout` with exponential backoff, and the `setup()` method is called recursively. If the scheduler stops during a reconnection window, the timer must be properly cleared.~~
+- ~~Safe modification: Always verify `isRunning()` before any reconnection action. The `close()` method properly clears all timers. Test with the change stream error scenarios in `tests/integration/change-streams.test.ts`.~~
+- ~~Test coverage: Good — integration tests cover fallback, reconnection, and error scenarios~~
+- **Resolved (2026-03-09):** Reconnection cleanup is now centralized in `ChangeStreamHandler`, reconnect actions re-check `isRunning()` before closing or re-establishing the stream, and `tests/integration/change-streams.test.ts` covers the stop-during-backoff shutdown window.
 
 ~~**`documentToPersistedJob` manual field mapping:**~~
 - ~~Files: `packages/core/src/scheduler/monque.ts` (lines 1246-1282)~~
