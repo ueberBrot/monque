@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  check:
-    name: Check Deployment Condition
+  build:
+    name: Build Docs
     runs-on: ubuntu-latest
     outputs:
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
@@ -35,9 +35,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "workflow_call" ]]; then
             echo "should_deploy=true" >> $GITHUB_OUTPUT
           else
-            # On push, only deploy if there are no pending changesets
             if [ -d .changeset ]; then
-              # Count .md files in .changeset excluding README.md
               COUNT=$(find .changeset -name "*.md" ! -name "README.md" | wc -l | xargs)
               if [ "$COUNT" -eq "0" ]; then
                 echo "should_deploy=true" >> $GITHUB_OUTPUT
@@ -50,35 +48,24 @@ jobs:
             fi
           fi
 
-  build:
-    needs: check
-    if: needs.check.outputs.should_deploy == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
-        with:
-          bun-version: 1.3.10
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Setup Bun Environment
+        if: steps.decide.outputs.should_deploy == 'true'
+        uses: ./.github/actions/setup-bun-env
 
       - name: Build packages
+        if: steps.decide.outputs.should_deploy == 'true'
         run: bun run build
 
       - name: Install, build, and upload docs
+        if: steps.decide.outputs.should_deploy == 'true'
         uses: withastro/action@15aa0a5a1e067940253e3b259413ab2ae882a740 # v5
         with:
           path: ./apps/docs
-          package-manager: bun@1.3.5
+          package-manager: bun@1.3.10
 
   deploy:
     needs: build
+    if: needs.build.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

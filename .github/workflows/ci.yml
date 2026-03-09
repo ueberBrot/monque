@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'apps/docs/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'apps/docs/**'
+      - '**/*.md'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,27 +31,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
-        with:
-          bun-version: 1.3.10
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
 
-      - name: Cache dependencies
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Type Check
-        run: bun run type-check
+      - name: Lint & Type Check
+        run: bun turbo lint type-check
 
   test:
     name: Test & Coverage
@@ -58,29 +48,14 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
-        with:
-          bun-version: 1.3.10
-
-      - name: Cache dependencies
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
       - name: Fetch base branch
         if: github.event_name == 'pull_request'
         run: git fetch origin ${{ github.base_ref || 'main' }}:${{ github.base_ref || 'main' }}
 
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
 
       - name: Run Tests
-        # Use Turbo to run tests only for changed packages and their dependents
-        # Fallback to running all tests if filter fails or on main branch
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             bun turbo test --filter="...[${{ github.base_ref }}]"
@@ -92,6 +67,7 @@ jobs:
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   build:
     name: Build
@@ -105,21 +81,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
-        with:
-          bun-version: 1.3.10
-
-      - name: Cache dependencies
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
 
       - name: Build
         run: bun run build
@@ -133,35 +96,3 @@ jobs:
           name: build-artifacts
           path: packages/*/dist
           retention-days: 1
-
-  check-changeset:
-    name: Check Changeset
-    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 0
-
-      - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
-        with:
-          bun-version: 1.3.10
-
-      - name: Cache dependencies
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      - name: Install Dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check Changeset
-        run: echo "Skipping changeset status check" # bunx changeset status
