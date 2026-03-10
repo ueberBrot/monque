@@ -172,7 +172,9 @@ describe('ChangeStreamHandler', () => {
 		});
 
 		it('should emit error event', () => {
-			const mockChangeStream = new EventEmitter();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
 			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
 			);
@@ -296,6 +298,90 @@ describe('ChangeStreamHandler', () => {
 					}),
 				}),
 			);
+		});
+
+		it('should set isActive to false during reconnection backoff', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+			expect(handler.isActive()).toBe(true);
+
+			// Error triggers backoff — isActive should immediately be false
+			mockChangeStream.emit('error', new Error('Connection lost'));
+			expect(handler.isActive()).toBe(false);
+
+			// After reconnect timer fires and setup succeeds, isActive is restored
+			vi.advanceTimersByTime(1000);
+			expect(handler.isActive()).toBe(true);
+		});
+
+		it('should clear stale wakeup timer on error', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			// Schedule a wakeup timer via a future-dated job event
+			const futureDate = new Date(Date.now() + 5000);
+			handler.handleEvent({
+				operationType: 'insert',
+				fullDocument: {
+					name: 'test-job',
+					status: JobStatus.PENDING,
+					nextRunAt: futureDate,
+				},
+			} as unknown as Parameters<typeof handler.handleEvent>[0]);
+
+			// Error should clear the wakeup timer
+			mockChangeStream.emit('error', new Error('Connection lost'));
+
+			// Advance past when the wakeup would have fired
+			vi.advanceTimersByTime(6000);
+
+			// The wakeup poll should NOT have fired (only the reconnect poll may have)
+			expect(onPoll).not.toHaveBeenCalled();
+		});
+
+		it('should clear stale debounce timer on error', () => {
+			vi.useFakeTimers();
+			const mockChangeStream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
+				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+			);
+
+			handler.setup();
+
+			// Trigger an event that starts the debounce timer
+			handler.handleEvent({
+				operationType: 'insert',
+				fullDocument: {
+					name: 'test-job',
+					status: JobStatus.PENDING,
+					nextRunAt: new Date(Date.now() - 1000),
+				},
+			} as unknown as Parameters<typeof handler.handleEvent>[0]);
+
+			// Error should clear the debounce timer before it fires
+			mockChangeStream.emit('error', new Error('Connection lost'));
+
+			// Advance past the debounce window (100ms)
+			vi.advanceTimersByTime(150);
+
+			// The debounced poll should NOT have fired
+			expect(onPoll).not.toHaveBeenCalled();
 		});
 	});
 

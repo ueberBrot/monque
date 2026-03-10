@@ -260,12 +260,15 @@ export class ChangeStreamHandler {
 
 		this.reconnectAttempts++;
 
-		if (this.reconnectAttempts > this.maxReconnectAttempts) {
-			// Fall back to polling-only mode
-			this.usingChangeStreams = false;
+		// Immediately reset active state: clears stale debounce/wakeup timers,
+		// closes the broken cursor, and sets isActive() to false so the lifecycle
+		// manager switches to fast polling during backoff.
+		this.resetActiveState();
+		this.closeChangeStream();
 
+		if (this.reconnectAttempts > this.maxReconnectAttempts) {
+			// Permanent fallback to polling-only mode
 			this.clearReconnectTimer();
-			this.closeChangeStream();
 
 			this.ctx.emit('changestream:fallback', {
 				reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
@@ -313,6 +316,24 @@ export class ChangeStreamHandler {
 		this.reconnectTimer = null;
 	}
 
+	/**
+	 * Reset all active change stream state: clear debounce timer, wakeup timer,
+	 * pending target names, and mark as inactive.
+	 *
+	 * Does NOT close the cursor (callers handle sync vs async close) or clear
+	 * the reconnect timer/attempts (callers manage reconnection lifecycle).
+	 */
+	private resetActiveState(): void {
+		if (this.debounceTimer) {
+			clearTimeout(this.debounceTimer);
+			this.debounceTimer = null;
+		}
+
+		this.pendingTargetNames.clear();
+		this.clearWakeupTimer();
+		this.usingChangeStreams = false;
+	}
+
 	private clearWakeupTimer(): void {
 		if (this.wakeupTimer) {
 			clearTimeout(this.wakeupTimer);
@@ -334,19 +355,10 @@ export class ChangeStreamHandler {
 	 * Close the change stream cursor and emit closed event.
 	 */
 	async close(): Promise<void> {
-		// Clear debounce timer
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-			this.debounceTimer = null;
-		}
+		const wasActive = this.usingChangeStreams;
 
-		// Clear pending target names
-		this.pendingTargetNames.clear();
-
-		// Clear wakeup timer
-		this.clearWakeupTimer();
-
-		// Clear reconnection timer
+		// Clear all active state (debounce, wakeup, pending names, flag)
+		this.resetActiveState();
 		this.clearReconnectTimer();
 
 		if (this.changeStream) {
@@ -357,12 +369,11 @@ export class ChangeStreamHandler {
 			}
 			this.changeStream = null;
 
-			if (this.usingChangeStreams) {
+			if (wasActive) {
 				this.ctx.emit('changestream:closed', undefined);
 			}
 		}
 
-		this.usingChangeStreams = false;
 		this.reconnectAttempts = 0;
 	}
 
