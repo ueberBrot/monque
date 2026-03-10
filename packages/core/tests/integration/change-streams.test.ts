@@ -575,21 +575,26 @@ describe('change streams', () => {
 	describe('adaptive poll scheduling', () => {
 		it('should process future-dated job via wakeup timer without polling', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
+			// Poll and safety intervals set very high — neither should fire during the test.
+			// The wakeup timer is the ONLY mechanism that should process the future job.
 			const monque = new Monque(db, {
 				collectionName,
-				pollInterval: 30000, // Very high — should NOT be used
-				safetyPollInterval: 30000, // Very high — should NOT be used
+				pollInterval: 60000,
+				safetyPollInterval: 60000,
 			});
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			let processed = false;
-			let processingTime: number | null = null;
-			const startTime = Date.now();
+			let warmupProcessed = false;
+			let futureProcessed = false;
 
 			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processingTime = Date.now() - startTime;
-				processed = true;
+				if (!warmupProcessed) {
+					warmupProcessed = true;
+				} else {
+					futureProcessed = true;
+				}
 			});
 
 			let connected = false;
@@ -600,7 +605,17 @@ describe('change streams', () => {
 			monque.start();
 			await waitFor(async () => connected, { timeout: 5000 });
 
-			// Enqueue a job scheduled 2 seconds in the future
+			// Warm-up: enqueue and process an immediate job to prove the change
+			// stream cursor is fully operational. This eliminates the race between
+			// the `connected` event and the server-side cursor being ready to deliver events.
+			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { warmup: true });
+			await waitFor(async () => warmupProcessed, { timeout: 5000 });
+
+			const startTime = Date.now();
+
+			// Now enqueue a job scheduled 2 seconds in the future.
+			// The CS will receive the insert, see nextRunAt > now, and set a wakeup
+			// timer. The timer fires at ~2.2s (2s + 200ms grace period).
 			await monque.enqueue(
 				TEST_CONSTANTS.JOB_NAME,
 				{ value: 1 },
@@ -609,10 +624,13 @@ describe('change streams', () => {
 				},
 			);
 
-			// Should be processed via wakeup timer (~2.2s), not safety poll (30s)
-			await waitFor(async () => processed, { timeout: 10000 });
-			expect(processed).toBe(true);
-			expect(processingTime).toBeLessThan(5000);
+			// The wakeup timer should process this well under 10s.
+			// Neither poll (60s) nor safety poll (60s) will fire in this window.
+			await waitFor(async () => futureProcessed, { timeout: 10000 });
+			const processingTime = Date.now() - startTime;
+			expect(futureProcessed).toBe(true);
+			// Must complete well before polls could fire — proves wakeup timer worked
+			expect(processingTime).toBeLessThan(8000);
 		});
 	});
 });
