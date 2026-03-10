@@ -1,7 +1,7 @@
 # Codebase Concerns
 
 **Analysis Date:** 2026-02-24
-**Last Updated:** 2026-03-05 (shutdown race fix)
+**Last Updated:** 2026-03-10 (adaptive polling + change stream cleanup)
 
 ## Tech Debt
 
@@ -96,6 +96,13 @@
 - ~~Test coverage: Good — integration tests cover fallback, reconnection, and error scenarios~~
 - **Resolved (2026-03-09):** Reconnection cleanup is now centralized in `ChangeStreamHandler`, reconnect actions re-check `isRunning()` before closing or re-establishing the stream, and `tests/integration/change-streams.test.ts` covers the stop-during-backoff shutdown window.
 
+~~**Polling remained effectively primary even with change streams enabled:**~~
+- ~~Files: `packages/core/src/scheduler/monque.ts`, `packages/core/src/scheduler/services/lifecycle-manager.ts`, `packages/core/src/scheduler/services/change-stream-handler.ts`, `packages/core/src/scheduler/services/job-processor.ts`~~
+- ~~Why fragile: The scheduler still ran a fixed 1s poll loop while change streams were active, so change streams acted more like a hint than the primary wakeup mechanism. Future-dated jobs also depended on the next blind poll unless their change event was handled precisely.~~
+- ~~Safe modification: Keep change-stream-triggered work targeted, preserve a slower safety poll as a backstop only, and ensure error/fallback paths immediately clear active change-stream state so polling behavior switches correctly during backoff.~~
+- ~~Test coverage: Good — unit tests cover adaptive scheduling, targeted polling, queued re-polls, and change-stream cleanup; integration tests cover lower-latency processing and future-job wakeup behavior.~~
+- **Resolved (2026-03-10):** Polling is now adaptive: active change streams use `safetyPollInterval` (default 30s) while normal polling remains the fallback path. Change stream events use `fullDocument` to trigger targeted worker polls, future-dated jobs schedule a wakeup timer near `nextRunAt`, slot-freed updates trigger re-polls, and error handling immediately clears active change-stream state so `isActive()` reflects reality during reconnect backoff.
+
 ~~**`documentToPersistedJob` manual field mapping:**~~
 - ~~Files: `packages/core/src/scheduler/monque.ts` (lines 1246-1282)~~
 - ~~Why fragile: Every new field added to the `Job` interface must also be added to this mapping function. If a field is missed, it silently drops data.~~
@@ -103,10 +110,10 @@
 
 ## Scaling Limits
 
-**Poll-based job discovery:**
-- Current capacity: One poll per `pollInterval` (default 1s) per instance
-- Limit: With many job types and high throughput, the poll loop iterates all registered workers sequentially and makes one `findOneAndUpdate` per available slot
-- Scaling path: Change streams mitigate this for reactive processing. For high throughput, reduce `pollInterval` or increase `workerConcurrency`. The `instanceConcurrency` option caps total load per instance.
+**Poll-based fallback job discovery:**
+- Current capacity: One full fallback poll per `pollInterval` when change streams are unavailable; one safety poll per `safetyPollInterval` (default 30s) when change streams are healthy
+- Limit: Full polls still iterate registered workers sequentially and perform one `findOneAndUpdate` per available slot. Under sustained very high throughput, the safety/backstop poll can become expensive if change stream delivery is degraded or unavailable.
+- Scaling path: Prefer change streams as the primary reactive mechanism. The current implementation already reduces work via targeted change-stream-triggered polling and future-job wakeup timers. For higher throughput, increase `workerConcurrency`, tune `instanceConcurrency`, shorten `safetyPollInterval` only when necessary, or split workloads across separate collections via `collectionName`.
 
 **Single MongoDB collection for all job types:**
 - Current capacity: Depends on MongoDB cluster size and index efficiency
@@ -161,4 +168,4 @@
 ---
 
 *Concerns audit: 2026-02-24*
-*Last updated: 2026-03-05 — Shutdown race condition resolved*
+*Last updated: 2026-03-10 — Adaptive polling and change stream cleanup resolved*
