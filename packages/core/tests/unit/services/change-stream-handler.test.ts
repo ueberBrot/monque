@@ -614,7 +614,7 @@ describe('ChangeStreamHandler', () => {
 
 			expect(onPoll).toHaveBeenCalledOnce();
 			// Wakeup fires a full poll (no target names)
-			expect(onPoll).toHaveBeenCalledWith();
+			expect(onPoll).toHaveBeenCalledWith(undefined);
 		});
 
 		it('should clear wakeup timer on close()', async () => {
