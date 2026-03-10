@@ -111,7 +111,7 @@
 ## Scaling Limits
 
 **Poll-based fallback job discovery:**
-- Current capacity: One full fallback poll per `pollInterval` when change streams are unavailable; one safety poll per `safetyPollInterval` (default 30s) when change streams are healthy
+- Current capacity: One full fallback poll per `pollInterval` (default 1000ms) when change streams are unavailable; one safety poll per `safetyPollInterval` (default 30s) when change streams are healthy
 - Limit: Full polls still iterate registered workers sequentially and perform one `findOneAndUpdate` per available slot. Under sustained very high throughput, the safety/backstop poll can become expensive if change stream delivery is degraded or unavailable.
 - Scaling path: Prefer change streams as the primary reactive mechanism. The current implementation already reduces work via targeted change-stream-triggered polling and future-job wakeup timers. For higher throughput, increase `workerConcurrency`, tune `instanceConcurrency`, shorten `safetyPollInterval` only when necessary, or split workloads across separate collections via `collectionName`.
 
