@@ -52,6 +52,7 @@ describe('JobScheduler', () => {
 			expect(job._id).toEqual(insertedId);
 			expect(job.name).toBe('test-job');
 			expect(job.data).toEqual({ value: 42 });
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('test-job', job.nextRunAt);
 		});
 
 		it('should use runAt option for delayed execution', async () => {
@@ -85,6 +86,7 @@ describe('JobScheduler', () => {
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
 			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
 			expect(job._id).toEqual(existingJob._id);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('unique-job', existingJob.nextRunAt);
 		});
 
 		it('should throw ConnectionError when insertOne fails', async () => {
@@ -183,6 +185,7 @@ describe('JobScheduler', () => {
 
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
 			expect(job._id).toEqual(existingJob._id);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('recurring-job', existingJob.nextRunAt);
 		});
 
 		it('should support predefined cron expressions like @daily', async () => {

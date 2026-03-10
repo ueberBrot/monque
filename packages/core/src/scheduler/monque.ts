@@ -287,6 +287,13 @@ export class Monque extends EventEmitter {
 			isRunning: () => this.isRunning,
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
+			notifyPendingJob: (name: string, nextRunAt: Date) => {
+				if (!this.isRunning || !this._changeStreamHandler) {
+					return;
+				}
+
+				this._changeStreamHandler.notifyPendingJob(name, nextRunAt);
+			},
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}

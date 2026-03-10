@@ -60,6 +60,9 @@ export interface SchedulerContext {
 	/** Type-safe event emitter */
 	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
 
+	/** Notify the local scheduler about a pending job transition */
+	notifyPendingJob: (name: string, nextRunAt: Date) => void;
+
 	/** Convert MongoDB document to typed PersistedJob */
 	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }

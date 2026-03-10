@@ -147,6 +147,7 @@ export class JobManager {
 		}
 
 		const job = this.ctx.documentToPersistedJob(result);
+		this.ctx.notifyPendingJob(job.name, job.nextRunAt);
 		this.ctx.emit('job:retried', { job, previousStatus });
 		return job;
 	}
@@ -204,7 +205,9 @@ export class JobManager {
 			);
 		}
 
-		return this.ctx.documentToPersistedJob(result);
+		const job = this.ctx.documentToPersistedJob(result);
+		this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+		return job;
 	}
 
 	/**

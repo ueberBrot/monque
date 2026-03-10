@@ -634,6 +634,30 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(6000);
 			expect(onPoll).not.toHaveBeenCalled();
 		});
+
+		it('should route locally notified immediate jobs through debounced targeted poll', () => {
+			vi.useFakeTimers();
+
+			handler.notifyPendingJob('local-immediate', new Date(Date.now() - 1000));
+
+			vi.advanceTimersByTime(150);
+
+			expect(onPoll).toHaveBeenCalledOnce();
+			expect(onPoll).toHaveBeenCalledWith(new Set(['local-immediate']));
+		});
+
+		it('should schedule wakeup for locally notified future jobs', () => {
+			vi.useFakeTimers();
+
+			handler.notifyPendingJob('local-future', new Date(Date.now() + 1000));
+
+			vi.advanceTimersByTime(1100);
+			expect(onPoll).not.toHaveBeenCalled();
+
+			vi.advanceTimersByTime(100);
+			expect(onPoll).toHaveBeenCalledOnce();
+			expect(onPoll).toHaveBeenCalledWith();
+		});
 	});
 
 	describe('handleEvent - mixed immediate and future', () => {

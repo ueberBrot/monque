@@ -181,9 +181,8 @@ export class ChangeStreamHandler {
 		const jobName = fullDocument?.['name'] as string | undefined;
 		const nextRunAt = fullDocument?.['nextRunAt'] as Date | undefined;
 
-		if (jobName && nextRunAt && nextRunAt.getTime() > Date.now()) {
-			// Future job — schedule a precise wakeup instead of polling now
-			this.scheduleWakeup(nextRunAt);
+		if (jobName && nextRunAt) {
+			this.notifyPendingJob(jobName, nextRunAt);
 			return;
 		}
 
@@ -191,6 +190,29 @@ export class ChangeStreamHandler {
 		if (jobName) {
 			this.pendingTargetNames.add(jobName);
 		}
+		this.debouncedPoll();
+	}
+
+	/**
+	 * Notify the handler about a pending job created or updated by this process.
+	 *
+	 * Reuses the same routing logic as change stream events so local writes don't
+	 * depend on the MongoDB change stream cursor already being fully ready.
+	 *
+	 * @param jobName - Worker name for targeted polling
+	 * @param nextRunAt - When the job becomes eligible for processing
+	 */
+	notifyPendingJob(jobName: string, nextRunAt: Date): void {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		if (nextRunAt.getTime() > Date.now()) {
+			this.scheduleWakeup(nextRunAt);
+			return;
+		}
+
+		this.pendingTargetNames.add(jobName);
 		this.debouncedPoll();
 	}
 

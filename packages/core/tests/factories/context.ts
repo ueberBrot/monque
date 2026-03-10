@@ -90,6 +90,7 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
 			emitHistory.push({ event, payload });
 			return true;
 		}),
+		notifyPendingJob: vi.fn(),
 		documentToPersistedJob: documentToPersistedJob,
 		...overrides,
 	};

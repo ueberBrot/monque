@@ -294,7 +294,13 @@ export class JobProcessor {
 				{ returnDocument: 'after' },
 			);
 
-			return result ? this.ctx.documentToPersistedJob(result) : null;
+			if (!result) {
+				return null;
+			}
+
+			const persistedJob = this.ctx.documentToPersistedJob(result);
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+			return persistedJob;
 		}
 
 		// One-time job - mark as completed
@@ -316,7 +322,13 @@ export class JobProcessor {
 			{ returnDocument: 'after' },
 		);
 
-		return result ? this.ctx.documentToPersistedJob(result) : null;
+		if (!result) {
+			return null;
+		}
+
+		const persistedJob = this.ctx.documentToPersistedJob(result);
+		this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		return persistedJob;
 	}
 
 	/**
