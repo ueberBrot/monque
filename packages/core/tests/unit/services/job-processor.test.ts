@@ -181,6 +181,9 @@ describe('JobProcessor', () => {
 			// While first poll is running, request another poll
 			const secondPollPromise = processor.poll(new Set(['test-job']));
 
+			// The second poll should stay queued until the first poll finishes.
+			expect(spy).toHaveBeenCalledTimes(1);
+
 			// Release the first poll
 			firstPollResolve?.();
 			await secondPollPromise;
