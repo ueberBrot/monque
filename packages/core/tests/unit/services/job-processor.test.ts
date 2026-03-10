@@ -438,6 +438,7 @@ describe('JobProcessor', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.COMPLETED);
+			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
@@ -463,6 +464,10 @@ describe('JobProcessor', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.PENDING);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(
+				rescheduledJob.name,
+				rescheduledJob.nextRunAt,
+			);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({

@@ -327,7 +327,6 @@ export class JobProcessor {
 		}
 
 		const persistedJob = this.ctx.documentToPersistedJob(result);
-		this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
 		return persistedJob;
 	}
 
