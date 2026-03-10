@@ -180,9 +180,19 @@ describe('atomic job locking', () => {
 		it('should distribute jobs between concurrent workers', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
-			const monque1 = new Monque(db, { collectionName, pollInterval: 30, defaultConcurrency: 2 });
+			const monque1 = new Monque(db, {
+				collectionName,
+				pollInterval: 30,
+				safetyPollInterval: 30,
+				defaultConcurrency: 2,
+			});
 			monqueInstances.push(monque1);
-			const monque2 = new Monque(db, { collectionName, pollInterval: 30, defaultConcurrency: 2 });
+			const monque2 = new Monque(db, {
+				collectionName,
+				pollInterval: 30,
+				safetyPollInterval: 30,
+				defaultConcurrency: 2,
+			});
 			monqueInstances.push(monque2);
 
 			await monque1.initialize();
@@ -234,11 +244,26 @@ describe('atomic job locking', () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 
 			// Very short poll interval to increase contention
-			const monque1 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			const monque1 = new Monque(db, {
+				collectionName,
+				pollInterval: 10,
+				safetyPollInterval: 10,
+				defaultConcurrency: 1,
+			});
 			monqueInstances.push(monque1);
-			const monque2 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			const monque2 = new Monque(db, {
+				collectionName,
+				pollInterval: 10,
+				safetyPollInterval: 10,
+				defaultConcurrency: 1,
+			});
 			monqueInstances.push(monque2);
-			const monque3 = new Monque(db, { collectionName, pollInterval: 10, defaultConcurrency: 1 });
+			const monque3 = new Monque(db, {
+				collectionName,
+				pollInterval: 10,
+				safetyPollInterval: 10,
+				defaultConcurrency: 1,
+			});
 			monqueInstances.push(monque3);
 
 			await monque1.initialize();

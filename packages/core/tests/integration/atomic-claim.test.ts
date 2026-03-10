@@ -265,12 +265,14 @@ describe('atomic job claiming', () => {
 			const monque1 = new Monque(db, {
 				collectionName,
 				pollInterval: 30,
+				safetyPollInterval: 30,
 				schedulerInstanceId: 'dist-instance-1',
 				defaultConcurrency: 3,
 			});
 			const monque2 = new Monque(db, {
 				collectionName,
 				pollInterval: 30,
+				safetyPollInterval: 30,
 				schedulerInstanceId: 'dist-instance-2',
 				defaultConcurrency: 3,
 			});

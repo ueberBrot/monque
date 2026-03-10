@@ -19,6 +19,7 @@ import type { WorkerRegistration } from '@/workers';
 const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
 	collectionName: 'test_jobs',
 	pollInterval: 1000,
+	safetyPollInterval: 30_000,
 	maxRetries: 3,
 	baseRetryInterval: 100,
 	shutdownTimeout: 5000,

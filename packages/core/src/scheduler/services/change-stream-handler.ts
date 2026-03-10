@@ -5,11 +5,21 @@ import { toError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
+/** Minimum poll interval floor to prevent tight loops (ms) */
+const MIN_POLL_INTERVAL = 100;
+
+/** Grace period after nextRunAt before scheduling a wakeup poll (ms) */
+const POLL_GRACE_PERIOD = 200;
+
 /**
  * Internal service for MongoDB Change Stream lifecycle.
  *
  * Provides real-time job notifications when available, with automatic
  * reconnection and graceful fallback to polling-only mode.
+ *
+ * Leverages the full document from change stream events to:
+ * - Trigger **targeted polls** for specific workers (using the job `name`)
+ * - Schedule **precise wakeup timers** for future-dated jobs (using `nextRunAt`)
  *
  * @internal Not part of public API.
  */
@@ -32,9 +42,18 @@ export class ChangeStreamHandler {
 	/** Whether the scheduler is currently using change streams */
 	private usingChangeStreams = false;
 
+	/** Job names collected during the current debounce window for targeted polling */
+	private pendingTargetNames: Set<string> = new Set();
+
+	/** Wakeup timer for the earliest known future job */
+	private wakeupTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Time of the currently scheduled wakeup */
+	private wakeupTime: Date | null = null;
+
 	constructor(
 		private readonly ctx: SchedulerContext,
-		private readonly onPoll: () => Promise<void>,
+		private readonly onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>,
 	) {}
 
 	/**
@@ -102,11 +121,20 @@ export class ChangeStreamHandler {
 	}
 
 	/**
-	 * Handle a change stream event by triggering a debounced poll.
+	 * Handle a change stream event using the full document for intelligent routing.
 	 *
-	 * Events are debounced to prevent "claim storms" when multiple changes arrive
-	 * in rapid succession (e.g., bulk job inserts). A 100ms debounce window
-	 * collects multiple events and triggers a single poll.
+	 * For **immediate jobs** (`nextRunAt <= now`): collects the job name and triggers
+	 * a debounced targeted poll for only the relevant workers.
+	 *
+	 * For **future jobs** (`nextRunAt > now`): schedules a precise wakeup timer so
+	 * the job is picked up near its scheduled time without blind polling.
+	 *
+	 * For **completed/failed jobs** (slot freed): triggers a targeted re-poll for that
+	 * worker so the next pending job is picked up immediately, maintaining continuous
+	 * throughput without waiting for the safety poll interval.
+	 *
+	 * Falls back to a full poll (no target names) if the document is missing
+	 * required fields.
 	 *
 	 * @param change - The change stream event document
 	 */
@@ -121,25 +149,99 @@ export class ChangeStreamHandler {
 
 		// Get fullDocument if available (for insert or with updateLookup option)
 		const fullDocument = 'fullDocument' in change ? change.fullDocument : undefined;
-		const isPendingStatus = fullDocument?.['status'] === JobStatus.PENDING;
+		const currentStatus = fullDocument?.['status'] as string | undefined;
+		const isPendingStatus = currentStatus === JobStatus.PENDING;
+
+		// A completed/failed status change means a concurrency slot was freed.
+		// Trigger a re-poll so the next pending job is picked up immediately,
+		// rather than waiting for the safety poll interval.
+		const isSlotFreed =
+			isUpdate && (currentStatus === JobStatus.COMPLETED || currentStatus === JobStatus.FAILED);
 
 		// For inserts: always trigger since new pending jobs need processing
-		// For updates: trigger if status changed to pending (retry/release scenario)
-		const shouldTrigger = isInsert || (isUpdate && isPendingStatus);
+		// For updates to pending: trigger (retry/release/recurring reschedule)
+		// For updates to completed/failed: trigger (concurrency slot freed)
+		const shouldTrigger = isInsert || (isUpdate && isPendingStatus) || isSlotFreed;
 
-		if (shouldTrigger) {
-			// Debounce poll triggers to avoid claim storms
-			if (this.debounceTimer) {
-				clearTimeout(this.debounceTimer);
-			}
-
-			this.debounceTimer = setTimeout(() => {
-				this.debounceTimer = null;
-				this.onPoll().catch((error: unknown) => {
-					this.ctx.emit('job:error', { error: toError(error) });
-				});
-			}, 100);
+		if (!shouldTrigger) {
+			return;
 		}
+
+		// Slot-freed events: targeted poll for that worker to pick up waiting jobs
+		if (isSlotFreed) {
+			const jobName = fullDocument?.['name'] as string | undefined;
+			if (jobName) {
+				this.pendingTargetNames.add(jobName);
+			}
+			this.debouncedPoll();
+			return;
+		}
+
+		// Extract job metadata from the full document for smart routing
+		const jobName = fullDocument?.['name'] as string | undefined;
+		const nextRunAt = fullDocument?.['nextRunAt'] as Date | undefined;
+
+		if (jobName && nextRunAt && nextRunAt.getTime() > Date.now()) {
+			// Future job — schedule a precise wakeup instead of polling now
+			this.scheduleWakeup(nextRunAt);
+			return;
+		}
+
+		// Immediate job or missing metadata — collect for targeted/full poll
+		if (jobName) {
+			this.pendingTargetNames.add(jobName);
+		}
+		this.debouncedPoll();
+	}
+
+	/**
+	 * Schedule a debounced poll with collected target names.
+	 *
+	 * Collects job names from multiple change stream events during the debounce
+	 * window, then triggers a single targeted poll for only those workers.
+	 */
+	private debouncedPoll(): void {
+		if (this.debounceTimer) {
+			clearTimeout(this.debounceTimer);
+		}
+
+		this.debounceTimer = setTimeout(() => {
+			this.debounceTimer = null;
+			const names = this.pendingTargetNames.size > 0 ? new Set(this.pendingTargetNames) : undefined;
+			this.pendingTargetNames.clear();
+			this.onPoll(names).catch((error: unknown) => {
+				this.ctx.emit('job:error', { error: toError(error) });
+			});
+		}, 100);
+	}
+
+	/**
+	 * Schedule a wakeup timer for a future-dated job.
+	 *
+	 * Maintains a single timer set to the earliest known future job's `nextRunAt`.
+	 * When the timer fires, triggers a full poll to pick up all due jobs.
+	 *
+	 * @param nextRunAt - When the future job should become ready
+	 */
+	private scheduleWakeup(nextRunAt: Date): void {
+		// Only update if this job is earlier than the current wakeup
+		if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
+			return;
+		}
+
+		this.clearWakeupTimer();
+		this.wakeupTime = nextRunAt;
+
+		const delay = Math.max(nextRunAt.getTime() - Date.now() + POLL_GRACE_PERIOD, MIN_POLL_INTERVAL);
+
+		this.wakeupTimer = setTimeout(() => {
+			this.wakeupTime = null;
+			this.wakeupTimer = null;
+			// Full poll — there may be multiple jobs due at this time
+			this.onPoll().catch((error: unknown) => {
+				this.ctx.emit('job:error', { error: toError(error) });
+			});
+		}, delay);
 	}
 
 	/**
@@ -211,6 +313,14 @@ export class ChangeStreamHandler {
 		this.reconnectTimer = null;
 	}
 
+	private clearWakeupTimer(): void {
+		if (this.wakeupTimer) {
+			clearTimeout(this.wakeupTimer);
+			this.wakeupTimer = null;
+		}
+		this.wakeupTime = null;
+	}
+
 	private closeChangeStream(): void {
 		if (!this.changeStream) {
 			return;
@@ -229,6 +339,12 @@ export class ChangeStreamHandler {
 			clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
+
+		// Clear pending target names
+		this.pendingTargetNames.clear();
+
+		// Clear wakeup timer
+		this.clearWakeupTimer();
 
 		// Clear reconnection timer
 		this.clearReconnectTimer();

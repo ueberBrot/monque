@@ -39,6 +39,7 @@ import type { MonqueOptions } from './types.js';
 const DEFAULTS = {
 	collectionName: 'monque_jobs',
 	pollInterval: 1000,
+	safetyPollInterval: 30_000,
 	maxRetries: 10,
 	baseRetryInterval: 1000,
 	shutdownTimeout: 30000,
@@ -135,6 +136,7 @@ export class Monque extends EventEmitter {
 		this.options = {
 			collectionName: options.collectionName ?? DEFAULTS.collectionName,
 			pollInterval: options.pollInterval ?? DEFAULTS.pollInterval,
+			safetyPollInterval: options.safetyPollInterval ?? DEFAULTS.safetyPollInterval,
 			maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,
 			baseRetryInterval: options.baseRetryInterval ?? DEFAULTS.baseRetryInterval,
 			shutdownTimeout: options.shutdownTimeout ?? DEFAULTS.shutdownTimeout,
@@ -186,7 +188,9 @@ export class Monque extends EventEmitter {
 			this._manager = new JobManager(ctx);
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx);
-			this._changeStreamHandler = new ChangeStreamHandler(ctx, () => this.processor.poll());
+			this._changeStreamHandler = new ChangeStreamHandler(ctx, (targetNames) =>
+				this.handleChangeStreamPoll(targetNames),
+			);
 			this._lifecycleManager = new LifecycleManager(ctx);
 
 			this.isInitialized = true;
@@ -253,6 +257,18 @@ export class Monque extends EventEmitter {
 		}
 
 		return this._lifecycleManager;
+	}
+
+	/**
+	 * Handle a change-stream-triggered poll and reset the safety poll timer.
+	 *
+	 * Used as the `onPoll` callback for {@link ChangeStreamHandler}. Runs a
+	 * targeted poll for the given worker names, then resets the adaptive safety
+	 * poll timer so it doesn't fire redundantly.
+	 */
+	private async handleChangeStreamPoll(targetNames?: ReadonlySet<string>): Promise<void> {
+		await this.processor.poll(targetNames);
+		this.lifecycleManager.resetPollTimer();
 	}
 
 	/**
@@ -1032,6 +1048,7 @@ export class Monque extends EventEmitter {
 		this.lifecycleManager.startTimers({
 			poll: () => this.processor.poll(),
 			updateHeartbeats: () => this.processor.updateHeartbeats(),
+			isChangeStreamActive: () => this.changeStreamHandler.isActive(),
 		});
 	}
 

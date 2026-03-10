@@ -16,6 +16,9 @@ export class JobProcessor {
 	/** Guard flag to prevent concurrent poll() execution */
 	private _isPolling = false;
 
+	/** Flag to request a re-poll after the current poll finishes */
+	private _repollRequested = false;
+
 	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
@@ -57,16 +60,34 @@ export class JobProcessor {
 	 * attempts to acquire jobs up to the worker's available concurrency slots.
 	 * Aborts early if the scheduler is stopping (`isRunning` is false) or if
 	 * the instance-level `instanceConcurrency` limit is reached.
+	 *
+	 * If a poll is requested while one is already running, it is queued and
+	 * executed as a full poll after the current one finishes. This prevents
+	 * change-stream-triggered polls from being silently dropped.
+	 *
+	 * @param targetNames - Optional set of worker names to poll. When provided, only the
+	 * specified workers are checked. Used by change stream handler for targeted polling.
 	 */
-	async poll(): Promise<void> {
-		if (!this.ctx.isRunning() || this._isPolling) {
+	async poll(targetNames?: ReadonlySet<string>): Promise<void> {
+		if (!this.ctx.isRunning()) {
+			return;
+		}
+
+		if (this._isPolling) {
+			// Queue a re-poll so work discovered during this poll isn't missed
+			this._repollRequested = true;
 			return;
 		}
 
 		this._isPolling = true;
 
 		try {
-			await this._doPoll();
+			do {
+				this._repollRequested = false;
+				await this._doPoll(targetNames);
+				// Re-polls are always full polls to catch all pending work
+				targetNames = undefined;
+			} while (this._repollRequested && this.ctx.isRunning());
 		} finally {
 			this._isPolling = false;
 		}
@@ -75,7 +96,7 @@ export class JobProcessor {
 	/**
 	 * Internal poll implementation.
 	 */
-	private async _doPoll(): Promise<void> {
+	private async _doPoll(targetNames?: ReadonlySet<string>): Promise<void> {
 		// Early exit if global instanceConcurrency is reached
 		const { instanceConcurrency } = this.ctx.options;
 
@@ -84,6 +105,11 @@ export class JobProcessor {
 		}
 
 		for (const [name, worker] of this.ctx.workers) {
+			// Skip workers not in the target set (if provided)
+			if (targetNames && !targetNames.has(name)) {
+				continue;
+			}
+
 			// Check if worker has capacity
 			const workerAvailableSlots = worker.concurrency - worker.activeJobs.size;
 

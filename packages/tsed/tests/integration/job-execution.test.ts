@@ -43,7 +43,6 @@ describe('Job Execution Flow', () => {
 		});
 
 		const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-
 		const job = await monqueService.enqueue('execution.success', {});
 
 		// Check Pending

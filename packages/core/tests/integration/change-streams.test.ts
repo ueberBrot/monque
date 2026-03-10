@@ -140,6 +140,7 @@ describe('change streams', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 2000, // 2 second poll to help pick up remaining jobs
+				safetyPollInterval: 2000, // Match poll interval for test reliability
 				defaultConcurrency: 1,
 			});
 			monqueInstances.push(monque);
@@ -175,6 +176,7 @@ describe('change streams', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 2000, // 2 second poll for quicker retry pickup
+				safetyPollInterval: 2000, // Match poll interval for test reliability
 				maxRetries: 3,
 				baseRetryInterval: 50, // Short interval for faster retry
 			});
@@ -212,6 +214,7 @@ describe('change streams', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 2000, // nextRunAt changes rely on polling (status changes trigger change stream)
+				safetyPollInterval: 2000, // Match poll interval — this update bypasses change streams
 			});
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -247,6 +250,7 @@ describe('change streams', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 100, // Fast polling for fallback
+				safetyPollInterval: 100, // Match poll interval for test reliability
 			});
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -318,7 +322,8 @@ describe('change streams', () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, {
 				collectionName,
-				pollInterval: 200,
+				pollInterval: 200, // Fast polling for test
+				safetyPollInterval: 200, // Match poll interval since test relies on backup polling
 			});
 			monqueInstances.push(monque);
 			await monque.initialize();
@@ -450,12 +455,14 @@ describe('change streams', () => {
 			const monque1 = new Monque(db, {
 				collectionName,
 				pollInterval: 5000, // 5 second backup poll
+				safetyPollInterval: 500, // Faster safety net for test reliability
 				schedulerInstanceId: 'cs-instance-1',
 				defaultConcurrency: 2,
 			});
 			const monque2 = new Monque(db, {
 				collectionName,
 				pollInterval: 5000, // 5 second backup poll
+				safetyPollInterval: 500, // Faster safety net for test reliability
 				schedulerInstanceId: 'cs-instance-2',
 				defaultConcurrency: 2,
 			});
@@ -562,6 +569,50 @@ describe('change streams', () => {
 			// Most should be under 1 second with change streams
 			const fastJobs = latencies.filter((l) => l < 1000).length;
 			expect(fastJobs).toBeGreaterThan(0);
+		});
+	});
+
+	describe('adaptive poll scheduling', () => {
+		it('should process future-dated job via wakeup timer without polling', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const monque = new Monque(db, {
+				collectionName,
+				pollInterval: 30000, // Very high — should NOT be used
+				safetyPollInterval: 30000, // Very high — should NOT be used
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			let processed = false;
+			let processingTime: number | null = null;
+			const startTime = Date.now();
+
+			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				processingTime = Date.now() - startTime;
+				processed = true;
+			});
+
+			let connected = false;
+			monque.on('changestream:connected', () => {
+				connected = true;
+			});
+
+			monque.start();
+			await waitFor(async () => connected, { timeout: 5000 });
+
+			// Enqueue a job scheduled 2 seconds in the future
+			await monque.enqueue(
+				TEST_CONSTANTS.JOB_NAME,
+				{ value: 1 },
+				{
+					runAt: new Date(Date.now() + 2000),
+				},
+			);
+
+			// Should be processed via wakeup timer (~2.2s), not safety poll (30s)
+			await waitFor(async () => processed, { timeout: 10000 });
+			expect(processed).toBe(true);
+			expect(processingTime).toBeLessThan(5000);
 		});
 	});
 });

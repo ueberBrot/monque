@@ -30,6 +30,7 @@ export interface ResolvedMonqueOptions
 		> {
 	// Ensure resolved options use the new naming convention
 	workerConcurrency: number;
+	safetyPollInterval: number;
 }
 /**
  * Shared context provided to all internal Monque services.

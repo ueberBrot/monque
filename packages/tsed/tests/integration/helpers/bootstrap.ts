@@ -75,6 +75,7 @@ export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<
 		imports: [MonqueModule, ...extraImports, ...imports],
 		monque: {
 			enabled: true,
+			safetyPollInterval: 500, // Fast safety poll for tests
 			...dbConfig,
 			...monqueConfig,
 		},

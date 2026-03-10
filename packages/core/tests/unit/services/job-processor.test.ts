@@ -155,6 +155,40 @@ describe('JobProcessor', () => {
 			// Should try to acquire up to worker concurrency (3 attempts until null)
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(1);
 		});
+
+		it('should re-poll when a poll request arrives while already polling', async () => {
+			ctx.workers.set('test-job', createWorker({ concurrency: 1 }));
+
+			let firstPollResolve: (() => void) | undefined;
+			const firstPollPromise = new Promise<void>((resolve) => {
+				firstPollResolve = resolve;
+			});
+
+			const spy = vi
+				.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockImplementationOnce(
+					() =>
+						new Promise((resolve) => {
+							// Hold the first poll open until we signal it
+							firstPollPromise.then(() => resolve(null));
+						}),
+				)
+				.mockResolvedValue(null);
+
+			// Start first poll (will be held open)
+			const pollPromise = processor.poll();
+
+			// While first poll is running, request another poll
+			const secondPollPromise = processor.poll(new Set(['test-job']));
+
+			// Release the first poll
+			firstPollResolve?.();
+			await secondPollPromise;
+			await pollPromise;
+
+			// First poll: 1 call. Re-poll (full): 1 call.
+			expect(spy).toHaveBeenCalledTimes(2);
+		});
 	});
 
 	describe('acquireJob', () => {
