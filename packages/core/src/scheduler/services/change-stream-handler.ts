@@ -86,7 +86,10 @@ export class ChangeStreamHandler {
 							{ operationType: 'insert' },
 							{
 								operationType: 'update',
-								'updateDescription.updatedFields.status': { $exists: true },
+								$or: [
+									{ 'updateDescription.updatedFields.status': { $exists: true } },
+									{ 'updateDescription.updatedFields.nextRunAt': { $exists: true } },
+								],
 							},
 						],
 					},

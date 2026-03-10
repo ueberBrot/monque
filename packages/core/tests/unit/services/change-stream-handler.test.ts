@@ -54,6 +54,37 @@ describe('ChangeStreamHandler', () => {
 			);
 		});
 
+		it('should watch nextRunAt-only updates for pending jobs', () => {
+			const mockChangeStream = new EventEmitter();
+			const watchSpy = vi
+				.spyOn(ctx.mockCollection, 'watch')
+				.mockReturnValue(
+					mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
+				);
+
+			handler.setup();
+
+			expect(watchSpy).toHaveBeenCalledWith(
+				[
+					{
+						$match: {
+							$or: [
+								{ operationType: 'insert' },
+								{
+									operationType: 'update',
+									$or: [
+										{ 'updateDescription.updatedFields.status': { $exists: true } },
+										{ 'updateDescription.updatedFields.nextRunAt': { $exists: true } },
+									],
+								},
+							],
+						},
+					},
+				],
+				{ fullDocument: 'updateLookup' },
+			);
+		});
+
 		it('should forward change events from the stream to the handler', () => {
 			vi.useFakeTimers();
 			const mockChangeStream = new EventEmitter();
@@ -134,6 +165,25 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(150);
 
 			expect(onPoll).toHaveBeenCalledOnce();
+		});
+
+		it('should trigger poll on update event with nextRunAt change for pending job', async () => {
+			vi.useFakeTimers();
+			const changeEvent = {
+				operationType: 'update' as const,
+				fullDocument: {
+					status: JobStatus.PENDING,
+					name: 'retry-job',
+					nextRunAt: new Date(Date.now() - 1000),
+				},
+				updateDescription: { updatedFields: { nextRunAt: new Date(Date.now() - 1000) } },
+			};
+
+			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+			vi.advanceTimersByTime(150);
+
+			expect(onPoll).toHaveBeenCalledOnce();
+			expect(onPoll).toHaveBeenCalledWith(new Set(['retry-job']));
 		});
 
 		it('should debounce multiple rapid events', async () => {
