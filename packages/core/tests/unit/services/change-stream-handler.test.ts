@@ -613,8 +613,8 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(1200);
 
 			expect(onPoll).toHaveBeenCalledOnce();
-			// Wakeup fires a full poll (no target names)
-			expect(onPoll).toHaveBeenCalledWith(undefined);
+			// Wakeup fires a full poll with no targeted names argument
+			expect(onPoll).toHaveBeenCalledWith();
 		});
 
 		it('should clear wakeup timer on close()', async () => {
