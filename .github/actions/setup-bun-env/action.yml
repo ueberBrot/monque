@@ -5,6 +5,12 @@ inputs:
   bun-version:
     description: 'Bun version to install'
     default: '1.3.10'
+  node-version:
+    description: 'Node.js version to install'
+    default: '22.22.1'
+  registry-url:
+    description: 'Optional npm registry URL for Node auth configuration'
+    default: ''
   turbo-cache:
     description: 'Persist .turbo cache between CI runs'
     default: 'true'
@@ -12,6 +18,12 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Setup Node
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: ${{ inputs.registry-url }}
+
     - name: Setup Bun
       uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2
       with:
