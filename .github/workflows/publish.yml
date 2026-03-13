@@ -27,14 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
-        with:
-          node-version: "22.22.1"
-          registry-url: "https://registry.npmjs.org"
-
       - name: Setup Bun Environment
         uses: ./.github/actions/setup-bun-env
+        with:
+          registry-url: "https://registry.npmjs.org"
 
       - name: Build
         run: bun run build

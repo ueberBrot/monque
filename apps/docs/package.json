@@ -2,7 +2,7 @@
 	"name": "@monque/docs",
 	"type": "module",
 	"engines": {
-		"node": ">=22.0.0"
+		"node": ">=22.12.0"
 	},
 	"version": "1.0.0",
 	"private": true,
