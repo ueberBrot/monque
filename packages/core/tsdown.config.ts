@@ -8,7 +8,9 @@ export default defineConfig({
 	sourcemap: true,
 	target: 'node22',
 	outDir: 'dist',
-	external: ['mongodb'],
+	deps: {
+		neverBundle: ['mongodb'],
+	},
 	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
 	attw: true,
