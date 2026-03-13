@@ -141,12 +141,19 @@ export class JobScheduler {
 					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
 				}
 
-				return this.ctx.documentToPersistedJob<T>(result);
+				const persistedJob = this.ctx.documentToPersistedJob<T>(result);
+				if (persistedJob.status === JobStatus.PENDING) {
+					this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+				}
+
+				return persistedJob;
 			}
 
 			const result = await this.ctx.collection.insertOne(job as Document);
+			const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
 
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
+			return persistedJob;
 		} catch (error) {
 			if (error instanceof ConnectionError) {
 				throw error;
@@ -287,12 +294,19 @@ export class JobScheduler {
 					);
 				}
 
-				return this.ctx.documentToPersistedJob<T>(result);
+				const persistedJob = this.ctx.documentToPersistedJob<T>(result);
+				if (persistedJob.status === JobStatus.PENDING) {
+					this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+				}
+
+				return persistedJob;
 			}
 
 			const result = await this.ctx.collection.insertOne(job as Document);
+			const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
 
-			return { ...job, _id: result.insertedId } as PersistedJob<T>;
+			return persistedJob;
 		} catch (error) {
 			if (error instanceof MonqueError) {
 				throw error;

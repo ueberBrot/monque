@@ -4,12 +4,43 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 } from '@test-utils/test-utils';
-import type { Db } from 'mongodb';
+import type { Db, Document } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 
-import { JobFactory, JobFactoryHelpers } from '@tests/factories';
+import { JobFactoryHelpers } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
+
+const LargeStatsJobBuilder = {
+	buildBatch(
+		status: (typeof JobStatus)[keyof typeof JobStatus],
+		count: number,
+		jobName: string,
+		startIndex: number,
+	): Document[] {
+		const now = new Date();
+
+		return Array.from({ length: count }, (_, index) => {
+			const document: Document = {
+				name: jobName,
+				data: { task: startIndex + index },
+				status,
+				failCount: status === JobStatus.FAILED ? 10 : 0,
+				createdAt: now,
+				updatedAt: now,
+				nextRunAt: now,
+			};
+
+			if (status === JobStatus.PROCESSING) {
+				document['lockedAt'] = now;
+				document['claimedBy'] = 'test-instance';
+				document['lastHeartbeat'] = now;
+			}
+
+			return document;
+		});
+	},
+};
 
 describe('Management APIs: Queue Statistics', () => {
 	let db: Db;
@@ -211,51 +242,32 @@ describe('Management APIs: Queue Statistics', () => {
 
 		test('handles large dataset efficiently', async () => {
 			const collectionName = uniqueCollectionName('stats_large');
-			monque = new Monque(db, { collectionName });
+			monque = new Monque(db, {
+				collectionName,
+				skipIndexCreation: true,
+			});
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			// Create 100K jobs - 20K per status using buildList
+			// Create 100K jobs - 20K per status
 			const countPerStatus = 20_000;
+			const batchSize = 5_000;
+			const statuses = [
+				JobStatus.PENDING,
+				JobStatus.PROCESSING,
+				JobStatus.COMPLETED,
+				JobStatus.FAILED,
+				JobStatus.CANCELLED,
+			] as const;
 
-			// Build job arrays using factory buildList
-			const pendingJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.PENDING,
-			});
-			const processingJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.PROCESSING,
-				lockedAt: new Date(),
-				claimedBy: 'test-instance',
-			});
-			const completedJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.COMPLETED,
-			});
-			const failedJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.FAILED,
-				failCount: 10,
-			});
-			const cancelledJobs = JobFactory.buildList(countPerStatus, {
-				name: queueName,
-				status: JobStatus.CANCELLED,
-			});
-
-			// Insert in batches of 10K to avoid memory issues
-			const batchSize = 10_000;
-			const allJobs = [
-				...pendingJobs,
-				...processingJobs,
-				...completedJobs,
-				...failedJobs,
-				...cancelledJobs,
-			];
-
-			for (let i = 0; i < allJobs.length; i += batchSize) {
-				const batch = allJobs.slice(i, i + batchSize);
-				await db.collection(collectionName).insertMany(batch);
+			let taskIndex = 0;
+			for (const status of statuses) {
+				for (let inserted = 0; inserted < countPerStatus; inserted += batchSize) {
+					const size = Math.min(batchSize, countPerStatus - inserted);
+					const batch = LargeStatsJobBuilder.buildBatch(status, size, queueName, taskIndex);
+					taskIndex += size;
+					await db.collection(collectionName).insertMany(batch, { ordered: false });
+				}
 			}
 
 			// Verify job count

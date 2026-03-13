@@ -238,6 +238,7 @@ For the full list of options and defaults, see the [MonqueOptions API Reference]
 const monque = new Monque(db, {
   collectionName: 'jobs',
   pollInterval: 1000,
+  safetyPollInterval: 30000,   // Safety poll interval when Change Streams active
   maxRetries: 10,
   baseRetryInterval: 1000,
   shutdownTimeout: 30000,

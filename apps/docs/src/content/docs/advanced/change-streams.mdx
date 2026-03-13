@@ -28,9 +28,9 @@ await monque.initialize();
 monque.start();
 
 // Behind the scenes:
-// - Change stream opened
-// - Polling continues at `pollInterval`
-// - Change stream events trigger a debounced poll for low-latency processing
+// - Change stream opened with full document lookup
+// - Safety polling runs at `safetyPollInterval` (default 30s) as a backup
+// - Change stream events trigger targeted, debounced polls for low-latency processing
 ```
 
 ### Event Types Monitored
@@ -88,14 +88,16 @@ monque.on('changestream:connected', () => {
 
 ### 2. Processing Events
 
-When a job is inserted or becomes ready:
+When a job is inserted, becomes ready, or a concurrency slot is freed:
 
 ```typescript
 // Internal flow:
-// 1. Change Stream receives notification
-// 2. Debounce timer (100ms) prevents claim storms
-// 3. Worker attempts to claim job
-// 4. Job is processed if claim succeeds
+// 1. Change Stream receives notification with full document
+// 2. Event is classified: immediate job, future job, or slot freed
+// 3. Immediate: debounce (100ms), then targeted poll for specific worker(s)
+//    Future: precise wakeup timer scheduled at nextRunAt + grace period
+//    Slot freed: targeted re-poll for that worker to pick up waiting jobs
+// 4. Worker attempts to claim job via atomic findOneAndUpdate
 ```
 
 ### 3. Error Handling
@@ -132,19 +134,33 @@ monque.on('changestream:closed', () => {
 
 ## Configuration
 
-### Polling and Change Streams
+### Adaptive Poll Scheduling
 
-`pollInterval` always controls how often the scheduler polls the database:
+Monque uses **adaptive polling** that adjusts based on whether Change Streams are active:
+
+| Scenario | Poll interval used | Purpose |
+| --- | --- | --- |
+| Change Streams **active** | `safetyPollInterval` (default 30 s) | Safety net — catches anything Change Streams missed |
+| Change Streams **inactive** | `pollInterval` (default 1 s) | Primary job discovery mechanism |
 
 ```typescript
 const monque = new Monque(db, {
-  pollInterval: 10000
+  pollInterval: 1000,          // Used when Change Streams are unavailable
+  safetyPollInterval: 30000,   // Safety net when Change Streams are active (default)
 });
 ```
 
 <Aside type="note">
-  Change Streams do not automatically change `pollInterval`. When Change Streams are available, Monque reacts to change events by triggering a debounced poll in addition to the regular polling loop.
+  When Change Streams are active, most jobs are picked up in near real-time via change events. The safety poll at `safetyPollInterval` only exists to catch edge cases (e.g., events missed during brief reconnections). If Change Streams fail permanently, Monque falls back to polling at the faster `pollInterval`.
 </Aside>
+
+### Targeted Polling
+
+Change Stream events include the full document (via `fullDocument: 'updateLookup'`), which Monque uses for smart routing:
+
+- **Job name** — only the worker(s) for the relevant job type are polled, skipping unrelated workers
+- **`nextRunAt`** — future-dated jobs get a precise wakeup timer instead of waiting for the next poll cycle
+- **Slot freed** — when a job completes or permanently fails, a targeted re-poll picks up the next waiting job for that worker immediately
 
 ## Reconnection Strategy
 
@@ -200,7 +216,8 @@ To prevent "claim storms" when many jobs arrive simultaneously:
 ```typescript
 // Internal behavior:
 // - Multiple change events within 100ms are batched
-// - Single claim attempt processes available jobs
+// - Job names are collected and passed as a targeted set
+// - Single poll attempt processes available jobs for those workers only
 // - Prevents overwhelming the database with concurrent claims
 ```
 
@@ -257,7 +274,7 @@ Monque does not publish benchmark numbers for Change Streams.
 In general:
 
 - **Polling-only** pickup latency is bounded by `pollInterval`.
-- **With Change Streams** enabled, pickup latency is typically bounded by the Change Stream notification delay plus Monque's **100ms debounce window** and processing time.
+- **With Change Streams** enabled, pickup latency is typically bounded by the Change Stream notification delay plus Monque's **100ms debounce window** and processing time. Future-dated jobs are picked up at their `nextRunAt` plus a small grace period, without waiting for a poll cycle.
 
 ### Measure In Your Environment
 

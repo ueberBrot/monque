@@ -54,6 +54,7 @@ describe('Concurrency & Scalability', () => {
 			const monque = new Monque(db, {
 				collectionName,
 				pollInterval: 50, // Fast polling for test
+				safetyPollInterval: 50,
 				workerConcurrency: 5,
 			});
 			monqueInstances.push(monque);
@@ -170,6 +171,7 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		const monque = new Monque(db, {
 			collectionName,
 			pollInterval: 500, // Slower polling to avoid race conditions in test
+			safetyPollInterval: 500,
 			instanceConcurrency, // Limit to 3 concurrent jobs total
 			workerConcurrency: 10, // Each worker could do 10, but global limit is 3
 		});
@@ -214,6 +216,7 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		const monque = new Monque(db, {
 			collectionName,
 			pollInterval: 50,
+			safetyPollInterval: 50,
 			instanceConcurrency: 2,
 			workerConcurrency: 5,
 		});
@@ -240,6 +243,16 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		expect(completedJobs).toBe(6);
 
 		// Verify all completed in DB
+		await waitFor(
+			async () => {
+				const count = await db
+					.collection(collectionName)
+					.countDocuments({ status: JobStatus.COMPLETED });
+				return count === 6;
+			},
+			{ timeout: 10000 },
+		);
+
 		const count = await db
 			.collection(collectionName)
 			.countDocuments({ status: JobStatus.COMPLETED });
@@ -256,6 +269,7 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		const monque = new Monque(db, {
 			collectionName,
 			pollInterval: 50,
+			safetyPollInterval: 50,
 			// No instanceConcurrency set
 			workerConcurrency: 5,
 		});

@@ -76,8 +76,9 @@ monque.register('heavy-computation', async (job) => {
 
 When [`start()`](/monque/api/classes/monque/#start) is called, Monque begins looking for jobs:
 
-1. **Polling** runs every [`pollInterval`](/monque/api/interfaces/monqueoptions/#pollinterval) milliseconds
-2. **Change Streams** (if available) trigger an additional, debounced poll for low-latency processing
+1. **[Change Streams](/monque/advanced/change-streams/)** (if available) provide near real-time notifications — triggering targeted, debounced polls for specific workers
+2. **Safety polling** runs every [`safetyPollInterval`](/monque/api/interfaces/monqueoptions/#safetypollinterval) (default 30 s) as a backup when Change Streams are active
+3. If Change Streams are unavailable, **regular polling** runs every [`pollInterval`](/monque/api/interfaces/monqueoptions/#pollinterval) (default 1 s)
 
 ### 2. Atomic Claim
 

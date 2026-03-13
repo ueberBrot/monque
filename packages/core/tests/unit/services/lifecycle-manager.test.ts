@@ -15,6 +15,7 @@ describe('LifecycleManager', () => {
 	let manager: LifecycleManager;
 	let pollFn: ReturnType<typeof vi.fn>;
 	let heartbeatFn: ReturnType<typeof vi.fn>;
+	let isChangeStreamActiveFn: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
 		vi.useFakeTimers();
@@ -22,6 +23,7 @@ describe('LifecycleManager', () => {
 		manager = new LifecycleManager(ctx);
 		pollFn = vi.fn().mockResolvedValue(undefined);
 		heartbeatFn = vi.fn().mockResolvedValue(undefined);
+		isChangeStreamActiveFn = vi.fn().mockReturnValue(false);
 	});
 
 	afterEach(() => {
@@ -34,6 +36,7 @@ describe('LifecycleManager', () => {
 	const callbacks = (): Parameters<typeof manager.startTimers>[0] => ({
 		poll: pollFn as unknown as () => Promise<void>,
 		updateHeartbeats: heartbeatFn as unknown as () => Promise<void>,
+		isChangeStreamActive: isChangeStreamActiveFn as unknown as () => boolean,
 	});
 
 	describe('startTimers', () => {
@@ -125,6 +128,7 @@ describe('LifecycleManager', () => {
 			manager.startTimers({
 				poll: failingPoll,
 				updateHeartbeats: heartbeatFn as unknown as () => Promise<void>,
+				isChangeStreamActive: isChangeStreamActiveFn as unknown as () => boolean,
 			});
 
 			// Wait for the initial poll rejection to be handled
@@ -147,6 +151,7 @@ describe('LifecycleManager', () => {
 			manager.startTimers({
 				poll: pollFn as unknown as () => Promise<void>,
 				updateHeartbeats: failingHeartbeat,
+				isChangeStreamActive: isChangeStreamActiveFn as unknown as () => boolean,
 			});
 
 			// Advance past one heartbeat interval
@@ -171,6 +176,7 @@ describe('LifecycleManager', () => {
 			manager.startTimers({
 				poll: failingPoll,
 				updateHeartbeats: heartbeatFn as unknown as () => Promise<void>,
+				isChangeStreamActive: isChangeStreamActiveFn as unknown as () => boolean,
 			});
 
 			// Advance past one poll interval
@@ -257,6 +263,112 @@ describe('LifecycleManager', () => {
 				manager.stopTimers();
 				manager.stopTimers();
 			}).not.toThrow();
+		});
+	});
+
+	describe('adaptive poll scheduling', () => {
+		it('should use safetyPollInterval when change streams are active', async () => {
+			isChangeStreamActiveFn.mockReturnValue(true);
+			manager.startTimers(callbacks());
+
+			// Clear initial poll call
+			pollFn.mockClear();
+
+			// Should NOT fire at pollInterval (1000ms)
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
+			expect(pollFn).not.toHaveBeenCalled();
+
+			// Should fire at safetyPollInterval (30000ms)
+			await vi.advanceTimersByTimeAsync(ctx.options.safetyPollInterval - ctx.options.pollInterval);
+			expect(pollFn).toHaveBeenCalledOnce();
+		});
+
+		it('should use pollInterval when change streams are not active', async () => {
+			isChangeStreamActiveFn.mockReturnValue(false);
+			manager.startTimers(callbacks());
+
+			// Clear initial poll call
+			pollFn.mockClear();
+
+			// Should fire at pollInterval (1000ms)
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
+			expect(pollFn).toHaveBeenCalledOnce();
+		});
+
+		it('should switch intervals when change stream status changes', async () => {
+			// Start with CS active (uses safetyPollInterval)
+			isChangeStreamActiveFn.mockReturnValue(true);
+			manager.startTimers(callbacks());
+			pollFn.mockClear();
+
+			// Switch to CS inactive and force re-evaluation
+			isChangeStreamActiveFn.mockReturnValue(false);
+			manager.resetPollTimer();
+
+			// Next poll should happen at pollInterval (not safetyPollInterval)
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
+			expect(pollFn).toHaveBeenCalledOnce();
+		});
+
+		it('should continue scheduling after poll errors', async () => {
+			const pollError = new Error('Poll failed');
+			const failingPoll = vi
+				.fn()
+				.mockRejectedValueOnce(pollError)
+				.mockResolvedValue(undefined) as unknown as () => Promise<void>;
+
+			manager.startTimers({
+				poll: failingPoll,
+				updateHeartbeats: heartbeatFn as unknown as () => Promise<void>,
+				isChangeStreamActive: isChangeStreamActiveFn as unknown as () => boolean,
+			});
+
+			// Wait for initial poll error to be handled
+			await vi.advanceTimersByTimeAsync(0);
+
+			// Next poll should still be scheduled at pollInterval
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
+			expect(failingPoll).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('resetPollTimer', () => {
+		it('should cancel current timer and reschedule', async () => {
+			manager.startTimers(callbacks());
+			pollFn.mockClear();
+
+			// Advance halfway through the poll interval
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
+			expect(pollFn).not.toHaveBeenCalled();
+
+			// Reset the timer — this restarts the countdown
+			manager.resetPollTimer();
+
+			// Advancing the remaining half should NOT trigger a poll
+			// (timer was reset, so it needs the full interval from now)
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
+			expect(pollFn).not.toHaveBeenCalled();
+
+			// But after the full interval from the reset, it should fire
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
+			expect(pollFn).toHaveBeenCalledOnce();
+		});
+
+		it('should use safetyPollInterval after reset when CS is active', async () => {
+			isChangeStreamActiveFn.mockReturnValue(true);
+			manager.startTimers(callbacks());
+			pollFn.mockClear();
+
+			// Reset the timer
+			manager.resetPollTimer();
+
+			// Should not fire at pollInterval
+			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
+			expect(pollFn).not.toHaveBeenCalled();
+
+			// Should fire at safetyPollInterval
+			await vi.advanceTimersByTimeAsync(ctx.options.safetyPollInterval - ctx.options.pollInterval);
+			expect(pollFn).toHaveBeenCalledOnce();
 		});
 	});
 

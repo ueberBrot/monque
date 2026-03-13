@@ -21,19 +21,26 @@ interface TimerCallbacks {
 	poll: () => Promise<void>;
 	/** Update heartbeats for claimed jobs */
 	updateHeartbeats: () => Promise<void>;
+	/** Whether change streams are currently active */
+	isChangeStreamActive: () => boolean;
 }
 
 /**
  * Manages scheduler lifecycle timers and job cleanup.
  *
- * Owns poll interval, heartbeat interval, cleanup interval, and the
+ * Owns poll scheduling, heartbeat interval, cleanup interval, and the
  * cleanupJobs logic. Extracted from Monque to keep the facade thin.
+ *
+ * Uses adaptive poll scheduling: when change streams are active, polls at
+ * `safetyPollInterval` (safety net only). When change streams are inactive,
+ * polls at `pollInterval` (primary discovery mechanism).
  *
  * @internal Not part of public API.
  */
 export class LifecycleManager {
 	private readonly ctx: SchedulerContext;
-	private pollIntervalId: ReturnType<typeof setInterval> | null = null;
+	private callbacks: TimerCallbacks | null = null;
+	private pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -44,18 +51,13 @@ export class LifecycleManager {
 	/**
 	 * Start all lifecycle timers.
 	 *
-	 * Sets up poll interval, heartbeat interval, and (if configured)
+	 * Sets up adaptive poll scheduling, heartbeat interval, and (if configured)
 	 * cleanup interval. Runs an initial poll immediately.
 	 *
 	 * @param callbacks - Functions to invoke on each timer tick
 	 */
 	startTimers(callbacks: TimerCallbacks): void {
-		// Set up polling as backup (runs at configured interval)
-		this.pollIntervalId = setInterval(() => {
-			callbacks.poll().catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			});
-		}, this.ctx.options.pollInterval);
+		this.callbacks = callbacks;
 
 		// Start heartbeat interval for claimed jobs
 		this.heartbeatIntervalId = setInterval(() => {
@@ -80,32 +82,85 @@ export class LifecycleManager {
 			}, interval);
 		}
 
-		// Run initial poll immediately to pick up any existing jobs
-		callbacks.poll().catch((error: unknown) => {
-			this.ctx.emit('job:error', { error: toError(error) });
-		});
+		// Run initial poll immediately, then schedule the next one adaptively
+		this.executePollAndScheduleNext();
 	}
 
 	/**
 	 * Stop all lifecycle timers.
 	 *
-	 * Clears poll, heartbeat, and cleanup intervals.
+	 * Clears poll timeout, heartbeat interval, and cleanup interval.
 	 */
 	stopTimers(): void {
+		this.callbacks = null;
+
 		if (this.cleanupIntervalId) {
 			clearInterval(this.cleanupIntervalId);
 			this.cleanupIntervalId = null;
 		}
 
-		if (this.pollIntervalId) {
-			clearInterval(this.pollIntervalId);
-			this.pollIntervalId = null;
+		if (this.pollTimeoutId) {
+			clearTimeout(this.pollTimeoutId);
+			this.pollTimeoutId = null;
 		}
 
 		if (this.heartbeatIntervalId) {
 			clearInterval(this.heartbeatIntervalId);
 			this.heartbeatIntervalId = null;
 		}
+	}
+
+	/**
+	 * Reset the poll timer to reschedule the next poll.
+	 *
+	 * Called after change-stream-triggered polls to ensure the safety poll timer
+	 * is recalculated (not fired redundantly from an old schedule).
+	 */
+	resetPollTimer(): void {
+		this.scheduleNextPoll();
+	}
+
+	/**
+	 * Execute a poll and schedule the next one adaptively.
+	 */
+	private executePollAndScheduleNext(): void {
+		if (!this.callbacks) {
+			return;
+		}
+
+		this.callbacks
+			.poll()
+			.catch((error: unknown) => {
+				this.ctx.emit('job:error', { error: toError(error) });
+			})
+			.then(() => {
+				this.scheduleNextPoll();
+			});
+	}
+
+	/**
+	 * Schedule the next poll using adaptive timing.
+	 *
+	 * When change streams are active, uses `safetyPollInterval` (longer, safety net only).
+	 * When change streams are inactive, uses `pollInterval` (shorter, primary discovery).
+	 */
+	private scheduleNextPoll(): void {
+		if (this.pollTimeoutId) {
+			clearTimeout(this.pollTimeoutId);
+			this.pollTimeoutId = null;
+		}
+
+		if (!this.ctx.isRunning() || !this.callbacks) {
+			return;
+		}
+
+		const delay = this.callbacks.isChangeStreamActive()
+			? this.ctx.options.safetyPollInterval
+			: this.ctx.options.pollInterval;
+
+		this.pollTimeoutId = setTimeout(() => {
+			this.executePollAndScheduleNext();
+		}, delay);
 	}
 
 	/**

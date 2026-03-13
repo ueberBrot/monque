@@ -196,4 +196,18 @@ export interface MonqueOptions {
 	 * @default 5000
 	 */
 	statsCacheTtlMs?: number;
+
+	/**
+	 * Interval in milliseconds between safety polls when change streams are active.
+	 *
+	 * When change streams are connected, the scheduler uses them as the primary
+	 * notification mechanism and only polls at this longer interval as a safety net
+	 * to catch any missed events. When change streams are unavailable, the scheduler
+	 * falls back to the standard `pollInterval`.
+	 *
+	 * This is separate from `heartbeatInterval`, which updates job liveness signals.
+	 *
+	 * @default 30000 (30 seconds)
+	 */
+	safetyPollInterval?: number;
 }

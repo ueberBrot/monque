@@ -97,6 +97,7 @@ describe('JobManager', () => {
 			);
 
 			expect(job?.status).toBe(JobStatus.PENDING);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(retriedJob.name, retriedJob.nextRunAt);
 			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:retried' }));
 		});
 
@@ -144,6 +145,7 @@ describe('JobManager', () => {
 			const job = await manager.rescheduleJob(jobId.toString(), newRunAt);
 
 			expect(job?.nextRunAt).toEqual(newRunAt);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(rescheduledJob.name, newRunAt);
 		});
 
 		it('should throw JobStateError when rescheduling a processing job', async () => {
