@@ -243,6 +243,16 @@ describe('Instance-level Concurrency (instanceConcurrency)', () => {
 		expect(completedJobs).toBe(6);
 
 		// Verify all completed in DB
+		await waitFor(
+			async () => {
+				const count = await db
+					.collection(collectionName)
+					.countDocuments({ status: JobStatus.COMPLETED });
+				return count === 6;
+			},
+			{ timeout: 10000 },
+		);
+
 		const count = await db
 			.collection(collectionName)
 			.countDocuments({ status: JobStatus.COMPLETED });
