@@ -21,7 +21,7 @@
     },
     "apps/docs": {
       "name": "@monque/docs",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@astrojs/starlight": "^0.38.1",
         "@fontsource/quicksand": "^5.2.10",
@@ -40,7 +40,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.5.2",
+      "version": "1.6.0",
       "dependencies": {
         "cron-parser": "^5.5.0",
       },
@@ -61,7 +61,7 @@
     },
     "packages/tsed": {
       "name": "@monque/tsed",
-      "version": "1.4.2",
+      "version": "1.4.3",
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@testcontainers/mongodb": "^11.12.0",
@@ -79,7 +79,7 @@
         "vitest": "^4.1.0",
       },
       "peerDependencies": {
-        "@monque/core": "^1.5.2",
+        "@monque/core": "^1.6.0",
         "@tsed/core": "^8.25.2",
         "@tsed/di": "^8.25.2",
         "@tsed/mongoose": "^8.25.2",
