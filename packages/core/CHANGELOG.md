@@ -1,5 +1,19 @@
 # @monque/core
 
+## 1.6.0
+
+### Minor Changes
+
+- [#232](https://github.com/ueberBrot/monque/pull/232) [`c3d2c83`](https://github.com/ueberBrot/monque/commit/c3d2c83b89d3fc8e77ec1958695d05b68f357d8d) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add adaptive poll scheduling and targeted change stream processing
+
+  - **Adaptive polling**: When change streams are active, safety polling runs at `safetyPollInterval` (default 30s) instead of the fast `pollInterval`. Falls back to `pollInterval` when change streams are unavailable.
+  - **Targeted polling**: Change stream events now leverage the full document to poll only the specific worker(s) for the affected job type, skipping unrelated workers.
+  - **Wakeup timers**: Future-dated jobs (`nextRunAt > now`) get a precise wakeup timer instead of waiting for the next poll cycle.
+  - **Local pending-job notifications**: Jobs created or moved back to `pending` by the local scheduler now trigger the same targeted polling and wakeup-timer path immediately, avoiding startup races before the change stream cursor is fully ready.
+  - **Slot-freed re-polling**: When a job completes or permanently fails, a targeted re-poll immediately picks up the next waiting job for that worker.
+  - **Re-poll queuing**: Poll requests arriving while a poll is running are queued and executed after, preventing silently dropped change-stream-triggered polls.
+  - New configuration option: `safetyPollInterval` (default: 30000ms).
+
 ## 1.5.2
 
 ### Patch Changes
