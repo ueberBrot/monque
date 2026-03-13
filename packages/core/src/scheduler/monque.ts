@@ -153,6 +153,17 @@ export class Monque extends EventEmitter {
 			maxPayloadSize: options.maxPayloadSize,
 			statsCacheTtlMs: options.statsCacheTtlMs ?? 5000,
 		};
+
+		if (options.defaultConcurrency !== undefined) {
+			console.warn(
+				'[@monque/core] "defaultConcurrency" is deprecated and will be removed in a future major version. Use "workerConcurrency" instead.',
+			);
+		}
+		if (options.maxConcurrency !== undefined) {
+			console.warn(
+				'[@monque/core] "maxConcurrency" is deprecated and will be removed in a future major version. Use "instanceConcurrency" instead.',
+			);
+		}
 	}
 
 	/**
