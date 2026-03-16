@@ -39,23 +39,6 @@ export class JobManager {
 
 		const _id = new ObjectId(jobId);
 
-		// Fetch job first to allow emitting the full job object in the event
-		const jobDoc = await this.ctx.collection.findOne({ _id });
-		if (!jobDoc) return null;
-
-		if (jobDoc['status'] === JobStatus.CANCELLED) {
-			return this.ctx.documentToPersistedJob(jobDoc);
-		}
-
-		if (jobDoc['status'] !== JobStatus.PENDING) {
-			throw new JobStateError(
-				`Cannot cancel job in status '${jobDoc['status']}'`,
-				jobId,
-				jobDoc['status'],
-				'cancel',
-			);
-		}
-
 		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{ _id, status: JobStatus.PENDING },
@@ -69,11 +52,18 @@ export class JobManager {
 		);
 
 		if (!result) {
-			// Race condition: job changed state between check and update
+			// Distinguish not-found vs wrong-state with a single findOne
+			const jobDoc = await this.ctx.collection.findOne({ _id });
+			if (!jobDoc) return null;
+
+			if (jobDoc['status'] === JobStatus.CANCELLED) {
+				return this.ctx.documentToPersistedJob(jobDoc);
+			}
+
 			throw new JobStateError(
-				'Job status changed during cancellation attempt',
+				`Cannot cancel job in status '${jobDoc['status']}'`,
 				jobId,
-				'unknown',
+				jobDoc['status'],
 				'cancel',
 			);
 		}
@@ -105,20 +95,6 @@ export class JobManager {
 		if (!ObjectId.isValid(jobId)) return null;
 
 		const _id = new ObjectId(jobId);
-		const currentJob = await this.ctx.collection.findOne({ _id });
-
-		if (!currentJob) return null;
-
-		if (currentJob['status'] !== JobStatus.FAILED && currentJob['status'] !== JobStatus.CANCELLED) {
-			throw new JobStateError(
-				`Cannot retry job in status '${currentJob['status']}'`,
-				jobId,
-				currentJob['status'],
-				'retry',
-			);
-		}
-
-		const previousStatus = currentJob['status'] as 'failed' | 'cancelled';
 
 		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
@@ -140,14 +116,34 @@ export class JobManager {
 					lastHeartbeat: '',
 				},
 			},
-			{ returnDocument: 'after' },
+			{ returnDocument: 'before' },
 		);
 
 		if (!result) {
-			throw new JobStateError('Job status changed during retry attempt', jobId, 'unknown', 'retry');
+			const currentJob = await this.ctx.collection.findOne({ _id });
+			if (!currentJob) return null;
+
+			throw new JobStateError(
+				`Cannot retry job in status '${currentJob['status']}'`,
+				jobId,
+				currentJob['status'],
+				'retry',
+			);
 		}
 
-		const job = this.ctx.documentToPersistedJob(result);
+		const previousStatus = result['status'] as 'failed' | 'cancelled';
+
+		const updatedDoc = { ...result };
+		updatedDoc['status'] = JobStatus.PENDING;
+		updatedDoc['failCount'] = 0;
+		updatedDoc['nextRunAt'] = now;
+		updatedDoc['updatedAt'] = now;
+		delete updatedDoc['failReason'];
+		delete updatedDoc['lockedAt'];
+		delete updatedDoc['claimedBy'];
+		delete updatedDoc['lastHeartbeat'];
+
+		const job = this.ctx.documentToPersistedJob(updatedDoc);
 		this.ctx.notifyPendingJob(job.name, job.nextRunAt);
 		this.ctx.emit('job:retried', { job, previousStatus });
 		return job;
@@ -173,18 +169,6 @@ export class JobManager {
 		if (!ObjectId.isValid(jobId)) return null;
 
 		const _id = new ObjectId(jobId);
-		const currentJobDoc = await this.ctx.collection.findOne({ _id });
-
-		if (!currentJobDoc) return null;
-
-		if (currentJobDoc['status'] !== JobStatus.PENDING) {
-			throw new JobStateError(
-				`Cannot reschedule job in status '${currentJobDoc['status']}'`,
-				jobId,
-				currentJobDoc['status'],
-				'reschedule',
-			);
-		}
 
 		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
@@ -199,10 +183,13 @@ export class JobManager {
 		);
 
 		if (!result) {
+			const currentJobDoc = await this.ctx.collection.findOne({ _id });
+			if (!currentJobDoc) return null;
+
 			throw new JobStateError(
-				'Job status changed during reschedule attempt',
+				`Cannot reschedule job in status '${currentJobDoc['status']}'`,
 				jobId,
-				'unknown',
+				currentJobDoc['status'],
 				'reschedule',
 			);
 		}

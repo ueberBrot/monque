@@ -29,10 +29,8 @@ describe('JobManager', () => {
 	describe('cancelJob', () => {
 		it('should cancel a pending job', async () => {
 			const jobId = new ObjectId();
-			const pendingJob = JobFactory.build({ _id: jobId, name: 'cancel-test' });
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId, name: 'cancel-test' });
 
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(cancelledJob);
 
 			const job = await manager.cancelJob(jobId.toString());
@@ -43,6 +41,7 @@ describe('JobManager', () => {
 		});
 
 		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.cancelJob(new ObjectId().toString());
@@ -54,7 +53,8 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValue(processingJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			await expect(manager.cancelJob(jobId.toString())).rejects.toThrow(JobStateError);
 		});
@@ -63,12 +63,13 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
 
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
 
 			const job = await manager.cancelJob(jobId.toString());
 
 			expect(job?.status).toBe(JobStatus.CANCELLED);
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
 		});
 	});
 
@@ -76,10 +77,8 @@ describe('JobManager', () => {
 		it('should retry a failed job', async () => {
 			const jobId = new ObjectId();
 			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
-			const retriedJob = JobFactory.build({ _id: jobId, failCount: 0 });
 
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(failedJob);
 			const expectedUnset = {
 				failReason: '',
 				lockedAt: '',
@@ -92,21 +91,19 @@ describe('JobManager', () => {
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				expect.objectContaining({ _id: jobId }),
 				expect.objectContaining({ $unset: expectedUnset }),
-				expect.anything(),
+				expect.objectContaining({ returnDocument: 'before' }),
 			);
 
 			expect(job?.status).toBe(JobStatus.PENDING);
-			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(retriedJob.name, retriedJob.nextRunAt);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(failedJob.name, expect.any(Date));
 			expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: 'job:retried' }));
 		});
 
 		it('should retry a cancelled job', async () => {
 			const jobId = new ObjectId();
 			const cancelledJob = JobFactoryHelpers.cancelled({ _id: jobId });
-			const retriedJob = JobFactory.build({ _id: jobId });
 
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(cancelledJob);
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(retriedJob);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(cancelledJob);
 
 			const job = await manager.retryJob(jobId.toString());
 
@@ -117,12 +114,14 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const pendingJob = JobFactory.build({ _id: jobId });
 
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 
 			await expect(manager.retryJob(jobId.toString())).rejects.toThrow(JobStateError);
 		});
 
 		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.retryJob(new ObjectId().toString());
@@ -135,10 +134,8 @@ describe('JobManager', () => {
 		it('should reschedule a pending job to new time', async () => {
 			const jobId = new ObjectId();
 			const newRunAt = new Date(Date.now() + 3600000);
-			const pendingJob = JobFactory.build({ _id: jobId });
 			const rescheduledJob = JobFactory.build({ _id: jobId, nextRunAt: newRunAt });
 
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(rescheduledJob);
 
 			const job = await manager.rescheduleJob(jobId.toString(), newRunAt);
@@ -151,6 +148,7 @@ describe('JobManager', () => {
 			const jobId = new ObjectId();
 			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			await expect(manager.rescheduleJob(jobId.toString(), new Date())).rejects.toThrow(
@@ -159,6 +157,7 @@ describe('JobManager', () => {
 		});
 
 		it('should return null for non-existent job', async () => {
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
 			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
 
 			const job = await manager.rescheduleJob(new ObjectId().toString(), new Date());
@@ -170,34 +169,32 @@ describe('JobManager', () => {
 	describe('cancelJob - race conditions', () => {
 		it('should throw JobStateError when job status changes during cancellation', async () => {
 			const jobId = new ObjectId();
-			const pendingJob = JobFactory.build({ _id: jobId });
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			// First findOne returns pending job
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
-			// But findOneAndUpdate returns null (another process changed the status)
+			// findOneAndUpdate returns null (another process changed the status)
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			// Fallback findOne returns the changed job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(JobStateError);
-			expect((error as JobStateError).message).toMatch(
-				/Job status changed during cancellation attempt/,
-			);
+			expect((error as JobStateError).message).toMatch(/Cannot cancel job in status 'processing'/);
 		});
 	});
 
 	describe('retryJob - race conditions', () => {
 		it('should throw JobStateError when job status changes during retry', async () => {
 			const jobId = new ObjectId();
-			const failedJob = JobFactoryHelpers.failed({ _id: jobId });
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			// First findOne returns failed job
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(failedJob);
-			// But findOneAndUpdate returns null (another process changed the status)
+			// findOneAndUpdate returns null (another process changed the status)
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			// Fallback findOne returns changed job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(JobStateError);
-			expect((error as JobStateError).message).toMatch(/Job status changed during retry attempt/);
+			expect((error as JobStateError).message).toMatch(/Cannot retry job in status 'processing'/);
 		});
 	});
 
@@ -205,19 +202,19 @@ describe('JobManager', () => {
 		it('should throw JobStateError when job status changes during reschedule', async () => {
 			const jobId = new ObjectId();
 			const newRunAt = new Date(Date.now() + 3600000);
-			const pendingJob = JobFactory.build({ _id: jobId });
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
 
-			// First findOne returns pending job
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
-			// But findOneAndUpdate returns null (another process changed the status)
+			// findOneAndUpdate returns null (another process changed the status)
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			// Fallback findOne returns changed job
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
 
 			const error = await manager
 				.rescheduleJob(jobId.toString(), newRunAt)
 				.catch((e: unknown) => e);
 			expect(error).toBeInstanceOf(JobStateError);
 			expect((error as JobStateError).message).toMatch(
-				/Job status changed during reschedule attempt/,
+				/Cannot reschedule job in status 'processing'/,
 			);
 		});
 	});
