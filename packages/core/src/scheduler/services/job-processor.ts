@@ -290,6 +290,8 @@ export class JobProcessor {
 			return null;
 		}
 
+		const now = new Date();
+
 		if (job.repeatInterval) {
 			// Recurring job - schedule next run
 			const nextRunAt = getNextCronDate(job.repeatInterval);
@@ -300,7 +302,7 @@ export class JobProcessor {
 						status: JobStatus.PENDING,
 						nextRunAt,
 						failCount: 0,
-						updatedAt: new Date(),
+						updatedAt: now,
 					},
 					$unset: {
 						lockedAt: '',
@@ -327,7 +329,7 @@ export class JobProcessor {
 			{
 				$set: {
 					status: JobStatus.COMPLETED,
-					updatedAt: new Date(),
+					updatedAt: now,
 				},
 				$unset: {
 					lockedAt: '',
@@ -370,6 +372,7 @@ export class JobProcessor {
 			return null;
 		}
 
+		const now = new Date();
 		const newFailCount = job.failCount + 1;
 
 		if (newFailCount >= this.ctx.options.maxRetries) {
@@ -381,7 +384,7 @@ export class JobProcessor {
 						status: JobStatus.FAILED,
 						failCount: newFailCount,
 						failReason: error.message,
-						updatedAt: new Date(),
+						updatedAt: now,
 					},
 					$unset: {
 						lockedAt: '',
@@ -410,7 +413,7 @@ export class JobProcessor {
 					failCount: newFailCount,
 					failReason: error.message,
 					nextRunAt,
-					updatedAt: new Date(),
+					updatedAt: now,
 				},
 				$unset: {
 					lockedAt: '',
