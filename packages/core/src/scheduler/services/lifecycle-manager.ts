@@ -138,7 +138,7 @@ export class LifecycleManager {
 			.catch((error: unknown) => {
 				this.ctx.emit('job:error', { error: toError(error) });
 			})
-			.then(() => {
+			.finally(() => {
 				this.scheduleNextPoll();
 			});
 	}
