@@ -19,20 +19,16 @@ export class JobProcessor {
 	/** Flag to request a re-poll after the current poll finishes */
 	private _repollRequested = false;
 
-	constructor(private readonly ctx: SchedulerContext) {}
-
 	/**
-	 * Get the total number of active jobs across all workers.
+	 * O(1) counter tracking the total number of active jobs across all workers.
 	 *
-	 * Used for instance-level throttling when `instanceConcurrency` is configured.
+	 * Incremented when a job is added to `worker.activeJobs` in `_doPoll`,
+	 * decremented in the `processJob` finally block. Replaces the previous
+	 * O(workers) loop in `getTotalActiveJobs()` for instance-level throttling.
 	 */
-	private getTotalActiveJobs(): number {
-		let total = 0;
-		for (const worker of this.ctx.workers.values()) {
-			total += worker.activeJobs.size;
-		}
-		return total;
-	}
+	private _totalActiveJobs = 0;
+
+	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
 	 * Get the number of available slots considering the global instanceConcurrency limit.
@@ -47,8 +43,7 @@ export class JobProcessor {
 			return workerAvailableSlots;
 		}
 
-		const totalActive = this.getTotalActiveJobs();
-		const globalAvailable = instanceConcurrency - totalActive;
+		const globalAvailable = instanceConcurrency - this._totalActiveJobs;
 
 		return Math.min(workerAvailableSlots, globalAvailable);
 	}
@@ -100,7 +95,7 @@ export class JobProcessor {
 		// Early exit if global instanceConcurrency is reached
 		const { instanceConcurrency } = this.ctx.options;
 
-		if (instanceConcurrency !== undefined && this.getTotalActiveJobs() >= instanceConcurrency) {
+		if (instanceConcurrency !== undefined && this._totalActiveJobs >= instanceConcurrency) {
 			return;
 		}
 
@@ -132,7 +127,7 @@ export class JobProcessor {
 				}
 
 				// Re-check global limit before each acquisition
-				if (instanceConcurrency !== undefined && this.getTotalActiveJobs() >= instanceConcurrency) {
+				if (instanceConcurrency !== undefined && this._totalActiveJobs >= instanceConcurrency) {
 					return;
 				}
 
@@ -141,6 +136,7 @@ export class JobProcessor {
 				if (job) {
 					// Add to activeJobs immediately to correctly track concurrency
 					worker.activeJobs.set(job._id.toString(), job);
+					this._totalActiveJobs++;
 
 					this.processJob(job, worker).catch((error: unknown) => {
 						this.ctx.emit('job:error', { error: toError(error), job });
@@ -248,6 +244,7 @@ export class JobProcessor {
 			}
 		} finally {
 			worker.activeJobs.delete(jobId);
+			this._totalActiveJobs--;
 		}
 	}
 

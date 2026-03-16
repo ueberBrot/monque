@@ -61,55 +61,60 @@ describe('JobProcessor', () => {
 		it('should exit early when instanceConcurrency is reached', async () => {
 			ctx.options.instanceConcurrency = 2;
 
-			const job1 = JobFactory.build();
-			const job2 = JobFactory.build();
+			const job1 = JobFactory.build({ name: 'worker-1' });
+			const job2 = JobFactory.build({ name: 'worker-2' });
 
-			ctx.workers.set(
-				'worker-1',
-				createWorker({
-					concurrency: 5,
-					activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
-				}),
-			);
-			ctx.workers.set(
-				'worker-2',
-				createWorker({
-					concurrency: 5,
-					activeJobs: new Map<string, PersistedJob>([['job-2', job2]]),
-				}),
-			);
+			let resolveHandlers: () => void;
+			const handlerPromise = new Promise<void>((r) => {
+				resolveHandlers = r;
+			});
+			const handler = () => handlerPromise;
+
+			ctx.workers.set('worker-1', createWorker({ concurrency: 5, handler }));
+			ctx.workers.set('worker-2', createWorker({ concurrency: 5, handler }));
+
+			// Seed the counter by acquiring 2 jobs through a first poll
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(job1)
+				.mockResolvedValueOnce(job2)
+				.mockResolvedValue(null);
 
 			await processor.poll();
 
-			// Should not attempt any acquisitions since instanceConcurrency (2) is already reached
+			const callsAfterFirstPoll = (ctx.mockCollection.findOneAndUpdate as ReturnType<typeof vi.fn>)
+				.mock.calls.length;
+			vi.clearAllMocks();
+
+			// Now the counter is at 2 (= instanceConcurrency), a second poll should not acquire
+			await processor.poll();
+
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+			expect(callsAfterFirstPoll).toBeGreaterThan(0);
+
+			// Clean up dangling promises
+			resolveHandlers!();
+			await new Promise<void>((r) => setTimeout(r, 0));
 		});
 
 		it('should limit job acquisition to available global slots', async () => {
 			ctx.options.instanceConcurrency = 3;
 
-			const job1 = JobFactory.build();
+			const seedJob = JobFactory.build({ name: 'worker-1' });
 			const newJob = JobFactory.build({ name: 'worker-2' });
 
-			ctx.workers.set(
-				'worker-1',
-				createWorker({
-					concurrency: 5,
-					activeJobs: new Map<string, PersistedJob>([['job-1', job1]]),
-				}),
-			);
+			ctx.workers.set('worker-1', createWorker({ concurrency: 5 }));
 			ctx.workers.set('worker-2', createWorker({ concurrency: 5 }));
 
-			// Return job on first call, null on subsequent calls
+			// Seed counter to 1 by acquiring seedJob, then return newJob and null
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(seedJob)
 				.mockResolvedValueOnce(newJob)
-				.mockResolvedValueOnce(null);
+				.mockResolvedValue(null);
 
 			await processor.poll();
 
-			// With 1 active job and instanceConcurrency 3, only 2 more slots available globally
-			// Worker-1 has 4 worker slots but global limit is 2
-			// Should attempt acquisitions up to the global limit
+			// With instanceConcurrency 3 and starting at 0, poll acquires up to 3 jobs (seedJob and newJob)
+			// Should attempt acquisitions
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
 		});
 
@@ -420,6 +425,103 @@ describe('JobProcessor', () => {
 			await processor.processJob(job, worker);
 
 			expect(worker.activeJobs.size).toBe(0);
+		});
+	});
+
+	describe('_totalActiveJobs counter', () => {
+		it('should increment counter when job is acquired via poll and decrement after completion', async () => {
+			const acquiredJob = JobFactory.build({ name: 'test-job' });
+			const completedJob = JobFactoryHelpers.completed({
+				_id: acquiredJob._id,
+				name: acquiredJob.name,
+				data: acquiredJob.data,
+			});
+
+			ctx.workers.set('test-job', createWorker({ concurrency: 3 }));
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(acquiredJob) // acquireJob succeeds
+				.mockResolvedValueOnce(null) // second acquireJob returns null (no more jobs)
+				.mockResolvedValueOnce(completedJob); // completeJob succeeds
+
+			await processor.poll();
+
+			// processJob runs asynchronously; flush the microtask queue
+			await new Promise<void>((r) => setTimeout(r, 0));
+
+			const worker = ctx.workers.get('test-job');
+			expect(worker?.activeJobs.size).toBe(0);
+		});
+
+		it('should decrement counter even when processJob handler fails', async () => {
+			const acquiredJob = JobFactory.build({ name: 'test-job' });
+			const failedJob = JobFactoryHelpers.failed({
+				_id: acquiredJob._id,
+				name: acquiredJob.name,
+				data: acquiredJob.data,
+				failCount: 3,
+			});
+
+			ctx.workers.set(
+				'test-job',
+				createWorker({
+					concurrency: 3,
+					handler: vi.fn().mockRejectedValue(new Error('boom')),
+				}),
+			);
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(acquiredJob) // acquireJob
+				.mockResolvedValueOnce(null) // second acquire: no more
+				.mockResolvedValueOnce(failedJob); // failJob DB write
+
+			await processor.poll();
+			await new Promise<void>((r) => setTimeout(r, 0));
+
+			const worker = ctx.workers.get('test-job');
+			expect(worker?.activeJobs.size).toBe(0);
+		});
+
+		it('should decrement counter even when DB transition returns null (race condition)', async () => {
+			const acquiredJob = JobFactory.build({ name: 'test-job' });
+			ctx.workers.set('test-job', createWorker({ concurrency: 3 }));
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(acquiredJob) // acquireJob
+				.mockResolvedValueOnce(null) // second acquire: no more
+				.mockResolvedValueOnce(null); // completeJob: race condition null
+
+			await processor.poll();
+			await new Promise<void>((r) => setTimeout(r, 0));
+
+			const worker = ctx.workers.get('test-job');
+			expect(worker?.activeJobs.size).toBe(0);
+		});
+
+		it('should cap poll acquisitions at instanceConcurrency using the O(1) counter', async () => {
+			ctx.options.instanceConcurrency = 2;
+			ctx.workers.set('test-job', createWorker({ concurrency: 10 }));
+
+			const job1 = JobFactory.build({ name: 'test-job' });
+			const job2 = JobFactory.build({ name: 'test-job' });
+
+			const spy = vi
+				.spyOn(ctx.mockCollection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(job1)
+				.mockResolvedValueOnce(job2)
+				.mockResolvedValue(null);
+
+			await processor.poll();
+
+			const acquireCalls = spy.mock.calls.filter(
+				(args) =>
+					typeof args[0] === 'object' &&
+					args[0] !== null &&
+					'status' in args[0] &&
+					args[0]['status'] === JobStatus.PENDING,
+			);
+			// counter enforces the limit: exactly 2 acquired (= instanceConcurrency)
+			expect(acquireCalls).toHaveLength(2);
 		});
 	});
 
