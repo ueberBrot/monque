@@ -391,7 +391,6 @@ export class Monque extends EventEmitter {
 					lockedAt: '',
 					claimedBy: '',
 					lastHeartbeat: '',
-					heartbeatInterval: '',
 				},
 			},
 		);

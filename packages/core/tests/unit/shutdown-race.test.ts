@@ -103,7 +103,7 @@ describe('Monque Shutdown Race Condition', () => {
 			{ _id: 'job-1', status: JobStatus.PROCESSING, claimedBy: expect.any(String) },
 			{
 				$set: expect.objectContaining({ status: JobStatus.PENDING }),
-				$unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '', heartbeatInterval: '' },
+				$unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '' },
 			},
 		);
 

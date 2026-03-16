@@ -85,7 +85,6 @@ describe('JobManager', () => {
 				lockedAt: '',
 				claimedBy: '',
 				lastHeartbeat: '',
-				heartbeatInterval: '',
 			};
 
 			const job = await manager.retryJob(jobId.toString());
