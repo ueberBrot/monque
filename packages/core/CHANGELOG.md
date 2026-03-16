@@ -1,5 +1,17 @@
 # @monque/core
 
+## 1.7.0
+
+### Minor Changes
+
+- [#249](https://github.com/ueberBrot/monque/pull/249) [`2c7c079`](https://github.com/ueberBrot/monque/commit/2c7c0790d96b95efef4db2afb96204999d11cded) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add deprecation console warning for `defaultConcurrency` and `maxConcurrency` options.
+
+### Patch Changes
+
+- [#258](https://github.com/ueberBrot/monque/pull/258) [`218d398`](https://github.com/ueberBrot/monque/commit/218d3983bfb8e6b55d1a185378a4489650d7ec32) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace `getActiveJobs()` array allocation with `getActiveJobCount()` in shutdown path. The previous implementation created a throw-away `string[]` on every call just to check `.length`. The new method returns a count directly using `Map.size`, avoiding unnecessary array allocations during shutdown polling.
+
+- [#259](https://github.com/ueberBrot/monque/pull/259) [`b0babc4`](https://github.com/ueberBrot/monque/commit/b0babc4c7a87020b39d0622ada388a4adf7d815c) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace the O(workers) iteration in `getTotalActiveJobs()` with an O(1) counter that updates on job acquisition and completion.
+
 ## 1.6.0
 
 ### Minor Changes
