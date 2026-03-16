@@ -125,27 +125,53 @@ export class JobProcessor {
 				return;
 			}
 
-			const acquisitionPromises: Promise<PersistedJob | null>[] = [];
+			const acquisitionPromises: Promise<void>[] = [];
 			for (let i = 0; i < availableSlots; i++) {
-				acquisitionPromises.push(this.acquireJob(name));
+				acquisitionPromises.push(
+					this.acquireJob(name)
+						.then(async (job) => {
+							if (!job) {
+								return;
+							}
+
+							if (this.ctx.isRunning()) {
+								// Add to activeJobs immediately to correctly track concurrency
+								worker.activeJobs.set(job._id.toString(), job);
+								this._totalActiveJobs++;
+
+								this.processJob(job, worker).catch((error: unknown) => {
+									this.ctx.emit('job:error', { error: toError(error), job });
+								});
+							} else {
+								// Revert claim if shut down while acquiring
+								try {
+									await this.ctx.collection.updateOne(
+										{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
+										{
+											$set: {
+												status: JobStatus.PENDING,
+												updatedAt: new Date(),
+											},
+											$unset: {
+												lockedAt: '',
+												claimedBy: '',
+												lastHeartbeat: '',
+												heartbeatInterval: '',
+											},
+										},
+									);
+								} catch (error) {
+									this.ctx.emit('job:error', { error: toError(error) });
+								}
+							}
+						})
+						.catch((error: unknown) => {
+							this.ctx.emit('job:error', { error: toError(error) });
+						}),
+				);
 			}
 
-			const results = await Promise.allSettled(acquisitionPromises);
-
-			for (const result of results) {
-				if (result.status === 'fulfilled' && result.value) {
-					const job = result.value;
-					// Add to activeJobs immediately to correctly track concurrency
-					worker.activeJobs.set(job._id.toString(), job);
-					this._totalActiveJobs++;
-
-					this.processJob(job, worker).catch((error: unknown) => {
-						this.ctx.emit('job:error', { error: toError(error), job });
-					});
-				} else if (result.status === 'rejected') {
-					this.ctx.emit('job:error', { error: toError(result.reason) });
-				}
-			}
+			await Promise.allSettled(acquisitionPromises);
 		}
 	}
 
@@ -192,10 +218,6 @@ export class JobProcessor {
 				returnDocument: 'after',
 			},
 		);
-
-		if (!this.ctx.isRunning()) {
-			return null;
-		}
 
 		if (!result) {
 			return null;

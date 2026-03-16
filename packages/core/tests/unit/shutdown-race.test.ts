@@ -80,14 +80,32 @@ describe('Monque Shutdown Race Condition', () => {
 		// Resolve the pending acquisition to simulate DB responding during shutdown
 		if (resolveFirstCall) {
 			resolveFirstCall({
-				value: {
-					_id: 'job-1',
-					name: 'test-job',
-					status: JobStatus.PROCESSING,
-					data: {},
-				},
+				_id: 'job-1',
+				name: 'test-job',
+				status: JobStatus.PROCESSING,
+				data: {},
 			} as unknown as WithId<Document>);
 		}
+
+		// Wait for the acquisition promise chain to process the resolved job.
+		for (let i = 0; i < 10; i++) {
+			await Promise.resolve();
+		}
+
+		// Ensure the job was not absorbed into regular active job tracking
+		const worker = (
+			monque as unknown as { workers: Map<string, { activeJobs: Map<string, unknown> }> }
+		).workers.get('test-job');
+		expect(worker?.activeJobs.has('job-1')).toBe(false);
+
+		// Ensure the claim was reverted correctly
+		expect(collection.updateOne).toHaveBeenCalledWith(
+			{ _id: 'job-1', status: JobStatus.PROCESSING, claimedBy: expect.any(String) },
+			{
+				$set: expect.objectContaining({ status: JobStatus.PENDING }),
+				$unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '', heartbeatInterval: '' },
+			},
+		);
 
 		await stopPromise;
 
