@@ -122,6 +122,15 @@ export class Monque extends EventEmitter {
 	private isRunning = false;
 	private isInitialized = false;
 
+	/**
+	 * Resolve function for the reactive shutdown drain promise.
+	 * Set during stop() when active jobs need to finish; called by
+	 * onJobFinished() when the last active job completes.
+	 *
+	 * @private
+	 */
+	private _drainResolve: (() => void) | null = null;
+
 	// Internal services (initialized in initialize())
 	private _scheduler: JobScheduler | null = null;
 	private _manager: JobManager | null = null;
@@ -305,6 +314,7 @@ export class Monque extends EventEmitter {
 
 				this._changeStreamHandler.notifyPendingJob(name, nextRunAt);
 			},
+			notifyJobFinished: () => this.onJobFinished(),
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}
@@ -1131,15 +1141,10 @@ export class Monque extends EventEmitter {
 			return;
 		}
 
-		// Create a promise that resolves when all jobs are done
-		let checkInterval: ReturnType<typeof setInterval> | undefined;
+		// Reactive drain: resolve when the last active job finishes.
+		// onJobFinished() is called from processJob's finally block.
 		const waitForJobs = new Promise<undefined>((resolve) => {
-			checkInterval = setInterval(() => {
-				if (this.getActiveJobCount() === 0) {
-					clearInterval(checkInterval);
-					resolve(undefined);
-				}
-			}, 100);
+			this._drainResolve = () => resolve(undefined);
 		});
 
 		// Race between job completion and timeout
@@ -1147,15 +1152,9 @@ export class Monque extends EventEmitter {
 			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
 		});
 
-		let result: undefined | 'timeout';
+		const result = await Promise.race([waitForJobs, timeout]);
 
-		try {
-			result = await Promise.race([waitForJobs, timeout]);
-		} finally {
-			if (checkInterval) {
-				clearInterval(checkInterval);
-			}
-		}
+		this._drainResolve = null;
 
 		if (result === 'timeout') {
 			const incompleteJobs = this.getActiveJobsList();
@@ -1221,6 +1220,18 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Private Helpers
 	// ─────────────────────────────────────────────────────────────────────────────
+
+	/**
+	 * Called when a job finishes processing. If a shutdown drain is pending
+	 * and no active jobs remain, resolves the drain promise.
+	 *
+	 * @private
+	 */
+	private onJobFinished(): void {
+		if (this._drainResolve && this.getActiveJobCount() === 0) {
+			this._drainResolve();
+		}
+	}
 
 	/**
 	 * Ensure the scheduler is initialized before operations.
