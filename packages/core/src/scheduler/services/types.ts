@@ -63,6 +63,9 @@ export interface SchedulerContext {
 	/** Notify the local scheduler about a pending job transition */
 	notifyPendingJob: (name: string, nextRunAt: Date) => void;
 
+	/** Notify that a job has finished processing (for reactive shutdown drain) */
+	notifyJobFinished: () => void;
+
 	/** Convert MongoDB document to typed PersistedJob */
 	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }

@@ -64,7 +64,7 @@ describe('JobProcessor', () => {
 			const job1 = JobFactory.build({ name: 'worker-1' });
 			const job2 = JobFactory.build({ name: 'worker-2' });
 
-			let resolveHandlers: () => void;
+			let resolveHandlers: (() => void) | undefined;
 			const handlerPromise = new Promise<void>((r) => {
 				resolveHandlers = r;
 			});
@@ -92,7 +92,7 @@ describe('JobProcessor', () => {
 			expect(callsAfterFirstPoll).toBeGreaterThan(0);
 
 			// Clean up dangling promises
-			resolveHandlers!();
+			resolveHandlers?.();
 			await new Promise<void>((r) => setTimeout(r, 0));
 		});
 
@@ -425,6 +425,42 @@ describe('JobProcessor', () => {
 			await processor.processJob(job, worker);
 
 			expect(worker.activeJobs.size).toBe(0);
+		});
+
+		it('should call notifyJobFinished after successful completion', async () => {
+			const job = JobFactoryHelpers.processing();
+			const completedJob = JobFactoryHelpers.completed({
+				_id: job._id,
+				name: job.name,
+				data: job.data,
+			});
+			const worker = createWorker();
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(completedJob);
+
+			await processor.processJob(job, worker);
+
+			expect(ctx.notifyJobFinished).toHaveBeenCalledOnce();
+		});
+
+		it('should call notifyJobFinished after failure', async () => {
+			const job = JobFactoryHelpers.processing({ failCount: 0 });
+			const failedJob = JobFactoryHelpers.pending({
+				_id: job._id,
+				name: job.name,
+				data: job.data,
+				failCount: 1,
+				failReason: 'Handler failed',
+			});
+			const worker = createWorker({
+				handler: vi.fn().mockRejectedValue(new Error('Handler failed')),
+			});
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(failedJob);
+
+			await processor.processJob(job, worker);
+
+			expect(ctx.notifyJobFinished).toHaveBeenCalledOnce();
 		});
 	});
 

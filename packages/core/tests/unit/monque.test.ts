@@ -295,6 +295,8 @@ describe('Monque', () => {
 				for (const worker of workers.values()) {
 					worker.activeJobs.clear();
 				}
+				// Simulate the job processor triggering the drain resolve
+				(monque as unknown as { onJobFinished: () => void }).onJobFinished();
 			}, 50);
 
 			await monque.stop();

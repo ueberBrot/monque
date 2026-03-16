@@ -245,6 +245,7 @@ export class JobProcessor {
 		} finally {
 			worker.activeJobs.delete(jobId);
 			this._totalActiveJobs--;
+			this.ctx.notifyJobFinished();
 		}
 	}
 

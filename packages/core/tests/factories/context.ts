@@ -91,6 +91,7 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
 			return true;
 		}),
 		notifyPendingJob: vi.fn(),
+		notifyJobFinished: vi.fn(),
 		documentToPersistedJob: documentToPersistedJob,
 		...overrides,
 	};
