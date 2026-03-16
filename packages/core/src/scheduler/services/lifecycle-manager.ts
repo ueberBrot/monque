@@ -11,6 +11,11 @@ import type { SchedulerContext } from './types.js';
 const DEFAULT_RETENTION_INTERVAL = 3600_000;
 
 /**
+ * Statuses that are eligible for cleanup by the retention policy.
+ */
+export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const;
+
+/**
  * Callbacks for timer-driven operations.
  *
  * These are provided by the Monque facade to wire LifecycleManager's timers

@@ -23,6 +23,7 @@ import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
 import {
 	ChangeStreamHandler,
+	CLEANUP_STATUSES,
 	JobManager,
 	JobProcessor,
 	JobQueryService,
@@ -362,6 +363,20 @@ export class Monque extends EventEmitter {
 			{ key: { status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
 			// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
 			{ key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
+			// Index for efficient lifecycle manager cleanup when jobRetention is configured.
+			// Allows fast queries for deleteMany({ status, updatedAt: { $lt: cutoff } }).
+			...(this.options.jobRetention
+				? [
+						{
+							key: { status: 1, updatedAt: 1 } as const,
+							background: true,
+							partialFilterExpression: {
+								status: { $in: CLEANUP_STATUSES },
+								updatedAt: { $exists: true },
+							},
+						},
+					]
+				: []),
 		]);
 	}
 

@@ -85,6 +85,35 @@ describe('Monque', () => {
 			expect(mockDb.collection).toHaveBeenCalledWith('monque_jobs');
 			expect(mockCollection.createIndexes).not.toHaveBeenCalled();
 		});
+
+		it('should create compound index for job retention when configured', async () => {
+			const retentionMonque = new Monque(mockDb, { jobRetention: { completed: 10000 } });
+			await retentionMonque.initialize();
+
+			const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
+			expect(calls[0]?.[0]).toContainEqual(
+				expect.objectContaining({
+					key: { status: 1, updatedAt: 1 },
+					background: true,
+					partialFilterExpression: expect.objectContaining({
+						updatedAt: { $exists: true },
+						status: { $in: expect.arrayContaining(['completed', 'failed']) },
+					}),
+				}),
+			);
+		});
+
+		it('should not create index for job retention when omitted', async () => {
+			const MonqueInstance = new Monque(mockDb, {});
+			await MonqueInstance.initialize();
+
+			const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
+			expect(calls[0]?.[0]).not.toContainEqual(
+				expect.objectContaining({
+					key: { status: 1, updatedAt: 1 },
+				}),
+			);
+		});
 	});
 
 	describe('uninitialized state', () => {
