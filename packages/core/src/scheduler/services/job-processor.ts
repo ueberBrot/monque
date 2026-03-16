@@ -120,20 +120,21 @@ export class JobProcessor {
 				return;
 			}
 
-			// Try to acquire jobs up to available slots
+			// Try to acquire jobs up to available slots in parallel
+			if (!this.ctx.isRunning()) {
+				return;
+			}
+
+			const acquisitionPromises: Promise<PersistedJob | null>[] = [];
 			for (let i = 0; i < availableSlots; i++) {
-				if (!this.ctx.isRunning()) {
-					return;
-				}
+				acquisitionPromises.push(this.acquireJob(name));
+			}
 
-				// Re-check global limit before each acquisition
-				if (instanceConcurrency !== undefined && this._totalActiveJobs >= instanceConcurrency) {
-					return;
-				}
+			const results = await Promise.allSettled(acquisitionPromises);
 
-				const job = await this.acquireJob(name);
-
-				if (job) {
+			for (const result of results) {
+				if (result.status === 'fulfilled' && result.value) {
+					const job = result.value;
 					// Add to activeJobs immediately to correctly track concurrency
 					worker.activeJobs.set(job._id.toString(), job);
 					this._totalActiveJobs++;
@@ -141,9 +142,8 @@ export class JobProcessor {
 					this.processJob(job, worker).catch((error: unknown) => {
 						this.ctx.emit('job:error', { error: toError(error), job });
 					});
-				} else {
-					// No more jobs available for this worker
-					break;
+				} else if (result.status === 'rejected') {
+					this.ctx.emit('job:error', { error: toError(result.reason) });
 				}
 			}
 		}

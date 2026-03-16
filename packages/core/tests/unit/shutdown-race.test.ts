@@ -71,8 +71,8 @@ describe('Monque Shutdown Race Condition', () => {
 		// Advance time to trigger the first poll
 		// await vi.advanceTimersByTimeAsync(1000);
 
-		// poller has called acquireJob -> findOneAndUpdate, which is now pending
-		expect(collection.findOneAndUpdate).toHaveBeenCalledTimes(1);
+		// poller has called acquireJob -> findOneAndUpdate, which is now pending (all 5 slots in parallel)
+		expect(collection.findOneAndUpdate).toHaveBeenCalledTimes(5);
 
 		// Trigger stop() while acquisition is pending
 		const stopPromise = monque.stop();
@@ -93,6 +93,6 @@ describe('Monque Shutdown Race Condition', () => {
 
 		// Verify that loop aborted immediately after first acquisition returned.
 		// If race condition existed, loop would have continued and called findOneAndUpdate again.
-		expect(collection.findOneAndUpdate).toHaveBeenCalledTimes(1);
+		expect(collection.findOneAndUpdate).toHaveBeenCalledTimes(5);
 	});
 });

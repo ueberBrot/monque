@@ -157,8 +157,8 @@ describe('JobProcessor', () => {
 
 			await processor.poll();
 
-			// Should try to acquire up to worker concurrency (3 attempts until null)
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(1);
+			// Should try to acquire up to worker concurrency (3 parallel attempts)
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(3);
 		});
 
 		it('should re-poll when a poll request arrives while already polling', async () => {
