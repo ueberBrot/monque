@@ -136,7 +136,6 @@ export class JobManager {
 					lockedAt: '',
 					claimedBy: '',
 					lastHeartbeat: '',
-					heartbeatInterval: '',
 				},
 			},
 			{ returnDocument: 'after' },
@@ -358,7 +357,7 @@ export class JobManager {
 					},
 				},
 				{
-					$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat', 'heartbeatInterval'],
+					$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat'],
 				},
 			]);
 
