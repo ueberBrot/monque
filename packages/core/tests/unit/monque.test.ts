@@ -91,10 +91,28 @@ describe('Monque', () => {
 			await retentionMonque.initialize();
 
 			const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
-			expect(calls[0]?.[0]).toContainEqual({
-				key: { status: 1, updatedAt: 1 },
-				background: true,
-			});
+			expect(calls[0]?.[0]).toContainEqual(
+				expect.objectContaining({
+					key: { status: 1, updatedAt: 1 },
+					background: true,
+					partialFilterExpression: expect.objectContaining({
+						updatedAt: { $exists: true },
+						status: { $in: expect.arrayContaining(['completed', 'failed']) },
+					}),
+				}),
+			);
+		});
+
+		it('should not create index for job retention when omitted', async () => {
+			const MonqueInstance = new Monque(mockDb, {});
+			await MonqueInstance.initialize();
+
+			const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
+			expect(calls[0]?.[0]).not.toContainEqual(
+				expect.objectContaining({
+					key: { status: 1, updatedAt: 1 },
+				}),
+			);
 		});
 	});
 
