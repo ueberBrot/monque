@@ -56,12 +56,13 @@ export class JobManager {
 			);
 		}
 
+		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{ _id, status: JobStatus.PENDING },
 			{
 				$set: {
 					status: JobStatus.CANCELLED,
-					updatedAt: new Date(),
+					updatedAt: now,
 				},
 			},
 			{ returnDocument: 'after' },
@@ -119,6 +120,7 @@ export class JobManager {
 
 		const previousStatus = currentJob['status'] as 'failed' | 'cancelled';
 
+		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{
 				_id,
@@ -128,8 +130,8 @@ export class JobManager {
 				$set: {
 					status: JobStatus.PENDING,
 					failCount: 0,
-					nextRunAt: new Date(),
-					updatedAt: new Date(),
+					nextRunAt: now,
+					updatedAt: now,
 				},
 				$unset: {
 					failReason: '',
@@ -184,12 +186,13 @@ export class JobManager {
 			);
 		}
 
+		const now = new Date();
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{ _id, status: JobStatus.PENDING },
 			{
 				$set: {
 					nextRunAt: runAt,
-					updatedAt: new Date(),
+					updatedAt: now,
 				},
 			},
 			{ returnDocument: 'after' },
@@ -278,10 +281,11 @@ export class JobManager {
 		query['status'] = JobStatus.PENDING;
 
 		try {
+			const now = new Date();
 			const result = await this.ctx.collection.updateMany(query, {
 				$set: {
 					status: JobStatus.CANCELLED,
-					updatedAt: new Date(),
+					updatedAt: now,
 				},
 			});
 
@@ -345,15 +349,16 @@ export class JobManager {
 		const spreadWindowMs = 30_000; // 30s max spread for staggered retry
 
 		try {
+			const now = new Date();
 			const result = await this.ctx.collection.updateMany(query, [
 				{
 					$set: {
 						status: JobStatus.PENDING,
 						failCount: 0,
 						nextRunAt: {
-							$add: [new Date(), { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+							$add: [now, { $multiply: [{ $rand: {} }, spreadWindowMs] }],
 						},
-						updatedAt: new Date(),
+						updatedAt: now,
 					},
 				},
 				{
