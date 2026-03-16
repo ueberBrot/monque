@@ -120,32 +120,58 @@ export class JobProcessor {
 				return;
 			}
 
-			// Try to acquire jobs up to available slots
-			for (let i = 0; i < availableSlots; i++) {
-				if (!this.ctx.isRunning()) {
-					return;
-				}
-
-				// Re-check global limit before each acquisition
-				if (instanceConcurrency !== undefined && this._totalActiveJobs >= instanceConcurrency) {
-					return;
-				}
-
-				const job = await this.acquireJob(name);
-
-				if (job) {
-					// Add to activeJobs immediately to correctly track concurrency
-					worker.activeJobs.set(job._id.toString(), job);
-					this._totalActiveJobs++;
-
-					this.processJob(job, worker).catch((error: unknown) => {
-						this.ctx.emit('job:error', { error: toError(error), job });
-					});
-				} else {
-					// No more jobs available for this worker
-					break;
-				}
+			// Try to acquire jobs up to available slots in parallel
+			if (!this.ctx.isRunning()) {
+				return;
 			}
+
+			const acquisitionPromises: Promise<void>[] = [];
+			for (let i = 0; i < availableSlots; i++) {
+				acquisitionPromises.push(
+					this.acquireJob(name)
+						.then(async (job) => {
+							if (!job) {
+								return;
+							}
+
+							if (this.ctx.isRunning()) {
+								// Add to activeJobs immediately to correctly track concurrency
+								worker.activeJobs.set(job._id.toString(), job);
+								this._totalActiveJobs++;
+
+								this.processJob(job, worker).catch((error: unknown) => {
+									this.ctx.emit('job:error', { error: toError(error), job });
+								});
+							} else {
+								// Revert claim if shut down while acquiring
+								try {
+									await this.ctx.collection.updateOne(
+										{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
+										{
+											$set: {
+												status: JobStatus.PENDING,
+												updatedAt: new Date(),
+											},
+											$unset: {
+												lockedAt: '',
+												claimedBy: '',
+												lastHeartbeat: '',
+												heartbeatInterval: '',
+											},
+										},
+									);
+								} catch (error) {
+									this.ctx.emit('job:error', { error: toError(error) });
+								}
+							}
+						})
+						.catch((error: unknown) => {
+							this.ctx.emit('job:error', { error: toError(error) });
+						}),
+				);
+			}
+
+			await Promise.allSettled(acquisitionPromises);
 		}
 	}
 
@@ -192,10 +218,6 @@ export class JobProcessor {
 				returnDocument: 'after',
 			},
 		);
-
-		if (!this.ctx.isRunning()) {
-			return null;
-		}
 
 		if (!result) {
 			return null;
