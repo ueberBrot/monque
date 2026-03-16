@@ -8,8 +8,10 @@
 import { type Collection, type Db, ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PersistedJob } from '@/jobs';
 import { Monque } from '@/scheduler/monque.js';
-import { ConnectionError, WorkerRegistrationError } from '@/shared';
+import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
+import type { WorkerRegistration } from '@/workers';
 
 // Mock the services to avoid instantiating them
 vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
@@ -225,6 +227,126 @@ describe('Monque', () => {
 
 			await monque.deleteJob('123');
 			expect(spy).toHaveBeenCalledWith('123');
+		});
+	});
+
+	describe('stop', () => {
+		/**
+		 * Helper to access private workers Map and simulate active jobs.
+		 */
+		function getWorkers(m: Monque): Map<string, WorkerRegistration> {
+			return (m as unknown as { workers: Map<string, WorkerRegistration> }).workers;
+		}
+
+		function setRunning(m: Monque, running: boolean): void {
+			(m as unknown as Record<string, boolean>)['isRunning'] = running;
+		}
+
+		beforeEach(async () => {
+			await monque.initialize();
+
+			// Stub lifecycle & change stream to avoid real timer/stream logic
+			(monque as unknown as Record<string, unknown>)['_lifecycleManager'] = {
+				startTimers: vi.fn(),
+				stopTimers: vi.fn(),
+			};
+			(monque as unknown as Record<string, unknown>)['_changeStreamHandler'] = {
+				setup: vi.fn(),
+				close: vi.fn().mockResolvedValue(undefined),
+				isActive: vi.fn().mockReturnValue(false),
+			};
+			(monque as unknown as Record<string, unknown>)['_query'] = {
+				clearStatsCache: vi.fn(),
+			};
+		});
+
+		it('should return immediately when no active jobs (getActiveJobCount === 0)', async () => {
+			setRunning(monque, true);
+
+			await monque.stop();
+
+			// Should complete without timeout
+			expect((monque as unknown as Record<string, boolean>)['isRunning']).toBe(false);
+		});
+
+		it('should count active jobs across multiple workers', async () => {
+			setRunning(monque, true);
+
+			const workers = getWorkers(monque);
+			const fakeJob = { _id: new ObjectId() } as unknown as PersistedJob;
+
+			// Register two workers with active jobs
+			workers.set('worker-a', {
+				handler: vi.fn(),
+				concurrency: 5,
+				activeJobs: new Map([
+					['job-1', fakeJob],
+					['job-2', fakeJob],
+				]),
+			});
+			workers.set('worker-b', {
+				handler: vi.fn(),
+				concurrency: 5,
+				activeJobs: new Map([['job-3', fakeJob]]),
+			});
+
+			// Schedule clearing all active jobs after a short delay
+			setTimeout(() => {
+				for (const worker of workers.values()) {
+					worker.activeJobs.clear();
+				}
+			}, 50);
+
+			await monque.stop();
+
+			// Should have waited for jobs to drain and completed
+			expect((monque as unknown as Record<string, boolean>)['isRunning']).toBe(false);
+		});
+
+		it('should emit ShutdownTimeoutError with incomplete jobs on timeout', async () => {
+			const shortTimeoutMonque = new Monque(mockDb, { shutdownTimeout: 100 });
+			await shortTimeoutMonque.initialize();
+
+			// Stub services
+			(shortTimeoutMonque as unknown as Record<string, unknown>)['_lifecycleManager'] = {
+				startTimers: vi.fn(),
+				stopTimers: vi.fn(),
+			};
+			(shortTimeoutMonque as unknown as Record<string, unknown>)['_changeStreamHandler'] = {
+				setup: vi.fn(),
+				close: vi.fn().mockResolvedValue(undefined),
+				isActive: vi.fn().mockReturnValue(false),
+			};
+			(shortTimeoutMonque as unknown as Record<string, unknown>)['_query'] = {
+				clearStatsCache: vi.fn(),
+			};
+
+			setRunning(shortTimeoutMonque, true);
+
+			const fakeJob = {
+				_id: new ObjectId(),
+				name: 'stuck-job',
+				status: 'processing',
+			} as unknown as PersistedJob;
+
+			const workers = getWorkers(shortTimeoutMonque);
+			workers.set('worker-a', {
+				handler: vi.fn(),
+				concurrency: 5,
+				activeJobs: new Map([['stuck-1', fakeJob]]),
+			});
+
+			const errorPromise = new Promise<ShutdownTimeoutError>((resolve) => {
+				shortTimeoutMonque.on('job:error', ({ error }) => {
+					resolve(error as ShutdownTimeoutError);
+				});
+			});
+
+			await shortTimeoutMonque.stop();
+
+			const error = await errorPromise;
+			expect(error).toBeInstanceOf(ShutdownTimeoutError);
+			expect(error.message).toContain('1 incomplete jobs');
 		});
 	});
 });

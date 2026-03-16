@@ -1127,8 +1127,7 @@ export class Monque extends EventEmitter {
 		}
 
 		// Wait for all active jobs to complete (with timeout)
-		const activeJobs = this.getActiveJobs();
-		if (activeJobs.length === 0) {
+		if (this.getActiveJobCount() === 0) {
 			return;
 		}
 
@@ -1136,7 +1135,7 @@ export class Monque extends EventEmitter {
 		let checkInterval: ReturnType<typeof setInterval> | undefined;
 		const waitForJobs = new Promise<undefined>((resolve) => {
 			checkInterval = setInterval(() => {
-				if (this.getActiveJobs().length === 0) {
+				if (this.getActiveJobCount() === 0) {
 					clearInterval(checkInterval);
 					resolve(undefined);
 				}
@@ -1236,17 +1235,20 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Get array of active job IDs across all workers.
+	 * Get total count of active jobs across all workers.
+	 *
+	 * Returns only the count (O(workers)) instead of allocating
+	 * a throw-away array of IDs, since callers only need `.length`.
 	 *
 	 * @private
-	 * @returns Array of job ID strings currently being processed
+	 * @returns Number of jobs currently being processed
 	 */
-	private getActiveJobs(): string[] {
-		const activeJobs: string[] = [];
+	private getActiveJobCount(): number {
+		let count = 0;
 		for (const worker of this.workers.values()) {
-			activeJobs.push(...worker.activeJobs.keys());
+			count += worker.activeJobs.size;
 		}
-		return activeJobs;
+		return count;
 	}
 
 	/**
