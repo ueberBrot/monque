@@ -51,6 +51,12 @@ describe('Monque', () => {
 		vi.clearAllMocks();
 	});
 
+	describe('constructor', () => {
+		it('should set maxListeners to 20', () => {
+			expect(monque.getMaxListeners()).toBe(20);
+		});
+	});
+
 	describe('initialize', () => {
 		it('should initialize successfully', async () => {
 			await monque.initialize();

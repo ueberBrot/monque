@@ -142,6 +142,7 @@ export class Monque extends EventEmitter {
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
+		this.setMaxListeners(20);
 		this.db = db;
 		this.options = {
 			collectionName: options.collectionName ?? DEFAULTS.collectionName,
