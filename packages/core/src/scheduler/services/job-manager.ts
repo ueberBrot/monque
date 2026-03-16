@@ -39,38 +39,48 @@ export class JobManager {
 
 		const _id = new ObjectId(jobId);
 
-		const now = new Date();
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id, status: JobStatus.PENDING },
-			{
-				$set: {
-					status: JobStatus.CANCELLED,
-					updatedAt: now,
+		try {
+			const now = new Date();
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id, status: JobStatus.PENDING },
+				{
+					$set: {
+						status: JobStatus.CANCELLED,
+						updatedAt: now,
+					},
 				},
-			},
-			{ returnDocument: 'after' },
-		);
+				{ returnDocument: 'after' },
+			);
 
-		if (!result) {
-			// Distinguish not-found vs wrong-state with a single findOne
-			const jobDoc = await this.ctx.collection.findOne({ _id });
-			if (!jobDoc) return null;
+			if (!result) {
+				const jobDoc = await this.ctx.collection.findOne({ _id });
+				if (!jobDoc) return null;
 
-			if (jobDoc['status'] === JobStatus.CANCELLED) {
-				return this.ctx.documentToPersistedJob(jobDoc);
+				if (jobDoc['status'] === JobStatus.CANCELLED) {
+					return this.ctx.documentToPersistedJob(jobDoc);
+				}
+
+				throw new JobStateError(
+					`Cannot cancel job in status '${jobDoc['status']}'`,
+					jobId,
+					jobDoc['status'],
+					'cancel',
+				);
 			}
 
-			throw new JobStateError(
-				`Cannot cancel job in status '${jobDoc['status']}'`,
-				jobId,
-				jobDoc['status'],
-				'cancel',
+			const job = this.ctx.documentToPersistedJob(result);
+			this.ctx.emit('job:cancelled', { job });
+			return job;
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during cancelJob';
+			throw new ConnectionError(
+				`Failed to cancel job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
 			);
 		}
-
-		const job = this.ctx.documentToPersistedJob(result);
-		this.ctx.emit('job:cancelled', { job });
-		return job;
 	}
 
 	/**
@@ -96,57 +106,68 @@ export class JobManager {
 
 		const _id = new ObjectId(jobId);
 
-		const now = new Date();
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{
-				_id,
-				status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
-			},
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					failCount: 0,
-					nextRunAt: now,
-					updatedAt: now,
+		try {
+			const now = new Date();
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{
+					_id,
+					status: { $in: [JobStatus.FAILED, JobStatus.CANCELLED] },
 				},
-				$unset: {
-					failReason: '',
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: 0,
+						nextRunAt: now,
+						updatedAt: now,
+					},
+					$unset: {
+						failReason: '',
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+					},
 				},
-			},
-			{ returnDocument: 'before' },
-		);
+				{ returnDocument: 'before' },
+			);
 
-		if (!result) {
-			const currentJob = await this.ctx.collection.findOne({ _id });
-			if (!currentJob) return null;
+			if (!result) {
+				const currentJob = await this.ctx.collection.findOne({ _id });
+				if (!currentJob) return null;
 
-			throw new JobStateError(
-				`Cannot retry job in status '${currentJob['status']}'`,
-				jobId,
-				currentJob['status'],
-				'retry',
+				throw new JobStateError(
+					`Cannot retry job in status '${currentJob['status']}'`,
+					jobId,
+					currentJob['status'],
+					'retry',
+				);
+			}
+
+			const previousStatus = result['status'] as 'failed' | 'cancelled';
+
+			const updatedDoc = { ...result };
+			updatedDoc['status'] = JobStatus.PENDING;
+			updatedDoc['failCount'] = 0;
+			updatedDoc['nextRunAt'] = now;
+			updatedDoc['updatedAt'] = now;
+			delete updatedDoc['failReason'];
+			delete updatedDoc['lockedAt'];
+			delete updatedDoc['claimedBy'];
+			delete updatedDoc['lastHeartbeat'];
+
+			const job = this.ctx.documentToPersistedJob(updatedDoc);
+			this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+			this.ctx.emit('job:retried', { job, previousStatus });
+			return job;
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during retryJob';
+			throw new ConnectionError(
+				`Failed to retry job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
 			);
 		}
-
-		const previousStatus = result['status'] as 'failed' | 'cancelled';
-
-		const updatedDoc = { ...result };
-		updatedDoc['status'] = JobStatus.PENDING;
-		updatedDoc['failCount'] = 0;
-		updatedDoc['nextRunAt'] = now;
-		updatedDoc['updatedAt'] = now;
-		delete updatedDoc['failReason'];
-		delete updatedDoc['lockedAt'];
-		delete updatedDoc['claimedBy'];
-		delete updatedDoc['lastHeartbeat'];
-
-		const job = this.ctx.documentToPersistedJob(updatedDoc);
-		this.ctx.notifyPendingJob(job.name, job.nextRunAt);
-		this.ctx.emit('job:retried', { job, previousStatus });
-		return job;
 	}
 
 	/**
@@ -170,33 +191,44 @@ export class JobManager {
 
 		const _id = new ObjectId(jobId);
 
-		const now = new Date();
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id, status: JobStatus.PENDING },
-			{
-				$set: {
-					nextRunAt: runAt,
-					updatedAt: now,
+		try {
+			const now = new Date();
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id, status: JobStatus.PENDING },
+				{
+					$set: {
+						nextRunAt: runAt,
+						updatedAt: now,
+					},
 				},
-			},
-			{ returnDocument: 'after' },
-		);
+				{ returnDocument: 'after' },
+			);
 
-		if (!result) {
-			const currentJobDoc = await this.ctx.collection.findOne({ _id });
-			if (!currentJobDoc) return null;
+			if (!result) {
+				const currentJobDoc = await this.ctx.collection.findOne({ _id });
+				if (!currentJobDoc) return null;
 
-			throw new JobStateError(
-				`Cannot reschedule job in status '${currentJobDoc['status']}'`,
-				jobId,
-				currentJobDoc['status'],
-				'reschedule',
+				throw new JobStateError(
+					`Cannot reschedule job in status '${currentJobDoc['status']}'`,
+					jobId,
+					currentJobDoc['status'],
+					'reschedule',
+				);
+			}
+
+			const job = this.ctx.documentToPersistedJob(result);
+			this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+			return job;
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during rescheduleJob';
+			throw new ConnectionError(
+				`Failed to reschedule job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
 			);
 		}
-
-		const job = this.ctx.documentToPersistedJob(result);
-		this.ctx.notifyPendingJob(job.name, job.nextRunAt);
-		return job;
 	}
 
 	/**
@@ -221,14 +253,25 @@ export class JobManager {
 
 		const _id = new ObjectId(jobId);
 
-		const result = await this.ctx.collection.deleteOne({ _id });
+		try {
+			const result = await this.ctx.collection.deleteOne({ _id });
 
-		if (result.deletedCount > 0) {
-			this.ctx.emit('job:deleted', { jobId });
-			return true;
+			if (result.deletedCount > 0) {
+				this.ctx.emit('job:deleted', { jobId });
+				return true;
+			}
+
+			return false;
+		} catch (error) {
+			if (error instanceof MonqueError) {
+				throw error;
+			}
+			const message = error instanceof Error ? error.message : 'Unknown error during deleteJob';
+			throw new ConnectionError(
+				`Failed to delete job: ${message}`,
+				error instanceof Error ? { cause: error } : undefined,
+			);
 		}
-
-		return false;
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────

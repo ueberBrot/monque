@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockContext, JobFactory, JobFactoryHelpers } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { JobManager } from '@/scheduler/services/job-manager.js';
-import { JobStateError } from '@/shared';
+import { ConnectionError, JobStateError } from '@/shared';
 
 describe('JobManager', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -258,6 +258,110 @@ describe('JobManager', () => {
 			const deleteEvent = ctx.emitHistory.find((e) => e.event === 'job:deleted');
 			expect(deleteEvent).toBeDefined();
 			expect((deleteEvent?.payload as { jobId: string })?.jobId).toBe(jobId.toString());
+		});
+	});
+
+	describe('cancelJob - error handling', () => {
+		it('should wrap DB errors in ConnectionError', async () => {
+			const jobId = new ObjectId();
+			const dbError = new Error('MongoNetworkError: connection pool closed');
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(dbError);
+
+			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to cancel job/);
+			expect((error as ConnectionError).cause).toBe(dbError);
+		});
+
+		it('should preserve JobStateError when thrown', async () => {
+			const jobId = new ObjectId();
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
+
+			const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect(error).not.toBeInstanceOf(ConnectionError);
+		});
+	});
+
+	describe('retryJob - error handling', () => {
+		it('should wrap DB errors in ConnectionError', async () => {
+			const jobId = new ObjectId();
+			const dbError = new Error('MongoNetworkError: socket timeout');
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(dbError);
+
+			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to retry job/);
+			expect((error as ConnectionError).cause).toBe(dbError);
+		});
+
+		it('should preserve JobStateError when thrown', async () => {
+			const jobId = new ObjectId();
+			const pendingJob = JobFactory.build({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(pendingJob);
+
+			const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect(error).not.toBeInstanceOf(ConnectionError);
+		});
+	});
+
+	describe('rescheduleJob - error handling', () => {
+		it('should wrap DB errors in ConnectionError', async () => {
+			const jobId = new ObjectId();
+			const dbError = new Error('MongoNetworkError: connection refused');
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(dbError);
+
+			const error = await manager
+				.rescheduleJob(jobId.toString(), new Date())
+				.catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to reschedule job/);
+			expect((error as ConnectionError).cause).toBe(dbError);
+		});
+
+		it('should preserve JobStateError when thrown', async () => {
+			const jobId = new ObjectId();
+			const processingJob = JobFactoryHelpers.processing({ _id: jobId });
+
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(processingJob);
+
+			const error = await manager
+				.rescheduleJob(jobId.toString(), new Date())
+				.catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(JobStateError);
+			expect(error).not.toBeInstanceOf(ConnectionError);
+		});
+	});
+
+	describe('deleteJob - error handling', () => {
+		it('should wrap DB errors in ConnectionError', async () => {
+			const jobId = new ObjectId();
+			const dbError = new Error('MongoNetworkError: connection pool exhausted');
+
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockRejectedValueOnce(dbError);
+
+			const error = await manager.deleteJob(jobId.toString()).catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to delete job/);
+			expect((error as ConnectionError).cause).toBe(dbError);
+		});
+
+		it('should wrap non-Error thrown values in ConnectionError', async () => {
+			const jobId = new ObjectId();
+
+			vi.spyOn(ctx.mockCollection, 'deleteOne').mockRejectedValueOnce('String error');
+
+			await expect(manager.deleteJob(jobId.toString())).rejects.toThrow(ConnectionError);
 		});
 	});
 
