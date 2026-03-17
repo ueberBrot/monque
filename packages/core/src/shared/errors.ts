@@ -200,6 +200,35 @@ export class InvalidCursorError extends MonqueError {
 }
 
 /**
+ * Error thrown when a public job identifier fails validation.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await monque.enqueue('invalid job name', {});
+ * } catch (error) {
+ *   if (error instanceof InvalidJobIdentifierError) {
+ *     console.error(`Invalid ${error.field}: ${error.message}`);
+ *   }
+ * }
+ * ```
+ */
+export class InvalidJobIdentifierError extends MonqueError {
+	constructor(
+		public readonly field: 'name' | 'uniqueKey',
+		public readonly value: string,
+		message: string,
+	) {
+		super(message);
+		this.name = 'InvalidJobIdentifierError';
+		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
+		if (Error.captureStackTrace) {
+			Error.captureStackTrace(this, InvalidJobIdentifierError);
+		}
+	}
+}
+
+/**
  * Error thrown when a statistics aggregation times out.
  *
  * @example

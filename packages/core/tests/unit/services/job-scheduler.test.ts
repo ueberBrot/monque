@@ -12,7 +12,7 @@ import { createMockContext, JobFactory } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { JobScheduler } from '@/scheduler/services/job-scheduler.js';
 import type { SchedulerContext } from '@/scheduler/services/types.js';
-import { ConnectionError, InvalidCronError } from '@/shared';
+import { ConnectionError, InvalidCronError, InvalidJobIdentifierError } from '@/shared';
 
 describe('JobScheduler', () => {
 	let ctx: SchedulerContext & {
@@ -30,6 +30,22 @@ describe('JobScheduler', () => {
 	});
 
 	describe('enqueue', () => {
+		it('should reject invalid job names before hitting MongoDB', async () => {
+			await expect(scheduler.enqueue('invalid job name', { value: 42 })).rejects.toThrow(
+				InvalidJobIdentifierError,
+			);
+			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
+		it('should reject invalid unique keys before hitting MongoDB', async () => {
+			await expect(
+				scheduler.enqueue('valid-job', { value: 42 }, { uniqueKey: '   ' }),
+			).rejects.toThrow(InvalidJobIdentifierError);
+			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+		});
+
 		it('should insert a new job with correct properties', async () => {
 			const insertedId = new ObjectId();
 			vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
@@ -142,6 +158,13 @@ describe('JobScheduler', () => {
 	});
 
 	describe('schedule', () => {
+		it('should reject invalid scheduled job names before parsing cron', async () => {
+			await expect(scheduler.schedule('not-a-cron', 'bad name', {})).rejects.toThrow(
+				InvalidJobIdentifierError,
+			);
+			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();
+		});
+
 		it('should create job with repeatInterval and calculated nextRunAt', async () => {
 			const insertedId = new ObjectId();
 

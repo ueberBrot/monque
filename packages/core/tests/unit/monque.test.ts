@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PersistedJob } from '@/jobs';
 import { Monque } from '@/scheduler/monque.js';
-import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
+import {
+	ConnectionError,
+	InvalidJobIdentifierError,
+	ShutdownTimeoutError,
+	WorkerRegistrationError,
+} from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
 // Mock the services to avoid instantiating them
@@ -184,6 +189,18 @@ describe('Monque', () => {
 				monque.register('test-job', handler2, { replace: true });
 			}).not.toThrow();
 		});
+
+		it('should reject invalid worker names', () => {
+			const handler = async () => {};
+
+			expect(() => {
+				monque.register('invalid worker', handler);
+			}).toThrow(InvalidJobIdentifierError);
+
+			expect(() => {
+				monque.register('\u0000', handler);
+			}).toThrow(InvalidJobIdentifierError);
+		});
 	});
 
 	describe('delegation', () => {
@@ -197,6 +214,26 @@ describe('Monque', () => {
 
 			await monque.enqueue('test', { foo: 'bar' });
 			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' }, {});
+		});
+
+		it('should reject invalid enqueue job names before delegating', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+
+			await expect(monque.enqueue('invalid job', { foo: 'bar' })).rejects.toThrow(
+				InvalidJobIdentifierError,
+			);
+			expect(spy).not.toHaveBeenCalled();
+		});
+
+		it('should reject invalid enqueue unique keys before delegating', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+
+			await expect(
+				monque.enqueue('valid-job', { foo: 'bar' }, { uniqueKey: '   ' }),
+			).rejects.toThrow(InvalidJobIdentifierError);
+			expect(spy).not.toHaveBeenCalled();
 		});
 
 		it('should delegate now to scheduler', async () => {
@@ -213,6 +250,16 @@ describe('Monque', () => {
 
 			await monque.schedule('* * * * *', 'test', {});
 			expect(spy).toHaveBeenCalledWith('* * * * *', 'test', {}, {});
+		});
+
+		it('should reject invalid scheduled job names before delegating', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_scheduler'] = { schedule: spy };
+
+			await expect(monque.schedule('* * * * *', 'bad name', {})).rejects.toThrow(
+				InvalidJobIdentifierError,
+			);
+			expect(spy).not.toHaveBeenCalled();
 		});
 
 		it('should delegate getJob to query service', async () => {

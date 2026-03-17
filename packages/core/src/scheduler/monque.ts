@@ -18,7 +18,13 @@ import {
 	type QueueStats,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, ShutdownTimeoutError, WorkerRegistrationError } from '@/shared';
+import {
+	ConnectionError,
+	ShutdownTimeoutError,
+	validateJobName,
+	validateUniqueKey,
+	WorkerRegistrationError,
+} from '@/shared';
 import type { WorkerOptions, WorkerRegistration } from '@/workers';
 
 import {
@@ -281,6 +287,14 @@ export class Monque extends EventEmitter {
 		return this._lifecycleManager;
 	}
 
+	private validateSchedulingIdentifiers(name: string, uniqueKey?: string): void {
+		validateJobName(name);
+
+		if (uniqueKey !== undefined) {
+			validateUniqueKey(uniqueKey);
+		}
+	}
+
 	/**
 	 * Handle a change-stream-triggered poll and reset the safety poll timer.
 	 *
@@ -473,6 +487,7 @@ export class Monque extends EventEmitter {
 	 * @param data - Job payload, will be passed to the worker handler
 	 * @param options - Scheduling and deduplication options
 	 * @returns Promise resolving to the created or existing job document
+	 * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
@@ -505,6 +520,7 @@ export class Monque extends EventEmitter {
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
+		this.validateSchedulingIdentifiers(name, options.uniqueKey);
 		return this.scheduler.enqueue(name, data, options);
 	}
 
@@ -518,6 +534,7 @@ export class Monque extends EventEmitter {
 	 * @param name - Job type identifier, must match a registered worker
 	 * @param data - Job payload, will be passed to the worker handler
 	 * @returns Promise resolving to the created job document
+	 * @throws {InvalidJobIdentifierError} If `name` fails public identifier validation
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 *
 	 * @example Send email immediately
@@ -540,6 +557,7 @@ export class Monque extends EventEmitter {
 	 */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
+		validateJobName(name);
 		return this.scheduler.now(name, data);
 	}
 
@@ -561,6 +579,7 @@ export class Monque extends EventEmitter {
 	 * @param data - Job payload, will be passed to the worker handler on each run
 	 * @param options - Scheduling options (uniqueKey for deduplication)
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
+	 * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
 	 * @throws {InvalidCronError} If cron expression is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
@@ -597,6 +616,7 @@ export class Monque extends EventEmitter {
 		options: ScheduleOptions = {},
 	): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
+		this.validateSchedulingIdentifiers(name, options.uniqueKey);
 		return this.scheduler.schedule(cron, name, data, options);
 	}
 
@@ -966,6 +986,7 @@ export class Monque extends EventEmitter {
 	 * @param options - Worker configuration
 	 * @param options.concurrency - Maximum concurrent jobs for this worker (default: `defaultConcurrency`)
 	 * @param options.replace - When `true`, replace existing worker instead of throwing error
+	 * @throws {InvalidJobIdentifierError} If `name` fails public identifier validation
 	 * @throws {WorkerRegistrationError} When a worker is already registered for `name` and `replace` is not `true`
 	 *
 	 * @example Basic email worker
@@ -1009,6 +1030,7 @@ export class Monque extends EventEmitter {
 	 * ```
 	 */
 	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
+		validateJobName(name);
 		const concurrency = options.concurrency ?? this.options.workerConcurrency;
 
 		// Check for existing worker and throw unless replace is explicitly true
