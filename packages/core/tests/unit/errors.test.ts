@@ -19,6 +19,7 @@ import {
 	ConnectionError,
 	InvalidCronError,
 	InvalidCursorError,
+	InvalidJobIdentifierError,
 	JobStateError,
 	MonqueError,
 	ShutdownTimeoutError,
@@ -245,6 +246,25 @@ describe('errors', () => {
 		});
 	});
 
+	describe('InvalidJobIdentifierError', () => {
+		it('should create an error with field and value', () => {
+			const error = new InvalidJobIdentifierError('name', 'bad name', 'Invalid job name');
+			expect(error.message).toBe('Invalid job name');
+			expect(error.field).toBe('name');
+			expect(error.value).toBe('bad name');
+		});
+
+		it('should have name "InvalidJobIdentifierError"', () => {
+			const error = new InvalidJobIdentifierError('uniqueKey', 'bad', 'Invalid');
+			expect(error.name).toBe('InvalidJobIdentifierError');
+		});
+
+		it('should be an instance of MonqueError', () => {
+			const error = new InvalidJobIdentifierError('name', 'bad', 'Invalid');
+			expect(error).toBeInstanceOf(MonqueError);
+		});
+	});
+
 	describe('AggregationTimeoutError', () => {
 		it('should create an error with default message', () => {
 			const error = new AggregationTimeoutError();
@@ -334,6 +354,7 @@ describe('errors', () => {
 				new InvalidCronError('x', 'Invalid'),
 				new ConnectionError('Failed'),
 				new ShutdownTimeoutError('Timeout', []),
+				new InvalidJobIdentifierError('name', 'bad', 'Invalid'),
 				new WorkerRegistrationError('Failed', 'job'),
 			];
 

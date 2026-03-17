@@ -7,7 +7,14 @@ import {
 	type PersistedJob,
 	type ScheduleOptions,
 } from '@/jobs';
-import { ConnectionError, getNextCronDate, MonqueError, PayloadTooLargeError } from '@/shared';
+import {
+	ConnectionError,
+	getNextCronDate,
+	MonqueError,
+	PayloadTooLargeError,
+	validateJobName,
+	validateUniqueKey,
+} from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -21,6 +28,14 @@ import type { SchedulerContext } from './types.js';
  */
 export class JobScheduler {
 	constructor(private readonly ctx: SchedulerContext) {}
+
+	private validateJobIdentifiers(name: string, uniqueKey?: string): void {
+		validateJobName(name);
+
+		if (uniqueKey !== undefined) {
+			validateUniqueKey(uniqueKey);
+		}
+	}
 
 	/**
 	 * Validate that the job data payload does not exceed the configured maximum BSON byte size.
@@ -74,6 +89,7 @@ export class JobScheduler {
 	 * @param data - Job payload, will be passed to the worker handler
 	 * @param options - Scheduling and deduplication options
 	 * @returns Promise resolving to the created or existing job document
+	 * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *
@@ -103,6 +119,7 @@ export class JobScheduler {
 	 * ```
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
+		this.validateJobIdentifiers(name, options.uniqueKey);
 		this.validatePayloadSize(data);
 		const now = new Date();
 		const job: Omit<Job<T>, '_id'> = {
@@ -115,12 +132,12 @@ export class JobScheduler {
 			updatedAt: now,
 		};
 
-		if (options.uniqueKey) {
+		if (options.uniqueKey !== undefined) {
 			job.uniqueKey = options.uniqueKey;
 		}
 
 		try {
-			if (options.uniqueKey) {
+			if (options.uniqueKey !== undefined) {
 				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
 				const result = await this.ctx.collection.findOneAndUpdate(
 					{
@@ -216,6 +233,7 @@ export class JobScheduler {
 	 * @param data - Job payload, will be passed to the worker handler on each run
 	 * @param options - Scheduling options (uniqueKey for deduplication)
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
+	 * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
 	 * @throws {InvalidCronError} If cron expression is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
@@ -249,6 +267,7 @@ export class JobScheduler {
 		data: T,
 		options: ScheduleOptions = {},
 	): Promise<PersistedJob<T>> {
+		this.validateJobIdentifiers(name, options.uniqueKey);
 		this.validatePayloadSize(data);
 
 		// Validate cron and get next run date (throws InvalidCronError if invalid)
@@ -266,12 +285,12 @@ export class JobScheduler {
 			updatedAt: now,
 		};
 
-		if (options.uniqueKey) {
+		if (options.uniqueKey !== undefined) {
 			job.uniqueKey = options.uniqueKey;
 		}
 
 		try {
-			if (options.uniqueKey) {
+			if (options.uniqueKey !== undefined) {
 				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
 				const result = await this.ctx.collection.findOneAndUpdate(
 					{

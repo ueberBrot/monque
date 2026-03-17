@@ -3,6 +3,7 @@ export {
 	ConnectionError,
 	InvalidCronError,
 	InvalidCursorError,
+	InvalidJobIdentifierError,
 	JobStateError,
 	MonqueError,
 	PayloadTooLargeError,
@@ -17,4 +18,6 @@ export {
 	getNextCronDate,
 	toError,
 	validateCronExpression,
+	validateJobName,
+	validateUniqueKey,
 } from './utils/index.js';

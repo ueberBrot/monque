@@ -41,11 +41,14 @@ export {
 	getNextCronDate,
 	InvalidCronError,
 	InvalidCursorError,
+	InvalidJobIdentifierError,
 	JobStateError,
 	MonqueError,
 	PayloadTooLargeError,
 	ShutdownTimeoutError,
 	validateCronExpression,
+	validateJobName,
+	validateUniqueKey,
 	WorkerRegistrationError,
 } from '@/shared';
 // Types - Workers

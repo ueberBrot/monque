@@ -6,3 +6,4 @@ export {
 } from './backoff.js';
 export { getNextCronDate, validateCronExpression } from './cron.js';
 export { toError } from './error.js';
+export { validateJobName, validateUniqueKey } from './job-identifiers.js';
