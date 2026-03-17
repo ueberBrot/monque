@@ -159,7 +159,7 @@ describe('JobScheduler', () => {
 
 	describe('schedule', () => {
 		it('should reject invalid scheduled job names before parsing cron', async () => {
-			await expect(scheduler.schedule('0 * * * *', 'bad name', {})).rejects.toThrow(
+			await expect(scheduler.schedule('not-a-cron', 'bad name', {})).rejects.toThrow(
 				InvalidJobIdentifierError,
 			);
 			expect(ctx.mockCollection.insertOne).not.toHaveBeenCalled();

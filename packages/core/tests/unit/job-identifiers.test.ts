@@ -16,8 +16,16 @@ describe('job identifier validation', () => {
 			expect(() => validateJobName('')).toThrow(InvalidJobIdentifierError);
 		});
 
+		it('rejects whitespace-only job names', () => {
+			expect(() => validateJobName('   ')).toThrow(InvalidJobIdentifierError);
+		});
+
 		it('rejects names with whitespace', () => {
 			expect(() => validateJobName('email send')).toThrow(InvalidJobIdentifierError);
+		});
+
+		it('rejects non-whitespace control characters', () => {
+			expect(() => validateJobName('\u0000')).toThrow(InvalidJobIdentifierError);
 		});
 
 		it('rejects names with control characters', () => {

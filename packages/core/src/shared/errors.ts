@@ -208,7 +208,7 @@ export class InvalidCursorError extends MonqueError {
  *   await monque.enqueue('invalid job name', {});
  * } catch (error) {
  *   if (error instanceof InvalidJobIdentifierError) {
- *     console.error(`Invalid ${error.field}:`, error.value);
+ *     console.error(`Invalid ${error.field}: ${error.message}`);
  *   }
  * }
  * ```

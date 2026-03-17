@@ -196,6 +196,10 @@ describe('Monque', () => {
 			expect(() => {
 				monque.register('invalid worker', handler);
 			}).toThrow(InvalidJobIdentifierError);
+
+			expect(() => {
+				monque.register('\u0000', handler);
+			}).toThrow(InvalidJobIdentifierError);
 		});
 	});
 
