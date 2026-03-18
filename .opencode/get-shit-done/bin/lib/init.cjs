@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, normalizePhaseName, output, error } = require('./core.cjs');
+const { loadConfig, resolveModelInternal, findPhaseInternal, getRoadmapPhaseInternal, pathExistsInternal, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, stripShippedMilestones, normalizePhaseName, toPosixPath, output, error } = require('./core.cjs');
 
 function cmdInitExecutePhase(cwd, phase, raw) {
   if (!phase) {
@@ -15,6 +15,13 @@ function cmdInitExecutePhase(cwd, phase, raw) {
   const config = loadConfig(cwd);
   const phaseInfo = findPhaseInternal(cwd, phase);
   const milestone = getMilestoneInfo(cwd);
+
+  const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+  const reqMatch = roadmapPhase?.section?.match(/^\*\*Requirements\*\*:[^\S\n]*([^\n]*)$/m);
+  const reqExtracted = reqMatch
+    ? reqMatch[1].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).join(', ')
+    : null;
+  const phase_req_ids = (reqExtracted && reqExtracted !== 'TBD') ? reqExtracted : null;
 
   const result = {
     // Models
@@ -35,6 +42,7 @@ function cmdInitExecutePhase(cwd, phase, raw) {
     phase_number: phaseInfo?.phase_number || null,
     phase_name: phaseInfo?.phase_name || null,
     phase_slug: phaseInfo?.phase_slug || null,
+    phase_req_ids,
 
     // Plan inventory
     plans: phaseInfo?.plans || [],
@@ -80,6 +88,13 @@ function cmdInitPlanPhase(cwd, phase, raw) {
   const config = loadConfig(cwd);
   const phaseInfo = findPhaseInternal(cwd, phase);
 
+  const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+  const reqMatch = roadmapPhase?.section?.match(/^\*\*Requirements\*\*:[^\S\n]*([^\n]*)$/m);
+  const reqExtracted = reqMatch
+    ? reqMatch[1].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean).join(', ')
+    : null;
+  const phase_req_ids = (reqExtracted && reqExtracted !== 'TBD') ? reqExtracted : null;
+
   const result = {
     // Models
     researcher_model: resolveModelInternal(cwd, 'gsd-phase-researcher'),
@@ -98,7 +113,8 @@ function cmdInitPlanPhase(cwd, phase, raw) {
     phase_number: phaseInfo?.phase_number || null,
     phase_name: phaseInfo?.phase_name || null,
     phase_slug: phaseInfo?.phase_slug || null,
-    padded_phase: phaseInfo?.phase_number?.padStart(2, '0') || null,
+    padded_phase: phaseInfo?.phase_number ? normalizePhaseName(phaseInfo.phase_number) : null,
+    phase_req_ids,
 
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
@@ -123,19 +139,19 @@ function cmdInitPlanPhase(cwd, phase, raw) {
       const files = fs.readdirSync(phaseDirFull);
       const contextFile = files.find(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
       if (contextFile) {
-        result.context_path = path.join(phaseInfo.directory, contextFile);
+        result.context_path = toPosixPath(path.join(phaseInfo.directory, contextFile));
       }
       const researchFile = files.find(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
       if (researchFile) {
-        result.research_path = path.join(phaseInfo.directory, researchFile);
+        result.research_path = toPosixPath(path.join(phaseInfo.directory, researchFile));
       }
       const verificationFile = files.find(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
       if (verificationFile) {
-        result.verification_path = path.join(phaseInfo.directory, verificationFile);
+        result.verification_path = toPosixPath(path.join(phaseInfo.directory, verificationFile));
       }
       const uatFile = files.find(f => f.endsWith('-UAT.md') || f === 'UAT.md');
       if (uatFile) {
-        result.uat_path = path.join(phaseInfo.directory, uatFile);
+        result.uat_path = toPosixPath(path.join(phaseInfo.directory, uatFile));
       }
     } catch {}
   }
@@ -239,18 +255,18 @@ function cmdInitQuick(cwd, description, raw) {
   const now = new Date();
   const slug = description ? generateSlugInternal(description)?.substring(0, 40) : null;
 
-  // Find next quick task number
-  const quickDir = path.join(cwd, '.planning', 'quick');
-  let nextNum = 1;
-  try {
-    const existing = fs.readdirSync(quickDir)
-      .filter(f => /^\d+-/.test(f))
-      .map(f => parseInt(f.split('-')[0], 10))
-      .filter(n => !isNaN(n));
-    if (existing.length > 0) {
-      nextNum = Math.max(...existing) + 1;
-    }
-  } catch {}
+  // Generate collision-resistant quick task ID: YYMMDD-xxx
+  // xxx = 2-second precision blocks since midnight, encoded as 3-char Base36 (lowercase)
+  // Range: 000 (00:00:00) to xbz (23:59:58), guaranteed 3 chars for any time of day.
+  // Provides ~2s uniqueness window per user — practically collision-free across a team.
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const dateStr = yy + mm + dd;
+  const secondsSinceMidnight = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const timeBlocks = Math.floor(secondsSinceMidnight / 2);
+  const timeEncoded = timeBlocks.toString(36).padStart(3, '0');
+  const quickId = dateStr + '-' + timeEncoded;
 
   const result = {
     // Models
@@ -263,7 +279,7 @@ function cmdInitQuick(cwd, description, raw) {
     commit_docs: config.commit_docs,
 
     // Quick task info
-    next_num: nextNum,
+    quick_id: quickId,
     slug: slug,
     description: description || null,
 
@@ -273,7 +289,7 @@ function cmdInitQuick(cwd, description, raw) {
 
     // Paths
     quick_dir: '.planning/quick',
-    task_dir: slug ? `.planning/quick/${nextNum}-${slug}` : null,
+    task_dir: slug ? `.planning/quick/${quickId}-${slug}` : null,
 
     // File existence
     roadmap_exists: pathExistsInternal(cwd, '.planning/ROADMAP.md'),
@@ -349,6 +365,29 @@ function cmdInitPhaseOp(cwd, phase, raw) {
   const config = loadConfig(cwd);
   let phaseInfo = findPhaseInternal(cwd, phase);
 
+  // If the only disk match comes from an archived milestone, prefer the
+  // current milestone's ROADMAP entry so discuss-phase and similar flows
+  // don't attach to shipped work that reused the same phase number.
+  if (phaseInfo?.archived) {
+    const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
+    if (roadmapPhase?.found) {
+      const phaseName = roadmapPhase.phase_name;
+      phaseInfo = {
+        found: true,
+        directory: null,
+        phase_number: roadmapPhase.phase_number,
+        phase_name: phaseName,
+        phase_slug: phaseName ? phaseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : null,
+        plans: [],
+        summaries: [],
+        incomplete_plans: [],
+        has_research: false,
+        has_context: false,
+        has_verification: false,
+      };
+    }
+  }
+
   // Fallback to ROADMAP.md if no directory exists (e.g., Plans: TBD)
   if (!phaseInfo) {
     const roadmapPhase = getRoadmapPhaseInternal(cwd, phase);
@@ -381,7 +420,7 @@ function cmdInitPhaseOp(cwd, phase, raw) {
     phase_number: phaseInfo?.phase_number || null,
     phase_name: phaseInfo?.phase_name || null,
     phase_slug: phaseInfo?.phase_slug || null,
-    padded_phase: phaseInfo?.phase_number?.padStart(2, '0') || null,
+    padded_phase: phaseInfo?.phase_number ? normalizePhaseName(phaseInfo.phase_number) : null,
 
     // Existing artifacts
     has_research: phaseInfo?.has_research || false,
@@ -406,19 +445,19 @@ function cmdInitPhaseOp(cwd, phase, raw) {
       const files = fs.readdirSync(phaseDirFull);
       const contextFile = files.find(f => f.endsWith('-CONTEXT.md') || f === 'CONTEXT.md');
       if (contextFile) {
-        result.context_path = path.join(phaseInfo.directory, contextFile);
+        result.context_path = toPosixPath(path.join(phaseInfo.directory, contextFile));
       }
       const researchFile = files.find(f => f.endsWith('-RESEARCH.md') || f === 'RESEARCH.md');
       if (researchFile) {
-        result.research_path = path.join(phaseInfo.directory, researchFile);
+        result.research_path = toPosixPath(path.join(phaseInfo.directory, researchFile));
       }
       const verificationFile = files.find(f => f.endsWith('-VERIFICATION.md') || f === 'VERIFICATION.md');
       if (verificationFile) {
-        result.verification_path = path.join(phaseInfo.directory, verificationFile);
+        result.verification_path = toPosixPath(path.join(phaseInfo.directory, verificationFile));
       }
       const uatFile = files.find(f => f.endsWith('-UAT.md') || f === 'UAT.md');
       if (uatFile) {
-        result.uat_path = path.join(phaseInfo.directory, uatFile);
+        result.uat_path = toPosixPath(path.join(phaseInfo.directory, uatFile));
       }
     } catch {}
   }
@@ -453,7 +492,7 @@ function cmdInitTodos(cwd, area, raw) {
           created: createdMatch ? createdMatch[1].trim() : 'unknown',
           title: titleMatch ? titleMatch[1].trim() : 'Untitled',
           area: todoArea,
-          path: path.join('.planning', 'todos', 'pending', file),
+          path: '.planning/todos/pending/' + file,
         });
       } catch {}
     }
@@ -584,20 +623,46 @@ function cmdInitProgress(cwd, raw) {
   const config = loadConfig(cwd);
   const milestone = getMilestoneInfo(cwd);
 
-  // Analyze phases
+  // Analyze phases — filter to current milestone and include ROADMAP-only phases
   const phasesDir = path.join(cwd, '.planning', 'phases');
   const phases = [];
   let currentPhase = null;
   let nextPhase = null;
 
+  // Build set of phases defined in ROADMAP for the current milestone
+  const roadmapPhaseNums = new Set();
+  const roadmapPhaseNames = new Map();
+  try {
+    const roadmapContent = stripShippedMilestones(
+      fs.readFileSync(path.join(cwd, '.planning', 'ROADMAP.md'), 'utf-8')
+    );
+    const headingPattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:\s*([^\n]+)/gi;
+    let hm;
+    while ((hm = headingPattern.exec(roadmapContent)) !== null) {
+      roadmapPhaseNums.add(hm[1]);
+      roadmapPhaseNames.set(hm[1], hm[2].replace(/\(INSERTED\)/i, '').trim());
+    }
+  } catch {}
+
+  const isDirInMilestone = getMilestonePhaseFilter(cwd);
+  const seenPhaseNums = new Set();
+
   try {
     const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
-    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
+    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name)
+      .filter(isDirInMilestone)
+      .sort((a, b) => {
+        const pa = a.match(/^(\d+[A-Z]?(?:\.\d+)*)/i);
+        const pb = b.match(/^(\d+[A-Z]?(?:\.\d+)*)/i);
+        if (!pa || !pb) return a.localeCompare(b);
+        return parseInt(pa[1], 10) - parseInt(pb[1], 10);
+      });
 
     for (const dir of dirs) {
-      const match = dir.match(/^(\d+(?:\.\d+)?)-?(.*)/);
+      const match = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)-?(.*)/i);
       const phaseNumber = match ? match[1] : dir;
       const phaseName = match && match[2] ? match[2] : null;
+      seenPhaseNums.add(phaseNumber.replace(/^0+/, '') || '0');
 
       const phasePath = path.join(phasesDir, dir);
       const phaseFiles = fs.readdirSync(phasePath);
@@ -613,7 +678,7 @@ function cmdInitProgress(cwd, raw) {
       const phaseInfo = {
         number: phaseNumber,
         name: phaseName,
-        directory: path.join('.planning', 'phases', dir),
+        directory: '.planning/phases/' + dir,
         status,
         plan_count: plans.length,
         summary_count: summaries.length,
@@ -631,6 +696,29 @@ function cmdInitProgress(cwd, raw) {
       }
     }
   } catch {}
+
+  // Add phases defined in ROADMAP but not yet scaffolded to disk
+  for (const [num, name] of roadmapPhaseNames) {
+    const stripped = num.replace(/^0+/, '') || '0';
+    if (!seenPhaseNums.has(stripped)) {
+      const phaseInfo = {
+        number: num,
+        name: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
+        directory: null,
+        status: 'not_started',
+        plan_count: 0,
+        summary_count: 0,
+        has_research: false,
+      };
+      phases.push(phaseInfo);
+      if (!nextPhase && !currentPhase) {
+        nextPhase = phaseInfo;
+      }
+    }
+  }
+
+  // Re-sort phases by number after adding ROADMAP-only phases
+  phases.sort((a, b) => parseInt(a.number, 10) - parseInt(b.number, 10));
 
   // Check for paused work
   let pausedAt = null;

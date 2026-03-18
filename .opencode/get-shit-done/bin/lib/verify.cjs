@@ -4,8 +4,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const { safeReadFile, normalizePhaseName, execGit, findPhaseInternal, getMilestoneInfo, output, error } = require('./core.cjs');
+const os = require('os');
+const { safeReadFile, normalizePhaseName, execGit, findPhaseInternal, getMilestoneInfo, stripShippedMilestones, output, error } = require('./core.cjs');
 const { extractFrontmatter, parseMustHavesBlock } = require('./frontmatter.cjs');
+const { writeStateMd } = require('./state.cjs');
 
 function cmdVerifySummary(cwd, summaryPath, checkFileCount, raw) {
   if (!summaryPath) {
@@ -406,11 +408,12 @@ function cmdValidateConsistency(cwd, raw) {
     return;
   }
 
-  const roadmapContent = fs.readFileSync(roadmapPath, 'utf-8');
+  const roadmapContentRaw = fs.readFileSync(roadmapPath, 'utf-8');
+  const roadmapContent = stripShippedMilestones(roadmapContentRaw);
 
-  // Extract phases from ROADMAP
+  // Extract phases from ROADMAP (archived milestones already stripped)
   const roadmapPhases = new Set();
-  const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)?)\s*:/gi;
+  const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:/gi;
   let m;
   while ((m = phasePattern.exec(roadmapContent)) !== null) {
     roadmapPhases.add(m[1]);
@@ -422,7 +425,7 @@ function cmdValidateConsistency(cwd, raw) {
     const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
     const dirs = entries.filter(e => e.isDirectory()).map(e => e.name);
     for (const dir of dirs) {
-      const dm = dir.match(/^(\d+[A-Z]?(?:\.\d+)?)/i);
+      const dm = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)/i);
       if (dm) diskPhases.add(dm[1]);
     }
   } catch {}
@@ -514,6 +517,19 @@ function cmdValidateConsistency(cwd, raw) {
 }
 
 function cmdValidateHealth(cwd, options, raw) {
+  // Guard: detect if CWD is the home directory (likely accidental)
+  const resolved = path.resolve(cwd);
+  if (resolved === os.homedir()) {
+    output({
+      status: 'error',
+      errors: [{ code: 'E010', message: `CWD is home directory (${resolved}) — health check would read the wrong .planning/ directory. Run from your project root instead.`, fix: 'cd into your project directory and retry' }],
+      warnings: [],
+      info: [{ code: 'I010', message: `Resolved CWD: ${resolved}` }],
+      repairable_count: 0,
+    }, raw);
+    return;
+  }
+
   const planningDir = path.join(cwd, '.planning');
   const projectPath = path.join(planningDir, 'PROJECT.md');
   const roadmapPath = path.join(planningDir, 'ROADMAP.md');
@@ -572,14 +588,14 @@ function cmdValidateHealth(cwd, options, raw) {
   } else {
     const stateContent = fs.readFileSync(statePath, 'utf-8');
     // Extract phase references from STATE.md
-    const phaseRefs = [...stateContent.matchAll(/[Pp]hase\s+(\d+(?:\.\d+)?)/g)].map(m => m[1]);
+    const phaseRefs = [...stateContent.matchAll(/[Pp]hase\s+(\d+(?:\.\d+)*)/g)].map(m => m[1]);
     // Get disk phases
     const diskPhases = new Set();
     try {
       const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
       for (const e of entries) {
         if (e.isDirectory()) {
-          const m = e.name.match(/^(\d+(?:\.\d+)?)/);
+          const m = e.name.match(/^(\d+(?:\.\d+)*)/);
           if (m) diskPhases.add(m[1]);
         }
       }
@@ -606,7 +622,7 @@ function cmdValidateHealth(cwd, options, raw) {
       const raw = fs.readFileSync(configPath, 'utf-8');
       const parsed = JSON.parse(raw);
       // Validate known fields
-      const validProfiles = ['quality', 'balanced', 'budget'];
+      const validProfiles = ['quality', 'balanced', 'budget', 'inherit'];
       if (parsed.model_profile && !validProfiles.includes(parsed.model_profile)) {
         addIssue('warning', 'W004', `config.json: invalid model_profile "${parsed.model_profile}"`, `Valid values: ${validProfiles.join(', ')}`);
       }
@@ -616,11 +632,23 @@ function cmdValidateHealth(cwd, options, raw) {
     }
   }
 
+  // ─── Check 5b: Nyquist validation key presence ──────────────────────────
+  if (fs.existsSync(configPath)) {
+    try {
+      const configRaw = fs.readFileSync(configPath, 'utf-8');
+      const configParsed = JSON.parse(configRaw);
+      if (configParsed.workflow && configParsed.workflow.nyquist_validation === undefined) {
+        addIssue('warning', 'W008', 'config.json: workflow.nyquist_validation absent (defaults to enabled but agents may skip)', 'Run /gsd:health --repair to add key', true);
+        if (!repairs.includes('addNyquistKey')) repairs.push('addNyquistKey');
+      }
+    } catch {}
+  }
+
   // ─── Check 6: Phase directory naming (NN-name format) ─────────────────────
   try {
     const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
     for (const e of entries) {
-      if (e.isDirectory() && !e.name.match(/^\d{2}(?:\.\d+)?-[\w-]+$/)) {
+      if (e.isDirectory() && !e.name.match(/^\d{2}(?:\.\d+)*-[\w-]+$/)) {
         addIssue('warning', 'W005', `Phase directory "${e.name}" doesn't follow NN-name format`, 'Rename to match pattern (e.g., 01-setup)');
       }
     }
@@ -645,12 +673,31 @@ function cmdValidateHealth(cwd, options, raw) {
     }
   } catch {}
 
+  // ─── Check 7b: Nyquist VALIDATION.md consistency ────────────────────────
+  try {
+    const phaseEntries = fs.readdirSync(phasesDir, { withFileTypes: true });
+    for (const e of phaseEntries) {
+      if (!e.isDirectory()) continue;
+      const phaseFiles = fs.readdirSync(path.join(phasesDir, e.name));
+      const hasResearch = phaseFiles.some(f => f.endsWith('-RESEARCH.md'));
+      const hasValidation = phaseFiles.some(f => f.endsWith('-VALIDATION.md'));
+      if (hasResearch && !hasValidation) {
+        const researchFile = phaseFiles.find(f => f.endsWith('-RESEARCH.md'));
+        const researchContent = fs.readFileSync(path.join(phasesDir, e.name, researchFile), 'utf-8');
+        if (researchContent.includes('## Validation Architecture')) {
+          addIssue('warning', 'W009', `Phase ${e.name}: has Validation Architecture in RESEARCH.md but no VALIDATION.md`, 'Re-run /gsd:plan-phase with --research to regenerate');
+        }
+      }
+    }
+  } catch {}
+
   // ─── Check 8: Run existing consistency checks ─────────────────────────────
   // Inline subset of cmdValidateConsistency
   if (fs.existsSync(roadmapPath)) {
-    const roadmapContent = fs.readFileSync(roadmapPath, 'utf-8');
+    const roadmapContentRaw = fs.readFileSync(roadmapPath, 'utf-8');
+    const roadmapContent = stripShippedMilestones(roadmapContentRaw);
     const roadmapPhases = new Set();
-    const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)?)\s*:/gi;
+    const phasePattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:/gi;
     let m;
     while ((m = phasePattern.exec(roadmapContent)) !== null) {
       roadmapPhases.add(m[1]);
@@ -661,7 +708,7 @@ function cmdValidateHealth(cwd, options, raw) {
       const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
       for (const e of entries) {
         if (e.isDirectory()) {
-          const dm = e.name.match(/^(\d+[A-Z]?(?:\.\d+)?)/i);
+          const dm = e.name.match(/^(\d+[A-Z]?(?:\.\d+)*)/i);
           if (dm) diskPhases.add(dm[1]);
         }
       }
@@ -697,10 +744,16 @@ function cmdValidateHealth(cwd, options, raw) {
               commit_docs: true,
               search_gitignored: false,
               branching_strategy: 'none',
-              research: true,
-              plan_checker: true,
-              verifier: true,
+              phase_branch_template: 'gsd/phase-{phase}-{slug}',
+              milestone_branch_template: 'gsd/{milestone}-{slug}',
+              workflow: {
+                research: true,
+                plan_check: true,
+                verifier: true,
+                nyquist_validation: true,
+              },
               parallelization: true,
+              brave_search: false,
             };
             fs.writeFileSync(configPath, JSON.stringify(defaults, null, 2), 'utf-8');
             repairActions.push({ action: repair, success: true, path: 'config.json' });
@@ -725,8 +778,25 @@ function cmdValidateHealth(cwd, options, raw) {
             stateContent += `**Status:** Resuming\n\n`;
             stateContent += `## Session Log\n\n`;
             stateContent += `- ${new Date().toISOString().split('T')[0]}: STATE.md regenerated by /gsd:health --repair\n`;
-            fs.writeFileSync(statePath, stateContent, 'utf-8');
+            writeStateMd(statePath, stateContent, cwd);
             repairActions.push({ action: repair, success: true, path: 'STATE.md' });
+            break;
+          }
+          case 'addNyquistKey': {
+            if (fs.existsSync(configPath)) {
+              try {
+                const configRaw = fs.readFileSync(configPath, 'utf-8');
+                const configParsed = JSON.parse(configRaw);
+                if (!configParsed.workflow) configParsed.workflow = {};
+                if (configParsed.workflow.nyquist_validation === undefined) {
+                  configParsed.workflow.nyquist_validation = true;
+                  fs.writeFileSync(configPath, JSON.stringify(configParsed, null, 2), 'utf-8');
+                }
+                repairActions.push({ action: repair, success: true, path: 'config.json' });
+              } catch (err) {
+                repairActions.push({ action: repair, success: false, error: err.message });
+              }
+            }
             break;
           }
         }
