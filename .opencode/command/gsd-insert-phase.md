@@ -16,7 +16,7 @@ Purpose: Handle urgent work discovered during execution without renumbering enti
 </objective>
 
 <execution_context>
-@./.opencode/get-shit-done/workflows/insert-phase.md
+@/Users/debruyn/Code/privates/monque/.opencode/get-shit-done/workflows/insert-phase.md
 </execution_context>
 
 <context>
@@ -26,6 +26,6 @@ Roadmap and state are resolved in-workflow via `init phase-op` and targeted tool
 </context>
 
 <process>
-Execute the insert-phase workflow from @./.opencode/get-shit-done/workflows/insert-phase.md end-to-end.
+Execute the insert-phase workflow from @/Users/debruyn/Code/privates/monque/.opencode/get-shit-done/workflows/insert-phase.md end-to-end.
 Preserve all validation gates (argument parsing, phase verification, decimal calculation, roadmap updates).
 </process>

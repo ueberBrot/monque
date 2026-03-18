@@ -66,8 +66,11 @@ Help articulate your vision for a phase before planning.
 - Captures how you imagine this phase working
 - Creates CONTEXT.md with your vision, essentials, and boundaries
 - Use when you have ideas about how something should look/feel
+- Optional `--batch` asks 2-5 related questions at a time instead of one-by-one
 
 Usage: `/gsd-discuss-phase 2`
+Usage: `/gsd-discuss-phase 2 --batch`
+Usage: `/gsd-discuss-phase 2 --batch=3`
 
 **`/gsd-research-phase <number>`**
 Comprehensive ecosystem research for niche/complex domains.
@@ -99,6 +102,8 @@ Create detailed execution plan for a specific phase.
 Usage: `/gsd-plan-phase 1`
 Result: Creates `.planning/phases/01-foundation/01-01-PLAN.md`
 
+**PRD Express Path:** Pass `--prd path/to/requirements.md` to skip discuss-phase entirely. Your PRD becomes locked decisions in CONTEXT.md. Useful when you already have clear acceptance criteria.
+
 ### Execution
 
 **`/gsd-execute-phase <phase-number>`**
@@ -111,19 +116,39 @@ Execute all plans in a phase.
 
 Usage: `/gsd-execute-phase 5`
 
+### Smart Router
+
+**`/gsd-do <description>`**
+Route freeform text to the right GSD command automatically.
+
+- Analyzes natural language input to find the best matching GSD command
+- Acts as a dispatcher — never does the work itself
+- Resolves ambiguity by asking you to pick between top matches
+- Use when you know what you want but don't know which `/gsd-*` command to run
+
+Usage: `/gsd-do fix the login button`
+Usage: `/gsd-do refactor the auth system`
+Usage: `/gsd-do I want to start a new milestone`
+
 ### Quick Mode
 
-**`/gsd-quick`**
+**`/gsd-quick [--full] [--discuss] [--research]`**
 Execute small, ad-hoc tasks with GSD guarantees but skip optional agents.
 
 Quick mode uses the same system with a shorter path:
-- Spawns planner + executor (skips researcher, checker, verifier)
+- Spawns planner + executor (skips researcher, checker, verifier by default)
 - Quick tasks live in `.planning/quick/` separate from planned phases
 - Updates STATE.md tracking (not ROADMAP.md)
 
-Use when you know exactly what to do and the task is small enough to not need research or verification.
+Flags enable additional quality steps:
+- `--discuss` — Lightweight discussion to surface gray areas before planning
+- `--research` — Focused research agent investigates approaches before planning
+- `--full` — Adds plan-checking (max 2 iterations) and post-execution verification
+
+Flags are composable: `--discuss --research --full` gives the complete quality pipeline for a single task.
 
 Usage: `/gsd-quick`
+Usage: `/gsd-quick --research --full`
 Result: Creates `.planning/quick/NNN-slug/PLAN.md`, `.planning/quick/NNN-slug/SUMMARY.md`
 
 ### Roadmap Management
@@ -230,6 +255,21 @@ Systematic debugging with persistent state across context resets.
 Usage: `/gsd-debug "login button doesn't work"`
 Usage: `/gsd-debug` (resume active session)
 
+### Quick Notes
+
+**`/gsd-note <text>`**
+Zero-friction idea capture — one command, instant save, no questions.
+
+- Saves timestamped note to `.planning/notes/` (or `/Users/debruyn/Code/privates/monque/.opencode/notes/` globally)
+- Three subcommands: append (default), list, promote
+- Promote converts a note into a structured todo
+- Works without a project (falls back to global scope)
+
+Usage: `/gsd-note refactor the hook system`
+Usage: `/gsd-note list`
+Usage: `/gsd-note promote 3`
+Usage: `/gsd-note --global cross-project idea`
+
 ### Todo Management
 
 **`/gsd-add-todo [description]`**
@@ -296,7 +336,7 @@ Usage: `/gsd-plan-milestone-gaps`
 Configure workflow toggles and model profile interactively.
 
 - Toggle researcher, plan checker, verifier agents
-- Select model profile (quality/balanced/budget)
+- Select model profile (quality/balanced/budget/inherit)
 - Updates `.planning/config.json`
 
 Usage: `/gsd-settings`
@@ -307,6 +347,7 @@ Quick switch model profile for GSD agents.
 - `quality` — Opus everywhere except verification
 - `balanced` — Opus for planning, Sonnet for execution (default)
 - `budget` — Sonnet for writing, Haiku for research/verification
+- `inherit` — Use current session model for all agents (OpenCode `/model`)
 
 Usage: `/gsd-set-profile budget`
 
@@ -351,6 +392,7 @@ Usage: `/gsd-join-discord`
 ├── PROJECT.md            # Project vision
 ├── ROADMAP.md            # Current phase breakdown
 ├── STATE.md              # Project memory & context
+├── RETROSPECTIVE.md      # Living retrospective (updated per milestone)
 ├── config.json           # Workflow mode & gates
 ├── todos/                # Captured ideas and tasks
 │   ├── pending/          # Todos waiting to be worked on

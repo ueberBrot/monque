@@ -14,7 +14,8 @@
 			"!!**/.turbo",
 			"!!**/.astro",
 			"!!**/.agents",
-			"!!**/.opencode"
+			"!!**/.opencode",
+			"!!**/.github"
 		]
 	},
 	"overrides": [

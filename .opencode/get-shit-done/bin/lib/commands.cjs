@@ -4,8 +4,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { safeReadFile, loadConfig, isGitIgnored, execGit, normalizePhaseName, getArchivedPhaseDirs, generateSlugInternal, getMilestoneInfo, resolveModelInternal, MODEL_PROFILES, output, error, findPhaseInternal } = require('./core.cjs');
+const { safeReadFile, loadConfig, isGitIgnored, execGit, normalizePhaseName, comparePhaseNum, getArchivedPhaseDirs, generateSlugInternal, getMilestoneInfo, getMilestonePhaseFilter, resolveModelInternal, stripShippedMilestones, toPosixPath, output, error, findPhaseInternal } = require('./core.cjs');
 const { extractFrontmatter } = require('./frontmatter.cjs');
+const { MODEL_PROFILES } = require('./model-profiles.cjs');
 
 function cmdGenerateSlug(text, raw) {
   if (!text) {
@@ -68,7 +69,7 @@ function cmdListTodos(cwd, area, raw) {
           created: createdMatch ? createdMatch[1].trim() : 'unknown',
           title: titleMatch ? titleMatch[1].trim() : 'Untitled',
           area: todoArea,
-          path: path.join('.planning', 'todos', 'pending', file),
+          path: toPosixPath(path.join('.planning', 'todos', 'pending', file)),
         });
       } catch {}
     }
@@ -204,17 +205,12 @@ function cmdResolveModel(cwd, agentType, raw) {
 
   const config = loadConfig(cwd);
   const profile = config.model_profile || 'balanced';
+  const model = resolveModelInternal(cwd, agentType);
 
   const agentModels = MODEL_PROFILES[agentType];
-  if (!agentModels) {
-    const result = { model: 'sonnet', profile, unknown_agent: true };
-    output(result, raw, 'sonnet');
-    return;
-  }
-
-  const resolved = agentModels[profile] || agentModels['balanced'] || 'sonnet';
-  const model = resolved === 'opus' ? 'inherit' : resolved;
-  const result = { model, profile };
+  const result = agentModels
+    ? { model, profile }
+    : { model, profile, unknown_agent: true };
   output(result, raw, model);
 }
 
@@ -304,6 +300,7 @@ function cmdSummaryExtract(cwd, summaryPath, fields, raw) {
     tech_added: (fm['tech-stack'] && fm['tech-stack'].added) || [],
     patterns: fm['patterns-established'] || [],
     decisions: parseDecisions(fm['key-decisions']),
+    requirements_completed: fm['requirements-completed'] || [],
   };
 
   // If fields specified, filter to only those fields
@@ -394,14 +391,10 @@ function cmdProgressRender(cwd, format, raw) {
 
   try {
     const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
-    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => {
-      const aNum = parseFloat(a.match(/^(\d+(?:\.\d+)?)/)?.[1] || '0');
-      const bNum = parseFloat(b.match(/^(\d+(?:\.\d+)?)/)?.[1] || '0');
-      return aNum - bNum;
-    });
+    const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => comparePhaseNum(a, b));
 
     for (const dir of dirs) {
-      const dm = dir.match(/^(\d+(?:\.\d+)?)-?(.*)/);
+      const dm = dir.match(/^(\d+(?:\.\d+)*)-?(.*)/);
       const phaseNum = dm ? dm[1] : dir;
       const phaseName = dm && dm[2] ? dm[2].replace(/-/g, ' ') : '';
       const phaseFiles = fs.readdirSync(path.join(phasesDir, dir));
@@ -421,7 +414,7 @@ function cmdProgressRender(cwd, format, raw) {
     }
   } catch {}
 
-  const percent = totalPlans > 0 ? Math.round((totalSummaries / totalPlans) * 100) : 0;
+  const percent = totalPlans > 0 ? Math.min(100, Math.round((totalSummaries / totalPlans) * 100)) : 0;
 
   if (format === 'table') {
     // Render markdown table
@@ -536,8 +529,167 @@ function cmdScaffold(cwd, type, options, raw) {
   }
 
   fs.writeFileSync(filePath, content, 'utf-8');
-  const relPath = path.relative(cwd, filePath);
+  const relPath = toPosixPath(path.relative(cwd, filePath));
   output({ created: true, path: relPath }, raw, relPath);
+}
+
+function cmdStats(cwd, format, raw) {
+  const phasesDir = path.join(cwd, '.planning', 'phases');
+  const roadmapPath = path.join(cwd, '.planning', 'ROADMAP.md');
+  const reqPath = path.join(cwd, '.planning', 'REQUIREMENTS.md');
+  const statePath = path.join(cwd, '.planning', 'STATE.md');
+  const milestone = getMilestoneInfo(cwd);
+  const isDirInMilestone = getMilestonePhaseFilter(cwd);
+
+  // Phase & plan stats (reuse progress pattern)
+  const phasesByNumber = new Map();
+  let totalPlans = 0;
+  let totalSummaries = 0;
+
+  try {
+    const roadmapContent = stripShippedMilestones(fs.readFileSync(roadmapPath, 'utf-8'));
+    const headingPattern = /#{2,4}\s*Phase\s+(\d+[A-Z]?(?:\.\d+)*)\s*:\s*([^\n]+)/gi;
+    let match;
+    while ((match = headingPattern.exec(roadmapContent)) !== null) {
+      phasesByNumber.set(match[1], {
+        number: match[1],
+        name: match[2].replace(/\(INSERTED\)/i, '').trim(),
+        plans: 0,
+        summaries: 0,
+        status: 'Not Started',
+      });
+    }
+  } catch {}
+
+  try {
+    const entries = fs.readdirSync(phasesDir, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory())
+      .map(e => e.name)
+      .filter(isDirInMilestone)
+      .sort((a, b) => comparePhaseNum(a, b));
+
+    for (const dir of dirs) {
+      const dm = dir.match(/^(\d+[A-Z]?(?:\.\d+)*)-?(.*)/i);
+      const phaseNum = dm ? dm[1] : dir;
+      const phaseName = dm && dm[2] ? dm[2].replace(/-/g, ' ') : '';
+      const phaseFiles = fs.readdirSync(path.join(phasesDir, dir));
+      const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').length;
+      const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').length;
+
+      totalPlans += plans;
+      totalSummaries += summaries;
+
+      let status;
+      if (plans === 0) status = 'Not Started';
+      else if (summaries >= plans) status = 'Complete';
+      else if (summaries > 0) status = 'In Progress';
+      else status = 'Planned';
+
+      const existing = phasesByNumber.get(phaseNum);
+      phasesByNumber.set(phaseNum, {
+        number: phaseNum,
+        name: existing?.name || phaseName,
+        plans,
+        summaries,
+        status,
+      });
+    }
+  } catch {}
+
+  const phases = [...phasesByNumber.values()].sort((a, b) => comparePhaseNum(a.number, b.number));
+  const completedPhases = phases.filter(p => p.status === 'Complete').length;
+  const planPercent = totalPlans > 0 ? Math.min(100, Math.round((totalSummaries / totalPlans) * 100)) : 0;
+  const percent = phases.length > 0 ? Math.min(100, Math.round((completedPhases / phases.length) * 100)) : 0;
+
+  // Requirements stats
+  let requirementsTotal = 0;
+  let requirementsComplete = 0;
+  try {
+    if (fs.existsSync(reqPath)) {
+      const reqContent = fs.readFileSync(reqPath, 'utf-8');
+      const checked = reqContent.match(/^- \[x\] \*\*/gm);
+      const unchecked = reqContent.match(/^- \[ \] \*\*/gm);
+      requirementsComplete = checked ? checked.length : 0;
+      requirementsTotal = requirementsComplete + (unchecked ? unchecked.length : 0);
+    }
+  } catch {}
+
+  // Last activity from STATE.md
+  let lastActivity = null;
+  try {
+    if (fs.existsSync(statePath)) {
+      const stateContent = fs.readFileSync(statePath, 'utf-8');
+      const activityMatch = stateContent.match(/^last_activity:\s*(.+)$/im)
+        || stateContent.match(/\*\*Last Activity:\*\*\s*(.+)/i)
+        || stateContent.match(/^Last Activity:\s*(.+)$/im)
+        || stateContent.match(/^Last activity:\s*(.+)$/im);
+      if (activityMatch) lastActivity = activityMatch[1].trim();
+    }
+  } catch {}
+
+  // Git stats
+  let gitCommits = 0;
+  let gitFirstCommitDate = null;
+  const commitCount = execGit(cwd, ['rev-list', '--count', 'HEAD']);
+  if (commitCount.exitCode === 0) {
+    gitCommits = parseInt(commitCount.stdout, 10) || 0;
+  }
+  const rootHash = execGit(cwd, ['rev-list', '--max-parents=0', 'HEAD']);
+  if (rootHash.exitCode === 0 && rootHash.stdout) {
+    const firstCommit = rootHash.stdout.split('\n')[0].trim();
+    const firstDate = execGit(cwd, ['show', '-s', '--format=%as', firstCommit]);
+    if (firstDate.exitCode === 0) {
+      gitFirstCommitDate = firstDate.stdout || null;
+    }
+  }
+
+  const result = {
+    milestone_version: milestone.version,
+    milestone_name: milestone.name,
+    phases,
+    phases_completed: completedPhases,
+    phases_total: phases.length,
+    total_plans: totalPlans,
+    total_summaries: totalSummaries,
+    percent,
+    plan_percent: planPercent,
+    requirements_total: requirementsTotal,
+    requirements_complete: requirementsComplete,
+    git_commits: gitCommits,
+    git_first_commit_date: gitFirstCommitDate,
+    last_activity: lastActivity,
+  };
+
+  if (format === 'table') {
+    const barWidth = 10;
+    const filled = Math.round((percent / 100) * barWidth);
+    const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(barWidth - filled);
+    let out = `# ${milestone.version} ${milestone.name} \u2014 Statistics\n\n`;
+    out += `**Progress:** [${bar}] ${completedPhases}/${phases.length} phases (${percent}%)\n`;
+    if (totalPlans > 0) {
+      out += `**Plans:** ${totalSummaries}/${totalPlans} complete (${planPercent}%)\n`;
+    }
+    out += `**Phases:** ${completedPhases}/${phases.length} complete\n`;
+    if (requirementsTotal > 0) {
+      out += `**Requirements:** ${requirementsComplete}/${requirementsTotal} complete\n`;
+    }
+    out += '\n';
+    out += `| Phase | Name | Plans | Completed | Status |\n`;
+    out += `|-------|------|-------|-----------|--------|\n`;
+    for (const p of phases) {
+      out += `| ${p.number} | ${p.name} | ${p.plans} | ${p.summaries} | ${p.status} |\n`;
+    }
+    if (gitCommits > 0) {
+      out += `\n**Git:** ${gitCommits} commits`;
+      if (gitFirstCommitDate) out += ` (since ${gitFirstCommitDate})`;
+      out += '\n';
+    }
+    if (lastActivity) out += `**Last activity:** ${lastActivity}\n`;
+    output({ rendered: out }, raw, out);
+  } else {
+    output(result, raw);
+  }
 }
 
 module.exports = {
@@ -553,4 +705,5 @@ module.exports = {
   cmdProgressRender,
   cmdTodoComplete,
   cmdScaffold,
+  cmdStats,
 };
