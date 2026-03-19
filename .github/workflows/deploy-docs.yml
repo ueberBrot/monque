@@ -58,7 +58,7 @@ jobs:
 
       - name: Install, build, and upload docs
         if: steps.decide.outputs.should_deploy == 'true'
-        uses: withastro/action@15aa0a5a1e067940253e3b259413ab2ae882a740 # v5
+        uses: withastro/action@74d664f13f9f9063e37b49d74a74613dbf94db3c # v6
         with:
           path: ./apps/docs
           package-manager: bun@1.3.10
