@@ -1,6 +1,6 @@
 import { type Document, type Filter, ObjectId } from 'mongodb';
 
-import { CursorDirection, type CursorDirectionType, type JobSelector } from '@/jobs';
+import type { JobSelector } from '@/jobs';
 import { InvalidCursorError } from '@/shared';
 
 /**
@@ -41,63 +41,43 @@ export function buildSelectorQuery(filter: JobSelector): Filter<Document> {
 }
 
 /**
- * Encode an ObjectId and direction into an opaque cursor string.
+ * Encode an ObjectId into an opaque cursor string.
  *
- * Format: `prefix` + `base64url(objectId)`
- * Prefix: 'F' (forward) or 'B' (backward)
+ * The cursor is a pure anchor — it contains only the ObjectId. Direction is
+ * always provided separately via `CursorOptions.direction`.
  *
  * @param id - The job ID to use as the cursor anchor (exclusive)
- * @param direction - 'forward' or 'backward'
  * @returns Base64url-encoded cursor string
  */
-export function encodeCursor(id: ObjectId, direction: CursorDirectionType): string {
-	const prefix = direction === 'forward' ? 'F' : 'B';
+export function encodeCursor(id: ObjectId): string {
 	const buffer = Buffer.from(id.toHexString(), 'hex');
 
-	return prefix + buffer.toString('base64url');
+	return buffer.toString('base64url');
 }
 
 /**
- * Decode an opaque cursor string into an ObjectId and direction.
+ * Decode an opaque cursor string into an ObjectId.
  *
- * Validates format and returns the components.
+ * Validates format and returns the anchor ID.
  *
  * @param cursor - The opaque cursor string
- * @returns The decoded ID and direction
+ * @returns The decoded ObjectId
  * @throws {InvalidCursorError} If the cursor format is invalid or ID is malformed
  */
-export function decodeCursor(cursor: string): {
-	id: ObjectId;
-	direction: CursorDirectionType;
-} {
-	if (!cursor || cursor.length < 2) {
-		throw new InvalidCursorError('Cursor is empty or too short');
-	}
-
-	const prefix = cursor.charAt(0);
-	const payload = cursor.slice(1);
-
-	let direction: CursorDirectionType;
-
-	if (prefix === 'F') {
-		direction = CursorDirection.FORWARD;
-	} else if (prefix === 'B') {
-		direction = CursorDirection.BACKWARD;
-	} else {
-		throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
+export function decodeCursor(cursor: string): ObjectId {
+	if (!cursor || cursor.length === 0) {
+		throw new InvalidCursorError('Cursor is empty');
 	}
 
 	try {
-		const buffer = Buffer.from(payload, 'base64url');
+		const buffer = Buffer.from(cursor, 'base64url');
 		const hex = buffer.toString('hex');
 		// standard ObjectID is 12 bytes = 24 hex chars
 		if (hex.length !== 24) {
-			throw new InvalidCursorError('Invalid length');
+			throw new InvalidCursorError('Invalid cursor length');
 		}
 
-		const id = new ObjectId(hex);
-
-		return { id, direction };
+		return new ObjectId(hex);
 	} catch (error) {
 		if (error instanceof InvalidCursorError) {
 			throw error;

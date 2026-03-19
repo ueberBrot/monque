@@ -192,8 +192,7 @@ export class JobQueryService {
 		let anchorId: ObjectId | null = null;
 
 		if (options.cursor) {
-			const decoded = decodeCursor(options.cursor);
-			anchorId = decoded.id;
+			anchorId = decodeCursor(options.cursor);
 		}
 
 		// Build base query from filters
@@ -248,7 +247,7 @@ export class JobQueryService {
 			const lastJob = jobs[jobs.length - 1];
 			// Check for existence to satisfy strict null checks/noUncheckedIndexedAccess
 			if (lastJob) {
-				nextCursor = encodeCursor(lastJob._id, direction);
+				nextCursor = encodeCursor(lastJob._id);
 			}
 		}
 
