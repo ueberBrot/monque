@@ -22,7 +22,6 @@ permissions:
 jobs:
   lint:
     name: Lint & Format
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -39,7 +38,6 @@ jobs:
 
   test:
     name: Test & Coverage
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -71,7 +69,6 @@ jobs:
 
   build:
     name: Build
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
     needs: [lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -99,7 +96,7 @@ jobs:
 
   check-changeset:
     name: Check Changeset
-    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Check Changeset
