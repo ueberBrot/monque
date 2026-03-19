@@ -1,5 +1,35 @@
 # @monque/core
 
+## 1.7.0
+
+### Minor Changes
+
+- [#249](https://github.com/ueberBrot/monque/pull/249) [`2c7c079`](https://github.com/ueberBrot/monque/commit/2c7c0790d96b95efef4db2afb96204999d11cded) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add deprecation console warning for `defaultConcurrency` and `maxConcurrency` options.
+
+- [#260](https://github.com/ueberBrot/monque/pull/260) [`c11798b`](https://github.com/ueberBrot/monque/commit/c11798be15ffb9f78abdc4432a954db4a17a05cc) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Parallelized job acquisition in the poll loop using `Promise.allSettled` to lower wall-clock acquisition latency / reduce serialized DB waits (fans out one `findOneAndUpdate` per free slot).
+
+### Patch Changes
+
+- [#269](https://github.com/ueberBrot/monque/pull/269) [`cb707b9`](https://github.com/ueberBrot/monque/commit/cb707b904406ad92a3bbf833c570a92868e7f3d9) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Validate job names and unique keys at the public API boundary so invalid identifiers fail fast before reaching MongoDB operations.
+
+- [#266](https://github.com/ueberBrot/monque/pull/266) [`9c75d1c`](https://github.com/ueberBrot/monque/commit/9c75d1cde5330c4495ed930e4fb20fb5ad86a03e) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Fix `.then()` to `.finally()` in `executePollAndScheduleNext` to ensure the next poll is always scheduled, even if `scheduleNextPoll` throws. This prevents silently swallowed rejections when the callback in `.then()` throws.
+
+- [#258](https://github.com/ueberBrot/monque/pull/258) [`218d398`](https://github.com/ueberBrot/monque/commit/218d3983bfb8e6b55d1a185378a4489650d7ec32) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace `getActiveJobs()` array allocation with `getActiveJobCount()` in shutdown path. The previous implementation created a throw-away `string[]` on every call just to check `.length`. The new method returns a count directly using `Map.size`, avoiding unnecessary array allocations during shutdown polling.
+
+- [#259](https://github.com/ueberBrot/monque/pull/259) [`b0babc4`](https://github.com/ueberBrot/monque/commit/b0babc4c7a87020b39d0622ada388a4adf7d815c) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace the O(workers) iteration in `getTotalActiveJobs()` with an O(1) counter that updates on job acquisition and completion.
+
+- [#263](https://github.com/ueberBrot/monque/pull/263) [`a30186f`](https://github.com/ueberBrot/monque/commit/a30186f24859bcdd9776fede95c848d1bdac3b32) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add compound index for job retention to avoid collection scan during cleanup
+
+- [#264](https://github.com/ueberBrot/monque/pull/264) [`c2b046e`](https://github.com/ueberBrot/monque/commit/c2b046e13ec08814a9a9cd81415b7815499116a1) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Deduplicate `new Date()` calls in update operations. Instead of creating multiple `new Date()` instances milliseconds apart within the same logical operation, methods like `cancelJob`, `retryJob`, and `completeJob` now capture a single `const now = new Date()` and reuse it for all timestamp fields, ensuring consistent timestamps.
+
+- [#265](https://github.com/ueberBrot/monque/pull/265) [`79300c0`](https://github.com/ueberBrot/monque/commit/79300c0d725994f7c9b33e3cf6d6b6217dec26d2) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Optimize `cancelJob`, `retryJob`, and `rescheduleJob` by removing redundant `findOne` pre-checks. These operations now use an optimistic `findOneAndUpdate` first, reducing database round-trips for the common happy paths.
+
+- [#262](https://github.com/ueberBrot/monque/pull/262) [`1b6e29f`](https://github.com/ueberBrot/monque/commit/1b6e29fdcde765beeacf26785253b5cf8c96a145) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Removed redundant `$unset` operations for `heartbeatInterval` on job completion/failure to improve performance and retain observability metadata.
+
+- [#257](https://github.com/ueberBrot/monque/pull/257) [`d71049d`](https://github.com/ueberBrot/monque/commit/d71049da3054de02f3cdd2ad27c021c82f463060) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Replace the `setInterval(100)` busy-loop in `stop()` with a reactive drain promise that resolves instantly when all active jobs finish.
+
+- [#267](https://github.com/ueberBrot/monque/pull/267) [`965f8aa`](https://github.com/ueberBrot/monque/commit/965f8aa90742b9ea8e19685898216c6ad3af5011) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Set maxListeners to 20 on Monque EventEmitter to prevent memory leaks in long-running processes.
+
 ## 1.6.0
 
 ### Minor Changes
