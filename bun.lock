@@ -79,7 +79,7 @@
         "vitest": "^4.1.0",
       },
       "peerDependencies": {
-        "@monque/core": "^1.6.0",
+        "@monque/core": "^1.7.0",
         "@tsed/core": "^8.25.2",
         "@tsed/di": "^8.25.2",
         "@tsed/mongoose": "^8.25.2",
