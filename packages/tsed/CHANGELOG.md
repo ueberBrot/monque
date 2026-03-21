@@ -1,5 +1,15 @@
 # @monque/tsed
 
+## 1.5.1
+
+### Patch Changes
+
+- [#290](https://github.com/ueberBrot/monque/pull/290) [`cdfaa4b`](https://github.com/ueberBrot/monque/commit/cdfaa4b31489c4b5367f4a1ea364fc91e9715fcf) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/tsed: @tsed/core (^8.25.2 → ^8.25.4)
+  - @monque/tsed: @tsed/di (^8.25.2 → ^8.25.4)
+  - @monque/tsed: @tsed/mongoose (^8.25.2 → ^8.25.4)
+
 ## 1.5.0
 
 ### Minor Changes
