@@ -89,10 +89,10 @@
 		"@tsed/platform-http": "^8.25.4",
 		"@tsed/testcontainers-mongo": "^8.25.4",
 		"@types/node": "^22.19.15",
-		"@vitest/coverage-v8": "^4.1.0",
+		"@vitest/coverage-v8": "^4.1.1",
 		"mongodb": "^7.1.0",
 		"testcontainers": "^11.13.0",
 		"tsdown": "^0.21.4",
-		"vitest": "^4.1.0"
+		"vitest": "^4.1.1"
 	}
 }

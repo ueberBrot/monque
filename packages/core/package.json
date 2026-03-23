@@ -79,10 +79,10 @@
 		"@testcontainers/mongodb": "^11.13.0",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/node": "^22.19.15",
-		"@vitest/coverage-v8": "^4.1.0",
+		"@vitest/coverage-v8": "^4.1.1",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.1.0",
 		"tsdown": "^0.21.4",
-		"vitest": "^4.1.0"
+		"vitest": "^4.1.1"
 	}
 }
