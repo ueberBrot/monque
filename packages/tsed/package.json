@@ -92,7 +92,7 @@
 		"@vitest/coverage-v8": "^4.1.2",
 		"mongodb": "^7.1.1",
 		"testcontainers": "^11.13.0",
-		"tsdown": "^0.21.5",
+		"tsdown": "^0.21.6",
 		"vitest": "^4.1.2"
 	}
 }
