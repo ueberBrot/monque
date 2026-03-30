@@ -52,7 +52,7 @@
         "@vitest/coverage-v8": "^4.1.2",
         "fishery": "^2.4.0",
         "mongodb": "^7.1.1",
-        "tsdown": "^0.21.6",
+        "tsdown": "^0.21.7",
         "vitest": "^4.1.2",
       },
       "peerDependencies": {
@@ -75,7 +75,7 @@
         "@vitest/coverage-v8": "^4.1.2",
         "mongodb": "^7.1.1",
         "testcontainers": "^11.13.0",
-        "tsdown": "^0.21.6",
+        "tsdown": "^0.21.7",
         "vitest": "^4.1.2",
       },
       "peerDependencies": {
