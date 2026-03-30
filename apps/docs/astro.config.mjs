@@ -3,12 +3,11 @@
 import { readFileSync } from 'node:fs';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
+import astroMermaid from 'astro-mermaid';
 import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import starlightThemeNova from 'starlight-theme-nova';
 import starlightTypeDoc from 'starlight-typedoc';
-
-import remarkMermaidToPre from './src/remark/remark-mermaid-to-pre.mjs';
 
 const corePackageJsonUrl = new URL('../../packages/core/package.json', import.meta.url);
 const corePackageJson = JSON.parse(readFileSync(corePackageJsonUrl, 'utf8'));
@@ -23,11 +22,12 @@ export default defineConfig({
 		},
 	},
 	markdown: {
-		remarkPlugins: [remarkMermaidToPre],
+		remarkPlugins: [],
 	},
 	site: 'https://ueberBrot.github.io',
 	base: '/monque',
 	integrations: [
+		astroMermaid(),
 		starlight({
 			title: 'Monque',
 			description:
@@ -109,27 +109,6 @@ export default defineConfig({
 						property: 'og:image',
 						content: 'https://ueberBrot.github.io/monque/favicon.svg',
 					},
-				},
-				{
-					tag: 'script',
-					attrs: { type: 'module' },
-					content: `
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-
-mermaid.initialize({ startOnLoad: false });
-
-async function renderMermaid() {
-  try {
-    await mermaid.run({ querySelector: 'pre.mermaid' });
-  } catch {
-    // ignore render errors
-  }
-}
-
-window.addEventListener('DOMContentLoaded', renderMermaid);
-document.addEventListener('astro:page-load', renderMermaid);
-document.addEventListener('astro:after-swap', renderMermaid);
-`,
 				},
 			],
 			plugins: [
