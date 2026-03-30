@@ -28,12 +28,10 @@
 		"isolatedModules": true,
 		"declaration": true,
 		"declarationMap": true,
-
-		"baseUrl": ".",
 		"paths": {
-			"@/*": ["src/*"],
-			"@tests/*": ["tests/*"],
-			"@test-utils/*": ["tests/setup/*"]
+			"@/*": ["./src/*"],
+			"@tests/*": ["./tests/*"],
+			"@test-utils/*": ["./tests/setup/*"]
 		}
 	},
 	"include": ["src/**/*", "tests/**/*"],
