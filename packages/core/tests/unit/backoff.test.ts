@@ -46,7 +46,7 @@ describe('backoff', () => {
 			expect(applyJitter(0, 0.25)).toBe(0);
 		});
 
-		it('should return 0 when factor is negative', () => {
+		it('should return the original delay when factor is negative', () => {
 			expect(applyJitter(4000, -0.1)).toBe(4000);
 		});
 
