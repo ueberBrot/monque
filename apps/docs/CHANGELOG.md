@@ -1,5 +1,11 @@
 # @monque/docs
 
+## 1.1.0
+
+### Minor Changes
+
+- [#319](https://github.com/ueberBrot/monque/pull/319) [`d6813a1`](https://github.com/ueberBrot/monque/commit/d6813a12fffc4fc9a3259e5d3265b7b11f9a8487) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Removed inline Mermaid script and replaced it with a dedicated Mermaid lib.
+
 ## 1.0.1
 
 ### Patch Changes

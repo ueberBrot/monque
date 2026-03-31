@@ -1,5 +1,20 @@
 # @monque/tsed
 
+## 1.6.0
+
+### Minor Changes
+
+- [#322](https://github.com/ueberBrot/monque/pull/322) [`7dd21a6`](https://github.com/ueberBrot/monque/commit/7dd21a6cc0f904616fb171ebbf177e8793d93679) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/tsed: @monque/core (^1.6.0 → ^1.7.0)
+
+### Patch Changes
+
+- [#300](https://github.com/ueberBrot/monque/pull/300) [`2e309e8`](https://github.com/ueberBrot/monque/commit/2e309e8ad99143d6c2ba36e139848ff98d83571b) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.1.0 → ^7.1.1)
+  - @monque/tsed: mongodb (^7.1.0 → ^7.1.1)
+
 ## 1.5.1
 
 ### Patch Changes
