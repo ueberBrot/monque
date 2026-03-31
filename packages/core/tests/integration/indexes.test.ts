@@ -64,7 +64,7 @@ describe('Index creation', () => {
 			// Atomic claim indexes
 			expect(indexKeys).toContain('claimedBy,status');
 			expect(indexKeys).toContain('lastHeartbeat,status');
-			expect(indexKeys).toContain('status,nextRunAt,claimedBy');
+			expect(indexKeys).toContain('name,status,nextRunAt,claimedBy');
 			expect(indexKeys).toContain('status,lockedAt,lastHeartbeat');
 		});
 
@@ -103,7 +103,7 @@ describe('Index creation', () => {
 			expect(heartbeatIndex?.background).toBe(true);
 		});
 
-		it('should create status+nextRunAt+claimedBy compound index for atomic claim queries', async () => {
+		it('should create name+status+nextRunAt+claimedBy compound index for atomic claim queries', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
@@ -113,14 +113,15 @@ describe('Index creation', () => {
 			const indexes = await collection.indexes();
 			const atomicClaimIndex = indexes.find(
 				(idx) =>
+					'name' in idx.key &&
 					'status' in idx.key &&
 					'nextRunAt' in idx.key &&
 					'claimedBy' in idx.key &&
-					Object.keys(idx.key).length === 3,
+					Object.keys(idx.key).length === 4,
 			);
 
 			expect(atomicClaimIndex).toBeDefined();
-			expect(atomicClaimIndex?.key).toEqual({ status: 1, nextRunAt: 1, claimedBy: 1 });
+			expect(atomicClaimIndex?.key).toEqual({ name: 1, status: 1, nextRunAt: 1, claimedBy: 1 });
 			expect(atomicClaimIndex?.background).toBe(true);
 		});
 
