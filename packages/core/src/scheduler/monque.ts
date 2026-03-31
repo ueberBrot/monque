@@ -343,7 +343,7 @@ export class Monque extends EventEmitter {
 	 * - `{name, status}` - For job lookup by type
 	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
 	 * - `{lastHeartbeat, status}` - For monitoring/debugging queries (e.g., inspecting heartbeat age)
-	 * - `{status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs)
+	 * - `{name, status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs per worker)
 	 * - `{lockedAt, lastHeartbeat, status}` - Supports recovery scans and monitoring access patterns
 	 */
 	private async createIndexes(): Promise<void> {
@@ -374,8 +374,9 @@ export class Monque extends EventEmitter {
 			// Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
 			{ key: { lastHeartbeat: 1, status: 1 }, background: true },
 			// Compound index for atomic claim queries.
-			// Optimizes the findOneAndUpdate query that claims unclaimed pending jobs.
-			{ key: { status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
+			// Prefix with `name` to match the acquireJob query shape: { name, status, nextRunAt, claimedBy }.
+			// This enables per-worker index prefix scans instead of scanning across all job types.
+			{ key: { name: 1, status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
 			// Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
 			{ key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
 			// Index for efficient lifecycle manager cleanup when jobRetention is configured.
