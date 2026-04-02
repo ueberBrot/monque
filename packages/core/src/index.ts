@@ -33,10 +33,12 @@ export { Monque } from '@/scheduler';
 // Utilities (for advanced use cases)
 export {
 	AggregationTimeoutError,
+	applyJitter,
 	ConnectionError,
 	calculateBackoff,
 	calculateBackoffDelay,
 	DEFAULT_BASE_INTERVAL,
+	DEFAULT_JITTER_FACTOR,
 	DEFAULT_MAX_BACKOFF_DELAY,
 	getNextCronDate,
 	InvalidCronError,

@@ -25,7 +25,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
 import { type Job, JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
-import { calculateBackoffDelay } from '@/shared';
+
+// removed calculateBackoffDelay import
 
 describe('Retry Logic', () => {
 	let db: Db;
@@ -100,12 +101,13 @@ describe('Retry Logic', () => {
 			expect(doc['status']).toBe(JobStatus.PENDING);
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
-			const expectedDelay = calculateBackoffDelay(1, 1000); // 2^1 * 1000 = 2000ms
-			const expectedNextRunAt = failureTime + expectedDelay;
+			const expectedBaseDelay = 2 ** 1 * 1000; // 2000ms
+			const expectedMaxJitter = expectedBaseDelay * 0.25; // 500ms
+			const expectedNextRunAt = failureTime + expectedBaseDelay;
 
-			// Verify timing is within tolerance
+			// Verify timing is within tolerance (jitter + processing buffer)
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
-			expect(timingDiff).toBeLessThanOrEqual(250); // Allow buffer for processing time and CI variability
+			expect(timingDiff).toBeLessThanOrEqual(expectedMaxJitter + 250);
 		});
 
 		it('should schedule second retry with correct backoff timing (2^2 * 1000 = 4000ms)', async () => {
@@ -157,12 +159,13 @@ describe('Retry Logic', () => {
 			expect(doc['status']).toBe(JobStatus.PENDING);
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
-			const expectedDelay = calculateBackoffDelay(2, 1000); // 2^2 * 1000 = 4000ms
-			const expectedNextRunAt = failureTime + expectedDelay;
+			const expectedBaseDelay = 2 ** 2 * 1000; // 4000ms
+			const expectedMaxJitter = expectedBaseDelay * 0.25; // 1000ms
+			const expectedNextRunAt = failureTime + expectedBaseDelay;
 
-			// Verify timing is within tolerance (SC-003 specifies ±50ms ideal, but we allow buffer for processing time and CI variability)
+			// Verify timing is within tolerance (jitter + processing buffer)
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
-			expect(timingDiff).toBeLessThanOrEqual(250); // Allow buffer for processing time and CI variability
+			expect(timingDiff).toBeLessThanOrEqual(expectedMaxJitter + 250);
 		});
 
 		it('should use configurable baseRetryInterval for backoff calculation', async () => {
@@ -199,11 +202,12 @@ describe('Retry Logic', () => {
 				.findOne({ _id: job._id })) as WithId<Document>;
 
 			const nextRunAt = new Date(doc['nextRunAt']).getTime();
-			const expectedDelay = calculateBackoffDelay(1, customBaseInterval); // 2^1 * 500 = 1000ms
-			const expectedNextRunAt = failureTime + expectedDelay;
+			const expectedBaseDelay = 2 ** 1 * customBaseInterval; // 1000ms
+			const expectedMaxJitter = expectedBaseDelay * 0.25; // 250ms
+			const expectedNextRunAt = failureTime + expectedBaseDelay;
 
 			const timingDiff = Math.abs(nextRunAt - expectedNextRunAt);
-			expect(timingDiff).toBeLessThanOrEqual(200);
+			expect(timingDiff).toBeLessThanOrEqual(expectedMaxJitter + 200);
 		});
 	});
 
