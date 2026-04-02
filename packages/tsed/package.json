@@ -68,7 +68,7 @@
 		"lint": "biome check ."
 	},
 	"peerDependencies": {
-		"@monque/core": "^1.7.0",
+		"@monque/core": "^1.7.1",
 		"@tsed/core": "^8.26.0",
 		"@tsed/di": "^8.26.0",
 		"@tsed/mongoose": "^8.26.0",
