@@ -1,5 +1,13 @@
 # @monque/core
 
+## 1.7.2
+
+### Patch Changes
+
+- [#329](https://github.com/ueberBrot/monque/pull/329) [`0f8ff15`](https://github.com/ueberBrot/monque/commit/0f8ff15ce1b22f1a56d935ce3398863ed45e63f8) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add jitter to exponential backoff to prevent thundering-herd retries
+
+- [#330](https://github.com/ueberBrot/monque/pull/330) [`1cbb22b`](https://github.com/ueberBrot/monque/commit/1cbb22b10885b6d886d6c4c00c03361356784720) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add `name` prefix to atomic claim compound index for per-worker scan efficiency
+
 ## 1.7.1
 
 ### Patch Changes
