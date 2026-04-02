@@ -101,11 +101,7 @@ export function calculateBackoffDelay(
 	jitterFactor: number = DEFAULT_JITTER_FACTOR,
 ): number {
 	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
-	let delay = 2 ** failCount * baseInterval;
-
-	if (delay > effectiveMaxDelay) {
-		delay = effectiveMaxDelay;
-	}
-
-	return applyJitter(delay, jitterFactor);
+	const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
+	const jittered = applyJitter(baseDelay, jitterFactor);
+	return Math.min(jittered, effectiveMaxDelay);
 }

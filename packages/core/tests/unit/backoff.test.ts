@@ -148,8 +148,8 @@ describe('backoff', () => {
 			}
 		});
 
-		it('should apply jitter after cap', () => {
-			// With maxDelay=60000 and jitter=0.25, range is [45000, 75000]
+		it('should clamp jittered result to maxDelay', () => {
+			// With maxDelay=60000, jitter can push below but never above the cap
 			const results = new Set<number>();
 
 			for (let i = 0; i < 50; i++) {
@@ -158,7 +158,7 @@ describe('backoff', () => {
 
 			for (const result of results) {
 				expect(result).toBeGreaterThanOrEqual(60000 * 0.75);
-				expect(result).toBeLessThanOrEqual(60000 * 1.25);
+				expect(result).toBeLessThanOrEqual(60000);
 			}
 		});
 	});
