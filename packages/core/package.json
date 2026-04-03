@@ -78,7 +78,7 @@
 		"@faker-js/faker": "^10.4.0",
 		"@testcontainers/mongodb": "^11.13.0",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.19.15",
+		"@types/node": "^22.19.17",
 		"@vitest/coverage-v8": "^4.1.2",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.1.1",
