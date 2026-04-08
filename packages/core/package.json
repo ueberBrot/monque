@@ -76,7 +76,7 @@
 	},
 	"devDependencies": {
 		"@faker-js/faker": "^10.4.0",
-		"@testcontainers/mongodb": "^11.13.0",
+		"@testcontainers/mongodb": "^11.14.0",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@types/node": "^22.19.17",
 		"@vitest/coverage-v8": "^4.1.3",
