@@ -82,7 +82,7 @@
 		"@vitest/coverage-v8": "^4.1.4",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.1.1",
-		"tsdown": "^0.21.7",
+		"tsdown": "^0.21.8",
 		"vitest": "^4.1.4"
 	}
 }
