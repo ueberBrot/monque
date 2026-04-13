@@ -10,7 +10,7 @@
         "@changesets/changelog-github": "^0.6.0",
         "@changesets/cli": "^2.30.0",
         "@types/node": "^22.19.17",
-        "knip": "^6.4.0",
+        "knip": "^6.4.1",
         "lefthook": "^2.1.5",
         "publint": "^0.3.18",
         "rimraf": "^6.1.3",
