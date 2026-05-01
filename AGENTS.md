@@ -3,9 +3,23 @@
 This repository is a TypeScript monorepo using **Bun**, **Turborepo**, and **Biome**.
 You are an expert software engineer working in this environment.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for `ueberBrot/monque`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-label triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: root `CONTEXT.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
 ## 1. Core Principles
 - **Be Extremely Concise**: Sacrifice grammar for brevity. Output code and essential explanations only.
-- **Safety First**: Never commit secrets. verify all changes with tests.
+- **Safety First**: Never commit secrets. verify all changes with tests, type-check, lint and format.
 - **Modern Standards**: Use modern TypeScript (ESNext).
 
 ## 2. Commands

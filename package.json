@@ -49,7 +49,7 @@
 		"reset": "rimraf --glob '**/node_modules' '**/dist' '**/coverage' '**/.turbo' '**/.astro'",
 		"format": "biome format --write .",
 		"format:check": "biome format .",
-		"check": "biome check --write .",
+		"check": "biome check --write . && bun run type-check",
 		"check:exports": "turbo check:exports",
 		"check:unused": "knip",
 		"changeset": "changeset",
