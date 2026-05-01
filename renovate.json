@@ -9,14 +9,15 @@
 		"helpers:pinGitHubActionDigests"
 	],
 	"enabledManagers": ["bun", "github-actions"],
-	"timezone": "Europe/Brussels",
+	"timezone": "Europe/Berlin",
+	"schedule": ["* 6-8 1-7 * 1"],
 	"labels": ["dependencies"],
 	"rangeStrategy": "bump",
 	"prConcurrentLimit": 4,
 	"prHourlyLimit": 2,
 	"lockFileMaintenance": {
 		"enabled": true,
-		"schedule": ["before 6am on monday"],
+		"schedule": ["* 6-8 1-7 * 1"],
 		"automerge": true,
 		"platformAutomerge": true
 	},
