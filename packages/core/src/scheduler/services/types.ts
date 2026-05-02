@@ -1,7 +1,7 @@
 import type { Collection, Document, WithId } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
-import type { PersistedJob } from '@/jobs';
+import { JobStatus, type PersistedJob } from '@/jobs';
 import type { WorkerRegistration } from '@/workers';
 
 import type { MonqueOptions } from '../types.js';
@@ -68,4 +68,18 @@ export interface SchedulerContext {
 
 	/** Convert MongoDB document to typed PersistedJob */
 	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
+}
+
+export const RETRYABLE_JOB_STATUSES = [JobStatus.FAILED, JobStatus.CANCELLED] as const;
+
+export type RetryableJobStatusType = (typeof RETRYABLE_JOB_STATUSES)[number];
+
+export interface CancelledJob {
+	job: PersistedJob<unknown>;
+	transitioned: boolean;
+}
+
+export interface RetriedJob {
+	job: PersistedJob<unknown>;
+	previousStatus: RetryableJobStatusType;
 }

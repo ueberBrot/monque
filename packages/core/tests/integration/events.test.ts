@@ -220,6 +220,24 @@ describe('Monitor Job Lifecycle Events', () => {
 			expect(event.job._id?.toString()).toBe(job._id.toString());
 			expect(event.job.status).toBe(JobStatus.CANCELLED);
 		});
+
+		it('should not emit job:cancelled when cancelling an already cancelled job', async () => {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const cancelledEvents: MonqueEventMap['job:cancelled'][] = [];
+			monque.on('job:cancelled', (payload) => {
+				cancelledEvents.push(payload);
+			});
+
+			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'cancel-me-once' });
+			await monque.cancelJob(job._id.toString());
+			await monque.cancelJob(job._id.toString());
+
+			expect(cancelledEvents).toHaveLength(1);
+		});
 	});
 
 	describe('job:retried event', () => {

@@ -70,6 +70,9 @@ describe('JobManager', () => {
 
 			expect(job?.status).toBe(JobStatus.CANCELLED);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalled();
+			expect(ctx.emitHistory).not.toContainEqual(
+				expect.objectContaining({ event: 'job:cancelled' }),
+			);
 		});
 	});
 

@@ -1,8 +1,9 @@
-import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
-import { calculateBackoff, getNextCronDate, toError } from '@/shared';
+import { type Job, JobStatus, type PersistedJob } from '@/jobs';
+import { toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
 import { JobSelection } from './job-selection.js';
+import { JobStateTransitions } from './job-state-transitions.js';
 import type { SchedulerContext } from './types.js';
 
 /**
@@ -30,9 +31,11 @@ export class JobProcessor {
 	private _totalActiveJobs = 0;
 
 	private readonly selection: JobSelection;
+	private readonly transitions: JobStateTransitions;
 
 	constructor(private readonly ctx: SchedulerContext) {
 		this.selection = new JobSelection(ctx);
+		this.transitions = new JobStateTransitions(ctx);
 	}
 
 	/**
@@ -148,24 +151,10 @@ export class JobProcessor {
 									this.ctx.emit('job:error', { error: toError(error), job });
 								});
 							} else {
-								// Revert claim if shut down while acquiring
 								try {
-									await this.ctx.collection.updateOne(
-										{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
-										{
-											$set: {
-												status: JobStatus.PENDING,
-												updatedAt: new Date(),
-											},
-											$unset: {
-												lockedAt: '',
-												claimedBy: '',
-												lastHeartbeat: '',
-											},
-										},
-									);
-								} catch (error) {
-									this.ctx.emit('job:error', { error: toError(error) });
+									await this.transitions.releaseOwnedClaim(job);
+								} catch {
+									// Best-effort shutdown cleanup.
 								}
 							}
 						})
@@ -252,67 +241,7 @@ export class JobProcessor {
 	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
 	async completeJob(job: Job): Promise<PersistedJob | null> {
-		if (!isPersistedJob(job)) {
-			return null;
-		}
-
-		const now = new Date();
-
-		if (job.repeatInterval) {
-			// Recurring job - schedule next run
-			const nextRunAt = getNextCronDate(job.repeatInterval);
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: now,
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-						failReason: '',
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			if (!result) {
-				return null;
-			}
-
-			const persistedJob = this.ctx.documentToPersistedJob(result);
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-			return persistedJob;
-		}
-
-		// One-time job - mark as completed
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
-			{
-				$set: {
-					status: JobStatus.COMPLETED,
-					updatedAt: now,
-				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-					failReason: '',
-				},
-			},
-			{ returnDocument: 'after' },
-		);
-
-		if (!result) {
-			return null;
-		}
-
-		const persistedJob = this.ctx.documentToPersistedJob(result);
-		return persistedJob;
+		return this.transitions.completeOwned(job);
 	}
 
 	/**
@@ -334,63 +263,7 @@ export class JobProcessor {
 	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
 	async failJob(job: Job, error: Error): Promise<PersistedJob | null> {
-		if (!isPersistedJob(job)) {
-			return null;
-		}
-
-		const now = new Date();
-		const newFailCount = job.failCount + 1;
-
-		if (newFailCount >= this.ctx.options.maxRetries) {
-			// Permanent failure
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: now,
-					},
-					$unset: {
-						lockedAt: '',
-						claimedBy: '',
-						lastHeartbeat: '',
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			return result ? this.ctx.documentToPersistedJob(result) : null;
-		}
-
-		// Schedule retry with exponential backoff
-		const nextRunAt = calculateBackoff(
-			newFailCount,
-			this.ctx.options.baseRetryInterval,
-			this.ctx.options.maxBackoffDelay,
-		);
-
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: this.ctx.instanceId },
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					failCount: newFailCount,
-					failReason: error.message,
-					nextRunAt,
-					updatedAt: now,
-				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-				},
-			},
-			{ returnDocument: 'after' },
-		);
-
-		return result ? this.ctx.documentToPersistedJob(result) : null;
+		return this.transitions.failOwned(job, error);
 	}
 
 	/**

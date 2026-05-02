@@ -628,7 +628,8 @@ export class Monque extends EventEmitter {
 	/**
 	 * Cancel a pending or scheduled job.
 	 *
-	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
+	 * Sets the job status to 'cancelled' only when canceling from pending status.
+	 * Emits a 'job:cancelled' event only when a state transition occurs.
 	 * If the job is already cancelled, this is a no-op and returns the job.
 	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
 	 *

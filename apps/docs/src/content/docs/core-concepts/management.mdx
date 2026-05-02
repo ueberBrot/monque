@@ -32,7 +32,7 @@ const job = await monque.cancelJob('job-id');
 ```
 
 - **Effect**: Status becomes `cancelled`.
-- **Event**: Emits `job:cancelled`.
+- **Event**: Emits `job:cancelled` only when the job transitions from `pending` to `cancelled`.
 - **Constraint**: Cannot cancel `processing`, `completed`, or `failed` jobs (unless they return to pending).
 
 ### Retry a Job
