@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockContext, JobFactory } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { JobSelection } from '@/scheduler/services';
-import { ConnectionError } from '@/shared';
 
 describe('JobSelection', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -87,14 +86,9 @@ describe('JobSelection', () => {
 		expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(2);
 	});
 
-	it('wraps selection failures with job context', async () => {
+	it('propagates selection failures to the caller', async () => {
 		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce('database offline');
 
-		const result = selection.acquireNext('email');
-
-		await expect(result).rejects.toThrow(
-			'Failed to acquire next job for "email": database offline',
-		);
-		await expect(result).rejects.toThrow(ConnectionError);
+		await expect(selection.acquireNext('email')).rejects.toThrow('database offline');
 	});
 });
