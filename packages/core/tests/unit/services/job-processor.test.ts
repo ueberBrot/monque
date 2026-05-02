@@ -221,7 +221,6 @@ describe('JobProcessor', () => {
 				expect.objectContaining({
 					name: 'test-job',
 					status: JobStatus.PENDING,
-					$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
 				}),
 				expect.objectContaining({
 					$set: expect.objectContaining({
@@ -229,6 +228,11 @@ describe('JobProcessor', () => {
 						claimedBy: 'test-instance-id',
 					}),
 				}),
+				expect.any(Object),
+			);
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalledWith(
+				expect.objectContaining({ $or: expect.any(Array) }),
+				expect.any(Object),
 				expect.any(Object),
 			);
 		});

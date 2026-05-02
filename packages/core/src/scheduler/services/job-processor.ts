@@ -2,6 +2,7 @@ import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
 import { calculateBackoff, getNextCronDate, toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
+import { JobSelection } from './job-selection.js';
 import type { SchedulerContext } from './types.js';
 
 /**
@@ -28,7 +29,11 @@ export class JobProcessor {
 	 */
 	private _totalActiveJobs = 0;
 
-	constructor(private readonly ctx: SchedulerContext) {}
+	private readonly selection: JobSelection;
+
+	constructor(private readonly ctx: SchedulerContext) {
+		this.selection = new JobSelection(ctx);
+	}
 
 	/**
 	 * Get the number of available slots considering the global instanceConcurrency limit.
@@ -177,52 +182,13 @@ export class JobProcessor {
 	/**
 	 * Atomically acquire a pending job for processing using the claimedBy pattern.
 	 *
-	 * Uses MongoDB's `findOneAndUpdate` with atomic operations to ensure only one scheduler
-	 * instance can claim a job. The query ensures the job is:
-	 * - In pending status
-	 * - Has nextRunAt <= now
-	 * - Is not claimed by another instance (claimedBy is null/undefined)
-	 *
 	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
 	 *
 	 * @param name - The job type to acquire
 	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
 	 */
 	async acquireJob(name: string): Promise<PersistedJob | null> {
-		if (!this.ctx.isRunning()) {
-			return null;
-		}
-
-		const now = new Date();
-
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.ctx.instanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.ctx.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
-
-		if (!result) {
-			return null;
-		}
-
-		return this.ctx.documentToPersistedJob(result);
+		return this.selection.acquireNext(name);
 	}
 
 	/**
