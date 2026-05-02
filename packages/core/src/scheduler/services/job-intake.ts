@@ -11,6 +11,7 @@ import {
 	ConnectionError,
 	getNextCronDate,
 	PayloadTooLargeError,
+	toError,
 	validateJobName,
 	validateUniqueKey,
 } from '@/shared';
@@ -46,7 +47,7 @@ export class JobIntake {
 		try {
 			size = BSON.calculateObjectSize({ data } as Document);
 		} catch (error) {
-			const cause = error instanceof Error ? error : new Error(String(error));
+			const cause = toError(error);
 			const sizeError = new PayloadTooLargeError(
 				`Failed to calculate job payload size: ${cause.message}`,
 				-1,
@@ -139,11 +140,8 @@ export class JobIntake {
 			if (error instanceof ConnectionError) {
 				throw error;
 			}
-			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(
-				`Failed to schedule job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
+			const err = toError(error);
+			throw new ConnectionError(`Failed to schedule job: ${err.message}`, { cause: err });
 		}
 	}
 
@@ -172,11 +170,8 @@ export class JobIntake {
 			if (error instanceof ConnectionError) {
 				throw error;
 			}
-			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			throw new ConnectionError(
-				`Failed to enqueue job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
+			const err = toError(error);
+			throw new ConnectionError(`Failed to enqueue job: ${err.message}`, { cause: err });
 		}
 	}
 }

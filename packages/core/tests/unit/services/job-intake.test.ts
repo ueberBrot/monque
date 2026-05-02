@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, JobFactory } from '@tests/factories';
 import { JobStatus } from '@/jobs';
-import { JobIntake } from '@/scheduler/services/job-intake.js';
+import { JobIntake } from '@/scheduler/services/job-intake';
 
 describe('JobIntake', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -51,6 +51,22 @@ describe('JobIntake', () => {
 		expect(ctx.notifyPendingJob).toHaveBeenCalledWith('sync-user', existingJob.nextRunAt);
 	});
 
+	it('returns the existing processing job for duplicate unique intake', async () => {
+		const existingJob = JobFactory.build({
+			name: 'sync-user',
+			uniqueKey: 'user-123',
+			data: { userId: 'user-123' },
+			status: JobStatus.PROCESSING,
+		});
+		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
+
+		const job = await intake.enqueue('sync-user', { userId: 'ignored' }, { uniqueKey: 'user-123' });
+
+		expect(job._id).toEqual(existingJob._id);
+		expect(job.data).toEqual(existingJob.data);
+		expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+	});
+
 	it('schedules a pending recurring job', async () => {
 		const insertedId = new ObjectId();
 		vi.spyOn(ctx.mockCollection, 'insertOne').mockResolvedValueOnce({
@@ -92,5 +108,28 @@ describe('JobIntake', () => {
 		expect(job.data).toEqual(existingJob.data);
 		expect(job.repeatInterval).toBe('0 0 * * *');
 		expect(ctx.notifyPendingJob).toHaveBeenCalledWith('daily-report', existingJob.nextRunAt);
+	});
+
+	it('returns the existing processing recurring job for duplicate unique schedule intake', async () => {
+		const existingJob = JobFactory.build({
+			name: 'daily-report',
+			uniqueKey: 'sales-report',
+			repeatInterval: '0 0 * * *',
+			data: { report: 'sales' },
+			status: JobStatus.PROCESSING,
+		});
+		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(existingJob);
+
+		const job = await intake.schedule(
+			'0 0 * * *',
+			'daily-report',
+			{ report: 'ignored' },
+			{ uniqueKey: 'sales-report' },
+		);
+
+		expect(job._id).toEqual(existingJob._id);
+		expect(job.data).toEqual(existingJob.data);
+		expect(job.repeatInterval).toBe('0 0 * * *');
+		expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 	});
 });
