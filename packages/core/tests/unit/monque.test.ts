@@ -23,7 +23,7 @@ vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@/scheduler/services/index.js')>();
 	return {
 		...actual,
-		JobScheduler: vi.fn(),
+		JobIntake: vi.fn(),
 		JobManager: vi.fn(),
 		JobQueryService: vi.fn(),
 		JobProcessor: vi.fn(),
@@ -141,7 +141,7 @@ describe('Monque', () => {
 
 		it('should throw ConnectionError when accessing internal services', () => {
 			// Accessing private getters via casting to unknown (simulating internal usage or bugs)
-			expect(() => (monque as unknown as Record<string, unknown>)['scheduler']).toThrow(
+			expect(() => (monque as unknown as Record<string, unknown>)['intake']).toThrow(
 				ConnectionError,
 			);
 			expect(() => (monque as unknown as Record<string, unknown>)['manager']).toThrow(
@@ -208,9 +208,9 @@ describe('Monque', () => {
 			await monque.initialize();
 		});
 
-		it('should delegate enqueue to scheduler', async () => {
+		it('should delegate enqueue to intake', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { enqueue: spy };
 
 			await monque.enqueue('test', { foo: 'bar' });
 			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' }, {});
@@ -218,7 +218,7 @@ describe('Monque', () => {
 
 		it('should reject invalid enqueue job names before delegating', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { enqueue: spy };
 
 			await expect(monque.enqueue('invalid job', { foo: 'bar' })).rejects.toThrow(
 				InvalidJobIdentifierError,
@@ -228,7 +228,7 @@ describe('Monque', () => {
 
 		it('should reject invalid enqueue unique keys before delegating', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { enqueue: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { enqueue: spy };
 
 			await expect(
 				monque.enqueue('valid-job', { foo: 'bar' }, { uniqueKey: '   ' }),
@@ -236,17 +236,17 @@ describe('Monque', () => {
 			expect(spy).not.toHaveBeenCalled();
 		});
 
-		it('should delegate now to scheduler', async () => {
+		it('should delegate now to intake', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { now: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { now: spy };
 
 			await monque.now('test', { foo: 'bar' });
 			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' });
 		});
 
-		it('should delegate schedule to scheduler', async () => {
+		it('should delegate schedule to intake', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { schedule: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { schedule: spy };
 
 			await monque.schedule('* * * * *', 'test', {});
 			expect(spy).toHaveBeenCalledWith('* * * * *', 'test', {}, {});
@@ -254,7 +254,7 @@ describe('Monque', () => {
 
 		it('should reject invalid scheduled job names before delegating', async () => {
 			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_scheduler'] = { schedule: spy };
+			(monque as unknown as Record<string, unknown>)['_intake'] = { schedule: spy };
 
 			await expect(monque.schedule('* * * * *', 'bad name', {})).rejects.toThrow(
 				InvalidJobIdentifierError,

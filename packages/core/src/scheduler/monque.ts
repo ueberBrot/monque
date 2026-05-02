@@ -30,10 +30,10 @@ import type { WorkerOptions, WorkerRegistration } from '@/workers';
 import {
 	ChangeStreamHandler,
 	CLEANUP_STATUSES,
+	JobIntake,
 	JobManager,
 	JobProcessor,
 	JobQueryService,
-	JobScheduler,
 	LifecycleManager,
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
@@ -139,7 +139,7 @@ export class Monque extends EventEmitter {
 	private _drainResolve: (() => void) | null = null;
 
 	// Internal services (initialized in initialize())
-	private _scheduler: JobScheduler | null = null;
+	private _intake: JobIntake | null = null;
 	private _manager: JobManager | null = null;
 	private _query: JobQueryService | null = null;
 	private _processor: JobProcessor | null = null;
@@ -212,7 +212,7 @@ export class Monque extends EventEmitter {
 
 			// Initialize services with shared context
 			const ctx = this.buildContext();
-			this._scheduler = new JobScheduler(ctx);
+			this._intake = new JobIntake(ctx);
 			this._manager = new JobManager(ctx);
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx);
@@ -234,12 +234,12 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/** @throws {ConnectionError} if not initialized */
-	private get scheduler(): JobScheduler {
-		if (!this._scheduler) {
+	private get intake(): JobIntake {
+		if (!this._intake) {
 			throw new ConnectionError('Monque not initialized. Call initialize() first.');
 		}
 
-		return this._scheduler;
+		return this._intake;
 	}
 
 	/** @throws {ConnectionError} if not initialized */
@@ -468,7 +468,7 @@ export class Monque extends EventEmitter {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
-	// Public API - Job Scheduling (delegates to JobScheduler)
+	// Public API - Job Scheduling (delegates to JobIntake)
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
@@ -517,12 +517,12 @@ export class Monque extends EventEmitter {
 	 * // Subsequent enqueues with same uniqueKey return existing pending/processing job
 	 * ```
 	 *
-	 * @see {@link JobScheduler.enqueue}
+	 * @see {@link JobIntake.enqueue}
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 		this.validateSchedulingIdentifiers(name, options.uniqueKey);
-		return this.scheduler.enqueue(name, data, options);
+		return this.intake.enqueue(name, data, options);
 	}
 
 	/**
@@ -554,12 +554,12 @@ export class Monque extends EventEmitter {
 	 * return order; // Return immediately, processing happens async
 	 * ```
 	 *
-	 * @see {@link JobScheduler.now}
+	 * @see {@link JobIntake.now}
 	 */
 	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 		validateJobName(name);
-		return this.scheduler.now(name, data);
+		return this.intake.now(name, data);
 	}
 
 	/**
@@ -608,7 +608,7 @@ export class Monque extends EventEmitter {
 	 * });
 	 * ```
 	 *
-	 * @see {@link JobScheduler.schedule}
+	 * @see {@link JobIntake.schedule}
 	 */
 	async schedule<T>(
 		cron: string,
@@ -618,7 +618,7 @@ export class Monque extends EventEmitter {
 	): Promise<PersistedJob<T>> {
 		this.ensureInitialized();
 		this.validateSchedulingIdentifiers(name, options.uniqueKey);
-		return this.scheduler.schedule(cron, name, data, options);
+		return this.intake.schedule(cron, name, data, options);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────

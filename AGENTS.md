@@ -179,7 +179,7 @@ Patterns:
 ### Core Package
 
 - **Monque class**: Facade extending typed `EventEmitter` (type-safe `emit`/`on`/`once`/`off`)
-- **Internal services**: `JobScheduler`, `JobManager`, `JobQueryService`, `JobProcessor`, `ChangeStreamHandler`
+- **Internal services**: `JobIntake`, `JobManager`, `JobQueryService`, `JobProcessor`, `ChangeStreamHandler`
 - All services receive a shared `SchedulerContext` interface (manual constructor injection)
 - **Lazy init**: Services null-initialized, created in `initialize()`, private getters throw if accessed before init
 

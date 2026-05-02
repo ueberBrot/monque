@@ -63,7 +63,7 @@ function createMockCollection(): Collection<Document> {
  * @example
  * ```typescript
  * const ctx = createMockContext();
- * const scheduler = new JobScheduler(ctx);
+ * const intake = new JobIntake(ctx);
  *
  * // Mock collection responses using vi.spyOn and JobFactory
  * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
