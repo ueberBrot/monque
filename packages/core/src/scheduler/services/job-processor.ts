@@ -153,8 +153,8 @@ export class JobProcessor {
 							} else {
 								try {
 									await this.transitions.releaseOwnedClaim(job);
-								} catch (error) {
-									this.ctx.emit('job:error', { error: toError(error) });
+								} catch {
+									// Best-effort shutdown cleanup.
 								}
 							}
 						})

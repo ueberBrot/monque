@@ -29,12 +29,13 @@ export class JobManager {
 	/**
 	 * Cancel a pending or scheduled job.
 	 *
-	 * Sets the job status to 'cancelled' and emits a 'job:cancelled' event.
-	 * If the job is already cancelled, this is a no-op and returns the job.
+	 * Uses `transitions.cancelPending()` to set the job status to 'cancelled'.
+	 * Cancellation is idempotent: no-op cancels may return null.
+	 * Emits a 'job:cancelled' event only when a real transition occurs.
 	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
 	 *
 	 * @param jobId - The ID of the job to cancel
-	 * @returns The cancelled job, or null if not found
+	 * @returns The cancelled job, or null if not found or cancellation is a no-op
 	 * @throws {JobStateError} If job is in an invalid state for cancellation
 	 *
 	 * @example Cancel a pending job
