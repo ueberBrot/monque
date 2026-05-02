@@ -174,4 +174,8 @@ export class JobIntake {
 			throw new ConnectionError(`Failed to enqueue job: ${err.message}`, { cause: err });
 		}
 	}
+
+	async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
+		return this.enqueue(name, data, { runAt: new Date() });
+	}
 }

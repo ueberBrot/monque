@@ -16,7 +16,7 @@ vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@/scheduler/services/index.js')>();
 	return {
 		...actual,
-		JobScheduler: vi.fn(),
+		JobIntake: vi.fn(),
 		JobManager: vi.fn(),
 		JobQueryService: vi.fn(),
 		JobProcessor: vi.fn(),
