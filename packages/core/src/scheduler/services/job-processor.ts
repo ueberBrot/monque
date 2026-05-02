@@ -256,7 +256,7 @@ export class JobProcessor {
 			}
 		} catch (error) {
 			// Job failed
-			const err = error instanceof Error ? error : new Error(String(error));
+			const err = toError(error);
 			const updatedJob = await this.failJob(job, err);
 
 			if (updatedJob) {

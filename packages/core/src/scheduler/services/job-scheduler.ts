@@ -1,21 +1,6 @@
-import { BSON, type Document } from 'mongodb';
+import type { EnqueueOptions, PersistedJob, ScheduleOptions } from '@/jobs';
 
-import {
-	type EnqueueOptions,
-	type Job,
-	JobStatus,
-	type PersistedJob,
-	type ScheduleOptions,
-} from '@/jobs';
-import {
-	ConnectionError,
-	getNextCronDate,
-	MonqueError,
-	PayloadTooLargeError,
-	validateJobName,
-	validateUniqueKey,
-} from '@/shared';
-
+import { JobIntake } from './job-intake.js';
 import type { SchedulerContext } from './types.js';
 
 /**
@@ -27,49 +12,10 @@ import type { SchedulerContext } from './types.js';
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobScheduler {
-	constructor(private readonly ctx: SchedulerContext) {}
+	private readonly intake: JobIntake;
 
-	private validateJobIdentifiers(name: string, uniqueKey?: string): void {
-		validateJobName(name);
-
-		if (uniqueKey !== undefined) {
-			validateUniqueKey(uniqueKey);
-		}
-	}
-
-	/**
-	 * Validate that the job data payload does not exceed the configured maximum BSON byte size.
-	 *
-	 * @param data - The job data payload to validate
-	 * @throws {PayloadTooLargeError} If the payload exceeds `maxPayloadSize`
-	 */
-	private validatePayloadSize(data: unknown): void {
-		const maxSize = this.ctx.options.maxPayloadSize;
-		if (maxSize === undefined) {
-			return;
-		}
-
-		let size: number;
-		try {
-			size = BSON.calculateObjectSize({ data } as Document);
-		} catch (error) {
-			const cause = error instanceof Error ? error : new Error(String(error));
-			const sizeError = new PayloadTooLargeError(
-				`Failed to calculate job payload size: ${cause.message}`,
-				-1,
-				maxSize,
-			);
-			sizeError.cause = cause;
-			throw sizeError;
-		}
-
-		if (size > maxSize) {
-			throw new PayloadTooLargeError(
-				`Job payload exceeds maximum size: ${size} bytes > ${maxSize} bytes`,
-				size,
-				maxSize,
-			);
-		}
+	constructor(ctx: SchedulerContext) {
+		this.intake = new JobIntake(ctx);
 	}
 
 	/**
@@ -119,68 +65,7 @@ export class JobScheduler {
 	 * ```
 	 */
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-		this.validateJobIdentifiers(name, options.uniqueKey);
-		this.validatePayloadSize(data);
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt: options.runAt ?? now,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey !== undefined) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey !== undefined) {
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.ctx.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError('Failed to enqueue job: findOneAndUpdate returned no document');
-				}
-
-				const persistedJob = this.ctx.documentToPersistedJob<T>(result);
-				if (persistedJob.status === JobStatus.PENDING) {
-					this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-				}
-
-				return persistedJob;
-			}
-
-			const result = await this.ctx.collection.insertOne(job as Document);
-			const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-
-			return persistedJob;
-		} catch (error) {
-			if (error instanceof ConnectionError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during enqueue';
-			throw new ConnectionError(
-				`Failed to enqueue job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
+		return this.intake.enqueue(name, data, options);
 	}
 
 	/**
@@ -267,74 +152,6 @@ export class JobScheduler {
 		data: T,
 		options: ScheduleOptions = {},
 	): Promise<PersistedJob<T>> {
-		this.validateJobIdentifiers(name, options.uniqueKey);
-		this.validatePayloadSize(data);
-
-		// Validate cron and get next run date (throws InvalidCronError if invalid)
-		const nextRunAt = getNextCronDate(cron);
-
-		const now = new Date();
-		const job: Omit<Job<T>, '_id'> = {
-			name,
-			data,
-			status: JobStatus.PENDING,
-			nextRunAt,
-			repeatInterval: cron,
-			failCount: 0,
-			createdAt: now,
-			updatedAt: now,
-		};
-
-		if (options.uniqueKey !== undefined) {
-			job.uniqueKey = options.uniqueKey;
-		}
-
-		try {
-			if (options.uniqueKey !== undefined) {
-				// Use upsert with $setOnInsert for deduplication (scoped by name + uniqueKey)
-				const result = await this.ctx.collection.findOneAndUpdate(
-					{
-						name,
-						uniqueKey: options.uniqueKey,
-						status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-					},
-					{
-						$setOnInsert: job,
-					},
-					{
-						upsert: true,
-						returnDocument: 'after',
-					},
-				);
-
-				if (!result) {
-					throw new ConnectionError(
-						'Failed to schedule job: findOneAndUpdate returned no document',
-					);
-				}
-
-				const persistedJob = this.ctx.documentToPersistedJob<T>(result);
-				if (persistedJob.status === JobStatus.PENDING) {
-					this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-				}
-
-				return persistedJob;
-			}
-
-			const result = await this.ctx.collection.insertOne(job as Document);
-			const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-
-			return persistedJob;
-		} catch (error) {
-			if (error instanceof MonqueError) {
-				throw error;
-			}
-			const message = error instanceof Error ? error.message : 'Unknown error during schedule';
-			throw new ConnectionError(
-				`Failed to schedule job: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
-		}
+		return this.intake.schedule(cron, name, data, options);
 	}
 }
