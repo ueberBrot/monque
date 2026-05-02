@@ -1,4 +1,5 @@
 import { JobStatus, type PersistedJob } from '@/jobs';
+import { ConnectionError, toError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -25,33 +26,39 @@ export class JobSelection {
 
 		const now = new Date();
 
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-				$or: [{ claimedBy: null }, { claimedBy: { $exists: false } }],
-			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.ctx.instanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.ctx.options.heartbeatInterval,
-					updatedAt: now,
+		try {
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{
+					name,
+					status: JobStatus.PENDING,
+					nextRunAt: { $lte: now },
 				},
-			},
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
+				{
+					$set: {
+						status: JobStatus.PROCESSING,
+						claimedBy: this.ctx.instanceId,
+						lockedAt: now,
+						lastHeartbeat: now,
+						heartbeatInterval: this.ctx.options.heartbeatInterval,
+						updatedAt: now,
+					},
+				},
+				{
+					sort: { nextRunAt: 1 },
+					returnDocument: 'after',
+				},
+			);
 
-		if (!result) {
-			return null;
+			if (!result) {
+				return null;
+			}
+
+			return this.ctx.documentToPersistedJob(result);
+		} catch (error) {
+			const err = toError(error);
+			throw new ConnectionError(`Failed to acquire next job for "${name}": ${err.message}`, {
+				cause: err,
+			});
 		}
-
-		return this.ctx.documentToPersistedJob(result);
 	}
 }
