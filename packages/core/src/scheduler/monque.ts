@@ -16,6 +16,7 @@ import {
 	JobStatus,
 	type PersistedJob,
 	type QueueStats,
+	type QueueViewSummary,
 	type ScheduleOptions,
 } from '@/jobs';
 import {
@@ -960,6 +961,31 @@ export class Monque extends EventEmitter {
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
 		this.ensureInitialized();
 		return this.query.getQueueStats(filter);
+	}
+
+	/**
+	 * Get operator-facing Queue View summaries grouped by Job Name.
+	 *
+	 * Includes every Job Name with persisted Jobs, every locally registered Worker,
+	 * per-name Job statistics, and local Worker capacity snapshots. Results are
+	 * sorted by Job Name.
+	 *
+	 * @returns Promise resolving to immutable Queue View summaries
+	 *
+	 * @example Inspect Queue Views
+	 * ```typescript
+	 * const summaries = await monque.getQueueViewSummaries();
+	 *
+	 * for (const summary of summaries) {
+	 *   console.log(summary.name, summary.stats.total, summary.worker?.activeCount ?? 0);
+	 * }
+	 * ```
+	 *
+	 * @see {@link JobQueryService.getQueueViewSummaries}
+	 */
+	async getQueueViewSummaries(): Promise<readonly QueueViewSummary[]> {
+		this.ensureInitialized();
+		return this.query.getQueueViewSummaries();
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────

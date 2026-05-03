@@ -135,6 +135,8 @@ describe('Monque', () => {
 			await expect(monque.schedule('* * * * *', 'test', {})).rejects.toThrow(ConnectionError);
 			// Get
 			await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
+			// Queue View summaries
+			await expect(monque.getQueueViewSummaries()).rejects.toThrow(ConnectionError);
 			// Management
 			await expect(monque.cancelJob('123')).rejects.toThrow(ConnectionError);
 		});
@@ -285,6 +287,14 @@ describe('Monque', () => {
 
 			await monque.getQueueStats();
 			expect(spy).toHaveBeenCalledWith(undefined);
+		});
+
+		it('should delegate getQueueViewSummaries to query service', async () => {
+			const spy = vi.fn();
+			(monque as unknown as Record<string, unknown>)['_query'] = { getQueueViewSummaries: spy };
+
+			await monque.getQueueViewSummaries();
+			expect(spy).toHaveBeenCalledWith();
 		});
 
 		it('should delegate cancelJob to manager', async () => {

@@ -83,6 +83,7 @@ await monque.schedule('0 9 * * *', 'daily-report', { type: 'summary' });
 // Management
 await monque.cancelJob('job-id');
 const stats = await monque.getQueueStats();
+const queueViews = await monque.getQueueViewSummaries();
 
 // Graceful shutdown
 await monque.stop();
@@ -120,6 +121,7 @@ Creates a new Monque instance.
 - `getJobs(filter)` - List jobs
 - `getJobsWithCursor(options)` - Paginated list
 - `getQueueStats(filter?)` - Queue statistics
+- `getQueueViewSummaries()` - Queue View summaries by Job Name
 - `cancelJob(id)` - Cancel a job
 - `retryJob(id)` - Retry a job
 - `rescheduleJob(id, date)` - Reschedule a job

@@ -18,6 +18,7 @@ Monque serves a comprehensive set of APIs for managing jobs throughout their lif
 | [`deleteJobs()`](/monque/api/classes/monque/#deletejobs) | Bulk delete |
 | [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor) | Paginated list |
 | [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats) | Queue statistics |
+| [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) | Queue View summaries |
 
 ## Single Job Operations
 
@@ -182,3 +183,26 @@ const monque = new Monque(db, {
   statsCacheTtlMs: 0  // Always run live aggregation
 });
 ```
+
+---
+
+## Queue View Summaries
+
+Use [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) to list operator-facing Job Name groups so callers don't need to run their own MongoDB queries.
+
+```typescript
+const queueViews = await monque.getQueueViewSummaries();
+
+for (const view of queueViews) {
+  console.log(view.name, view.stats.total, view.worker?.activeCount ?? 0);
+}
+```
+
+Each summary includes:
+
+- persisted Job statistics for that Job Name
+- whether persisted Jobs exist
+- whether this scheduler has a local Worker registered
+- local Worker `concurrency` and `activeCount` when registered
+
+The summaries include historical-only Job Names, registered-worker-only Job Names, and Job Names that have both persisted Jobs and Workers. Output is sorted by Job Name. Worker internals such as handler functions, Worker maps, and active Job ids are not exposed.
