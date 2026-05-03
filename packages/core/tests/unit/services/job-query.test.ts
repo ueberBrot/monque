@@ -840,5 +840,20 @@ describe('JobQueryService', () => {
 
 			await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
 		});
+
+		it('should throw AggregationTimeoutError when write concern reports timeout code', async () => {
+			const timeoutError = Object.assign(new Error('write concern timeout'), {
+				writeConcernError: { code: 50 },
+			});
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
+		});
 	});
 });

@@ -188,7 +188,7 @@ const monque = new Monque(db, {
 
 ## Queue View Summaries
 
-Use [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) to list operator-facing Job Name groups without reading MongoDB outside core.
+Use [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) to list operator-facing Job Name groups so callers don't need to run their own MongoDB queries.
 
 ```typescript
 const queueViews = await monque.getQueueViewSummaries();

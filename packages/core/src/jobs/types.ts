@@ -324,10 +324,10 @@ export interface QueueStats {
  */
 export interface QueueViewWorkerSummary {
 	/** Maximum concurrent jobs this local Worker can process */
-	concurrency: number;
+	readonly concurrency: number;
 
 	/** Number of jobs currently active in this local Worker */
-	activeCount: number;
+	readonly activeCount: number;
 }
 
 /**
@@ -338,13 +338,13 @@ export interface QueueViewWorkerSummary {
  */
 export interface QueueViewSummary {
 	/** Job Name represented by this Queue View */
-	name: string;
+	readonly name: string;
 
 	/** Whether at least one persisted Job exists for this Job Name */
-	hasPersistedJobs: boolean;
+	readonly hasPersistedJobs: boolean;
 
 	/** Whether this scheduler instance has a local Worker registered for this Job Name */
-	hasRegisteredWorker: boolean;
+	readonly hasRegisteredWorker: boolean;
 
 	/** Aggregated persisted Job statistics for this Job Name */
 	stats: Readonly<QueueStats>;

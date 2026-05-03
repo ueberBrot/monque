@@ -23,6 +23,7 @@ describe('Management APIs: Queue View Summaries', () => {
 
 	afterEach(async () => {
 		await stopMonqueInstances(monqueInstances);
+		monqueInstances.length = 0;
 	});
 
 	describe('getQueueViewSummaries', () => {
