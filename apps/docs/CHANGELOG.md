@@ -1,5 +1,14 @@
 # @monque/docs
 
+## 1.1.1
+
+### Patch Changes
+
+- [#412](https://github.com/ueberBrot/monque/pull/412) [`60deedf`](https://github.com/ueberBrot/monque/commit/60deedf1ca0ecd00297eec12e2a2b9009a1fb25e) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Clarify cancellation event semantics in core docs.
+
+  - Update core management docs to state `job:cancelled` only emits on a pending→cancelled transition.
+  - Keep `cancelJob` docs consistent with idempotent no-op behavior for already-cancelled jobs.
+
 ## 1.1.0
 
 ### Minor Changes

@@ -1,5 +1,21 @@
 # @monque/core
 
+## 1.8.0
+
+### Minor Changes
+
+- [#386](https://github.com/ueberBrot/monque/pull/386) [`5a15015`](https://github.com/ueberBrot/monque/commit/5a15015e17348ece53991f0c9bcc2c49bad05c7c) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.1.1 → ^7.2.0)
+  - @monque/tsed: mongodb (^7.1.1 → ^7.2.0)
+
+### Patch Changes
+
+- [#412](https://github.com/ueberBrot/monque/pull/412) [`60deedf`](https://github.com/ueberBrot/monque/commit/60deedf1ca0ecd00297eec12e2a2b9009a1fb25e) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Avoid emitting `job:cancelled` for no-op cancellations.
+
+  - Keep `cancelJob()` idempotent for already-cancelled jobs.
+  - Emit `job:cancelled` only when a job transitions from `pending` to `cancelled`.
+
 ## 1.7.2
 
 ### Patch Changes
