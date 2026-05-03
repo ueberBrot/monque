@@ -317,6 +317,43 @@ export interface QueueStats {
 }
 
 /**
+ * Local Worker observability exposed through Queue View summaries.
+ *
+ * This is an immutable snapshot of public counts and limits. It intentionally
+ * excludes the Worker handler, active Job ids, and internal Worker maps.
+ */
+export interface QueueViewWorkerSummary {
+	/** Maximum concurrent jobs this local Worker can process */
+	concurrency: number;
+
+	/** Number of jobs currently active in this local Worker */
+	activeCount: number;
+}
+
+/**
+ * Operator-facing summary for one Job Name.
+ *
+ * A Queue View is derived from persisted Jobs and registered Workers; it is not
+ * a persisted queue entity.
+ */
+export interface QueueViewSummary {
+	/** Job Name represented by this Queue View */
+	name: string;
+
+	/** Whether at least one persisted Job exists for this Job Name */
+	hasPersistedJobs: boolean;
+
+	/** Whether this scheduler instance has a local Worker registered for this Job Name */
+	hasRegisteredWorker: boolean;
+
+	/** Aggregated persisted Job statistics for this Job Name */
+	stats: Readonly<QueueStats>;
+
+	/** Local Worker observability, or null when no local Worker is registered */
+	worker: Readonly<QueueViewWorkerSummary> | null;
+}
+
+/**
  * Result of a bulk operation.
  *
  * @example

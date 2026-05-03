@@ -10,8 +10,10 @@ import {
 	JobStatus,
 	type PersistedJob,
 	type QueueStats,
+	type QueueViewSummary,
+	type QueueViewWorkerSummary,
 } from '@/jobs';
-import { AggregationTimeoutError, ConnectionError } from '@/shared';
+import { AggregationTimeoutError, ConnectionError, toError } from '@/shared';
 
 import { buildSelectorQuery, decodeCursor, encodeCursor } from '../helpers.js';
 import type { SchedulerContext } from './types.js';
@@ -19,6 +21,61 @@ import type { SchedulerContext } from './types.js';
 interface StatsCacheEntry {
 	data: QueueStats;
 	expiresAt: number;
+}
+
+const MONGO_MAX_TIME_MS_EXPIRED_CODE = 50;
+
+type QueueViewStatsDocument = {
+	_id: string;
+	pending?: number;
+	processing?: number;
+	completed?: number;
+	failed?: number;
+	cancelled?: number;
+	total?: number;
+	completedDurationTotal?: number;
+	completedDurationCount?: number;
+};
+
+function createEmptyQueueStats(): QueueStats {
+	return {
+		pending: 0,
+		processing: 0,
+		completed: 0,
+		failed: 0,
+		cancelled: 0,
+		total: 0,
+	};
+}
+
+function freezeQueueStats(stats: QueueStats): Readonly<QueueStats> {
+	return Object.freeze({ ...stats });
+}
+
+function freezeWorkerSummary(
+	worker: QueueViewWorkerSummary | null,
+): Readonly<QueueViewWorkerSummary> | null {
+	if (!worker) {
+		return null;
+	}
+
+	return Object.freeze({ ...worker });
+}
+
+type MongoErrorWithTimeoutCode = Error & {
+	code?: unknown;
+	writeConcernError?: {
+		code?: unknown;
+	};
+};
+
+function isMongoMaxTimeMSExpiredError(error: Error): boolean {
+	const mongoError = error as MongoErrorWithTimeoutCode;
+
+	return (
+		mongoError.code === MONGO_MAX_TIME_MS_EXPIRED_CODE ||
+		mongoError.writeConcernError?.code === MONGO_MAX_TIME_MS_EXPIRED_CODE
+	);
 }
 
 /**
@@ -441,16 +498,121 @@ export class JobQueryService {
 
 			return stats;
 		} catch (error) {
-			// Check for timeout error
-			if (error instanceof Error && error.message.includes('exceeded time limit')) {
+			const err = toError(error);
+
+			if (isMongoMaxTimeMSExpiredError(err)) {
 				throw new AggregationTimeoutError();
 			}
 
-			const message = error instanceof Error ? error.message : 'Unknown error during getQueueStats';
-			throw new ConnectionError(
-				`Failed to get queue stats: ${message}`,
-				error instanceof Error ? { cause: error } : undefined,
-			);
+			throw new ConnectionError(`Failed to get queue stats: ${err.message}`, { cause: err });
 		}
+	}
+
+	/**
+	 * Get operator-facing Queue View summaries grouped by Job Name.
+	 *
+	 * Includes every persisted Job Name and every locally registered Worker name.
+	 * Summaries are sorted by Job Name and contain immutable statistics and Worker
+	 * observability snapshots.
+	 */
+	async getQueueViewSummaries(): Promise<readonly QueueViewSummary[]> {
+		const persistedStats = new Map<string, QueueStats>();
+
+		try {
+			const results = await this.ctx.collection
+				.aggregate<QueueViewStatsDocument>(
+					[
+						{
+							$group: {
+								_id: '$name',
+								pending: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.PENDING] }, 1, 0] },
+								},
+								processing: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.PROCESSING] }, 1, 0] },
+								},
+								completed: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.COMPLETED] }, 1, 0] },
+								},
+								failed: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.FAILED] }, 1, 0] },
+								},
+								cancelled: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.CANCELLED] }, 1, 0] },
+								},
+								total: { $sum: 1 },
+								completedDurationTotal: {
+									$sum: {
+										$cond: [
+											{ $eq: ['$status', JobStatus.COMPLETED] },
+											{ $subtract: ['$updatedAt', '$createdAt'] },
+											0,
+										],
+									},
+								},
+								completedDurationCount: {
+									$sum: { $cond: [{ $eq: ['$status', JobStatus.COMPLETED] }, 1, 0] },
+								},
+							},
+						},
+					],
+					{ maxTimeMS: 30000 },
+				)
+				.toArray();
+
+			for (const result of results) {
+				const stats: QueueStats = {
+					pending: result.pending ?? 0,
+					processing: result.processing ?? 0,
+					completed: result.completed ?? 0,
+					failed: result.failed ?? 0,
+					cancelled: result.cancelled ?? 0,
+					total: result.total ?? 0,
+				};
+
+				const completedDurationCount = result.completedDurationCount ?? 0;
+				const completedDurationTotal = result.completedDurationTotal ?? 0;
+				if (completedDurationCount > 0) {
+					stats.avgProcessingDurationMs = Math.round(
+						completedDurationTotal / completedDurationCount,
+					);
+				}
+
+				persistedStats.set(result._id, stats);
+			}
+		} catch (error) {
+			const err = toError(error);
+
+			if (isMongoMaxTimeMSExpiredError(err)) {
+				throw new AggregationTimeoutError();
+			}
+
+			throw new ConnectionError(`Failed to get queue view summaries: ${err.message}`, {
+				cause: err,
+			});
+		}
+
+		const names = new Set([...persistedStats.keys(), ...this.ctx.workers.keys()]);
+		const summaries = [...names]
+			.sort((a, b) => a.localeCompare(b))
+			.map((name): QueueViewSummary => {
+				const worker = this.ctx.workers.get(name);
+				const workerSummary = worker
+					? {
+							concurrency: worker.concurrency,
+							activeCount: worker.activeJobs.size,
+						}
+					: null;
+
+				return Object.freeze({
+					name,
+					hasPersistedJobs: persistedStats.has(name),
+					hasRegisteredWorker: worker !== undefined,
+					stats: freezeQueueStats(persistedStats.get(name) ?? createEmptyQueueStats()),
+					worker: freezeWorkerSummary(workerSummary),
+				});
+			});
+
+		return Object.freeze(summaries);
 	}
 }

@@ -8,7 +8,7 @@
 import { ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockContext, JobFactory } from '@tests/factories';
+import { createMockContext, createWorker, JobFactory } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
@@ -346,8 +346,24 @@ describe('JobQueryService', () => {
 		});
 
 		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
+			const timeoutError = Object.assign(new Error('max time expired'), { code: 50 });
 			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(new Error('operation exceeded time limit')),
+				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
+		});
+
+		it('should throw AggregationTimeoutError when write concern reports timeout code', async () => {
+			const timeoutError = Object.assign(new Error('write concern timeout'), {
+				writeConcernError: { code: 50 },
+			});
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
 			};
 
 			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
@@ -570,6 +586,259 @@ describe('JobQueryService', () => {
 				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
 				expect(afterClear.pending).toBe(99);
 			});
+		});
+	});
+
+	describe('getQueueViewSummaries', () => {
+		it('should return persisted job names sorted by name with statistics', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([
+					{
+						_id: 'report-daily',
+						pending: 1,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 1,
+						completedDurationTotal: 0,
+						completedDurationCount: 0,
+					},
+					{
+						_id: 'email-send',
+						pending: 2,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 2,
+						completedDurationTotal: 0,
+						completedDurationCount: 0,
+					},
+				]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(expect.any(Array), {
+				maxTimeMS: 30000,
+			});
+			expect(summaries.map((summary) => summary.name)).toEqual(['email-send', 'report-daily']);
+			expect(summaries).toMatchObject([
+				{
+					name: 'email-send',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: false,
+					stats: { pending: 2, total: 2 },
+					worker: null,
+				},
+				{
+					name: 'report-daily',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: false,
+					stats: { pending: 1, total: 1 },
+					worker: null,
+				},
+			]);
+		});
+
+		it('should include registered-worker-only job names with zero statistics', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			ctx.workers.set('image-resize', createWorker({ concurrency: 7 }));
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toMatchObject([
+				{
+					name: 'image-resize',
+					hasPersistedJobs: false,
+					hasRegisteredWorker: true,
+					stats: {
+						pending: 0,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 0,
+					},
+					worker: {
+						concurrency: 7,
+						activeCount: 0,
+					},
+				},
+			]);
+		});
+
+		it('should include historical-only job names with completed duration averages', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([
+					{
+						_id: 'archive-user',
+						pending: 0,
+						processing: 0,
+						completed: 2,
+						failed: 1,
+						cancelled: 1,
+						total: 4,
+						completedDurationTotal: 5000,
+						completedDurationCount: 2,
+					},
+				]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toMatchObject([
+				{
+					name: 'archive-user',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: false,
+					stats: {
+						completed: 2,
+						failed: 1,
+						cancelled: 1,
+						total: 4,
+						avgProcessingDurationMs: 2500,
+					},
+					worker: null,
+				},
+			]);
+		});
+
+		it('should combine persisted jobs and registered workers with active counts', async () => {
+			const activeJob = JobFactory.build({ name: 'email-send' });
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([
+					{
+						_id: 'email-send',
+						pending: 1,
+						processing: 1,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 2,
+						completedDurationTotal: 0,
+						completedDurationCount: 0,
+					},
+				]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+			ctx.workers.set(
+				'email-send',
+				createWorker({
+					concurrency: 3,
+					activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
+				}),
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toMatchObject([
+				{
+					name: 'email-send',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: true,
+					stats: {
+						pending: 1,
+						processing: 1,
+						total: 2,
+					},
+					worker: {
+						concurrency: 3,
+						activeCount: 1,
+					},
+				},
+			]);
+		});
+
+		it('should expose immutable public summaries without worker maps or active job ids', async () => {
+			const activeJob = JobFactory.build({ name: 'email-send' });
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([
+					{
+						_id: 'email-send',
+						pending: 0,
+						processing: 1,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 1,
+						completedDurationTotal: 0,
+						completedDurationCount: 0,
+					},
+				]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+			ctx.workers.set(
+				'email-send',
+				createWorker({
+					concurrency: 3,
+					activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
+				}),
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+			const summary = summaries[0];
+			expect(summary).toBeDefined();
+			if (!summary) {
+				throw new Error('Expected Queue View summary');
+			}
+
+			expect(Object.isFrozen(summaries)).toBe(true);
+			expect(Object.isFrozen(summary)).toBe(true);
+			expect(Object.isFrozen(summary.stats)).toBe(true);
+			expect(Object.isFrozen(summary.worker)).toBe(true);
+			expect(Object.keys(summary.worker ?? {})).toEqual(['concurrency', 'activeCount']);
+			expect(summary.worker).not.toHaveProperty('activeJobs');
+			expect(summary.worker).not.toHaveProperty('activeJobIds');
+		});
+
+		it('should throw ConnectionError when aggregation fails', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const error = await queryService.getQueueViewSummaries().catch((e: unknown) => e);
+			expect(error).toBeInstanceOf(ConnectionError);
+			expect((error as ConnectionError).message).toMatch(/Failed to get queue view summaries/);
+		});
+
+		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
+			const timeoutError = Object.assign(new Error('max time expired'), { code: 50 });
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
 		});
 	});
 });

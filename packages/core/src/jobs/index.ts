@@ -27,5 +27,7 @@ export {
 	type JobStatusType,
 	type PersistedJob,
 	type QueueStats,
+	type QueueViewSummary,
+	type QueueViewWorkerSummary,
 	type ScheduleOptions,
 } from './types.js';
