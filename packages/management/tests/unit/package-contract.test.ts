@@ -14,7 +14,7 @@ interface PackageJson {
 	devDependencies?: Record<string, string>;
 }
 
-const ForbiddenRuntimePackages = [
+const FORBIDDEN_RUNTIME_PACKAGES = [
 	'express',
 	'connect',
 	'@tsed/core',
@@ -27,7 +27,7 @@ const ForbiddenRuntimePackages = [
 	'mongodb',
 ] as const;
 
-const TestDirectory = fileURLToPath(new URL('.', import.meta.url));
+const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
 
 describe('@monque/management package contract', () => {
 	test('is publishable, peer-depends on core, and avoids framework coupling', async () => {
@@ -37,7 +37,7 @@ describe('@monque/management package contract', () => {
 			...packageJson.peerDependencies,
 			...packageJson.devDependencies,
 		};
-		const sourceFiles = await readSourceFiles(join(TestDirectory, '../../src'));
+		const sourceFiles = await readSourceFiles(join(TEST_DIRECTORY, '../../src'));
 
 		expect(packageJson.name).toBe('@monque/management');
 		expect(packageJson.private).toBeUndefined();
@@ -47,7 +47,7 @@ describe('@monque/management package contract', () => {
 		});
 		expect(packageJson.dependencies?.['@monque/core']).toBeUndefined();
 
-		for (const packageName of ForbiddenRuntimePackages) {
+		for (const packageName of FORBIDDEN_RUNTIME_PACKAGES) {
 			expect(declaredPackages[packageName]).toBeUndefined();
 			expect(sourceFiles).not.toContain(`from '${packageName}'`);
 			expect(sourceFiles).not.toContain(`from "${packageName}"`);
@@ -56,7 +56,7 @@ describe('@monque/management package contract', () => {
 });
 
 async function readPackageJson(): Promise<PackageJson> {
-	const raw = await readFile(join(TestDirectory, '../../package.json'), 'utf8');
+	const raw = await readFile(join(TEST_DIRECTORY, '../../package.json'), 'utf8');
 	const parsed = JSON.parse(raw) as PackageJson;
 
 	return parsed;

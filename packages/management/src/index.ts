@@ -4,7 +4,7 @@ export {
 } from './http/index.js';
 export { getManagementOpenApiDocument } from './openapi/index.js';
 export {
-	ManagementRouteMap,
+	MANAGEMENT_ROUTE_MAP,
 	ManagementRoutePath,
 } from './routes/index.js';
 export {
@@ -14,7 +14,10 @@ export {
 } from './schemas/index.js';
 export type {
 	CapabilitiesDto,
+	CapabilityActionsDto,
 	ManagementAction,
+	ManagementAuthorizationInput,
+	ManagementAuthorize,
 	ManagementMonque,
 	ManagementOptions,
 	ManagementRequest,

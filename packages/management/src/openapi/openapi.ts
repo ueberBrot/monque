@@ -7,7 +7,7 @@ import type {
 import { OpenApiBuilder } from 'openapi3-ts/oas31';
 
 import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
-import { ManagementRouteMap } from '../routes/index.js';
+import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import { CapabilitiesSchema, ErrorSchema, SchedulerHealthSchema } from '../schemas/index.js';
 import type { ManagementHttpMethod, ManagementRoute } from '../surface/index.js';
 
@@ -21,7 +21,7 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		builder.addSchema(getSchemaId(schema), schema as SchemaObject);
 	}
 
-	for (const route of ManagementRouteMap) {
+	for (const route of MANAGEMENT_ROUTE_MAP) {
 		builder.addPath(route.path, createPathItem(route));
 	}
 

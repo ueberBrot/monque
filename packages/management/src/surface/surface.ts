@@ -1,5 +1,5 @@
 import { HttpMethod, HttpStatus } from '../http/index.js';
-import { ManagementRouteMap, ManagementRoutePath } from '../routes/index.js';
+import { MANAGEMENT_ROUTE_MAP, ManagementRoutePath } from '../routes/index.js';
 import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
@@ -11,14 +11,34 @@ import type {
 	SchedulerHealthDto,
 } from './types.js';
 
-const WritableActions = ['cancel', 'retry', 'reschedule', 'delete'] as const;
-const Actions = ['read', ...WritableActions] as const satisfies readonly ManagementAction[];
+const WRITABLE_ACTIONS = [
+	'cancel',
+	'retry',
+	'reschedule',
+	'delete',
+] as const satisfies readonly ManagementAction[];
+
+function ensureAllManagementActions<const T extends readonly ManagementAction[]>(
+	actions: T & ([ManagementAction] extends [T[number]] ? unknown : never),
+): T {
+	return actions;
+}
+
+const ACTIONS = ensureAllManagementActions(['read', ...WRITABLE_ACTIONS] as const);
+
+const DEFAULT_CAPABILITY_ACTIONS = {
+	read: false,
+	cancel: false,
+	retry: false,
+	reschedule: false,
+	delete: false,
+} satisfies CapabilityActionsDto & Record<(typeof ACTIONS)[number], boolean>;
 
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
 	return {
-		routes: ManagementRouteMap,
+		routes: MANAGEMENT_ROUTE_MAP,
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.HEALTH) {
 				return {
@@ -60,9 +80,9 @@ async function getCapabilities<TContext>(
 	context: TContext,
 ): Promise<CapabilitiesDto> {
 	const readOnly = options.readOnly ?? false;
-	const actions = {} as CapabilityActionsDto;
+	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
-	for (const action of Actions) {
+	for (const action of ACTIONS) {
 		actions[action] =
 			isAllowedByReadOnlyMode(action, readOnly) &&
 			(await isAllowedByAuthorization(options, action, context));
@@ -75,7 +95,7 @@ async function getCapabilities<TContext>(
 }
 
 function isAllowedByReadOnlyMode(action: ManagementAction, readOnly: boolean): boolean {
-	return !readOnly || !WritableActions.some((writableAction) => writableAction === action);
+	return !readOnly || !WRITABLE_ACTIONS.some((writableAction) => writableAction === action);
 }
 
 async function isAllowedByAuthorization<TContext>(

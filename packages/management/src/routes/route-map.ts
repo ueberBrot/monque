@@ -10,7 +10,7 @@ export const ManagementRoutePath = {
 export type ManagementRoutePathType =
 	(typeof ManagementRoutePath)[keyof typeof ManagementRoutePath];
 
-export const ManagementRouteMap = [
+export const MANAGEMENT_ROUTE_MAP = [
 	{
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.HEALTH,

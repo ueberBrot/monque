@@ -9,7 +9,7 @@ export default defineConfig({
 		},
 	},
 	test: {
-		globals: true,
+		globals: false,
 		environment: 'node',
 		include: ['tests/unit/**/*.test.ts'],
 		coverage: {

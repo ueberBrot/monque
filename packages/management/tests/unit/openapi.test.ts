@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { getManagementOpenApiDocument, ManagementRouteMap } from '@/index';
+import { getManagementOpenApiDocument, MANAGEMENT_ROUTE_MAP } from '@/index';
 
 describe('Management OpenAPI contract', () => {
 	test('derives paths and schemas from the Management Route Map', () => {
@@ -8,7 +8,7 @@ describe('Management OpenAPI contract', () => {
 
 		expect(document.openapi).toBe('3.1.0');
 		expect(Object.keys(document.paths ?? {})).toEqual(
-			ManagementRouteMap.map((route) => route.path),
+			MANAGEMENT_ROUTE_MAP.map((route) => route.path),
 		);
 		expect(document.paths?.['/api/v1/health']?.get?.operationId).toBe('getSchedulerHealth');
 		expect(document.paths?.['/api/v1/capabilities']?.get?.operationId).toBe('getCapabilities');
