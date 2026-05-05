@@ -34,14 +34,40 @@ const WRITABLE_ACTIONS = [
 	'delete',
 ] as const satisfies readonly ManagementAction[];
 
-function ensureAllManagementActions<const T extends readonly ManagementAction[]>(
-	actions: T & ([ManagementAction] extends [T[number]] ? unknown : never),
-): T {
-	return actions;
-}
-
-const ACTIONS = ensureAllManagementActions(['read', ...WRITABLE_ACTIONS] as const);
 type WritableAction = (typeof WRITABLE_ACTIONS)[number];
+const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
+const ACTION_METHOD_BY_ACTION = {
+	cancel: 'cancelJob',
+	retry: 'retryJob',
+	reschedule: 'rescheduleJob',
+	delete: 'deleteJob',
+} as const satisfies Record<WritableAction, keyof ManagementMonque>;
+const ACTION_ROUTES = [
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_CANCEL,
+		action: 'cancel',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_RETRY,
+		action: 'retry',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_RESCHEDULE,
+		action: 'reschedule',
+	},
+	{
+		method: HttpMethod.DELETE,
+		path: ManagementRoutePath.JOB_DETAIL,
+		action: 'delete',
+	},
+] as const satisfies ReadonlyArray<{
+	method: ManagementRoute['method'];
+	path: ManagementRoute['path'];
+	action: WritableAction;
+}>;
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
@@ -652,40 +678,19 @@ function getSupportedRoutes(monque: ManagementMonque): readonly ManagementRoute[
 }
 
 function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boolean {
-	if (route.method === HttpMethod.POST && route.path === ManagementRoutePath.JOB_CANCEL) {
-		return isActionSupported(monque, 'cancel');
-	}
+	const actionRoute = ACTION_ROUTES.find(
+		(candidate) => candidate.method === route.method && candidate.path === route.path,
+	);
 
-	if (route.method === HttpMethod.POST && route.path === ManagementRoutePath.JOB_RETRY) {
-		return isActionSupported(monque, 'retry');
-	}
-
-	if (route.method === HttpMethod.POST && route.path === ManagementRoutePath.JOB_RESCHEDULE) {
-		return isActionSupported(monque, 'reschedule');
-	}
-
-	if (route.method === HttpMethod.DELETE && route.path === ManagementRoutePath.JOB_DETAIL) {
-		return isActionSupported(monque, 'delete');
-	}
-
-	return true;
+	return actionRoute ? isActionSupported(monque, actionRoute.action) : true;
 }
 
 function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
-	switch (action) {
-		case 'read':
-			return true;
-		case 'cancel':
-			return monque.cancelJob !== undefined;
-		case 'retry':
-			return monque.retryJob !== undefined;
-		case 'reschedule':
-			return monque.rescheduleJob !== undefined;
-		case 'delete':
-			return monque.deleteJob !== undefined;
-		default:
-			return assertNever(action);
+	if (action === 'read') {
+		return true;
 	}
+
+	return monque[ACTION_METHOD_BY_ACTION[action]] !== undefined;
 }
 
 async function isAllowedByAuthorization<TContext>(
@@ -699,8 +704,4 @@ async function isAllowedByAuthorization<TContext>(
 	}
 
 	return options.authorize({ action, context, job });
-}
-
-function assertNever(value: never): never {
-	throw new Error(`Unsupported Management action: ${String(value)}`);
 }
