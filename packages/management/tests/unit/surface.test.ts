@@ -554,6 +554,12 @@ describe('Management Surface contract', () => {
 			query: { status: 'wat' },
 			context: {},
 		});
+		const emptyStatuses = await surface.handle({
+			method: HttpMethod.GET,
+			path: ManagementRoutePath.JOBS,
+			query: { status: [] },
+			context: {},
+		});
 		const unexpected = await surface.handle({
 			method: HttpMethod.GET,
 			path: ManagementRoutePath.JOBS,
@@ -561,6 +567,10 @@ describe('Management Surface contract', () => {
 		});
 
 		expect(invalid).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid status' },
+		});
+		expect(emptyStatuses).toEqual({
 			status: HttpStatus.BAD_REQUEST,
 			body: { error: 'Invalid status' },
 		});

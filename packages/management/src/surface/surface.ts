@@ -326,6 +326,11 @@ function parseStatuses(
 	}
 
 	const statuses = Array.isArray(value) ? value : [value];
+
+	if (statuses.length === 0) {
+		return { error: 'Invalid status' };
+	}
+
 	const validStatuses: JobStatusType[] = [];
 
 	for (const status of statuses) {
