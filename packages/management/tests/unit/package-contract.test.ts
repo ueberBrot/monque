@@ -24,13 +24,12 @@ const FORBIDDEN_RUNTIME_PACKAGES = [
 	'hono',
 	'@hono/node-server',
 	'scalar',
-	'mongodb',
 ] as const;
 
 const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
 
 describe('@monque/management package contract', () => {
-	test('is publishable, peer-depends on core, and avoids framework coupling', async () => {
+	test('is publishable, peer-depends on core and mongodb, and avoids framework coupling', async () => {
 		const packageJson = await readPackageJson();
 		const declaredPackages = {
 			...packageJson.dependencies,
@@ -44,8 +43,10 @@ describe('@monque/management package contract', () => {
 		expect(packageJson.publishConfig?.access).toBe('public');
 		expect(packageJson.peerDependencies).toMatchObject({
 			'@monque/core': expect.any(String),
+			mongodb: expect.any(String),
 		});
 		expect(packageJson.dependencies?.['@monque/core']).toBeUndefined();
+		expect(packageJson.dependencies?.['mongodb']).toBeUndefined();
 
 		for (const packageName of FORBIDDEN_RUNTIME_PACKAGES) {
 			expect(declaredPackages[packageName]).toBeUndefined();

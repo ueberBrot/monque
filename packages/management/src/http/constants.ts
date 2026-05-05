@@ -8,7 +8,10 @@ export type HttpMethodType = (typeof HttpMethod)[keyof typeof HttpMethod];
 
 export const HttpStatus = {
 	OK: 200,
+	BAD_REQUEST: 400,
+	FORBIDDEN: 403,
 	NOT_FOUND: 404,
+	INTERNAL_SERVER_ERROR: 500,
 } as const;
 
 export type HttpStatusType = (typeof HttpStatus)[keyof typeof HttpStatus];

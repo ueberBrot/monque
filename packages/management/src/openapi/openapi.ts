@@ -1,6 +1,7 @@
 import type {
 	OpenAPIObject,
 	OperationObject,
+	ParameterObject,
 	PathItemObject,
 	SchemaObject,
 } from 'openapi3-ts/oas31';
@@ -8,7 +9,15 @@ import { OpenApiBuilder } from 'openapi3-ts/oas31';
 
 import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
-import { CapabilitiesSchema, ErrorSchema, SchedulerHealthSchema } from '../schemas/index.js';
+import {
+	CapabilitiesSchema,
+	ErrorSchema,
+	JobCursorPageSchema,
+	JobSchema,
+	QueueStatsSchema,
+	QueueViewSummaryListSchema,
+	SchedulerHealthSchema,
+} from '../schemas/index.js';
 import type { ManagementHttpMethod, ManagementRoute } from '../surface/index.js';
 
 export function getManagementOpenApiDocument(): OpenAPIObject {
@@ -17,7 +26,15 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		version: '0.1.0',
 	});
 
-	for (const schema of [SchedulerHealthSchema, CapabilitiesSchema, ErrorSchema]) {
+	for (const schema of [
+		SchedulerHealthSchema,
+		CapabilitiesSchema,
+		QueueStatsSchema,
+		QueueViewSummaryListSchema,
+		JobSchema,
+		JobCursorPageSchema,
+		ErrorSchema,
+	]) {
 		builder.addSchema(getSchemaId(schema), schema as SchemaObject);
 	}
 
@@ -29,27 +46,59 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 }
 
 function createPathItem(route: ManagementRoute): PathItemObject {
-	const operation: OperationObject = {
-		operationId: route.operationId,
-		responses: {
-			[OpenApiResponseStatus.OK]: {
-				description: 'Successful response',
-				content: {
-					'application/json': {
-						schema: createSchemaReference(route.responseSchema),
-					},
+	const responses: NonNullable<OperationObject['responses']> = {
+		[OpenApiResponseStatus.OK]: {
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: createSchemaReference(route.responseSchema),
 				},
 			},
-			[OpenApiResponseStatus.DEFAULT]: {
-				description: 'Error response',
-				content: {
-					'application/json': {
-						schema: createSchemaReference(route.errorSchema),
-					},
+		},
+		[OpenApiResponseStatus.DEFAULT]: {
+			description: 'Error response',
+			content: {
+				'application/json': {
+					schema: createSchemaReference(route.errorSchema),
 				},
 			},
 		},
 	};
+	const operation: OperationObject = {
+		operationId: route.operationId,
+		responses,
+	};
+
+	for (const status of route.errorStatuses ?? []) {
+		responses[String(status)] = {
+			description: 'Error response',
+			content: {
+				'application/json': {
+					schema: createSchemaReference(route.errorSchema),
+				},
+			},
+		};
+	}
+
+	if (route.parameters) {
+		operation.parameters = route.parameters.map((parameter): ParameterObject => {
+			const openApiParameter: ParameterObject = {
+				name: parameter.name,
+				in: parameter.in,
+				schema: parameter.schema as SchemaObject,
+			};
+
+			if (parameter.required !== undefined) {
+				openApiParameter.required = parameter.required;
+			}
+
+			if (parameter.explode !== undefined) {
+				openApiParameter.explode = parameter.explode;
+			}
+
+			return openApiParameter;
+		});
+	}
 
 	switch (route.method) {
 		case HttpMethod.GET:
