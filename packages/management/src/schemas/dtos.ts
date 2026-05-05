@@ -97,6 +97,20 @@ export const JobCursorPageSchema = Type.Object(
 	{ $id: 'JobCursorPage' },
 );
 
+export const DeleteJobSchema = Type.Object(
+	{
+		deleted: Type.Literal(true),
+	},
+	{ $id: 'DeleteJob' },
+);
+
+export const RescheduleJobRequestSchema = Type.Object(
+	{
+		nextRunAt: Type.String({ format: 'date-time' }),
+	},
+	{ $id: 'RescheduleJobRequest' },
+);
+
 export const ErrorSchema = Type.Object(
 	{
 		error: Type.String(),

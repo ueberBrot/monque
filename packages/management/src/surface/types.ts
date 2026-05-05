@@ -21,11 +21,16 @@ export interface ManagementMonque {
 	getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
 	getJob(id: ObjectId): Promise<PersistedJob | null>;
 	getQueueStats(filter?: { name?: string }): Promise<QueueStats>;
+	cancelJob?(id: string): Promise<PersistedJob | null>;
+	retryJob?(id: string): Promise<PersistedJob | null>;
+	rescheduleJob?(id: string, runAt: Date): Promise<PersistedJob | null>;
+	deleteJob?(id: string): Promise<boolean>;
 }
 
 export interface ManagementAuthorizationInput<TContext = unknown> {
 	action: ManagementAction;
 	context: TContext;
+	job?: PersistedJob | undefined;
 }
 
 export type ManagementAuthorize<TContext = unknown> = (
@@ -57,6 +62,7 @@ export interface ManagementRequest<TContext = unknown> {
 	path: string;
 	params?: Readonly<Record<string, string | undefined>>;
 	query?: Readonly<Record<string, ManagementQueryValue>>;
+	body?: unknown;
 	context: TContext;
 }
 
@@ -79,6 +85,7 @@ export interface ManagementRoute {
 	operationId: string;
 	responseSchema: TSchema;
 	errorSchema: TSchema;
+	requestSchema?: TSchema;
 	parameters?: readonly ManagementRouteParameter[];
 	errorStatuses?: readonly HttpStatusType[];
 }
@@ -139,6 +146,10 @@ export interface JobCursorPageDto {
 	cursor: string | null;
 	hasNextPage: boolean;
 	hasPreviousPage: boolean;
+}
+
+export interface DeleteJobDto {
+	deleted: true;
 }
 
 export interface ManagementSurface<TContext = unknown> {

@@ -9,16 +9,19 @@ export {
 } from './routes/index.js';
 export {
 	CapabilitiesSchema,
+	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
+	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
 } from './schemas/index.js';
 export type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
+	DeleteJobDto,
 	JobCursorPageDto,
 	JobDto,
 	ManagementAction,

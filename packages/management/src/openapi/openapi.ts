@@ -11,11 +11,13 @@ import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import {
 	CapabilitiesSchema,
+	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
+	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
 } from '../schemas/index.js';
 import type { ManagementHttpMethod, ManagementRoute } from '../surface/index.js';
@@ -33,6 +35,8 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		QueueViewSummaryListSchema,
 		JobSchema,
 		JobCursorPageSchema,
+		DeleteJobSchema,
+		RescheduleJobRequestSchema,
 		ErrorSchema,
 	]) {
 		builder.addSchema(getSchemaId(schema), schema as SchemaObject);
@@ -98,6 +102,17 @@ function createPathItem(route: ManagementRoute): PathItemObject {
 
 			return openApiParameter;
 		});
+	}
+
+	if (route.requestSchema) {
+		operation.requestBody = {
+			required: true,
+			content: {
+				'application/json': {
+					schema: createSchemaReference(route.requestSchema),
+				},
+			},
+		};
 	}
 
 	switch (route.method) {
