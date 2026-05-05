@@ -2,6 +2,7 @@ export { createManagementSurface } from './surface.js';
 export type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
+	DeleteJobDto,
 	JobCursorPageDto,
 	JobDto,
 	ManagementAction,

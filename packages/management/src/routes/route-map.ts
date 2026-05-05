@@ -3,11 +3,13 @@ import { Type } from '@sinclair/typebox';
 import { HttpMethod, HttpStatus } from '../http/index.js';
 import {
 	CapabilitiesSchema,
+	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
+	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
 } from '../schemas/index.js';
 import type { ManagementRoute } from '../surface/index.js';
@@ -19,6 +21,9 @@ export const ManagementRoutePath = {
 	JOBS: '/api/v1/jobs',
 	JOB_STATS: '/api/v1/jobs/stats',
 	JOB_DETAIL: '/api/v1/jobs/{id}',
+	JOB_CANCEL: '/api/v1/jobs/{id}/actions/cancel',
+	JOB_RETRY: '/api/v1/jobs/{id}/actions/retry',
+	JOB_RESCHEDULE: '/api/v1/jobs/{id}/actions/reschedule',
 } as const;
 
 export type ManagementRoutePathType =
@@ -111,6 +116,95 @@ export const MANAGEMENT_ROUTE_MAP = [
 			HttpStatus.BAD_REQUEST,
 			HttpStatus.FORBIDDEN,
 			HttpStatus.NOT_FOUND,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+		parameters: [
+			{
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: Type.String(),
+			},
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_CANCEL,
+		operationId: 'cancelJob',
+		responseSchema: JobSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.NOT_FOUND,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+		parameters: [
+			{
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: Type.String(),
+			},
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_RETRY,
+		operationId: 'retryJob',
+		responseSchema: JobSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.NOT_FOUND,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+		parameters: [
+			{
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: Type.String(),
+			},
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOB_RESCHEDULE,
+		operationId: 'rescheduleJob',
+		requestSchema: RescheduleJobRequestSchema,
+		responseSchema: JobSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.NOT_FOUND,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+		parameters: [
+			{
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: Type.String(),
+			},
+		],
+	},
+	{
+		method: HttpMethod.DELETE,
+		path: ManagementRoutePath.JOB_DETAIL,
+		operationId: 'deleteJob',
+		responseSchema: DeleteJobSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.NOT_FOUND,
+			HttpStatus.CONFLICT,
 			HttpStatus.INTERNAL_SERVER_ERROR,
 		],
 		parameters: [
