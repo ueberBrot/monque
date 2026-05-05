@@ -8,6 +8,22 @@ describe('Management capabilities', () => {
 		const authorizedActions = new Set<ManagementAction>(['read', 'retry']);
 		const monque: ManagementMonque = {
 			isHealthy: () => true,
+			getQueueViewSummaries: async () => [],
+			getJobsWithCursor: async () => ({
+				jobs: [],
+				cursor: null,
+				hasNextPage: false,
+				hasPreviousPage: false,
+			}),
+			getJob: async () => null,
+			getQueueStats: async () => ({
+				pending: 0,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 0,
+			}),
 		};
 		const surface = createManagementSurface({
 			monque,

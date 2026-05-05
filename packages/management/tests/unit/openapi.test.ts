@@ -12,6 +12,23 @@ describe('Management OpenAPI contract', () => {
 		);
 		expect(document.paths?.['/api/v1/health']?.get?.operationId).toBe('getSchedulerHealth');
 		expect(document.paths?.['/api/v1/capabilities']?.get?.operationId).toBe('getCapabilities');
+		expect(document.paths?.['/api/v1/jobs']?.get?.operationId).toBe('listJobs');
+		expect(document.paths?.['/api/v1/jobs']?.get?.parameters).toMatchObject([
+			{ name: 'cursor', in: 'query' },
+			{ name: 'limit', in: 'query' },
+			{ name: 'name', in: 'query' },
+			{ name: 'status', in: 'query', explode: true },
+		]);
+		expect(document.paths?.['/api/v1/jobs']?.get?.responses).toHaveProperty('400');
+		expect(document.paths?.['/api/v1/jobs']?.get?.responses).toHaveProperty('403');
+		expect(document.paths?.['/api/v1/jobs']?.get?.responses).toHaveProperty('500');
+		expect(document.paths?.['/api/v1/queue-views']?.get?.responses).toHaveProperty('500');
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.operationId).toBe('getJob');
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.parameters).toMatchObject([
+			{ name: 'id', in: 'path', required: true },
+		]);
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.responses).toHaveProperty('404');
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.responses).toHaveProperty('500');
 		expect(document.components?.schemas?.['SchedulerHealth']).toMatchObject({
 			type: 'object',
 			required: ['status', 'scheduler'],
@@ -20,5 +37,21 @@ describe('Management OpenAPI contract', () => {
 			type: 'object',
 			required: ['readOnly', 'actions'],
 		});
+		expect(document.components?.schemas?.['Job']).toMatchObject({
+			type: 'object',
+			required: expect.arrayContaining(['id', 'payload', 'createdAt']),
+		});
+		expect(document.components?.schemas?.['QueueStats']).toMatchObject({
+			type: 'object',
+			required: expect.arrayContaining(['pending', 'total']),
+		});
+		expect(document.components?.schemas?.['JobCursorPage']).toHaveProperty(
+			['properties', 'jobs', 'items', '$ref'],
+			'#/components/schemas/Job',
+		);
+		expect(document.components?.schemas?.['QueueViewSummaryList']).toHaveProperty(
+			['properties', 'queueViews', 'items', 'properties', 'stats', '$ref'],
+			'#/components/schemas/QueueStats',
+		);
 	});
 });
