@@ -327,6 +327,93 @@ describe('Management Surface contract', () => {
 		});
 	});
 
+	test('uses default Job cursor page size when limit is omitted', async () => {
+		const jobId = new ObjectId();
+		let capturedOptions: unknown;
+		const monque: ManagementMonque = {
+			isHealthy: () => true,
+			getQueueViewSummaries: async () => [],
+			getJobsWithCursor: async (options) => {
+				capturedOptions = options;
+				return {
+					jobs: [
+						{
+							_id: jobId,
+							name: 'send-email',
+							data: { to: 'person@example.test', token: 'secret' },
+							status: 'failed',
+							nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+							lockedAt: null,
+							claimedBy: null,
+							lastHeartbeat: null,
+							failCount: 2,
+							failReason: 'SMTP rejected',
+							createdAt: new Date('2025-12-31T23:00:00.000Z'),
+							updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+						},
+					],
+					cursor: 'next-cursor',
+					hasNextPage: true,
+					hasPreviousPage: false,
+				};
+			},
+			getJob: async () => null,
+			getQueueStats: async () => ({
+				pending: 0,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 0,
+			}),
+		};
+		const surface = createManagementSurface<{ userId: string }>({
+			monque,
+			serializePayload: ({ context, job }) =>
+				Promise.resolve({
+					visibleTo: context.userId,
+					jobName: job.name,
+				}),
+		});
+
+		const response = await surface.handle({
+			method: HttpMethod.GET,
+			path: ManagementRoutePath.JOBS,
+			query: {
+				cursor: 'current-cursor',
+				name: 'send-email',
+				status: ['pending', 'failed'],
+			},
+			context: { userId: 'operator-1' },
+		});
+
+		expect(capturedOptions).toEqual({
+			cursor: 'current-cursor',
+			limit: 50,
+			filter: {
+				name: 'send-email',
+				status: ['pending', 'failed'],
+			},
+		});
+		expect(response.status).toBe(HttpStatus.OK);
+		expect(response.body).toMatchObject({
+			jobs: [
+				{
+					id: jobId.toHexString(),
+					name: 'send-email',
+					status: 'failed',
+					payload: {
+						visibleTo: 'operator-1',
+						jobName: 'send-email',
+					},
+				},
+			],
+			cursor: 'next-cursor',
+			hasNextPage: true,
+			hasPreviousPage: false,
+		});
+	});
+
 	test('uses per Job Name payload serialization before global serialization', async () => {
 		const jobId = new ObjectId();
 		const monque: ManagementMonque = {
