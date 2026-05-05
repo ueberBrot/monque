@@ -42,6 +42,8 @@ function ensureAllManagementActions<const T extends readonly ManagementAction[]>
 
 const ACTIONS = ensureAllManagementActions(['read', ...WRITABLE_ACTIONS] as const);
 type WritableAction = (typeof WRITABLE_ACTIONS)[number];
+const ISO_DATE_TIME_PATTERN =
+	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
 	read: false,
@@ -145,11 +147,21 @@ export function createManagementSurface<TContext = unknown>(
 				}
 
 				if (request.method === HttpMethod.POST && request.path === ManagementRoutePath.JOB_CANCEL) {
-					return await handleJobMutation(options, request, 'cancel', options.monque.cancelJob);
+					return await handleJobMutation(
+						options,
+						request,
+						'cancel',
+						options.monque.cancelJob?.bind(options.monque),
+					);
 				}
 
 				if (request.method === HttpMethod.POST && request.path === ManagementRoutePath.JOB_RETRY) {
-					return await handleJobMutation(options, request, 'retry', options.monque.retryJob);
+					return await handleJobMutation(
+						options,
+						request,
+						'retry',
+						options.monque.retryJob?.bind(options.monque),
+					);
 				}
 
 				if (
@@ -163,12 +175,13 @@ export function createManagementSurface<TContext = unknown>(
 					}
 
 					const rescheduleJob = options.monque.rescheduleJob;
+					const boundRescheduleJob = rescheduleJob?.bind(options.monque);
 
 					return await handleJobMutation(
 						options,
 						request,
 						'reschedule',
-						rescheduleJob ? (id) => rescheduleJob(id, body.nextRunAt) : undefined,
+						boundRescheduleJob ? (id) => boundRescheduleJob(id, body.nextRunAt) : undefined,
 					);
 				}
 
@@ -253,6 +266,10 @@ function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { error: stri
 		return { error: 'Invalid nextRunAt' };
 	}
 
+	if (!isValidIsoDateTime(nextRunAt)) {
+		return { error: 'Invalid nextRunAt' };
+	}
+
 	const date = new Date(nextRunAt);
 
 	if (Number.isNaN(date.getTime())) {
@@ -260,6 +277,37 @@ function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { error: stri
 	}
 
 	return { nextRunAt: date };
+}
+
+function isValidIsoDateTime(value: string): boolean {
+	const match = ISO_DATE_TIME_PATTERN.exec(value);
+
+	if (!match) {
+		return false;
+	}
+
+	const [, yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] = match;
+	const year = Number(yearValue);
+	const month = Number(monthValue);
+	const day = Number(dayValue);
+	const hour = Number(hourValue);
+	const minute = Number(minuteValue);
+	const second = Number(secondValue);
+
+	if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+		return false;
+	}
+
+	const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+
+	return (
+		utcDate.getUTCFullYear() === year &&
+		utcDate.getUTCMonth() === month - 1 &&
+		utcDate.getUTCDate() === day &&
+		utcDate.getUTCHours() === hour &&
+		utcDate.getUTCMinutes() === minute &&
+		utcDate.getUTCSeconds() === second
+	);
 }
 
 async function handleJobMutation<TContext>(
@@ -298,12 +346,13 @@ async function handleDeleteJobAction<TContext>(
 	}
 
 	const deleteJob = options.monque.deleteJob;
+	const boundDeleteJob = deleteJob?.bind(options.monque);
 
-	if (!deleteJob) {
+	if (!boundDeleteJob) {
 		return unsupportedAction();
 	}
 
-	const deleted = await deleteJob(target.id.toHexString());
+	const deleted = await boundDeleteJob(target.id.toHexString());
 
 	if (!deleted) {
 		return notFound('Job not found');

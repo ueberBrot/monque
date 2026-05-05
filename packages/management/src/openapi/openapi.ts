@@ -42,8 +42,16 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		builder.addSchema(getSchemaId(schema), schema as SchemaObject);
 	}
 
+	const pathItemsByPath = new Map<string, PathItemObject>();
+
 	for (const route of MANAGEMENT_ROUTE_MAP) {
-		builder.addPath(route.path, createPathItem(route));
+		const pathItem = pathItemsByPath.get(route.path) ?? {};
+		Object.assign(pathItem, createPathItem(route));
+		pathItemsByPath.set(route.path, pathItem);
+	}
+
+	for (const [path, pathItem] of pathItemsByPath) {
+		builder.addPath(path, pathItem);
 	}
 
 	return builder.getSpec();

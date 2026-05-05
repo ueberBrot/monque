@@ -41,6 +41,7 @@ describe('Management OpenAPI contract', () => {
 		expect(
 			document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.requestBody,
 		).toMatchObject({
+			required: true,
 			content: {
 				'application/json': {
 					schema: { $ref: '#/components/schemas/RescheduleJobRequest' },
