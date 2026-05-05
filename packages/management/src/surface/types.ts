@@ -127,7 +127,7 @@ export interface JobDto {
 	lastHeartbeat: string | null;
 	heartbeatInterval?: number;
 	failCount: number;
-	failureReason?: string;
+	failureReason: string | null;
 	repeatInterval?: string;
 	uniqueKey?: string;
 	createdAt: string;

@@ -78,7 +78,7 @@ export const JobSchema = Type.Object(
 		lastHeartbeat: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),
 		heartbeatInterval: Type.Optional(Type.Number()),
 		failCount: Type.Number(),
-		failureReason: Type.Optional(Type.String()),
+		failureReason: Type.Union([Type.String(), Type.Null()]),
 		repeatInterval: Type.Optional(Type.String()),
 		uniqueKey: Type.Optional(Type.String()),
 		createdAt: Type.String({ format: 'date-time' }),

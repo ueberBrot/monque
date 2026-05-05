@@ -225,16 +225,13 @@ async function serializeJob<TContext>(
 		claimedBy: job.claimedBy ?? null,
 		lastHeartbeat: job.lastHeartbeat ? job.lastHeartbeat.toISOString() : null,
 		failCount: job.failCount,
+		failureReason: job.failReason ?? null,
 		createdAt: job.createdAt.toISOString(),
 		updatedAt: job.updatedAt.toISOString(),
 	};
 
 	if (job.heartbeatInterval !== undefined) {
 		dto.heartbeatInterval = job.heartbeatInterval;
-	}
-
-	if (job.failReason !== undefined) {
-		dto.failureReason = job.failReason;
 	}
 
 	if (job.repeatInterval !== undefined) {
