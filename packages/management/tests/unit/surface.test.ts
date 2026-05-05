@@ -1,11 +1,556 @@
-import { ConnectionError, InvalidCursorError } from '@monque/core';
+import {
+	ConnectionError,
+	InvalidCursorError,
+	JobStateError,
+	type PersistedJob,
+} from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface, HttpMethod, HttpStatus, ManagementRoutePath } from '@/index';
 import type { ManagementMonque } from '@/surface';
 
+function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
+	return {
+		_id: new ObjectId(),
+		name: 'send-email',
+		data: { ok: true },
+		status: 'pending',
+		nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+		failCount: 0,
+		createdAt: new Date('2025-12-31T23:00:00.000Z'),
+		updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+		...overrides,
+	};
+}
+
+function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
+	return {
+		isHealthy: () => true,
+		getQueueViewSummaries: async () => [],
+		getJobsWithCursor: async () => ({
+			jobs: [],
+			cursor: null,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		}),
+		getJob: async () => null,
+		getQueueStats: async () => ({
+			pending: 0,
+			processing: 0,
+			completed: 0,
+			failed: 0,
+			cancelled: 0,
+			total: 0,
+		}),
+		...overrides,
+	};
+}
+
 describe('Management Surface contract', () => {
+	test('cancels single pending Job through public core API and returns Job DTO', async () => {
+		const jobId = new ObjectId();
+		const calls: string[] = [];
+		const monque = {
+			...createManagementMonque(),
+			getJob: async () => createJob({ _id: jobId }),
+			cancelJob: async (id: string) => {
+				calls.push(id);
+				return {
+					_id: jobId,
+					name: 'send-email',
+					data: { ok: true },
+					status: 'cancelled',
+					nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+					failCount: 0,
+					createdAt: new Date('2025-12-31T23:00:00.000Z'),
+					updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+				};
+			},
+		} satisfies ManagementMonque & {
+			cancelJob(id: string): ReturnType<ManagementMonque['getJob']>;
+		};
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/cancel',
+			params: { id: jobId.toHexString() },
+			context: {},
+		});
+
+		expect(calls).toEqual([jobId.toHexString()]);
+		expect(response).toEqual({
+			status: HttpStatus.OK,
+			body: {
+				id: jobId.toHexString(),
+				name: 'send-email',
+				status: 'cancelled',
+				payload: { ok: true },
+				nextRunAt: '2026-01-01T00:00:00.000Z',
+				lockedAt: null,
+				claimedBy: null,
+				lastHeartbeat: null,
+				failCount: 0,
+				failureReason: null,
+				createdAt: '2025-12-31T23:00:00.000Z',
+				updatedAt: '2026-01-01T00:01:00.000Z',
+			},
+		});
+	});
+
+	test('binds public core mutation methods before invoking them', async () => {
+		const jobId = new ObjectId();
+		const calls: string[] = [];
+		const monque = {
+			...createManagementMonque(),
+			marker: 'bound',
+			getJob: async () => createJob({ _id: jobId, status: 'failed' }),
+			async retryJob(this: { marker: string }, id: string) {
+				calls.push(`${this.marker}:${id}`);
+				return createJob({ _id: jobId, status: 'pending' });
+			},
+		} satisfies ManagementMonque & {
+			marker: string;
+			retryJob(id: string): ReturnType<ManagementMonque['getJob']>;
+		};
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/retry',
+			params: { id: jobId.toHexString() },
+			context: {},
+		});
+
+		expect(calls).toEqual([`bound:${jobId.toHexString()}`]);
+		expect(response.status).toBe(HttpStatus.OK);
+	});
+
+	test('retries single failed Job through public core API and returns Job DTO', async () => {
+		const jobId = new ObjectId();
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			getJob: async () => createJob({ _id: jobId, status: 'failed' }),
+			retryJob: async (id) => {
+				calls.push(id);
+				return createJob({
+					_id: jobId,
+					status: 'pending',
+					data: { retried: true },
+				});
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/retry',
+			params: { id: jobId.toHexString() },
+			context: {},
+		});
+
+		expect(calls).toEqual([jobId.toHexString()]);
+		expect(response).toMatchObject({
+			status: HttpStatus.OK,
+			body: {
+				id: jobId.toHexString(),
+				status: 'pending',
+				payload: { retried: true },
+			},
+		});
+	});
+
+	test('reschedules single pending Job using ISO date strings and returns Job DTO', async () => {
+		const jobId = new ObjectId();
+		const calls: Array<{ id: string; nextRunAt: string }> = [];
+		const monque = createManagementMonque({
+			getJob: async () => createJob({ _id: jobId }),
+			rescheduleJob: async (id, nextRunAt) => {
+				calls.push({ id, nextRunAt: nextRunAt.toISOString() });
+				return createJob({
+					_id: jobId,
+					nextRunAt,
+					data: { rescheduled: true },
+				});
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			params: { id: jobId.toHexString() },
+			body: { nextRunAt: '2026-02-01T10:30:00.000Z' },
+			context: {},
+		});
+
+		expect(calls).toEqual([{ id: jobId.toHexString(), nextRunAt: '2026-02-01T10:30:00.000Z' }]);
+		expect(response).toMatchObject({
+			status: HttpStatus.OK,
+			body: {
+				id: jobId.toHexString(),
+				nextRunAt: '2026-02-01T10:30:00.000Z',
+				payload: { rescheduled: true },
+			},
+		});
+	});
+
+	test('deletes single Job through public core API and returns delete DTO', async () => {
+		const jobId = new ObjectId();
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			getJob: async () => createJob({ _id: jobId }),
+			deleteJob: async (id) => {
+				calls.push(id);
+				return true;
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.DELETE,
+			path: '/api/v1/jobs/{id}',
+			params: { id: jobId.toHexString() },
+			context: {},
+		});
+
+		expect(calls).toEqual([jobId.toHexString()]);
+		expect(response).toEqual({
+			status: HttpStatus.OK,
+			body: { deleted: true },
+		});
+	});
+
+	test('maps deleteJob returning false to 404', async () => {
+		const jobId = new ObjectId();
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			getJob: async () => createJob({ _id: jobId }),
+			deleteJob: async (id) => {
+				calls.push(id);
+				return false;
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.DELETE,
+			path: '/api/v1/jobs/{id}',
+			params: { id: jobId.toHexString() },
+			context: {},
+		});
+
+		expect(calls).toEqual([jobId.toHexString()]);
+		expect(response).toEqual({
+			status: HttpStatus.NOT_FOUND,
+			body: { error: 'Job not found' },
+		});
+	});
+
+	test('rejects all single Job mutations in read-only mode before calling core actions', async () => {
+		const jobId = new ObjectId().toHexString();
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			cancelJob: async () => {
+				calls.push('cancel');
+				return null;
+			},
+			retryJob: async () => {
+				calls.push('retry');
+				return null;
+			},
+			rescheduleJob: async () => {
+				calls.push('reschedule');
+				return null;
+			},
+			deleteJob: async () => {
+				calls.push('delete');
+				return false;
+			},
+		});
+		const surface = createManagementSurface({ monque, readOnly: true });
+
+		const responses = await Promise.all([
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/cancel',
+				params: { id: jobId },
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/retry',
+				params: { id: jobId },
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/reschedule',
+				params: { id: jobId },
+				body: { nextRunAt: '2026-02-01T10:30:00.000Z' },
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.DELETE,
+				path: '/api/v1/jobs/{id}',
+				params: { id: jobId },
+				context: {},
+			}),
+		]);
+
+		expect(responses).toEqual([
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+		]);
+		expect(calls).toEqual([]);
+	});
+
+	test('authorizes single Job mutations with action, context, and target Job before core action', async () => {
+		const targetJob = createJob();
+		const authorizeCalls: string[] = [];
+		const actionCalls: string[] = [];
+		const monque = createManagementMonque({
+			getJob: async () => targetJob,
+			cancelJob: async () => {
+				actionCalls.push('cancel');
+				return null;
+			},
+			retryJob: async () => {
+				actionCalls.push('retry');
+				return null;
+			},
+			rescheduleJob: async () => {
+				actionCalls.push('reschedule');
+				return null;
+			},
+			deleteJob: async () => {
+				actionCalls.push('delete');
+				return false;
+			},
+		});
+		const surface = createManagementSurface<{ userId: string }>({
+			monque,
+			authorize: ({ action, context, job }) => {
+				authorizeCalls.push(`${action}:${context.userId}:${job?._id.toHexString()}`);
+				return false;
+			},
+		});
+		const params = { id: targetJob._id.toHexString() };
+		const context = { userId: 'operator-1' };
+
+		const responses = await Promise.all([
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/cancel',
+				params,
+				context,
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/retry',
+				params,
+				context,
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: '/api/v1/jobs/{id}/actions/reschedule',
+				params,
+				body: { nextRunAt: '2026-02-01T10:30:00.000Z' },
+				context,
+			}),
+			surface.handle({
+				method: HttpMethod.DELETE,
+				path: '/api/v1/jobs/{id}',
+				params,
+				context,
+			}),
+		]);
+
+		expect(responses).toEqual([
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Action denied' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Action denied' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Action denied' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Action denied' } },
+		]);
+		expect(authorizeCalls).toEqual([
+			`cancel:operator-1:${targetJob._id.toHexString()}`,
+			`retry:operator-1:${targetJob._id.toHexString()}`,
+			`reschedule:operator-1:${targetJob._id.toHexString()}`,
+			`delete:operator-1:${targetJob._id.toHexString()}`,
+		]);
+		expect(actionCalls).toEqual([]);
+	});
+
+	test('maps invalid single Job state transitions to 409', async () => {
+		const targetJob = createJob({ status: 'processing' });
+		const monque = createManagementMonque({
+			getJob: async () => targetJob,
+			cancelJob: async () => {
+				throw new JobStateError(
+					'Cannot cancel processing job',
+					targetJob._id.toHexString(),
+					'processing',
+					'cancel',
+				);
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/cancel',
+			params: { id: targetJob._id.toHexString() },
+			context: {},
+		});
+
+		expect(response).toEqual({
+			status: HttpStatus.CONFLICT,
+			body: { error: 'Cannot cancel processing job' },
+		});
+	});
+
+	test('maps invalid retry Job state transitions to 409', async () => {
+		const targetJob = createJob({ status: 'pending' });
+		const message = 'Cannot retry pending job';
+		const monque = createManagementMonque({
+			getJob: async () => targetJob,
+			retryJob: async () => {
+				throw new JobStateError(message, targetJob._id.toHexString(), 'pending', 'retry');
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/retry',
+			params: { id: targetJob._id.toHexString() },
+			context: {},
+		});
+
+		expect(response).toEqual({
+			status: HttpStatus.CONFLICT,
+			body: { error: message },
+		});
+	});
+
+	test('maps invalid reschedule Job state transitions to 409', async () => {
+		const targetJob = createJob({ status: 'completed' });
+		const message = 'Cannot reschedule completed job';
+		const monque = createManagementMonque({
+			getJob: async () => targetJob,
+			rescheduleJob: async () => {
+				throw new JobStateError(message, targetJob._id.toHexString(), 'completed', 'reschedule');
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			params: { id: targetJob._id.toHexString() },
+			body: { nextRunAt: '2026-02-01T10:30:00.000Z' },
+			context: {},
+		});
+
+		expect(response).toEqual({
+			status: HttpStatus.CONFLICT,
+			body: { error: message },
+		});
+	});
+
+	test('maps invalid delete Job state transitions to 409', async () => {
+		const targetJob = createJob({ status: 'processing' });
+		const message = 'Cannot delete processing job';
+		const monque = createManagementMonque({
+			getJob: async () => targetJob,
+			deleteJob: async () => {
+				throw new JobStateError(message, targetJob._id.toHexString(), 'processing', 'cancel');
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.DELETE,
+			path: '/api/v1/jobs/{id}',
+			params: { id: targetJob._id.toHexString() },
+			context: {},
+		});
+
+		expect(response).toEqual({
+			status: HttpStatus.CONFLICT,
+			body: { error: message },
+		});
+	});
+
+	test('maps single Job action request and core errors', async () => {
+		const targetJob = createJob();
+		const actionCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(targetJob._id) ? targetJob : null),
+				cancelJob: async () => {
+					throw new ConnectionError('db down');
+				},
+				retryJob: async () => {
+					actionCalls.push('retry');
+					return null;
+				},
+				rescheduleJob: async () => {
+					actionCalls.push('reschedule');
+					return null;
+				},
+			}),
+		});
+
+		const invalidReschedule = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			params: { id: targetJob._id.toHexString() },
+			body: { nextRunAt: 'not-a-date' },
+			context: {},
+		});
+		const legacyDateReschedule = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			params: { id: targetJob._id.toHexString() },
+			body: { nextRunAt: 'February 1, 2026 10:30:00' },
+			context: {},
+		});
+		const missing = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/retry',
+			params: { id: new ObjectId().toHexString() },
+			context: {},
+		});
+		const unexpected = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/cancel',
+			params: { id: targetJob._id.toHexString() },
+			context: {},
+		});
+
+		expect(invalidReschedule).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid nextRunAt' },
+		});
+		expect(legacyDateReschedule).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid nextRunAt' },
+		});
+		expect(missing).toEqual({
+			status: HttpStatus.NOT_FOUND,
+			body: { error: 'Job not found' },
+		});
+		expect(unexpected).toEqual({
+			status: HttpStatus.INTERNAL_SERVER_ERROR,
+			body: { error: 'Internal server error' },
+		});
+		expect(actionCalls).toEqual([]);
+	});
+
 	test('dispatches health and capabilities through the versioned route map', async () => {
 		const monque: ManagementMonque = {
 			isHealthy: () => true,
@@ -55,10 +600,10 @@ describe('Management Surface contract', () => {
 				readOnly: false,
 				actions: {
 					read: true,
-					cancel: true,
-					retry: true,
-					reschedule: true,
-					delete: true,
+					cancel: false,
+					retry: false,
+					reschedule: false,
+					delete: false,
 				},
 			},
 		});
