@@ -63,7 +63,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 			{
 				name: 'limit',
 				in: 'query',
-				schema: Type.Number({ default: 50, maximum: 100, minimum: 1 }),
+				schema: Type.Integer({ default: 50, maximum: 100, minimum: 1 }),
 			},
 			{
 				name: 'name',

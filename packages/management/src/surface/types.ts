@@ -40,7 +40,7 @@ export interface ManagementPayloadSerializationInput<TContext = unknown> {
 
 export type ManagementPayloadSerializer<TContext = unknown> = (
 	input: ManagementPayloadSerializationInput<TContext>,
-) => unknown | Promise<unknown>;
+) => Promise<unknown>;
 
 export interface ManagementOptions<TContext = unknown> {
 	monque: ManagementMonque;

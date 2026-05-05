@@ -271,10 +271,11 @@ describe('Management Surface contract', () => {
 		};
 		const surface = createManagementSurface<{ userId: string }>({
 			monque,
-			serializePayload: ({ context, job }) => ({
-				visibleTo: context.userId,
-				jobName: job.name,
-			}),
+			serializePayload: ({ context, job }) =>
+				Promise.resolve({
+					visibleTo: context.userId,
+					jobName: job.name,
+				}),
 		});
 
 		const response = await surface.handle({
@@ -360,9 +361,13 @@ describe('Management Surface contract', () => {
 		};
 		const surface = createManagementSurface<{ role: string }>({
 			monque,
-			serializePayload: () => ({ source: 'global' }),
+			serializePayload: () => Promise.resolve({ source: 'global' }),
 			serializePayloadByJobName: {
-				'send-email': ({ context }) => ({ source: 'job', role: context.role }),
+				'send-email': ({ context }) =>
+					Promise.resolve({
+						source: 'job',
+						role: context.role,
+					}),
 			},
 		});
 
