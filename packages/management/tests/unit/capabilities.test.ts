@@ -137,6 +137,13 @@ describe('Management capabilities', () => {
 			params: { id: '000000000000000000000000' },
 			context: {},
 		});
+		const unsupportedReschedule = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOB_RESCHEDULE,
+			params: { id: '000000000000000000000000' },
+			body: { nextRunAt: 'not-a-date' },
+			context: {},
+		});
 
 		expect(response).toEqual({
 			status: HttpStatus.OK,
@@ -161,6 +168,10 @@ describe('Management capabilities', () => {
 			'POST /api/v1/jobs/{id}/actions/retry',
 		]);
 		expect(unsupported).toEqual({
+			status: HttpStatus.FORBIDDEN,
+			body: { error: 'Management action is unsupported' },
+		});
+		expect(unsupportedReschedule).toEqual({
 			status: HttpStatus.FORBIDDEN,
 			body: { error: 'Management action is unsupported' },
 		});
