@@ -932,6 +932,16 @@ describe('Management Surface contract', () => {
 			body: { nextRunAt: 'February 1, 2026 10:30:00' },
 			context: {},
 		});
+		const extraFieldReschedule = await surface.handle({
+			method: HttpMethod.POST,
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			params: { id: targetJob._id.toHexString() },
+			body: {
+				nextRunAt: '2026-02-01T10:30:00.000Z',
+				unexpected: true,
+			},
+			context: {},
+		});
 		const missing = await surface.handle({
 			method: HttpMethod.POST,
 			path: '/api/v1/jobs/{id}/actions/retry',
@@ -952,6 +962,10 @@ describe('Management Surface contract', () => {
 		expect(legacyDateReschedule).toEqual({
 			status: HttpStatus.BAD_REQUEST,
 			body: { error: 'Invalid nextRunAt' },
+		});
+		expect(extraFieldReschedule).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid reschedule request' },
 		});
 		expect(missing).toEqual({
 			status: HttpStatus.NOT_FOUND,

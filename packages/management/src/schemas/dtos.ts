@@ -41,7 +41,7 @@ export const JobSelectorSchema = Type.Object(
 		olderThan: Type.Optional(Type.String({ format: 'date-time' })),
 		newerThan: Type.Optional(Type.String({ format: 'date-time' })),
 	},
-	{ $id: 'JobSelector' },
+	{ $id: 'JobSelector', additionalProperties: false },
 );
 
 export const BulkActionResultSchema = Type.Object(
@@ -135,7 +135,7 @@ export const RescheduleJobRequestSchema = Type.Object(
 	{
 		nextRunAt: Type.String({ format: 'date-time' }),
 	},
-	{ $id: 'RescheduleJobRequest' },
+	{ $id: 'RescheduleJobRequest', additionalProperties: false },
 );
 
 export const ErrorSchema = Type.Object(
