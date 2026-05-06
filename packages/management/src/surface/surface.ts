@@ -1,7 +1,9 @@
 import {
+	type BulkOperationResult,
 	type CursorOptions,
 	InvalidCursorError,
 	isValidJobStatus,
+	type JobSelector,
 	JobStateError,
 	type JobStatusType,
 	type PersistedJob,
@@ -42,31 +44,59 @@ const ACTION_METHOD_BY_ACTION = {
 	reschedule: 'rescheduleJob',
 	delete: 'deleteJob',
 } as const satisfies Record<WritableAction, keyof ManagementMonque>;
+const BULK_ACTION_METHOD_BY_ACTION = {
+	cancel: 'cancelJobs',
+	retry: 'retryJobs',
+	delete: 'deleteJobs',
+} as const satisfies Record<Exclude<WritableAction, 'reschedule'>, keyof ManagementMonque>;
 const ACTION_ROUTES = [
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_CANCEL,
 		action: 'cancel',
+		methodName: 'cancelJob',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RETRY,
 		action: 'retry',
+		methodName: 'retryJob',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RESCHEDULE,
 		action: 'reschedule',
+		methodName: 'rescheduleJob',
 	},
 	{
 		method: HttpMethod.DELETE,
 		path: ManagementRoutePath.JOB_DETAIL,
 		action: 'delete',
+		methodName: 'deleteJob',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_CANCEL,
+		action: 'cancel',
+		methodName: 'cancelJobs',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_RETRY,
+		action: 'retry',
+		methodName: 'retryJobs',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_DELETE,
+		action: 'delete',
+		methodName: 'deleteJobs',
 	},
 ] as const satisfies ReadonlyArray<{
 	method: ManagementRoute['method'];
 	path: ManagementRoute['path'];
 	action: WritableAction;
+	methodName: keyof ManagementMonque;
 }>;
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
@@ -192,6 +222,42 @@ export function createManagementSurface<TContext = unknown>(
 
 				if (
 					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_CANCEL
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'cancel',
+						options.monque.cancelJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_RETRY
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'retry',
+						options.monque.retryJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_DELETE
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'delete',
+						options.monque.deleteJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
 					request.path === ManagementRoutePath.JOB_RESCHEDULE
 				) {
 					const body = parseRescheduleBody(request.body);
@@ -305,6 +371,116 @@ function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { error: stri
 	return { nextRunAt: date };
 }
 
+function parseJobSelector(body: unknown): JobSelector | { error: string } {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return { error: 'Invalid job selector' };
+	}
+
+	const input = body as Record<string, unknown>;
+	const selector: JobSelector = {};
+	const name = input['name'];
+	const status = input['status'];
+	const olderThan = input['olderThan'];
+	const newerThan = input['newerThan'];
+
+	if (name !== undefined) {
+		if (typeof name !== 'string') {
+			return { error: 'Invalid selector name' };
+		}
+
+		selector.name = name;
+	}
+
+	const statuses = parseSelectorStatuses(status);
+
+	if ('error' in statuses) {
+		return statuses;
+	}
+
+	if (statuses.status !== undefined) {
+		selector.status = statuses.status;
+	}
+
+	const olderThanDate = parseOptionalIsoDateTime(olderThan, 'olderThan');
+
+	if ('error' in olderThanDate) {
+		return olderThanDate;
+	}
+
+	if (olderThanDate.value !== undefined) {
+		selector.olderThan = olderThanDate.value;
+	}
+
+	const newerThanDate = parseOptionalIsoDateTime(newerThan, 'newerThan');
+
+	if ('error' in newerThanDate) {
+		return newerThanDate;
+	}
+
+	if (newerThanDate.value !== undefined) {
+		selector.newerThan = newerThanDate.value;
+	}
+
+	return selector;
+}
+
+function parseSelectorStatuses(
+	value: unknown,
+): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
+	if (value === undefined) {
+		return { status: undefined };
+	}
+
+	if (typeof value === 'string') {
+		if (!isValidJobStatus(value)) {
+			return { error: 'Invalid status' };
+		}
+
+		return { status: value };
+	}
+
+	if (!Array.isArray(value) || value.length === 0) {
+		return { error: 'Invalid status' };
+	}
+
+	const statuses: JobStatusType[] = [];
+
+	for (const status of value) {
+		if (typeof status !== 'string' || !isValidJobStatus(status)) {
+			return { error: 'Invalid status' };
+		}
+
+		statuses.push(status);
+	}
+
+	return { status: statuses };
+}
+
+function parseOptionalIsoDateTime(
+	value: unknown,
+	fieldName: 'olderThan' | 'newerThan',
+): { value: Date | undefined } | { error: string } {
+	if (value === undefined) {
+		return { value: undefined };
+	}
+
+	if (typeof value !== 'string') {
+		return { error: `Invalid ${fieldName}` };
+	}
+
+	if (!isValidIsoDateTime(value)) {
+		return { error: `Invalid ${fieldName}` };
+	}
+
+	const date = new Date(value);
+
+	if (Number.isNaN(date.getTime())) {
+		return { error: `Invalid ${fieldName}` };
+	}
+
+	return { value: date };
+}
+
 function isValidIsoDateTime(value: string): boolean {
 	const match = ISO_DATE_TIME_PATTERN.exec(value);
 
@@ -385,6 +561,25 @@ async function handleDeleteJobAction<TContext>(
 	}
 
 	return ok({ deleted: true as const });
+}
+
+async function handleBulkJobMutation<TContext>(
+	options: ManagementOptions<TContext>,
+	request: ManagementRequest<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
+): Promise<ManagementResponse> {
+	const target = await requireBulkJobTarget(options, request, action);
+
+	if ('status' in target) {
+		return target;
+	}
+
+	if (!mutate) {
+		return unsupportedAction();
+	}
+
+	return ok(await mutate(target.selector));
 }
 
 async function getJobs<TContext>(
@@ -518,10 +713,14 @@ function parseLimit(value: ManagementQueryValue): { limit: number } | { error: s
 }
 
 function parseStatuses(
-	value: ManagementQueryValue,
+	value: ManagementQueryValue | unknown,
 ): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
 	if (value === undefined) {
 		return { status: undefined };
+	}
+
+	if (typeof value !== 'string' && !Array.isArray(value)) {
+		return { error: 'Invalid status' };
 	}
 
 	const statuses = Array.isArray(value) ? value : [value];
@@ -601,7 +800,7 @@ async function requireMutableJobTarget<TContext>(
 		return writeAuthorization;
 	}
 
-	if (!isActionSupported(options.monque, action)) {
+	if (!isSingleActionSupported(options.monque, action)) {
 		return unsupportedAction();
 	}
 
@@ -632,6 +831,54 @@ async function requireActionAuthorization<TContext>(
 	job: PersistedJob,
 ): Promise<ManagementResponse<{ error: string }> | undefined> {
 	if (await isAllowedByAuthorization(options, action, context, job)) {
+		return undefined;
+	}
+
+	return forbidden('Action denied');
+}
+
+async function requireBulkJobTarget<TContext>(
+	options: ManagementOptions<TContext>,
+	request: ManagementRequest<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+): Promise<{ selector: JobSelector } | ManagementResponse<{ error: string }>> {
+	const writeAuthorization = requireWritableAction(options);
+
+	if (writeAuthorization) {
+		return writeAuthorization;
+	}
+
+	if (!isBulkActionSupported(options.monque, action)) {
+		return unsupportedAction();
+	}
+
+	const selector = parseJobSelector(request.body);
+
+	if ('error' in selector) {
+		return badRequest(selector.error);
+	}
+
+	const actionAuthorization = await requireBulkActionAuthorization(
+		options,
+		action,
+		request.context,
+		selector,
+	);
+
+	if (actionAuthorization) {
+		return actionAuthorization;
+	}
+
+	return { selector };
+}
+
+async function requireBulkActionAuthorization<TContext>(
+	options: ManagementOptions<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+	context: TContext,
+	selector: JobSelector,
+): Promise<ManagementResponse<{ error: string }> | undefined> {
+	if (await isAllowedByAuthorization(options, action, context, undefined, selector)) {
 		return undefined;
 	}
 
@@ -682,7 +929,7 @@ function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boo
 		(candidate) => candidate.method === route.method && candidate.path === route.path,
 	);
 
-	return actionRoute ? isActionSupported(monque, actionRoute.action) : true;
+	return actionRoute ? monque[actionRoute.methodName] !== undefined : true;
 }
 
 function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
@@ -690,7 +937,21 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 		return true;
 	}
 
+	return (
+		isSingleActionSupported(monque, action) ||
+		(action !== 'reschedule' && monque[BULK_ACTION_METHOD_BY_ACTION[action]] !== undefined)
+	);
+}
+
+function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {
 	return monque[ACTION_METHOD_BY_ACTION[action]] !== undefined;
+}
+
+function isBulkActionSupported(
+	monque: ManagementMonque,
+	action: Exclude<WritableAction, 'reschedule'>,
+): boolean {
+	return monque[BULK_ACTION_METHOD_BY_ACTION[action]] !== undefined;
 }
 
 async function isAllowedByAuthorization<TContext>(
@@ -698,10 +959,11 @@ async function isAllowedByAuthorization<TContext>(
 	action: ManagementAction,
 	context: TContext,
 	job?: PersistedJob,
+	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
 		return true;
 	}
 
-	return options.authorize({ action, context, job });
+	return options.authorize({ action, context, job, selector });
 }

@@ -2,11 +2,13 @@ import { Type } from '@sinclair/typebox';
 
 import { HttpMethod, HttpStatus } from '../http/index.js';
 import {
+	BulkActionResultSchema,
 	CapabilitiesSchema,
 	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
+	JobSelectorSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
 	RescheduleJobRequestSchema,
@@ -24,6 +26,9 @@ export const ManagementRoutePath = {
 	JOB_CANCEL: '/api/v1/jobs/{id}/actions/cancel',
 	JOB_RETRY: '/api/v1/jobs/{id}/actions/retry',
 	JOB_RESCHEDULE: '/api/v1/jobs/{id}/actions/reschedule',
+	JOBS_BULK_CANCEL: '/api/v1/jobs/actions/cancel',
+	JOBS_BULK_RETRY: '/api/v1/jobs/actions/retry',
+	JOBS_BULK_DELETE: '/api/v1/jobs/actions/delete',
 } as const;
 
 export type ManagementRoutePathType =
@@ -192,6 +197,48 @@ export const MANAGEMENT_ROUTE_MAP = [
 				required: true,
 				schema: Type.String(),
 			},
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_CANCEL,
+		operationId: 'cancelJobs',
+		requestSchema: JobSelectorSchema,
+		responseSchema: BulkActionResultSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_RETRY,
+		operationId: 'retryJobs',
+		requestSchema: JobSelectorSchema,
+		responseSchema: BulkActionResultSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
+		],
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_DELETE,
+		operationId: 'deleteJobs',
+		requestSchema: JobSelectorSchema,
+		responseSchema: BulkActionResultSchema,
+		errorSchema: ErrorSchema,
+		errorStatuses: [
+			HttpStatus.BAD_REQUEST,
+			HttpStatus.FORBIDDEN,
+			HttpStatus.CONFLICT,
+			HttpStatus.INTERNAL_SERVER_ERROR,
 		],
 	},
 	{

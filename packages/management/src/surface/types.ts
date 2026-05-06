@@ -1,6 +1,8 @@
 import type {
+	BulkOperationResult,
 	CursorOptions,
 	CursorPage,
+	JobSelector,
 	JobStatusType,
 	Monque,
 	PersistedJob,
@@ -25,12 +27,16 @@ export interface ManagementMonque {
 	retryJob?(id: string): Promise<PersistedJob | null>;
 	rescheduleJob?(id: string, runAt: Date): Promise<PersistedJob | null>;
 	deleteJob?(id: string): Promise<boolean>;
+	cancelJobs?(selector: JobSelector): Promise<BulkOperationResult>;
+	retryJobs?(selector: JobSelector): Promise<BulkOperationResult>;
+	deleteJobs?(selector: JobSelector): Promise<BulkOperationResult>;
 }
 
 export interface ManagementAuthorizationInput<TContext = unknown> {
 	action: ManagementAction;
 	context: TContext;
 	job?: PersistedJob | undefined;
+	selector?: JobSelector | undefined;
 }
 
 export type ManagementAuthorize<TContext = unknown> = (
@@ -151,6 +157,8 @@ export interface JobCursorPageDto {
 export interface DeleteJobDto {
 	deleted: true;
 }
+
+export type BulkActionResultDto = BulkOperationResult;
 
 export interface ManagementSurface<TContext = unknown> {
 	readonly routes: readonly ManagementRoute[];

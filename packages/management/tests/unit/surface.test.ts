@@ -48,6 +48,281 @@ function createManagementMonque(overrides: Partial<ManagementMonque> = {}): Mana
 }
 
 describe('Management Surface contract', () => {
+	test('bulk cancels Jobs through public core API with selector DTO', async () => {
+		const calls: unknown[] = [];
+		const authorizeCalls: unknown[] = [];
+		const monque = createManagementMonque({
+			cancelJobs: async (selector) => {
+				calls.push(selector);
+				return {
+					count: 2,
+					errors: [],
+				};
+			},
+		});
+		const surface = createManagementSurface<{ userId: string }>({
+			monque,
+			authorize: ({ action, context, selector }) => {
+				authorizeCalls.push({ action, context, selector });
+				return true;
+			},
+		});
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: {
+				name: 'send-email',
+				status: ['pending'],
+				olderThan: '2026-02-01T10:30:00.000Z',
+				newerThan: '2026-01-01T00:00:00.000Z',
+			},
+			context: { userId: 'operator-1' },
+		});
+
+		const expectedSelector = {
+			name: 'send-email',
+			status: ['pending'],
+			olderThan: new Date('2026-02-01T10:30:00.000Z'),
+			newerThan: new Date('2026-01-01T00:00:00.000Z'),
+		};
+		expect(calls).toEqual([expectedSelector]);
+		expect(authorizeCalls).toEqual([
+			{
+				action: 'cancel',
+				context: { userId: 'operator-1' },
+				selector: expectedSelector,
+			},
+		]);
+		expect(response).toEqual({
+			status: HttpStatus.OK,
+			body: {
+				count: 2,
+				errors: [],
+			},
+		});
+	});
+
+	test('bulk retries and deletes Jobs through public core APIs with stable result DTOs', async () => {
+		const calls: Array<{ action: string; selector: unknown }> = [];
+		const monque = createManagementMonque({
+			retryJobs: async (selector) => {
+				calls.push({ action: 'retry', selector });
+				return {
+					count: 1,
+					errors: [{ jobId: 'job-1', error: 'still processing' }],
+				};
+			},
+			deleteJobs: async (selector) => {
+				calls.push({ action: 'delete', selector });
+				return {
+					count: 3,
+					errors: [],
+				};
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const retry = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_RETRY,
+			body: {
+				status: 'failed',
+			},
+			context: {},
+		});
+		const deleted = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_DELETE,
+			body: {
+				status: ['completed', 'cancelled'],
+			},
+			context: {},
+		});
+
+		expect(calls).toEqual([
+			{ action: 'retry', selector: { status: 'failed' } },
+			{ action: 'delete', selector: { status: ['completed', 'cancelled'] } },
+		]);
+		expect(retry).toEqual({
+			status: HttpStatus.OK,
+			body: {
+				count: 1,
+				errors: [{ jobId: 'job-1', error: 'still processing' }],
+			},
+		});
+		expect(deleted).toEqual({
+			status: HttpStatus.OK,
+			body: {
+				count: 3,
+				errors: [],
+			},
+		});
+	});
+
+	test('rejects invalid bulk selector request shapes before calling core', async () => {
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			cancelJobs: async () => {
+				calls.push('cancel');
+				return { count: 0, errors: [] };
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const invalidShape = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: [],
+			context: {},
+		});
+		const invalidStatus = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { status: [] },
+			context: {},
+		});
+		const invalidDate = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { olderThan: 'February 1, 2026 10:30:00' },
+			context: {},
+		});
+
+		expect(invalidShape).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid job selector' },
+		});
+		expect(invalidStatus).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid status' },
+		});
+		expect(invalidDate).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid olderThan' },
+		});
+		expect(calls).toEqual([]);
+	});
+
+	test('rejects all bulk Job mutations in read-only mode before calling core actions', async () => {
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			cancelJobs: async () => {
+				calls.push('cancel');
+				return { count: 0, errors: [] };
+			},
+			retryJobs: async () => {
+				calls.push('retry');
+				return { count: 0, errors: [] };
+			},
+			deleteJobs: async () => {
+				calls.push('delete');
+				return { count: 0, errors: [] };
+			},
+		});
+		const surface = createManagementSurface({ monque, readOnly: true });
+
+		const responses = await Promise.all([
+			surface.handle({
+				method: HttpMethod.POST,
+				path: ManagementRoutePath.JOBS_BULK_CANCEL,
+				body: {},
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: ManagementRoutePath.JOBS_BULK_RETRY,
+				body: {},
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: ManagementRoutePath.JOBS_BULK_DELETE,
+				body: {},
+				context: {},
+			}),
+		]);
+
+		expect(responses).toEqual([
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+		]);
+		expect(calls).toEqual([]);
+	});
+
+	test('authorizes bulk Job mutations with action, context, and selector before core action', async () => {
+		const authorizeCalls: unknown[] = [];
+		const actionCalls: string[] = [];
+		const monque = createManagementMonque({
+			cancelJobs: async () => {
+				actionCalls.push('cancel');
+				return { count: 0, errors: [] };
+			},
+		});
+		const surface = createManagementSurface<{ userId: string }>({
+			monque,
+			authorize: ({ action, context, selector }) => {
+				authorizeCalls.push({ action, context, selector });
+				return false;
+			},
+		});
+
+		const response = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { name: 'send-email' },
+			context: { userId: 'operator-1' },
+		});
+
+		expect(response).toEqual({
+			status: HttpStatus.FORBIDDEN,
+			body: { error: 'Action denied' },
+		});
+		expect(authorizeCalls).toEqual([
+			{
+				action: 'cancel',
+				context: { userId: 'operator-1' },
+				selector: { name: 'send-email' },
+			},
+		]);
+		expect(actionCalls).toEqual([]);
+	});
+
+	test('maps bulk Job action conflicts and core errors', async () => {
+		const monque = createManagementMonque({
+			cancelJobs: async () => {
+				throw new JobStateError('Cannot cancel selected jobs', 'bulk', 'processing', 'cancel');
+			},
+			retryJobs: async () => {
+				throw new ConnectionError('db down');
+			},
+		});
+		const surface = createManagementSurface({ monque });
+
+		const conflict = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { status: 'processing' },
+			context: {},
+		});
+		const unexpected = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_RETRY,
+			body: { status: 'failed' },
+			context: {},
+		});
+
+		expect(conflict).toEqual({
+			status: HttpStatus.CONFLICT,
+			body: { error: 'Cannot cancel selected jobs' },
+		});
+		expect(unexpected).toEqual({
+			status: HttpStatus.INTERNAL_SERVER_ERROR,
+			body: { error: 'Internal server error' },
+		});
+	});
+
 	test('cancels single pending Job through public core API and returns Job DTO', async () => {
 		const jobId = new ObjectId();
 		const calls: string[] = [];
