@@ -1,15 +1,6 @@
-import {
-	type BulkOperationResult,
-	InvalidCursorError,
-	type JobSelector,
-	JobStateError,
-	type PersistedJob,
-} from '@monque/core';
-import type { ObjectId } from 'mongodb';
+import { InvalidCursorError, JobStateError } from '@monque/core';
 
 import {
-	toBulkActionResultDto,
-	toDeleteJobDto,
 	toJobCursorPageDto,
 	toJobDto,
 	toQueueStatsDto,
@@ -17,22 +8,14 @@ import {
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
+import { getSingleQueryValue, parseJobListQuery, parseObjectId } from '../validation/index.js';
 import {
-	getSingleQueryValue,
-	parseJobListQuery,
-	parseJobSelector,
-	parseObjectId,
-	parseRescheduleBody,
-} from '../validation/index.js';
-import {
-	badRequest,
-	conflict,
-	forbidden,
-	internalServerError,
-	notFound,
-	ok,
-	unsupportedAction,
-} from './responses.js';
+	handleBulkJobMutation,
+	handleDeleteJobAction,
+	handleRescheduleJobAction,
+	handleSingleJobMutation,
+} from './job-actions.js';
+import { badRequest, conflict, forbidden, internalServerError, notFound, ok } from './responses.js';
 import { routeManagementRequest } from './route-request.js';
 import type {
 	CapabilitiesDto,
@@ -52,8 +35,6 @@ const WRITABLE_ACTIONS = [
 	'reschedule',
 	'delete',
 ] as const satisfies readonly ManagementAction[];
-
-type WritableAction = (typeof WRITABLE_ACTIONS)[number];
 
 const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
 
@@ -172,14 +153,14 @@ export function createManagementSurface<TContext = unknown>(
 					case 'deleteJob':
 						return await handleDeleteJobAction(options, managementRequest);
 					case 'cancelJob':
-						return await handleJobMutation(
+						return await handleSingleJobMutation(
 							options,
 							managementRequest,
 							'cancel',
 							options.monque.cancelJob?.bind(options.monque),
 						);
 					case 'retryJob':
-						return await handleJobMutation(
+						return await handleSingleJobMutation(
 							options,
 							managementRequest,
 							'retry',
@@ -206,29 +187,8 @@ export function createManagementSurface<TContext = unknown>(
 							'delete',
 							options.monque.deleteJobs?.bind(options.monque),
 						);
-					case 'rescheduleJob': {
-						const writeAuthorization = requireWritableAction(options);
-
-						if (writeAuthorization) {
-							return writeAuthorization;
-						}
-
-						const body = parseRescheduleBody(managementRequest.body);
-
-						if ('error' in body) {
-							return badRequest(body.error);
-						}
-
-						const rescheduleJob = options.monque.rescheduleJob;
-						const boundRescheduleJob = rescheduleJob?.bind(options.monque);
-
-						return await handleJobMutation(
-							options,
-							managementRequest,
-							'reschedule',
-							boundRescheduleJob ? (id) => boundRescheduleJob(id, body.nextRunAt) : undefined,
-						);
-					}
+					case 'rescheduleJob':
+						return await handleRescheduleJobAction(options, managementRequest);
 					default:
 						return assertNeverOperation(route.operationId);
 				}
@@ -251,76 +211,6 @@ function assertNeverOperation(operationId: string): never {
 	throw new Error(`Unsupported Management operation: ${operationId}`);
 }
 
-async function handleJobMutation<TContext>(
-	options: ManagementOptions<TContext>,
-	request: ManagementRequest<TContext>,
-	action: Exclude<WritableAction, 'delete'>,
-	mutate: ((id: string) => Promise<PersistedJob | null>) | undefined,
-): Promise<ManagementResponse> {
-	const target = await requireMutableJobTarget(options, request, action);
-
-	if ('status' in target) {
-		return target;
-	}
-
-	if (!mutate) {
-		return unsupportedAction();
-	}
-
-	const job = await mutate(target.id.toHexString());
-
-	if (!job) {
-		return notFound('Job not found');
-	}
-
-	return ok(await toJobDto(options, job, request.context));
-}
-
-async function handleDeleteJobAction<TContext>(
-	options: ManagementOptions<TContext>,
-	request: ManagementRequest<TContext>,
-): Promise<ManagementResponse> {
-	const target = await requireMutableJobTarget(options, request, 'delete');
-
-	if ('status' in target) {
-		return target;
-	}
-
-	const deleteJob = options.monque.deleteJob;
-	const boundDeleteJob = deleteJob?.bind(options.monque);
-
-	if (!boundDeleteJob) {
-		return unsupportedAction();
-	}
-
-	const deleted = await boundDeleteJob(target.id.toHexString());
-
-	if (!deleted) {
-		return notFound('Job not found');
-	}
-
-	return ok(toDeleteJobDto());
-}
-
-async function handleBulkJobMutation<TContext>(
-	options: ManagementOptions<TContext>,
-	request: ManagementRequest<TContext>,
-	action: Exclude<WritableAction, 'reschedule'>,
-	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
-): Promise<ManagementResponse> {
-	const target = await requireBulkJobTarget(options, request, action);
-
-	if ('status' in target) {
-		return target;
-	}
-
-	if (!mutate) {
-		return unsupportedAction();
-	}
-
-	return ok(toBulkActionResultDto(await mutate(target.selector)));
-}
-
 async function requireReadAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	context: TContext,
@@ -330,118 +220,6 @@ async function requireReadAuthorization<TContext>(
 	}
 
 	return forbidden('Read access denied');
-}
-
-function requireWritableAction<TContext>(
-	options: ManagementOptions<TContext>,
-): ManagementResponse<{ error: string }> | undefined {
-	if (!options.readOnly) {
-		return undefined;
-	}
-
-	return forbidden('Management surface is read-only');
-}
-
-async function requireMutableJobTarget<TContext>(
-	options: ManagementOptions<TContext>,
-	request: ManagementRequest<TContext>,
-	action: WritableAction,
-): Promise<{ id: ObjectId } | ManagementResponse<{ error: string }>> {
-	const writeAuthorization = requireWritableAction(options);
-
-	if (writeAuthorization) {
-		return writeAuthorization;
-	}
-
-	const id = parseObjectId(request.params?.['id']);
-
-	if ('error' in id) {
-		return badRequest(id.error);
-	}
-
-	if (!isSingleActionSupported(options.monque, action)) {
-		return unsupportedAction();
-	}
-
-	const job = await options.monque.getJob(id.value);
-
-	if (!job) {
-		return notFound('Job not found');
-	}
-
-	const actionAuthorization = await requireActionAuthorization(
-		options,
-		action,
-		request.context,
-		job,
-	);
-
-	if (actionAuthorization) {
-		return actionAuthorization;
-	}
-
-	return { id: id.value };
-}
-
-async function requireActionAuthorization<TContext>(
-	options: ManagementOptions<TContext>,
-	action: ManagementAction,
-	context: TContext,
-	job: PersistedJob,
-): Promise<ManagementResponse<{ error: string }> | undefined> {
-	if (await isAllowedByAuthorization(options, action, context, job)) {
-		return undefined;
-	}
-
-	return forbidden('Action denied');
-}
-
-async function requireBulkJobTarget<TContext>(
-	options: ManagementOptions<TContext>,
-	request: ManagementRequest<TContext>,
-	action: Exclude<WritableAction, 'reschedule'>,
-): Promise<{ selector: JobSelector } | ManagementResponse<{ error: string }>> {
-	const writeAuthorization = requireWritableAction(options);
-
-	if (writeAuthorization) {
-		return writeAuthorization;
-	}
-
-	if (!isBulkActionSupported(options.monque, action)) {
-		return unsupportedAction();
-	}
-
-	const selector = parseJobSelector(request.body);
-
-	if ('error' in selector) {
-		return badRequest(selector.error);
-	}
-
-	const actionAuthorization = await requireBulkActionAuthorization(
-		options,
-		action,
-		request.context,
-		selector,
-	);
-
-	if (actionAuthorization) {
-		return actionAuthorization;
-	}
-
-	return { selector };
-}
-
-async function requireBulkActionAuthorization<TContext>(
-	options: ManagementOptions<TContext>,
-	action: Exclude<WritableAction, 'reschedule'>,
-	context: TContext,
-	selector: JobSelector,
-): Promise<ManagementResponse<{ error: string }> | undefined> {
-	if (await isAllowedByAuthorization(options, action, context, undefined, selector)) {
-		return undefined;
-	}
-
-	return forbidden('Action denied');
 }
 
 async function getCapabilities<TContext>(
@@ -493,37 +271,14 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 	);
 }
 
-function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {
-	return MANAGEMENT_ROUTE_MAP.some(
-		(route) =>
-			route.operation.kind === 'single-job-action' &&
-			route.operation.action === action &&
-			isRouteSupported(monque, route),
-	);
-}
-
-function isBulkActionSupported(
-	monque: ManagementMonque,
-	action: Exclude<WritableAction, 'reschedule'>,
-): boolean {
-	return MANAGEMENT_ROUTE_MAP.some(
-		(route) =>
-			route.operation.kind === 'bulk-job-action' &&
-			route.operation.action === action &&
-			isRouteSupported(monque, route),
-	);
-}
-
 async function isAllowedByAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	action: ManagementAction,
 	context: TContext,
-	job?: PersistedJob,
-	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
 		return true;
 	}
 
-	return options.authorize({ action, context, job, selector });
+	return options.authorize({ action, context });
 }
