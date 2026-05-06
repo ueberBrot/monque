@@ -1,9 +1,57 @@
 import { describe, expect, test } from 'vitest';
 
-import { createManagementSurface, HttpMethod, HttpStatus, ManagementRoutePath } from '@/index';
+import {
+	createManagementSurface,
+	HttpMethod,
+	HttpStatus,
+	MANAGEMENT_ROUTE_MAP,
+	ManagementRoutePath,
+} from '@/index';
 import type { ManagementAction, ManagementMonque } from '@/surface';
 
 describe('Management capabilities', () => {
+	test('describes mutation operation support in the Management Route Map', () => {
+		expect(
+			MANAGEMENT_ROUTE_MAP.filter((route) => route.operation.kind !== 'read').map((route) => ({
+				path: route.path,
+				operation: route.operation,
+			})),
+		).toEqual([
+			{
+				path: ManagementRoutePath.JOB_CANCEL,
+				operation: { kind: 'single-job-action', action: 'cancel', method: 'cancelJob' },
+			},
+			{
+				path: ManagementRoutePath.JOB_RETRY,
+				operation: { kind: 'single-job-action', action: 'retry', method: 'retryJob' },
+			},
+			{
+				path: ManagementRoutePath.JOB_RESCHEDULE,
+				operation: {
+					kind: 'single-job-action',
+					action: 'reschedule',
+					method: 'rescheduleJob',
+				},
+			},
+			{
+				path: ManagementRoutePath.JOBS_BULK_CANCEL,
+				operation: { kind: 'bulk-job-action', action: 'cancel', method: 'cancelJobs' },
+			},
+			{
+				path: ManagementRoutePath.JOBS_BULK_RETRY,
+				operation: { kind: 'bulk-job-action', action: 'retry', method: 'retryJobs' },
+			},
+			{
+				path: ManagementRoutePath.JOBS_BULK_DELETE,
+				operation: { kind: 'bulk-job-action', action: 'delete', method: 'deleteJobs' },
+			},
+			{
+				path: ManagementRoutePath.JOB_DETAIL,
+				operation: { kind: 'single-job-action', action: 'delete', method: 'deleteJob' },
+			},
+		]);
+	});
+
 	test('reflects read-only mode and action-grained authorization outcomes', async () => {
 		const authorizedActions = new Set<ManagementAction>(['read', 'retry']);
 		const monque: ManagementMonque = {

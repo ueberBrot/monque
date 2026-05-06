@@ -18,6 +18,7 @@ export type {
 	ManagementRequest,
 	ManagementResponse,
 	ManagementRoute,
+	ManagementRouteOperation,
 	ManagementSurface,
 	QueueStatsDto,
 	QueueViewSummaryDto,
