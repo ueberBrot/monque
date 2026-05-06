@@ -1560,6 +1560,12 @@ describe('Management Surface contract', () => {
 			query: { status: 'wat' },
 			context: {},
 		});
+		const unsupportedFilter = await surface.handle({
+			method: HttpMethod.GET,
+			path: ManagementRoutePath.JOBS,
+			query: { claimedBy: 'scheduler-1' },
+			context: {},
+		});
 		const emptyStatuses = await surface.handle({
 			method: HttpMethod.GET,
 			path: ManagementRoutePath.JOBS,
@@ -1575,6 +1581,10 @@ describe('Management Surface contract', () => {
 		expect(invalid).toEqual({
 			status: HttpStatus.BAD_REQUEST,
 			body: { error: 'Invalid status' },
+		});
+		expect(unsupportedFilter).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid job list query' },
 		});
 		expect(emptyStatuses).toEqual({
 			status: HttpStatus.BAD_REQUEST,
