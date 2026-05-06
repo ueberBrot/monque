@@ -7,6 +7,9 @@ import type {
 	QueueViewSummaryListDto,
 } from '../surface/index.js';
 
+/**
+ * TypeBox schema for aggregate queue statistics.
+ */
 export const QueueStatsSchema = Type.Object(
 	{
 		pending: Type.Number(),
@@ -20,6 +23,9 @@ export const QueueStatsSchema = Type.Object(
 	{ $id: 'QueueStats', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for the queue-view summary list response.
+ */
 export const QueueViewSummaryListSchema = Type.Object(
 	{
 		queueViews: Type.Array(
@@ -49,6 +55,9 @@ export const QueueViewSummaryListSchema = Type.Object(
 	{ $id: 'QueueViewSummaryList', additionalProperties: false },
 );
 
+/**
+ * Convert Monque queue-view summaries to the Management HTTP DTO.
+ */
 export function toQueueViewSummaryListDto(
 	queueViews: readonly QueueViewSummary[],
 ): QueueViewSummaryListDto {
@@ -57,6 +66,9 @@ export function toQueueViewSummaryListDto(
 	};
 }
 
+/**
+ * Convert Monque queue statistics to the Management HTTP DTO.
+ */
 export function toQueueStatsDto(stats: QueueStats): QueueStatsDto {
 	const dto: QueueStatsDto = {
 		pending: stats.pending,

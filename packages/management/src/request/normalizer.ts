@@ -1,6 +1,10 @@
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import type { ManagementRequest, ManagementRoute } from '../surface/index.js';
 
+/**
+ * Error returned when a request path matches a route shape but contains invalid
+ * percent-encoding in a path parameter.
+ */
 export interface InvalidManagementRequestPath {
 	error: 'Invalid request path';
 }
@@ -59,6 +63,13 @@ function decodePathSegment(segment: string): string | undefined {
 	}
 }
 
+/**
+ * Normalize a concrete Management request path to route-map metadata.
+ *
+ * Framework adapters can call this before `ManagementSurface.handle()` to turn
+ * paths like `/api/v1/jobs/64f...` into `/api/v1/jobs/{id}` and populate
+ * `params.id`. Returns `undefined` when no Management route matches.
+ */
 export function normalizeManagementRequest<TContext>(
 	request: ManagementRequest<TContext>,
 ): ManagementRequest<TContext> | InvalidManagementRequestPath | undefined {
