@@ -37,6 +37,7 @@ const WRITABLE_ACTIONS = [
 ] as const satisfies readonly ManagementAction[];
 
 type WritableAction = (typeof WRITABLE_ACTIONS)[number];
+
 const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
 const ACTION_METHOD_BY_ACTION = {
 	cancel: 'cancelJob',
@@ -44,60 +45,72 @@ const ACTION_METHOD_BY_ACTION = {
 	reschedule: 'rescheduleJob',
 	delete: 'deleteJob',
 } as const satisfies Record<WritableAction, keyof ManagementMonque>;
+
 const BULK_ACTION_METHOD_BY_ACTION = {
 	cancel: 'cancelJobs',
 	retry: 'retryJobs',
 	delete: 'deleteJobs',
 } as const satisfies Record<Exclude<WritableAction, 'reschedule'>, keyof ManagementMonque>;
+
+type SingleActionRoute = {
+	method: ManagementRoute['method'];
+	path: ManagementRoute['path'];
+	action: WritableAction;
+	kind: 'single';
+};
+
+type BulkActionRoute = {
+	method: ManagementRoute['method'];
+	path: ManagementRoute['path'];
+	action: Exclude<WritableAction, 'reschedule'>;
+	kind: 'bulk';
+};
+
 const ACTION_ROUTES = [
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_CANCEL,
 		action: 'cancel',
-		methodName: 'cancelJob',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RETRY,
 		action: 'retry',
-		methodName: 'retryJob',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RESCHEDULE,
 		action: 'reschedule',
-		methodName: 'rescheduleJob',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.DELETE,
 		path: ManagementRoutePath.JOB_DETAIL,
 		action: 'delete',
-		methodName: 'deleteJob',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_CANCEL,
 		action: 'cancel',
-		methodName: 'cancelJobs',
+		kind: 'bulk',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_RETRY,
 		action: 'retry',
-		methodName: 'retryJobs',
+		kind: 'bulk',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_DELETE,
 		action: 'delete',
-		methodName: 'deleteJobs',
+		kind: 'bulk',
 	},
-] as const satisfies ReadonlyArray<{
-	method: ManagementRoute['method'];
-	path: ManagementRoute['path'];
-	action: WritableAction;
-	methodName: keyof ManagementMonque;
-}>;
+] as const satisfies ReadonlyArray<SingleActionRoute | BulkActionRoute>;
+
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
@@ -108,6 +121,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	reschedule: false,
 	delete: false,
 } satisfies CapabilityActionsDto & Record<(typeof ACTIONS)[number], boolean>;
+
 const JOB_SELECTOR_FIELDS = ['name', 'status', 'olderThan', 'newerThan'] as const;
 
 export function createManagementSurface<TContext = unknown>(
@@ -360,22 +374,13 @@ function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { error: stri
 	}
 
 	const nextRunAt = (body as Record<string, unknown>)['nextRunAt'];
+	const parsedNextRunAt = parseIsoDateTime(nextRunAt, 'nextRunAt');
 
-	if (typeof nextRunAt !== 'string') {
-		return { error: 'Invalid nextRunAt' };
+	if ('error' in parsedNextRunAt) {
+		return parsedNextRunAt;
 	}
 
-	if (!isValidIsoDateTime(nextRunAt)) {
-		return { error: 'Invalid nextRunAt' };
-	}
-
-	const date = new Date(nextRunAt);
-
-	if (Number.isNaN(date.getTime())) {
-		return { error: 'Invalid nextRunAt' };
-	}
-
-	return { nextRunAt: date };
+	return { nextRunAt: parsedNextRunAt.value };
 }
 
 function parseJobSelector(body: unknown): JobSelector | { error: string } {
@@ -404,7 +409,7 @@ function parseJobSelector(body: unknown): JobSelector | { error: string } {
 		selector.name = name;
 	}
 
-	const statuses = parseSelectorStatuses(status);
+	const statuses = parseStatuses(status, { preserveArray: true });
 
 	if ('error' in statuses) {
 		return statuses;
@@ -437,8 +442,9 @@ function parseJobSelector(body: unknown): JobSelector | { error: string } {
 	return selector;
 }
 
-function parseSelectorStatuses(
-	value: unknown,
+function parseStatuses(
+	value: ManagementQueryValue | unknown,
+	options: { preserveArray?: boolean } = {},
 ): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
 	if (value === undefined) {
 		return { status: undefined };
@@ -466,7 +472,9 @@ function parseSelectorStatuses(
 		statuses.push(status);
 	}
 
-	return { status: statuses };
+	return {
+		status: options.preserveArray === true || statuses.length > 1 ? statuses : statuses[0],
+	};
 }
 
 function parseOptionalIsoDateTime(
@@ -477,6 +485,13 @@ function parseOptionalIsoDateTime(
 		return { value: undefined };
 	}
 
+	return parseIsoDateTime(value, fieldName);
+}
+
+function parseIsoDateTime(
+	value: unknown,
+	fieldName: 'nextRunAt' | 'olderThan' | 'newerThan',
+): { value: Date } | { error: string } {
 	if (typeof value !== 'string') {
 		return { error: `Invalid ${fieldName}` };
 	}
@@ -725,38 +740,6 @@ function parseLimit(value: ManagementQueryValue): { limit: number } | { error: s
 	};
 }
 
-function parseStatuses(
-	value: ManagementQueryValue | unknown,
-): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
-	if (value === undefined) {
-		return { status: undefined };
-	}
-
-	if (typeof value !== 'string' && !Array.isArray(value)) {
-		return { error: 'Invalid status' };
-	}
-
-	const statuses = Array.isArray(value) ? value : [value];
-
-	if (statuses.length === 0) {
-		return { error: 'Invalid status' };
-	}
-
-	const validStatuses: JobStatusType[] = [];
-
-	for (const status of statuses) {
-		if (!isValidJobStatus(status)) {
-			return { error: 'Invalid status' };
-		}
-
-		validStatuses.push(status);
-	}
-
-	return {
-		status: validStatuses.length === 1 ? validStatuses[0] : validStatuses,
-	};
-}
-
 function getSingleQueryValue(
 	value: ManagementQueryValue,
 ): { value: string | undefined } | { error: string } {
@@ -942,7 +925,13 @@ function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boo
 		(candidate) => candidate.method === route.method && candidate.path === route.path,
 	);
 
-	return actionRoute ? monque[actionRoute.methodName] !== undefined : true;
+	if (!actionRoute) {
+		return true;
+	}
+
+	return actionRoute.kind === 'bulk'
+		? isBulkActionSupported(monque, actionRoute.action)
+		: isSingleActionSupported(monque, actionRoute.action);
 }
 
 function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
@@ -950,10 +939,7 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 		return true;
 	}
 
-	return (
-		isSingleActionSupported(monque, action) ||
-		(action !== 'reschedule' && monque[BULK_ACTION_METHOD_BY_ACTION[action]] !== undefined)
-	);
+	return isSingleActionSupported(monque, action);
 }
 
 function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {

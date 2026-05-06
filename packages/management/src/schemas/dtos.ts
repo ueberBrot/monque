@@ -35,7 +35,9 @@ const JobStatusSchema = Type.Union([
 export const JobSelectorSchema = Type.Object(
 	{
 		name: Type.Optional(Type.String()),
-		status: Type.Optional(Type.Union([JobStatusSchema, Type.Array(JobStatusSchema)])),
+		status: Type.Optional(
+			Type.Union([JobStatusSchema, Type.Array(JobStatusSchema, { minItems: 1 })]),
+		),
 		olderThan: Type.Optional(Type.String({ format: 'date-time' })),
 		newerThan: Type.Optional(Type.String({ format: 'date-time' })),
 	},

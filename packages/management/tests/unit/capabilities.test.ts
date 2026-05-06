@@ -118,7 +118,7 @@ describe('Management capabilities', () => {
 		});
 	});
 
-	test('enables bulk routes when bulk public core methods are available', async () => {
+	test('enables bulk routes without enabling single action capabilities', async () => {
 		const monque: ManagementMonque = {
 			isHealthy: () => true,
 			getQueueViewSummaries: async () => [],
@@ -154,6 +154,7 @@ describe('Management capabilities', () => {
 			params: { id: '000000000000000000000000' },
 			context: {},
 		});
+		const routeIds = surface.routes.map((route) => `${route.method} ${route.path}`);
 
 		expect(response).toEqual({
 			status: HttpStatus.OK,
@@ -161,22 +162,16 @@ describe('Management capabilities', () => {
 				readOnly: false,
 				actions: {
 					read: true,
-					cancel: true,
-					retry: true,
+					cancel: false,
+					retry: false,
 					reschedule: false,
-					delete: true,
+					delete: false,
 				},
 			},
 		});
-		expect(surface.routes.map((route) => `${route.method} ${route.path}`)).toContain(
-			'POST /api/v1/jobs/actions/cancel',
-		);
-		expect(surface.routes.map((route) => `${route.method} ${route.path}`)).toContain(
-			'POST /api/v1/jobs/actions/retry',
-		);
-		expect(surface.routes.map((route) => `${route.method} ${route.path}`)).toContain(
-			'POST /api/v1/jobs/actions/delete',
-		);
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/cancel');
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/retry');
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/delete');
 		expect(unsupportedSingleCancel).toEqual({
 			status: HttpStatus.FORBIDDEN,
 			body: { error: 'Management action is unsupported' },

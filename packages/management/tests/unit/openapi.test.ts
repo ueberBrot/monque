@@ -41,18 +41,24 @@ describe('Management OpenAPI contract', () => {
 		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.operationId).toBe('cancelJobs');
 		expect(document.paths?.['/api/v1/jobs/actions/retry']?.post?.operationId).toBe('retryJobs');
 		expect(document.paths?.['/api/v1/jobs/actions/delete']?.post?.operationId).toBe('deleteJobs');
-		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.requestBody).toMatchObject({
-			required: true,
-			content: {
-				'application/json': {
-					schema: { $ref: '#/components/schemas/JobSelector' },
+		for (const path of [
+			'/api/v1/jobs/actions/cancel',
+			'/api/v1/jobs/actions/retry',
+			'/api/v1/jobs/actions/delete',
+		] as const) {
+			expect(document.paths?.[path]?.post?.requestBody).toMatchObject({
+				required: true,
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/JobSelector' },
+					},
 				},
-			},
-		});
-		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.responses).toHaveProperty('400');
-		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.responses).toHaveProperty('403');
-		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.responses).toHaveProperty('409');
-		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.responses).toHaveProperty('500');
+			});
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('400');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('403');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('409');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('500');
+		}
 		expect(
 			document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.requestBody,
 		).toMatchObject({

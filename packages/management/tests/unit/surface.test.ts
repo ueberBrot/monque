@@ -103,6 +103,37 @@ describe('Management Surface contract', () => {
 		});
 	});
 
+	test('keeps bulk cancel idempotent for repeated empty-result operations', async () => {
+		const calls: unknown[] = [];
+		const monque = createManagementMonque({
+			cancelJobs: async (selector) => {
+				calls.push(selector);
+				return { count: 0, errors: [] };
+			},
+		});
+		const surface = createManagementSurface({ monque });
+		const request = {
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { status: ['pending'] },
+			context: {},
+		};
+
+		const first = await surface.handle(request);
+		const second = await surface.handle(request);
+
+		expect(first).toEqual({
+			status: HttpStatus.OK,
+			body: { count: 0, errors: [] },
+		});
+		expect(second).toEqual({
+			status: HttpStatus.OK,
+			body: { count: 0, errors: [] },
+		});
+		expect(calls).toEqual([{ status: ['pending'] }, { status: ['pending'] }]);
+		expect(calls[0]).toEqual(calls[1]);
+	});
+
 	test('bulk retries and deletes Jobs through public core APIs with stable result DTOs', async () => {
 		const calls: Array<{ action: string; selector: unknown }> = [];
 		const monque = createManagementMonque({
