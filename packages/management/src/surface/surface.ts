@@ -10,8 +10,8 @@ import {
 } from '@monque/core';
 import { ObjectId } from 'mongodb';
 
-import { HttpMethod, HttpStatus } from '../http/index.js';
-import { MANAGEMENT_ROUTE_MAP, ManagementRoutePath } from '../routes/index.js';
+import { HttpStatus } from '../http/index.js';
+import { findManagementRoute, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
@@ -39,77 +39,6 @@ const WRITABLE_ACTIONS = [
 type WritableAction = (typeof WRITABLE_ACTIONS)[number];
 
 const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
-const ACTION_METHOD_BY_ACTION = {
-	cancel: 'cancelJob',
-	retry: 'retryJob',
-	reschedule: 'rescheduleJob',
-	delete: 'deleteJob',
-} as const satisfies Record<WritableAction, keyof ManagementMonque>;
-
-const BULK_ACTION_METHOD_BY_ACTION = {
-	cancel: 'cancelJobs',
-	retry: 'retryJobs',
-	delete: 'deleteJobs',
-} as const satisfies Record<Exclude<WritableAction, 'reschedule'>, keyof ManagementMonque>;
-
-type SingleActionRoute = {
-	method: ManagementRoute['method'];
-	path: ManagementRoute['path'];
-	action: WritableAction;
-	kind: 'single';
-};
-
-type BulkActionRoute = {
-	method: ManagementRoute['method'];
-	path: ManagementRoute['path'];
-	action: Exclude<WritableAction, 'reschedule'>;
-	kind: 'bulk';
-};
-
-const ACTION_ROUTES = [
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOB_CANCEL,
-		action: 'cancel',
-		kind: 'single',
-	},
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOB_RETRY,
-		action: 'retry',
-		kind: 'single',
-	},
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOB_RESCHEDULE,
-		action: 'reschedule',
-		kind: 'single',
-	},
-	{
-		method: HttpMethod.DELETE,
-		path: ManagementRoutePath.JOB_DETAIL,
-		action: 'delete',
-		kind: 'single',
-	},
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOBS_BULK_CANCEL,
-		action: 'cancel',
-		kind: 'bulk',
-	},
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOBS_BULK_RETRY,
-		action: 'retry',
-		kind: 'bulk',
-	},
-	{
-		method: HttpMethod.POST,
-		path: ManagementRoutePath.JOBS_BULK_DELETE,
-		action: 'delete',
-		kind: 'bulk',
-	},
-] as const satisfies ReadonlyArray<SingleActionRoute | BulkActionRoute>;
 
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
@@ -131,174 +60,144 @@ export function createManagementSurface<TContext = unknown>(
 		routes: getSupportedRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {
-				if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.HEALTH) {
-					return ok(getSchedulerHealth(options));
+				const route = findManagementRoute(request.method, request.path);
+
+				if (!route) {
+					return notFound('Management route not found');
 				}
 
-				if (
-					request.method === HttpMethod.GET &&
-					request.path === ManagementRoutePath.CAPABILITIES
-				) {
-					return ok(await getCapabilities(options, request.context));
-				}
+				switch (route.operationId) {
+					case 'getSchedulerHealth':
+						return ok(getSchedulerHealth(options));
+					case 'getCapabilities':
+						return ok(await getCapabilities(options, request.context));
+					case 'listQueueViews': {
+						const readAuthorization = await requireReadAuthorization(options, request.context);
 
-				if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.QUEUE_VIEWS) {
-					const readAuthorization = await requireReadAuthorization(options, request.context);
+						if (readAuthorization) {
+							return readAuthorization;
+						}
 
-					if (readAuthorization) {
-						return readAuthorization;
+						return ok(await getQueueViews(options));
 					}
+					case 'listJobs': {
+						const readAuthorization = await requireReadAuthorization(options, request.context);
 
-					return ok(await getQueueViews(options));
-				}
+						if (readAuthorization) {
+							return readAuthorization;
+						}
 
-				if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.JOBS) {
-					const readAuthorization = await requireReadAuthorization(options, request.context);
+						const cursorOptions = parseJobListQuery(request.query);
 
-					if (readAuthorization) {
-						return readAuthorization;
+						if ('error' in cursorOptions) {
+							return badRequest(cursorOptions.error);
+						}
+
+						return ok(await getJobs(options, cursorOptions, request.context));
 					}
+					case 'getJobStats': {
+						const readAuthorization = await requireReadAuthorization(options, request.context);
 
-					const cursorOptions = parseJobListQuery(request.query);
+						if (readAuthorization) {
+							return readAuthorization;
+						}
 
-					if ('error' in cursorOptions) {
-						return badRequest(cursorOptions.error);
+						const name = getSingleQueryValue(request.query?.['name']);
+
+						if ('error' in name) {
+							return badRequest(name.error);
+						}
+
+						return ok(
+							await options.monque.getQueueStats(
+								name.value === undefined ? undefined : { name: name.value },
+							),
+						);
 					}
+					case 'getJob': {
+						const readAuthorization = await requireReadAuthorization(options, request.context);
 
-					return ok(await getJobs(options, cursorOptions, request.context));
-				}
+						if (readAuthorization) {
+							return readAuthorization;
+						}
 
-				if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.JOB_STATS) {
-					const readAuthorization = await requireReadAuthorization(options, request.context);
+						const id = parseObjectId(request.params?.['id']);
 
-					if (readAuthorization) {
-						return readAuthorization;
+						if ('error' in id) {
+							return badRequest(id.error);
+						}
+
+						const job = await options.monque.getJob(id.value);
+
+						if (!job) {
+							return notFound('Job not found');
+						}
+
+						return ok(await serializeJob(options, job, request.context));
 					}
+					case 'deleteJob':
+						return await handleDeleteJobAction(options, request);
+					case 'cancelJob':
+						return await handleJobMutation(
+							options,
+							request,
+							'cancel',
+							options.monque.cancelJob?.bind(options.monque),
+						);
+					case 'retryJob':
+						return await handleJobMutation(
+							options,
+							request,
+							'retry',
+							options.monque.retryJob?.bind(options.monque),
+						);
+					case 'cancelJobs':
+						return await handleBulkJobMutation(
+							options,
+							request,
+							'cancel',
+							options.monque.cancelJobs?.bind(options.monque),
+						);
+					case 'retryJobs':
+						return await handleBulkJobMutation(
+							options,
+							request,
+							'retry',
+							options.monque.retryJobs?.bind(options.monque),
+						);
+					case 'deleteJobs':
+						return await handleBulkJobMutation(
+							options,
+							request,
+							'delete',
+							options.monque.deleteJobs?.bind(options.monque),
+						);
+					case 'rescheduleJob': {
+						const writeAuthorization = requireWritableAction(options);
 
-					const name = getSingleQueryValue(request.query?.['name']);
+						if (writeAuthorization) {
+							return writeAuthorization;
+						}
 
-					if ('error' in name) {
-						return badRequest(name.error);
+						const body = parseRescheduleBody(request.body);
+
+						if ('error' in body) {
+							return badRequest(body.error);
+						}
+
+						const rescheduleJob = options.monque.rescheduleJob;
+						const boundRescheduleJob = rescheduleJob?.bind(options.monque);
+
+						return await handleJobMutation(
+							options,
+							request,
+							'reschedule',
+							boundRescheduleJob ? (id) => boundRescheduleJob(id, body.nextRunAt) : undefined,
+						);
 					}
-
-					return ok(
-						await options.monque.getQueueStats(
-							name.value === undefined ? undefined : { name: name.value },
-						),
-					);
+					default:
+						return assertNeverOperation(route.operationId);
 				}
-
-				if (request.method === HttpMethod.GET && request.path === ManagementRoutePath.JOB_DETAIL) {
-					const readAuthorization = await requireReadAuthorization(options, request.context);
-
-					if (readAuthorization) {
-						return readAuthorization;
-					}
-
-					const id = parseObjectId(request.params?.['id']);
-
-					if ('error' in id) {
-						return badRequest(id.error);
-					}
-
-					const job = await options.monque.getJob(id.value);
-
-					if (!job) {
-						return notFound('Job not found');
-					}
-
-					return ok(await serializeJob(options, job, request.context));
-				}
-
-				if (
-					request.method === HttpMethod.DELETE &&
-					request.path === ManagementRoutePath.JOB_DETAIL
-				) {
-					return await handleDeleteJobAction(options, request);
-				}
-
-				if (request.method === HttpMethod.POST && request.path === ManagementRoutePath.JOB_CANCEL) {
-					return await handleJobMutation(
-						options,
-						request,
-						'cancel',
-						options.monque.cancelJob?.bind(options.monque),
-					);
-				}
-
-				if (request.method === HttpMethod.POST && request.path === ManagementRoutePath.JOB_RETRY) {
-					return await handleJobMutation(
-						options,
-						request,
-						'retry',
-						options.monque.retryJob?.bind(options.monque),
-					);
-				}
-
-				if (
-					request.method === HttpMethod.POST &&
-					request.path === ManagementRoutePath.JOBS_BULK_CANCEL
-				) {
-					return await handleBulkJobMutation(
-						options,
-						request,
-						'cancel',
-						options.monque.cancelJobs?.bind(options.monque),
-					);
-				}
-
-				if (
-					request.method === HttpMethod.POST &&
-					request.path === ManagementRoutePath.JOBS_BULK_RETRY
-				) {
-					return await handleBulkJobMutation(
-						options,
-						request,
-						'retry',
-						options.monque.retryJobs?.bind(options.monque),
-					);
-				}
-
-				if (
-					request.method === HttpMethod.POST &&
-					request.path === ManagementRoutePath.JOBS_BULK_DELETE
-				) {
-					return await handleBulkJobMutation(
-						options,
-						request,
-						'delete',
-						options.monque.deleteJobs?.bind(options.monque),
-					);
-				}
-
-				if (
-					request.method === HttpMethod.POST &&
-					request.path === ManagementRoutePath.JOB_RESCHEDULE
-				) {
-					const writeAuthorization = requireWritableAction(options);
-
-					if (writeAuthorization) {
-						return writeAuthorization;
-					}
-
-					const body = parseRescheduleBody(request.body);
-
-					if ('error' in body) {
-						return badRequest(body.error);
-					}
-
-					const rescheduleJob = options.monque.rescheduleJob;
-					const boundRescheduleJob = rescheduleJob?.bind(options.monque);
-
-					return await handleJobMutation(
-						options,
-						request,
-						'reschedule',
-						boundRescheduleJob ? (id) => boundRescheduleJob(id, body.nextRunAt) : undefined,
-					);
-				}
-
-				return notFound('Management route not found');
 			} catch (error) {
 				if (error instanceof InvalidCursorError) {
 					return badRequest(error.message);
@@ -358,6 +257,10 @@ function internalServerError(): ManagementResponse<{ error: string }> {
 		status: HttpStatus.INTERNAL_SERVER_ERROR,
 		body: { error: 'Internal server error' },
 	};
+}
+
+function assertNeverOperation(operationId: string): never {
+	throw new Error(`Unsupported Management operation: ${operationId}`);
 }
 
 function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
@@ -921,17 +824,11 @@ function getSupportedRoutes(monque: ManagementMonque): readonly ManagementRoute[
 }
 
 function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boolean {
-	const actionRoute = ACTION_ROUTES.find(
-		(candidate) => candidate.method === route.method && candidate.path === route.path,
-	);
-
-	if (!actionRoute) {
+	if (route.operation.kind === 'read') {
 		return true;
 	}
 
-	return actionRoute.kind === 'bulk'
-		? isBulkActionSupported(monque, actionRoute.action)
-		: isSingleActionSupported(monque, actionRoute.action);
+	return monque[route.operation.method] !== undefined;
 }
 
 function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
@@ -943,14 +840,24 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 }
 
 function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {
-	return monque[ACTION_METHOD_BY_ACTION[action]] !== undefined;
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind === 'single-job-action' &&
+			route.operation.action === action &&
+			isRouteSupported(monque, route),
+	);
 }
 
 function isBulkActionSupported(
 	monque: ManagementMonque,
 	action: Exclude<WritableAction, 'reschedule'>,
 ): boolean {
-	return monque[BULK_ACTION_METHOD_BY_ACTION[action]] !== undefined;
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind === 'bulk-job-action' &&
+			route.operation.action === action &&
+			isRouteSupported(monque, route),
+	);
 }
 
 async function isAllowedByAuthorization<TContext>(

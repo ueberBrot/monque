@@ -1,4 +1,5 @@
 export {
+	findManagementRoute,
 	MANAGEMENT_ROUTE_MAP,
 	ManagementRoutePath,
 	type ManagementRoutePathType,

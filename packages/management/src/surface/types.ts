@@ -17,6 +17,19 @@ export type ManagementAction = 'read' | 'cancel' | 'retry' | 'reschedule' | 'del
 
 export type ManagementHttpMethod = HttpMethodType;
 
+export type ManagementRouteOperation =
+	| { kind: 'read' }
+	| {
+			kind: 'single-job-action';
+			action: Exclude<ManagementAction, 'read'>;
+			method: 'cancelJob' | 'retryJob' | 'rescheduleJob' | 'deleteJob';
+	  }
+	| {
+			kind: 'bulk-job-action';
+			action: Exclude<ManagementAction, 'read' | 'reschedule'>;
+			method: 'cancelJobs' | 'retryJobs' | 'deleteJobs';
+	  };
+
 export interface ManagementMonque {
 	isHealthy: Pick<Monque, 'isHealthy'>['isHealthy'];
 	getQueueViewSummaries: Pick<Monque, 'getQueueViewSummaries'>['getQueueViewSummaries'];
@@ -89,6 +102,7 @@ export interface ManagementRoute {
 	method: ManagementHttpMethod;
 	path: string;
 	operationId: string;
+	operation: ManagementRouteOperation;
 	responseSchema: TSchema;
 	errorSchema: TSchema;
 	requestSchema?: TSchema;

@@ -39,6 +39,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.HEALTH,
 		operationId: 'getSchedulerHealth',
+		operation: { kind: 'read' },
 		responseSchema: SchedulerHealthSchema,
 		errorSchema: ErrorSchema,
 	},
@@ -46,6 +47,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.CAPABILITIES,
 		operationId: 'getCapabilities',
+		operation: { kind: 'read' },
 		responseSchema: CapabilitiesSchema,
 		errorSchema: ErrorSchema,
 	},
@@ -53,6 +55,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.QUEUE_VIEWS,
 		operationId: 'listQueueViews',
+		operation: { kind: 'read' },
 		responseSchema: QueueViewSummaryListSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [HttpStatus.FORBIDDEN, HttpStatus.INTERNAL_SERVER_ERROR],
@@ -61,6 +64,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.JOBS,
 		operationId: 'listJobs',
+		operation: { kind: 'read' },
 		responseSchema: JobCursorPageSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [HttpStatus.BAD_REQUEST, HttpStatus.FORBIDDEN, HttpStatus.INTERNAL_SERVER_ERROR],
@@ -100,6 +104,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.JOB_STATS,
 		operationId: 'getJobStats',
+		operation: { kind: 'read' },
 		responseSchema: QueueStatsSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [HttpStatus.BAD_REQUEST, HttpStatus.FORBIDDEN, HttpStatus.INTERNAL_SERVER_ERROR],
@@ -115,6 +120,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.GET,
 		path: ManagementRoutePath.JOB_DETAIL,
 		operationId: 'getJob',
+		operation: { kind: 'read' },
 		responseSchema: JobSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [
@@ -136,6 +142,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_CANCEL,
 		operationId: 'cancelJob',
+		operation: { kind: 'single-job-action', action: 'cancel', method: 'cancelJob' },
 		responseSchema: JobSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [
@@ -158,6 +165,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RETRY,
 		operationId: 'retryJob',
+		operation: { kind: 'single-job-action', action: 'retry', method: 'retryJob' },
 		responseSchema: JobSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [
@@ -180,6 +188,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RESCHEDULE,
 		operationId: 'rescheduleJob',
+		operation: { kind: 'single-job-action', action: 'reschedule', method: 'rescheduleJob' },
 		requestSchema: RescheduleJobRequestSchema,
 		responseSchema: JobSchema,
 		errorSchema: ErrorSchema,
@@ -203,6 +212,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_CANCEL,
 		operationId: 'cancelJobs',
+		operation: { kind: 'bulk-job-action', action: 'cancel', method: 'cancelJobs' },
 		requestSchema: JobSelectorSchema,
 		responseSchema: BulkActionResultSchema,
 		errorSchema: ErrorSchema,
@@ -217,6 +227,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_RETRY,
 		operationId: 'retryJobs',
+		operation: { kind: 'bulk-job-action', action: 'retry', method: 'retryJobs' },
 		requestSchema: JobSelectorSchema,
 		responseSchema: BulkActionResultSchema,
 		errorSchema: ErrorSchema,
@@ -231,6 +242,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOBS_BULK_DELETE,
 		operationId: 'deleteJobs',
+		operation: { kind: 'bulk-job-action', action: 'delete', method: 'deleteJobs' },
 		requestSchema: JobSelectorSchema,
 		responseSchema: BulkActionResultSchema,
 		errorSchema: ErrorSchema,
@@ -245,6 +257,7 @@ export const MANAGEMENT_ROUTE_MAP = [
 		method: HttpMethod.DELETE,
 		path: ManagementRoutePath.JOB_DETAIL,
 		operationId: 'deleteJob',
+		operation: { kind: 'single-job-action', action: 'delete', method: 'deleteJob' },
 		responseSchema: DeleteJobSchema,
 		errorSchema: ErrorSchema,
 		errorStatuses: [
@@ -264,3 +277,10 @@ export const MANAGEMENT_ROUTE_MAP = [
 		],
 	},
 ] as const satisfies readonly ManagementRoute[];
+
+export function findManagementRoute(
+	method: ManagementRoute['method'],
+	path: string,
+): ManagementRoute | undefined {
+	return MANAGEMENT_ROUTE_MAP.find((route) => route.method === method && route.path === path);
+}

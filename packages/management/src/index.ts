@@ -4,6 +4,7 @@ export {
 } from './http/index.js';
 export { getManagementOpenApiDocument } from './openapi/index.js';
 export {
+	findManagementRoute,
 	MANAGEMENT_ROUTE_MAP,
 	ManagementRoutePath,
 } from './routes/index.js';
@@ -38,6 +39,7 @@ export type {
 	ManagementRequest,
 	ManagementResponse,
 	ManagementRoute,
+	ManagementRouteOperation,
 	ManagementSurface,
 	QueueStatsDto,
 	QueueViewSummaryDto,
