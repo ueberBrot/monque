@@ -8,17 +8,20 @@ export {
 	ManagementRoutePath,
 } from './routes/index.js';
 export {
+	BulkActionResultSchema,
 	CapabilitiesSchema,
 	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
+	JobSelectorSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
 	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
 } from './schemas/index.js';
 export type {
+	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
 	DeleteJobDto,

@@ -1,5 +1,6 @@
 export { createManagementSurface } from './surface.js';
 export type {
+	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
 	DeleteJobDto,

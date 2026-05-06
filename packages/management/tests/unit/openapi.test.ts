@@ -38,6 +38,27 @@ describe('Management OpenAPI contract', () => {
 		expect(document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.operationId).toBe(
 			'rescheduleJob',
 		);
+		expect(document.paths?.['/api/v1/jobs/actions/cancel']?.post?.operationId).toBe('cancelJobs');
+		expect(document.paths?.['/api/v1/jobs/actions/retry']?.post?.operationId).toBe('retryJobs');
+		expect(document.paths?.['/api/v1/jobs/actions/delete']?.post?.operationId).toBe('deleteJobs');
+		for (const path of [
+			'/api/v1/jobs/actions/cancel',
+			'/api/v1/jobs/actions/retry',
+			'/api/v1/jobs/actions/delete',
+		] as const) {
+			expect(document.paths?.[path]?.post?.requestBody).toMatchObject({
+				required: true,
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/JobSelector' },
+					},
+				},
+			});
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('400');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('403');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('409');
+			expect(document.paths?.[path]?.post?.responses).toHaveProperty('500');
+		}
 		expect(
 			document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.requestBody,
 		).toMatchObject({
@@ -74,6 +95,19 @@ describe('Management OpenAPI contract', () => {
 		expect(document.components?.schemas?.['DeleteJob']).toMatchObject({
 			type: 'object',
 			required: ['deleted'],
+		});
+		expect(document.components?.schemas?.['BulkActionResult']).toMatchObject({
+			type: 'object',
+			required: ['count', 'errors'],
+		});
+		expect(document.components?.schemas?.['JobSelector']).toMatchObject({
+			type: 'object',
+			properties: expect.objectContaining({
+				name: expect.any(Object),
+				status: expect.any(Object),
+				olderThan: expect.any(Object),
+				newerThan: expect.any(Object),
+			}),
 		});
 		expect(document.components?.schemas?.['RescheduleJobRequest']).toMatchObject({
 			type: 'object',
