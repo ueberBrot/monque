@@ -1,10 +1,14 @@
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import type { ManagementRequest, ManagementRoute } from '../surface/index.js';
 
+export interface InvalidManagementRequestPath {
+	error: 'Invalid request path';
+}
+
 function matchPath(
 	routePath: ManagementRoute['path'],
 	requestPath: string,
-): Record<string, string> | undefined {
+): { params: Record<string, string> } | InvalidManagementRequestPath | undefined {
 	const routeSegments = routePath.split('/').filter((segment) => segment.length > 0);
 	const requestSegments = requestPath.split('/').filter((segment) => segment.length > 0);
 
@@ -29,7 +33,13 @@ function matchPath(
 				return undefined;
 			}
 
-			params[paramName] = decodeURIComponent(requestSegment);
+			const decodedSegment = decodePathSegment(requestSegment);
+
+			if (decodedSegment === undefined) {
+				return { error: 'Invalid request path' };
+			}
+
+			params[paramName] = decodedSegment;
 			continue;
 		}
 
@@ -38,12 +48,20 @@ function matchPath(
 		}
 	}
 
-	return params;
+	return { params };
+}
+
+function decodePathSegment(segment: string): string | undefined {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		return undefined;
+	}
 }
 
 export function normalizeManagementRequest<TContext>(
 	request: ManagementRequest<TContext>,
-): ManagementRequest<TContext> | undefined {
+): ManagementRequest<TContext> | InvalidManagementRequestPath | undefined {
 	for (const route of MANAGEMENT_ROUTE_MAP) {
 		if (route.method !== request.method) {
 			continue;
@@ -53,17 +71,21 @@ export function normalizeManagementRequest<TContext>(
 			return request;
 		}
 
-		const params = matchPath(route.path, request.path);
+		const match = matchPath(route.path, request.path);
 
-		if (!params) {
+		if (!match) {
 			continue;
+		}
+
+		if ('error' in match) {
+			return match;
 		}
 
 		return {
 			...request,
 			path: route.path,
 			params: {
-				...params,
+				...match.params,
 				...request.params,
 			},
 		};
