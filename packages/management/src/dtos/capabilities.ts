@@ -1,5 +1,8 @@
 import { Type } from '@sinclair/typebox';
 
+/**
+ * TypeBox schema for Management capability responses.
+ */
 export const CapabilitiesSchema = Type.Object(
 	{
 		readOnly: Type.Boolean(),

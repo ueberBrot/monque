@@ -16,6 +16,9 @@ import {
 import { HttpMethod, HttpStatus } from '../http/index.js';
 import type { ManagementAction, ManagementMonque, ManagementRoute } from '../surface/index.js';
 
+/**
+ * Management actions that mutate scheduler state.
+ */
 export const WritableManagementActions = [
 	'cancel',
 	'retry',
@@ -23,15 +26,29 @@ export const WritableManagementActions = [
 	'delete',
 ] as const satisfies readonly ManagementAction[];
 
+/**
+ * Union type of Management actions that mutate scheduler state.
+ */
 export type WritableManagementActionType = (typeof WritableManagementActions)[number];
 
+/**
+ * Union type of writable actions supported by bulk endpoints.
+ */
 export type BulkWritableManagementActionType = Exclude<WritableManagementActionType, 'reschedule'>;
 
+/**
+ * All Management API action categories.
+ */
 export const ManagementActions = [
 	'read',
 	...WritableManagementActions,
 ] as const satisfies readonly ManagementAction[];
 
+/**
+ * Canonical Management API route paths.
+ *
+ * Paths with identifiers use OpenAPI-style `{id}` placeholders.
+ */
 export const ManagementRoutePath = {
 	HEALTH: '/api/v1/health',
 	CAPABILITIES: '/api/v1/capabilities',
@@ -47,9 +64,18 @@ export const ManagementRoutePath = {
 	JOBS_BULK_DELETE: '/api/v1/jobs/actions/delete',
 } as const;
 
+/**
+ * Union type of canonical Management API route path values.
+ */
 export type ManagementRoutePathType =
 	(typeof ManagementRoutePath)[keyof typeof ManagementRoutePath];
 
+/**
+ * Canonical Management route map used for dispatch, capabilities, and OpenAPI generation.
+ *
+ * Routes whose scheduler mutation method is absent from `ManagementMonque` are
+ * filtered out by `getSupportedManagementRoutes()`.
+ */
 export const MANAGEMENT_ROUTE_MAP = [
 	{
 		method: HttpMethod.GET,
@@ -294,6 +320,13 @@ export const MANAGEMENT_ROUTE_MAP = [
 	},
 ] as const satisfies readonly ManagementRoute[];
 
+/**
+ * Find a route in the canonical Management route map.
+ *
+ * The `path` argument must use a canonical templated path, such as
+ * `/api/v1/jobs/{id}`. Use `normalizeManagementRequest()` for concrete request
+ * paths received from an HTTP framework.
+ */
 export function findManagementRoute(
 	method: ManagementRoute['method'],
 	path: string,
@@ -301,10 +334,16 @@ export function findManagementRoute(
 	return MANAGEMENT_ROUTE_MAP.find((route) => route.method === method && route.path === path);
 }
 
+/**
+ * Return the routes supported by the supplied scheduler capability contract.
+ */
 export function getSupportedManagementRoutes(monque: ManagementMonque): readonly ManagementRoute[] {
 	return MANAGEMENT_ROUTE_MAP.filter((route) => isManagementRouteSupported(monque, route));
 }
 
+/**
+ * Check whether a route can be handled by the supplied scheduler capability contract.
+ */
 export function isManagementRouteSupported(
 	monque: ManagementMonque,
 	route: ManagementRoute,
@@ -316,6 +355,9 @@ export function isManagementRouteSupported(
 	return monque[route.operation.method] !== undefined;
 }
 
+/**
+ * Check whether at least one supported route exists for a Management action.
+ */
 export function isManagementActionSupported(
 	monque: ManagementMonque,
 	action: ManagementAction,
@@ -332,6 +374,9 @@ export function isManagementActionSupported(
 	);
 }
 
+/**
+ * Check whether read-only mode allows the requested Management action.
+ */
 export function isManagementActionAllowedByReadOnlyMode(
 	action: ManagementAction,
 	readOnly: boolean,
@@ -341,6 +386,9 @@ export function isManagementActionAllowedByReadOnlyMode(
 	);
 }
 
+/**
+ * Check whether a single-job mutation action is supported.
+ */
 export function isSingleJobManagementActionSupported(
 	monque: ManagementMonque,
 	action: WritableManagementActionType,
@@ -353,6 +401,9 @@ export function isSingleJobManagementActionSupported(
 	);
 }
 
+/**
+ * Check whether a bulk job mutation action is supported.
+ */
 export function isBulkJobManagementActionSupported(
 	monque: ManagementMonque,
 	action: BulkWritableManagementActionType,
@@ -365,6 +416,9 @@ export function isBulkJobManagementActionSupported(
 	);
 }
 
+/**
+ * Return the unique TypeBox schemas referenced by Management routes.
+ */
 export function getManagementRouteSchemas(): readonly ManagementRoute['responseSchema'][] {
 	const schemas = new Map<string, ManagementRoute['responseSchema']>();
 

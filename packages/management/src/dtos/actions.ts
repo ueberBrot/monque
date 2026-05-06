@@ -3,6 +3,9 @@ import { Type } from '@sinclair/typebox';
 
 import type { BulkActionResultDto, DeleteJobDto } from '../surface/index.js';
 
+/**
+ * TypeBox schema for a successful single-job delete response.
+ */
 export const DeleteJobSchema = Type.Object(
 	{
 		deleted: Type.Literal(true),
@@ -10,6 +13,9 @@ export const DeleteJobSchema = Type.Object(
 	{ $id: 'DeleteJob', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for a bulk job mutation response.
+ */
 export const BulkActionResultSchema = Type.Object(
 	{
 		count: Type.Number(),
@@ -26,6 +32,9 @@ export const BulkActionResultSchema = Type.Object(
 	{ $id: 'BulkActionResult', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for Management error responses.
+ */
 export const ErrorSchema = Type.Object(
 	{
 		error: Type.String(),
@@ -33,10 +42,16 @@ export const ErrorSchema = Type.Object(
 	{ $id: 'ManagementError', additionalProperties: false },
 );
 
+/**
+ * Create the DTO returned after a single job is deleted.
+ */
 export function toDeleteJobDto(): DeleteJobDto {
 	return { deleted: true };
 }
 
+/**
+ * Convert a Monque bulk operation result to the Management HTTP DTO.
+ */
 export function toBulkActionResultDto(result: BulkOperationResult): BulkActionResultDto {
 	return {
 		count: result.count,

@@ -2,6 +2,9 @@ import { Type } from '@sinclair/typebox';
 
 import type { SchedulerHealthDto } from '../surface/index.js';
 
+/**
+ * TypeBox schema for the scheduler health response.
+ */
 export const SchedulerHealthSchema = Type.Object(
 	{
 		status: Type.Union([Type.Literal('ok'), Type.Literal('unavailable')]),
@@ -12,6 +15,9 @@ export const SchedulerHealthSchema = Type.Object(
 	{ $id: 'SchedulerHealth', additionalProperties: false },
 );
 
+/**
+ * Create the scheduler health response DTO.
+ */
 export function toSchedulerHealthDto(healthy: boolean): SchedulerHealthDto {
 	return {
 		status: healthy ? 'ok' : 'unavailable',

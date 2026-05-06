@@ -11,6 +11,12 @@ import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
 import { getManagementRouteSchemas, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import type { ManagementHttpMethod, ManagementRoute } from '../surface/index.js';
 
+/**
+ * Build the OpenAPI 3.1 document for the Monque Management API.
+ *
+ * The document is generated from the same route map and TypeBox schemas used by
+ * request dispatch, keeping framework adapters and OpenAPI output aligned.
+ */
 export function getManagementOpenApiDocument(): OpenAPIObject {
 	const builder = OpenApiBuilder.create().addOpenApiVersion('3.1.0').addInfo({
 		title: 'Monque Management API',

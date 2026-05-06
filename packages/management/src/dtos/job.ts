@@ -11,6 +11,11 @@ const JobStatusSchema = Type.Union([
 	Type.Literal('cancelled'),
 ]);
 
+/**
+ * TypeBox schema for selector-based bulk job actions.
+ *
+ * Date values are represented as ISO 8601 strings in the HTTP API.
+ */
 export const JobSelectorSchema = Type.Object(
 	{
 		name: Type.Optional(Type.String()),
@@ -23,6 +28,9 @@ export const JobSelectorSchema = Type.Object(
 	{ $id: 'JobSelector', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for a Management job response.
+ */
 export const JobSchema = Type.Object(
 	{
 		id: Type.String(),
@@ -44,6 +52,9 @@ export const JobSchema = Type.Object(
 	{ $id: 'Job', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for a cursor-paginated job list response.
+ */
 export const JobCursorPageSchema = Type.Object(
 	{
 		jobs: Type.Array(Type.Unsafe<Static<typeof JobSchema>>(Type.Ref('#/components/schemas/Job'))),
@@ -54,6 +65,9 @@ export const JobCursorPageSchema = Type.Object(
 	{ $id: 'JobCursorPage', additionalProperties: false },
 );
 
+/**
+ * TypeBox schema for the single-job reschedule request body.
+ */
 export const RescheduleJobRequestSchema = Type.Object(
 	{
 		nextRunAt: Type.String({ format: 'date-time' }),
@@ -61,6 +75,9 @@ export const RescheduleJobRequestSchema = Type.Object(
 	{ $id: 'RescheduleJobRequest', additionalProperties: false },
 );
 
+/**
+ * Convert a Monque cursor page to the Management HTTP DTO.
+ */
 export async function toJobCursorPageDto<TContext>(
 	options: ManagementOptions<TContext>,
 	page: CursorPage,
@@ -76,6 +93,12 @@ export async function toJobCursorPageDto<TContext>(
 	};
 }
 
+/**
+ * Convert a persisted Monque job to the Management HTTP DTO.
+ *
+ * Payload serialization hooks from `ManagementOptions` are applied before the
+ * DTO is returned.
+ */
 export async function toJobDto<TContext>(
 	options: ManagementOptions<TContext>,
 	job: PersistedJob,

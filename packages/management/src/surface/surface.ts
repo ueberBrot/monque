@@ -40,6 +40,23 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	delete: false,
 } satisfies CapabilityActionsDto & Record<(typeof ManagementActions)[number], boolean>;
 
+/**
+ * Create a framework-neutral Management API surface for a Monque scheduler.
+ *
+ * The returned surface exposes route metadata for adapter registration and a
+ * single `handle()` function for dispatching normalized requests.
+ *
+ * @example
+ * ```typescript
+ * const surface = createManagementSurface({ monque });
+ *
+ * const response = await surface.handle({
+ *   method: HttpMethod.GET,
+ *   path: '/api/v1/health',
+ *   context: undefined,
+ * });
+ * ```
+ */
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
