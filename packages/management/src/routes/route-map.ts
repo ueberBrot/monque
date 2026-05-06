@@ -1,6 +1,5 @@
 import { Type } from '@sinclair/typebox';
 
-import { HttpMethod, HttpStatus } from '../http/index.js';
 import {
 	BulkActionResultSchema,
 	CapabilitiesSchema,
@@ -13,7 +12,8 @@ import {
 	QueueViewSummaryListSchema,
 	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
-} from '../schemas/index.js';
+} from '../dtos/index.js';
+import { HttpMethod, HttpStatus } from '../http/index.js';
 import type { ManagementAction, ManagementMonque, ManagementRoute } from '../surface/index.js';
 
 export const WritableManagementActions = [

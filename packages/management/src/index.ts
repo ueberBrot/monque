@@ -1,15 +1,4 @@
 export {
-	HttpMethod,
-	HttpStatus,
-} from './http/index.js';
-export { getManagementOpenApiDocument } from './openapi/index.js';
-export { normalizeManagementRequest } from './request/index.js';
-export {
-	findManagementRoute,
-	MANAGEMENT_ROUTE_MAP,
-	ManagementRoutePath,
-} from './routes/index.js';
-export {
 	BulkActionResultSchema,
 	CapabilitiesSchema,
 	DeleteJobSchema,
@@ -21,7 +10,18 @@ export {
 	QueueViewSummaryListSchema,
 	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
-} from './schemas/index.js';
+} from './dtos/index.js';
+export {
+	HttpMethod,
+	HttpStatus,
+} from './http/index.js';
+export { getManagementOpenApiDocument } from './openapi/index.js';
+export { normalizeManagementRequest } from './request/index.js';
+export {
+	findManagementRoute,
+	MANAGEMENT_ROUTE_MAP,
+	ManagementRoutePath,
+} from './routes/index.js';
 export type {
 	BulkActionResultDto,
 	CapabilitiesDto,

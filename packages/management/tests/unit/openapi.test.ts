@@ -82,10 +82,12 @@ describe('Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['Job']).toMatchObject({
 			type: 'object',
+			additionalProperties: false,
 			required: expect.arrayContaining(['id', 'payload', 'createdAt']),
 		});
 		expect(document.components?.schemas?.['QueueStats']).toMatchObject({
 			type: 'object',
+			additionalProperties: false,
 			required: expect.arrayContaining(['pending', 'total']),
 		});
 		expect(document.components?.schemas?.['JobCursorPage']).toHaveProperty(
@@ -94,10 +96,12 @@ describe('Management OpenAPI contract', () => {
 		);
 		expect(document.components?.schemas?.['DeleteJob']).toMatchObject({
 			type: 'object',
+			additionalProperties: false,
 			required: ['deleted'],
 		});
 		expect(document.components?.schemas?.['BulkActionResult']).toMatchObject({
 			type: 'object',
+			additionalProperties: false,
 			required: ['count', 'errors'],
 		});
 		expect(document.components?.schemas?.['JobSelector']).toMatchObject({

@@ -6,7 +6,7 @@ import {
 } from '@monque/core';
 import { ObjectId } from 'mongodb';
 
-import { JobSelectorSchema, RescheduleJobRequestSchema } from '../schemas/index.js';
+import { JobSelectorSchema, RescheduleJobRequestSchema } from '../dtos/index.js';
 import type { ManagementQueryValue } from '../surface/index.js';
 
 const ISO_DATE_TIME_PATTERN =
