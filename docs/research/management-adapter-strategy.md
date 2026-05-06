@@ -4,6 +4,11 @@ This note records research for Management Adapters, optional Scalar API referenc
 Dashboard asset serving, and Docker distribution. It is research input for a PRD, not a
 normative contract. Normative decisions live in `CONTEXT.md` and ADRs.
 
+Status update: ADR-0005 replaces the custom `ManagementRequest`/`ManagementResponse`
+adapter translation model with oRPC OpenAPI HTTP handlers. See
+[`management-orpc-zod-stack.md`](./management-orpc-zod-stack.md) for the current adapter
+research.
+
 ## Adapter Boundary
 
 The Management Surface owns:
