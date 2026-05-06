@@ -2,27 +2,22 @@ import type { BulkOperationResult, JobSelector, PersistedJob } from '@monque/cor
 import type { ObjectId } from 'mongodb';
 
 import { toBulkActionResultDto, toDeleteJobDto, toJobDto } from '../dtos/index.js';
-import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
+import {
+	type BulkWritableManagementActionType,
+	isBulkJobManagementActionSupported,
+	isSingleJobManagementActionSupported,
+	type WritableManagementActionType,
+} from '../routes/index.js';
 import { parseJobSelector, parseObjectId, parseRescheduleBody } from '../validation/index.js';
 import { badRequest, forbidden, notFound, ok, unsupportedAction } from './responses.js';
 import type {
 	ManagementAction,
-	ManagementMonque,
 	ManagementOptions,
 	ManagementRequest,
 	ManagementResponse,
 } from './types.js';
 
-const WRITABLE_ACTIONS = [
-	'cancel',
-	'retry',
-	'reschedule',
-	'delete',
-] as const satisfies readonly ManagementAction[];
-
-type WritableAction = (typeof WRITABLE_ACTIONS)[number];
-type BulkWritableAction = Exclude<WritableAction, 'reschedule'>;
-type SingleJobMutationAction = Exclude<WritableAction, 'delete'>;
+type SingleJobMutationAction = Exclude<WritableManagementActionType, 'delete'>;
 
 export async function handleSingleJobMutation<TContext>(
 	options: ManagementOptions<TContext>,
@@ -117,7 +112,7 @@ export async function handleDeleteJobAction<TContext>(
 export async function handleBulkJobMutation<TContext>(
 	options: ManagementOptions<TContext>,
 	request: ManagementRequest<TContext>,
-	action: BulkWritableAction,
+	action: BulkWritableManagementActionType,
 	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
 ): Promise<ManagementResponse> {
 	const actionCheck = requireBulkActionSupport(options, action);
@@ -177,7 +172,7 @@ async function mutateSingleJob<TContext>(
 
 function requireSingleActionSupport<TContext>(
 	options: ManagementOptions<TContext>,
-	action: WritableAction,
+	action: WritableManagementActionType,
 ): ManagementResponse<{ error: string }> | undefined {
 	const writeAuthorization = requireWritableAction(options);
 
@@ -185,7 +180,7 @@ function requireSingleActionSupport<TContext>(
 		return writeAuthorization;
 	}
 
-	if (!isSingleActionSupported(options.monque, action)) {
+	if (!isSingleJobManagementActionSupported(options.monque, action)) {
 		return unsupportedAction();
 	}
 
@@ -194,7 +189,7 @@ function requireSingleActionSupport<TContext>(
 
 function requireBulkActionSupport<TContext>(
 	options: ManagementOptions<TContext>,
-	action: BulkWritableAction,
+	action: BulkWritableManagementActionType,
 ): ManagementResponse<{ error: string }> | undefined {
 	const writeAuthorization = requireWritableAction(options);
 
@@ -202,7 +197,7 @@ function requireBulkActionSupport<TContext>(
 		return writeAuthorization;
 	}
 
-	if (!isBulkActionSupported(options.monque, action)) {
+	if (!isBulkJobManagementActionSupported(options.monque, action)) {
 		return unsupportedAction();
 	}
 
@@ -222,7 +217,7 @@ function requireWritableAction<TContext>(
 async function resolveMutableJobTarget<TContext>(
 	options: ManagementOptions<TContext>,
 	request: ManagementRequest<TContext>,
-	action: WritableAction,
+	action: WritableManagementActionType,
 ): Promise<{ id: ObjectId } | ManagementResponse<{ error: string }>> {
 	const id = parseObjectId(request.params?.['id']);
 
@@ -265,7 +260,7 @@ async function requireActionAuthorization<TContext>(
 
 async function requireBulkActionAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
-	action: BulkWritableAction,
+	action: BulkWritableManagementActionType,
 	context: TContext,
 	selector: JobSelector,
 ): Promise<ManagementResponse<{ error: string }> | undefined> {
@@ -274,40 +269,6 @@ async function requireBulkActionAuthorization<TContext>(
 	}
 
 	return forbidden('Action denied');
-}
-
-function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {
-	return MANAGEMENT_ROUTE_MAP.some(
-		(route) =>
-			route.operation.kind === 'single-job-action' &&
-			route.operation.action === action &&
-			isRouteSupported(monque, route.operation.method),
-	);
-}
-
-function isBulkActionSupported(monque: ManagementMonque, action: BulkWritableAction): boolean {
-	return MANAGEMENT_ROUTE_MAP.some(
-		(route) =>
-			route.operation.kind === 'bulk-job-action' &&
-			route.operation.action === action &&
-			isRouteSupported(monque, route.operation.method),
-	);
-}
-
-function isRouteSupported(
-	monque: ManagementMonque,
-	method: keyof Pick<
-		ManagementMonque,
-		| 'cancelJob'
-		| 'retryJob'
-		| 'rescheduleJob'
-		| 'deleteJob'
-		| 'cancelJobs'
-		| 'retryJobs'
-		| 'deleteJobs'
-	>,
-): boolean {
-	return monque[method] !== undefined;
 }
 
 async function isAllowedByAuthorization<TContext>(

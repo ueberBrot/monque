@@ -14,7 +14,23 @@ import {
 	RescheduleJobRequestSchema,
 	SchedulerHealthSchema,
 } from '../schemas/index.js';
-import type { ManagementRoute } from '../surface/index.js';
+import type { ManagementAction, ManagementMonque, ManagementRoute } from '../surface/index.js';
+
+export const WritableManagementActions = [
+	'cancel',
+	'retry',
+	'reschedule',
+	'delete',
+] as const satisfies readonly ManagementAction[];
+
+export type WritableManagementActionType = (typeof WritableManagementActions)[number];
+
+export type BulkWritableManagementActionType = Exclude<WritableManagementActionType, 'reschedule'>;
+
+export const ManagementActions = [
+	'read',
+	...WritableManagementActions,
+] as const satisfies readonly ManagementAction[];
 
 export const ManagementRoutePath = {
 	HEALTH: '/api/v1/health',
@@ -283,4 +299,96 @@ export function findManagementRoute(
 	path: string,
 ): ManagementRoute | undefined {
 	return MANAGEMENT_ROUTE_MAP.find((route) => route.method === method && route.path === path);
+}
+
+export function getSupportedManagementRoutes(monque: ManagementMonque): readonly ManagementRoute[] {
+	return MANAGEMENT_ROUTE_MAP.filter((route) => isManagementRouteSupported(monque, route));
+}
+
+export function isManagementRouteSupported(
+	monque: ManagementMonque,
+	route: ManagementRoute,
+): boolean {
+	if (route.operation.kind === 'read') {
+		return true;
+	}
+
+	return monque[route.operation.method] !== undefined;
+}
+
+export function isManagementActionSupported(
+	monque: ManagementMonque,
+	action: ManagementAction,
+): boolean {
+	if (action === 'read') {
+		return true;
+	}
+
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind !== 'read' &&
+			route.operation.action === action &&
+			isManagementRouteSupported(monque, route),
+	);
+}
+
+export function isManagementActionAllowedByReadOnlyMode(
+	action: ManagementAction,
+	readOnly: boolean,
+): boolean {
+	return (
+		!readOnly || !WritableManagementActions.some((writableAction) => writableAction === action)
+	);
+}
+
+export function isSingleJobManagementActionSupported(
+	monque: ManagementMonque,
+	action: WritableManagementActionType,
+): boolean {
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind === 'single-job-action' &&
+			route.operation.action === action &&
+			isManagementRouteSupported(monque, route),
+	);
+}
+
+export function isBulkJobManagementActionSupported(
+	monque: ManagementMonque,
+	action: BulkWritableManagementActionType,
+): boolean {
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind === 'bulk-job-action' &&
+			route.operation.action === action &&
+			isManagementRouteSupported(monque, route),
+	);
+}
+
+export function getManagementRouteSchemas(): readonly ManagementRoute['responseSchema'][] {
+	const schemas = new Map<string, ManagementRoute['responseSchema']>();
+
+	for (const route of MANAGEMENT_ROUTE_MAP) {
+		addRouteSchema(schemas, route.responseSchema);
+		addRouteSchema(schemas, route.errorSchema);
+
+		if ('requestSchema' in route && route.requestSchema) {
+			addRouteSchema(schemas, route.requestSchema);
+		}
+	}
+
+	return [...schemas.values()];
+}
+
+function addRouteSchema(
+	schemas: Map<string, ManagementRoute['responseSchema']>,
+	schema: ManagementRoute['responseSchema'],
+): void {
+	const schemaId = (schema as { $id?: string }).$id;
+
+	if (!schemaId) {
+		throw new Error('Management schemas must define $id');
+	}
+
+	schemas.set(schemaId, schema);
 }

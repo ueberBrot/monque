@@ -8,20 +8,7 @@ import type {
 import { OpenApiBuilder } from 'openapi3-ts/oas31';
 
 import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
-import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
-import {
-	BulkActionResultSchema,
-	CapabilitiesSchema,
-	DeleteJobSchema,
-	ErrorSchema,
-	JobCursorPageSchema,
-	JobSchema,
-	JobSelectorSchema,
-	QueueStatsSchema,
-	QueueViewSummaryListSchema,
-	RescheduleJobRequestSchema,
-	SchedulerHealthSchema,
-} from '../schemas/index.js';
+import { getManagementRouteSchemas, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import type { ManagementHttpMethod, ManagementRoute } from '../surface/index.js';
 
 export function getManagementOpenApiDocument(): OpenAPIObject {
@@ -30,19 +17,7 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		version: '0.1.0',
 	});
 
-	for (const schema of [
-		SchedulerHealthSchema,
-		CapabilitiesSchema,
-		QueueStatsSchema,
-		QueueViewSummaryListSchema,
-		JobSchema,
-		JobCursorPageSchema,
-		DeleteJobSchema,
-		BulkActionResultSchema,
-		JobSelectorSchema,
-		RescheduleJobRequestSchema,
-		ErrorSchema,
-	]) {
+	for (const schema of getManagementRouteSchemas()) {
 		builder.addSchema(getSchemaId(schema), schema as SchemaObject);
 	}
 
