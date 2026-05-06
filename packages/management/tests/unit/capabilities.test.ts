@@ -117,4 +117,64 @@ describe('Management capabilities', () => {
 			body: { error: 'Management action is unsupported' },
 		});
 	});
+
+	test('enables bulk routes without enabling single action capabilities', async () => {
+		const monque: ManagementMonque = {
+			isHealthy: () => true,
+			getQueueViewSummaries: async () => [],
+			getJobsWithCursor: async () => ({
+				jobs: [],
+				cursor: null,
+				hasNextPage: false,
+				hasPreviousPage: false,
+			}),
+			getJob: async () => null,
+			getQueueStats: async () => ({
+				pending: 0,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 0,
+			}),
+			cancelJobs: async () => ({ count: 0, errors: [] }),
+			retryJobs: async () => ({ count: 0, errors: [] }),
+			deleteJobs: async () => ({ count: 0, errors: [] }),
+		};
+		const surface = createManagementSurface({ monque });
+
+		const response = await surface.handle({
+			method: HttpMethod.GET,
+			path: ManagementRoutePath.CAPABILITIES,
+			context: {},
+		});
+		const unsupportedSingleCancel = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOB_CANCEL,
+			params: { id: '000000000000000000000000' },
+			context: {},
+		});
+		const routeIds = surface.routes.map((route) => `${route.method} ${route.path}`);
+
+		expect(response).toEqual({
+			status: HttpStatus.OK,
+			body: {
+				readOnly: false,
+				actions: {
+					read: true,
+					cancel: false,
+					retry: false,
+					reschedule: false,
+					delete: false,
+				},
+			},
+		});
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/cancel');
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/retry');
+		expect(routeIds).toContain('POST /api/v1/jobs/actions/delete');
+		expect(unsupportedSingleCancel).toEqual({
+			status: HttpStatus.FORBIDDEN,
+			body: { error: 'Management action is unsupported' },
+		});
+	});
 });

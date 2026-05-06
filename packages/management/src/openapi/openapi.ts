@@ -10,11 +10,13 @@ import { OpenApiBuilder } from 'openapi3-ts/oas31';
 import { HttpMethod, OpenApiResponseStatus } from '../http/index.js';
 import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import {
+	BulkActionResultSchema,
 	CapabilitiesSchema,
 	DeleteJobSchema,
 	ErrorSchema,
 	JobCursorPageSchema,
 	JobSchema,
+	JobSelectorSchema,
 	QueueStatsSchema,
 	QueueViewSummaryListSchema,
 	RescheduleJobRequestSchema,
@@ -36,6 +38,8 @@ export function getManagementOpenApiDocument(): OpenAPIObject {
 		JobSchema,
 		JobCursorPageSchema,
 		DeleteJobSchema,
+		BulkActionResultSchema,
+		JobSelectorSchema,
 		RescheduleJobRequestSchema,
 		ErrorSchema,
 	]) {

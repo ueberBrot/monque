@@ -24,6 +24,39 @@ export const CapabilitiesSchema = Type.Object(
 	{ $id: 'Capabilities' },
 );
 
+const JobStatusSchema = Type.Union([
+	Type.Literal('pending'),
+	Type.Literal('processing'),
+	Type.Literal('completed'),
+	Type.Literal('failed'),
+	Type.Literal('cancelled'),
+]);
+
+export const JobSelectorSchema = Type.Object(
+	{
+		name: Type.Optional(Type.String()),
+		status: Type.Optional(
+			Type.Union([JobStatusSchema, Type.Array(JobStatusSchema, { minItems: 1 })]),
+		),
+		olderThan: Type.Optional(Type.String({ format: 'date-time' })),
+		newerThan: Type.Optional(Type.String({ format: 'date-time' })),
+	},
+	{ $id: 'JobSelector' },
+);
+
+export const BulkActionResultSchema = Type.Object(
+	{
+		count: Type.Number(),
+		errors: Type.Array(
+			Type.Object({
+				jobId: Type.String(),
+				error: Type.String(),
+			}),
+		),
+	},
+	{ $id: 'BulkActionResult' },
+);
+
 export const QueueStatsSchema = Type.Object(
 	{
 		pending: Type.Number(),
@@ -64,13 +97,7 @@ export const JobSchema = Type.Object(
 	{
 		id: Type.String(),
 		name: Type.String(),
-		status: Type.Union([
-			Type.Literal('pending'),
-			Type.Literal('processing'),
-			Type.Literal('completed'),
-			Type.Literal('failed'),
-			Type.Literal('cancelled'),
-		]),
+		status: JobStatusSchema,
 		payload: Type.Unknown(),
 		nextRunAt: Type.String({ format: 'date-time' }),
 		lockedAt: Type.Union([Type.String({ format: 'date-time' }), Type.Null()]),

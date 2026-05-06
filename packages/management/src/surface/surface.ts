@@ -1,7 +1,9 @@
 import {
+	type BulkOperationResult,
 	type CursorOptions,
 	InvalidCursorError,
 	isValidJobStatus,
+	type JobSelector,
 	JobStateError,
 	type JobStatusType,
 	type PersistedJob,
@@ -35,6 +37,7 @@ const WRITABLE_ACTIONS = [
 ] as const satisfies readonly ManagementAction[];
 
 type WritableAction = (typeof WRITABLE_ACTIONS)[number];
+
 const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
 const ACTION_METHOD_BY_ACTION = {
 	cancel: 'cancelJob',
@@ -42,32 +45,72 @@ const ACTION_METHOD_BY_ACTION = {
 	reschedule: 'rescheduleJob',
 	delete: 'deleteJob',
 } as const satisfies Record<WritableAction, keyof ManagementMonque>;
+
+const BULK_ACTION_METHOD_BY_ACTION = {
+	cancel: 'cancelJobs',
+	retry: 'retryJobs',
+	delete: 'deleteJobs',
+} as const satisfies Record<Exclude<WritableAction, 'reschedule'>, keyof ManagementMonque>;
+
+type SingleActionRoute = {
+	method: ManagementRoute['method'];
+	path: ManagementRoute['path'];
+	action: WritableAction;
+	kind: 'single';
+};
+
+type BulkActionRoute = {
+	method: ManagementRoute['method'];
+	path: ManagementRoute['path'];
+	action: Exclude<WritableAction, 'reschedule'>;
+	kind: 'bulk';
+};
+
 const ACTION_ROUTES = [
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_CANCEL,
 		action: 'cancel',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RETRY,
 		action: 'retry',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.POST,
 		path: ManagementRoutePath.JOB_RESCHEDULE,
 		action: 'reschedule',
+		kind: 'single',
 	},
 	{
 		method: HttpMethod.DELETE,
 		path: ManagementRoutePath.JOB_DETAIL,
 		action: 'delete',
+		kind: 'single',
 	},
-] as const satisfies ReadonlyArray<{
-	method: ManagementRoute['method'];
-	path: ManagementRoute['path'];
-	action: WritableAction;
-}>;
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_CANCEL,
+		action: 'cancel',
+		kind: 'bulk',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_RETRY,
+		action: 'retry',
+		kind: 'bulk',
+	},
+	{
+		method: HttpMethod.POST,
+		path: ManagementRoutePath.JOBS_BULK_DELETE,
+		action: 'delete',
+		kind: 'bulk',
+	},
+] as const satisfies ReadonlyArray<SingleActionRoute | BulkActionRoute>;
+
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
@@ -78,6 +121,8 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	reschedule: false,
 	delete: false,
 } satisfies CapabilityActionsDto & Record<(typeof ACTIONS)[number], boolean>;
+
+const JOB_SELECTOR_FIELDS = ['name', 'status', 'olderThan', 'newerThan'] as const;
 
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
@@ -192,8 +237,50 @@ export function createManagementSurface<TContext = unknown>(
 
 				if (
 					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_CANCEL
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'cancel',
+						options.monque.cancelJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_RETRY
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'retry',
+						options.monque.retryJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
+					request.path === ManagementRoutePath.JOBS_BULK_DELETE
+				) {
+					return await handleBulkJobMutation(
+						options,
+						request,
+						'delete',
+						options.monque.deleteJobs?.bind(options.monque),
+					);
+				}
+
+				if (
+					request.method === HttpMethod.POST &&
 					request.path === ManagementRoutePath.JOB_RESCHEDULE
 				) {
+					const writeAuthorization = requireWritableAction(options);
+
+					if (writeAuthorization) {
+						return writeAuthorization;
+					}
+
 					const body = parseRescheduleBody(request.body);
 
 					if ('error' in body) {
@@ -287,22 +374,139 @@ function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { error: stri
 	}
 
 	const nextRunAt = (body as Record<string, unknown>)['nextRunAt'];
+	const parsedNextRunAt = parseIsoDateTime(nextRunAt, 'nextRunAt');
 
-	if (typeof nextRunAt !== 'string') {
-		return { error: 'Invalid nextRunAt' };
+	if ('error' in parsedNextRunAt) {
+		return parsedNextRunAt;
 	}
 
-	if (!isValidIsoDateTime(nextRunAt)) {
-		return { error: 'Invalid nextRunAt' };
+	return { nextRunAt: parsedNextRunAt.value };
+}
+
+function parseJobSelector(body: unknown): JobSelector | { error: string } {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return { error: 'Invalid job selector' };
 	}
 
-	const date = new Date(nextRunAt);
+	const input = body as Record<string, unknown>;
+	const selector: JobSelector = {};
+	const name = input['name'];
+	const status = input['status'];
+	const olderThan = input['olderThan'];
+	const newerThan = input['newerThan'];
+
+	for (const key of Object.keys(input)) {
+		if (!JOB_SELECTOR_FIELDS.some((field) => field === key)) {
+			return { error: 'Invalid job selector' };
+		}
+	}
+
+	if (name !== undefined) {
+		if (typeof name !== 'string') {
+			return { error: 'Invalid selector name' };
+		}
+
+		selector.name = name;
+	}
+
+	const statuses = parseStatuses(status, { preserveArray: true });
+
+	if ('error' in statuses) {
+		return statuses;
+	}
+
+	if (statuses.status !== undefined) {
+		selector.status = statuses.status;
+	}
+
+	const olderThanDate = parseOptionalIsoDateTime(olderThan, 'olderThan');
+
+	if ('error' in olderThanDate) {
+		return olderThanDate;
+	}
+
+	if (olderThanDate.value !== undefined) {
+		selector.olderThan = olderThanDate.value;
+	}
+
+	const newerThanDate = parseOptionalIsoDateTime(newerThan, 'newerThan');
+
+	if ('error' in newerThanDate) {
+		return newerThanDate;
+	}
+
+	if (newerThanDate.value !== undefined) {
+		selector.newerThan = newerThanDate.value;
+	}
+
+	return selector;
+}
+
+function parseStatuses(
+	value: ManagementQueryValue | unknown,
+	options: { preserveArray?: boolean } = {},
+): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
+	if (value === undefined) {
+		return { status: undefined };
+	}
+
+	if (typeof value === 'string') {
+		if (!isValidJobStatus(value)) {
+			return { error: 'Invalid status' };
+		}
+
+		return { status: value };
+	}
+
+	if (!Array.isArray(value) || value.length === 0) {
+		return { error: 'Invalid status' };
+	}
+
+	const statuses: JobStatusType[] = [];
+
+	for (const status of value) {
+		if (typeof status !== 'string' || !isValidJobStatus(status)) {
+			return { error: 'Invalid status' };
+		}
+
+		statuses.push(status);
+	}
+
+	return {
+		status: options.preserveArray === true || statuses.length > 1 ? statuses : statuses[0],
+	};
+}
+
+function parseOptionalIsoDateTime(
+	value: unknown,
+	fieldName: 'olderThan' | 'newerThan',
+): { value: Date | undefined } | { error: string } {
+	if (value === undefined) {
+		return { value: undefined };
+	}
+
+	return parseIsoDateTime(value, fieldName);
+}
+
+function parseIsoDateTime(
+	value: unknown,
+	fieldName: 'nextRunAt' | 'olderThan' | 'newerThan',
+): { value: Date } | { error: string } {
+	if (typeof value !== 'string') {
+		return { error: `Invalid ${fieldName}` };
+	}
+
+	if (!isValidIsoDateTime(value)) {
+		return { error: `Invalid ${fieldName}` };
+	}
+
+	const date = new Date(value);
 
 	if (Number.isNaN(date.getTime())) {
-		return { error: 'Invalid nextRunAt' };
+		return { error: `Invalid ${fieldName}` };
 	}
 
-	return { nextRunAt: date };
+	return { value: date };
 }
 
 function isValidIsoDateTime(value: string): boolean {
@@ -385,6 +589,25 @@ async function handleDeleteJobAction<TContext>(
 	}
 
 	return ok({ deleted: true as const });
+}
+
+async function handleBulkJobMutation<TContext>(
+	options: ManagementOptions<TContext>,
+	request: ManagementRequest<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
+): Promise<ManagementResponse> {
+	const target = await requireBulkJobTarget(options, request, action);
+
+	if ('status' in target) {
+		return target;
+	}
+
+	if (!mutate) {
+		return unsupportedAction();
+	}
+
+	return ok(await mutate(target.selector));
 }
 
 async function getJobs<TContext>(
@@ -517,34 +740,6 @@ function parseLimit(value: ManagementQueryValue): { limit: number } | { error: s
 	};
 }
 
-function parseStatuses(
-	value: ManagementQueryValue,
-): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
-	if (value === undefined) {
-		return { status: undefined };
-	}
-
-	const statuses = Array.isArray(value) ? value : [value];
-
-	if (statuses.length === 0) {
-		return { error: 'Invalid status' };
-	}
-
-	const validStatuses: JobStatusType[] = [];
-
-	for (const status of statuses) {
-		if (!isValidJobStatus(status)) {
-			return { error: 'Invalid status' };
-		}
-
-		validStatuses.push(status);
-	}
-
-	return {
-		status: validStatuses.length === 1 ? validStatuses[0] : validStatuses,
-	};
-}
-
 function getSingleQueryValue(
 	value: ManagementQueryValue,
 ): { value: string | undefined } | { error: string } {
@@ -589,19 +784,19 @@ async function requireMutableJobTarget<TContext>(
 	request: ManagementRequest<TContext>,
 	action: WritableAction,
 ): Promise<{ id: ObjectId } | ManagementResponse<{ error: string }>> {
-	const id = parseObjectId(request.params?.['id']);
-
-	if ('error' in id) {
-		return badRequest(id.error);
-	}
-
 	const writeAuthorization = requireWritableAction(options);
 
 	if (writeAuthorization) {
 		return writeAuthorization;
 	}
 
-	if (!isActionSupported(options.monque, action)) {
+	const id = parseObjectId(request.params?.['id']);
+
+	if ('error' in id) {
+		return badRequest(id.error);
+	}
+
+	if (!isSingleActionSupported(options.monque, action)) {
 		return unsupportedAction();
 	}
 
@@ -632,6 +827,54 @@ async function requireActionAuthorization<TContext>(
 	job: PersistedJob,
 ): Promise<ManagementResponse<{ error: string }> | undefined> {
 	if (await isAllowedByAuthorization(options, action, context, job)) {
+		return undefined;
+	}
+
+	return forbidden('Action denied');
+}
+
+async function requireBulkJobTarget<TContext>(
+	options: ManagementOptions<TContext>,
+	request: ManagementRequest<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+): Promise<{ selector: JobSelector } | ManagementResponse<{ error: string }>> {
+	const writeAuthorization = requireWritableAction(options);
+
+	if (writeAuthorization) {
+		return writeAuthorization;
+	}
+
+	if (!isBulkActionSupported(options.monque, action)) {
+		return unsupportedAction();
+	}
+
+	const selector = parseJobSelector(request.body);
+
+	if ('error' in selector) {
+		return badRequest(selector.error);
+	}
+
+	const actionAuthorization = await requireBulkActionAuthorization(
+		options,
+		action,
+		request.context,
+		selector,
+	);
+
+	if (actionAuthorization) {
+		return actionAuthorization;
+	}
+
+	return { selector };
+}
+
+async function requireBulkActionAuthorization<TContext>(
+	options: ManagementOptions<TContext>,
+	action: Exclude<WritableAction, 'reschedule'>,
+	context: TContext,
+	selector: JobSelector,
+): Promise<ManagementResponse<{ error: string }> | undefined> {
+	if (await isAllowedByAuthorization(options, action, context, undefined, selector)) {
 		return undefined;
 	}
 
@@ -682,7 +925,13 @@ function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boo
 		(candidate) => candidate.method === route.method && candidate.path === route.path,
 	);
 
-	return actionRoute ? isActionSupported(monque, actionRoute.action) : true;
+	if (!actionRoute) {
+		return true;
+	}
+
+	return actionRoute.kind === 'bulk'
+		? isBulkActionSupported(monque, actionRoute.action)
+		: isSingleActionSupported(monque, actionRoute.action);
 }
 
 function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
@@ -690,7 +939,18 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 		return true;
 	}
 
+	return isSingleActionSupported(monque, action);
+}
+
+function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {
 	return monque[ACTION_METHOD_BY_ACTION[action]] !== undefined;
+}
+
+function isBulkActionSupported(
+	monque: ManagementMonque,
+	action: Exclude<WritableAction, 'reschedule'>,
+): boolean {
+	return monque[BULK_ACTION_METHOD_BY_ACTION[action]] !== undefined;
 }
 
 async function isAllowedByAuthorization<TContext>(
@@ -698,10 +958,11 @@ async function isAllowedByAuthorization<TContext>(
 	action: ManagementAction,
 	context: TContext,
 	job?: PersistedJob,
+	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
 		return true;
 	}
 
-	return options.authorize({ action, context, job });
+	return options.authorize({ action, context, job, selector });
 }
