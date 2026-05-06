@@ -508,7 +508,12 @@ function isActionSupported(monque: ManagementMonque, action: ManagementAction): 
 		return true;
 	}
 
-	return isSingleActionSupported(monque, action);
+	return MANAGEMENT_ROUTE_MAP.some(
+		(route) =>
+			route.operation.kind !== 'read' &&
+			route.operation.action === action &&
+			isRouteSupported(monque, route),
+	);
 }
 
 function isSingleActionSupported(monque: ManagementMonque, action: WritableAction): boolean {

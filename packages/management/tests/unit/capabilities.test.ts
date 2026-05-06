@@ -210,10 +210,10 @@ describe('Management capabilities', () => {
 				readOnly: false,
 				actions: {
 					read: true,
-					cancel: false,
-					retry: false,
+					cancel: true,
+					retry: true,
 					reschedule: false,
-					delete: false,
+					delete: true,
 				},
 			},
 		});
