@@ -6,13 +6,15 @@ import {
 } from '@monque/core';
 import { ObjectId } from 'mongodb';
 
+import { JobSelectorSchema, RescheduleJobRequestSchema } from '../schemas/index.js';
 import type { ManagementQueryValue } from '../surface/index.js';
 
 const ISO_DATE_TIME_PATTERN =
 	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
 
 const JOB_LIST_QUERY_FIELDS = ['cursor', 'limit', 'name', 'status'] as const;
-const JOB_SELECTOR_FIELDS = ['name', 'status', 'olderThan', 'newerThan'] as const;
+const JOB_SELECTOR_FIELDS = Object.keys(JobSelectorSchema.properties);
+const RESCHEDULE_REQUEST_FIELDS = Object.keys(RescheduleJobRequestSchema.properties);
 
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
 	if (!value || !ObjectId.isValid(value)) {
@@ -28,6 +30,13 @@ export function parseRescheduleBody(body: unknown): { nextRunAt: Date } | { erro
 	}
 
 	const nextRunAt = (body as Record<string, unknown>)['nextRunAt'];
+
+	for (const key of Object.keys(body)) {
+		if (!RESCHEDULE_REQUEST_FIELDS.includes(key)) {
+			return { error: 'Invalid reschedule request' };
+		}
+	}
+
 	const parsedNextRunAt = parseIsoDateTime(nextRunAt, 'nextRunAt');
 
 	if ('error' in parsedNextRunAt) {

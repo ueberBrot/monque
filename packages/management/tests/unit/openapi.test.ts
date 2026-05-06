@@ -102,6 +102,7 @@ describe('Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['JobSelector']).toMatchObject({
 			type: 'object',
+			additionalProperties: false,
 			properties: expect.objectContaining({
 				name: expect.any(Object),
 				status: expect.any(Object),
@@ -112,6 +113,7 @@ describe('Management OpenAPI contract', () => {
 		expect(document.components?.schemas?.['RescheduleJobRequest']).toMatchObject({
 			type: 'object',
 			required: ['nextRunAt'],
+			additionalProperties: false,
 		});
 		expect(document.components?.schemas?.['QueueViewSummaryList']).toHaveProperty(
 			['properties', 'queueViews', 'items', 'properties', 'stats', '$ref'],
