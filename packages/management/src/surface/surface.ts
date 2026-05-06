@@ -108,6 +108,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	reschedule: false,
 	delete: false,
 } satisfies CapabilityActionsDto & Record<(typeof ACTIONS)[number], boolean>;
+const JOB_SELECTOR_FIELDS = ['name', 'status', 'olderThan', 'newerThan'] as const;
 
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
@@ -260,6 +261,12 @@ export function createManagementSurface<TContext = unknown>(
 					request.method === HttpMethod.POST &&
 					request.path === ManagementRoutePath.JOB_RESCHEDULE
 				) {
+					const writeAuthorization = requireWritableAction(options);
+
+					if (writeAuthorization) {
+						return writeAuthorization;
+					}
+
 					const body = parseRescheduleBody(request.body);
 
 					if ('error' in body) {
@@ -382,6 +389,12 @@ function parseJobSelector(body: unknown): JobSelector | { error: string } {
 	const status = input['status'];
 	const olderThan = input['olderThan'];
 	const newerThan = input['newerThan'];
+
+	for (const key of Object.keys(input)) {
+		if (!JOB_SELECTOR_FIELDS.some((field) => field === key)) {
+			return { error: 'Invalid job selector' };
+		}
+	}
 
 	if (name !== undefined) {
 		if (typeof name !== 'string') {
@@ -788,16 +801,16 @@ async function requireMutableJobTarget<TContext>(
 	request: ManagementRequest<TContext>,
 	action: WritableAction,
 ): Promise<{ id: ObjectId } | ManagementResponse<{ error: string }>> {
-	const id = parseObjectId(request.params?.['id']);
-
-	if ('error' in id) {
-		return badRequest(id.error);
-	}
-
 	const writeAuthorization = requireWritableAction(options);
 
 	if (writeAuthorization) {
 		return writeAuthorization;
+	}
+
+	const id = parseObjectId(request.params?.['id']);
+
+	if ('error' in id) {
+		return badRequest(id.error);
 	}
 
 	if (!isSingleActionSupported(options.monque, action)) {

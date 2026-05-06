@@ -188,6 +188,18 @@ describe('Management Surface contract', () => {
 			body: { olderThan: 'February 1, 2026 10:30:00' },
 			context: {},
 		});
+		const unknownSelectorField = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { olderThen: '2026-02-01T10:30:00.000Z' },
+			context: {},
+		});
+		const mixedUnknownSelectorField = await surface.handle({
+			method: HttpMethod.POST,
+			path: ManagementRoutePath.JOBS_BULK_CANCEL,
+			body: { name: 'send-email', unexpected: true },
+			context: {},
+		});
 
 		expect(invalidShape).toEqual({
 			status: HttpStatus.BAD_REQUEST,
@@ -200,6 +212,14 @@ describe('Management Surface contract', () => {
 		expect(invalidDate).toEqual({
 			status: HttpStatus.BAD_REQUEST,
 			body: { error: 'Invalid olderThan' },
+		});
+		expect(unknownSelectorField).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid job selector' },
+		});
+		expect(mixedUnknownSelectorField).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid job selector' },
 		});
 		expect(calls).toEqual([]);
 	});
@@ -239,6 +259,54 @@ describe('Management Surface contract', () => {
 				method: HttpMethod.POST,
 				path: ManagementRoutePath.JOBS_BULK_DELETE,
 				body: {},
+				context: {},
+			}),
+		]);
+
+		expect(responses).toEqual([
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+			{ status: HttpStatus.FORBIDDEN, body: { error: 'Management surface is read-only' } },
+		]);
+		expect(calls).toEqual([]);
+	});
+
+	test('rejects malformed single Job mutations as read-only before request validation', async () => {
+		const calls: string[] = [];
+		const monque = createManagementMonque({
+			cancelJob: async () => {
+				calls.push('cancel');
+				return null;
+			},
+			rescheduleJob: async () => {
+				calls.push('reschedule');
+				return null;
+			},
+			deleteJob: async () => {
+				calls.push('delete');
+				return false;
+			},
+		});
+		const surface = createManagementSurface({ monque, readOnly: true });
+
+		const responses = await Promise.all([
+			surface.handle({
+				method: HttpMethod.POST,
+				path: ManagementRoutePath.JOB_CANCEL,
+				params: { id: 'not-an-object-id' },
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.POST,
+				path: ManagementRoutePath.JOB_RESCHEDULE,
+				params: { id: new ObjectId().toHexString() },
+				body: { nextRunAt: 'not-a-date' },
+				context: {},
+			}),
+			surface.handle({
+				method: HttpMethod.DELETE,
+				path: ManagementRoutePath.JOB_DETAIL,
+				params: { id: 'not-an-object-id' },
 				context: {},
 			}),
 		]);
