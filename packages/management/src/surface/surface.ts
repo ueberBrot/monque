@@ -7,7 +7,12 @@ import {
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
-import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
+import {
+	getSupportedManagementRoutes,
+	isManagementActionAllowedByReadOnlyMode,
+	isManagementActionSupported,
+	ManagementActions,
+} from '../routes/index.js';
 import { getSingleQueryValue, parseJobListQuery, parseObjectId } from '../validation/index.js';
 import {
 	handleBulkJobMutation,
@@ -21,22 +26,11 @@ import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
 	ManagementAction,
-	ManagementMonque,
 	ManagementOptions,
 	ManagementRequest,
 	ManagementResponse,
-	ManagementRoute,
 	ManagementSurface,
 } from './types.js';
-
-const WRITABLE_ACTIONS = [
-	'cancel',
-	'retry',
-	'reschedule',
-	'delete',
-] as const satisfies readonly ManagementAction[];
-
-const ACTIONS = ['read', ...WRITABLE_ACTIONS] as const satisfies readonly ManagementAction[];
 
 const DEFAULT_CAPABILITY_ACTIONS = {
 	read: false,
@@ -44,13 +38,13 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	retry: false,
 	reschedule: false,
 	delete: false,
-} satisfies CapabilityActionsDto & Record<(typeof ACTIONS)[number], boolean>;
+} satisfies CapabilityActionsDto & Record<(typeof ManagementActions)[number], boolean>;
 
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
 	return {
-		routes: getSupportedRoutes(options.monque),
+		routes: getSupportedManagementRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {
 				const routedRequest = routeManagementRequest(request);
@@ -229,10 +223,10 @@ async function getCapabilities<TContext>(
 	const readOnly = options.readOnly ?? false;
 	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
-	for (const action of ACTIONS) {
+	for (const action of ManagementActions) {
 		actions[action] =
-			isActionSupported(options.monque, action) &&
-			isAllowedByReadOnlyMode(action, readOnly) &&
+			isManagementActionSupported(options.monque, action) &&
+			isManagementActionAllowedByReadOnlyMode(action, readOnly) &&
 			(await isAllowedByAuthorization(options, action, context));
 	}
 
@@ -240,35 +234,6 @@ async function getCapabilities<TContext>(
 		readOnly,
 		actions,
 	};
-}
-
-function isAllowedByReadOnlyMode(action: ManagementAction, readOnly: boolean): boolean {
-	return !readOnly || !WRITABLE_ACTIONS.some((writableAction) => writableAction === action);
-}
-
-function getSupportedRoutes(monque: ManagementMonque): readonly ManagementRoute[] {
-	return MANAGEMENT_ROUTE_MAP.filter((route) => isRouteSupported(monque, route));
-}
-
-function isRouteSupported(monque: ManagementMonque, route: ManagementRoute): boolean {
-	if (route.operation.kind === 'read') {
-		return true;
-	}
-
-	return monque[route.operation.method] !== undefined;
-}
-
-function isActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
-	if (action === 'read') {
-		return true;
-	}
-
-	return MANAGEMENT_ROUTE_MAP.some(
-		(route) =>
-			route.operation.kind !== 'read' &&
-			route.operation.action === action &&
-			isRouteSupported(monque, route),
-	);
 }
 
 async function isAllowedByAuthorization<TContext>(

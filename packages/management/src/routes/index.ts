@@ -1,6 +1,17 @@
 export {
+	type BulkWritableManagementActionType,
 	findManagementRoute,
+	getManagementRouteSchemas,
+	getSupportedManagementRoutes,
+	isBulkJobManagementActionSupported,
+	isManagementActionAllowedByReadOnlyMode,
+	isManagementActionSupported,
+	isManagementRouteSupported,
+	isSingleJobManagementActionSupported,
 	MANAGEMENT_ROUTE_MAP,
+	ManagementActions,
 	ManagementRoutePath,
 	type ManagementRoutePathType,
+	WritableManagementActions,
+	type WritableManagementActionType,
 } from './route-map.js';
