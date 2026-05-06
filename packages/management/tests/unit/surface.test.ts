@@ -7,7 +7,13 @@ import {
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementSurface, HttpMethod, HttpStatus, ManagementRoutePath } from '@/index';
+import {
+	createManagementSurface,
+	HttpMethod,
+	HttpStatus,
+	ManagementRoutePath,
+	normalizeManagementRequest,
+} from '@/index';
 import type { ManagementMonque, QueueViewSummaryListDto } from '@/surface';
 
 function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
@@ -48,6 +54,39 @@ function createManagementMonque(overrides: Partial<ManagementMonque> = {}): Mana
 }
 
 describe('Management Surface contract', () => {
+	test('normalizes concrete HTTP paths into Management Route Map requests', async () => {
+		const jobId = new ObjectId();
+		const monque = createManagementMonque({
+			getJob: async (id) => (id.equals(jobId) ? createJob({ _id: jobId }) : null),
+		});
+		const surface = createManagementSurface({ monque });
+
+		const normalized = normalizeManagementRequest({
+			method: HttpMethod.GET,
+			path: `/api/v1/jobs/${jobId.toHexString()}`,
+			context: { userId: 'operator-1' },
+		});
+		const response = await surface.handle({
+			method: HttpMethod.GET,
+			path: `/api/v1/jobs/${jobId.toHexString()}`,
+			context: { userId: 'operator-1' },
+		});
+
+		expect(normalized).toEqual({
+			method: HttpMethod.GET,
+			path: ManagementRoutePath.JOB_DETAIL,
+			params: { id: jobId.toHexString() },
+			context: { userId: 'operator-1' },
+		});
+		expect(response).toMatchObject({
+			status: HttpStatus.OK,
+			body: {
+				id: jobId.toHexString(),
+				name: 'send-email',
+			},
+		});
+	});
+
 	test('bulk cancels Jobs through public core API with selector DTO', async () => {
 		const calls: unknown[] = [];
 		const authorizeCalls: unknown[] = [];

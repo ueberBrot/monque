@@ -17,6 +17,7 @@ import {
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
 import { HttpStatus } from '../http/index.js';
+import { normalizeManagementRequest } from '../request/index.js';
 import { findManagementRoute, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import {
 	getSingleQueryValue,
@@ -63,7 +64,13 @@ export function createManagementSurface<TContext = unknown>(
 		routes: getSupportedRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {
-				const route = findManagementRoute(request.method, request.path);
+				const managementRequest = normalizeManagementRequest(request);
+
+				if (!managementRequest) {
+					return notFound('Management route not found');
+				}
+
+				const route = findManagementRoute(managementRequest.method, managementRequest.path);
 
 				if (!route) {
 					return notFound('Management route not found');
@@ -73,9 +80,12 @@ export function createManagementSurface<TContext = unknown>(
 					case 'getSchedulerHealth':
 						return ok(toSchedulerHealthDto(options.monque.isHealthy()));
 					case 'getCapabilities':
-						return ok(await getCapabilities(options, request.context));
+						return ok(await getCapabilities(options, managementRequest.context));
 					case 'listQueueViews': {
-						const readAuthorization = await requireReadAuthorization(options, request.context);
+						const readAuthorization = await requireReadAuthorization(
+							options,
+							managementRequest.context,
+						);
 
 						if (readAuthorization) {
 							return readAuthorization;
@@ -84,13 +94,16 @@ export function createManagementSurface<TContext = unknown>(
 						return ok(toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries()));
 					}
 					case 'listJobs': {
-						const readAuthorization = await requireReadAuthorization(options, request.context);
+						const readAuthorization = await requireReadAuthorization(
+							options,
+							managementRequest.context,
+						);
 
 						if (readAuthorization) {
 							return readAuthorization;
 						}
 
-						const cursorOptions = parseJobListQuery(request.query);
+						const cursorOptions = parseJobListQuery(managementRequest.query);
 
 						if ('error' in cursorOptions) {
 							return badRequest(cursorOptions.error);
@@ -100,18 +113,21 @@ export function createManagementSurface<TContext = unknown>(
 							await toJobCursorPageDto(
 								options,
 								await options.monque.getJobsWithCursor(cursorOptions),
-								request.context,
+								managementRequest.context,
 							),
 						);
 					}
 					case 'getJobStats': {
-						const readAuthorization = await requireReadAuthorization(options, request.context);
+						const readAuthorization = await requireReadAuthorization(
+							options,
+							managementRequest.context,
+						);
 
 						if (readAuthorization) {
 							return readAuthorization;
 						}
 
-						const name = getSingleQueryValue(request.query?.['name']);
+						const name = getSingleQueryValue(managementRequest.query?.['name']);
 
 						if ('error' in name) {
 							return badRequest(name.error);
@@ -126,13 +142,16 @@ export function createManagementSurface<TContext = unknown>(
 						);
 					}
 					case 'getJob': {
-						const readAuthorization = await requireReadAuthorization(options, request.context);
+						const readAuthorization = await requireReadAuthorization(
+							options,
+							managementRequest.context,
+						);
 
 						if (readAuthorization) {
 							return readAuthorization;
 						}
 
-						const id = parseObjectId(request.params?.['id']);
+						const id = parseObjectId(managementRequest.params?.['id']);
 
 						if ('error' in id) {
 							return badRequest(id.error);
@@ -144,42 +163,42 @@ export function createManagementSurface<TContext = unknown>(
 							return notFound('Job not found');
 						}
 
-						return ok(await toJobDto(options, job, request.context));
+						return ok(await toJobDto(options, job, managementRequest.context));
 					}
 					case 'deleteJob':
-						return await handleDeleteJobAction(options, request);
+						return await handleDeleteJobAction(options, managementRequest);
 					case 'cancelJob':
 						return await handleJobMutation(
 							options,
-							request,
+							managementRequest,
 							'cancel',
 							options.monque.cancelJob?.bind(options.monque),
 						);
 					case 'retryJob':
 						return await handleJobMutation(
 							options,
-							request,
+							managementRequest,
 							'retry',
 							options.monque.retryJob?.bind(options.monque),
 						);
 					case 'cancelJobs':
 						return await handleBulkJobMutation(
 							options,
-							request,
+							managementRequest,
 							'cancel',
 							options.monque.cancelJobs?.bind(options.monque),
 						);
 					case 'retryJobs':
 						return await handleBulkJobMutation(
 							options,
-							request,
+							managementRequest,
 							'retry',
 							options.monque.retryJobs?.bind(options.monque),
 						);
 					case 'deleteJobs':
 						return await handleBulkJobMutation(
 							options,
-							request,
+							managementRequest,
 							'delete',
 							options.monque.deleteJobs?.bind(options.monque),
 						);
@@ -190,7 +209,7 @@ export function createManagementSurface<TContext = unknown>(
 							return writeAuthorization;
 						}
 
-						const body = parseRescheduleBody(request.body);
+						const body = parseRescheduleBody(managementRequest.body);
 
 						if ('error' in body) {
 							return badRequest(body.error);
@@ -201,7 +220,7 @@ export function createManagementSurface<TContext = unknown>(
 
 						return await handleJobMutation(
 							options,
-							request,
+							managementRequest,
 							'reschedule',
 							boundRescheduleJob ? (id) => boundRescheduleJob(id, body.nextRunAt) : undefined,
 						);
