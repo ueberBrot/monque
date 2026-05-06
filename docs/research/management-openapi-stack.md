@@ -4,6 +4,10 @@ This note compares TypeScript schema and OpenAPI tooling for the Management Rout
 It is research input for a PRD, not a normative contract. Normative decisions live in
 `CONTEXT.md` and ADRs.
 
+Status update: this note records the earlier TypeBox + `openapi3-ts` recommendation. It is
+superseded by ADR-0005 and the oRPC/Zod research in
+[`management-orpc-zod-stack.md`](./management-orpc-zod-stack.md).
+
 ## Constraints
 
 The Management Surface needs tooling that:

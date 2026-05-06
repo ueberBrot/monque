@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0005: oRPC Management Route Map](./0005-orpc-management-route-map.md)
 
 ## Context
 
