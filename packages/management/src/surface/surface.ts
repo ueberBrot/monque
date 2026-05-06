@@ -16,9 +16,7 @@ import {
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
-import { HttpStatus } from '../http/index.js';
-import { normalizeManagementRequest } from '../request/index.js';
-import { findManagementRoute, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
+import { MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import {
 	getSingleQueryValue,
 	parseJobListQuery,
@@ -26,6 +24,16 @@ import {
 	parseObjectId,
 	parseRescheduleBody,
 } from '../validation/index.js';
+import {
+	badRequest,
+	conflict,
+	forbidden,
+	internalServerError,
+	notFound,
+	ok,
+	unsupportedAction,
+} from './responses.js';
+import { routeManagementRequest } from './route-request.js';
 import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
@@ -64,17 +72,13 @@ export function createManagementSurface<TContext = unknown>(
 		routes: getSupportedRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {
-				const managementRequest = normalizeManagementRequest(request);
+				const routedRequest = routeManagementRequest(request);
 
-				if (!managementRequest) {
-					return notFound('Management route not found');
+				if ('status' in routedRequest) {
+					return routedRequest;
 				}
 
-				const route = findManagementRoute(managementRequest.method, managementRequest.path);
-
-				if (!route) {
-					return notFound('Management route not found');
-				}
+				const { request: managementRequest, route } = routedRequest;
 
 				switch (route.operationId) {
 					case 'getSchedulerHealth':
@@ -240,52 +244,6 @@ export function createManagementSurface<TContext = unknown>(
 				return internalServerError();
 			}
 		},
-	};
-}
-
-function ok<TBody>(body: TBody): ManagementResponse<TBody> {
-	return {
-		status: HttpStatus.OK,
-		body,
-	};
-}
-
-function badRequest(error: string): ManagementResponse<{ error: string }> {
-	return {
-		status: HttpStatus.BAD_REQUEST,
-		body: { error },
-	};
-}
-
-function forbidden(error: string): ManagementResponse<{ error: string }> {
-	return {
-		status: HttpStatus.FORBIDDEN,
-		body: { error },
-	};
-}
-
-function unsupportedAction(): ManagementResponse<{ error: string }> {
-	return forbidden('Management action is unsupported');
-}
-
-function notFound(error: string): ManagementResponse<{ error: string }> {
-	return {
-		status: HttpStatus.NOT_FOUND,
-		body: { error },
-	};
-}
-
-function conflict(error: string): ManagementResponse<{ error: string }> {
-	return {
-		status: HttpStatus.CONFLICT,
-		body: { error },
-	};
-}
-
-function internalServerError(): ManagementResponse<{ error: string }> {
-	return {
-		status: HttpStatus.INTERNAL_SERVER_ERROR,
-		body: { error: 'Internal server error' },
 	};
 }
 

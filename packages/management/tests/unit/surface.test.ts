@@ -1614,6 +1614,11 @@ describe('Management Surface contract', () => {
 			query: { status: [] },
 			context: {},
 		});
+		const malformedPathParameter = await surface.handle({
+			method: HttpMethod.GET,
+			path: '/api/v1/jobs/%',
+			context: {},
+		});
 		const unexpected = await surface.handle({
 			method: HttpMethod.GET,
 			path: ManagementRoutePath.JOBS,
@@ -1631,6 +1636,10 @@ describe('Management Surface contract', () => {
 		expect(emptyStatuses).toEqual({
 			status: HttpStatus.BAD_REQUEST,
 			body: { error: 'Invalid status' },
+		});
+		expect(malformedPathParameter).toEqual({
+			status: HttpStatus.BAD_REQUEST,
+			body: { error: 'Invalid request path' },
 		});
 		expect(unexpected).toEqual({
 			status: HttpStatus.INTERNAL_SERVER_ERROR,
