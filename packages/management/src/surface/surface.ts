@@ -1,6 +1,5 @@
 import {
 	type BulkOperationResult,
-	type CursorOptions,
 	InvalidCursorError,
 	type JobSelector,
 	JobStateError,
@@ -8,6 +7,15 @@ import {
 } from '@monque/core';
 import type { ObjectId } from 'mongodb';
 
+import {
+	toBulkActionResultDto,
+	toDeleteJobDto,
+	toJobCursorPageDto,
+	toJobDto,
+	toQueueStatsDto,
+	toQueueViewSummaryListDto,
+	toSchedulerHealthDto,
+} from '../dtos/index.js';
 import { HttpStatus } from '../http/index.js';
 import { findManagementRoute, MANAGEMENT_ROUTE_MAP } from '../routes/index.js';
 import {
@@ -20,8 +28,6 @@ import {
 import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
-	JobCursorPageDto,
-	JobDto,
 	ManagementAction,
 	ManagementMonque,
 	ManagementOptions,
@@ -29,8 +35,6 @@ import type {
 	ManagementResponse,
 	ManagementRoute,
 	ManagementSurface,
-	QueueViewSummaryListDto,
-	SchedulerHealthDto,
 } from './types.js';
 
 const WRITABLE_ACTIONS = [
@@ -67,7 +71,7 @@ export function createManagementSurface<TContext = unknown>(
 
 				switch (route.operationId) {
 					case 'getSchedulerHealth':
-						return ok(getSchedulerHealth(options));
+						return ok(toSchedulerHealthDto(options.monque.isHealthy()));
 					case 'getCapabilities':
 						return ok(await getCapabilities(options, request.context));
 					case 'listQueueViews': {
@@ -77,7 +81,7 @@ export function createManagementSurface<TContext = unknown>(
 							return readAuthorization;
 						}
 
-						return ok(await getQueueViews(options));
+						return ok(toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries()));
 					}
 					case 'listJobs': {
 						const readAuthorization = await requireReadAuthorization(options, request.context);
@@ -92,7 +96,13 @@ export function createManagementSurface<TContext = unknown>(
 							return badRequest(cursorOptions.error);
 						}
 
-						return ok(await getJobs(options, cursorOptions, request.context));
+						return ok(
+							await toJobCursorPageDto(
+								options,
+								await options.monque.getJobsWithCursor(cursorOptions),
+								request.context,
+							),
+						);
 					}
 					case 'getJobStats': {
 						const readAuthorization = await requireReadAuthorization(options, request.context);
@@ -108,8 +118,10 @@ export function createManagementSurface<TContext = unknown>(
 						}
 
 						return ok(
-							await options.monque.getQueueStats(
-								name.value === undefined ? undefined : { name: name.value },
+							toQueueStatsDto(
+								await options.monque.getQueueStats(
+									name.value === undefined ? undefined : { name: name.value },
+								),
 							),
 						);
 					}
@@ -132,7 +144,7 @@ export function createManagementSurface<TContext = unknown>(
 							return notFound('Job not found');
 						}
 
-						return ok(await serializeJob(options, job, request.context));
+						return ok(await toJobDto(options, job, request.context));
 					}
 					case 'deleteJob':
 						return await handleDeleteJobAction(options, request);
@@ -284,7 +296,7 @@ async function handleJobMutation<TContext>(
 		return notFound('Job not found');
 	}
 
-	return ok(await serializeJob(options, job, request.context));
+	return ok(await toJobDto(options, job, request.context));
 }
 
 async function handleDeleteJobAction<TContext>(
@@ -310,7 +322,7 @@ async function handleDeleteJobAction<TContext>(
 		return notFound('Job not found');
 	}
 
-	return ok({ deleted: true as const });
+	return ok(toDeleteJobDto());
 }
 
 async function handleBulkJobMutation<TContext>(
@@ -329,72 +341,7 @@ async function handleBulkJobMutation<TContext>(
 		return unsupportedAction();
 	}
 
-	return ok(await mutate(target.selector));
-}
-
-async function getJobs<TContext>(
-	options: ManagementOptions<TContext>,
-	cursorOptions: CursorOptions,
-	context: TContext,
-): Promise<JobCursorPageDto> {
-	const page = await options.monque.getJobsWithCursor(cursorOptions);
-
-	return {
-		jobs: await Promise.all(
-			page.jobs.map((job) => serializeJob(options, job as PersistedJob, context)),
-		),
-		cursor: page.cursor,
-		hasNextPage: page.hasNextPage,
-		hasPreviousPage: page.hasPreviousPage,
-	};
-}
-
-async function serializeJob<TContext>(
-	options: ManagementOptions<TContext>,
-	job: PersistedJob,
-	context: TContext,
-): Promise<JobDto> {
-	const serializePayload =
-		options.serializePayloadByJobName?.[job.name] ?? options.serializePayload;
-	const payload = serializePayload
-		? await serializePayload({ job, payload: job.data, context })
-		: job.data;
-	const dto: JobDto = {
-		id: job._id.toHexString(),
-		name: job.name,
-		status: job.status,
-		payload,
-		nextRunAt: job.nextRunAt.toISOString(),
-		lockedAt: job.lockedAt ? job.lockedAt.toISOString() : null,
-		claimedBy: job.claimedBy ?? null,
-		lastHeartbeat: job.lastHeartbeat ? job.lastHeartbeat.toISOString() : null,
-		failCount: job.failCount,
-		failureReason: job.failReason ?? null,
-		createdAt: job.createdAt.toISOString(),
-		updatedAt: job.updatedAt.toISOString(),
-	};
-
-	if (job.heartbeatInterval !== undefined) {
-		dto.heartbeatInterval = job.heartbeatInterval;
-	}
-
-	if (job.repeatInterval !== undefined) {
-		dto.repeatInterval = job.repeatInterval;
-	}
-
-	if (job.uniqueKey !== undefined) {
-		dto.uniqueKey = job.uniqueKey;
-	}
-
-	return dto;
-}
-
-async function getQueueViews<TContext>(
-	options: ManagementOptions<TContext>,
-): Promise<QueueViewSummaryListDto> {
-	return {
-		queueViews: [...(await options.monque.getQueueViewSummaries())],
-	};
+	return ok(toBulkActionResultDto(await mutate(target.selector)));
 }
 
 async function requireReadAuthorization<TContext>(
@@ -518,17 +465,6 @@ async function requireBulkActionAuthorization<TContext>(
 	}
 
 	return forbidden('Action denied');
-}
-
-function getSchedulerHealth<TContext>(options: ManagementOptions<TContext>): SchedulerHealthDto {
-	const healthy = options.monque.isHealthy();
-
-	return {
-		status: healthy ? 'ok' : 'unavailable',
-		scheduler: {
-			healthy,
-		},
-	};
 }
 
 async function getCapabilities<TContext>(

@@ -8,7 +8,7 @@ import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface, HttpMethod, HttpStatus, ManagementRoutePath } from '@/index';
-import type { ManagementMonque } from '@/surface';
+import type { ManagementMonque, QueueViewSummaryListDto } from '@/surface';
 
 function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
 	return {
@@ -992,28 +992,27 @@ describe('Management Surface contract', () => {
 	});
 
 	test('returns Queue View summary DTOs from public core API', async () => {
+		const queueView = {
+			name: 'send-email',
+			hasPersistedJobs: true,
+			hasRegisteredWorker: true,
+			stats: {
+				pending: 2,
+				processing: 1,
+				completed: 3,
+				failed: 4,
+				cancelled: 5,
+				total: 15,
+				avgProcessingDurationMs: 123,
+			},
+			worker: {
+				concurrency: 5,
+				activeCount: 1,
+			},
+		};
 		const monque: ManagementMonque = {
 			isHealthy: () => true,
-			getQueueViewSummaries: async () => [
-				{
-					name: 'send-email',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: true,
-					stats: {
-						pending: 2,
-						processing: 1,
-						completed: 3,
-						failed: 4,
-						cancelled: 5,
-						total: 15,
-						avgProcessingDurationMs: 123,
-					},
-					worker: {
-						concurrency: 5,
-						activeCount: 1,
-					},
-				},
-			],
+			getQueueViewSummaries: async () => [queueView],
 			getJobsWithCursor: async () => ({
 				jobs: [],
 				cursor: null,
@@ -1063,6 +1062,10 @@ describe('Management Surface contract', () => {
 				],
 			},
 		});
+		const body = response.body as QueueViewSummaryListDto;
+		expect(body.queueViews[0]).not.toBe(queueView);
+		expect(body.queueViews[0]?.stats).not.toBe(queueView.stats);
+		expect(body.queueViews[0]?.worker).not.toBe(queueView.worker);
 	});
 
 	test('denies read endpoints before calling core when read authorization fails', async () => {
