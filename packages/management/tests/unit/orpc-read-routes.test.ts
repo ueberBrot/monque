@@ -1,4 +1,4 @@
-import type { QueueViewSummary } from '@monque/core';
+import type { QueueStats, QueueViewSummary } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface } from '@/index';
@@ -124,6 +124,41 @@ describe('oRPC Management read routes', () => {
 					worker: null,
 				},
 			],
+		});
+	});
+
+	test('returns Job statistics through the public scheduler stats API', async () => {
+		const calls: Array<{ name?: string } | undefined> = [];
+		const stats = {
+			pending: 4,
+			processing: 3,
+			completed: 20,
+			failed: 2,
+			cancelled: 1,
+			total: 30,
+			avgProcessingDurationMs: 456,
+		} satisfies QueueStats;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueStats: async (filter) => {
+					calls.push(filter);
+					return stats;
+				},
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats?name=send-email');
+
+		expect(response.status).toBe(200);
+		expect(calls).toEqual([{ name: 'send-email' }]);
+		expect(await response.json()).toEqual({
+			pending: 4,
+			processing: 3,
+			completed: 20,
+			failed: 2,
+			cancelled: 1,
+			total: 30,
+			avgProcessingDurationMs: 456,
 		});
 	});
 });

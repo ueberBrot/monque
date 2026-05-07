@@ -5,6 +5,8 @@ export {
 	CapabilityActionsDtoSchema,
 } from './capabilities.js';
 export {
+	type JobStatsQueryDto,
+	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
 	type QueueViewSummaryDto,

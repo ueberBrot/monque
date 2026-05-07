@@ -14,6 +14,14 @@ export const QueueStatsDtoSchema = z
 
 export type QueueStatsDto = z.infer<typeof QueueStatsDtoSchema>;
 
+export const JobStatsQueryDtoSchema = z
+	.object({
+		name: z.string().optional(),
+	})
+	.strict();
+
+export type JobStatsQueryDto = z.infer<typeof JobStatsQueryDtoSchema>;
+
 export const QueueViewWorkerDtoSchema = z
 	.object({
 		concurrency: z.number(),
