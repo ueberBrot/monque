@@ -29,7 +29,11 @@ export {
 	MANAGEMENT_ROUTE_MAP,
 	ManagementRoutePath,
 } from './routes/index.js';
-export { SchedulerHealthDtoSchema } from './schemas/index.js';
+export {
+	CapabilitiesDtoSchema,
+	CapabilityActionsDtoSchema,
+	SchedulerHealthDtoSchema,
+} from './schemas/index.js';
 export type {
 	BulkActionResultDto,
 	CapabilitiesDto,
