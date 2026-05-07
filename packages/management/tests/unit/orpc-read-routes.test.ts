@@ -173,6 +173,30 @@ describe('oRPC Management read routes', () => {
 		expect(await invalid.json()).toEqual({ error: 'Invalid job id' });
 	});
 
+	test('rejects Job detail query ids before reading from core', async () => {
+		const coreCalls: string[] = [];
+		const pathId = new ObjectId();
+		const queryId = new ObjectId();
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async () => {
+					coreCalls.push('called');
+
+					return null;
+				},
+			}),
+		});
+
+		const response = await handleGet(
+			surface,
+			`/api/v1/jobs/${pathId.toHexString()}?id=${queryId.toHexString()}`,
+		);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		expect(coreCalls).toEqual([]);
+	});
+
 	test('uses default Job page size and per Job Name payload serialization', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;

@@ -70,7 +70,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 		job: managementImplementer.job.handler(async ({ input, context }) => {
 			await requireReadAuthorization(options, context.managementContext as TContext);
 
-			const id = parseObjectId(input.id);
+			const id = parseObjectId(input.params.id);
 
 			if ('error' in id) {
 				throw new ORPCError('BAD_REQUEST', { message: id.error });

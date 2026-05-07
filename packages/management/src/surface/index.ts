@@ -5,6 +5,7 @@ export type {
 	CapabilityActionsDto,
 	DeleteJobDto,
 	JobCursorPageDto,
+	JobDetailInputDto,
 	JobDetailParamsDto,
 	JobDto,
 	JobListQueryDto,

@@ -61,3 +61,14 @@ export const JobDetailParamsDtoSchema = z
 	.strict();
 
 export type JobDetailParamsDto = z.infer<typeof JobDetailParamsDtoSchema>;
+
+export const JobDetailInputDtoSchema = z
+	.object({
+		params: JobDetailParamsDtoSchema,
+		query: z.object({}).strict().optional(),
+		headers: z.looseObject({}).optional(),
+		body: z.unknown().optional(),
+	})
+	.strict();
+
+export type JobDetailInputDto = z.infer<typeof JobDetailInputDtoSchema>;

@@ -3,7 +3,7 @@ import { oc } from '@orpc/contract';
 import {
 	CapabilitiesDtoSchema,
 	JobCursorPageDtoSchema,
-	JobDetailParamsDtoSchema,
+	JobDetailInputDtoSchema,
 	JobDtoSchema,
 	JobListQueryDtoSchema,
 	JobStatsQueryDtoSchema,
@@ -67,8 +67,9 @@ export const managementContract = {
 			operationId: 'getJob',
 			successStatus: 200,
 			successDescription: 'Successful response',
+			inputStructure: 'detailed',
 		})
-		.input(JobDetailParamsDtoSchema)
+		.input(JobDetailInputDtoSchema)
 		.output(JobDtoSchema),
 };
 
