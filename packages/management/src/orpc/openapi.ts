@@ -3,6 +3,8 @@ import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4';
 
 import {
 	CapabilitiesDtoSchema,
+	JobCursorPageDtoSchema,
+	JobDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	SchedulerHealthDtoSchema,
@@ -22,6 +24,12 @@ export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Docum
 		commonSchemas: {
 			Capabilities: {
 				schema: CapabilitiesDtoSchema,
+			},
+			Job: {
+				schema: JobDtoSchema,
+			},
+			JobCursorPage: {
+				schema: JobCursorPageDtoSchema,
 			},
 			QueueStats: {
 				schema: QueueStatsDtoSchema,

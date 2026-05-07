@@ -3,7 +3,6 @@ import type {
 	CursorOptions,
 	CursorPage,
 	JobSelector,
-	JobStatusType,
 	Monque,
 	PersistedJob,
 	QueueStats,
@@ -17,6 +16,12 @@ import type { HttpMethodType, HttpStatusType } from '../http/index.js';
 export type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
+	JobCursorPageDto,
+	JobDetailInputDto,
+	JobDetailParamsDto,
+	JobDto,
+	JobListQueryDto,
+	JobStatusDto,
 	QueueStatsDto,
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
@@ -291,76 +296,6 @@ export interface ManagementRoute {
 
 	/** Explicit non-200 error statuses documented for this route. */
 	errorStatuses?: readonly HttpStatusType[];
-}
-
-/**
- * Job response DTO.
- *
- * Dates are serialized as ISO 8601 strings and MongoDB ObjectIds are serialized
- * as hex strings for HTTP transport.
- */
-export interface JobDto {
-	/** MongoDB ObjectId serialized as a hex string. */
-	id: string;
-
-	/** Job name registered with Monque. */
-	name: string;
-
-	/** Current lifecycle state. */
-	status: JobStatusType;
-
-	/** Serialized job payload. */
-	payload: unknown;
-
-	/** Next processing time as an ISO 8601 string. */
-	nextRunAt: string;
-
-	/** Lock timestamp as an ISO 8601 string, or null when unlocked. */
-	lockedAt: string | null;
-
-	/** Scheduler instance that claimed the job, or null when unclaimed. */
-	claimedBy: string | null;
-
-	/** Last heartbeat timestamp as an ISO 8601 string, or null when absent. */
-	lastHeartbeat: string | null;
-
-	/** Heartbeat interval in milliseconds, when stored on the job. */
-	heartbeatInterval?: number;
-
-	/** Number of failed attempts. */
-	failCount: number;
-
-	/** Last failure reason, or null when absent. */
-	failureReason: string | null;
-
-	/** Cron expression for recurring jobs. */
-	repeatInterval?: string;
-
-	/** Deduplication key, when present. */
-	uniqueKey?: string;
-
-	/** Creation timestamp as an ISO 8601 string. */
-	createdAt: string;
-
-	/** Last update timestamp as an ISO 8601 string. */
-	updatedAt: string;
-}
-
-/**
- * Cursor-paginated job list response DTO.
- */
-export interface JobCursorPageDto {
-	/** Jobs in the current page. */
-	jobs: JobDto[];
-
-	/** Cursor for the next page, or null when no next page exists. */
-	cursor: string | null;
-
-	/** Whether a forward page exists. */
-	hasNextPage: boolean;
-
-	/** Whether a backward page exists. */
-	hasPreviousPage: boolean;
 }
 
 /**
