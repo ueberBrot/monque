@@ -212,4 +212,37 @@ describe('oRPC Management read routes', () => {
 		expect(await response.json()).toEqual({ error: 'Input validation failed' });
 		expect(calls).toEqual([]);
 	});
+
+	test('rejects Job stats reads when authorization denies read access', async () => {
+		const calls: unknown[] = [];
+		const statsCalls: string[] = [];
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getQueueStats: async () => {
+					statsCalls.push('called');
+					return {
+						pending: 0,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 0,
+					};
+				},
+			}),
+			authorize: ({ action, context }) => {
+				calls.push({ action, context });
+				return false;
+			},
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats', {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
+		expect(statsCalls).toEqual([]);
+	});
 });
