@@ -255,6 +255,34 @@ describe('oRPC Management read routes', () => {
 		});
 	});
 
+	test('passes a single Job status query as a scalar core filter', async () => {
+		let capturedOptions: CursorOptions | undefined;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async (options) => {
+					capturedOptions = options;
+
+					return {
+						jobs: [],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					};
+				},
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs?status=failed');
+
+		expect(response.status).toBe(200);
+		expect(capturedOptions).toEqual({
+			limit: 50,
+			filter: {
+				status: 'failed',
+			},
+		});
+	});
+
 	test('maps invalid Job list query shapes and malformed cursors to 400', async () => {
 		const coreCalls: string[] = [];
 		const surface = createManagementSurface({
