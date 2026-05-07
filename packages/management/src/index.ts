@@ -16,12 +16,20 @@ export {
 	HttpStatus,
 } from './http/index.js';
 export { getManagementOpenApiDocument } from './openapi/index.js';
+export {
+	createManagementRouter,
+	generateManagementOpenApiDocument,
+	type ManagementContract,
+	type ManagementRouter,
+	managementContract,
+} from './orpc/index.js';
 export { normalizeManagementRequest } from './request/index.js';
 export {
 	findManagementRoute,
 	MANAGEMENT_ROUTE_MAP,
 	ManagementRoutePath,
 } from './routes/index.js';
+export { SchedulerHealthDtoSchema } from './schemas/index.js';
 export type {
 	BulkActionResultDto,
 	CapabilitiesDto,
