@@ -1,0 +1,248 @@
+import type { QueueStats, QueueViewSummary } from '@monque/core';
+import { describe, expect, test } from 'vitest';
+
+import { createManagementSurface } from '@/index';
+import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
+
+function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
+	return {
+		isHealthy: () => true,
+		getQueueViewSummaries: async () => [],
+		getJobsWithCursor: async () => ({
+			jobs: [],
+			cursor: null,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		}),
+		getJob: async () => null,
+		getQueueStats: async () => ({
+			pending: 0,
+			processing: 0,
+			completed: 0,
+			failed: 0,
+			cancelled: 0,
+			total: 0,
+		}),
+		...overrides,
+	};
+}
+
+async function handleGet(
+	surface: ManagementSurface,
+	path: string,
+	context?: ManagementOpenApiContext,
+): Promise<Response> {
+	const result = await surface.openApiHandler.handle(
+		new Request(`https://management.example${path}`, { method: 'GET' }),
+		context === undefined ? {} : { context },
+	);
+
+	if (!result.matched) {
+		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
+	}
+
+	return result.response;
+}
+
+describe('oRPC Management read routes', () => {
+	test('lists Queue Views through the public scheduler summary API', async () => {
+		const queueViews = [
+			{
+				name: 'send-email',
+				hasPersistedJobs: true,
+				hasRegisteredWorker: true,
+				stats: {
+					pending: 1,
+					processing: 2,
+					completed: 3,
+					failed: 4,
+					cancelled: 5,
+					total: 15,
+					avgProcessingDurationMs: 123,
+				},
+				worker: {
+					concurrency: 10,
+					activeCount: 2,
+				},
+			},
+			{
+				name: 'historical-report',
+				hasPersistedJobs: true,
+				hasRegisteredWorker: false,
+				stats: {
+					pending: 0,
+					processing: 0,
+					completed: 7,
+					failed: 1,
+					cancelled: 0,
+					total: 8,
+				},
+				worker: null,
+			},
+		] satisfies QueueViewSummary[];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async () => queueViews,
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/queue-views');
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			queueViews: [
+				{
+					name: 'send-email',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: true,
+					stats: {
+						pending: 1,
+						processing: 2,
+						completed: 3,
+						failed: 4,
+						cancelled: 5,
+						total: 15,
+						avgProcessingDurationMs: 123,
+					},
+					worker: {
+						concurrency: 10,
+						activeCount: 2,
+					},
+				},
+				{
+					name: 'historical-report',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: false,
+					stats: {
+						pending: 0,
+						processing: 0,
+						completed: 7,
+						failed: 1,
+						cancelled: 0,
+						total: 8,
+					},
+					worker: null,
+				},
+			],
+		});
+	});
+
+	test('returns Job statistics through the public scheduler stats API', async () => {
+		const calls: Array<{ name?: string } | undefined> = [];
+		const stats = {
+			pending: 4,
+			processing: 3,
+			completed: 20,
+			failed: 2,
+			cancelled: 1,
+			total: 30,
+			avgProcessingDurationMs: 456,
+		} satisfies QueueStats;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueStats: async (filter) => {
+					calls.push(filter);
+					return stats;
+				},
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats?name=send-email');
+
+		expect(response.status).toBe(200);
+		expect(calls).toEqual([{ name: 'send-email' }]);
+		expect(await response.json()).toEqual({
+			pending: 4,
+			processing: 3,
+			completed: 20,
+			failed: 2,
+			cancelled: 1,
+			total: 30,
+			avgProcessingDurationMs: 456,
+		});
+	});
+
+	test('rejects Queue View reads when authorization denies read access', async () => {
+		const calls: unknown[] = [];
+		const queueViewCalls: string[] = [];
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async () => {
+					queueViewCalls.push('called');
+					return [];
+				},
+			}),
+			authorize: ({ action, context }) => {
+				calls.push({ action, context });
+				return false;
+			},
+		});
+
+		const response = await handleGet(surface, '/api/v1/queue-views', {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
+		expect(queueViewCalls).toEqual([]);
+	});
+
+	test('rejects invalid Job stats query shapes before calling core', async () => {
+		const calls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueStats: async () => {
+					calls.push('called');
+					return {
+						pending: 0,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 0,
+					};
+				},
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats?name=one&name=two');
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		expect(calls).toEqual([]);
+	});
+
+	test('rejects Job stats reads when authorization denies read access', async () => {
+		const calls: unknown[] = [];
+		const statsCalls: string[] = [];
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getQueueStats: async () => {
+					statsCalls.push('called');
+					return {
+						pending: 0,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 0,
+					};
+				},
+			}),
+			authorize: ({ action, context }) => {
+				calls.push({ action, context });
+				return false;
+			},
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats', {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
+		expect(statsCalls).toEqual([]);
+	});
+});

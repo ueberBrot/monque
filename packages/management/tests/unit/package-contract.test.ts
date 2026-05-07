@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
-import { CapabilitiesDtoSchema } from '@/index';
+import { CapabilitiesDtoSchema, QueueStatsDtoSchema, QueueViewSummaryListDtoSchema } from '@/index';
 
 interface PackageJson {
 	name: string;
@@ -64,6 +64,39 @@ describe('@monque/management package contract', () => {
 					reschedule: false,
 					delete: false,
 				},
+			}).success,
+		).toBe(true);
+	});
+
+	test('exports the Zod-derived read DTO schemas', () => {
+		expect(
+			QueueStatsDtoSchema.safeParse({
+				pending: 1,
+				processing: 2,
+				completed: 3,
+				failed: 4,
+				cancelled: 5,
+				total: 15,
+			}).success,
+		).toBe(true);
+		expect(
+			QueueViewSummaryListDtoSchema.safeParse({
+				queueViews: [
+					{
+						name: 'send-email',
+						hasPersistedJobs: true,
+						hasRegisteredWorker: false,
+						stats: {
+							pending: 1,
+							processing: 0,
+							completed: 0,
+							failed: 0,
+							cancelled: 0,
+							total: 1,
+						},
+						worker: null,
+					},
+				],
 			}).success,
 		).toBe(true);
 	});

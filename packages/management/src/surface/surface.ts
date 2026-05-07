@@ -51,7 +51,9 @@ export function createManagementSurface<TContext = unknown>(
 	const router = createManagementRouter(options);
 
 	return {
-		openApiHandler: new OpenAPIHandler(router),
+		openApiHandler: new OpenAPIHandler(router, {
+			customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
+		}),
 		routes: getSupportedManagementRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {

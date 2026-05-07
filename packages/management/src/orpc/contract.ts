@@ -1,6 +1,12 @@
 import { oc } from '@orpc/contract';
 
-import { CapabilitiesDtoSchema, SchedulerHealthDtoSchema } from '../schemas/index.js';
+import {
+	CapabilitiesDtoSchema,
+	JobStatsQueryDtoSchema,
+	QueueStatsDtoSchema,
+	QueueViewSummaryListDtoSchema,
+	SchedulerHealthDtoSchema,
+} from '../schemas/index.js';
 
 export const managementContract = {
 	health: oc
@@ -21,6 +27,25 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.output(CapabilitiesDtoSchema),
+	queueViews: oc
+		.route({
+			method: 'GET',
+			path: '/api/v1/queue-views',
+			operationId: 'listQueueViews',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.output(QueueViewSummaryListDtoSchema),
+	jobStats: oc
+		.route({
+			method: 'GET',
+			path: '/api/v1/jobs/stats',
+			operationId: 'getJobStats',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobStatsQueryDtoSchema)
+		.output(QueueStatsDtoSchema),
 };
 
 export type ManagementContract = typeof managementContract;
