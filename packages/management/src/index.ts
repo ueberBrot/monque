@@ -18,6 +18,7 @@ export {
 export { getManagementOpenApiDocument } from './openapi/index.js';
 export {
 	createManagementRouter,
+	generateManagementOpenApiDocument,
 	type ManagementContract,
 	type ManagementRouter,
 	managementContract,
