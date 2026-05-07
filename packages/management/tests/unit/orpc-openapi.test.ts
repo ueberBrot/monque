@@ -41,4 +41,44 @@ describe('oRPC Management OpenAPI contract', () => {
 			additionalProperties: false,
 		});
 	});
+
+	test('derives Queue View and Job stats paths from the oRPC contract', async () => {
+		const document = await generateManagementOpenApiDocument();
+
+		expect(document.paths?.['/api/v1/queue-views']?.get?.operationId).toBe('listQueueViews');
+		expect(document.paths?.['/api/v1/queue-views']?.get?.responses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/QueueViewSummaryList' },
+				},
+			},
+		});
+		expect(document.paths?.['/api/v1/jobs/stats']?.get?.operationId).toBe('getJobStats');
+		expect(document.paths?.['/api/v1/jobs/stats']?.get?.parameters).toEqual([
+			expect.objectContaining({
+				name: 'name',
+				in: 'query',
+				schema: { type: 'string' },
+			}),
+		]);
+		expect(document.paths?.['/api/v1/jobs/stats']?.get?.responses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/QueueStats' },
+				},
+			},
+		});
+		expect(document.components?.schemas?.['QueueViewSummaryList']).toMatchObject({
+			type: 'object',
+			required: ['queueViews'],
+			additionalProperties: false,
+		});
+		expect(document.components?.schemas?.['QueueStats']).toMatchObject({
+			type: 'object',
+			required: ['pending', 'processing', 'completed', 'failed', 'cancelled', 'total'],
+			additionalProperties: false,
+		});
+	});
 });
