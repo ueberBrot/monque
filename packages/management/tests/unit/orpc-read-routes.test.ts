@@ -161,4 +161,30 @@ describe('oRPC Management read routes', () => {
 			avgProcessingDurationMs: 456,
 		});
 	});
+
+	test('rejects Queue View reads when authorization denies read access', async () => {
+		const calls: unknown[] = [];
+		const queueViewCalls: string[] = [];
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async () => {
+					queueViewCalls.push('called');
+					return [];
+				},
+			}),
+			authorize: ({ action, context }) => {
+				calls.push({ action, context });
+				return false;
+			},
+		});
+
+		const response = await handleGet(surface, '/api/v1/queue-views', {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
+		expect(queueViewCalls).toEqual([]);
+	});
 });
