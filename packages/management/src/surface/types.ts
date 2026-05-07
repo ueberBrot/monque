@@ -8,10 +8,13 @@ import type {
 	PersistedJob,
 	QueueStats,
 } from '@monque/core';
+import type { OpenAPIHandler } from '@orpc/openapi/fetch';
 import type { TSchema } from '@sinclair/typebox';
 import type { ObjectId } from 'mongodb';
 
 import type { HttpMethodType, HttpStatusType } from '../http/index.js';
+
+export type { SchedulerHealthDto } from '../schemas/index.js';
 
 /**
  * High-level Management API action categories.
@@ -273,20 +276,6 @@ export interface ManagementRoute {
 }
 
 /**
- * Scheduler health response DTO.
- */
-export interface SchedulerHealthDto {
-	/** Overall Management health status. */
-	status: 'ok' | 'unavailable';
-
-	/** Scheduler-specific health details. */
-	scheduler: {
-		/** Whether the scheduler reports itself healthy. */
-		healthy: boolean;
-	};
-}
-
-/**
  * Capability flags keyed by Management action.
  */
 export type CapabilityActionsDto = Record<ManagementAction, boolean>;
@@ -438,6 +427,9 @@ export type BulkActionResultDto = BulkOperationResult;
 export interface ManagementSurface<TContext = unknown> {
 	/** Routes supported by the supplied scheduler capability contract. */
 	readonly routes: readonly ManagementRoute[];
+
+	/** oRPC OpenAPI handler mounted by framework adapters. */
+	readonly openApiHandler: OpenAPIHandler<Record<never, never>>;
 
 	/** Handle one normalized Management request. */
 	handle(request: ManagementRequest<TContext>): Promise<ManagementResponse>;
