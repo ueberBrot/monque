@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
+import { CapabilitiesDtoSchema } from '@/index';
+
 interface PackageJson {
 	name: string;
 	private?: boolean;
@@ -49,6 +51,21 @@ describe('@monque/management package contract', () => {
 		expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual([
 			...EXPECTED_RUNTIME_DEPENDENCIES,
 		]);
+	});
+
+	test('exports the Zod-derived capabilities DTO schema', () => {
+		expect(
+			CapabilitiesDtoSchema.safeParse({
+				readOnly: false,
+				actions: {
+					read: true,
+					cancel: false,
+					retry: false,
+					reschedule: false,
+					delete: false,
+				},
+			}).success,
+		).toBe(true);
 	});
 });
 

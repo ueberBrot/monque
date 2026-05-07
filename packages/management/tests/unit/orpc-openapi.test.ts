@@ -22,4 +22,23 @@ describe('oRPC Management OpenAPI contract', () => {
 			additionalProperties: false,
 		});
 	});
+
+	test('derives the capabilities path and response schema from the oRPC contract', async () => {
+		const document = await generateManagementOpenApiDocument();
+
+		expect(document.paths?.['/api/v1/capabilities']?.get?.operationId).toBe('getCapabilities');
+		expect(document.paths?.['/api/v1/capabilities']?.get?.responses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/Capabilities' },
+				},
+			},
+		});
+		expect(document.components?.schemas?.['Capabilities']).toMatchObject({
+			type: 'object',
+			required: ['readOnly', 'actions'],
+			additionalProperties: false,
+		});
+	});
 });

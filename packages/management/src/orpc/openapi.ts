@@ -1,7 +1,7 @@
 import { type OpenAPI, OpenAPIGenerator } from '@orpc/openapi';
 import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4';
 
-import { SchedulerHealthDtoSchema } from '../schemas/index.js';
+import { CapabilitiesDtoSchema, SchedulerHealthDtoSchema } from '../schemas/index.js';
 import { managementContract } from './contract.js';
 
 export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Document> {
@@ -15,6 +15,9 @@ export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Docum
 			version: '0.1.0',
 		},
 		commonSchemas: {
+			Capabilities: {
+				schema: CapabilitiesDtoSchema,
+			},
 			SchedulerHealth: {
 				schema: SchedulerHealthDtoSchema,
 			},
