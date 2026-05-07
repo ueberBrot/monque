@@ -81,4 +81,69 @@ describe('oRPC Management OpenAPI contract', () => {
 			additionalProperties: false,
 		});
 	});
+
+	test('derives Job list and detail paths from the oRPC contract', async () => {
+		const document = await generateManagementOpenApiDocument();
+
+		expect(document.paths?.['/api/v1/jobs']?.get?.operationId).toBe('listJobs');
+		expect(document.paths?.['/api/v1/jobs']?.get?.parameters).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'cursor',
+					in: 'query',
+					schema: { type: 'string' },
+				}),
+				expect.objectContaining({
+					name: 'limit',
+					in: 'query',
+					schema: { type: 'string' },
+				}),
+				expect.objectContaining({
+					name: 'name',
+					in: 'query',
+					schema: { type: 'string' },
+				}),
+				expect.objectContaining({
+					name: 'status',
+					in: 'query',
+					explode: true,
+				}),
+			]),
+		);
+		expect(document.paths?.['/api/v1/jobs']?.get?.responses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/JobCursorPage' },
+				},
+			},
+		});
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.operationId).toBe('getJob');
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.parameters).toEqual([
+			expect.objectContaining({
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: { type: 'string' },
+			}),
+		]);
+		expect(document.paths?.['/api/v1/jobs/{id}']?.get?.responses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/Job' },
+				},
+			},
+		});
+		expect(document.components?.schemas?.['Job']).toMatchObject({
+			type: 'object',
+			required: expect.arrayContaining(['id', 'name', 'status', 'payload', 'createdAt']),
+			additionalProperties: false,
+		});
+		expect(document.components?.schemas?.['JobCursorPage']).toMatchObject({
+			type: 'object',
+			required: ['jobs', 'cursor', 'hasNextPage', 'hasPreviousPage'],
+			additionalProperties: false,
+		});
+	});
 });
