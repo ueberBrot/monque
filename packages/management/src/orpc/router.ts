@@ -1,6 +1,6 @@
 import { implement } from '@orpc/server';
 
-import { toSchedulerHealthDto } from '../dtos/index.js';
+import { toQueueViewSummaryListDto, toSchedulerHealthDto } from '../dtos/index.js';
 import { getManagementCapabilities } from '../surface/capabilities.js';
 import type { ManagementOpenApiContext, ManagementOptions } from '../surface/index.js';
 import { managementContract } from './contract.js';
@@ -15,6 +15,9 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 		),
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
 			getManagementCapabilities(options, context.managementContext as TContext),
+		),
+		queueViews: managementImplementer.queueViews.handler(async () =>
+			toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries()),
 		),
 	});
 }
