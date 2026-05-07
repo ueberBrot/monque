@@ -1,4 +1,10 @@
-import type { CursorOptions, PersistedJob, QueueStats, QueueViewSummary } from '@monque/core';
+import {
+	type CursorOptions,
+	InvalidCursorError,
+	type PersistedJob,
+	type QueueStats,
+	type QueueViewSummary,
+} from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
@@ -165,6 +171,31 @@ describe('oRPC Management read routes', () => {
 		expect(await missing.json()).toEqual({ error: 'Job not found' });
 		expect(invalid.status).toBe(400);
 		expect(await invalid.json()).toEqual({ error: 'Invalid job id' });
+	});
+
+	test('maps invalid Job list query shapes and malformed cursors to 400', async () => {
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async () => {
+					coreCalls.push('called');
+					throw new InvalidCursorError('Invalid cursor');
+				},
+			}),
+		});
+
+		const invalidStatus = await handleGet(surface, '/api/v1/jobs?status=wat');
+		const unsupportedFilter = await handleGet(surface, '/api/v1/jobs?claimedBy=scheduler-1');
+		const invalidLimit = await handleGet(surface, '/api/v1/jobs?limit=0');
+		const malformedCursor = await handleGet(surface, '/api/v1/jobs?cursor=not-a-valid-cursor');
+
+		expect(invalidStatus.status).toBe(400);
+		expect(unsupportedFilter.status).toBe(400);
+		expect(invalidLimit.status).toBe(400);
+		expect(await invalidLimit.json()).toEqual({ error: 'Invalid limit' });
+		expect(malformedCursor.status).toBe(400);
+		expect(await malformedCursor.json()).toEqual({ error: 'Invalid cursor' });
+		expect(coreCalls).toEqual(['called']);
 	});
 
 	test('lists Queue Views through the public scheduler summary API', async () => {
