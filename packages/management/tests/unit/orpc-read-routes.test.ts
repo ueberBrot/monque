@@ -173,6 +173,88 @@ describe('oRPC Management read routes', () => {
 		expect(await invalid.json()).toEqual({ error: 'Invalid job id' });
 	});
 
+	test('uses default Job page size and per Job Name payload serialization', async () => {
+		const jobId = new ObjectId();
+		let capturedOptions: CursorOptions | undefined;
+		const job = {
+			_id: jobId,
+			name: 'send-email',
+			data: { token: 'secret' },
+			status: 'pending',
+			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+			lockedAt: new Date('2026-01-01T00:00:01.000Z'),
+			claimedBy: 'scheduler-1',
+			lastHeartbeat: new Date('2026-01-01T00:00:02.000Z'),
+			heartbeatInterval: 5000,
+			failCount: 0,
+			repeatInterval: '0 * * * *',
+			uniqueKey: 'send-email:user-1',
+			createdAt: new Date('2025-12-31T23:00:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+		} satisfies PersistedJob;
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getJobsWithCursor: async (options) => {
+					capturedOptions = options;
+
+					return {
+						jobs: [job],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					};
+				},
+			}),
+			serializePayload: () => Promise.resolve({ source: 'global' }),
+			serializePayloadByJobName: {
+				'send-email': ({ context }) =>
+					Promise.resolve({
+						source: 'job',
+						role: context.role,
+					}),
+			},
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs?name=send-email', {
+			managementContext: { role: 'admin' },
+		});
+
+		expect(response.status).toBe(200);
+		expect(capturedOptions).toEqual({
+			limit: 50,
+			filter: {
+				name: 'send-email',
+			},
+		});
+		expect(await response.json()).toEqual({
+			jobs: [
+				{
+					id: jobId.toHexString(),
+					name: 'send-email',
+					status: 'pending',
+					payload: {
+						source: 'job',
+						role: 'admin',
+					},
+					nextRunAt: '2026-01-01T00:00:00.000Z',
+					lockedAt: '2026-01-01T00:00:01.000Z',
+					claimedBy: 'scheduler-1',
+					lastHeartbeat: '2026-01-01T00:00:02.000Z',
+					heartbeatInterval: 5000,
+					failCount: 0,
+					failureReason: null,
+					repeatInterval: '0 * * * *',
+					uniqueKey: 'send-email:user-1',
+					createdAt: '2025-12-31T23:00:00.000Z',
+					updatedAt: '2026-01-01T00:01:00.000Z',
+				},
+			],
+			cursor: null,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		});
+	});
+
 	test('maps invalid Job list query shapes and malformed cursors to 400', async () => {
 		const coreCalls: string[] = [];
 		const surface = createManagementSurface({
