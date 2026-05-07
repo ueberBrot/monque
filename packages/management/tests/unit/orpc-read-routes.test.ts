@@ -187,4 +187,29 @@ describe('oRPC Management read routes', () => {
 		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
 		expect(queueViewCalls).toEqual([]);
 	});
+
+	test('rejects invalid Job stats query shapes before calling core', async () => {
+		const calls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueStats: async () => {
+					calls.push('called');
+					return {
+						pending: 0,
+						processing: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+						total: 0,
+					};
+				},
+			}),
+		});
+
+		const response = await handleGet(surface, '/api/v1/jobs/stats?name=one&name=two');
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		expect(calls).toEqual([]);
+	});
 });
