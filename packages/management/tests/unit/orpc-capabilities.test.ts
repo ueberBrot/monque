@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface } from '@/index';
-import type { ManagementMonque } from '@/surface';
+import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
 
 function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
 	return {
@@ -33,9 +33,10 @@ function createManagementMonque(overrides: Partial<ManagementMonque> = {}): Mana
 	};
 }
 
-async function handleCapabilities(surface: ReturnType<typeof createManagementSurface>) {
+async function handleCapabilities(surface: ManagementSurface, context?: ManagementOpenApiContext) {
 	const result = await surface.openApiHandler.handle(
 		new Request('https://management.example/api/v1/capabilities', { method: 'GET' }),
+		context === undefined ? {} : { context },
 	);
 
 	if (!result.matched) {
@@ -62,6 +63,33 @@ describe('oRPC Management capabilities route', () => {
 				retry: true,
 				reschedule: true,
 				delete: true,
+			},
+		});
+	});
+
+	test('uses adapter-provided request context for action authorization', async () => {
+		const authorizedActions = new Set(['read', 'retry']);
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque(),
+			authorize: ({ action, context }) => {
+				expect(context).toEqual({ role: 'viewer' });
+				return authorizedActions.has(action);
+			},
+		});
+
+		const response = await handleCapabilities(surface, {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
+			readOnly: false,
+			actions: {
+				read: true,
+				cancel: false,
+				retry: true,
+				reschedule: false,
+				delete: false,
 			},
 		});
 	});

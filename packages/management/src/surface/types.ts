@@ -186,6 +186,16 @@ export interface ManagementOptions<TContext = unknown> {
 }
 
 /**
+ * Context object supplied to the oRPC OpenAPI handler.
+ *
+ * oRPC requires an object-shaped context, while Management keeps the adapter
+ * request context generic.
+ */
+export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, unknown> & {
+	managementContext?: TContext;
+};
+
+/**
  * Query-string value shape accepted from framework adapters.
  */
 export type ManagementQueryValue = string | readonly string[] | undefined;
@@ -417,7 +427,7 @@ export interface ManagementSurface<TContext = unknown> {
 	readonly routes: readonly ManagementRoute[];
 
 	/** oRPC OpenAPI handler mounted by framework adapters. */
-	readonly openApiHandler: OpenAPIHandler<Record<never, never>>;
+	readonly openApiHandler: OpenAPIHandler<ManagementOpenApiContext<TContext>>;
 
 	/** Handle one normalized Management request. */
 	handle(request: ManagementRequest<TContext>): Promise<ManagementResponse>;
