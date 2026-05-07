@@ -1,6 +1,6 @@
 import { Type } from '@sinclair/typebox';
 
-import type { SchedulerHealthDto } from '../surface/index.js';
+import type { SchedulerHealthDto } from '../schemas/index.js';
 
 /**
  * TypeBox schema for the scheduler health response.

@@ -1,4 +1,5 @@
 import { InvalidCursorError, JobStateError } from '@monque/core';
+import { OpenAPIHandler } from '@orpc/openapi/fetch';
 
 import {
 	toJobCursorPageDto,
@@ -7,6 +8,7 @@ import {
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
+import { createManagementRouter } from '../orpc/index.js';
 import {
 	getSupportedManagementRoutes,
 	isManagementActionAllowedByReadOnlyMode,
@@ -60,7 +62,10 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 export function createManagementSurface<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
+	const router = createManagementRouter(options);
+
 	return {
+		openApiHandler: new OpenAPIHandler(router),
 		routes: getSupportedManagementRoutes(options.monque),
 		async handle(request: ManagementRequest<TContext>): Promise<ManagementResponse> {
 			try {
