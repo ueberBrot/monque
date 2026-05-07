@@ -14,7 +14,11 @@ import type { ObjectId } from 'mongodb';
 
 import type { HttpMethodType, HttpStatusType } from '../http/index.js';
 
-export type { SchedulerHealthDto } from '../schemas/index.js';
+export type {
+	CapabilitiesDto,
+	CapabilityActionsDto,
+	SchedulerHealthDto,
+} from '../schemas/index.js';
 
 /**
  * High-level Management API action categories.
@@ -182,6 +186,16 @@ export interface ManagementOptions<TContext = unknown> {
 }
 
 /**
+ * Context object supplied to the oRPC OpenAPI handler.
+ *
+ * oRPC requires an object-shaped context, while Management keeps the adapter
+ * request context generic.
+ */
+export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, unknown> & {
+	managementContext?: TContext;
+};
+
+/**
  * Query-string value shape accepted from framework adapters.
  */
 export type ManagementQueryValue = string | readonly string[] | undefined;
@@ -273,22 +287,6 @@ export interface ManagementRoute {
 
 	/** Explicit non-200 error statuses documented for this route. */
 	errorStatuses?: readonly HttpStatusType[];
-}
-
-/**
- * Capability flags keyed by Management action.
- */
-export type CapabilityActionsDto = Record<ManagementAction, boolean>;
-
-/**
- * Capabilities response DTO.
- */
-export interface CapabilitiesDto {
-	/** Whether the surface rejects write actions. */
-	readOnly: boolean;
-
-	/** Available actions after scheduler support and read-only mode are applied. */
-	actions: CapabilityActionsDto;
 }
 
 /**
@@ -429,7 +427,7 @@ export interface ManagementSurface<TContext = unknown> {
 	readonly routes: readonly ManagementRoute[];
 
 	/** oRPC OpenAPI handler mounted by framework adapters. */
-	readonly openApiHandler: OpenAPIHandler<Record<never, never>>;
+	readonly openApiHandler: OpenAPIHandler<ManagementOpenApiContext<TContext>>;
 
 	/** Handle one normalized Management request. */
 	handle(request: ManagementRequest<TContext>): Promise<ManagementResponse>;

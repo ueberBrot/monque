@@ -11,6 +11,7 @@ export type {
 	ManagementAuthorize,
 	ManagementHttpMethod,
 	ManagementMonque,
+	ManagementOpenApiContext,
 	ManagementOptions,
 	ManagementPayloadSerializationInput,
 	ManagementPayloadSerializer,
