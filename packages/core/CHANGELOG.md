@@ -1,5 +1,12 @@
 # @monque/core
 
+## 1.9.0
+
+### Minor Changes
+
+- [#424](https://github.com/ueberBrot/monque/pull/424) [`ed4f7fb`](https://github.com/ueberBrot/monque/commit/ed4f7fb78ff4966de02d71383a2033c3f9b13918) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add public Queue View summaries for persisted Job Names, registered Workers, Job statistics,
+  and local Worker capacity.
+
 ## 1.8.0
 
 ### Minor Changes
