@@ -15,7 +15,7 @@ export const JobDtoSchema = z
 		id: z.string(),
 		name: z.string(),
 		status: JobStatusDtoSchema,
-		payload: z.unknown(),
+		payload: z.custom<unknown>((value) => value !== undefined),
 		nextRunAt: z.iso.datetime(),
 		lockedAt: z.iso.datetime().nullable(),
 		claimedBy: z.string().nullable(),
