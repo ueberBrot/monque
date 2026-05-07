@@ -2,6 +2,8 @@ import { oc } from '@orpc/contract';
 
 import {
 	CapabilitiesDtoSchema,
+	JobCursorPageDtoSchema,
+	JobListQueryDtoSchema,
 	JobStatsQueryDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
@@ -36,6 +38,16 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.output(QueueViewSummaryListDtoSchema),
+	jobs: oc
+		.route({
+			method: 'GET',
+			path: '/api/v1/jobs',
+			operationId: 'listJobs',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobListQueryDtoSchema)
+		.output(JobCursorPageDtoSchema),
 	jobStats: oc
 		.route({
 			method: 'GET',

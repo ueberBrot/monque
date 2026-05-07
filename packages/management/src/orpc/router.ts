@@ -1,12 +1,20 @@
 import { implement, ORPCError } from '@orpc/server';
 
-import { toQueueStatsDto, toQueueViewSummaryListDto, toSchedulerHealthDto } from '../dtos/index.js';
+import {
+	toJobCursorPageDto,
+	toQueueStatsDto,
+	toQueueViewSummaryListDto,
+	toSchedulerHealthDto,
+} from '../dtos/index.js';
+import type { JobListQueryDto } from '../schemas/index.js';
 import { getManagementCapabilities } from '../surface/capabilities.js';
 import type {
 	ManagementAction,
 	ManagementOpenApiContext,
 	ManagementOptions,
+	ManagementQueryValue,
 } from '../surface/index.js';
+import { parseJobListQuery } from '../validation/index.js';
 import { managementContract } from './contract.js';
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
@@ -25,6 +33,21 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 
 			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
 		}),
+		jobs: managementImplementer.jobs.handler(async ({ input, context }) => {
+			await requireReadAuthorization(options, context.managementContext as TContext);
+
+			const cursorOptions = parseJobListQuery(toManagementQuery(input));
+
+			if ('error' in cursorOptions) {
+				throw new ORPCError('BAD_REQUEST', { message: cursorOptions.error });
+			}
+
+			return toJobCursorPageDto(
+				options,
+				await options.monque.getJobsWithCursor(cursorOptions),
+				context.managementContext as TContext,
+			);
+		}),
 		jobStats: managementImplementer.jobStats.handler(async ({ input, context }) => {
 			await requireReadAuthorization(options, context.managementContext as TContext);
 
@@ -35,6 +58,28 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			);
 		}),
 	});
+}
+
+function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
+	const query: Record<string, ManagementQueryValue> = {};
+
+	if (input.cursor !== undefined) {
+		query['cursor'] = input.cursor;
+	}
+
+	if (input.limit !== undefined) {
+		query['limit'] = input.limit;
+	}
+
+	if (input.name !== undefined) {
+		query['name'] = input.name;
+	}
+
+	if (input.status !== undefined) {
+		query['status'] = input.status;
+	}
+
+	return query;
 }
 
 export type ManagementRouter = ReturnType<typeof createManagementRouter>;

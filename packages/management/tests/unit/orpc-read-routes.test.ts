@@ -1,4 +1,5 @@
-import type { QueueStats, QueueViewSummary } from '@monque/core';
+import type { CursorOptions, PersistedJob, QueueStats, QueueViewSummary } from '@monque/core';
+import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface } from '@/index';
@@ -45,6 +46,84 @@ async function handleGet(
 }
 
 describe('oRPC Management read routes', () => {
+	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
+		const jobId = new ObjectId();
+		let capturedOptions: CursorOptions | undefined;
+		const job = {
+			_id: jobId,
+			name: 'send-email',
+			data: { to: 'person@example.test', token: 'secret' },
+			status: 'failed',
+			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+			lockedAt: null,
+			claimedBy: null,
+			lastHeartbeat: null,
+			failCount: 2,
+			failReason: 'SMTP rejected',
+			createdAt: new Date('2025-12-31T23:00:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+		} satisfies PersistedJob;
+		const surface = createManagementSurface<{ userId: string }>({
+			monque: createManagementMonque({
+				getJobsWithCursor: async (options) => {
+					capturedOptions = options;
+
+					return {
+						jobs: [job],
+						cursor: 'next-cursor',
+						hasNextPage: true,
+						hasPreviousPage: false,
+					};
+				},
+			}),
+			serializePayload: ({ context, job: serializedJob }) =>
+				Promise.resolve({
+					visibleTo: context.userId,
+					jobName: serializedJob.name,
+				}),
+		});
+
+		const response = await handleGet(
+			surface,
+			'/api/v1/jobs?cursor=current-cursor&limit=250&name=send-email&status=pending&status=failed',
+			{ managementContext: { userId: 'operator-1' } },
+		);
+
+		expect(response.status).toBe(200);
+		expect(capturedOptions).toEqual({
+			cursor: 'current-cursor',
+			limit: 100,
+			filter: {
+				name: 'send-email',
+				status: ['pending', 'failed'],
+			},
+		});
+		expect(await response.json()).toEqual({
+			jobs: [
+				{
+					id: jobId.toHexString(),
+					name: 'send-email',
+					status: 'failed',
+					payload: {
+						visibleTo: 'operator-1',
+						jobName: 'send-email',
+					},
+					nextRunAt: '2026-01-01T00:00:00.000Z',
+					lockedAt: null,
+					claimedBy: null,
+					lastHeartbeat: null,
+					failCount: 2,
+					failureReason: 'SMTP rejected',
+					createdAt: '2025-12-31T23:00:00.000Z',
+					updatedAt: '2026-01-01T00:01:00.000Z',
+				},
+			],
+			cursor: 'next-cursor',
+			hasNextPage: true,
+			hasPreviousPage: false,
+		});
+	});
+
 	test('lists Queue Views through the public scheduler summary API', async () => {
 		const queueViews = [
 			{

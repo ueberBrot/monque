@@ -5,6 +5,16 @@ export {
 	CapabilityActionsDtoSchema,
 } from './capabilities.js';
 export {
+	type JobCursorPageDto,
+	JobCursorPageDtoSchema,
+	type JobDto,
+	JobDtoSchema,
+	type JobListQueryDto,
+	JobListQueryDtoSchema,
+	type JobStatusDto,
+	JobStatusDtoSchema,
+} from './job.js';
+export {
 	type JobStatsQueryDto,
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
