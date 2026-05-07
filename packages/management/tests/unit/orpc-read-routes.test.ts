@@ -198,6 +198,51 @@ describe('oRPC Management read routes', () => {
 		expect(coreCalls).toEqual(['called']);
 	});
 
+	test('rejects Job reads when authorization denies read access', async () => {
+		const calls: unknown[] = [];
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getJobsWithCursor: async () => {
+					coreCalls.push('list');
+
+					return {
+						jobs: [],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					};
+				},
+				getJob: async () => {
+					coreCalls.push('detail');
+
+					return null;
+				},
+			}),
+			authorize: ({ action, context }) => {
+				calls.push({ action, context });
+				return false;
+			},
+		});
+
+		const list = await handleGet(surface, '/api/v1/jobs', {
+			managementContext: { role: 'viewer' },
+		});
+		const detail = await handleGet(surface, `/api/v1/jobs/${new ObjectId().toHexString()}`, {
+			managementContext: { role: 'viewer' },
+		});
+
+		expect(list.status).toBe(403);
+		expect(await list.json()).toEqual({ error: 'Read access denied' });
+		expect(detail.status).toBe(403);
+		expect(await detail.json()).toEqual({ error: 'Read access denied' });
+		expect(calls).toEqual([
+			{ action: 'read', context: { role: 'viewer' } },
+			{ action: 'read', context: { role: 'viewer' } },
+		]);
+		expect(coreCalls).toEqual([]);
+	});
+
 	test('lists Queue Views through the public scheduler summary API', async () => {
 		const queueViews = [
 			{
