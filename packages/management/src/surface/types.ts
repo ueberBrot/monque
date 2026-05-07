@@ -17,6 +17,10 @@ import type { HttpMethodType, HttpStatusType } from '../http/index.js';
 export type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
+	QueueStatsDto,
+	QueueViewSummaryDto,
+	QueueViewSummaryListDto,
+	QueueViewWorkerDto,
 	SchedulerHealthDto,
 } from '../schemas/index.js';
 
@@ -287,50 +291,6 @@ export interface ManagementRoute {
 
 	/** Explicit non-200 error statuses documented for this route. */
 	errorStatuses?: readonly HttpStatusType[];
-}
-
-/**
- * Queue statistics response DTO.
- */
-export type QueueStatsDto = QueueStats;
-
-/**
- * Local worker state included in queue-view summaries.
- */
-export interface QueueViewWorkerDto {
-	/** Maximum concurrent jobs this worker can process. */
-	concurrency: number;
-
-	/** Number of jobs currently active in this worker. */
-	activeCount: number;
-}
-
-/**
- * Queue-view summary response DTO.
- */
-export interface QueueViewSummaryDto {
-	/** Job name represented by this queue view. */
-	name: string;
-
-	/** Whether at least one persisted job exists for this name. */
-	hasPersistedJobs: boolean;
-
-	/** Whether this scheduler instance has a worker registered for this name. */
-	hasRegisteredWorker: boolean;
-
-	/** Aggregated persisted job statistics for this name. */
-	stats: QueueStatsDto;
-
-	/** Local worker observability, or null when no worker is registered. */
-	worker: QueueViewWorkerDto | null;
-}
-
-/**
- * Queue-view list response DTO.
- */
-export interface QueueViewSummaryListDto {
-	/** Queue views visible to the current scheduler instance. */
-	queueViews: QueueViewSummaryDto[];
 }
 
 /**

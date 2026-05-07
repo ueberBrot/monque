@@ -32,6 +32,10 @@ export {
 export {
 	CapabilitiesDtoSchema,
 	CapabilityActionsDtoSchema,
+	QueueStatsDtoSchema,
+	QueueViewSummaryDtoSchema,
+	QueueViewSummaryListDtoSchema,
+	QueueViewWorkerDtoSchema,
 	SchedulerHealthDtoSchema,
 } from './schemas/index.js';
 export type {
