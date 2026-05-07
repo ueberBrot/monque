@@ -14,7 +14,11 @@ import type { ObjectId } from 'mongodb';
 
 import type { HttpMethodType, HttpStatusType } from '../http/index.js';
 
-export type { SchedulerHealthDto } from '../schemas/index.js';
+export type {
+	CapabilitiesDto,
+	CapabilityActionsDto,
+	SchedulerHealthDto,
+} from '../schemas/index.js';
 
 /**
  * High-level Management API action categories.
@@ -273,22 +277,6 @@ export interface ManagementRoute {
 
 	/** Explicit non-200 error statuses documented for this route. */
 	errorStatuses?: readonly HttpStatusType[];
-}
-
-/**
- * Capability flags keyed by Management action.
- */
-export type CapabilityActionsDto = Record<ManagementAction, boolean>;
-
-/**
- * Capabilities response DTO.
- */
-export interface CapabilitiesDto {
-	/** Whether the surface rejects write actions. */
-	readOnly: boolean;
-
-	/** Available actions after scheduler support and read-only mode are applied. */
-	actions: CapabilityActionsDto;
 }
 
 /**
