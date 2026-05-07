@@ -7,6 +7,8 @@ export {
 export {
 	type JobCursorPageDto,
 	JobCursorPageDtoSchema,
+	type JobDetailParamsDto,
+	JobDetailParamsDtoSchema,
 	type JobDto,
 	JobDtoSchema,
 	type JobListQueryDto,

@@ -124,6 +124,49 @@ describe('oRPC Management read routes', () => {
 		});
 	});
 
+	test('returns Job detail DTOs by id and maps missing or invalid ids', async () => {
+		const jobId = new ObjectId();
+		const job = {
+			_id: jobId,
+			name: 'send-email',
+			data: { visible: true },
+			status: 'completed',
+			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+			failCount: 0,
+			createdAt: new Date('2025-12-31T23:00:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+		} satisfies PersistedJob;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? job : null),
+			}),
+		});
+
+		const found = await handleGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+		const missing = await handleGet(surface, `/api/v1/jobs/${new ObjectId().toHexString()}`);
+		const invalid = await handleGet(surface, '/api/v1/jobs/not-an-object-id');
+
+		expect(found.status).toBe(200);
+		expect(await found.json()).toEqual({
+			id: jobId.toHexString(),
+			name: 'send-email',
+			status: 'completed',
+			payload: { visible: true },
+			nextRunAt: '2026-01-01T00:00:00.000Z',
+			lockedAt: null,
+			claimedBy: null,
+			lastHeartbeat: null,
+			failCount: 0,
+			failureReason: null,
+			createdAt: '2025-12-31T23:00:00.000Z',
+			updatedAt: '2026-01-01T00:01:00.000Z',
+		});
+		expect(missing.status).toBe(404);
+		expect(await missing.json()).toEqual({ error: 'Job not found' });
+		expect(invalid.status).toBe(400);
+		expect(await invalid.json()).toEqual({ error: 'Invalid job id' });
+	});
+
 	test('lists Queue Views through the public scheduler summary API', async () => {
 		const queueViews = [
 			{

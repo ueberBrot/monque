@@ -3,6 +3,8 @@ import { oc } from '@orpc/contract';
 import {
 	CapabilitiesDtoSchema,
 	JobCursorPageDtoSchema,
+	JobDetailParamsDtoSchema,
+	JobDtoSchema,
 	JobListQueryDtoSchema,
 	JobStatsQueryDtoSchema,
 	QueueStatsDtoSchema,
@@ -58,6 +60,16 @@ export const managementContract = {
 		})
 		.input(JobStatsQueryDtoSchema)
 		.output(QueueStatsDtoSchema),
+	job: oc
+		.route({
+			method: 'GET',
+			path: '/api/v1/jobs/{id}',
+			operationId: 'getJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobDetailParamsDtoSchema)
+		.output(JobDtoSchema),
 };
 
 export type ManagementContract = typeof managementContract;

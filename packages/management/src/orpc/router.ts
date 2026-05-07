@@ -2,6 +2,7 @@ import { implement, ORPCError } from '@orpc/server';
 
 import {
 	toJobCursorPageDto,
+	toJobDto,
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
@@ -14,7 +15,7 @@ import type {
 	ManagementOptions,
 	ManagementQueryValue,
 } from '../surface/index.js';
-import { parseJobListQuery } from '../validation/index.js';
+import { parseJobListQuery, parseObjectId } from '../validation/index.js';
 import { managementContract } from './contract.js';
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
@@ -56,6 +57,23 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 					input.name === undefined ? undefined : { name: input.name },
 				),
 			);
+		}),
+		job: managementImplementer.job.handler(async ({ input, context }) => {
+			await requireReadAuthorization(options, context.managementContext as TContext);
+
+			const id = parseObjectId(input.id);
+
+			if ('error' in id) {
+				throw new ORPCError('BAD_REQUEST', { message: id.error });
+			}
+
+			const job = await options.monque.getJob(id.value);
+
+			if (!job) {
+				throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+			}
+
+			return toJobDto(options, job, context.managementContext as TContext);
 		}),
 	});
 }

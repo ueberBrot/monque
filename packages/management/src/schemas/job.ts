@@ -53,3 +53,11 @@ export const JobListQueryDtoSchema = z
 	.strict();
 
 export type JobListQueryDto = z.infer<typeof JobListQueryDtoSchema>;
+
+export const JobDetailParamsDtoSchema = z
+	.object({
+		id: z.string(),
+	})
+	.strict();
+
+export type JobDetailParamsDto = z.infer<typeof JobDetailParamsDtoSchema>;
