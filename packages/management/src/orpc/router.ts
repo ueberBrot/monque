@@ -42,15 +42,19 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			toSchedulerHealthDto(options.monque.isHealthy()),
 		),
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
-			getManagementCapabilities(options, context.managementContext as TContext),
+			getManagementCapabilities(options, getOpenApiManagementContext(context)),
 		),
 		queueViews: managementImplementer.queueViews.handler(async ({ context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
 		}),
 		jobs: managementImplementer.jobs.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			const cursorOptions = parseJobListQuery(toManagementQuery(input));
 
@@ -62,7 +66,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				return await toJobCursorPageDto(
 					options,
 					await options.monque.getJobsWithCursor(cursorOptions),
-					context.managementContext as TContext,
+					managementContext,
 				);
 			} catch (error) {
 				if (error instanceof InvalidCursorError) {
@@ -73,7 +77,9 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			}
 		}),
 		jobStats: managementImplementer.jobStats.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			return toQueueStatsDto(
 				await options.monque.getQueueStats(
@@ -82,7 +88,9 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			);
 		}),
 		job: managementImplementer.job.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			const id = parseObjectId(input.params.id);
 
@@ -96,14 +104,14 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 			}
 
-			return toJobDto(options, job, context.managementContext as TContext);
+			return toJobDto(options, job, managementContext);
 		}),
 		cancelJob: managementImplementer.cancelJob.handler(async ({ input, context }) =>
 			handleSingleJobMutation(
 				options,
 				'cancel',
 				input.params.id,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.cancelJob?.bind(options.monque),
 			),
 		),
@@ -112,7 +120,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'retry',
 				input.params.id,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.retryJob?.bind(options.monque),
 			),
 		),
@@ -123,7 +131,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'reschedule',
 				input.params.id,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				rescheduleJob ? (id) => rescheduleJob(id, new Date(input.body.nextRunAt)) : undefined,
 			);
 		}),
@@ -131,7 +139,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			handleDeleteJob(
 				options,
 				input.params.id,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.deleteJob?.bind(options.monque),
 			),
 		),
@@ -140,7 +148,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'cancel',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.cancelJobs?.bind(options.monque),
 			),
 		),
@@ -149,7 +157,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'retry',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.retryJobs?.bind(options.monque),
 			),
 		),
@@ -158,11 +166,17 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'delete',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.deleteJobs?.bind(options.monque),
 			),
 		),
 	});
+}
+
+function getOpenApiManagementContext<TContext>(
+	context: ManagementOpenApiContext<TContext>,
+): TContext {
+	return context.managementContext as TContext;
 }
 
 async function handleSingleJobMutation<TContext>(
