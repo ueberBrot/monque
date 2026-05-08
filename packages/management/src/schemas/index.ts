@@ -5,6 +5,8 @@ export {
 	BulkActionResultDtoSchema,
 	type JobSelectorDto,
 	JobSelectorDtoSchema,
+	type ManagementErrorDto,
+	ManagementErrorDtoSchema,
 } from './actions.js';
 export {
 	type CapabilitiesDto,

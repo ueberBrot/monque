@@ -30,3 +30,11 @@ export const BulkActionResultDtoSchema = z
 	.strict();
 
 export type BulkActionResultDto = z.infer<typeof BulkActionResultDtoSchema>;
+
+export const ManagementErrorDtoSchema = z
+	.object({
+		error: z.string(),
+	})
+	.strict();
+
+export type ManagementErrorDto = z.infer<typeof ManagementErrorDtoSchema>;

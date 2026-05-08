@@ -15,6 +15,7 @@ export type {
 	ManagementAction,
 	ManagementAuthorizationInput,
 	ManagementAuthorize,
+	ManagementErrorDto,
 	ManagementHttpMethod,
 	ManagementMonque,
 	ManagementOpenApiContext,

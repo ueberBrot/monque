@@ -9,10 +9,30 @@ import {
 	JobListQueryDtoSchema,
 	JobSelectorDtoSchema,
 	JobStatsQueryDtoSchema,
+	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	SchedulerHealthDtoSchema,
 } from '../schemas/index.js';
+
+const BulkActionErrors = {
+	BAD_REQUEST: {
+		status: 400,
+		data: ManagementErrorDtoSchema,
+	},
+	FORBIDDEN: {
+		status: 403,
+		data: ManagementErrorDtoSchema,
+	},
+	CONFLICT: {
+		status: 409,
+		data: ManagementErrorDtoSchema,
+	},
+	INTERNAL_SERVER_ERROR: {
+		status: 500,
+		data: ManagementErrorDtoSchema,
+	},
+} as const;
 
 export const managementContract = {
 	health: oc
@@ -82,6 +102,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
+		.errors(BulkActionErrors)
 		.output(BulkActionResultDtoSchema),
 	retryJobs: oc
 		.route({
@@ -92,6 +113,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
+		.errors(BulkActionErrors)
 		.output(BulkActionResultDtoSchema),
 	deleteJobs: oc
 		.route({
@@ -102,6 +124,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
+		.errors(BulkActionErrors)
 		.output(BulkActionResultDtoSchema),
 };
 

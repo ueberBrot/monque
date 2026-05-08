@@ -25,6 +25,7 @@ export type {
 	JobListQueryDto,
 	JobSelectorDto,
 	JobStatusDto,
+	ManagementErrorDto,
 	QueueStatsDto,
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
