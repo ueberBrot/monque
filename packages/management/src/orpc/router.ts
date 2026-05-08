@@ -1,14 +1,15 @@
-import { InvalidCursorError } from '@monque/core';
+import { InvalidCursorError, type JobSelector, JobStateError } from '@monque/core';
 import { implement, ORPCError } from '@orpc/server';
 
 import {
+	toBulkActionResultDto,
 	toJobCursorPageDto,
 	toJobDto,
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
 } from '../dtos/index.js';
-import type { JobListQueryDto } from '../schemas/index.js';
+import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
 import { getManagementCapabilities } from '../surface/capabilities.js';
 import type {
 	ManagementAction,
@@ -84,6 +85,15 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 
 			return toJobDto(options, job, context.managementContext as TContext);
 		}),
+		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
+			handleBulkJobMutation(
+				options,
+				'cancel',
+				input,
+				context.managementContext as TContext,
+				options.monque.cancelJobs?.bind(options.monque),
+			),
+		),
 	});
 }
 
@@ -109,6 +119,64 @@ function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQue
 	return query;
 }
 
+async function handleBulkJobMutation<TContext>(
+	options: ManagementOptions<TContext>,
+	action: Exclude<ManagementAction, 'read' | 'reschedule'>,
+	input: JobSelectorDto,
+	context: TContext,
+	mutate:
+		| ((
+				selector: JobSelector,
+		  ) => ReturnType<NonNullable<ManagementOptions['monque']['cancelJobs']>>)
+		| undefined,
+) {
+	if (options.readOnly) {
+		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	}
+
+	if (!mutate) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+
+	const selector = toManagementSelector(input);
+
+	if (!(await isAllowedByAuthorization(options, action, context, undefined, selector))) {
+		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
+	}
+
+	try {
+		return toBulkActionResultDto(await mutate(selector));
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
+}
+
+function toManagementSelector(input: JobSelectorDto): JobSelector {
+	const selector: JobSelector = {};
+
+	if (input.name !== undefined) {
+		selector.name = input.name;
+	}
+
+	if (input.status !== undefined) {
+		selector.status = input.status;
+	}
+
+	if (input.olderThan !== undefined) {
+		selector.olderThan = new Date(input.olderThan);
+	}
+
+	if (input.newerThan !== undefined) {
+		selector.newerThan = new Date(input.newerThan);
+	}
+
+	return selector;
+}
+
 export type ManagementRouter = ReturnType<typeof createManagementRouter>;
 
 async function requireReadAuthorization<TContext>(
@@ -126,10 +194,12 @@ async function isAllowedByAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	action: ManagementAction,
 	context: TContext,
+	job?: never,
+	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
 		return true;
 	}
 
-	return options.authorize({ action, context });
+	return options.authorize({ action, context, job, selector });
 }

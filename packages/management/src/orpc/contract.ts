@@ -1,11 +1,13 @@
 import { oc } from '@orpc/contract';
 
 import {
+	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDetailInputDtoSchema,
 	JobDtoSchema,
 	JobListQueryDtoSchema,
+	JobSelectorDtoSchema,
 	JobStatsQueryDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
@@ -71,6 +73,16 @@ export const managementContract = {
 		})
 		.input(JobDetailInputDtoSchema)
 		.output(JobDtoSchema),
+	cancelJobs: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/actions/cancel',
+			operationId: 'cancelJobs',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobSelectorDtoSchema)
+		.output(BulkActionResultDtoSchema),
 };
 
 export type ManagementContract = typeof managementContract;
