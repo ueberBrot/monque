@@ -29,9 +29,8 @@ import { managementContract } from './contract.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
-type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete' | 'reschedule'>;
+type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
-type RescheduleJobMutator = (id: string, runAt: Date) => Promise<PersistedJob | null>;
 type DeleteJobMutator = (id: string) => Promise<boolean>;
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
@@ -117,15 +116,17 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options.monque.retryJob?.bind(options.monque),
 			),
 		),
-		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) =>
-			handleRescheduleJob(
+		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) => {
+			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+
+			return handleSingleJobMutation(
 				options,
+				'reschedule',
 				input.params.id,
-				input.body.nextRunAt,
 				context.managementContext as TContext,
-				options.monque.rescheduleJob?.bind(options.monque),
-			),
-		),
+				rescheduleJob ? (id) => rescheduleJob(id, new Date(input.body.nextRunAt)) : undefined,
+			);
+		}),
 		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
 			handleDeleteJob(
 				options,
@@ -171,80 +172,11 @@ async function handleSingleJobMutation<TContext>(
 	context: TContext,
 	mutate: SingleJobMutator | undefined,
 ) {
-	if (options.readOnly) {
-		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
-	}
-
-	if (!mutate) {
-		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
-	}
-
-	const id = parseObjectId(idInput);
-
-	if ('error' in id) {
-		throw new ORPCError('BAD_REQUEST', { message: id.error });
-	}
-
-	const target = await options.monque.getJob(id.value);
-
-	if (!target) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	if (!(await isAllowedByAuthorization(options, action, context, target))) {
-		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
-	}
+	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const id = await resolveSingleJobTarget(options, action, idInput, context);
 
 	try {
-		const job = await mutate(id.value.toHexString());
-
-		if (!job) {
-			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-		}
-
-		return toJobDto(options, job, context);
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
-	}
-}
-
-async function handleRescheduleJob<TContext>(
-	options: ManagementOptions<TContext>,
-	idInput: string,
-	nextRunAtInput: string,
-	context: TContext,
-	mutate: RescheduleJobMutator | undefined,
-) {
-	if (options.readOnly) {
-		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
-	}
-
-	if (!mutate) {
-		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
-	}
-
-	const id = parseObjectId(idInput);
-
-	if ('error' in id) {
-		throw new ORPCError('BAD_REQUEST', { message: id.error });
-	}
-
-	const target = await options.monque.getJob(id.value);
-
-	if (!target) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	if (!(await isAllowedByAuthorization(options, 'reschedule', context, target))) {
-		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
-	}
-
-	try {
-		const job = await mutate(id.value.toHexString(), new Date(nextRunAtInput));
+		const job = await supportedMutate(id);
 
 		if (!job) {
 			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
@@ -266,6 +198,21 @@ async function handleDeleteJob<TContext>(
 	context: TContext,
 	mutate: DeleteJobMutator | undefined,
 ) {
+	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
+	const deleted = await supportedMutate(id);
+
+	if (!deleted) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	return toDeleteJobDto();
+}
+
+function requireSingleJobMutator<TContext, TMutator>(
+	options: ManagementOptions<TContext>,
+	mutate: TMutator | undefined,
+): TMutator {
 	if (options.readOnly) {
 		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
 	}
@@ -274,6 +221,15 @@ async function handleDeleteJob<TContext>(
 		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
 	}
 
+	return mutate;
+}
+
+async function resolveSingleJobTarget<TContext>(
+	options: ManagementOptions<TContext>,
+	action: Exclude<ManagementAction, 'read'>,
+	idInput: string,
+	context: TContext,
+): Promise<string> {
 	const id = parseObjectId(idInput);
 
 	if ('error' in id) {
@@ -286,17 +242,11 @@ async function handleDeleteJob<TContext>(
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
 
-	if (!(await isAllowedByAuthorization(options, 'delete', context, target))) {
+	if (!(await isAllowedByAuthorization(options, action, context, target))) {
 		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
 	}
 
-	const deleted = await mutate(id.value.toHexString());
-
-	if (!deleted) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	return toDeleteJobDto();
+	return id.value.toHexString();
 }
 
 function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
