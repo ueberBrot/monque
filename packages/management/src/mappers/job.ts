@@ -9,9 +9,7 @@ export async function toJobCursorPageDto<TContext>(
 	context: TContext,
 ): Promise<JobCursorPageDto> {
 	return {
-		jobs: await Promise.all(
-			page.jobs.map((job) => toJobDto(options, job as PersistedJob, context)),
-		),
+		jobs: await Promise.all(page.jobs.map((job) => toJobDto(options, job, context))),
 		cursor: page.cursor,
 		hasNextPage: page.hasNextPage,
 		hasPreviousPage: page.hasPreviousPage,

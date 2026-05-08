@@ -125,13 +125,18 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 		),
 		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) => {
 			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+			let mutate: SingleJobMutator | undefined;
+
+			if (rescheduleJob !== undefined) {
+				mutate = (id) => rescheduleJob(id, new Date(input.body.nextRunAt));
+			}
 
 			return handleSingleJobMutation(
 				options,
 				'reschedule',
 				input.params.id,
 				getOpenApiManagementContext(context),
-				rescheduleJob ? (id) => rescheduleJob(id, new Date(input.body.nextRunAt)) : undefined,
+				mutate,
 			);
 		}),
 		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
@@ -187,22 +192,13 @@ async function handleSingleJobMutation<TContext>(
 ) {
 	const supportedMutate = requireMutationSupport(options, mutate);
 	const id = await resolveSingleJobTarget(options, action, idInput, context);
+	const job = await mapJobStateConflict(() => supportedMutate(id));
 
-	try {
-		const job = await supportedMutate(id);
-
-		if (!job) {
-			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-		}
-
-		return toJobDto(options, job, context);
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
+	if (!job) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
+
+	return toJobDto(options, job, context);
 }
 
 async function handleDeleteJob<TContext>(
@@ -276,15 +272,7 @@ async function handleBulkJobMutation<TContext>(
 		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
 	}
 
-	try {
-		return toBulkActionResultDto(await supportedMutate(selector));
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
-	}
+	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
 }
 
 function toManagementSelector(input: JobSelectorDto): JobSelector {
@@ -334,4 +322,16 @@ async function isAllowedByAuthorization<TContext>(
 	}
 
 	return options.authorize({ action, context, job, selector });
+}
+
+async function mapJobStateConflict<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+	try {
+		return await operation();
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
 }
