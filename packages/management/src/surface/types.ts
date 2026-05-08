@@ -18,6 +18,7 @@ export type {
 	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
+	DeleteJobDto,
 	JobCursorPageDto,
 	JobDetailInputDto,
 	JobDetailParamsDto,
@@ -30,6 +31,8 @@ export type {
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
 	QueueViewWorkerDto,
+	RescheduleJobInputDto,
+	RescheduleJobRequestDto,
 	SchedulerHealthDto,
 } from '../schemas/index.js';
 
@@ -300,14 +303,6 @@ export interface ManagementRoute {
 
 	/** Explicit non-200 error statuses documented for this route. */
 	errorStatuses?: readonly HttpStatusType[];
-}
-
-/**
- * Delete-job response DTO.
- */
-export interface DeleteJobDto {
-	/** Literal confirmation that the job was deleted. */
-	deleted: true;
 }
 
 /**

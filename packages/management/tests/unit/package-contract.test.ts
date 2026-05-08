@@ -6,11 +6,13 @@ import { describe, expect, test } from 'vitest';
 import {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
+	DeleteJobDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDtoSchema,
 	JobSelectorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
+	RescheduleJobRequestDtoSchema,
 } from '@/index';
 
 interface PackageJson {
@@ -146,6 +148,19 @@ describe('@monque/management package contract', () => {
 			BulkActionResultDtoSchema.safeParse({
 				count: 1,
 				errors: [{ jobId: 'job-1', error: 'still processing' }],
+			}).success,
+		).toBe(true);
+	});
+
+	test('exports the Zod-derived single Job action DTO schemas', () => {
+		expect(
+			RescheduleJobRequestDtoSchema.safeParse({
+				nextRunAt: '2026-02-01T10:30:00.000Z',
+			}).success,
+		).toBe(true);
+		expect(
+			DeleteJobDtoSchema.safeParse({
+				deleted: true,
 			}).success,
 		).toBe(true);
 	});

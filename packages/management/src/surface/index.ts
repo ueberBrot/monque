@@ -32,5 +32,7 @@ export type {
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
 	QueueViewWorkerDto,
+	RescheduleJobInputDto,
+	RescheduleJobRequestDto,
 	SchedulerHealthDto,
 } from './types.js';

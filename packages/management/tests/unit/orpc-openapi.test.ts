@@ -200,4 +200,92 @@ describe('oRPC Management OpenAPI contract', () => {
 			additionalProperties: false,
 		});
 	});
+
+	test('derives single Job action paths, schemas, and error statuses from the oRPC contract', async () => {
+		const document = await generateManagementOpenApiDocument();
+		const jobResponseRoutes = [
+			['/api/v1/jobs/{id}/actions/cancel', 'cancelJob'],
+			['/api/v1/jobs/{id}/actions/retry', 'retryJob'],
+			['/api/v1/jobs/{id}/actions/reschedule', 'rescheduleJob'],
+		] as const;
+
+		for (const [path, operationId] of jobResponseRoutes) {
+			const operation = document.paths?.[path]?.post;
+
+			expect(operation?.operationId).toBe(operationId);
+			expect(operation?.parameters).toEqual([
+				expect.objectContaining({
+					name: 'id',
+					in: 'path',
+					required: true,
+					schema: { type: 'string' },
+				}),
+			]);
+			expect(operation?.responses?.['200']).toMatchObject({
+				description: 'Successful response',
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/Job' },
+					},
+				},
+			});
+			for (const status of ['400', '403', '404', '409', '500']) {
+				expect(operation?.responses?.[status]).toMatchObject({
+					content: {
+						'application/json': {
+							schema: { $ref: '#/components/schemas/ManagementError' },
+						},
+					},
+				});
+			}
+		}
+		expect(document.paths?.['/api/v1/jobs/{id}']?.delete?.parameters).toEqual([
+			expect.objectContaining({
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: { type: 'string' },
+			}),
+		]);
+		expect(
+			document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.requestBody,
+		).toMatchObject({
+			required: true,
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/RescheduleJobRequest' },
+				},
+			},
+		});
+		expect(document.paths?.['/api/v1/jobs/{id}']?.delete?.operationId).toBe('deleteJob');
+		const deleteResponses = document.paths?.['/api/v1/jobs/{id}']?.delete?.responses;
+
+		expect(deleteResponses?.['200']).toMatchObject({
+			description: 'Successful response',
+			content: {
+				'application/json': {
+					schema: { $ref: '#/components/schemas/DeleteJob' },
+				},
+			},
+		});
+		for (const status of ['400', '403', '404', '409', '500']) {
+			expect(deleteResponses?.[status]).toMatchObject({
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/ManagementError' },
+					},
+				},
+			});
+		}
+		expect(document.components?.schemas?.['RescheduleJobRequest']).toMatchObject({
+			type: 'object',
+			required: ['nextRunAt'],
+			additionalProperties: false,
+		});
+		expect(document.components?.schemas?.['DeleteJob']).toMatchObject({
+			type: 'object',
+			required: ['deleted'],
+			additionalProperties: false,
+		});
+	});
 });

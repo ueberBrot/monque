@@ -3,6 +3,7 @@ import { oc } from '@orpc/contract';
 import {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
+	DeleteJobDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDetailInputDtoSchema,
 	JobDtoSchema,
@@ -12,10 +13,11 @@ import {
 	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
+	RescheduleJobInputDtoSchema,
 	SchedulerHealthDtoSchema,
 } from '../schemas/index.js';
 
-const BulkActionErrors = {
+const ManagementMutationErrors = {
 	BAD_REQUEST: {
 		status: 400,
 		data: ManagementErrorDtoSchema,
@@ -30,6 +32,14 @@ const BulkActionErrors = {
 	},
 	INTERNAL_SERVER_ERROR: {
 		status: 500,
+		data: ManagementErrorDtoSchema,
+	},
+} as const;
+
+const SingleJobActionErrors = {
+	...ManagementMutationErrors,
+	NOT_FOUND: {
+		status: 404,
 		data: ManagementErrorDtoSchema,
 	},
 } as const;
@@ -93,6 +103,54 @@ export const managementContract = {
 		})
 		.input(JobDetailInputDtoSchema)
 		.output(JobDtoSchema),
+	cancelJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/cancel',
+			operationId: 'cancelJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(JobDtoSchema),
+	retryJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/retry',
+			operationId: 'retryJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(JobDtoSchema),
+	rescheduleJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			operationId: 'rescheduleJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(RescheduleJobInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(JobDtoSchema),
+	deleteJob: oc
+		.route({
+			method: 'DELETE',
+			path: '/api/v1/jobs/{id}',
+			operationId: 'deleteJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(DeleteJobDtoSchema),
 	cancelJobs: oc
 		.route({
 			method: 'POST',
@@ -102,7 +160,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 	retryJobs: oc
 		.route({
@@ -113,7 +171,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 	deleteJobs: oc
 		.route({
@@ -124,7 +182,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 };
 
