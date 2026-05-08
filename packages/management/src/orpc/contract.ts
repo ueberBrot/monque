@@ -17,7 +17,7 @@ import {
 	SchedulerHealthDtoSchema,
 } from '../schemas/index.js';
 
-const BulkActionErrors = {
+const ManagementMutationErrors = {
 	BAD_REQUEST: {
 		status: 400,
 		data: ManagementErrorDtoSchema,
@@ -37,24 +37,9 @@ const BulkActionErrors = {
 } as const;
 
 const SingleJobActionErrors = {
-	BAD_REQUEST: {
-		status: 400,
-		data: ManagementErrorDtoSchema,
-	},
-	FORBIDDEN: {
-		status: 403,
-		data: ManagementErrorDtoSchema,
-	},
+	...ManagementMutationErrors,
 	NOT_FOUND: {
 		status: 404,
-		data: ManagementErrorDtoSchema,
-	},
-	CONFLICT: {
-		status: 409,
-		data: ManagementErrorDtoSchema,
-	},
-	INTERNAL_SERVER_ERROR: {
-		status: 500,
 		data: ManagementErrorDtoSchema,
 	},
 } as const;
@@ -175,7 +160,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 	retryJobs: oc
 		.route({
@@ -186,7 +171,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 	deleteJobs: oc
 		.route({
@@ -197,7 +182,7 @@ export const managementContract = {
 			successDescription: 'Successful response',
 		})
 		.input(JobSelectorDtoSchema)
-		.errors(BulkActionErrors)
+		.errors(ManagementMutationErrors)
 		.output(BulkActionResultDtoSchema),
 };
 

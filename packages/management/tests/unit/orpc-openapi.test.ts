@@ -239,6 +239,14 @@ describe('oRPC Management OpenAPI contract', () => {
 				});
 			}
 		}
+		expect(document.paths?.['/api/v1/jobs/{id}']?.delete?.parameters).toEqual([
+			expect.objectContaining({
+				name: 'id',
+				in: 'path',
+				required: true,
+				schema: { type: 'string' },
+			}),
+		]);
 		expect(
 			document.paths?.['/api/v1/jobs/{id}/actions/reschedule']?.post?.requestBody,
 		).toMatchObject({
@@ -250,7 +258,9 @@ describe('oRPC Management OpenAPI contract', () => {
 			},
 		});
 		expect(document.paths?.['/api/v1/jobs/{id}']?.delete?.operationId).toBe('deleteJob');
-		expect(document.paths?.['/api/v1/jobs/{id}']?.delete?.responses?.['200']).toMatchObject({
+		const deleteResponses = document.paths?.['/api/v1/jobs/{id}']?.delete?.responses;
+
+		expect(deleteResponses?.['200']).toMatchObject({
 			description: 'Successful response',
 			content: {
 				'application/json': {
@@ -258,6 +268,15 @@ describe('oRPC Management OpenAPI contract', () => {
 				},
 			},
 		});
+		for (const status of ['400', '403', '404', '409', '500']) {
+			expect(deleteResponses?.[status]).toMatchObject({
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/ManagementError' },
+					},
+				},
+			});
+		}
 		expect(document.components?.schemas?.['RescheduleJobRequest']).toMatchObject({
 			type: 'object',
 			required: ['nextRunAt'],
