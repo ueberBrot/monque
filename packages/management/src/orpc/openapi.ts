@@ -4,12 +4,14 @@ import { ZodToJsonSchemaConverter } from '@orpc/zod/zod4';
 import {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
+	DeleteJobDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDtoSchema,
 	JobSelectorDtoSchema,
 	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
+	RescheduleJobRequestDtoSchema,
 	SchedulerHealthDtoSchema,
 } from '../schemas/index.js';
 import { managementContract } from './contract.js';
@@ -41,6 +43,9 @@ export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Docum
 			BulkActionResult: {
 				schema: BulkActionResultDtoSchema,
 			},
+			DeleteJob: {
+				schema: DeleteJobDtoSchema,
+			},
 			ManagementError: {
 				schema: ManagementErrorDtoSchema,
 			},
@@ -49,6 +54,9 @@ export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Docum
 			},
 			QueueViewSummaryList: {
 				schema: QueueViewSummaryListDtoSchema,
+			},
+			RescheduleJobRequest: {
+				schema: RescheduleJobRequestDtoSchema,
 			},
 			SchedulerHealth: {
 				schema: SchedulerHealthDtoSchema,
