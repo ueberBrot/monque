@@ -1,4 +1,9 @@
-import type { CursorOptions, PersistedJob, QueueStats } from '@monque/core';
+import {
+	type CursorOptions,
+	JobStateError,
+	type PersistedJob,
+	type QueueStats,
+} from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
@@ -240,5 +245,133 @@ describe('oRPC Management single Job action routes', () => {
 				runAt: new Date('2026-02-01T10:30:00.000Z'),
 			},
 		]);
+	});
+
+	test('maps single Job action failures to stable HTTP statuses', async () => {
+		const jobId = new ObjectId();
+		const target = createJob({ _id: jobId });
+		const coreCalls: string[] = [];
+		const readOnly = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJob: async () => {
+					coreCalls.push('read-only');
+
+					return null;
+				},
+			}),
+			readOnly: true,
+		});
+		const unsupported = createManagementSurface({
+			monque: createManagementMonque(),
+		});
+		const denied = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? target : null),
+				cancelJob: async () => {
+					coreCalls.push('denied');
+
+					return null;
+				},
+			}),
+			authorize: ({ action, context, job }) => {
+				expect({ action, context, job }).toEqual({
+					action: 'cancel',
+					context: { role: 'viewer' },
+					job: target,
+				});
+
+				return false;
+			},
+		});
+		const validatesBeforeCore = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async () => {
+					coreCalls.push('invalid');
+
+					return target;
+				},
+				cancelJob: async () => {
+					coreCalls.push('invalid');
+
+					return target;
+				},
+				rescheduleJob: async () => {
+					coreCalls.push('invalid');
+
+					return target;
+				},
+			}),
+		});
+		const missing = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async () => null,
+				cancelJob: async () => {
+					coreCalls.push('missing');
+
+					return null;
+				},
+			}),
+		});
+		const conflict = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? target : null),
+				cancelJob: async () => {
+					throw new JobStateError(
+						'Cannot cancel processing job',
+						jobId.toHexString(),
+						'processing',
+						'cancel',
+					);
+				},
+			}),
+		});
+
+		const readOnlyResponse = await handlePost(
+			readOnly,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
+		);
+		const unsupportedResponse = await handlePost(
+			unsupported,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
+		);
+		const deniedResponse = await handlePost(
+			denied,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
+			undefined,
+			{ managementContext: { role: 'viewer' } },
+		);
+		const invalidId = await handlePost(
+			validatesBeforeCore,
+			'/api/v1/jobs/not-an-object-id/actions/cancel',
+		);
+		const invalidRescheduleBody = await handlePost(
+			validatesBeforeCore,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/reschedule`,
+			{ nextRunAt: 'February 1, 2026 10:30:00' },
+		);
+		const missingResponse = await handlePost(
+			missing,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
+		);
+		const conflictResponse = await handlePost(
+			conflict,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
+		);
+
+		expect(readOnlyResponse.status).toBe(403);
+		expect(await readOnlyResponse.json()).toEqual({ error: 'Management surface is read-only' });
+		expect(unsupportedResponse.status).toBe(403);
+		expect(await unsupportedResponse.json()).toEqual({ error: 'Unsupported action' });
+		expect(deniedResponse.status).toBe(403);
+		expect(await deniedResponse.json()).toEqual({ error: 'Action denied' });
+		expect(invalidId.status).toBe(400);
+		expect(await invalidId.json()).toEqual({ error: 'Invalid job id' });
+		expect(invalidRescheduleBody.status).toBe(400);
+		expect(await invalidRescheduleBody.json()).toEqual({ error: 'Input validation failed' });
+		expect(missingResponse.status).toBe(404);
+		expect(await missingResponse.json()).toEqual({ error: 'Job not found' });
+		expect(conflictResponse.status).toBe(409);
+		expect(await conflictResponse.json()).toEqual({ error: 'Cannot cancel processing job' });
+		expect(coreCalls).toEqual([]);
 	});
 });
