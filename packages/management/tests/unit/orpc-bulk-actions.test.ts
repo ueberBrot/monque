@@ -5,6 +5,7 @@ import type {
 	QueueStats,
 	QueueViewSummary,
 } from '@monque/core';
+import { JobStateError } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
 import { createManagementSurface } from '@/index';
@@ -151,5 +152,104 @@ describe('oRPC Management bulk action routes', () => {
 			{ action: 'retry', selector: { status: 'failed' } },
 			{ action: 'delete', selector: { status: ['completed', 'cancelled'] } },
 		]);
+	});
+
+	test('rejects read-only, unsupported, and denied bulk actions with 403', async () => {
+		const coreCalls: string[] = [];
+		const readOnly = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJobs: async (): Promise<BulkOperationResult> => {
+					coreCalls.push('read-only');
+
+					return { count: 0, errors: [] };
+				},
+			}),
+			readOnly: true,
+		});
+		const unsupported = createManagementSurface({
+			monque: createManagementMonque(),
+		});
+		const denied = createManagementSurface<{ role: string }>({
+			monque: createManagementMonque({
+				cancelJobs: async (): Promise<BulkOperationResult> => {
+					coreCalls.push('denied');
+
+					return { count: 0, errors: [] };
+				},
+			}),
+			authorize: ({ action, context, selector }) => {
+				expect({ action, context, selector }).toEqual({
+					action: 'cancel',
+					context: { role: 'viewer' },
+					selector: { name: 'send-email' },
+				});
+
+				return false;
+			},
+		});
+
+		const readOnlyResponse = await handlePost(readOnly, '/api/v1/jobs/actions/cancel', {});
+		const unsupportedResponse = await handlePost(unsupported, '/api/v1/jobs/actions/cancel', {});
+		const deniedResponse = await handlePost(
+			denied,
+			'/api/v1/jobs/actions/cancel',
+			{ name: 'send-email' },
+			{ managementContext: { role: 'viewer' } },
+		);
+
+		expect(readOnlyResponse.status).toBe(403);
+		expect(await readOnlyResponse.json()).toEqual({ error: 'Management surface is read-only' });
+		expect(unsupportedResponse.status).toBe(403);
+		expect(await unsupportedResponse.json()).toEqual({ error: 'Unsupported action' });
+		expect(deniedResponse.status).toBe(403);
+		expect(await deniedResponse.json()).toEqual({ error: 'Action denied' });
+		expect(coreCalls).toEqual([]);
+	});
+
+	test('rejects invalid bulk selector request shapes before calling core', async () => {
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJobs: async (): Promise<BulkOperationResult> => {
+					coreCalls.push('called');
+
+					return { count: 0, errors: [] };
+				},
+			}),
+		});
+
+		const invalidShape = await handlePost(surface, '/api/v1/jobs/actions/cancel', []);
+		const invalidStatus = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+			status: [],
+		});
+		const invalidDate = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+			olderThan: 'February 1, 2026 10:30:00',
+		});
+		const unknownSelectorField = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+			olderThen: '2026-02-01T10:30:00.000Z',
+		});
+
+		for (const response of [invalidShape, invalidStatus, invalidDate, unknownSelectorField]) {
+			expect(response.status).toBe(400);
+			expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		}
+		expect(coreCalls).toEqual([]);
+	});
+
+	test('maps invalid bulk Job state transitions to 409', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJobs: async () => {
+					throw new JobStateError('Cannot cancel selected jobs', 'bulk', 'processing', 'cancel');
+				},
+			}),
+		});
+
+		const response = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+			status: 'processing',
+		});
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: 'Cannot cancel selected jobs' });
 	});
 });
