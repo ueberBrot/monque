@@ -31,9 +31,22 @@ const EXPECTED_RUNTIME_DEPENDENCIES = [
 	'@orpc/openapi',
 	'@orpc/server',
 	'@orpc/zod',
-	'@sinclair/typebox',
-	'openapi3-ts',
 	'zod',
+] as const;
+
+const FORBIDDEN_RUNTIME_DEPENDENCIES = [
+	'@orpc/client',
+	'@orpc/openapi-client',
+	'@scalar/api-reference',
+	'@sinclair/typebox',
+	'@types/express',
+	'@types/koa',
+	'@types/node',
+	'express',
+	'fastify',
+	'hono',
+	'koa',
+	'openapi3-ts',
 ] as const;
 
 const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
@@ -61,6 +74,9 @@ describe('@monque/management package contract', () => {
 		expect(Object.keys(packageJson.dependencies ?? {}).sort()).toEqual([
 			...EXPECTED_RUNTIME_DEPENDENCIES,
 		]);
+		for (const dependency of FORBIDDEN_RUNTIME_DEPENDENCIES) {
+			expect(packageJson.dependencies?.[dependency]).toBeUndefined();
+		}
 	});
 
 	test('exports the Zod-derived capabilities DTO schema', () => {
