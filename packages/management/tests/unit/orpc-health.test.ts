@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque } from '@tests/unit/management-test-utils';
+import { createManagementMonque, handleManagementGet } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management health route', () => {
@@ -9,16 +9,10 @@ describe('oRPC Management health route', () => {
 			monque: createManagementMonque({ isHealthy: () => false }),
 		});
 
-		const result = await surface.openApiHandler.handle(
-			new Request('https://management.example/api/v1/health', { method: 'GET' }),
-		);
+		const response = await handleManagementGet(surface, '/api/v1/health');
 
-		if (!result.matched) {
-			throw new Error('Expected oRPC OpenAPI handler to match health route');
-		}
-
-		expect(result.response.status).toBe(200);
-		expect(await result.response.json()).toEqual({
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
 			status: 'unavailable',
 			scheduler: {
 				healthy: false,
@@ -32,16 +26,10 @@ describe('oRPC Management health route', () => {
 			authorize: () => false,
 		});
 
-		const result = await surface.openApiHandler.handle(
-			new Request('https://management.example/api/v1/health', { method: 'GET' }),
-		);
+		const response = await handleManagementGet(surface, '/api/v1/health');
 
-		if (!result.matched) {
-			throw new Error('Expected oRPC OpenAPI handler to match health route');
-		}
-
-		expect(result.response.status).toBe(200);
-		expect(await result.response.json()).toEqual({
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({
 			status: 'ok',
 			scheduler: {
 				healthy: true,

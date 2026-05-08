@@ -8,26 +8,8 @@ import {
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque } from '@tests/unit/management-test-utils';
+import { createManagementMonque, handleManagementGet } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
-import type { ManagementOpenApiContext, ManagementSurface } from '@/surface';
-
-async function handleGet(
-	surface: ManagementSurface,
-	path: string,
-	context?: ManagementOpenApiContext,
-): Promise<Response> {
-	const result = await surface.openApiHandler.handle(
-		new Request(`https://management.example${path}`, { method: 'GET' }),
-		context === undefined ? {} : { context },
-	);
-
-	if (!result.matched) {
-		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
-	}
-
-	return result.response;
-}
 
 describe('oRPC Management read routes', () => {
 	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
@@ -71,7 +53,7 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 
-		const response = await handleGet(
+		const response = await handleManagementGet(
 			surface,
 			'/api/v1/jobs?cursor=current-cursor&limit=250&name=send-email&status=pending&status=failed',
 			{ managementContext: { userId: 'operator-1' } },
@@ -131,9 +113,12 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const found = await handleGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
-		const missing = await handleGet(surface, `/api/v1/jobs/${new ObjectId().toHexString()}`);
-		const invalid = await handleGet(surface, '/api/v1/jobs/not-an-object-id');
+		const found = await handleManagementGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+		const missing = await handleManagementGet(
+			surface,
+			`/api/v1/jobs/${new ObjectId().toHexString()}`,
+		);
+		const invalid = await handleManagementGet(surface, '/api/v1/jobs/not-an-object-id');
 
 		expect(found.status).toBe(200);
 		expect(await found.json()).toEqual({
@@ -170,7 +155,7 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const response = await handleGet(
+		const response = await handleManagementGet(
 			surface,
 			`/api/v1/jobs/${pathId.toHexString()}?id=${queryId.toHexString()}`,
 		);
@@ -222,7 +207,7 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 
-		const response = await handleGet(surface, '/api/v1/jobs?name=send-email', {
+		const response = await handleManagementGet(surface, '/api/v1/jobs?name=send-email', {
 			managementContext: { role: 'admin' },
 		});
 
@@ -279,7 +264,7 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const response = await handleGet(surface, '/api/v1/jobs?status=failed');
+		const response = await handleManagementGet(surface, '/api/v1/jobs?status=failed');
 
 		expect(response.status).toBe(200);
 		expect(capturedOptions).toEqual({
@@ -301,10 +286,16 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const invalidStatus = await handleGet(surface, '/api/v1/jobs?status=wat');
-		const unsupportedFilter = await handleGet(surface, '/api/v1/jobs?claimedBy=scheduler-1');
-		const invalidLimit = await handleGet(surface, '/api/v1/jobs?limit=0');
-		const malformedCursor = await handleGet(surface, '/api/v1/jobs?cursor=not-a-valid-cursor');
+		const invalidStatus = await handleManagementGet(surface, '/api/v1/jobs?status=wat');
+		const unsupportedFilter = await handleManagementGet(
+			surface,
+			'/api/v1/jobs?claimedBy=scheduler-1',
+		);
+		const invalidLimit = await handleManagementGet(surface, '/api/v1/jobs?limit=0');
+		const malformedCursor = await handleManagementGet(
+			surface,
+			'/api/v1/jobs?cursor=not-a-valid-cursor',
+		);
 
 		expect(invalidStatus.status).toBe(400);
 		expect(unsupportedFilter.status).toBe(400);
@@ -342,12 +333,16 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 
-		const list = await handleGet(surface, '/api/v1/jobs', {
+		const list = await handleManagementGet(surface, '/api/v1/jobs', {
 			managementContext: { role: 'viewer' },
 		});
-		const detail = await handleGet(surface, `/api/v1/jobs/${new ObjectId().toHexString()}`, {
-			managementContext: { role: 'viewer' },
-		});
+		const detail = await handleManagementGet(
+			surface,
+			`/api/v1/jobs/${new ObjectId().toHexString()}`,
+			{
+				managementContext: { role: 'viewer' },
+			},
+		);
 
 		expect(list.status).toBe(403);
 		expect(await list.json()).toEqual({ error: 'Read access denied' });
@@ -401,7 +396,7 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const response = await handleGet(surface, '/api/v1/queue-views');
+		const response = await handleManagementGet(surface, '/api/v1/queue-views');
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
@@ -462,7 +457,7 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const response = await handleGet(surface, '/api/v1/jobs/stats?name=send-email');
+		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=send-email');
 
 		expect(response.status).toBe(200);
 		expect(calls).toEqual([{ name: 'send-email' }]);
@@ -493,7 +488,7 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 
-		const response = await handleGet(surface, '/api/v1/queue-views', {
+		const response = await handleManagementGet(surface, '/api/v1/queue-views', {
 			managementContext: { role: 'viewer' },
 		});
 
@@ -521,7 +516,7 @@ describe('oRPC Management read routes', () => {
 			}),
 		});
 
-		const response = await handleGet(surface, '/api/v1/jobs/stats?name=one&name=two');
+		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=one&name=two');
 
 		expect(response.status).toBe(400);
 		expect(await response.json()).toEqual({ error: 'Input validation failed' });
@@ -551,7 +546,7 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 
-		const response = await handleGet(surface, '/api/v1/jobs/stats', {
+		const response = await handleManagementGet(surface, '/api/v1/jobs/stats', {
 			managementContext: { role: 'viewer' },
 		});
 

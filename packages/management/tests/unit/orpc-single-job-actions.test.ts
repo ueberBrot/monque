@@ -2,9 +2,12 @@ import { JobStateError, type PersistedJob } from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque } from '@tests/unit/management-test-utils';
+import {
+	createManagementMonque,
+	handleManagementDelete,
+	handleManagementPost,
+} from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
-import type { ManagementOpenApiContext, ManagementSurface } from '@/surface';
 
 function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
 	return {
@@ -18,48 +21,6 @@ function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
 		updatedAt: new Date('2026-01-01T00:01:00.000Z'),
 		...overrides,
 	};
-}
-
-async function handlePost(
-	surface: ManagementSurface,
-	path: string,
-	body?: unknown,
-	context?: ManagementOpenApiContext,
-): Promise<Response> {
-	const init: RequestInit = { method: 'POST' };
-
-	if (body !== undefined) {
-		init.headers = { 'content-type': 'application/json' };
-		init.body = JSON.stringify(body);
-	}
-
-	const result = await surface.openApiHandler.handle(
-		new Request(`https://management.example${path}`, init),
-		context === undefined ? {} : { context },
-	);
-
-	if (!result.matched) {
-		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
-	}
-
-	return result.response;
-}
-
-async function handleDelete(
-	surface: ManagementSurface,
-	path: string,
-	context?: ManagementOpenApiContext,
-): Promise<Response> {
-	const result = await surface.openApiHandler.handle(
-		new Request(`https://management.example${path}`, { method: 'DELETE' }),
-		context === undefined ? {} : { context },
-	);
-
-	if (!result.matched) {
-		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
-	}
-
-	return result.response;
 }
 
 describe('oRPC Management single Job action routes', () => {
@@ -88,7 +49,7 @@ describe('oRPC Management single Job action routes', () => {
 			},
 		});
 
-		const response = await handlePost(
+		const response = await handleManagementPost(
 			surface,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 			undefined,
@@ -146,7 +107,10 @@ describe('oRPC Management single Job action routes', () => {
 			}),
 		});
 
-		const response = await handlePost(surface, `/api/v1/jobs/${jobId.toHexString()}/actions/retry`);
+		const response = await handleManagementPost(
+			surface,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/retry`,
+		);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({
@@ -173,7 +137,7 @@ describe('oRPC Management single Job action routes', () => {
 			}),
 		});
 
-		const response = await handleDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+		const response = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ deleted: true });
@@ -200,7 +164,7 @@ describe('oRPC Management single Job action routes', () => {
 			}),
 		});
 
-		const response = await handlePost(
+		const response = await handleManagementPost(
 			surface,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/reschedule`,
 			{ nextRunAt: '2026-02-01T10:30:00.000Z' },
@@ -299,34 +263,34 @@ describe('oRPC Management single Job action routes', () => {
 			}),
 		});
 
-		const readOnlyResponse = await handlePost(
+		const readOnlyResponse = await handleManagementPost(
 			readOnly,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 		);
-		const unsupportedResponse = await handlePost(
+		const unsupportedResponse = await handleManagementPost(
 			unsupported,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 		);
-		const deniedResponse = await handlePost(
+		const deniedResponse = await handleManagementPost(
 			denied,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 			undefined,
 			{ managementContext: { role: 'viewer' } },
 		);
-		const invalidId = await handlePost(
+		const invalidId = await handleManagementPost(
 			validatesBeforeCore,
 			'/api/v1/jobs/not-an-object-id/actions/cancel',
 		);
-		const invalidRescheduleBody = await handlePost(
+		const invalidRescheduleBody = await handleManagementPost(
 			validatesBeforeCore,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/reschedule`,
 			{ nextRunAt: 'February 1, 2026 10:30:00' },
 		);
-		const missingResponse = await handlePost(
+		const missingResponse = await handleManagementPost(
 			missing,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 		);
-		const conflictResponse = await handlePost(
+		const conflictResponse = await handleManagementPost(
 			conflict,
 			`/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
 		);

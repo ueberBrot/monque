@@ -2,31 +2,8 @@ import type { BulkOperationResult, JobSelector } from '@monque/core';
 import { JobStateError } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque } from '@tests/unit/management-test-utils';
+import { createManagementMonque, handleManagementPost } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
-import type { ManagementOpenApiContext, ManagementSurface } from '@/surface';
-
-async function handlePost(
-	surface: ManagementSurface,
-	path: string,
-	body: unknown,
-	context?: ManagementOpenApiContext,
-): Promise<Response> {
-	const result = await surface.openApiHandler.handle(
-		new Request(`https://management.example${path}`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify(body),
-		}),
-		context === undefined ? {} : { context },
-	);
-
-	if (!result.matched) {
-		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
-	}
-
-	return result.response;
-}
 
 describe('oRPC Management bulk action routes', () => {
 	test('bulk cancels Jobs through public core API with selector DTOs', async () => {
@@ -49,7 +26,7 @@ describe('oRPC Management bulk action routes', () => {
 			},
 		});
 
-		const response = await handlePost(
+		const response = await handleManagementPost(
 			surface,
 			'/api/v1/jobs/actions/cancel',
 			{
@@ -105,8 +82,10 @@ describe('oRPC Management bulk action routes', () => {
 			}),
 		});
 
-		const retry = await handlePost(surface, '/api/v1/jobs/actions/retry', { status: 'failed' });
-		const deleted = await handlePost(surface, '/api/v1/jobs/actions/delete', {
+		const retry = await handleManagementPost(surface, '/api/v1/jobs/actions/retry', {
+			status: 'failed',
+		});
+		const deleted = await handleManagementPost(surface, '/api/v1/jobs/actions/delete', {
 			status: ['completed', 'cancelled'],
 		});
 
@@ -138,7 +117,7 @@ describe('oRPC Management bulk action routes', () => {
 			}),
 		});
 
-		const response = await handlePost(surface, '/api/v1/jobs/actions/delete', {});
+		const response = await handleManagementPost(surface, '/api/v1/jobs/actions/delete', {});
 
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ count: 0, errors: [] });
@@ -179,9 +158,17 @@ describe('oRPC Management bulk action routes', () => {
 			},
 		});
 
-		const readOnlyResponse = await handlePost(readOnly, '/api/v1/jobs/actions/cancel', {});
-		const unsupportedResponse = await handlePost(unsupported, '/api/v1/jobs/actions/cancel', {});
-		const deniedResponse = await handlePost(
+		const readOnlyResponse = await handleManagementPost(
+			readOnly,
+			'/api/v1/jobs/actions/cancel',
+			{},
+		);
+		const unsupportedResponse = await handleManagementPost(
+			unsupported,
+			'/api/v1/jobs/actions/cancel',
+			{},
+		);
+		const deniedResponse = await handleManagementPost(
 			denied,
 			'/api/v1/jobs/actions/cancel',
 			{ name: 'send-email' },
@@ -209,16 +196,20 @@ describe('oRPC Management bulk action routes', () => {
 			}),
 		});
 
-		const invalidShape = await handlePost(surface, '/api/v1/jobs/actions/cancel', []);
-		const invalidStatus = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+		const invalidShape = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', []);
+		const invalidStatus = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', {
 			status: [],
 		});
-		const invalidDate = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+		const invalidDate = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', {
 			olderThan: 'February 1, 2026 10:30:00',
 		});
-		const unknownSelectorField = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
-			olderThen: '2026-02-01T10:30:00.000Z',
-		});
+		const unknownSelectorField = await handleManagementPost(
+			surface,
+			'/api/v1/jobs/actions/cancel',
+			{
+				olderThen: '2026-02-01T10:30:00.000Z',
+			},
+		);
 
 		for (const response of [invalidShape, invalidStatus, invalidDate, unknownSelectorField]) {
 			expect(response.status).toBe(400);
@@ -236,7 +227,7 @@ describe('oRPC Management bulk action routes', () => {
 			}),
 		});
 
-		const response = await handlePost(surface, '/api/v1/jobs/actions/cancel', {
+		const response = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', {
 			status: 'processing',
 		});
 
