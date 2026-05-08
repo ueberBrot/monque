@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
 	createManagementMonque,
+	expectJsonResponse,
 	handleManagementGet,
 	handleManagementPost,
 } from '@tests/unit/management-test-utils';
@@ -15,8 +16,7 @@ describe('oRPC Management capabilities route', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/capabilities');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			readOnly: false,
 			actions: {
 				read: true,
@@ -42,8 +42,7 @@ describe('oRPC Management capabilities route', () => {
 			managementContext: { role: 'viewer' },
 		});
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			readOnly: false,
 			actions: {
 				read: true,
@@ -63,8 +62,7 @@ describe('oRPC Management capabilities route', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/capabilities');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			readOnly: true,
 			actions: {
 				read: true,
@@ -86,8 +84,7 @@ describe('oRPC Management capabilities route', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/capabilities');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			readOnly: false,
 			actions: {
 				read: true,
@@ -113,15 +110,16 @@ describe('oRPC Management capabilities route', () => {
 		);
 		const bulkCancel = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', {});
 
-		expect(capabilities.status).toBe(200);
-		expect(await capabilities.json()).toMatchObject({
-			actions: {
-				cancel: true,
-			},
-		});
-		expect(singleCancel.status).toBe(403);
-		expect(await singleCancel.json()).toEqual({ error: 'Unsupported action' });
-		expect(bulkCancel.status).toBe(200);
-		expect(await bulkCancel.json()).toEqual({ count: 0, errors: [] });
+		await expectJsonResponse(
+			capabilities,
+			200,
+			expect.objectContaining({
+				actions: expect.objectContaining({
+					cancel: true,
+				}),
+			}),
+		);
+		await expectJsonResponse(singleCancel, 403, { error: 'Unsupported action' });
+		await expectJsonResponse(bulkCancel, 200, { count: 0, errors: [] });
 	});
 });

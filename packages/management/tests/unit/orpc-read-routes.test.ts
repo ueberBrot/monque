@@ -1,14 +1,19 @@
 import {
 	type CursorOptions,
 	InvalidCursorError,
-	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
 } from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque, handleManagementGet } from '@tests/unit/management-test-utils';
+import {
+	createManagementJob,
+	createManagementMonque,
+	expectJsonResponse,
+	getManagementJobById,
+	handleManagementGet,
+} from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management read routes', () => {
@@ -16,20 +21,16 @@ describe('oRPC Management read routes', () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;
 		const serializedPayloads: unknown[] = [];
-		const job = {
+		const job = createManagementJob({
 			_id: jobId,
-			name: 'send-email',
 			data: { to: 'person@example.test', token: 'secret' },
 			status: 'failed',
-			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
 			lockedAt: null,
 			claimedBy: null,
 			lastHeartbeat: null,
 			failCount: 2,
 			failReason: 'SMTP rejected',
-			createdAt: new Date('2025-12-31T23:00:00.000Z'),
-			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
-		} satisfies PersistedJob;
+		});
 		const surface = createManagementSurface<{ userId: string }>({
 			monque: createManagementMonque({
 				getJobsWithCursor: async (options) => {
@@ -59,7 +60,6 @@ describe('oRPC Management read routes', () => {
 			{ managementContext: { userId: 'operator-1' } },
 		);
 
-		expect(response.status).toBe(200);
 		expect(capturedOptions).toEqual({
 			cursor: 'current-cursor',
 			limit: 100,
@@ -69,7 +69,7 @@ describe('oRPC Management read routes', () => {
 			},
 		});
 		expect(serializedPayloads).toEqual([{ to: 'person@example.test', token: 'secret' }]);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			jobs: [
 				{
 					id: jobId.toHexString(),
@@ -97,19 +97,14 @@ describe('oRPC Management read routes', () => {
 
 	test('returns Job detail DTOs by id and maps missing or invalid ids', async () => {
 		const jobId = new ObjectId();
-		const job = {
+		const job = createManagementJob({
 			_id: jobId,
-			name: 'send-email',
 			data: { visible: true },
 			status: 'completed',
-			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
-			failCount: 0,
-			createdAt: new Date('2025-12-31T23:00:00.000Z'),
-			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
-		} satisfies PersistedJob;
+		});
 		const surface = createManagementSurface({
 			monque: createManagementMonque({
-				getJob: async (id) => (id.equals(jobId) ? job : null),
+				getJob: getManagementJobById(job),
 			}),
 		});
 
@@ -120,8 +115,7 @@ describe('oRPC Management read routes', () => {
 		);
 		const invalid = await handleManagementGet(surface, '/api/v1/jobs/not-an-object-id');
 
-		expect(found.status).toBe(200);
-		expect(await found.json()).toEqual({
+		await expectJsonResponse(found, 200, {
 			id: jobId.toHexString(),
 			name: 'send-email',
 			status: 'completed',
@@ -135,10 +129,8 @@ describe('oRPC Management read routes', () => {
 			createdAt: '2025-12-31T23:00:00.000Z',
 			updatedAt: '2026-01-01T00:01:00.000Z',
 		});
-		expect(missing.status).toBe(404);
-		expect(await missing.json()).toEqual({ error: 'Job not found' });
-		expect(invalid.status).toBe(400);
-		expect(await invalid.json()).toEqual({ error: 'Invalid job id' });
+		await expectJsonResponse(missing, 404, { error: 'Job not found' });
+		await expectJsonResponse(invalid, 400, { error: 'Invalid job id' });
 	});
 
 	test('rejects Job detail query ids before reading from core', async () => {
@@ -160,30 +152,23 @@ describe('oRPC Management read routes', () => {
 			`/api/v1/jobs/${pathId.toHexString()}?id=${queryId.toHexString()}`,
 		);
 
-		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		await expectJsonResponse(response, 400, { error: 'Input validation failed' });
 		expect(coreCalls).toEqual([]);
 	});
 
 	test('uses default Job page size and per Job Name payload serialization', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;
-		const job = {
+		const job = createManagementJob({
 			_id: jobId,
-			name: 'send-email',
 			data: { token: 'secret' },
-			status: 'pending',
-			nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
 			lockedAt: new Date('2026-01-01T00:00:01.000Z'),
 			claimedBy: 'scheduler-1',
 			lastHeartbeat: new Date('2026-01-01T00:00:02.000Z'),
 			heartbeatInterval: 5000,
-			failCount: 0,
 			repeatInterval: '0 * * * *',
 			uniqueKey: 'send-email:user-1',
-			createdAt: new Date('2025-12-31T23:00:00.000Z'),
-			updatedAt: new Date('2026-01-01T00:01:00.000Z'),
-		} satisfies PersistedJob;
+		});
 		const surface = createManagementSurface<{ role: string }>({
 			monque: createManagementMonque({
 				getJobsWithCursor: async (options) => {
@@ -211,14 +196,13 @@ describe('oRPC Management read routes', () => {
 			managementContext: { role: 'admin' },
 		});
 
-		expect(response.status).toBe(200);
 		expect(capturedOptions).toEqual({
 			limit: 50,
 			filter: {
 				name: 'send-email',
 			},
 		});
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			jobs: [
 				{
 					id: jobId.toHexString(),
@@ -266,7 +250,12 @@ describe('oRPC Management read routes', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/jobs?status=failed');
 
-		expect(response.status).toBe(200);
+		await expectJsonResponse(response, 200, {
+			jobs: [],
+			cursor: null,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		});
 		expect(capturedOptions).toEqual({
 			limit: 50,
 			filter: {
@@ -299,10 +288,8 @@ describe('oRPC Management read routes', () => {
 
 		expect(invalidStatus.status).toBe(400);
 		expect(unsupportedFilter.status).toBe(400);
-		expect(invalidLimit.status).toBe(400);
-		expect(await invalidLimit.json()).toEqual({ error: 'Invalid limit' });
-		expect(malformedCursor.status).toBe(400);
-		expect(await malformedCursor.json()).toEqual({ error: 'Invalid cursor' });
+		await expectJsonResponse(invalidLimit, 400, { error: 'Invalid limit' });
+		await expectJsonResponse(malformedCursor, 400, { error: 'Invalid cursor' });
 		expect(coreCalls).toEqual(['called']);
 	});
 
@@ -344,10 +331,8 @@ describe('oRPC Management read routes', () => {
 			},
 		);
 
-		expect(list.status).toBe(403);
-		expect(await list.json()).toEqual({ error: 'Read access denied' });
-		expect(detail.status).toBe(403);
-		expect(await detail.json()).toEqual({ error: 'Read access denied' });
+		await expectJsonResponse(list, 403, { error: 'Read access denied' });
+		await expectJsonResponse(detail, 403, { error: 'Read access denied' });
 		expect(calls).toEqual([
 			{ action: 'read', context: { role: 'viewer' } },
 			{ action: 'read', context: { role: 'viewer' } },
@@ -398,8 +383,7 @@ describe('oRPC Management read routes', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/queue-views');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			queueViews: [
 				{
 					name: 'send-email',
@@ -459,9 +443,7 @@ describe('oRPC Management read routes', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=send-email');
 
-		expect(response.status).toBe(200);
-		expect(calls).toEqual([{ name: 'send-email' }]);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			pending: 4,
 			processing: 3,
 			completed: 20,
@@ -470,6 +452,7 @@ describe('oRPC Management read routes', () => {
 			total: 30,
 			avgProcessingDurationMs: 456,
 		});
+		expect(calls).toEqual([{ name: 'send-email' }]);
 	});
 
 	test('rejects Queue View reads when authorization denies read access', async () => {
@@ -492,8 +475,7 @@ describe('oRPC Management read routes', () => {
 			managementContext: { role: 'viewer' },
 		});
 
-		expect(response.status).toBe(403);
-		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		await expectJsonResponse(response, 403, { error: 'Read access denied' });
 		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
 		expect(queueViewCalls).toEqual([]);
 	});
@@ -518,8 +500,7 @@ describe('oRPC Management read routes', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=one&name=two');
 
-		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'Input validation failed' });
+		await expectJsonResponse(response, 400, { error: 'Input validation failed' });
 		expect(calls).toEqual([]);
 	});
 
@@ -550,8 +531,7 @@ describe('oRPC Management read routes', () => {
 			managementContext: { role: 'viewer' },
 		});
 
-		expect(response.status).toBe(403);
-		expect(await response.json()).toEqual({ error: 'Read access denied' });
+		await expectJsonResponse(response, 403, { error: 'Read access denied' });
 		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
 		expect(statsCalls).toEqual([]);
 	});

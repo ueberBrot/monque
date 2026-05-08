@@ -1,9 +1,12 @@
 import type {
 	BulkOperationResult,
 	CursorOptions,
+	PersistedJob,
 	QueueStats,
 	QueueViewSummary,
 } from '@monque/core';
+import { ObjectId } from 'mongodb';
+import { expect } from 'vitest';
 
 import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
 
@@ -47,6 +50,33 @@ export function createManagementMonque(
 	}
 
 	return monque;
+}
+
+export function createManagementJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
+	return {
+		_id: new ObjectId(),
+		name: 'send-email',
+		data: { to: 'person@example.test' },
+		status: 'pending',
+		nextRunAt: new Date('2026-01-01T00:00:00.000Z'),
+		failCount: 0,
+		createdAt: new Date('2025-12-31T23:00:00.000Z'),
+		updatedAt: new Date('2026-01-01T00:01:00.000Z'),
+		...overrides,
+	};
+}
+
+export function getManagementJobById(job: PersistedJob): ManagementMonque['getJob'] {
+	return async (id) => (id.equals(job._id) ? job : null);
+}
+
+export async function expectJsonResponse(
+	response: Response,
+	status: number,
+	expectedBody: unknown,
+): Promise<void> {
+	expect(response.status).toBe(status);
+	expect(await response.json()).toEqual(expectedBody);
 }
 
 export async function handleManagementGet(

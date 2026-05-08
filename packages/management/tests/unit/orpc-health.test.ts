@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { describe, test } from 'vitest';
 
-import { createManagementMonque, handleManagementGet } from '@tests/unit/management-test-utils';
+import {
+	createManagementMonque,
+	expectJsonResponse,
+	handleManagementGet,
+} from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management health route', () => {
@@ -11,8 +15,7 @@ describe('oRPC Management health route', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/health');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			status: 'unavailable',
 			scheduler: {
 				healthy: false,
@@ -28,8 +31,7 @@ describe('oRPC Management health route', () => {
 
 		const response = await handleManagementGet(surface, '/api/v1/health');
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			status: 'ok',
 			scheduler: {
 				healthy: true,

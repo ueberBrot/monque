@@ -2,7 +2,11 @@ import type { BulkOperationResult, JobSelector } from '@monque/core';
 import { JobStateError } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
-import { createManagementMonque, handleManagementPost } from '@tests/unit/management-test-utils';
+import {
+	createManagementMonque,
+	expectJsonResponse,
+	handleManagementPost,
+} from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management bulk action routes', () => {
@@ -44,8 +48,7 @@ describe('oRPC Management bulk action routes', () => {
 			olderThan: new Date('2026-02-01T10:30:00.000Z'),
 			newerThan: new Date('2026-01-01T00:00:00.000Z'),
 		};
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({
+		await expectJsonResponse(response, 200, {
 			count: 2,
 			errors: [],
 		});
@@ -89,13 +92,11 @@ describe('oRPC Management bulk action routes', () => {
 			status: ['completed', 'cancelled'],
 		});
 
-		expect(retry.status).toBe(200);
-		expect(await retry.json()).toEqual({
+		await expectJsonResponse(retry, 200, {
 			count: 1,
 			errors: [{ jobId: 'job-1', error: 'still processing' }],
 		});
-		expect(deleted.status).toBe(200);
-		expect(await deleted.json()).toEqual({
+		await expectJsonResponse(deleted, 200, {
 			count: 3,
 			errors: [],
 		});
@@ -119,8 +120,7 @@ describe('oRPC Management bulk action routes', () => {
 
 		const response = await handleManagementPost(surface, '/api/v1/jobs/actions/delete', {});
 
-		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ count: 0, errors: [] });
+		await expectJsonResponse(response, 200, { count: 0, errors: [] });
 		expect(coreCalls).toEqual([{}]);
 	});
 
@@ -175,12 +175,9 @@ describe('oRPC Management bulk action routes', () => {
 			{ managementContext: { role: 'viewer' } },
 		);
 
-		expect(readOnlyResponse.status).toBe(403);
-		expect(await readOnlyResponse.json()).toEqual({ error: 'Management surface is read-only' });
-		expect(unsupportedResponse.status).toBe(403);
-		expect(await unsupportedResponse.json()).toEqual({ error: 'Unsupported action' });
-		expect(deniedResponse.status).toBe(403);
-		expect(await deniedResponse.json()).toEqual({ error: 'Action denied' });
+		await expectJsonResponse(readOnlyResponse, 403, { error: 'Management surface is read-only' });
+		await expectJsonResponse(unsupportedResponse, 403, { error: 'Unsupported action' });
+		await expectJsonResponse(deniedResponse, 403, { error: 'Action denied' });
 		expect(coreCalls).toEqual([]);
 	});
 
@@ -212,8 +209,7 @@ describe('oRPC Management bulk action routes', () => {
 		);
 
 		for (const response of [invalidShape, invalidStatus, invalidDate, unknownSelectorField]) {
-			expect(response.status).toBe(400);
-			expect(await response.json()).toEqual({ error: 'Input validation failed' });
+			await expectJsonResponse(response, 400, { error: 'Input validation failed' });
 		}
 		expect(coreCalls).toEqual([]);
 	});
@@ -231,7 +227,6 @@ describe('oRPC Management bulk action routes', () => {
 			status: 'processing',
 		});
 
-		expect(response.status).toBe(409);
-		expect(await response.json()).toEqual({ error: 'Cannot cancel selected jobs' });
+		await expectJsonResponse(response, 409, { error: 'Cannot cancel selected jobs' });
 	});
 });
