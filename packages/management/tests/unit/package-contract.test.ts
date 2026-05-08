@@ -6,10 +6,14 @@ import { describe, expect, test } from 'vitest';
 import {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
+	createManagementRouter,
+	createManagementSurface,
 	DeleteJobDtoSchema,
+	generateManagementOpenApiDocument,
 	JobCursorPageDtoSchema,
 	JobDtoSchema,
 	JobSelectorDtoSchema,
+	managementContract,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	RescheduleJobRequestDtoSchema,
@@ -114,6 +118,20 @@ describe('@monque/management package contract', () => {
 				},
 			}).success,
 		).toBe(true);
+	});
+
+	test('exports the oRPC server-side surface APIs', () => {
+		expect(createManagementSurface).toEqual(expect.any(Function));
+		expect(createManagementRouter).toEqual(expect.any(Function));
+		expect(generateManagementOpenApiDocument).toEqual(expect.any(Function));
+		expect(managementContract).toEqual(
+			expect.objectContaining({
+				health: expect.any(Object),
+				capabilities: expect.any(Object),
+				jobs: expect.any(Object),
+				cancelJobs: expect.any(Object),
+			}),
+		);
 	});
 
 	test('exports the Zod-derived read DTO schemas', () => {
