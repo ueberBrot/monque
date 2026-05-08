@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
@@ -50,6 +50,25 @@ const FORBIDDEN_RUNTIME_DEPENDENCIES = [
 ] as const;
 
 const TEST_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
+const PACKAGE_DIRECTORY = join(TEST_DIRECTORY, '../..');
+
+const FORBIDDEN_SOURCE_PATTERNS = [
+	'@sinclair/typebox',
+	'openapi3-ts',
+	'ManagementRequest',
+	'ManagementResponse',
+	'MANAGEMENT_ROUTE_MAP',
+	'normalizeManagementRequest',
+] as const;
+
+const FORBIDDEN_SOURCE_PATHS = [
+	'src/dtos',
+	'src/http',
+	'src/openapi',
+	'src/request',
+	'src/routes',
+	'src/validation',
+] as const;
 
 describe('@monque/management package contract', () => {
 	test('is publishable, peer-depends on core and mongodb, and avoids framework coupling', async () => {
@@ -180,11 +199,43 @@ describe('@monque/management package contract', () => {
 			}).success,
 		).toBe(true);
 	});
+
+	test('does not ship the old custom route/request/OpenAPI stack', async () => {
+		const sourceFiles = await listPackageFiles(join(PACKAGE_DIRECTORY, 'src'));
+		const sourcePaths = sourceFiles.map((filePath) => filePath.slice(PACKAGE_DIRECTORY.length + 1));
+
+		for (const forbiddenPath of FORBIDDEN_SOURCE_PATHS) {
+			expect(sourcePaths.some((filePath) => filePath.startsWith(forbiddenPath))).toBe(false);
+		}
+
+		const sourceText = await Promise.all(sourceFiles.map((filePath) => readFile(filePath, 'utf8')));
+
+		for (const forbiddenPattern of FORBIDDEN_SOURCE_PATTERNS) {
+			expect(sourceText.some((text) => text.includes(forbiddenPattern))).toBe(false);
+		}
+	});
 });
 
 async function readPackageJson(): Promise<PackageJson> {
-	const raw = await readFile(join(TEST_DIRECTORY, '../../package.json'), 'utf8');
+	const raw = await readFile(join(PACKAGE_DIRECTORY, 'package.json'), 'utf8');
 	const parsed = JSON.parse(raw) as PackageJson;
 
 	return parsed;
+}
+
+async function listPackageFiles(directory: string): Promise<string[]> {
+	const entries = await readdir(directory, { withFileTypes: true });
+	const files = await Promise.all(
+		entries.map((entry) => {
+			const entryPath = join(directory, entry.name);
+
+			if (entry.isDirectory()) {
+				return listPackageFiles(entryPath);
+			}
+
+			return [entryPath];
+		}),
+	);
+
+	return files.flat();
 }

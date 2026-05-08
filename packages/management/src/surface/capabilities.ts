@@ -1,14 +1,12 @@
-import {
-	isManagementActionAllowedByReadOnlyMode,
-	isManagementActionSupported,
-	ManagementActions,
-} from '../routes/index.js';
 import type {
 	CapabilitiesDto,
 	CapabilityActionsDto,
 	ManagementAction,
+	ManagementMonque,
 	ManagementOptions,
 } from './types.js';
+
+const ManagementActions = ['read', 'cancel', 'retry', 'reschedule', 'delete'] as const;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
 	read: false,
@@ -36,6 +34,28 @@ export async function getManagementCapabilities<TContext>(
 		readOnly,
 		actions,
 	};
+}
+
+function isManagementActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
+	switch (action) {
+		case 'read':
+			return true;
+		case 'cancel':
+			return Boolean(monque.cancelJob || monque.cancelJobs);
+		case 'retry':
+			return Boolean(monque.retryJob || monque.retryJobs);
+		case 'reschedule':
+			return Boolean(monque.rescheduleJob);
+		case 'delete':
+			return Boolean(monque.deleteJob || monque.deleteJobs);
+	}
+}
+
+function isManagementActionAllowedByReadOnlyMode(
+	action: ManagementAction,
+	readOnly: boolean,
+): boolean {
+	return !readOnly || action === 'read';
 }
 
 async function isAllowedByAuthorization<TContext>(

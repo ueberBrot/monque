@@ -15,17 +15,16 @@ import {
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
-} from '../dtos/index.js';
-import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
+} from '../mappers/index.js';
+import type { JobSelectorDto } from '../schemas/index.js';
 import { getManagementCapabilities } from '../surface/capabilities.js';
 import type {
 	ManagementAction,
 	ManagementOpenApiContext,
 	ManagementOptions,
-	ManagementQueryValue,
 } from '../surface/index.js';
-import { parseJobListQuery, parseObjectId } from '../validation/index.js';
 import { managementContract } from './contract.js';
+import { parseJobListQuery, parseObjectId, toManagementQuery } from './input.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
@@ -261,28 +260,6 @@ async function resolveSingleJobTarget<TContext>(
 	}
 
 	return id.value.toHexString();
-}
-
-function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
-	const query: Record<string, ManagementQueryValue> = {};
-
-	if (input.cursor !== undefined) {
-		query['cursor'] = input.cursor;
-	}
-
-	if (input.limit !== undefined) {
-		query['limit'] = input.limit;
-	}
-
-	if (input.name !== undefined) {
-		query['name'] = input.name;
-	}
-
-	if (input.status !== undefined) {
-		query['status'] = input.status;
-	}
-
-	return query;
 }
 
 async function handleBulkJobMutation<TContext>(
