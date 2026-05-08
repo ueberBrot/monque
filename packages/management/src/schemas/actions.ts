@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { JobStatusDtoSchema } from './job.js';
+import { JobDetailParamsDtoSchema, JobStatusDtoSchema } from './job.js';
 
 export const JobSelectorDtoSchema = z
 	.object({
@@ -38,6 +38,25 @@ export const DeleteJobDtoSchema = z
 	.strict();
 
 export type DeleteJobDto = z.infer<typeof DeleteJobDtoSchema>;
+
+export const RescheduleJobRequestDtoSchema = z
+	.object({
+		nextRunAt: z.iso.datetime(),
+	})
+	.strict();
+
+export type RescheduleJobRequestDto = z.infer<typeof RescheduleJobRequestDtoSchema>;
+
+export const RescheduleJobInputDtoSchema = z
+	.object({
+		params: JobDetailParamsDtoSchema,
+		query: z.object({}).strict().optional(),
+		headers: z.looseObject({}).optional(),
+		body: RescheduleJobRequestDtoSchema,
+	})
+	.strict();
+
+export type RescheduleJobInputDto = z.infer<typeof RescheduleJobInputDtoSchema>;
 
 export const ManagementErrorDtoSchema = z
 	.object({

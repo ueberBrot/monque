@@ -9,6 +9,10 @@ export {
 	JobSelectorDtoSchema,
 	type ManagementErrorDto,
 	ManagementErrorDtoSchema,
+	type RescheduleJobInputDto,
+	RescheduleJobInputDtoSchema,
+	type RescheduleJobRequestDto,
+	RescheduleJobRequestDtoSchema,
 } from './actions.js';
 export {
 	type CapabilitiesDto,

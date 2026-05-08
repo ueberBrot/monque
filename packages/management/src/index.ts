@@ -47,6 +47,8 @@ export {
 	QueueViewSummaryDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	QueueViewWorkerDtoSchema,
+	RescheduleJobInputDtoSchema,
+	RescheduleJobRequestDtoSchema,
 	SchedulerHealthDtoSchema,
 } from './schemas/index.js';
 export type {
@@ -81,6 +83,8 @@ export type {
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
 	QueueViewWorkerDto,
+	RescheduleJobInputDto,
+	RescheduleJobRequestDto,
 	SchedulerHealthDto,
 } from './surface/index.js';
 export { createManagementSurface } from './surface/index.js';

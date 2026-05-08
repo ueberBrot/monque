@@ -31,6 +31,7 @@ type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
 type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete' | 'reschedule'>;
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
+type RescheduleJobMutator = (id: string, runAt: Date) => Promise<PersistedJob | null>;
 type DeleteJobMutator = (id: string) => Promise<boolean>;
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
@@ -116,6 +117,15 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options.monque.retryJob?.bind(options.monque),
 			),
 		),
+		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) =>
+			handleRescheduleJob(
+				options,
+				input.params.id,
+				input.body.nextRunAt,
+				context.managementContext as TContext,
+				options.monque.rescheduleJob?.bind(options.monque),
+			),
+		),
 		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
 			handleDeleteJob(
 				options,
@@ -187,6 +197,54 @@ async function handleSingleJobMutation<TContext>(
 
 	try {
 		const job = await mutate(id.value.toHexString());
+
+		if (!job) {
+			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+		}
+
+		return toJobDto(options, job, context);
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
+}
+
+async function handleRescheduleJob<TContext>(
+	options: ManagementOptions<TContext>,
+	idInput: string,
+	nextRunAtInput: string,
+	context: TContext,
+	mutate: RescheduleJobMutator | undefined,
+) {
+	if (options.readOnly) {
+		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	}
+
+	if (!mutate) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+
+	const id = parseObjectId(idInput);
+
+	if ('error' in id) {
+		throw new ORPCError('BAD_REQUEST', { message: id.error });
+	}
+
+	const target = await options.monque.getJob(id.value);
+
+	if (!target) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	if (!(await isAllowedByAuthorization(options, 'reschedule', context, target))) {
+		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
+	}
+
+	try {
+		const job = await mutate(id.value.toHexString(), new Date(nextRunAtInput));
 
 		if (!job) {
 			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });

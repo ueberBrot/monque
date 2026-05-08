@@ -201,4 +201,44 @@ describe('oRPC Management single Job action routes', () => {
 		expect(await response.json()).toEqual({ deleted: true });
 		expect(coreCalls).toEqual([jobId.toHexString()]);
 	});
+
+	test('reschedules one Job with an ISO date DTO mapped to core Date', async () => {
+		const jobId = new ObjectId();
+		const target = createJob({ _id: jobId });
+		const rescheduled = createJob({
+			_id: jobId,
+			nextRunAt: new Date('2026-02-01T10:30:00.000Z'),
+			updatedAt: new Date('2026-01-01T00:04:00.000Z'),
+		});
+		const coreCalls: Array<{ id: string; runAt: Date }> = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? target : null),
+				rescheduleJob: async (id, runAt) => {
+					coreCalls.push({ id, runAt });
+
+					return rescheduled;
+				},
+			}),
+		});
+
+		const response = await handlePost(
+			surface,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/reschedule`,
+			{ nextRunAt: '2026-02-01T10:30:00.000Z' },
+		);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			id: jobId.toHexString(),
+			nextRunAt: '2026-02-01T10:30:00.000Z',
+			updatedAt: '2026-01-01T00:04:00.000Z',
+		});
+		expect(coreCalls).toEqual([
+			{
+				id: jobId.toHexString(),
+				runAt: new Date('2026-02-01T10:30:00.000Z'),
+			},
+		]);
+	});
 });

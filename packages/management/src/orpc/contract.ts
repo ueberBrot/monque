@@ -13,6 +13,7 @@ import {
 	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
+	RescheduleJobInputDtoSchema,
 	SchedulerHealthDtoSchema,
 } from '../schemas/index.js';
 
@@ -139,6 +140,18 @@ export const managementContract = {
 			inputStructure: 'detailed',
 		})
 		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(JobDtoSchema),
+	rescheduleJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/reschedule',
+			operationId: 'rescheduleJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(RescheduleJobInputDtoSchema)
 		.errors(SingleJobActionErrors)
 		.output(JobDtoSchema),
 	deleteJob: oc
