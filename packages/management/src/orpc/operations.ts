@@ -29,7 +29,12 @@ import {
 	type ManagementActionTarget,
 } from '../surface/action-policy.js';
 import type { ManagementAction, ManagementOptions } from '../surface/index.js';
-import { parseObjectId, toJobCursorOptions, toJobSelector } from '../surface/request-mapping.js';
+import {
+	parseObjectId,
+	toJobCursorOptions,
+	toJobSelector,
+	toQueueStatsFilter,
+} from '../surface/request-mapping.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
@@ -74,26 +79,12 @@ export function createManagementOperations<TContext = unknown>(
 		getJobStats: async (input: { name?: string | undefined }, context: TContext) => {
 			await requireReadAuthorization(options, context);
 
-			return toQueueStatsDto(
-				await options.monque.getQueueStats(
-					input.name === undefined ? undefined : { name: input.name },
-				),
-			);
+			return toQueueStatsDto(await options.monque.getQueueStats(toQueueStatsFilter(input)));
 		},
 		getJob: async (input: JobDetailInputDto, context: TContext) => {
 			await requireReadAuthorization(options, context);
 
-			const id = parseObjectId(input.params.id);
-
-			if ('error' in id) {
-				throw new ORPCError('BAD_REQUEST', { message: id.error });
-			}
-
-			const job = await options.monque.getJob(id.value);
-
-			if (!job) {
-				throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-			}
+			const { job } = await resolvePersistedJob(options, input.params.id);
 
 			return toJobDto(options, job, context);
 		},
@@ -216,6 +207,17 @@ async function resolveSingleJobTarget<TContext>(
 	idInput: string,
 	context: TContext,
 ): Promise<string> {
+	const { id, job } = await resolvePersistedJob(options, idInput);
+
+	await requireManagementAction(options, action, context, { job });
+
+	return id.toHexString();
+}
+
+async function resolvePersistedJob<TContext>(
+	options: ManagementOptions<TContext>,
+	idInput: string,
+): Promise<{ id: PersistedJob['_id']; job: PersistedJob }> {
 	const id = parseObjectId(idInput);
 
 	if ('error' in id) {
@@ -228,9 +230,7 @@ async function resolveSingleJobTarget<TContext>(
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
 
-	await requireManagementAction(options, action, context, { job: target });
-
-	return id.value.toHexString();
+	return { id: id.value, job: target };
 }
 
 async function handleBulkJobMutation<TContext>(

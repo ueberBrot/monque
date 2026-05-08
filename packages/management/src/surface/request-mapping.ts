@@ -54,6 +54,16 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 	return options;
 }
 
+export function toQueueStatsFilter(input: {
+	name?: string | undefined;
+}): { name: string } | undefined {
+	if (input.name === undefined) {
+		return undefined;
+	}
+
+	return { name: input.name };
+}
+
 export function toJobSelector(input: JobSelectorDto): JobSelector {
 	const selector: JobSelector = {};
 
