@@ -185,7 +185,7 @@ async function handleSingleJobMutation<TContext>(
 	context: TContext,
 	mutate: SingleJobMutator | undefined,
 ) {
-	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const id = await resolveSingleJobTarget(options, action, idInput, context);
 
 	try {
@@ -211,7 +211,7 @@ async function handleDeleteJob<TContext>(
 	context: TContext,
 	mutate: DeleteJobMutator | undefined,
 ) {
-	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
 	const deleted = await supportedMutate(id);
 
@@ -222,7 +222,7 @@ async function handleDeleteJob<TContext>(
 	return toDeleteJobDto();
 }
 
-function requireSingleJobMutator<TContext, TMutator>(
+function requireMutationSupport<TContext, TMutator>(
 	options: ManagementOptions<TContext>,
 	mutate: TMutator | undefined,
 ): TMutator {
@@ -269,14 +269,7 @@ async function handleBulkJobMutation<TContext>(
 	context: TContext,
 	mutate: BulkJobMutator | undefined,
 ) {
-	if (options.readOnly) {
-		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
-	}
-
-	if (!mutate) {
-		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
-	}
-
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const selector = toManagementSelector(input);
 
 	if (!(await isAllowedByAuthorization(options, action, context, undefined, selector))) {
@@ -284,7 +277,7 @@ async function handleBulkJobMutation<TContext>(
 	}
 
 	try {
-		return toBulkActionResultDto(await mutate(selector));
+		return toBulkActionResultDto(await supportedMutate(selector));
 	} catch (error) {
 		if (error instanceof JobStateError) {
 			throw new ORPCError('CONFLICT', { message: error.message });
