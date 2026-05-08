@@ -18,7 +18,19 @@ export function createManagementMonque(
 	overrides: Partial<ManagementMonque> = {},
 	options: CreateManagementMonqueOptions = {},
 ): ManagementMonque {
-	const monque: ManagementMonque = {
+	const mutationStubs: Partial<ManagementMonque> = options.mutations
+		? {
+				cancelJob: async () => null,
+				retryJob: async () => null,
+				rescheduleJob: async () => null,
+				deleteJob: async () => false,
+				cancelJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
+				retryJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
+				deleteJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
+			}
+		: {};
+
+	return {
 		isHealthy: () => true,
 		getQueueViewSummaries: async (): Promise<QueueViewSummary[]> => [],
 		getJobsWithCursor: async (_options?: CursorOptions) => ({
@@ -36,20 +48,9 @@ export function createManagementMonque(
 			cancelled: 0,
 			total: 0,
 		}),
+		...mutationStubs,
 		...overrides,
 	};
-
-	if (options.mutations) {
-		monque.cancelJob = async () => null;
-		monque.retryJob = async () => null;
-		monque.rescheduleJob = async () => null;
-		monque.deleteJob = async () => false;
-		monque.cancelJobs = async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] });
-		monque.retryJobs = async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] });
-		monque.deleteJobs = async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] });
-	}
-
-	return monque;
 }
 
 export function createManagementJob(overrides: Partial<PersistedJob> = {}): PersistedJob {

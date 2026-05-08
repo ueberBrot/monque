@@ -1,11 +1,15 @@
-import { describe, expect, test } from 'vitest';
+import { beforeAll, describe, expect, test } from 'vitest';
 
 import { generateManagementOpenApiDocument } from '@/index';
 
 describe('oRPC Management OpenAPI contract', () => {
-	test('includes stable reusable schema names', async () => {
-		const document = await generateManagementOpenApiDocument();
+	let document: Awaited<ReturnType<typeof generateManagementOpenApiDocument>>;
 
+	beforeAll(async () => {
+		document = await generateManagementOpenApiDocument();
+	});
+
+	test('includes stable reusable schema names', () => {
 		expect(Object.keys(document.components?.schemas ?? {})).toEqual(
 			expect.arrayContaining([
 				'BulkActionResult',
@@ -23,9 +27,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		);
 	});
 
-	test('derives the health path and response schema from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
-
+	test('derives the health path and response schema from the oRPC contract', () => {
 		expect(document.openapi).toBe('3.1.1');
 		expect(document.paths?.['/api/v1/health']?.get?.operationId).toBe('getSchedulerHealth');
 		expect(document.paths?.['/api/v1/health']?.get?.responses?.['200']).toMatchObject({
@@ -43,9 +45,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 	});
 
-	test('derives the capabilities path and response schema from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
-
+	test('derives the capabilities path and response schema from the oRPC contract', () => {
 		expect(document.paths?.['/api/v1/capabilities']?.get?.operationId).toBe('getCapabilities');
 		expect(document.paths?.['/api/v1/capabilities']?.get?.responses?.['200']).toMatchObject({
 			description: 'Successful response',
@@ -62,9 +62,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 	});
 
-	test('derives Queue View and Job stats paths from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
-
+	test('derives Queue View and Job stats paths from the oRPC contract', () => {
 		expect(document.paths?.['/api/v1/queue-views']?.get?.operationId).toBe('listQueueViews');
 		expect(document.paths?.['/api/v1/queue-views']?.get?.responses?.['200']).toMatchObject({
 			description: 'Successful response',
@@ -102,9 +100,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 	});
 
-	test('derives Job list and detail paths from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
-
+	test('derives Job list and detail paths from the oRPC contract', () => {
 		expect(document.paths?.['/api/v1/jobs']?.get?.operationId).toBe('listJobs');
 		expect(document.paths?.['/api/v1/jobs']?.get?.parameters).toEqual(
 			expect.arrayContaining([
@@ -167,8 +163,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 	});
 
-	test('derives bulk action paths, schemas, and error statuses from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
+	test('derives bulk action paths, schemas, and error statuses from the oRPC contract', () => {
 		const paths = [
 			['/api/v1/jobs/actions/cancel', 'cancelJobs'],
 			['/api/v1/jobs/actions/retry', 'retryJobs'],
@@ -221,8 +216,7 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 	});
 
-	test('derives single Job action paths, schemas, and error statuses from the oRPC contract', async () => {
-		const document = await generateManagementOpenApiDocument();
+	test('derives single Job action paths, schemas, and error statuses from the oRPC contract', () => {
 		const jobResponseRoutes = [
 			['/api/v1/jobs/{id}/actions/cancel', 'cancelJob'],
 			['/api/v1/jobs/{id}/actions/retry', 'retryJob'],
