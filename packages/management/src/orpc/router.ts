@@ -24,7 +24,7 @@ import type {
 	ManagementOptions,
 } from '../surface/index.js';
 import { managementContract } from './contract.js';
-import { parseJobListQuery, parseObjectId, toManagementQuery } from './input.js';
+import { parseJobListQuery, parseObjectId } from './input.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
@@ -55,7 +55,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 
 			await requireReadAuthorization(options, managementContext);
 
-			const cursorOptions = parseJobListQuery(toManagementQuery(input));
+			const cursorOptions = parseJobListQuery(input);
 
 			if ('error' in cursorOptions) {
 				throw new ORPCError('BAD_REQUEST', { message: cursorOptions.error });
