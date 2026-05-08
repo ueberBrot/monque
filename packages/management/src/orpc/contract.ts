@@ -3,6 +3,7 @@ import { oc } from '@orpc/contract';
 import {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
+	DeleteJobDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDetailInputDtoSchema,
 	JobDtoSchema,
@@ -140,6 +141,18 @@ export const managementContract = {
 		.input(JobDetailInputDtoSchema)
 		.errors(SingleJobActionErrors)
 		.output(JobDtoSchema),
+	deleteJob: oc
+		.route({
+			method: 'DELETE',
+			path: '/api/v1/jobs/{id}',
+			operationId: 'deleteJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(DeleteJobDtoSchema),
 	cancelJobs: oc
 		.route({
 			method: 'POST',

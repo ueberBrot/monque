@@ -31,6 +31,14 @@ export const BulkActionResultDtoSchema = z
 
 export type BulkActionResultDto = z.infer<typeof BulkActionResultDtoSchema>;
 
+export const DeleteJobDtoSchema = z
+	.object({
+		deleted: z.literal(true),
+	})
+	.strict();
+
+export type DeleteJobDto = z.infer<typeof DeleteJobDtoSchema>;
+
 export const ManagementErrorDtoSchema = z
 	.object({
 		error: z.string(),

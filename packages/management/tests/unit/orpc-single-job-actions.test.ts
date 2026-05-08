@@ -67,6 +67,23 @@ async function handlePost(
 	return result.response;
 }
 
+async function handleDelete(
+	surface: ManagementSurface,
+	path: string,
+	context?: ManagementOpenApiContext,
+): Promise<Response> {
+	const result = await surface.openApiHandler.handle(
+		new Request(`https://management.example${path}`, { method: 'DELETE' }),
+		context === undefined ? {} : { context },
+	);
+
+	if (!result.matched) {
+		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
+	}
+
+	return result.response;
+}
+
 describe('oRPC Management single Job action routes', () => {
 	test('cancels one Job through public core API with target authorization', async () => {
 		const jobId = new ObjectId();
@@ -160,6 +177,28 @@ describe('oRPC Management single Job action routes', () => {
 			failCount: 2,
 			updatedAt: '2026-01-01T00:03:00.000Z',
 		});
+		expect(coreCalls).toEqual([jobId.toHexString()]);
+	});
+
+	test('deletes one Job through public core API with a stable response DTO', async () => {
+		const jobId = new ObjectId();
+		const target = createJob({ _id: jobId, status: 'completed' });
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? target : null),
+				deleteJob: async (id) => {
+					coreCalls.push(id);
+
+					return true;
+				},
+			}),
+		});
+
+		const response = await handleDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ deleted: true });
 		expect(coreCalls).toEqual([jobId.toHexString()]);
 	});
 });

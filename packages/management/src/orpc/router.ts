@@ -9,6 +9,7 @@ import { implement, ORPCError } from '@orpc/server';
 
 import {
 	toBulkActionResultDto,
+	toDeleteJobDto,
 	toJobCursorPageDto,
 	toJobDto,
 	toQueueStatsDto,
@@ -30,6 +31,7 @@ type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
 type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete' | 'reschedule'>;
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
+type DeleteJobMutator = (id: string) => Promise<boolean>;
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
@@ -114,6 +116,14 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options.monque.retryJob?.bind(options.monque),
 			),
 		),
+		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
+			handleDeleteJob(
+				options,
+				input.params.id,
+				context.managementContext as TContext,
+				options.monque.deleteJob?.bind(options.monque),
+			),
+		),
 		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
 			handleBulkJobMutation(
 				options,
@@ -190,6 +200,45 @@ async function handleSingleJobMutation<TContext>(
 
 		throw error;
 	}
+}
+
+async function handleDeleteJob<TContext>(
+	options: ManagementOptions<TContext>,
+	idInput: string,
+	context: TContext,
+	mutate: DeleteJobMutator | undefined,
+) {
+	if (options.readOnly) {
+		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	}
+
+	if (!mutate) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+
+	const id = parseObjectId(idInput);
+
+	if ('error' in id) {
+		throw new ORPCError('BAD_REQUEST', { message: id.error });
+	}
+
+	const target = await options.monque.getJob(id.value);
+
+	if (!target) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	if (!(await isAllowedByAuthorization(options, 'delete', context, target))) {
+		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
+	}
+
+	const deleted = await mutate(id.value.toHexString());
+
+	if (!deleted) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	return toDeleteJobDto();
 }
 
 function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {

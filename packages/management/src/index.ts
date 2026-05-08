@@ -34,6 +34,7 @@ export {
 	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
 	CapabilityActionsDtoSchema,
+	DeleteJobDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDetailInputDtoSchema,
 	JobDetailParamsDtoSchema,

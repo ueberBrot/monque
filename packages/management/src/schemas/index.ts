@@ -3,6 +3,8 @@ export {
 	BulkActionErrorDtoSchema,
 	type BulkActionResultDto,
 	BulkActionResultDtoSchema,
+	type DeleteJobDto,
+	DeleteJobDtoSchema,
 	type JobSelectorDto,
 	JobSelectorDtoSchema,
 	type ManagementErrorDto,
