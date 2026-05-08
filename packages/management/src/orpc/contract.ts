@@ -34,6 +34,29 @@ const BulkActionErrors = {
 	},
 } as const;
 
+const SingleJobActionErrors = {
+	BAD_REQUEST: {
+		status: 400,
+		data: ManagementErrorDtoSchema,
+	},
+	FORBIDDEN: {
+		status: 403,
+		data: ManagementErrorDtoSchema,
+	},
+	NOT_FOUND: {
+		status: 404,
+		data: ManagementErrorDtoSchema,
+	},
+	CONFLICT: {
+		status: 409,
+		data: ManagementErrorDtoSchema,
+	},
+	INTERNAL_SERVER_ERROR: {
+		status: 500,
+		data: ManagementErrorDtoSchema,
+	},
+} as const;
+
 export const managementContract = {
 	health: oc
 		.route({
@@ -92,6 +115,18 @@ export const managementContract = {
 			inputStructure: 'detailed',
 		})
 		.input(JobDetailInputDtoSchema)
+		.output(JobDtoSchema),
+	cancelJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/cancel',
+			operationId: 'cancelJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
 		.output(JobDtoSchema),
 	cancelJobs: oc
 		.route({

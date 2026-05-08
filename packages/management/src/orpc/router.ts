@@ -3,6 +3,7 @@ import {
 	InvalidCursorError,
 	type JobSelector,
 	JobStateError,
+	type PersistedJob,
 } from '@monque/core';
 import { implement, ORPCError } from '@orpc/server';
 
@@ -27,6 +28,8 @@ import { managementContract } from './contract.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
+type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete' | 'reschedule'>;
+type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
@@ -93,6 +96,15 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 
 			return toJobDto(options, job, context.managementContext as TContext);
 		}),
+		cancelJob: managementImplementer.cancelJob.handler(async ({ input, context }) =>
+			handleSingleJobMutation(
+				options,
+				'cancel',
+				input.params.id,
+				context.managementContext as TContext,
+				options.monque.cancelJob?.bind(options.monque),
+			),
+		),
 		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
 			handleBulkJobMutation(
 				options,
@@ -121,6 +133,54 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			),
 		),
 	});
+}
+
+async function handleSingleJobMutation<TContext>(
+	options: ManagementOptions<TContext>,
+	action: SingleJobMutationAction,
+	idInput: string,
+	context: TContext,
+	mutate: SingleJobMutator | undefined,
+) {
+	if (options.readOnly) {
+		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	}
+
+	if (!mutate) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+
+	const id = parseObjectId(idInput);
+
+	if ('error' in id) {
+		throw new ORPCError('BAD_REQUEST', { message: id.error });
+	}
+
+	const target = await options.monque.getJob(id.value);
+
+	if (!target) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	if (!(await isAllowedByAuthorization(options, action, context, target))) {
+		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
+	}
+
+	try {
+		const job = await mutate(id.value.toHexString());
+
+		if (!job) {
+			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+		}
+
+		return toJobDto(options, job, context);
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
 }
 
 function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
@@ -216,7 +276,7 @@ async function isAllowedByAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	action: ManagementAction,
 	context: TContext,
-	job?: never,
+	job?: PersistedJob,
 	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
