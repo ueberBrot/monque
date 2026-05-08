@@ -17,7 +17,12 @@ import {
 	toSchedulerHealthDto,
 } from '../mappers/index.js';
 import type { JobSelectorDto } from '../schemas/index.js';
-import { getManagementCapabilities } from '../surface/capabilities.js';
+import {
+	decideManagementAction,
+	decideManagementActionSupport,
+	getManagementCapabilities,
+	type ManagementActionTarget,
+} from '../surface/action-policy.js';
 import type {
 	ManagementAction,
 	ManagementOpenApiContext,
@@ -196,7 +201,7 @@ async function handleSingleJobMutation<TContext>(
 	context: TContext,
 	mutate: SingleJobMutator | undefined,
 ) {
-	const supportedMutate = requireMutationSupport(options, mutate);
+	const supportedMutate = requireMutationSupport(options, action, mutate);
 	const id = await resolveSingleJobTarget(options, action, idInput, context);
 	const job = await mapJobStateConflict(() => supportedMutate(id));
 
@@ -213,7 +218,7 @@ async function handleDeleteJob<TContext>(
 	context: TContext,
 	mutate: DeleteJobMutator | undefined,
 ) {
-	const supportedMutate = requireMutationSupport(options, mutate);
+	const supportedMutate = requireMutationSupport(options, 'delete', mutate);
 	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
 	const deleted = await supportedMutate(id);
 
@@ -226,14 +231,17 @@ async function handleDeleteJob<TContext>(
 
 function requireMutationSupport<TContext, TMutator>(
 	options: ManagementOptions<TContext>,
+	action: Exclude<ManagementAction, 'read'>,
 	mutate: TMutator | undefined,
 ): TMutator {
-	if (options.readOnly) {
-		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	const decision = decideManagementActionSupport(options, action, mutate !== undefined);
+
+	if (!decision.allowed) {
+		throwForbidden(decision.message);
 	}
 
-	if (!mutate) {
-		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	if (mutate === undefined) {
+		throwForbidden('Unsupported action');
 	}
 
 	return mutate;
@@ -257,9 +265,7 @@ async function resolveSingleJobTarget<TContext>(
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
 
-	if (!(await isAllowedByAuthorization(options, action, context, target))) {
-		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
-	}
+	await requireManagementAction(options, action, context, { job: target });
 
 	return id.value.toHexString();
 }
@@ -271,12 +277,10 @@ async function handleBulkJobMutation<TContext>(
 	context: TContext,
 	mutate: BulkJobMutator | undefined,
 ) {
-	const supportedMutate = requireMutationSupport(options, mutate);
+	const supportedMutate = requireMutationSupport(options, action, mutate);
 	const selector = toManagementSelector(input);
 
-	if (!(await isAllowedByAuthorization(options, action, context, undefined, selector))) {
-		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
-	}
+	await requireManagementAction(options, action, context, { selector });
 
 	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
 }
@@ -310,25 +314,24 @@ async function requireReadAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	context: TContext,
 ): Promise<void> {
-	if (await isAllowedByAuthorization(options, 'read', context)) {
-		return;
-	}
-
-	throw new ORPCError('FORBIDDEN', { message: 'Read access denied' });
+	await requireManagementAction(options, 'read', context);
 }
 
-async function isAllowedByAuthorization<TContext>(
+async function requireManagementAction<TContext>(
 	options: ManagementOptions<TContext>,
 	action: ManagementAction,
 	context: TContext,
-	job?: PersistedJob,
-	selector?: JobSelector,
-): Promise<boolean> {
-	if (!options.authorize) {
-		return true;
-	}
+	target: ManagementActionTarget = {},
+): Promise<void> {
+	const decision = await decideManagementAction(options, action, context, target);
 
-	return options.authorize({ action, context, job, selector });
+	if (!decision.allowed) {
+		throwForbidden(decision.message);
+	}
+}
+
+function throwForbidden(message: string): never {
+	throw new ORPCError('FORBIDDEN', { message });
 }
 
 async function mapJobStateConflict<TResult>(operation: () => Promise<TResult>): Promise<TResult> {

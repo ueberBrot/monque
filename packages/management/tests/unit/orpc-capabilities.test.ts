@@ -17,6 +17,29 @@ async function handleCapabilities(surface: ManagementSurface, context?: Manageme
 	return result.response;
 }
 
+async function handlePost(
+	surface: ManagementSurface,
+	path: string,
+	body?: unknown,
+): Promise<Response> {
+	const init: RequestInit = { method: 'POST' };
+
+	if (body !== undefined) {
+		init.headers = { 'content-type': 'application/json' };
+		init.body = JSON.stringify(body);
+	}
+
+	const result = await surface.openApiHandler.handle(
+		new Request(`https://management.example${path}`, init),
+	);
+
+	if (!result.matched) {
+		throw new Error(`Expected oRPC OpenAPI handler to match ${path}`);
+	}
+
+	return result.response;
+}
+
 describe('oRPC Management capabilities route', () => {
 	test('reports every Management action available when the scheduler supports them', async () => {
 		const surface = createManagementSurface({
@@ -107,5 +130,31 @@ describe('oRPC Management capabilities route', () => {
 				delete: false,
 			},
 		});
+	});
+
+	test('keeps action capabilities separate from route-level scheduler support', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJobs: async () => ({ count: 0, errors: [] }),
+			}),
+		});
+
+		const capabilities = await handleCapabilities(surface);
+		const singleCancel = await handlePost(
+			surface,
+			'/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel',
+		);
+		const bulkCancel = await handlePost(surface, '/api/v1/jobs/actions/cancel', {});
+
+		expect(capabilities.status).toBe(200);
+		expect(await capabilities.json()).toMatchObject({
+			actions: {
+				cancel: true,
+			},
+		});
+		expect(singleCancel.status).toBe(403);
+		expect(await singleCancel.json()).toEqual({ error: 'Unsupported action' });
+		expect(bulkCancel.status).toBe(200);
+		expect(await bulkCancel.json()).toEqual({ count: 0, errors: [] });
 	});
 });
