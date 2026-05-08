@@ -1,6 +1,7 @@
 import type { CursorPage, PersistedJob } from '@monque/core';
 
 import type { JobCursorPageDto, JobDto } from '../schemas/index.js';
+import { serializeJobPayload } from '../surface/payload-serialization.js';
 import type { ManagementOptions } from '../surface/types.js';
 
 export async function toJobCursorPageDto<TContext>(
@@ -21,11 +22,7 @@ export async function toJobDto<TContext>(
 	job: PersistedJob,
 	context: TContext,
 ): Promise<JobDto> {
-	const serializePayload =
-		options.serializePayloadByJobName?.[job.name] ?? options.serializePayload;
-	const payload = serializePayload
-		? await serializePayload({ job, payload: job.data, context })
-		: job.data;
+	const payload = await serializeJobPayload(options, job, context);
 	const dto: JobDto = {
 		id: job._id.toHexString(),
 		name: job.name,

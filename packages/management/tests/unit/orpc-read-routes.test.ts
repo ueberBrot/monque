@@ -33,6 +33,7 @@ describe('oRPC Management read routes', () => {
 	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;
+		const serializedPayloads: unknown[] = [];
 		const job = {
 			_id: jobId,
 			name: 'send-email',
@@ -60,11 +61,14 @@ describe('oRPC Management read routes', () => {
 					};
 				},
 			}),
-			serializePayload: ({ context, job: serializedJob }) =>
-				Promise.resolve({
+			serializePayload: ({ context, job: serializedJob, payload }) => {
+				serializedPayloads.push(payload);
+
+				return Promise.resolve({
 					visibleTo: context.userId,
 					jobName: serializedJob.name,
-				}),
+				});
+			},
 		});
 
 		const response = await handleGet(
@@ -82,6 +86,7 @@ describe('oRPC Management read routes', () => {
 				status: ['pending', 'failed'],
 			},
 		});
+		expect(serializedPayloads).toEqual([{ to: 'person@example.test', token: 'secret' }]);
 		expect(await response.json()).toEqual({
 			jobs: [
 				{
