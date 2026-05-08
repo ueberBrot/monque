@@ -3,6 +3,26 @@ import { describe, expect, test } from 'vitest';
 import { generateManagementOpenApiDocument } from '@/index';
 
 describe('oRPC Management OpenAPI contract', () => {
+	test('includes stable reusable schema names', async () => {
+		const document = await generateManagementOpenApiDocument();
+
+		expect(Object.keys(document.components?.schemas ?? {})).toEqual(
+			expect.arrayContaining([
+				'BulkActionResult',
+				'Capabilities',
+				'DeleteJob',
+				'Job',
+				'JobCursorPage',
+				'JobSelector',
+				'ManagementError',
+				'QueueStats',
+				'QueueViewSummaryList',
+				'RescheduleJobRequest',
+				'SchedulerHealth',
+			]),
+		);
+	});
+
 	test('derives the health path and response schema from the oRPC contract', async () => {
 		const document = await generateManagementOpenApiDocument();
 
