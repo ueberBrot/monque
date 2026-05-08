@@ -16,6 +16,13 @@ import {
 } from '../schemas/index.js';
 import { managementContract } from './contract.js';
 
+declare const __MONQUE_MANAGEMENT_PACKAGE_VERSION__: string;
+
+const MANAGEMENT_OPENAPI_VERSION =
+	typeof __MONQUE_MANAGEMENT_PACKAGE_VERSION__ === 'string'
+		? __MONQUE_MANAGEMENT_PACKAGE_VERSION__
+		: '0.0.0';
+
 /**
  * Generate an OpenAPI 3.1 document for the Monque management API.
  *
@@ -30,7 +37,7 @@ export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Docum
 	return generator.generate(managementContract, {
 		info: {
 			title: 'Monque Management API',
-			version: '0.1.0',
+			version: MANAGEMENT_OPENAPI_VERSION,
 		},
 		customErrorResponseBodySchema: () => ({ $ref: '#/components/schemas/ManagementError' }),
 		commonSchemas: {

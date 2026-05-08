@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'tsdown';
+
+const packageJson = JSON.parse(
+	readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 export default defineConfig({
 	entry: ['src/index.ts'],
@@ -10,6 +15,9 @@ export default defineConfig({
 	outDir: 'dist',
 	deps: {
 		neverBundle: ['@monque/core'],
+	},
+	define: {
+		__MONQUE_MANAGEMENT_PACKAGE_VERSION__: JSON.stringify(packageJson.version),
 	},
 	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
