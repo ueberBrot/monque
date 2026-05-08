@@ -44,6 +44,13 @@ const SingleJobActionErrors = {
 	},
 } as const;
 
+/**
+ * oRPC contract for the versioned Monque management HTTP API.
+ *
+ * The contract is REST-shaped under `/api/v1` and is exported for consumers that want
+ * type-level route information or their own oRPC integration. Runtime support for mutation
+ * routes still depends on the methods available on `ManagementOptions.monque`.
+ */
 export const managementContract = {
 	health: oc
 		.route({
@@ -186,4 +193,5 @@ export const managementContract = {
 		.output(BulkActionResultDtoSchema),
 };
 
+/** Type-level representation of the management oRPC contract. */
 export type ManagementContract = typeof managementContract;

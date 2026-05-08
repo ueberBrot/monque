@@ -32,6 +32,12 @@ type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 type DeleteJobMutator = (id: string) => Promise<boolean>;
 
+/**
+ * Create an oRPC router that implements the management contract.
+ *
+ * Use this when integrating with oRPC directly. For a framework-neutral fetch handler,
+ * prefer `createManagementSurface()`.
+ */
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
 		implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
@@ -297,6 +303,7 @@ function toManagementSelector(input: JobSelectorDto): JobSelector {
 	return selector;
 }
 
+/** oRPC router type returned by `createManagementRouter()`. */
 export type ManagementRouter = ReturnType<typeof createManagementRouter>;
 
 async function requireReadAuthorization<TContext>(

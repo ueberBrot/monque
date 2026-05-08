@@ -16,6 +16,12 @@ import {
 } from '../schemas/index.js';
 import { managementContract } from './contract.js';
 
+/**
+ * Generate an OpenAPI 3.1 document for the Monque management API.
+ *
+ * The document includes every v1 route, including mutation routes that may return `403`
+ * at runtime when the configured scheduler facade does not support them.
+ */
 export async function generateManagementOpenApiDocument(): Promise<OpenAPI.Document> {
 	const generator = new OpenAPIGenerator({
 		schemaConverters: [new ZodToJsonSchemaConverter()],

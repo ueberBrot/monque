@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+/** Job lifecycle status values returned by the management API. */
 export const JobStatusDtoSchema = z.enum([
 	'pending',
 	'processing',
@@ -8,8 +9,15 @@ export const JobStatusDtoSchema = z.enum([
 	'cancelled',
 ]);
 
+/** Job lifecycle status returned by the management API. */
 export type JobStatusDto = z.infer<typeof JobStatusDtoSchema>;
 
+/**
+ * Public job representation returned by management read and mutation endpoints.
+ *
+ * Dates are serialized as ISO 8601 strings and nullable scheduler fields are normalized
+ * to `null` when absent.
+ */
 export const JobDtoSchema = z
 	.object({
 		id: z.string(),
@@ -30,8 +38,10 @@ export const JobDtoSchema = z
 	})
 	.strict();
 
+/** Public job representation returned by management read and mutation endpoints. */
 export type JobDto = z.infer<typeof JobDtoSchema>;
 
+/** Cursor-paginated job list response. */
 export const JobCursorPageDtoSchema = z
 	.object({
 		jobs: z.array(JobDtoSchema),
@@ -41,8 +51,10 @@ export const JobCursorPageDtoSchema = z
 	})
 	.strict();
 
+/** Cursor-paginated job list response. */
 export type JobCursorPageDto = z.infer<typeof JobCursorPageDtoSchema>;
 
+/** Query parameters accepted by `GET /api/v1/jobs`. */
 export const JobListQueryDtoSchema = z
 	.object({
 		cursor: z.string().optional(),
@@ -52,16 +64,20 @@ export const JobListQueryDtoSchema = z
 	})
 	.strict();
 
+/** Query parameters accepted by `GET /api/v1/jobs`. */
 export type JobListQueryDto = z.infer<typeof JobListQueryDtoSchema>;
 
+/** Path parameters for routes targeting a single job. */
 export const JobDetailParamsDtoSchema = z
 	.object({
 		id: z.string(),
 	})
 	.strict();
 
+/** Path parameters for routes targeting a single job. */
 export type JobDetailParamsDto = z.infer<typeof JobDetailParamsDtoSchema>;
 
+/** Detailed oRPC input shape for single-job routes. */
 export const JobDetailInputDtoSchema = z
 	.object({
 		params: JobDetailParamsDtoSchema,
@@ -71,4 +87,5 @@ export const JobDetailInputDtoSchema = z
 	})
 	.strict();
 
+/** Detailed oRPC input shape for single-job routes. */
 export type JobDetailInputDto = z.infer<typeof JobDetailInputDtoSchema>;

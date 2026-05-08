@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+/** Action support reported by the capabilities endpoint for the current request context. */
 export const CapabilityActionsDtoSchema = z
 	.object({
 		read: z.boolean(),
@@ -10,8 +11,15 @@ export const CapabilityActionsDtoSchema = z
 	})
 	.strict();
 
+/** Action support reported by the capabilities endpoint for the current request context. */
 export type CapabilityActionsDto = z.infer<typeof CapabilityActionsDtoSchema>;
 
+/**
+ * Runtime capabilities for a management surface.
+ *
+ * Capabilities combine configured read-only mode, scheduler method support, and the optional
+ * authorization hook for the current request context.
+ */
 export const CapabilitiesDtoSchema = z
 	.object({
 		readOnly: z.boolean(),
@@ -19,4 +27,5 @@ export const CapabilitiesDtoSchema = z
 	})
 	.strict();
 
+/** Runtime capabilities for a management surface. */
 export type CapabilitiesDto = z.infer<typeof CapabilitiesDtoSchema>;
