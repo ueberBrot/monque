@@ -3,11 +3,13 @@ import {
 	InvalidCursorError,
 	type JobSelector,
 	JobStateError,
+	type PersistedJob,
 } from '@monque/core';
 import { implement, ORPCError } from '@orpc/server';
 
 import {
 	toBulkActionResultDto,
+	toDeleteJobDto,
 	toJobCursorPageDto,
 	toJobDto,
 	toQueueStatsDto,
@@ -27,6 +29,9 @@ import { managementContract } from './contract.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
+type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
+type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
+type DeleteJobMutator = (id: string) => Promise<boolean>;
 
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
@@ -37,15 +42,19 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			toSchedulerHealthDto(options.monque.isHealthy()),
 		),
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
-			getManagementCapabilities(options, context.managementContext as TContext),
+			getManagementCapabilities(options, getOpenApiManagementContext(context)),
 		),
 		queueViews: managementImplementer.queueViews.handler(async ({ context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
 		}),
 		jobs: managementImplementer.jobs.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			const cursorOptions = parseJobListQuery(toManagementQuery(input));
 
@@ -57,7 +66,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				return await toJobCursorPageDto(
 					options,
 					await options.monque.getJobsWithCursor(cursorOptions),
-					context.managementContext as TContext,
+					managementContext,
 				);
 			} catch (error) {
 				if (error instanceof InvalidCursorError) {
@@ -68,7 +77,9 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			}
 		}),
 		jobStats: managementImplementer.jobStats.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			return toQueueStatsDto(
 				await options.monque.getQueueStats(
@@ -77,7 +88,9 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 			);
 		}),
 		job: managementImplementer.job.handler(async ({ input, context }) => {
-			await requireReadAuthorization(options, context.managementContext as TContext);
+			const managementContext = getOpenApiManagementContext(context);
+
+			await requireReadAuthorization(options, managementContext);
 
 			const id = parseObjectId(input.params.id);
 
@@ -91,14 +104,51 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 			}
 
-			return toJobDto(options, job, context.managementContext as TContext);
+			return toJobDto(options, job, managementContext);
 		}),
+		cancelJob: managementImplementer.cancelJob.handler(async ({ input, context }) =>
+			handleSingleJobMutation(
+				options,
+				'cancel',
+				input.params.id,
+				getOpenApiManagementContext(context),
+				options.monque.cancelJob?.bind(options.monque),
+			),
+		),
+		retryJob: managementImplementer.retryJob.handler(async ({ input, context }) =>
+			handleSingleJobMutation(
+				options,
+				'retry',
+				input.params.id,
+				getOpenApiManagementContext(context),
+				options.monque.retryJob?.bind(options.monque),
+			),
+		),
+		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) => {
+			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+
+			return handleSingleJobMutation(
+				options,
+				'reschedule',
+				input.params.id,
+				getOpenApiManagementContext(context),
+				rescheduleJob ? (id) => rescheduleJob(id, new Date(input.body.nextRunAt)) : undefined,
+			);
+		}),
+		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
+			handleDeleteJob(
+				options,
+				input.params.id,
+				getOpenApiManagementContext(context),
+				options.monque.deleteJob?.bind(options.monque),
+			),
+		),
 		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
 			handleBulkJobMutation(
 				options,
 				'cancel',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.cancelJobs?.bind(options.monque),
 			),
 		),
@@ -107,7 +157,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'retry',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.retryJobs?.bind(options.monque),
 			),
 		),
@@ -116,11 +166,101 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options,
 				'delete',
 				input,
-				context.managementContext as TContext,
+				getOpenApiManagementContext(context),
 				options.monque.deleteJobs?.bind(options.monque),
 			),
 		),
 	});
+}
+
+function getOpenApiManagementContext<TContext>(
+	context: ManagementOpenApiContext<TContext>,
+): TContext {
+	return context.managementContext as TContext;
+}
+
+async function handleSingleJobMutation<TContext>(
+	options: ManagementOptions<TContext>,
+	action: SingleJobMutationAction,
+	idInput: string,
+	context: TContext,
+	mutate: SingleJobMutator | undefined,
+) {
+	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const id = await resolveSingleJobTarget(options, action, idInput, context);
+
+	try {
+		const job = await supportedMutate(id);
+
+		if (!job) {
+			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+		}
+
+		return toJobDto(options, job, context);
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
+}
+
+async function handleDeleteJob<TContext>(
+	options: ManagementOptions<TContext>,
+	idInput: string,
+	context: TContext,
+	mutate: DeleteJobMutator | undefined,
+) {
+	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
+	const deleted = await supportedMutate(id);
+
+	if (!deleted) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	return toDeleteJobDto();
+}
+
+function requireSingleJobMutator<TContext, TMutator>(
+	options: ManagementOptions<TContext>,
+	mutate: TMutator | undefined,
+): TMutator {
+	if (options.readOnly) {
+		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
+	}
+
+	if (!mutate) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+
+	return mutate;
+}
+
+async function resolveSingleJobTarget<TContext>(
+	options: ManagementOptions<TContext>,
+	action: Exclude<ManagementAction, 'read'>,
+	idInput: string,
+	context: TContext,
+): Promise<string> {
+	const id = parseObjectId(idInput);
+
+	if ('error' in id) {
+		throw new ORPCError('BAD_REQUEST', { message: id.error });
+	}
+
+	const target = await options.monque.getJob(id.value);
+
+	if (!target) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
+	}
+
+	if (!(await isAllowedByAuthorization(options, action, context, target))) {
+		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
+	}
+
+	return id.value.toHexString();
 }
 
 function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
@@ -216,7 +356,7 @@ async function isAllowedByAuthorization<TContext>(
 	options: ManagementOptions<TContext>,
 	action: ManagementAction,
 	context: TContext,
-	job?: never,
+	job?: PersistedJob,
 	selector?: JobSelector,
 ): Promise<boolean> {
 	if (!options.authorize) {
