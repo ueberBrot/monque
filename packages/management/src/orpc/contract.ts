@@ -83,6 +83,26 @@ export const managementContract = {
 		})
 		.input(JobSelectorDtoSchema)
 		.output(BulkActionResultDtoSchema),
+	retryJobs: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/actions/retry',
+			operationId: 'retryJobs',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobSelectorDtoSchema)
+		.output(BulkActionResultDtoSchema),
+	deleteJobs: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/actions/delete',
+			operationId: 'deleteJobs',
+			successStatus: 200,
+			successDescription: 'Successful response',
+		})
+		.input(JobSelectorDtoSchema)
+		.output(BulkActionResultDtoSchema),
 };
 
 export type ManagementContract = typeof managementContract;

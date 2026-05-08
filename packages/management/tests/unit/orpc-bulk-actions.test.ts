@@ -108,4 +108,48 @@ describe('oRPC Management bulk action routes', () => {
 			},
 		]);
 	});
+
+	test('bulk retries and deletes Jobs through public core APIs with stable result DTOs', async () => {
+		const coreCalls: Array<{ action: string; selector: JobSelector }> = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				retryJobs: async (selector): Promise<BulkOperationResult> => {
+					coreCalls.push({ action: 'retry', selector });
+
+					return {
+						count: 1,
+						errors: [{ jobId: 'job-1', error: 'still processing' }],
+					};
+				},
+				deleteJobs: async (selector): Promise<BulkOperationResult> => {
+					coreCalls.push({ action: 'delete', selector });
+
+					return {
+						count: 3,
+						errors: [],
+					};
+				},
+			}),
+		});
+
+		const retry = await handlePost(surface, '/api/v1/jobs/actions/retry', { status: 'failed' });
+		const deleted = await handlePost(surface, '/api/v1/jobs/actions/delete', {
+			status: ['completed', 'cancelled'],
+		});
+
+		expect(retry.status).toBe(200);
+		expect(await retry.json()).toEqual({
+			count: 1,
+			errors: [{ jobId: 'job-1', error: 'still processing' }],
+		});
+		expect(deleted.status).toBe(200);
+		expect(await deleted.json()).toEqual({
+			count: 3,
+			errors: [],
+		});
+		expect(coreCalls).toEqual([
+			{ action: 'retry', selector: { status: 'failed' } },
+			{ action: 'delete', selector: { status: ['completed', 'cancelled'] } },
+		]);
+	});
 });

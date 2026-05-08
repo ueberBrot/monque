@@ -1,4 +1,9 @@
-import { InvalidCursorError, type JobSelector, JobStateError } from '@monque/core';
+import {
+	type BulkOperationResult,
+	InvalidCursorError,
+	type JobSelector,
+	JobStateError,
+} from '@monque/core';
 import { implement, ORPCError } from '@orpc/server';
 
 import {
@@ -94,6 +99,24 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options.monque.cancelJobs?.bind(options.monque),
 			),
 		),
+		retryJobs: managementImplementer.retryJobs.handler(async ({ input, context }) =>
+			handleBulkJobMutation(
+				options,
+				'retry',
+				input,
+				context.managementContext as TContext,
+				options.monque.retryJobs?.bind(options.monque),
+			),
+		),
+		deleteJobs: managementImplementer.deleteJobs.handler(async ({ input, context }) =>
+			handleBulkJobMutation(
+				options,
+				'delete',
+				input,
+				context.managementContext as TContext,
+				options.monque.deleteJobs?.bind(options.monque),
+			),
+		),
 	});
 }
 
@@ -124,11 +147,7 @@ async function handleBulkJobMutation<TContext>(
 	action: Exclude<ManagementAction, 'read' | 'reschedule'>,
 	input: JobSelectorDto,
 	context: TContext,
-	mutate:
-		| ((
-				selector: JobSelector,
-		  ) => ReturnType<NonNullable<ManagementOptions['monque']['cancelJobs']>>)
-		| undefined,
+	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
 ) {
 	if (options.readOnly) {
 		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
