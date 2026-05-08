@@ -1,41 +1,8 @@
-import {
-	type BulkOperationResult,
-	InvalidCursorError,
-	type JobSelector,
-	JobStateError,
-	type PersistedJob,
-} from '@monque/core';
-import { implement, ORPCError } from '@orpc/server';
+import { implement } from '@orpc/server';
 
-import {
-	toBulkActionResultDto,
-	toDeleteJobDto,
-	toJobCursorPageDto,
-	toJobDto,
-	toQueueStatsDto,
-	toQueueViewSummaryListDto,
-	toSchedulerHealthDto,
-} from '../mappers/index.js';
-import type { JobSelectorDto } from '../schemas/index.js';
-import {
-	decideManagementAction,
-	decideManagementActionSupport,
-	getManagementCapabilities,
-	type ManagementActionTarget,
-} from '../surface/action-policy.js';
-import type {
-	ManagementAction,
-	ManagementOpenApiContext,
-	ManagementOptions,
-} from '../surface/index.js';
+import type { ManagementOpenApiContext, ManagementOptions } from '../surface/index.js';
 import { managementContract } from './contract.js';
-import { parseJobListQuery, parseObjectId } from './input.js';
-
-type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
-type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
-type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
-type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
-type DeleteJobMutator = (id: string) => Promise<boolean>;
+import { createManagementOperations } from './operations.js';
 
 /**
  * Create an oRPC router that implements the management contract.
@@ -46,144 +13,45 @@ type DeleteJobMutator = (id: string) => Promise<boolean>;
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
 		implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
+	const operations = createManagementOperations(options);
 
 	return managementImplementer.router({
-		health: managementImplementer.health.handler(() =>
-			toSchedulerHealthDto(options.monque.isHealthy()),
-		),
+		health: managementImplementer.health.handler(() => operations.getHealth()),
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
-			getManagementCapabilities(options, getOpenApiManagementContext(context)),
+			operations.getCapabilities(getOpenApiManagementContext(context)),
 		),
-		queueViews: managementImplementer.queueViews.handler(async ({ context }) => {
-			const managementContext = getOpenApiManagementContext(context);
-
-			await requireReadAuthorization(options, managementContext);
-
-			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
-		}),
-		jobs: managementImplementer.jobs.handler(async ({ input, context }) => {
-			const managementContext = getOpenApiManagementContext(context);
-
-			await requireReadAuthorization(options, managementContext);
-
-			const cursorOptions = parseJobListQuery(input);
-
-			if ('error' in cursorOptions) {
-				throw new ORPCError('BAD_REQUEST', { message: cursorOptions.error });
-			}
-
-			try {
-				return await toJobCursorPageDto(
-					options,
-					await options.monque.getJobsWithCursor(cursorOptions),
-					managementContext,
-				);
-			} catch (error) {
-				if (error instanceof InvalidCursorError) {
-					throw new ORPCError('BAD_REQUEST', { message: error.message });
-				}
-
-				throw error;
-			}
-		}),
-		jobStats: managementImplementer.jobStats.handler(async ({ input, context }) => {
-			const managementContext = getOpenApiManagementContext(context);
-
-			await requireReadAuthorization(options, managementContext);
-
-			return toQueueStatsDto(
-				await options.monque.getQueueStats(
-					input.name === undefined ? undefined : { name: input.name },
-				),
-			);
-		}),
-		job: managementImplementer.job.handler(async ({ input, context }) => {
-			const managementContext = getOpenApiManagementContext(context);
-
-			await requireReadAuthorization(options, managementContext);
-
-			const id = parseObjectId(input.params.id);
-
-			if ('error' in id) {
-				throw new ORPCError('BAD_REQUEST', { message: id.error });
-			}
-
-			const job = await options.monque.getJob(id.value);
-
-			if (!job) {
-				throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-			}
-
-			return toJobDto(options, job, managementContext);
-		}),
-		cancelJob: managementImplementer.cancelJob.handler(async ({ input, context }) =>
-			handleSingleJobMutation(
-				options,
-				'cancel',
-				input.params.id,
-				getOpenApiManagementContext(context),
-				options.monque.cancelJob?.bind(options.monque),
-			),
+		queueViews: managementImplementer.queueViews.handler(({ context }) =>
+			operations.listQueueViews(getOpenApiManagementContext(context)),
 		),
-		retryJob: managementImplementer.retryJob.handler(async ({ input, context }) =>
-			handleSingleJobMutation(
-				options,
-				'retry',
-				input.params.id,
-				getOpenApiManagementContext(context),
-				options.monque.retryJob?.bind(options.monque),
-			),
+		jobs: managementImplementer.jobs.handler(({ input, context }) =>
+			operations.listJobs(input, getOpenApiManagementContext(context)),
 		),
-		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) => {
-			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
-			let mutate: SingleJobMutator | undefined;
-
-			if (rescheduleJob !== undefined) {
-				mutate = (id) => rescheduleJob(id, new Date(input.body.nextRunAt));
-			}
-
-			return handleSingleJobMutation(
-				options,
-				'reschedule',
-				input.params.id,
-				getOpenApiManagementContext(context),
-				mutate,
-			);
-		}),
-		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
-			handleDeleteJob(
-				options,
-				input.params.id,
-				getOpenApiManagementContext(context),
-				options.monque.deleteJob?.bind(options.monque),
-			),
+		jobStats: managementImplementer.jobStats.handler(({ input, context }) =>
+			operations.getJobStats(input, getOpenApiManagementContext(context)),
 		),
-		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
-			handleBulkJobMutation(
-				options,
-				'cancel',
-				input,
-				getOpenApiManagementContext(context),
-				options.monque.cancelJobs?.bind(options.monque),
-			),
+		job: managementImplementer.job.handler(({ input, context }) =>
+			operations.getJob(input, getOpenApiManagementContext(context)),
 		),
-		retryJobs: managementImplementer.retryJobs.handler(async ({ input, context }) =>
-			handleBulkJobMutation(
-				options,
-				'retry',
-				input,
-				getOpenApiManagementContext(context),
-				options.monque.retryJobs?.bind(options.monque),
-			),
+		cancelJob: managementImplementer.cancelJob.handler(({ input, context }) =>
+			operations.cancelJob(input, getOpenApiManagementContext(context)),
 		),
-		deleteJobs: managementImplementer.deleteJobs.handler(async ({ input, context }) =>
-			handleBulkJobMutation(
-				options,
-				'delete',
-				input,
-				getOpenApiManagementContext(context),
-				options.monque.deleteJobs?.bind(options.monque),
-			),
+		retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
+			operations.retryJob(input, getOpenApiManagementContext(context)),
+		),
+		rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
+			operations.rescheduleJob(input, getOpenApiManagementContext(context)),
+		),
+		deleteJob: managementImplementer.deleteJob.handler(({ input, context }) =>
+			operations.deleteJob(input, getOpenApiManagementContext(context)),
+		),
+		cancelJobs: managementImplementer.cancelJobs.handler(({ input, context }) =>
+			operations.cancelJobs(input, getOpenApiManagementContext(context)),
+		),
+		retryJobs: managementImplementer.retryJobs.handler(({ input, context }) =>
+			operations.retryJobs(input, getOpenApiManagementContext(context)),
+		),
+		deleteJobs: managementImplementer.deleteJobs.handler(({ input, context }) =>
+			operations.deleteJobs(input, getOpenApiManagementContext(context)),
 		),
 	});
 }
@@ -194,154 +62,5 @@ function getOpenApiManagementContext<TContext>(
 	return context.managementContext as TContext;
 }
 
-async function handleSingleJobMutation<TContext>(
-	options: ManagementOptions<TContext>,
-	action: SingleJobMutationAction,
-	idInput: string,
-	context: TContext,
-	mutate: SingleJobMutator | undefined,
-) {
-	const supportedMutate = requireMutationSupport(options, action, mutate);
-	const id = await resolveSingleJobTarget(options, action, idInput, context);
-	const job = await mapJobStateConflict(() => supportedMutate(id));
-
-	if (!job) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	return toJobDto(options, job, context);
-}
-
-async function handleDeleteJob<TContext>(
-	options: ManagementOptions<TContext>,
-	idInput: string,
-	context: TContext,
-	mutate: DeleteJobMutator | undefined,
-) {
-	const supportedMutate = requireMutationSupport(options, 'delete', mutate);
-	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
-	const deleted = await supportedMutate(id);
-
-	if (!deleted) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	return toDeleteJobDto();
-}
-
-function requireMutationSupport<TContext, TMutator>(
-	options: ManagementOptions<TContext>,
-	action: Exclude<ManagementAction, 'read'>,
-	mutate: TMutator | undefined,
-): TMutator {
-	const decision = decideManagementActionSupport(options, action, mutate !== undefined);
-
-	if (!decision.allowed) {
-		throwForbidden(decision.message);
-	}
-
-	if (mutate === undefined) {
-		throwForbidden('Unsupported action');
-	}
-
-	return mutate;
-}
-
-async function resolveSingleJobTarget<TContext>(
-	options: ManagementOptions<TContext>,
-	action: Exclude<ManagementAction, 'read'>,
-	idInput: string,
-	context: TContext,
-): Promise<string> {
-	const id = parseObjectId(idInput);
-
-	if ('error' in id) {
-		throw new ORPCError('BAD_REQUEST', { message: id.error });
-	}
-
-	const target = await options.monque.getJob(id.value);
-
-	if (!target) {
-		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-	}
-
-	await requireManagementAction(options, action, context, { job: target });
-
-	return id.value.toHexString();
-}
-
-async function handleBulkJobMutation<TContext>(
-	options: ManagementOptions<TContext>,
-	action: BulkManagementAction,
-	input: JobSelectorDto,
-	context: TContext,
-	mutate: BulkJobMutator | undefined,
-) {
-	const supportedMutate = requireMutationSupport(options, action, mutate);
-	const selector = toManagementSelector(input);
-
-	await requireManagementAction(options, action, context, { selector });
-
-	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
-}
-
-function toManagementSelector(input: JobSelectorDto): JobSelector {
-	const selector: JobSelector = {};
-
-	if (input.name !== undefined) {
-		selector.name = input.name;
-	}
-
-	if (input.status !== undefined) {
-		selector.status = input.status;
-	}
-
-	if (input.olderThan !== undefined) {
-		selector.olderThan = new Date(input.olderThan);
-	}
-
-	if (input.newerThan !== undefined) {
-		selector.newerThan = new Date(input.newerThan);
-	}
-
-	return selector;
-}
-
 /** oRPC router type returned by `createManagementRouter()`. */
 export type ManagementRouter = ReturnType<typeof createManagementRouter>;
-
-async function requireReadAuthorization<TContext>(
-	options: ManagementOptions<TContext>,
-	context: TContext,
-): Promise<void> {
-	await requireManagementAction(options, 'read', context);
-}
-
-async function requireManagementAction<TContext>(
-	options: ManagementOptions<TContext>,
-	action: ManagementAction,
-	context: TContext,
-	target: ManagementActionTarget = {},
-): Promise<void> {
-	const decision = await decideManagementAction(options, action, context, target);
-
-	if (!decision.allowed) {
-		throwForbidden(decision.message);
-	}
-}
-
-function throwForbidden(message: string): never {
-	throw new ORPCError('FORBIDDEN', { message });
-}
-
-async function mapJobStateConflict<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
-	try {
-		return await operation();
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
-	}
-}
