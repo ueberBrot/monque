@@ -25,6 +25,9 @@ import type {
 import { parseJobListQuery, parseObjectId } from '../validation/index.js';
 import { managementContract } from './contract.js';
 
+type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
+type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
+
 export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
 	const managementImplementer =
 		implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
@@ -144,10 +147,10 @@ function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQue
 
 async function handleBulkJobMutation<TContext>(
 	options: ManagementOptions<TContext>,
-	action: Exclude<ManagementAction, 'read' | 'reschedule'>,
+	action: BulkManagementAction,
 	input: JobSelectorDto,
 	context: TContext,
-	mutate: ((selector: JobSelector) => Promise<BulkOperationResult>) | undefined,
+	mutate: BulkJobMutator | undefined,
 ) {
 	if (options.readOnly) {
 		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
