@@ -146,4 +146,58 @@ describe('oRPC Management OpenAPI contract', () => {
 			additionalProperties: false,
 		});
 	});
+
+	test('derives bulk action paths, schemas, and error statuses from the oRPC contract', async () => {
+		const document = await generateManagementOpenApiDocument();
+		const paths = [
+			['/api/v1/jobs/actions/cancel', 'cancelJobs'],
+			['/api/v1/jobs/actions/retry', 'retryJobs'],
+			['/api/v1/jobs/actions/delete', 'deleteJobs'],
+		] as const;
+
+		for (const [path, operationId] of paths) {
+			const operation = document.paths?.[path]?.post;
+
+			expect(operation?.operationId).toBe(operationId);
+			expect(operation?.requestBody).toMatchObject({
+				required: true,
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/JobSelector' },
+					},
+				},
+			});
+			expect(operation?.responses?.['200']).toMatchObject({
+				description: 'Successful response',
+				content: {
+					'application/json': {
+						schema: { $ref: '#/components/schemas/BulkActionResult' },
+					},
+				},
+			});
+			for (const status of ['400', '403', '409', '500']) {
+				expect(operation?.responses?.[status]).toMatchObject({
+					content: {
+						'application/json': {
+							schema: { $ref: '#/components/schemas/ManagementError' },
+						},
+					},
+				});
+			}
+		}
+		expect(document.components?.schemas?.['JobSelector']).toMatchObject({
+			type: 'object',
+			additionalProperties: false,
+		});
+		expect(document.components?.schemas?.['BulkActionResult']).toMatchObject({
+			type: 'object',
+			required: ['count', 'errors'],
+			additionalProperties: false,
+		});
+		expect(document.components?.schemas?.['ManagementError']).toMatchObject({
+			type: 'object',
+			required: ['error'],
+			additionalProperties: false,
+		});
+	});
 });

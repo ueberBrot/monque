@@ -1,4 +1,14 @@
 export {
+	type BulkActionErrorDto,
+	BulkActionErrorDtoSchema,
+	type BulkActionResultDto,
+	BulkActionResultDtoSchema,
+	type JobSelectorDto,
+	JobSelectorDtoSchema,
+	type ManagementErrorDto,
+	ManagementErrorDtoSchema,
+} from './actions.js';
+export {
 	type CapabilitiesDto,
 	CapabilitiesDtoSchema,
 	type CapabilityActionsDto,

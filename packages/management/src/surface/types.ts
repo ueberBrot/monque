@@ -14,6 +14,8 @@ import type { ObjectId } from 'mongodb';
 import type { HttpMethodType, HttpStatusType } from '../http/index.js';
 
 export type {
+	BulkActionErrorDto,
+	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
 	JobCursorPageDto,
@@ -21,7 +23,9 @@ export type {
 	JobDetailParamsDto,
 	JobDto,
 	JobListQueryDto,
+	JobSelectorDto,
 	JobStatusDto,
+	ManagementErrorDto,
 	QueueStatsDto,
 	QueueViewSummaryDto,
 	QueueViewSummaryListDto,
@@ -305,11 +309,6 @@ export interface DeleteJobDto {
 	/** Literal confirmation that the job was deleted. */
 	deleted: true;
 }
-
-/**
- * Bulk job action response DTO.
- */
-export type BulkActionResultDto = BulkOperationResult;
 
 /**
  * Framework-neutral Management surface.

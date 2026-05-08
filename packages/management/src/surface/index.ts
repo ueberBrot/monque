@@ -1,5 +1,6 @@
 export { createManagementSurface } from './surface.js';
 export type {
+	BulkActionErrorDto,
 	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
@@ -9,10 +10,12 @@ export type {
 	JobDetailParamsDto,
 	JobDto,
 	JobListQueryDto,
+	JobSelectorDto,
 	JobStatusDto,
 	ManagementAction,
 	ManagementAuthorizationInput,
 	ManagementAuthorize,
+	ManagementErrorDto,
 	ManagementHttpMethod,
 	ManagementMonque,
 	ManagementOpenApiContext,

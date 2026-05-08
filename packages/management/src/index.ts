@@ -30,6 +30,8 @@ export {
 	ManagementRoutePath,
 } from './routes/index.js';
 export {
+	BulkActionErrorDtoSchema,
+	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
 	CapabilityActionsDtoSchema,
 	JobCursorPageDtoSchema,
@@ -37,7 +39,9 @@ export {
 	JobDetailParamsDtoSchema,
 	JobDtoSchema,
 	JobListQueryDtoSchema,
+	JobSelectorDtoSchema,
 	JobStatusDtoSchema,
+	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryDtoSchema,
 	QueueViewSummaryListDtoSchema,
@@ -45,6 +49,7 @@ export {
 	SchedulerHealthDtoSchema,
 } from './schemas/index.js';
 export type {
+	BulkActionErrorDto,
 	BulkActionResultDto,
 	CapabilitiesDto,
 	CapabilityActionsDto,
@@ -54,10 +59,12 @@ export type {
 	JobDetailParamsDto,
 	JobDto,
 	JobListQueryDto,
+	JobSelectorDto,
 	JobStatusDto,
 	ManagementAction,
 	ManagementAuthorizationInput,
 	ManagementAuthorize,
+	ManagementErrorDto,
 	ManagementMonque,
 	ManagementOpenApiContext,
 	ManagementOptions,
