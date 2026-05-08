@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 
 import type { JobListQueryDto } from '../schemas/index.js';
 
-export type ManagementQueryValue = string | readonly string[] | undefined;
+type QueryValue = string | readonly string[] | undefined;
 
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
 	if (!value || !ObjectId.isValid(value)) {
@@ -14,7 +14,7 @@ export function parseObjectId(value: string | undefined): { value: ObjectId } | 
 }
 
 export function parseJobListQuery(
-	query: Readonly<Record<string, ManagementQueryValue>> | undefined,
+	query: Readonly<Record<string, QueryValue>> | undefined,
 ): CursorOptions | { error: string } {
 	if (query) {
 		for (const key of Object.keys(query)) {
@@ -72,8 +72,8 @@ export function parseJobListQuery(
 	return options;
 }
 
-export function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
-	const query: Record<string, ManagementQueryValue> = {};
+export function toManagementQuery(input: JobListQueryDto): Record<string, QueryValue> {
+	const query: Record<string, QueryValue> = {};
 
 	if (input.cursor !== undefined) {
 		query['cursor'] = input.cursor;
@@ -94,9 +94,7 @@ export function toManagementQuery(input: JobListQueryDto): Record<string, Manage
 	return query;
 }
 
-function getSingleQueryValue(
-	value: ManagementQueryValue,
-): { value: string | undefined } | { error: string } {
+function getSingleQueryValue(value: QueryValue): { value: string | undefined } | { error: string } {
 	if (value === undefined || typeof value === 'string') {
 		return { value };
 	}
@@ -104,7 +102,7 @@ function getSingleQueryValue(
 	return { error: 'Expected single query parameter' };
 }
 
-function parseLimit(value: ManagementQueryValue): { limit: number } | { error: string } {
+function parseLimit(value: QueryValue): { limit: number } | { error: string } {
 	const raw = getSingleQueryValue(value);
 
 	if ('error' in raw) {
@@ -127,7 +125,7 @@ function parseLimit(value: ManagementQueryValue): { limit: number } | { error: s
 }
 
 function parseStatuses(
-	value: ManagementQueryValue,
+	value: QueryValue,
 ): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
 	if (value === undefined) {
 		return { status: undefined };

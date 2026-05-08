@@ -62,6 +62,7 @@ const FORBIDDEN_SOURCE_PATTERNS = [
 	'openapi3-ts',
 	'ManagementRequest',
 	'ManagementResponse',
+	'ManagementQueryValue',
 	'MANAGEMENT_ROUTE_MAP',
 	'normalizeManagementRequest',
 ] as const;

@@ -20,8 +20,6 @@ export const JobStatsQueryDtoSchema = z
 	})
 	.strict();
 
-export type JobStatsQueryDto = z.infer<typeof JobStatsQueryDtoSchema>;
-
 export const QueueViewWorkerDtoSchema = z
 	.object({
 		concurrency: z.number(),
