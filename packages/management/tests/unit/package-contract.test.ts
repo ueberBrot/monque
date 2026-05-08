@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import {
+	BulkActionResultDtoSchema,
 	CapabilitiesDtoSchema,
 	JobCursorPageDtoSchema,
 	JobDtoSchema,
+	JobSelectorDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewSummaryListDtoSchema,
 } from '@/index';
@@ -127,6 +129,23 @@ describe('@monque/management package contract', () => {
 						worker: null,
 					},
 				],
+			}).success,
+		).toBe(true);
+	});
+
+	test('exports the Zod-derived bulk action DTO schemas', () => {
+		expect(
+			JobSelectorDtoSchema.safeParse({
+				name: 'send-email',
+				status: ['pending'],
+				olderThan: '2026-02-01T10:30:00.000Z',
+				newerThan: '2026-01-01T00:00:00.000Z',
+			}).success,
+		).toBe(true);
+		expect(
+			BulkActionResultDtoSchema.safeParse({
+				count: 1,
+				errors: [{ jobId: 'job-1', error: 'still processing' }],
 			}).success,
 		).toBe(true);
 	});
