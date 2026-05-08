@@ -1,34 +1,10 @@
 export {
-	BulkActionResultSchema,
-	CapabilitiesSchema,
-	DeleteJobSchema,
-	ErrorSchema,
-	JobCursorPageSchema,
-	JobSchema,
-	JobSelectorSchema,
-	QueueStatsSchema,
-	QueueViewSummaryListSchema,
-	RescheduleJobRequestSchema,
-	SchedulerHealthSchema,
-} from './dtos/index.js';
-export {
-	HttpMethod,
-	HttpStatus,
-} from './http/index.js';
-export { getManagementOpenApiDocument } from './openapi/index.js';
-export {
 	createManagementRouter,
 	generateManagementOpenApiDocument,
 	type ManagementContract,
 	type ManagementRouter,
 	managementContract,
 } from './orpc/index.js';
-export { normalizeManagementRequest } from './request/index.js';
-export {
-	findManagementRoute,
-	MANAGEMENT_ROUTE_MAP,
-	ManagementRoutePath,
-} from './routes/index.js';
 export {
 	BulkActionErrorDtoSchema,
 	BulkActionResultDtoSchema,
@@ -73,11 +49,6 @@ export type {
 	ManagementOptions,
 	ManagementPayloadSerializationInput,
 	ManagementPayloadSerializer,
-	ManagementQueryValue,
-	ManagementRequest,
-	ManagementResponse,
-	ManagementRoute,
-	ManagementRouteOperation,
 	ManagementSurface,
 	QueueStatsDto,
 	QueueViewSummaryDto,

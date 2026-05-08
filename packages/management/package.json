@@ -27,7 +27,8 @@
 		"jobs",
 		"scheduler",
 		"openapi",
-		"typebox"
+		"orpc",
+		"zod"
 	],
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
@@ -66,8 +67,6 @@
 		"@orpc/openapi": "^1.14.2",
 		"@orpc/server": "^1.14.2",
 		"@orpc/zod": "^1.14.2",
-		"@sinclair/typebox": "^0.34.49",
-		"openapi3-ts": "^4.5.0",
 		"zod": "^4.4.3"
 	},
 	"peerDependencies": {

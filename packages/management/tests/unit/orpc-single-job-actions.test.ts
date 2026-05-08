@@ -1,37 +1,10 @@
-import {
-	type CursorOptions,
-	JobStateError,
-	type PersistedJob,
-	type QueueStats,
-} from '@monque/core';
+import { JobStateError, type PersistedJob } from '@monque/core';
 import { ObjectId } from 'mongodb';
 import { describe, expect, test } from 'vitest';
 
+import { createManagementMonque } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
-import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
-
-function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
-	return {
-		isHealthy: () => true,
-		getQueueViewSummaries: async () => [],
-		getJobsWithCursor: async (_options?: CursorOptions) => ({
-			jobs: [],
-			cursor: null,
-			hasNextPage: false,
-			hasPreviousPage: false,
-		}),
-		getJob: async () => null,
-		getQueueStats: async (_filter?: { name?: string }): Promise<QueueStats> => ({
-			pending: 0,
-			processing: 0,
-			completed: 0,
-			failed: 0,
-			cancelled: 0,
-			total: 0,
-		}),
-		...overrides,
-	};
-}
+import type { ManagementOpenApiContext, ManagementSurface } from '@/surface';
 
 function createJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
 	return {

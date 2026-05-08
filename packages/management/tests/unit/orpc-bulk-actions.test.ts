@@ -1,38 +1,10 @@
-import type {
-	BulkOperationResult,
-	CursorOptions,
-	JobSelector,
-	QueueStats,
-	QueueViewSummary,
-} from '@monque/core';
+import type { BulkOperationResult, JobSelector } from '@monque/core';
 import { JobStateError } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
+import { createManagementMonque } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
-import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
-
-function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
-	return {
-		isHealthy: () => true,
-		getQueueViewSummaries: async (): Promise<QueueViewSummary[]> => [],
-		getJobsWithCursor: async (_options?: CursorOptions) => ({
-			jobs: [],
-			cursor: null,
-			hasNextPage: false,
-			hasPreviousPage: false,
-		}),
-		getJob: async (_id) => null,
-		getQueueStats: async (_filter?: { name?: string }): Promise<QueueStats> => ({
-			pending: 0,
-			processing: 0,
-			completed: 0,
-			failed: 0,
-			cancelled: 0,
-			total: 0,
-		}),
-		...overrides,
-	};
-}
+import type { ManagementOpenApiContext, ManagementSurface } from '@/surface';
 
 async function handlePost(
 	surface: ManagementSurface,

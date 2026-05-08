@@ -1,11 +1,10 @@
 # @monque/management
 
-Framework-neutral management surface for Monque.
+Framework-neutral, server-only Management Surface for Monque.
 
-`@monque/management` exposes the shared route map, DTO schemas, OpenAPI document, and
-request handler used to build management APIs around a Monque scheduler. It does not ship an
-HTTP server or framework adapter; adapters can mount the surface in Express, Fastify, Ts.ED, Hono,
-or any other runtime.
+`@monque/management` exposes an oRPC OpenAPI handler, Zod-derived DTO schemas and types,
+OpenAPI generation, and type-level router information. It does not ship an HTTP server,
+framework adapter, documentation UI, dashboard, or oRPC client runtime.
 
 ## Installation
 
@@ -13,19 +12,14 @@ or any other runtime.
 bun add @monque/management @monque/core
 ```
 
-`@monque/core` is a peer dependency. Use the same Monque instance that owns the scheduler you want
-to expose.
+`@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
+the scheduler you want to expose.
 
 ## Usage
 
 ```typescript
 import { Monque } from '@monque/core';
-import {
-	HttpMethod,
-	ManagementRoutePath,
-	createManagementSurface,
-	getManagementOpenApiDocument,
-} from '@monque/management';
+import { createManagementSurface, generateManagementOpenApiDocument } from '@monque/management';
 import { MongoClient } from 'mongodb';
 
 const client = new MongoClient('mongodb://localhost:27017');
@@ -39,42 +33,55 @@ const management = createManagementSurface({
 	authorize: ({ action }) => action === 'read',
 });
 
-const response = await management.handle({
-	method: HttpMethod.GET,
-	path: ManagementRoutePath.HEALTH,
-	context: undefined,
-});
+const result = await management.openApiHandler.handle(
+	new Request('https://example.com/api/v1/health', { method: 'GET' }),
+);
 
-const openApiDocument = getManagementOpenApiDocument();
+const openApiDocument = await generateManagementOpenApiDocument();
 
-console.log(response.status, response.body, openApiDocument.openapi);
+console.log(result.matched, openApiDocument.openapi);
 ```
 
-## Routes
-
-| Method | Path | Operation | Description |
-| ------ | ---- | --------- | ----------- |
-| `GET` | `/api/v1/health` | `getSchedulerHealth` | Returns scheduler health. |
-| `GET` | `/api/v1/capabilities` | `getCapabilities` | Returns read/write capabilities for the caller. |
-
-Unknown routes return `404` with an error body.
-
-## Authorization
-
-Pass `readOnly: true` to disable write actions. Pass `authorize` to decide which actions a caller
-can use for the provided request context.
+Framework adapters should create request context from their native request object and pass it
+to `openApiHandler.handle()` as `managementContext`.
 
 ```typescript
-const management = createManagementSurface<{ role: 'admin' | 'viewer' }>({
-	monque,
-	authorize: ({ action, context }) => context.role === 'admin' || action === 'read',
+await management.openApiHandler.handle(request, {
+	context: {
+		managementContext: { userId: 'operator-1' },
+	},
 });
 ```
 
-The initial route set is read-only, but capabilities already model planned write actions:
-`cancel`, `retry`, `reschedule`, and `delete`.
+## API
+
+The v1 API is REST-shaped under `/api/v1` and includes:
+
+| Method | Path | Operation |
+| ------ | ---- | --------- |
+| `GET` | `/health` | `getSchedulerHealth` |
+| `GET` | `/capabilities` | `getCapabilities` |
+| `GET` | `/queue-views` | `listQueueViews` |
+| `GET` | `/jobs` | `listJobs` |
+| `GET` | `/jobs/stats` | `getJobStats` |
+| `GET` | `/jobs/{id}` | `getJob` |
+| `POST` | `/jobs/{id}/actions/cancel` | `cancelJob` |
+| `POST` | `/jobs/{id}/actions/retry` | `retryJob` |
+| `POST` | `/jobs/{id}/actions/reschedule` | `rescheduleJob` |
+| `DELETE` | `/jobs/{id}` | `deleteJob` |
+| `POST` | `/jobs/actions/cancel` | `cancelJobs` |
+| `POST` | `/jobs/actions/retry` | `retryJobs` |
+| `POST` | `/jobs/actions/delete` | `deleteJobs` |
+
+Unsupported scheduler actions remain in the OpenAPI contract and return `403` at runtime.
+`readOnly: true` also keeps read endpoints available while write actions return `403`.
 
 ## OpenAPI
 
-Use `getManagementOpenApiDocument()` to generate an OpenAPI 3.1 document from the package route
-map and TypeBox schemas.
+Use `generateManagementOpenApiDocument()` to generate an OpenAPI 3.1 document from the oRPC
+contract. The generated document includes every v1 route independent of scheduler capability
+support, and uses the deliberate Management error body shape:
+
+```json
+{ "error": "Message" }
+```

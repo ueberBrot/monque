@@ -15,17 +15,16 @@ import {
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
-} from '../dtos/index.js';
-import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
+} from '../mappers/index.js';
+import type { JobSelectorDto } from '../schemas/index.js';
 import { getManagementCapabilities } from '../surface/capabilities.js';
 import type {
 	ManagementAction,
 	ManagementOpenApiContext,
 	ManagementOptions,
-	ManagementQueryValue,
 } from '../surface/index.js';
-import { parseJobListQuery, parseObjectId } from '../validation/index.js';
 import { managementContract } from './contract.js';
+import { parseJobListQuery, parseObjectId } from './input.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
@@ -56,7 +55,7 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 
 			await requireReadAuthorization(options, managementContext);
 
-			const cursorOptions = parseJobListQuery(toManagementQuery(input));
+			const cursorOptions = parseJobListQuery(input);
 
 			if ('error' in cursorOptions) {
 				throw new ORPCError('BAD_REQUEST', { message: cursorOptions.error });
@@ -126,13 +125,18 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 		),
 		rescheduleJob: managementImplementer.rescheduleJob.handler(async ({ input, context }) => {
 			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+			let mutate: SingleJobMutator | undefined;
+
+			if (rescheduleJob !== undefined) {
+				mutate = (id) => rescheduleJob(id, new Date(input.body.nextRunAt));
+			}
 
 			return handleSingleJobMutation(
 				options,
 				'reschedule',
 				input.params.id,
 				getOpenApiManagementContext(context),
-				rescheduleJob ? (id) => rescheduleJob(id, new Date(input.body.nextRunAt)) : undefined,
+				mutate,
 			);
 		}),
 		deleteJob: managementImplementer.deleteJob.handler(async ({ input, context }) =>
@@ -186,24 +190,15 @@ async function handleSingleJobMutation<TContext>(
 	context: TContext,
 	mutate: SingleJobMutator | undefined,
 ) {
-	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const id = await resolveSingleJobTarget(options, action, idInput, context);
+	const job = await mapJobStateConflict(() => supportedMutate(id));
 
-	try {
-		const job = await supportedMutate(id);
-
-		if (!job) {
-			throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
-		}
-
-		return toJobDto(options, job, context);
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
+	if (!job) {
+		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
+
+	return toJobDto(options, job, context);
 }
 
 async function handleDeleteJob<TContext>(
@@ -212,7 +207,7 @@ async function handleDeleteJob<TContext>(
 	context: TContext,
 	mutate: DeleteJobMutator | undefined,
 ) {
-	const supportedMutate = requireSingleJobMutator(options, mutate);
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
 	const deleted = await supportedMutate(id);
 
@@ -223,7 +218,7 @@ async function handleDeleteJob<TContext>(
 	return toDeleteJobDto();
 }
 
-function requireSingleJobMutator<TContext, TMutator>(
+function requireMutationSupport<TContext, TMutator>(
 	options: ManagementOptions<TContext>,
 	mutate: TMutator | undefined,
 ): TMutator {
@@ -263,28 +258,6 @@ async function resolveSingleJobTarget<TContext>(
 	return id.value.toHexString();
 }
 
-function toManagementQuery(input: JobListQueryDto): Record<string, ManagementQueryValue> {
-	const query: Record<string, ManagementQueryValue> = {};
-
-	if (input.cursor !== undefined) {
-		query['cursor'] = input.cursor;
-	}
-
-	if (input.limit !== undefined) {
-		query['limit'] = input.limit;
-	}
-
-	if (input.name !== undefined) {
-		query['name'] = input.name;
-	}
-
-	if (input.status !== undefined) {
-		query['status'] = input.status;
-	}
-
-	return query;
-}
-
 async function handleBulkJobMutation<TContext>(
 	options: ManagementOptions<TContext>,
 	action: BulkManagementAction,
@@ -292,29 +265,14 @@ async function handleBulkJobMutation<TContext>(
 	context: TContext,
 	mutate: BulkJobMutator | undefined,
 ) {
-	if (options.readOnly) {
-		throw new ORPCError('FORBIDDEN', { message: 'Management surface is read-only' });
-	}
-
-	if (!mutate) {
-		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
-	}
-
+	const supportedMutate = requireMutationSupport(options, mutate);
 	const selector = toManagementSelector(input);
 
 	if (!(await isAllowedByAuthorization(options, action, context, undefined, selector))) {
 		throw new ORPCError('FORBIDDEN', { message: 'Action denied' });
 	}
 
-	try {
-		return toBulkActionResultDto(await mutate(selector));
-	} catch (error) {
-		if (error instanceof JobStateError) {
-			throw new ORPCError('CONFLICT', { message: error.message });
-		}
-
-		throw error;
-	}
+	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
 }
 
 function toManagementSelector(input: JobSelectorDto): JobSelector {
@@ -364,4 +322,16 @@ async function isAllowedByAuthorization<TContext>(
 	}
 
 	return options.authorize({ action, context, job, selector });
+}
+
+async function mapJobStateConflict<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+	try {
+		return await operation();
+	} catch (error) {
+		if (error instanceof JobStateError) {
+			throw new ORPCError('CONFLICT', { message: error.message });
+		}
+
+		throw error;
+	}
 }
