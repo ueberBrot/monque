@@ -18,6 +18,7 @@ import {
 interface PackageJson {
 	name: string;
 	private?: boolean;
+	keywords?: string[];
 	publishConfig?: {
 		access?: string;
 	};
@@ -83,6 +84,8 @@ describe('@monque/management package contract', () => {
 		});
 		expect(packageJson.dependencies?.['@monque/core']).toBeUndefined();
 		expect(packageJson.dependencies?.['mongodb']).toBeUndefined();
+		expect(packageJson.keywords).toEqual(expect.arrayContaining(['orpc', 'zod', 'openapi']));
+		expect(packageJson.keywords).not.toContain('typebox');
 		expect(packageJson.dependencies).toMatchObject({
 			'@orpc/contract': expect.any(String),
 			'@orpc/openapi': expect.any(String),
@@ -213,6 +216,18 @@ describe('@monque/management package contract', () => {
 		for (const forbiddenPattern of FORBIDDEN_SOURCE_PATTERNS) {
 			expect(sourceText.some((text) => text.includes(forbiddenPattern))).toBe(false);
 		}
+	});
+
+	test('documents the oRPC server-only surface instead of the old route map', async () => {
+		const readme = await readFile(join(PACKAGE_DIRECTORY, 'README.md'), 'utf8');
+
+		expect(readme).toContain('oRPC');
+		expect(readme).toContain('server-only');
+		expect(readme).toContain('generateManagementOpenApiDocument');
+		expect(readme).not.toContain('TypeBox');
+		expect(readme).not.toContain('route map');
+		expect(readme).not.toContain('ManagementRequest');
+		expect(readme).not.toContain('ManagementResponse');
 	});
 });
 

@@ -27,7 +27,8 @@
 		"jobs",
 		"scheduler",
 		"openapi",
-		"typebox"
+		"orpc",
+		"zod"
 	],
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
