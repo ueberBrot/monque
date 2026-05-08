@@ -128,6 +128,18 @@ export const managementContract = {
 		.input(JobDetailInputDtoSchema)
 		.errors(SingleJobActionErrors)
 		.output(JobDtoSchema),
+	retryJob: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/{id}/actions/retry',
+			operationId: 'retryJob',
+			successStatus: 200,
+			successDescription: 'Successful response',
+			inputStructure: 'detailed',
+		})
+		.input(JobDetailInputDtoSchema)
+		.errors(SingleJobActionErrors)
+		.output(JobDtoSchema),
 	cancelJobs: oc
 		.route({
 			method: 'POST',

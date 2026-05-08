@@ -124,4 +124,42 @@ describe('oRPC Management single Job action routes', () => {
 			},
 		]);
 	});
+
+	test('retries one Job through public core API', async () => {
+		const jobId = new ObjectId();
+		const target = createJob({
+			_id: jobId,
+			status: 'failed',
+			failCount: 2,
+			updatedAt: new Date('2026-01-01T00:02:00.000Z'),
+		});
+		const retried = createJob({
+			_id: jobId,
+			status: 'pending',
+			failCount: 2,
+			updatedAt: new Date('2026-01-01T00:03:00.000Z'),
+		});
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => (id.equals(jobId) ? target : null),
+				retryJob: async (id) => {
+					coreCalls.push(id);
+
+					return retried;
+				},
+			}),
+		});
+
+		const response = await handlePost(surface, `/api/v1/jobs/${jobId.toHexString()}/actions/retry`);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			id: jobId.toHexString(),
+			status: 'pending',
+			failCount: 2,
+			updatedAt: '2026-01-01T00:03:00.000Z',
+		});
+		expect(coreCalls).toEqual([jobId.toHexString()]);
+	});
 });

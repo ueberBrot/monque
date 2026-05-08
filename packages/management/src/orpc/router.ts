@@ -105,6 +105,15 @@ export function createManagementRouter<TContext = unknown>(options: ManagementOp
 				options.monque.cancelJob?.bind(options.monque),
 			),
 		),
+		retryJob: managementImplementer.retryJob.handler(async ({ input, context }) =>
+			handleSingleJobMutation(
+				options,
+				'retry',
+				input.params.id,
+				context.managementContext as TContext,
+				options.monque.retryJob?.bind(options.monque),
+			),
+		),
 		cancelJobs: managementImplementer.cancelJobs.handler(async ({ input, context }) =>
 			handleBulkJobMutation(
 				options,
