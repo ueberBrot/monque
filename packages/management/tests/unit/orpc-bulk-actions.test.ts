@@ -229,4 +229,18 @@ describe('oRPC Management bulk action routes', () => {
 
 		await expectJsonResponse(response, 409, { error: 'Cannot cancel selected jobs' });
 	});
+
+	test('maps unexpected bulk action failures to the documented 500 response', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				cancelJobs: async () => {
+					throw new Error('Database unavailable');
+				},
+			}),
+		});
+
+		const response = await handleManagementPost(surface, '/api/v1/jobs/actions/cancel', {});
+
+		await expectJsonResponse(response, 500, { error: 'Internal server error' });
+	});
 });

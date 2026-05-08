@@ -264,7 +264,7 @@ describe('oRPC Management read routes', () => {
 		});
 	});
 
-	test('maps invalid Job list query shapes and malformed cursors to 400', async () => {
+	test('maps invalid Job list query shapes and malformed cursors to stable 400 responses', async () => {
 		const coreCalls: string[] = [];
 		const surface = createManagementSurface({
 			monque: createManagementMonque({
@@ -276,6 +276,10 @@ describe('oRPC Management read routes', () => {
 		});
 
 		const invalidStatus = await handleManagementGet(surface, '/api/v1/jobs?status=wat');
+		const invalidRepeatedStatus = await handleManagementGet(
+			surface,
+			'/api/v1/jobs?status=pending&status=wat',
+		);
 		const unsupportedFilter = await handleManagementGet(
 			surface,
 			'/api/v1/jobs?claimedBy=scheduler-1',
@@ -286,8 +290,11 @@ describe('oRPC Management read routes', () => {
 			'/api/v1/jobs?cursor=not-a-valid-cursor',
 		);
 
-		expect(invalidStatus.status).toBe(400);
-		expect(unsupportedFilter.status).toBe(400);
+		await expectJsonResponse(invalidStatus, 400, { error: 'Input validation failed' });
+		await expectJsonResponse(invalidRepeatedStatus, 400, {
+			error: 'Input validation failed',
+		});
+		await expectJsonResponse(unsupportedFilter, 400, { error: 'Input validation failed' });
 		await expectJsonResponse(invalidLimit, 400, { error: 'Invalid limit' });
 		await expectJsonResponse(malformedCursor, 400, { error: 'Invalid cursor' });
 		expect(coreCalls).toEqual(['called']);
@@ -442,6 +449,7 @@ describe('oRPC Management read routes', () => {
 		});
 
 		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=send-email');
+		const globalResponse = await handleManagementGet(surface, '/api/v1/jobs/stats');
 
 		await expectJsonResponse(response, 200, {
 			pending: 4,
@@ -452,7 +460,16 @@ describe('oRPC Management read routes', () => {
 			total: 30,
 			avgProcessingDurationMs: 456,
 		});
-		expect(calls).toEqual([{ name: 'send-email' }]);
+		await expectJsonResponse(globalResponse, 200, {
+			pending: 4,
+			processing: 3,
+			completed: 20,
+			failed: 2,
+			cancelled: 1,
+			total: 30,
+			avgProcessingDurationMs: 456,
+		});
+		expect(calls).toEqual([{ name: 'send-email' }, undefined]);
 	});
 
 	test('rejects Queue View reads when authorization denies read access', async () => {

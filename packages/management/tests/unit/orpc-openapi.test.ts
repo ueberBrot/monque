@@ -27,6 +27,11 @@ describe('oRPC Management OpenAPI contract', () => {
 		);
 	});
 
+	test('publishes stable document metadata', () => {
+		expect(document.info.title).toBe('Monque Management API');
+		expect(document.info.version).toMatch(/^\d+\.\d+\.\d+(?:[-+].+)?$/);
+	});
+
 	test('derives the health path and response schema from the oRPC contract', () => {
 		expect(document.openapi).toBe('3.1.1');
 		expect(document.paths?.['/api/v1/health']?.get?.operationId).toBe('getSchedulerHealth');
@@ -40,6 +45,19 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['SchedulerHealth']).toMatchObject({
 			type: 'object',
+			properties: {
+				status: {
+					anyOf: [{ const: 'ok' }, { const: 'unavailable' }],
+				},
+				scheduler: {
+					type: 'object',
+					properties: {
+						healthy: { type: 'boolean' },
+					},
+					required: ['healthy'],
+					additionalProperties: false,
+				},
+			},
 			required: ['status', 'scheduler'],
 			additionalProperties: false,
 		});
@@ -57,6 +75,21 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['Capabilities']).toMatchObject({
 			type: 'object',
+			properties: {
+				readOnly: { type: 'boolean' },
+				actions: {
+					type: 'object',
+					properties: {
+						read: { type: 'boolean' },
+						cancel: { type: 'boolean' },
+						retry: { type: 'boolean' },
+						reschedule: { type: 'boolean' },
+						delete: { type: 'boolean' },
+					},
+					required: ['read', 'cancel', 'retry', 'reschedule', 'delete'],
+					additionalProperties: false,
+				},
+			},
 			required: ['readOnly', 'actions'],
 			additionalProperties: false,
 		});
@@ -153,7 +186,44 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['Job']).toMatchObject({
 			type: 'object',
-			required: expect.arrayContaining(['id', 'name', 'status', 'payload', 'createdAt']),
+			properties: {
+				id: { type: 'string' },
+				name: { type: 'string' },
+				status: {
+					enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+					type: 'string',
+				},
+				nextRunAt: { type: 'string', format: 'date-time' },
+				lockedAt: {
+					anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+				},
+				claimedBy: {
+					anyOf: [{ type: 'string' }, { type: 'null' }],
+				},
+				lastHeartbeat: {
+					anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+				},
+				failCount: { type: 'number' },
+				failureReason: {
+					anyOf: [{ type: 'string' }, { type: 'null' }],
+				},
+				createdAt: { type: 'string', format: 'date-time' },
+				updatedAt: { type: 'string', format: 'date-time' },
+			},
+			required: [
+				'id',
+				'name',
+				'status',
+				'payload',
+				'nextRunAt',
+				'lockedAt',
+				'claimedBy',
+				'lastHeartbeat',
+				'failCount',
+				'failureReason',
+				'createdAt',
+				'updatedAt',
+			],
 			additionalProperties: false,
 		});
 		expect(document.components?.schemas?.['JobCursorPage']).toMatchObject({
@@ -202,6 +272,27 @@ describe('oRPC Management OpenAPI contract', () => {
 		}
 		expect(document.components?.schemas?.['JobSelector']).toMatchObject({
 			type: 'object',
+			properties: {
+				name: { type: 'string' },
+				status: {
+					anyOf: [
+						{
+							enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+							type: 'string',
+						},
+						{
+							type: 'array',
+							minItems: 1,
+							items: {
+								enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+								type: 'string',
+							},
+						},
+					],
+				},
+				olderThan: { type: 'string', format: 'date-time' },
+				newerThan: { type: 'string', format: 'date-time' },
+			},
 			additionalProperties: false,
 		});
 		expect(document.components?.schemas?.['BulkActionResult']).toMatchObject({

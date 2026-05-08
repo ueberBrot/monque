@@ -113,6 +113,30 @@ describe('oRPC Management single Job action routes', () => {
 		expect(coreCalls).toEqual([jobId.toHexString()]);
 	});
 
+	test('maps a single Job mutation miss after target resolution to 404', async () => {
+		const jobId = new ObjectId();
+		const target = createManagementJob({ _id: jobId, status: 'failed' });
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: getManagementJobById(target),
+				retryJob: async (id) => {
+					coreCalls.push(id);
+
+					return null;
+				},
+			}),
+		});
+
+		const response = await handleManagementPost(
+			surface,
+			`/api/v1/jobs/${jobId.toHexString()}/actions/retry`,
+		);
+
+		await expectJsonResponse(response, 404, { error: 'Job not found' });
+		expect(coreCalls).toEqual([jobId.toHexString()]);
+	});
+
 	test('deletes one Job through public core API with a stable response DTO', async () => {
 		const jobId = new ObjectId();
 		const target = createManagementJob({ _id: jobId, status: 'completed' });
@@ -131,6 +155,27 @@ describe('oRPC Management single Job action routes', () => {
 		const response = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
 
 		await expectJsonResponse(response, 200, { deleted: true });
+		expect(coreCalls).toEqual([jobId.toHexString()]);
+	});
+
+	test('maps a single Job delete miss after target resolution to 404', async () => {
+		const jobId = new ObjectId();
+		const target = createManagementJob({ _id: jobId, status: 'completed' });
+		const coreCalls: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: getManagementJobById(target),
+				deleteJob: async (id) => {
+					coreCalls.push(id);
+
+					return false;
+				},
+			}),
+		});
+
+		const response = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+
+		await expectJsonResponse(response, 404, { error: 'Job not found' });
 		expect(coreCalls).toEqual([jobId.toHexString()]);
 	});
 
