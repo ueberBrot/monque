@@ -126,6 +126,25 @@ describe('oRPC Management bulk action routes', () => {
 		]);
 	});
 
+	test('passes an empty bulk Job selector through to public core APIs', async () => {
+		const coreCalls: JobSelector[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				deleteJobs: async (selector): Promise<BulkOperationResult> => {
+					coreCalls.push(selector);
+
+					return { count: 0, errors: [] };
+				},
+			}),
+		});
+
+		const response = await handlePost(surface, '/api/v1/jobs/actions/delete', {});
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ count: 0, errors: [] });
+		expect(coreCalls).toEqual([{}]);
+	});
+
 	test('rejects read-only, unsupported, and denied bulk actions with 403', async () => {
 		const coreCalls: string[] = [];
 		const readOnly = createManagementSurface({

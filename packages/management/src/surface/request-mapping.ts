@@ -1,7 +1,12 @@
-import { type CursorOptions, isValidJobStatus, type JobStatusType } from '@monque/core';
+import {
+	type CursorOptions,
+	isValidJobStatus,
+	type JobSelector,
+	type JobStatusType,
+} from '@monque/core';
 import { ObjectId } from 'mongodb';
 
-import type { JobListQueryDto } from '../schemas/index.js';
+import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
 
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
 	if (!value || !ObjectId.isValid(value)) {
@@ -11,7 +16,7 @@ export function parseObjectId(value: string | undefined): { value: ObjectId } | 
 	return { value: new ObjectId(value) };
 }
 
-export function parseJobListQuery(query: JobListQueryDto): CursorOptions | { error: string } {
+export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { error: string } {
 	const limitResult = parseLimit(query.limit);
 
 	if ('error' in limitResult) {
@@ -47,6 +52,28 @@ export function parseJobListQuery(query: JobListQueryDto): CursorOptions | { err
 	}
 
 	return options;
+}
+
+export function toJobSelector(input: JobSelectorDto): JobSelector {
+	const selector: JobSelector = {};
+
+	if (input.name !== undefined) {
+		selector.name = input.name;
+	}
+
+	if (input.status !== undefined) {
+		selector.status = input.status;
+	}
+
+	if (input.olderThan !== undefined) {
+		selector.olderThan = new Date(input.olderThan);
+	}
+
+	if (input.newerThan !== undefined) {
+		selector.newerThan = new Date(input.newerThan);
+	}
+
+	return selector;
 }
 
 function parseLimit(value: string | undefined): { limit: number } | { error: string } {

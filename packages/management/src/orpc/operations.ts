@@ -29,7 +29,7 @@ import {
 	type ManagementActionTarget,
 } from '../surface/action-policy.js';
 import type { ManagementAction, ManagementOptions } from '../surface/index.js';
-import { parseJobListQuery, parseObjectId } from './input.js';
+import { parseObjectId, toJobCursorOptions, toJobSelector } from '../surface/request-mapping.js';
 
 type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
@@ -51,7 +51,7 @@ export function createManagementOperations<TContext = unknown>(
 		listJobs: async (input: JobListQueryDto, context: TContext) => {
 			await requireReadAuthorization(options, context);
 
-			const cursorOptions = parseJobListQuery(input);
+			const cursorOptions = toJobCursorOptions(input);
 
 			if ('error' in cursorOptions) {
 				throw new ORPCError('BAD_REQUEST', { message: cursorOptions.error });
@@ -241,33 +241,11 @@ async function handleBulkJobMutation<TContext>(
 	mutate: BulkJobMutator | undefined,
 ) {
 	const supportedMutate = requireMutationSupport(options, action, mutate);
-	const selector = toManagementSelector(input);
+	const selector = toJobSelector(input);
 
 	await requireManagementAction(options, action, context, { selector });
 
 	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
-}
-
-function toManagementSelector(input: JobSelectorDto): JobSelector {
-	const selector: JobSelector = {};
-
-	if (input.name !== undefined) {
-		selector.name = input.name;
-	}
-
-	if (input.status !== undefined) {
-		selector.status = input.status;
-	}
-
-	if (input.olderThan !== undefined) {
-		selector.olderThan = new Date(input.olderThan);
-	}
-
-	if (input.newerThan !== undefined) {
-		selector.newerThan = new Date(input.newerThan);
-	}
-
-	return selector;
 }
 
 async function requireReadAuthorization<TContext>(
