@@ -1,4 +1,4 @@
-import { implement, type Router } from '@orpc/server';
+import { implement, ORPCError, type Router } from '@orpc/server';
 
 import type { ManagementOpenApiContext, ManagementOptions } from '../surface/index.js';
 import type { ManagementContract } from './contract.js';
@@ -68,5 +68,12 @@ export function createManagementRouter<TContext = unknown>(
 function getOpenApiManagementContext<TContext>(
 	context: ManagementOpenApiContext<TContext>,
 ): TContext {
+	if (context.managementContext === undefined) {
+		throw new ORPCError('INTERNAL_SERVER_ERROR', {
+			message:
+				'Missing managementContext in openApiHandler.handle() context; managementContext is required for authorize/serializePayload hooks.',
+		});
+	}
+
 	return context.managementContext as TContext;
 }

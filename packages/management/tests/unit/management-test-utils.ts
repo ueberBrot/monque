@@ -123,7 +123,9 @@ async function handleManagementRequest(
 
 	const result = await surface.openApiHandler.handle(
 		new Request(`https://management.example${path}`, init),
-		options.context === undefined ? {} : { context: options.context },
+		{
+			context: options.context === undefined ? { managementContext: {} } : options.context,
+		},
 	);
 
 	if (!result.matched) {
