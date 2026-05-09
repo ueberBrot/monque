@@ -31,6 +31,31 @@ describe('oRPC Management capabilities route', () => {
 		});
 	});
 
+	test('returns identical capabilities on repeated requests', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({}, { mutations: true }),
+		});
+		const expectedBody = {
+			readOnly: false,
+			actions: {
+				read: true,
+				cancel: true,
+				cancelBulk: true,
+				retry: true,
+				retryBulk: true,
+				reschedule: true,
+				delete: true,
+				deleteBulk: true,
+			},
+		};
+
+		const first = await handleManagementGet(surface, '/api/v1/capabilities');
+		const second = await handleManagementGet(surface, '/api/v1/capabilities');
+
+		await expectJsonResponse(first, 200, expectedBody);
+		await expectJsonResponse(second, 200, expectedBody);
+	});
+
 	test('uses adapter-provided request context for action authorization', async () => {
 		const authorizedActions = new Set(['read', 'retry']);
 		const surface = createManagementSurface<{ role: string }>({
