@@ -109,21 +109,15 @@ function parseStatuses(
 		return { status: undefined };
 	}
 
-	if (typeof value === 'string') {
-		if (!isValidJobStatus(value)) {
-			return { error: 'Invalid status' };
-		}
+	const requestedStatuses = Array.isArray(value) ? value : [value];
 
-		return { status: value };
-	}
-
-	if (value.length === 0) {
+	if (requestedStatuses.length === 0) {
 		return { error: 'Invalid status' };
 	}
 
 	const statuses: JobStatusType[] = [];
 
-	for (const status of value) {
+	for (const status of requestedStatuses) {
 		if (!isValidJobStatus(status)) {
 			return { error: 'Invalid status' };
 		}

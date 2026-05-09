@@ -129,16 +129,12 @@ export function createManagementOperations<TContext = unknown>(
 				options.monque.retryJob?.bind(options.monque),
 			),
 		rescheduleJob: (input: RescheduleJobInputDto, context: TContext) => {
-			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
-
 			return handleSingleJobMutation(
 				options,
 				'reschedule',
 				input.params.id,
 				context,
-				rescheduleJob === undefined
-					? undefined
-					: (id) => rescheduleJob(id, new Date(input.body.nextRunAt)),
+				toRescheduleJobMutator(options, new Date(input.body.nextRunAt)),
 			);
 		},
 		deleteJob: (input: JobDetailInputDto, context: TContext) =>
@@ -226,6 +222,19 @@ function requireMutationSupport<TContext, TMutator>(
 	}
 
 	return mutate;
+}
+
+function toRescheduleJobMutator<TContext>(
+	options: ManagementOptions<TContext>,
+	runAt: Date,
+): SingleJobMutator | undefined {
+	const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+
+	if (rescheduleJob === undefined) {
+		return undefined;
+	}
+
+	return (id) => rescheduleJob(id, runAt);
 }
 
 async function resolveSingleJobTarget<TContext>(

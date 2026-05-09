@@ -29,9 +29,9 @@ export async function toJobDto<TContext>(
 		status: job.status,
 		payload,
 		nextRunAt: job.nextRunAt.toISOString(),
-		lockedAt: job.lockedAt ? job.lockedAt.toISOString() : null,
+		lockedAt: toIsoStringOrNull(job.lockedAt),
 		claimedBy: job.claimedBy ?? null,
-		lastHeartbeat: job.lastHeartbeat ? job.lastHeartbeat.toISOString() : null,
+		lastHeartbeat: toIsoStringOrNull(job.lastHeartbeat),
 		failCount: job.failCount,
 		failureReason: job.failReason ?? null,
 		createdAt: job.createdAt.toISOString(),
@@ -51,4 +51,8 @@ export async function toJobDto<TContext>(
 	}
 
 	return dto;
+}
+
+function toIsoStringOrNull(value: Date | null | undefined): string | null {
+	return value === null || value === undefined ? null : value.toISOString();
 }
