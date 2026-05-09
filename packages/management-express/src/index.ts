@@ -1,8 +1,10 @@
 import {
 	createManagementSurface,
+	generateManagementOpenApiDocument,
 	type ManagementOpenApiContext,
 	type ManagementOptions,
 } from '@monque/management';
+import type { OpenAPI } from '@orpc/openapi';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 
 export interface ManagementExpressContextInput {
@@ -14,17 +16,41 @@ export type ManagementExpressContextFactory<TContext = unknown> = (
 	input: ManagementExpressContextInput,
 ) => TContext | Promise<TContext>;
 
+export type ManagementExpressOpenApiServerUrl =
+	| string
+	| ((input: ManagementExpressContextInput) => string | Promise<string>);
+
+export interface ManagementExpressOpenApiOptions {
+	path?: string;
+	serverUrl?: ManagementExpressOpenApiServerUrl;
+}
+
 export interface ManagementExpressRouterOptions<TContext = unknown>
 	extends ManagementOptions<TContext> {
 	context?: ManagementExpressContextFactory<TContext>;
+	openApi?: false | ManagementExpressOpenApiOptions;
 }
 
 export function createManagementExpressRouter<TContext = unknown>(
 	options: ManagementExpressRouterOptions<TContext>,
 ): Router {
 	const router = Router();
-	const { context, ...managementOptions } = options;
+	const { context, openApi, ...managementOptions } = options;
 	const surface = createManagementSurface(managementOptions);
+	const openApiOptions = normalizeOpenApiOptions(openApi);
+
+	if (openApiOptions !== null) {
+		router.get(
+			openApiOptions.path,
+			async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+				try {
+					res.json(await createOpenApiDocument(req, res, openApiOptions));
+				} catch (error) {
+					next(error);
+				}
+			},
+		);
+	}
 
 	router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
 		try {
@@ -44,6 +70,47 @@ export function createManagementExpressRouter<TContext = unknown>(
 	});
 
 	return router;
+}
+
+function normalizeOpenApiOptions(
+	options: false | ManagementExpressOpenApiOptions | undefined,
+): Required<ManagementExpressOpenApiOptions> | null {
+	if (options === false) {
+		return null;
+	}
+
+	return {
+		path: normalizeOpenApiPath(options?.path),
+		serverUrl: options?.serverUrl ?? (({ req }) => normalizeServerUrl(req.baseUrl)),
+	};
+}
+
+function normalizeOpenApiPath(path: string | undefined): string {
+	if (path === undefined) {
+		return '/openapi.json';
+	}
+
+	return path.startsWith('/') ? path : `/${path}`;
+}
+
+function normalizeServerUrl(serverUrl: string): string {
+	return serverUrl === '' ? '/' : serverUrl;
+}
+
+async function createOpenApiDocument(
+	req: Request,
+	res: Response,
+	options: Required<ManagementExpressOpenApiOptions>,
+): Promise<OpenAPI.Document> {
+	const document = structuredClone(await generateManagementOpenApiDocument());
+	const serverUrl =
+		typeof options.serverUrl === 'string'
+			? options.serverUrl
+			: await options.serverUrl({ req, res });
+
+	document.servers = [{ url: normalizeServerUrl(serverUrl) }];
+
+	return document;
 }
 
 async function createOpenApiContext<TContext>(

@@ -92,4 +92,31 @@ describe('Express Management Adapter', () => {
 			}),
 		);
 	});
+
+	test('serves the management OpenAPI document with mount-specific server metadata', async () => {
+		const app = express();
+
+		app.use(
+			'/monque',
+			createManagementExpressRouter({
+				monque: createManagementMonque(),
+			}),
+		);
+
+		const response = await request(app)
+			.get('/monque/openapi.json')
+			.expect(200)
+			.expect('content-type', /json/);
+
+		expect(response.body).toEqual(
+			expect.objectContaining({
+				openapi: '3.1.1',
+				info: expect.objectContaining({
+					title: 'Monque Management API',
+				}),
+				servers: [{ url: '/monque' }],
+			}),
+		);
+		expect(response.body.paths).toHaveProperty('/api/v1/health');
+	});
 });
