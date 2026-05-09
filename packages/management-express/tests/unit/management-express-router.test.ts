@@ -1,10 +1,11 @@
 import type { JobSelector } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
-import express, { type Express, type Request, type Response } from 'express';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
 import { createOpenApiContext } from '@/context';
+import { createRequest } from '@/http';
 import { createManagementExpressRouter, type ManagementExpressRouterOptions } from '@/index';
 
 function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
@@ -38,12 +39,83 @@ function createManagementApp<TContext>(options: ManagementExpressRouterOptions<T
 	return app;
 }
 
+function createRequestMock({
+	body,
+	headers = {},
+	host = 'example.test',
+	method = 'POST',
+	protocol = 'https',
+	url = '/api/v1/jobs/actions/cancel',
+}: {
+	body?: unknown;
+	headers?: Request['headers'];
+	host?: string;
+	method?: string;
+	protocol?: string;
+	url?: string;
+}): Request {
+	return {
+		body,
+		get: (name: string) => (name.toLowerCase() === 'host' ? host : undefined),
+		headers,
+		method,
+		protocol,
+		url,
+	} as unknown as Request;
+}
+
+function mountErrorJson(app: Express): void {
+	app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+		res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+	});
+}
+
 describe('Express Management Adapter', () => {
 	test('omits management context when no context factory is configured', async () => {
 		const context = await createOpenApiContext({} as Request, {} as Response, undefined);
 
 		expect(context).not.toHaveProperty('managementContext');
 		expect(context.managementContext).toBeUndefined();
+	});
+
+	test('preserves array headers while skipping undefined headers', async () => {
+		const fetchRequest = createRequest(
+			createRequestMock({
+				body: { name: 'send-email' },
+				headers: {
+					'x-forwarded-host': ['ops.example.test', 'fallback.example.test'],
+					'x-missing-header': undefined,
+				},
+			}),
+		);
+
+		expect(fetchRequest.headers.get('x-forwarded-host')).toBe(
+			'ops.example.test, fallback.example.test',
+		);
+		expect(fetchRequest.headers.has('x-missing-header')).toBe(false);
+	});
+
+	test('creates Fetch requests from already-parsed body types', async () => {
+		const cases = [
+			{
+				body: 'plain body',
+				expected: 'plain body',
+			},
+			{
+				body: Buffer.from('buffer body'),
+				expected: 'buffer body',
+			},
+			{
+				body: new URLSearchParams({ name: 'send-email', status: 'pending' }),
+				expected: 'name=send-email&status=pending',
+			},
+		];
+
+		for (const { body, expected } of cases) {
+			const fetchRequest = createRequest(createRequestMock({ body }));
+
+			expect(await fetchRequest.text()).toBe(expected);
+		}
 	});
 
 	test('serves management routes under the host mount path', async () => {
@@ -173,6 +245,22 @@ describe('Express Management Adapter', () => {
 		expect(response.body.servers).toEqual([{ url: 'https://ops.example.test/monque' }]);
 	});
 
+	test('forwards OpenAPI document errors to Express error middleware', async () => {
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			openApi: {
+				serverUrl: () => {
+					throw new Error('OpenAPI server URL failed');
+				},
+			},
+		});
+		mountErrorJson(app);
+
+		await request(app).get('/monque/openapi.json').expect(500).expect({
+			error: 'OpenAPI server URL failed',
+		});
+	});
+
 	test('can disable adapter-served OpenAPI JSON', async () => {
 		const app = createManagementApp({
 			monque: createManagementMonque(),
@@ -277,5 +365,19 @@ describe('Express Management Adapter', () => {
 				status: ['pending'],
 			},
 		]);
+	});
+
+	test('forwards management route errors to Express error middleware', async () => {
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			context: () => {
+				throw new Error('Management context failed');
+			},
+		});
+		mountErrorJson(app);
+
+		await request(app).get('/monque/api/v1/health').expect(500).expect({
+			error: 'Management context failed',
+		});
 	});
 });
