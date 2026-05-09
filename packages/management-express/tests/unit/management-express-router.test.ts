@@ -1,10 +1,10 @@
 import type { JobSelector } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
-import express from 'express';
+import express, { type Express } from 'express';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
-import { createManagementExpressRouter } from '@/index';
+import { createManagementExpressRouter, type ManagementExpressRouterOptions } from '@/index';
 
 function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
 	return {
@@ -29,16 +29,19 @@ function createManagementMonque(overrides: Partial<ManagementMonque> = {}): Mana
 	};
 }
 
+function createManagementApp<TContext>(options: ManagementExpressRouterOptions<TContext>): Express {
+	const app = express();
+
+	app.use('/monque', createManagementExpressRouter(options));
+
+	return app;
+}
+
 describe('Express Management Adapter', () => {
 	test('serves management routes under the host mount path', async () => {
-		const app = express();
-
-		app.use(
-			'/monque',
-			createManagementExpressRouter({
-				monque: createManagementMonque({ isHealthy: () => false }),
-			}),
-		);
+		const app = createManagementApp({
+			monque: createManagementMonque({ isHealthy: () => false }),
+		});
 
 		await request(app)
 			.get('/monque/api/v1/health')
@@ -56,17 +59,12 @@ describe('Express Management Adapter', () => {
 	});
 
 	test('passes Express-derived context into management authorization hooks', async () => {
-		const app = express();
 		const authorize = vi.fn(({ context }) => context.role === 'operator');
-
-		app.use(
-			'/monque',
-			createManagementExpressRouter<{ role: string }>({
-				monque: createManagementMonque(),
-				context: ({ req }) => ({ role: req.get('x-role') ?? 'viewer' }),
-				authorize,
-			}),
-		);
+		const app = createManagementApp<{ role: string }>({
+			monque: createManagementMonque(),
+			context: ({ req }) => ({ role: req.get('x-role') ?? 'viewer' }),
+			authorize,
+		});
 
 		await request(app)
 			.get('/monque/api/v1/capabilities')
@@ -95,14 +93,9 @@ describe('Express Management Adapter', () => {
 	});
 
 	test('serves the management OpenAPI document with mount-specific server metadata', async () => {
-		const app = express();
-
-		app.use(
-			'/monque',
-			createManagementExpressRouter({
-				monque: createManagementMonque(),
-			}),
-		);
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+		});
 
 		const response = await request(app)
 			.get('/monque/openapi.json')
@@ -122,18 +115,13 @@ describe('Express Management Adapter', () => {
 	});
 
 	test('serves OpenAPI JSON from a configured path and server URL', async () => {
-		const app = express();
-
-		app.use(
-			'/monque',
-			createManagementExpressRouter({
-				monque: createManagementMonque(),
-				openApi: {
-					path: 'docs/openapi.json',
-					serverUrl: 'https://ops.example.test/monque',
-				},
-			}),
-		);
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			openApi: {
+				path: 'docs/openapi.json',
+				serverUrl: 'https://ops.example.test/monque',
+			},
+		});
 
 		const response = await request(app).get('/monque/docs/openapi.json').expect(200);
 
@@ -142,15 +130,10 @@ describe('Express Management Adapter', () => {
 	});
 
 	test('can disable adapter-served OpenAPI JSON', async () => {
-		const app = express();
-
-		app.use(
-			'/monque',
-			createManagementExpressRouter({
-				monque: createManagementMonque(),
-				openApi: false,
-			}),
-		);
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			openApi: false,
+		});
 
 		await request(app).get('/monque/openapi.json').expect(404);
 		await request(app).get('/monque/api/v1/health').expect(200);

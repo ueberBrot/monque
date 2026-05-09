@@ -30,6 +30,10 @@ export interface ManagementExpressRouterOptions<TContext = unknown>
 	openApi?: false | ManagementExpressOpenApiOptions;
 }
 
+type ManagementExpressOpenApiDocument = Awaited<
+	ReturnType<typeof generateManagementOpenApiDocument>
+>;
+
 export function createManagementExpressRouter<TContext = unknown>(
 	options: ManagementExpressRouterOptions<TContext>,
 ): Router {
@@ -100,16 +104,24 @@ async function createOpenApiDocument(
 	req: Request,
 	res: Response,
 	options: Required<ManagementExpressOpenApiOptions>,
-): Promise<Awaited<ReturnType<typeof generateManagementOpenApiDocument>>> {
+): Promise<ManagementExpressOpenApiDocument> {
 	const document = structuredClone(await generateManagementOpenApiDocument());
-	const serverUrl =
-		typeof options.serverUrl === 'string'
-			? options.serverUrl
-			: await options.serverUrl({ req, res });
 
-	document.servers = [{ url: normalizeServerUrl(serverUrl) }];
+	document.servers = [{ url: normalizeServerUrl(await resolveServerUrl(req, res, options)) }];
 
 	return document;
+}
+
+async function resolveServerUrl(
+	req: Request,
+	res: Response,
+	options: Required<ManagementExpressOpenApiOptions>,
+): Promise<string> {
+	if (typeof options.serverUrl === 'string') {
+		return options.serverUrl;
+	}
+
+	return options.serverUrl({ req, res });
 }
 
 async function createOpenApiContext<TContext>(
