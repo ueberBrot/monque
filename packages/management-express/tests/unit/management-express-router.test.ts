@@ -1,3 +1,4 @@
+import type { JobSelector } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
 import express from 'express';
 import request from 'supertest';
@@ -118,5 +119,60 @@ describe('Express Management Adapter', () => {
 			}),
 		);
 		expect(response.body.paths).toHaveProperty('/api/v1/health');
+	});
+
+	test('lets host auth middleware wrap body-bearing management routes', async () => {
+		const app = express();
+		const selectors: JobSelector[] = [];
+
+		app.use((req, res, next) => {
+			if (req.get('authorization') !== 'Bearer secret') {
+				res.status(401).json({ error: 'Unauthorized' });
+				return;
+			}
+
+			next();
+		});
+		app.use(
+			'/monque',
+			createManagementExpressRouter({
+				monque: createManagementMonque({
+					cancelJobs: async (selector) => {
+						selectors.push(selector);
+
+						return {
+							count: 2,
+							errors: [],
+						};
+					},
+				}),
+			}),
+		);
+
+		await request(app).post('/monque/api/v1/jobs/actions/cancel').expect(401).expect({
+			error: 'Unauthorized',
+		});
+
+		await request(app)
+			.post('/monque/api/v1/jobs/actions/cancel')
+			.set('authorization', 'Bearer secret')
+			.send({
+				name: 'send-email',
+				status: ['pending'],
+				olderThan: '2026-02-01T10:30:00.000Z',
+			})
+			.expect(200)
+			.expect({
+				count: 2,
+				errors: [],
+			});
+
+		expect(selectors).toEqual([
+			{
+				name: 'send-email',
+				status: ['pending'],
+				olderThan: new Date('2026-02-01T10:30:00.000Z'),
+			},
+		]);
 	});
 });

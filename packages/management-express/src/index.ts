@@ -4,7 +4,6 @@ import {
 	type ManagementOpenApiContext,
 	type ManagementOptions,
 } from '@monque/management';
-import type { OpenAPI } from '@orpc/openapi';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 
 export interface ManagementExpressContextInput {
@@ -101,7 +100,7 @@ async function createOpenApiDocument(
 	req: Request,
 	res: Response,
 	options: Required<ManagementExpressOpenApiOptions>,
-): Promise<OpenAPI.Document> {
+): Promise<Awaited<ReturnType<typeof generateManagementOpenApiDocument>>> {
 	const document = structuredClone(await generateManagementOpenApiDocument());
 	const serverUrl =
 		typeof options.serverUrl === 'string'

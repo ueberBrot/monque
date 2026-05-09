@@ -88,9 +88,6 @@
     "packages/management-express": {
       "name": "@monque/management-express",
       "version": "0.0.0",
-      "dependencies": {
-        "@orpc/openapi": "^1.14.2",
-      },
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@monque/management": "workspace:*",
