@@ -8,7 +8,7 @@ import type {
 	ManagementOptions,
 } from './types.js';
 
-const ManagementActions = ['read', 'cancel', 'retry', 'reschedule', 'delete'] as const;
+const MANAGEMENT_ACTIONS = ['read', 'cancel', 'retry', 'reschedule', 'delete'] as const;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
 	read: false,
@@ -16,7 +16,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	retry: false,
 	reschedule: false,
 	delete: false,
-} satisfies CapabilityActionsDto & Record<(typeof ManagementActions)[number], boolean>;
+} satisfies CapabilityActionsDto & Record<(typeof MANAGEMENT_ACTIONS)[number], boolean>;
 
 export interface ManagementActionTarget {
 	job?: PersistedJob | undefined;
@@ -32,7 +32,7 @@ export async function getManagementCapabilities<TContext>(
 	const readOnly = options.readOnly ?? false;
 	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
-	for (const action of ManagementActions) {
+	for (const action of MANAGEMENT_ACTIONS) {
 		const decision = await decideManagementAction(options, action, context, {
 			supported: isManagementActionSupported(options.monque, action),
 		});
