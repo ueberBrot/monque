@@ -3,13 +3,13 @@ import { z } from 'zod';
 /** Aggregated job counts and timing statistics for a queue or the whole scheduler. */
 export const QueueStatsDtoSchema = z
 	.object({
-		pending: z.number(),
-		processing: z.number(),
-		completed: z.number(),
-		failed: z.number(),
-		cancelled: z.number(),
-		total: z.number(),
-		avgProcessingDurationMs: z.number().optional(),
+		pending: z.number().int().nonnegative(),
+		processing: z.number().int().nonnegative(),
+		completed: z.number().int().nonnegative(),
+		failed: z.number().int().nonnegative(),
+		cancelled: z.number().int().nonnegative(),
+		total: z.number().int().nonnegative(),
+		avgProcessingDurationMs: z.number().nonnegative().optional(),
 	})
 	.strict();
 
@@ -26,8 +26,8 @@ export const JobStatsQueryDtoSchema = z
 /** Local worker state for a queue view, when this scheduler has a worker registered. */
 export const QueueViewWorkerDtoSchema = z
 	.object({
-		concurrency: z.number(),
-		activeCount: z.number(),
+		concurrency: z.number().int().nonnegative(),
+		activeCount: z.number().int().nonnegative(),
 	})
 	.strict();
 

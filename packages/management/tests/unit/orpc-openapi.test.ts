@@ -203,7 +203,7 @@ describe('oRPC Management OpenAPI contract', () => {
 				lastHeartbeat: {
 					anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
 				},
-				failCount: { type: 'number' },
+				failCount: { type: 'integer' },
 				failureReason: {
 					anyOf: [{ type: 'string' }, { type: 'null' }],
 				},
@@ -297,6 +297,9 @@ describe('oRPC Management OpenAPI contract', () => {
 		});
 		expect(document.components?.schemas?.['BulkActionResult']).toMatchObject({
 			type: 'object',
+			properties: {
+				count: { type: 'integer' },
+			},
 			required: ['count', 'errors'],
 			additionalProperties: false,
 		});

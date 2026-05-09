@@ -33,7 +33,7 @@ export type BulkActionErrorDto = z.infer<typeof BulkActionErrorDtoSchema>;
 /** Result returned from bulk cancel, retry, and delete actions. */
 export const BulkActionResultDtoSchema = z
 	.object({
-		count: z.number(),
+		count: z.number().int().nonnegative(),
 		errors: z.array(BulkActionErrorDtoSchema),
 	})
 	.strict();
