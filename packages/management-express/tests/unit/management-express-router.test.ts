@@ -121,6 +121,41 @@ describe('Express Management Adapter', () => {
 		expect(response.body.paths).toHaveProperty('/api/v1/health');
 	});
 
+	test('serves OpenAPI JSON from a configured path and server URL', async () => {
+		const app = express();
+
+		app.use(
+			'/monque',
+			createManagementExpressRouter({
+				monque: createManagementMonque(),
+				openApi: {
+					path: 'docs/openapi.json',
+					serverUrl: 'https://ops.example.test/monque',
+				},
+			}),
+		);
+
+		const response = await request(app).get('/monque/docs/openapi.json').expect(200);
+
+		expect(response.body.servers).toEqual([{ url: 'https://ops.example.test/monque' }]);
+		await request(app).get('/monque/openapi.json').expect(404);
+	});
+
+	test('can disable adapter-served OpenAPI JSON', async () => {
+		const app = express();
+
+		app.use(
+			'/monque',
+			createManagementExpressRouter({
+				monque: createManagementMonque(),
+				openApi: false,
+			}),
+		);
+
+		await request(app).get('/monque/openapi.json').expect(404);
+		await request(app).get('/monque/api/v1/health').expect(200);
+	});
+
 	test('lets host auth middleware wrap body-bearing management routes', async () => {
 		const app = express();
 		const selectors: JobSelector[] = [];
