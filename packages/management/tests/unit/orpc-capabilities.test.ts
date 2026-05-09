@@ -60,6 +60,35 @@ describe('oRPC Management capabilities route', () => {
 		});
 	});
 
+	test('does not require managementContext when no hooks need it', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({}, { mutations: true }),
+		});
+
+		const result = await surface.openApiHandler.handle(
+			new Request('https://management.example/api/v1/capabilities'),
+			{},
+		);
+
+		if (!result.matched) {
+			throw new Error('Expected oRPC OpenAPI handler to match capabilities route');
+		}
+
+		await expectJsonResponse(result.response, 200, {
+			readOnly: false,
+			actions: {
+				read: true,
+				cancel: true,
+				cancelBulk: true,
+				retry: true,
+				retryBulk: true,
+				reschedule: true,
+				delete: true,
+				deleteBulk: true,
+			},
+		});
+	});
+
 	test('returns a clear handler error when managementContext is missing', async () => {
 		const surface = createManagementSurface<{ role: string }>({
 			monque: createManagementMonque({}, { mutations: true }),
