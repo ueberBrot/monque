@@ -1,18 +1,35 @@
-import { createManagementSurface, type ManagementOptions } from '@monque/management';
+import {
+	createManagementSurface,
+	type ManagementOpenApiContext,
+	type ManagementOptions,
+} from '@monque/management';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 
-export type ManagementExpressRouterOptions<TContext = unknown> = ManagementOptions<TContext>;
+export interface ManagementExpressContextInput {
+	req: Request;
+	res: Response;
+}
+
+export type ManagementExpressContextFactory<TContext = unknown> = (
+	input: ManagementExpressContextInput,
+) => TContext | Promise<TContext>;
+
+export interface ManagementExpressRouterOptions<TContext = unknown>
+	extends ManagementOptions<TContext> {
+	context?: ManagementExpressContextFactory<TContext>;
+}
 
 export function createManagementExpressRouter<TContext = unknown>(
 	options: ManagementExpressRouterOptions<TContext>,
 ): Router {
 	const router = Router();
-	const surface = createManagementSurface(options);
+	const { context, ...managementOptions } = options;
+	const surface = createManagementSurface(managementOptions);
 
 	router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
 		try {
 			const result = await surface.openApiHandler.handle(createRequest(req), {
-				context: {},
+				context: await createOpenApiContext(req, res, context),
 			});
 
 			if (!result.matched) {
@@ -27,6 +44,20 @@ export function createManagementExpressRouter<TContext = unknown>(
 	});
 
 	return router;
+}
+
+async function createOpenApiContext<TContext>(
+	req: Request,
+	res: Response,
+	context: ManagementExpressContextFactory<TContext> | undefined,
+): Promise<ManagementOpenApiContext<TContext>> {
+	if (context === undefined) {
+		return {};
+	}
+
+	return {
+		managementContext: await context({ req, res }),
+	};
 }
 
 function createRequest(req: Request): globalThis.Request {

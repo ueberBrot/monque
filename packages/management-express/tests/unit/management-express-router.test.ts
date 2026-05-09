@@ -1,7 +1,7 @@
 import type { ManagementMonque } from '@monque/management';
 import express from 'express';
 import request from 'supertest';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { createManagementExpressRouter } from '@/index';
 
@@ -52,5 +52,44 @@ describe('Express Management Adapter', () => {
 
 		const notFound = await request(app).get('/api/v1/health');
 		expect(notFound.status).toBe(404);
+	});
+
+	test('passes Express-derived context into management authorization hooks', async () => {
+		const app = express();
+		const authorize = vi.fn(({ context }) => context.role === 'operator');
+
+		app.use(
+			'/monque',
+			createManagementExpressRouter<{ role: string }>({
+				monque: createManagementMonque(),
+				context: ({ req }) => ({ role: req.get('x-role') ?? 'viewer' }),
+				authorize,
+			}),
+		);
+
+		await request(app)
+			.get('/monque/api/v1/capabilities')
+			.set('x-role', 'operator')
+			.expect(200)
+			.expect({
+				readOnly: false,
+				actions: {
+					read: true,
+					cancel: false,
+					cancelBulk: false,
+					retry: false,
+					retryBulk: false,
+					reschedule: false,
+					delete: false,
+					deleteBulk: false,
+				},
+			});
+
+		expect(authorize).toHaveBeenCalledWith(
+			expect.objectContaining({
+				action: 'read',
+				context: { role: 'operator' },
+			}),
+		);
 	});
 });
