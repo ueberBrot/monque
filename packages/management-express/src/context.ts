@@ -9,9 +9,7 @@ export async function createOpenApiContext<TContext>(
 	context: ManagementExpressContextFactory<TContext> | undefined,
 ): Promise<ManagementOpenApiContext<TContext>> {
 	if (context === undefined) {
-		return {
-			managementContext: {} as TContext,
-		};
+		return {};
 	}
 
 	return {

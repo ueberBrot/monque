@@ -1,9 +1,10 @@
 import type { JobSelector } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
-import express, { type Express } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
+import { createOpenApiContext } from '@/context';
 import { createManagementExpressRouter, type ManagementExpressRouterOptions } from '@/index';
 
 function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
@@ -38,6 +39,13 @@ function createManagementApp<TContext>(options: ManagementExpressRouterOptions<T
 }
 
 describe('Express Management Adapter', () => {
+	test('omits management context when no context factory is configured', async () => {
+		const context = await createOpenApiContext({} as Request, {} as Response, undefined);
+
+		expect(context).not.toHaveProperty('managementContext');
+		expect(context.managementContext).toBeUndefined();
+	});
+
 	test('serves management routes under the host mount path', async () => {
 		const app = createManagementApp({
 			monque: createManagementMonque({ isHealthy: () => false }),
@@ -92,21 +100,19 @@ describe('Express Management Adapter', () => {
 		);
 	});
 
-	test('supports authorization hooks that do not need Express-derived context', async () => {
+	test('reports missing context when authorization is configured without a context factory', async () => {
 		const authorize = vi.fn(({ action }) => action === 'read');
 		const app = createManagementApp({
 			monque: createManagementMonque(),
 			authorize,
 		});
 
-		await request(app).get('/monque/api/v1/capabilities').expect(200);
+		await request(app).get('/monque/api/v1/capabilities').expect(500).expect({
+			error:
+				'Missing managementContext in openApiHandler.handle() context; managementContext is required for authorize/serializePayload hooks.',
+		});
 
-		expect(authorize).toHaveBeenCalledWith(
-			expect.objectContaining({
-				action: 'read',
-				context: {},
-			}),
-		);
+		expect(authorize).not.toHaveBeenCalled();
 	});
 
 	test('serves the management OpenAPI document with mount-specific server metadata', async () => {
