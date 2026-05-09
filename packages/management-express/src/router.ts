@@ -1,9 +1,10 @@
-import { createManagementSurface, type ManagementOpenApiContext } from '@monque/management';
+import { createManagementSurface } from '@monque/management';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 
+import { createOpenApiContext } from './context.js';
 import { createRequest, sendResponse } from './http.js';
 import { createOpenApiDocument, normalizeOpenApiOptions } from './openapi.js';
-import type { ManagementExpressContextFactory, ManagementExpressRouterOptions } from './types.js';
+import type { ManagementExpressRouterOptions } from './types.js';
 
 /**
  * Creates an Express router for the Monque Management Surface.
@@ -106,18 +107,4 @@ export function createManagementExpressRouter<TContext = unknown>(
 	});
 
 	return router;
-}
-
-async function createOpenApiContext<TContext>(
-	req: Request,
-	res: Response,
-	context: ManagementExpressContextFactory<TContext> | undefined,
-): Promise<ManagementOpenApiContext<TContext>> {
-	if (context === undefined) {
-		return {};
-	}
-
-	return {
-		managementContext: await context({ req, res }),
-	};
 }

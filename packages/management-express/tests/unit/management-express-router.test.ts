@@ -92,6 +92,23 @@ describe('Express Management Adapter', () => {
 		);
 	});
 
+	test('supports authorization hooks that do not need Express-derived context', async () => {
+		const authorize = vi.fn(({ action }) => action === 'read');
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			authorize,
+		});
+
+		await request(app).get('/monque/api/v1/capabilities').expect(200);
+
+		expect(authorize).toHaveBeenCalledWith(
+			expect.objectContaining({
+				action: 'read',
+				context: {},
+			}),
+		);
+	});
+
 	test('serves the management OpenAPI document with mount-specific server metadata', async () => {
 		const app = createManagementApp({
 			monque: createManagementMonque(),
