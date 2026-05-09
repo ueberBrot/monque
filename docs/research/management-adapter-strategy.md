@@ -14,7 +14,7 @@ research.
 The Management Surface owns:
 
 - Management Route Map;
-- TypeBox schemas;
+- Zod schemas;
 - DTOs;
 - OpenAPI generation;
 - handler/business delegation to public `Monque` methods.
