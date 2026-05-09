@@ -1,8 +1,15 @@
-import { implement } from '@orpc/server';
+import { implement, type Router } from '@orpc/server';
 
 import type { ManagementOpenApiContext, ManagementOptions } from '../surface/index.js';
+import type { ManagementContract } from './contract.js';
 import { managementContract } from './contract.js';
 import { createManagementOperations } from './operations.js';
+
+/** oRPC router type returned by `createManagementRouter()`. */
+export type ManagementRouter<TContext = unknown> = Router<
+	ManagementContract,
+	ManagementOpenApiContext<TContext>
+>;
 
 /**
  * Create an oRPC router that implements the management contract.
@@ -10,7 +17,9 @@ import { createManagementOperations } from './operations.js';
  * Use this when integrating with oRPC directly. For a framework-neutral fetch handler,
  * prefer `createManagementSurface()`.
  */
-export function createManagementRouter<TContext = unknown>(options: ManagementOptions<TContext>) {
+export function createManagementRouter<TContext = unknown>(
+	options: ManagementOptions<TContext>,
+): ManagementRouter<TContext> {
 	const managementImplementer =
 		implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
 	const operations = createManagementOperations(options);
@@ -61,6 +70,3 @@ function getOpenApiManagementContext<TContext>(
 ): TContext {
 	return context.managementContext as TContext;
 }
-
-/** oRPC router type returned by `createManagementRouter()`. */
-export type ManagementRouter = ReturnType<typeof createManagementRouter>;

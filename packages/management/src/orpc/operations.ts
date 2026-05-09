@@ -17,10 +17,18 @@ import {
 	toSchedulerHealthDto,
 } from '../mappers/index.js';
 import type {
+	BulkActionResultDto,
+	CapabilitiesDto,
+	DeleteJobDto,
+	JobCursorPageDto,
 	JobDetailInputDto,
+	JobDto,
 	JobListQueryDto,
 	JobSelectorDto,
+	QueueStatsDto,
+	QueueViewSummaryListDto,
 	RescheduleJobInputDto,
+	SchedulerHealthDto,
 } from '../schemas/index.js';
 import {
 	decideManagementAction,
@@ -42,9 +50,25 @@ type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 type DeleteJobMutator = (id: string) => Promise<boolean>;
 
+export interface ManagementOperations<TContext = unknown> {
+	getHealth(): SchedulerHealthDto;
+	getCapabilities(context: TContext): Promise<CapabilitiesDto>;
+	listQueueViews(context: TContext): Promise<QueueViewSummaryListDto>;
+	listJobs(input: JobListQueryDto, context: TContext): Promise<JobCursorPageDto>;
+	getJobStats(input: { name?: string | undefined }, context: TContext): Promise<QueueStatsDto>;
+	getJob(input: JobDetailInputDto, context: TContext): Promise<JobDto>;
+	cancelJob(input: JobDetailInputDto, context: TContext): Promise<JobDto>;
+	retryJob(input: JobDetailInputDto, context: TContext): Promise<JobDto>;
+	rescheduleJob(input: RescheduleJobInputDto, context: TContext): Promise<JobDto>;
+	deleteJob(input: JobDetailInputDto, context: TContext): Promise<DeleteJobDto>;
+	cancelJobs(input: JobSelectorDto, context: TContext): Promise<BulkActionResultDto>;
+	retryJobs(input: JobSelectorDto, context: TContext): Promise<BulkActionResultDto>;
+	deleteJobs(input: JobSelectorDto, context: TContext): Promise<BulkActionResultDto>;
+}
+
 export function createManagementOperations<TContext = unknown>(
 	options: ManagementOptions<TContext>,
-) {
+): ManagementOperations<TContext> {
 	return {
 		getHealth: () => toSchedulerHealthDto(options.monque.isHealthy()),
 		getCapabilities: (context: TContext) => getManagementCapabilities(options, context),
@@ -106,13 +130,16 @@ export function createManagementOperations<TContext = unknown>(
 			),
 		rescheduleJob: (input: RescheduleJobInputDto, context: TContext) => {
 			const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
-			let mutate: SingleJobMutator | undefined;
 
-			if (rescheduleJob !== undefined) {
-				mutate = (id) => rescheduleJob(id, new Date(input.body.nextRunAt));
-			}
-
-			return handleSingleJobMutation(options, 'reschedule', input.params.id, context, mutate);
+			return handleSingleJobMutation(
+				options,
+				'reschedule',
+				input.params.id,
+				context,
+				rescheduleJob === undefined
+					? undefined
+					: (id) => rescheduleJob(id, new Date(input.body.nextRunAt)),
+			);
 		},
 		deleteJob: (input: JobDetailInputDto, context: TContext) =>
 			handleDeleteJob(
