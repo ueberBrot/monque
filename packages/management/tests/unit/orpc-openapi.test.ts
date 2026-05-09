@@ -47,7 +47,8 @@ describe('oRPC Management OpenAPI contract', () => {
 			type: 'object',
 			properties: {
 				status: {
-					anyOf: [{ const: 'ok' }, { const: 'unavailable' }],
+					enum: ['ok', 'unavailable'],
+					type: 'string',
 				},
 				scheduler: {
 					type: 'object',
@@ -82,11 +83,23 @@ describe('oRPC Management OpenAPI contract', () => {
 					properties: {
 						read: { type: 'boolean' },
 						cancel: { type: 'boolean' },
+						cancelBulk: { type: 'boolean' },
 						retry: { type: 'boolean' },
+						retryBulk: { type: 'boolean' },
 						reschedule: { type: 'boolean' },
 						delete: { type: 'boolean' },
+						deleteBulk: { type: 'boolean' },
 					},
-					required: ['read', 'cancel', 'retry', 'reschedule', 'delete'],
+					required: [
+						'read',
+						'cancel',
+						'cancelBulk',
+						'retry',
+						'retryBulk',
+						'reschedule',
+						'delete',
+						'deleteBulk',
+					],
 					additionalProperties: false,
 				},
 			},

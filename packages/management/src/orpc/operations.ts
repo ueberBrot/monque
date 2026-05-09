@@ -44,9 +44,9 @@ import {
 	toQueueStatsFilter,
 } from '../surface/request-mapping.js';
 
-type BulkManagementAction = Exclude<ManagementAction, 'read' | 'reschedule'>;
+type BulkManagementAction = 'cancelBulk' | 'retryBulk' | 'deleteBulk';
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
-type SingleJobMutationAction = Exclude<ManagementAction, 'read' | 'delete'>;
+type SingleJobMutationAction = 'cancel' | 'retry' | 'reschedule';
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 type DeleteJobMutator = (id: string) => Promise<boolean>;
 
@@ -151,7 +151,7 @@ export function createManagementOperations<TContext = unknown>(
 		cancelJobs: (input: JobSelectorDto, context: TContext) =>
 			handleBulkJobMutation(
 				options,
-				'cancel',
+				'cancelBulk',
 				input,
 				context,
 				options.monque.cancelJobs?.bind(options.monque),
@@ -159,7 +159,7 @@ export function createManagementOperations<TContext = unknown>(
 		retryJobs: (input: JobSelectorDto, context: TContext) =>
 			handleBulkJobMutation(
 				options,
-				'retry',
+				'retryBulk',
 				input,
 				context,
 				options.monque.retryJobs?.bind(options.monque),
@@ -167,7 +167,7 @@ export function createManagementOperations<TContext = unknown>(
 		deleteJobs: (input: JobSelectorDto, context: TContext) =>
 			handleBulkJobMutation(
 				options,
-				'delete',
+				'deleteBulk',
 				input,
 				context,
 				options.monque.deleteJobs?.bind(options.monque),

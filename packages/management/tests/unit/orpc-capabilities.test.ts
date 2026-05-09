@@ -21,9 +21,12 @@ describe('oRPC Management capabilities route', () => {
 			actions: {
 				read: true,
 				cancel: true,
+				cancelBulk: true,
 				retry: true,
+				retryBulk: true,
 				reschedule: true,
 				delete: true,
+				deleteBulk: true,
 			},
 		});
 	});
@@ -47,9 +50,12 @@ describe('oRPC Management capabilities route', () => {
 			actions: {
 				read: true,
 				cancel: false,
+				cancelBulk: false,
 				retry: true,
+				retryBulk: false,
 				reschedule: false,
 				delete: false,
+				deleteBulk: false,
 			},
 		});
 	});
@@ -88,9 +94,12 @@ describe('oRPC Management capabilities route', () => {
 			actions: {
 				read: true,
 				cancel: false,
+				cancelBulk: false,
 				retry: false,
+				retryBulk: false,
 				reschedule: false,
 				delete: false,
+				deleteBulk: false,
 			},
 		});
 	});
@@ -110,9 +119,12 @@ describe('oRPC Management capabilities route', () => {
 			actions: {
 				read: true,
 				cancel: false,
+				cancelBulk: false,
 				retry: true,
+				retryBulk: true,
 				reschedule: false,
 				delete: false,
+				deleteBulk: false,
 			},
 		});
 	});
@@ -136,7 +148,8 @@ describe('oRPC Management capabilities route', () => {
 			200,
 			expect.objectContaining({
 				actions: expect.objectContaining({
-					cancel: true,
+					cancel: false,
+					cancelBulk: true,
 				}),
 			}),
 		);

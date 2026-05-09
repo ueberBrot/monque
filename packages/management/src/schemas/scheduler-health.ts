@@ -3,7 +3,7 @@ import { z } from 'zod';
 /** Health response returned by the management API. */
 export const SchedulerHealthDtoSchema = z
 	.object({
-		status: z.union([z.literal('ok'), z.literal('unavailable')]),
+		status: z.enum(['ok', 'unavailable']),
 		scheduler: z
 			.object({
 				healthy: z.boolean(),
@@ -12,5 +12,4 @@ export const SchedulerHealthDtoSchema = z
 	})
 	.strict();
 
-/** Health response returned by the management API. */
 export type SchedulerHealthDto = z.infer<typeof SchedulerHealthDtoSchema>;

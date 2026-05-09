@@ -5,9 +5,12 @@ export const CapabilityActionsDtoSchema = z
 	.object({
 		read: z.boolean(),
 		cancel: z.boolean(),
+		cancelBulk: z.boolean(),
 		retry: z.boolean(),
+		retryBulk: z.boolean(),
 		reschedule: z.boolean(),
 		delete: z.boolean(),
+		deleteBulk: z.boolean(),
 	})
 	.strict();
 

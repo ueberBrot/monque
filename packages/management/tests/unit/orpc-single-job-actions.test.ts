@@ -158,6 +158,37 @@ describe('oRPC Management single Job action routes', () => {
 		expect(coreCalls).toEqual([jobId.toHexString()]);
 	});
 
+	test('keeps single Job delete idempotent when repeated after deletion', async () => {
+		const jobId = new ObjectId();
+		const target = createManagementJob({ _id: jobId, status: 'completed' });
+		const coreCalls: string[] = [];
+		let deleted = false;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJob: async (id) => {
+					if (deleted) {
+						return null;
+					}
+
+					return getManagementJobById(target)(id);
+				},
+				deleteJob: async (id) => {
+					coreCalls.push(id);
+					deleted = true;
+
+					return true;
+				},
+			}),
+		});
+
+		const first = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+		const second = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+
+		await expectJsonResponse(first, 200, { deleted: true });
+		await expectJsonResponse(second, 404, { error: 'Job not found' });
+		expect(coreCalls).toEqual([jobId.toHexString()]);
+	});
+
 	test('maps a single Job delete miss after target resolution to 404', async () => {
 		const jobId = new ObjectId();
 		const target = createManagementJob({ _id: jobId, status: 'completed' });

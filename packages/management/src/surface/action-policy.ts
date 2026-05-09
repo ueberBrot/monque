@@ -8,14 +8,26 @@ import type {
 	ManagementOptions,
 } from './types.js';
 
-const MANAGEMENT_ACTIONS = ['read', 'cancel', 'retry', 'reschedule', 'delete'] as const;
+const MANAGEMENT_ACTIONS = [
+	'read',
+	'cancel',
+	'cancelBulk',
+	'retry',
+	'retryBulk',
+	'reschedule',
+	'delete',
+	'deleteBulk',
+] as const;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
 	read: false,
 	cancel: false,
+	cancelBulk: false,
 	retry: false,
+	retryBulk: false,
 	reschedule: false,
 	delete: false,
+	deleteBulk: false,
 } satisfies CapabilityActionsDto & Record<(typeof MANAGEMENT_ACTIONS)[number], boolean>;
 
 export interface ManagementActionTarget {
@@ -92,13 +104,19 @@ export function isManagementActionSupported(
 		case 'read':
 			return true;
 		case 'cancel':
-			return Boolean(monque.cancelJob || monque.cancelJobs);
+			return Boolean(monque.cancelJob);
+		case 'cancelBulk':
+			return Boolean(monque.cancelJobs);
 		case 'retry':
-			return Boolean(monque.retryJob || monque.retryJobs);
+			return Boolean(monque.retryJob);
+		case 'retryBulk':
+			return Boolean(monque.retryJobs);
 		case 'reschedule':
 			return Boolean(monque.rescheduleJob);
 		case 'delete':
-			return Boolean(monque.deleteJob || monque.deleteJobs);
+			return Boolean(monque.deleteJob);
+		case 'deleteBulk':
+			return Boolean(monque.deleteJobs);
 	}
 }
 

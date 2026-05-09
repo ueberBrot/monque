@@ -35,10 +35,18 @@ export type {
 /**
  * Authorization action names used by the management surface.
  *
- * `read` covers all read endpoints. Mutation actions map to their matching single-job
- * and bulk-job endpoints where supported by the configured scheduler facade.
+ * `read` covers all read endpoints. Single-job and bulk-job mutations use distinct
+ * action names so scheduler support and authorization can be reported independently.
  */
-export type ManagementAction = 'read' | 'cancel' | 'retry' | 'reschedule' | 'delete';
+export type ManagementAction =
+	| 'read'
+	| 'cancel'
+	| 'cancelBulk'
+	| 'retry'
+	| 'retryBulk'
+	| 'reschedule'
+	| 'delete'
+	| 'deleteBulk';
 
 /**
  * Scheduler API required by `@monque/management`.

@@ -11,37 +11,51 @@ import { QueueStatsDtoSchema, QueueViewSummaryListDtoSchema } from './queue-view
 import { SchedulerHealthDtoSchema } from './scheduler-health.js';
 
 export const ManagementOpenApiSchemas = {
-	Capabilities: {
+	CAPABILITIES: {
 		schema: CapabilitiesDtoSchema,
 	},
-	Job: {
+	JOB: {
 		schema: JobDtoSchema,
 	},
-	JobCursorPage: {
+	JOB_CURSOR_PAGE: {
 		schema: JobCursorPageDtoSchema,
 	},
-	JobSelector: {
+	JOB_SELECTOR: {
 		schema: JobSelectorDtoSchema,
 	},
-	BulkActionResult: {
+	BULK_ACTION_RESULT: {
 		schema: BulkActionResultDtoSchema,
 	},
-	DeleteJob: {
+	DELETE_JOB: {
 		schema: DeleteJobDtoSchema,
 	},
-	ManagementError: {
+	MANAGEMENT_ERROR: {
 		schema: ManagementErrorDtoSchema,
 	},
-	QueueStats: {
+	QUEUE_STATS: {
 		schema: QueueStatsDtoSchema,
 	},
-	QueueViewSummaryList: {
+	QUEUE_VIEW_SUMMARY_LIST: {
 		schema: QueueViewSummaryListDtoSchema,
 	},
-	RescheduleJobRequest: {
+	RESCHEDULE_JOB_REQUEST: {
 		schema: RescheduleJobRequestDtoSchema,
 	},
-	SchedulerHealth: {
+	SCHEDULER_HEALTH: {
 		schema: SchedulerHealthDtoSchema,
 	},
 } as const;
+
+export const ManagementOpenApiComponentSchemas = {
+	Capabilities: ManagementOpenApiSchemas.CAPABILITIES,
+	Job: ManagementOpenApiSchemas.JOB,
+	JobCursorPage: ManagementOpenApiSchemas.JOB_CURSOR_PAGE,
+	JobSelector: ManagementOpenApiSchemas.JOB_SELECTOR,
+	BulkActionResult: ManagementOpenApiSchemas.BULK_ACTION_RESULT,
+	DeleteJob: ManagementOpenApiSchemas.DELETE_JOB,
+	ManagementError: ManagementOpenApiSchemas.MANAGEMENT_ERROR,
+	QueueStats: ManagementOpenApiSchemas.QUEUE_STATS,
+	QueueViewSummaryList: ManagementOpenApiSchemas.QUEUE_VIEW_SUMMARY_LIST,
+	RescheduleJobRequest: ManagementOpenApiSchemas.RESCHEDULE_JOB_REQUEST,
+	SchedulerHealth: ManagementOpenApiSchemas.SCHEDULER_HEALTH,
+};

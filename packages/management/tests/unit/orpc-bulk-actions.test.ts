@@ -55,7 +55,7 @@ describe('oRPC Management bulk action routes', () => {
 		expect(coreCalls).toEqual([expectedSelector]);
 		expect(authorizeCalls).toEqual([
 			{
-				action: 'cancel',
+				action: 'cancelBulk',
 				context: { userId: 'operator-1' },
 				selector: expectedSelector,
 			},
@@ -149,7 +149,7 @@ describe('oRPC Management bulk action routes', () => {
 			}),
 			authorize: ({ action, context, selector }) => {
 				expect({ action, context, selector }).toEqual({
-					action: 'cancel',
+					action: 'cancelBulk',
 					context: { role: 'viewer' },
 					selector: { name: 'send-email' },
 				});
