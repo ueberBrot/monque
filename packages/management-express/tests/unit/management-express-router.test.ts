@@ -193,4 +193,45 @@ describe('Express Management Adapter', () => {
 			},
 		]);
 	});
+
+	test('accepts body-bearing management routes after Express parsed JSON', async () => {
+		const app = express();
+		const selectors: JobSelector[] = [];
+
+		app.use(express.json());
+		app.use(
+			'/monque',
+			createManagementExpressRouter({
+				monque: createManagementMonque({
+					cancelJobs: async (selector) => {
+						selectors.push(selector);
+
+						return {
+							count: 1,
+							errors: [],
+						};
+					},
+				}),
+			}),
+		);
+
+		await request(app)
+			.post('/monque/api/v1/jobs/actions/cancel')
+			.send({
+				name: 'send-email',
+				status: ['pending'],
+			})
+			.expect(200)
+			.expect({
+				count: 1,
+				errors: [],
+			});
+
+		expect(selectors).toEqual([
+			{
+				name: 'send-email',
+				status: ['pending'],
+			},
+		]);
+	});
 });
