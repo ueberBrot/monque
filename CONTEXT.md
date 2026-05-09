@@ -27,8 +27,8 @@ _Avoid_: dashboard API, agnostic API
 through a server integration.
 _Avoid_: dashboard plugin
 
-**Management Route Map** — versioned HTTP contract used by Management Adapters, OpenAPI
-generation, and Dashboard clients.
+**Management Route Map** — versioned HTTP contract implemented as an oRPC router and used
+by Management Adapters, OpenAPI generation, and Dashboard clients.
 _Avoid_: dashboard routes, adapter routes
 
 **Scheduler Instance** — running Monque process identified by `schedulerInstanceId`.
@@ -77,12 +77,16 @@ processing jobs block duplicates; completed and failed jobs do not.
 - The first Management Surface manages one Monque instance per mounted surface.
 - Management packages accept a user-provided Monque instance and treat `@monque/core` as a
   peer dependency.
+- Management Surfaces create implemented oRPC routers through factories bound to
+  `ManagementOptions`, not through singleton routers with baked-in scheduler state.
 - The Management Surface exposes existing public Monque management operations before adding
   new operator behavior.
 - The first Management Surface excludes job creation, worker registration, and scheduler
   lifecycle operations.
 - Management read-only mode allows reads and rejects all mutations with `403`.
 - The Management Route Map exposes capabilities so clients can reflect disabled actions.
+- Unsupported Management actions keep their route in the v1 contract and return `403`;
+  `/api/v1/capabilities` reports per-surface availability.
 - Management capabilities combine static configuration and per-request authorization outcomes.
 - The Management Surface validates its own HTTP request shape; job payload schema validation
   belongs to core job definitions.
@@ -90,15 +94,23 @@ processing jobs block duplicates; completed and failed jobs do not.
   payload schemas first.
 - The Management Route Map is defined before the Dashboard, shared by adapters and clients,
   and uses an internal `/api/v1` prefix.
+- The Dashboard uses the same REST-shaped Management Route Map routes as third-party HTTP
+  clients; there is no separate RPC-shaped Dashboard API.
 - The Management Route Map groups operations by resource and uses action endpoints for job
   state transitions.
+- Management Adapters mount the oRPC OpenAPI HTTP handler instead of translating requests
+  into a custom `ManagementRequest`/`ManagementResponse` abstraction.
+- Management Adapters treat Management routers as opaque mountable handlers; capability
+  discovery is exposed through the Management Route Map, not adapter route introspection.
 - Job listing in the Management Route Map uses cursor pagination, not offset pagination.
 - Job listing filters in the Management Route Map only expose filters supported by public
   cursor listing in core.
-- Bulk job actions in the Management Route Map use the public core selector shape.
+- Bulk job actions in the Management Route Map use a Management selector DTO that mirrors
+  public core selector semantics and maps HTTP date strings to core `Date` values.
 - Invalid job state transitions in the Management Route Map are conflicts, not validation
   failures.
 - Management Route Map responses use DTOs instead of raw MongoDB/Core objects.
+- Management DTO types are derived from Zod schemas rather than handwritten beside them.
 - Successful Management Route Map responses return JSON DTOs, including delete actions.
 - Bulk action DTOs preserve count and error fields.
 - Management reschedule requests use ISO date strings.
@@ -112,9 +124,21 @@ processing jobs block duplicates; completed and failed jobs do not.
   visibility can vary per user.
 - The Management Surface exports an OpenAPI contract derived from the Management Route Map;
   adapters may serve it but do not generate it independently.
-- Management HTTP schemas use TypeBox and OpenAPI generation uses `openapi3-ts`.
+- The Management OpenAPI contract includes all v1 routes and does not vary by mounted
+  scheduler capabilities.
+- The Management Route Map is implemented with oRPC.
+- Management HTTP schemas use Zod v4.
+- `@monque/management` uses oRPC server/OpenAPI packages only; oRPC client runtime belongs
+  to Dashboard or other client-side packages.
+- TypeBox and `openapi3-ts` are not part of the oRPC-based Management Surface.
+- OpenAPI is the stable Management interoperability contract for third-party clients.
+- The Dashboard and TypeScript clients may use oRPC typed clients against the same
+  Management Route Map.
 - Management Adapters serve OpenAPI JSON; Scalar API reference UI is optional adapter-level
   functionality and disabled by default.
+- The Management Surface owns canonical OpenAPI paths, schemas, operation IDs, and package
+  metadata; Management Adapters own mount-specific OpenAPI metadata such as server URLs and
+  documentation UI paths.
 - The first Management Route Map is request/response only; Dashboard freshness uses polling,
   not SSE or WebSocket.
 - Management health starts as a simple scheduler health DTO; deeper diagnostics require
@@ -126,6 +150,8 @@ processing jobs block duplicates; completed and failed jobs do not.
 - Management operation authorization is action-grained.
 - Management operation authorization receives request context and the relevant job or selector
   when an action has a target.
+- Management request context is generic at the Management Surface and created by
+  Management Adapters from framework-native requests.
 - Queue View visibility filtering is deferred until core supports the required scoped read
   APIs.
 - Job statistics are job-resource endpoints; broader scheduler or worker diagnostics are

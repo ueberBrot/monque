@@ -1,0 +1,85 @@
+{
+	"name": "@monque/management",
+	"version": "0.0.0",
+	"description": "Framework-neutral management surface for Monque",
+	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ueberBrot/monque.git",
+		"directory": "packages/management"
+	},
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/ueberBrot/monque/issues"
+	},
+	"homepage": "https://github.com/ueberBrot/monque#readme",
+	"sideEffects": false,
+	"type": "module",
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"monque",
+		"management",
+		"jobs",
+		"scheduler",
+		"openapi",
+		"orpc",
+		"zod"
+	],
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"check:exports": "publint && attw --pack .",
+		"clean": "rimraf dist coverage .turbo",
+		"type-check": "tsc --noEmit",
+		"pretest": "bun run type-check",
+		"test": "vitest run",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
+		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
+		"test:watch": "vitest",
+		"test:watch:unit": "vitest --config vitest.unit.config.ts",
+		"lint": "biome check ."
+	},
+	"dependencies": {
+		"@orpc/contract": "^1.14.2",
+		"@orpc/openapi": "^1.14.2",
+		"@orpc/server": "^1.14.2",
+		"@orpc/zod": "^1.14.2",
+		"zod": "^4.4.3"
+	},
+	"peerDependencies": {
+		"@monque/core": "^1.8.0",
+		"mongodb": "^7.2.0"
+	},
+	"devDependencies": {
+		"@monque/core": "workspace:*",
+		"@total-typescript/ts-reset": "^0.6.1",
+		"@types/node": "^22.19.17",
+		"@vitest/coverage-v8": "^4.1.5",
+		"mongodb": "^7.2.0",
+		"tsdown": "^0.21.10",
+		"vitest": "^4.1.5"
+	}
+}
