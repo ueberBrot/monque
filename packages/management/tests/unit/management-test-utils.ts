@@ -9,6 +9,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 
 import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from '@/surface';
+import { parseObjectId } from '@/surface/request-mapping';
 
 interface CreateManagementMonqueOptions {
 	mutations?: boolean;
@@ -68,7 +69,15 @@ export function createManagementJob(overrides: Partial<PersistedJob> = {}): Pers
 }
 
 export function getManagementJobById(job: PersistedJob): ManagementMonque['getJob'] {
-	return async (id) => (id.equals(job._id) ? job : null);
+	return async (id) => {
+		const parsed = parseObjectId(id);
+
+		if ('error' in parsed) {
+			return null;
+		}
+
+		return parsed.value.equals(job._id) ? job : null;
+	};
 }
 
 export async function expectJsonResponse(

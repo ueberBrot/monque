@@ -8,7 +8,6 @@ import type {
 	QueueStats,
 } from '@monque/core';
 import type { OpenAPIHandler } from '@orpc/openapi/fetch';
-import type { ObjectId } from 'mongodb';
 
 export type {
 	BulkActionErrorDto,
@@ -52,7 +51,7 @@ export interface ManagementMonque {
 	isHealthy: Pick<Monque, 'isHealthy'>['isHealthy'];
 	getQueueViewSummaries: Pick<Monque, 'getQueueViewSummaries'>['getQueueViewSummaries'];
 	getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
-	getJob(id: ObjectId): Promise<PersistedJob | null>;
+	getJob(id: string): Promise<PersistedJob | null>;
 	getQueueStats(filter?: { name?: string }): Promise<QueueStats>;
 	cancelJob?(id: string): Promise<PersistedJob | null>;
 	retryJob?(id: string): Promise<PersistedJob | null>;

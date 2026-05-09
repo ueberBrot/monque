@@ -251,7 +251,7 @@ async function resolvePersistedJob<TContext>(
 		throw new ORPCError('BAD_REQUEST', { message: id.error });
 	}
 
-	const target = await options.monque.getJob(id.value);
+	const target = await options.monque.getJob(idInput);
 
 	if (!target) {
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
