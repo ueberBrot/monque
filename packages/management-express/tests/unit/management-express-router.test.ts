@@ -146,6 +146,27 @@ describe('Express Management Adapter', () => {
 		await request(app).get('/monque/openapi.json').expect(404);
 	});
 
+	test('resolves OpenAPI server metadata from Express request state', async () => {
+		const app = createManagementApp({
+			monque: createManagementMonque(),
+			openApi: {
+				serverUrl: async ({ req, res }) => {
+					res.setHeader('x-openapi-server-source', 'resolver');
+
+					return `https://${req.get('x-forwarded-host') ?? req.get('host')}${req.baseUrl}`;
+				},
+			},
+		});
+
+		const response = await request(app)
+			.get('/monque/openapi.json')
+			.set('x-forwarded-host', 'ops.example.test')
+			.expect(200)
+			.expect('x-openapi-server-source', 'resolver');
+
+		expect(response.body.servers).toEqual([{ url: 'https://ops.example.test/monque' }]);
+	});
+
 	test('can disable adapter-served OpenAPI JSON', async () => {
 		const app = createManagementApp({
 			monque: createManagementMonque(),

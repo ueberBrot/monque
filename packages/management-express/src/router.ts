@@ -3,7 +3,7 @@ import { type NextFunction, type Request, type Response, Router } from 'express'
 
 import { createOpenApiContext } from './context.js';
 import { createRequest, sendResponse } from './http.js';
-import { createOpenApiDocument, normalizeOpenApiOptions } from './openapi.js';
+import { mountOpenApiRoute } from './openapi.js';
 import type { ManagementExpressRouterOptions } from './types.js';
 
 /**
@@ -74,20 +74,7 @@ export function createManagementExpressRouter<TContext = unknown>(
 	const router = Router();
 	const { context, openApi, ...managementOptions } = options;
 	const surface = createManagementSurface(managementOptions);
-	const openApiOptions = normalizeOpenApiOptions(openApi);
-
-	if (openApiOptions !== null) {
-		router.get(
-			openApiOptions.path,
-			async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-				try {
-					res.json(await createOpenApiDocument(req, res, openApiOptions));
-				} catch (error) {
-					next(error);
-				}
-			},
-		);
-	}
+	mountOpenApiRoute(router, openApi);
 
 	router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
 		try {
