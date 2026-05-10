@@ -1,5 +1,11 @@
 # @monque/docs
 
+## 1.2.0
+
+### Minor Changes
+
+- [#452](https://github.com/ueberBrot/monque/pull/452) [`6225005`](https://github.com/ueberBrot/monque/commit/622500531a53bf5e9d785a446bbbd975550ef4d5) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Document the Management Surface ecosystem roadmap and Express adapter.
+
 ## 1.1.1
 
 ### Patch Changes
