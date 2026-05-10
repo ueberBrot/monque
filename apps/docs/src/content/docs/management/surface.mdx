@@ -1,0 +1,115 @@
+---
+title: Management Surface
+description: Use the framework-neutral Management Surface to expose Monque operator APIs.
+---
+
+`@monque/management` is the framework-neutral, server-only Management Surface for Monque.
+It turns a user-provided [`Monque`](/monque/api/classes/monque/) instance into a versioned
+HTTP contract for inspecting Queue Views, listing Jobs, reading scheduler health, and
+running existing Job actions.
+
+The package does not export Express, Connect, Ts.ED, NestJS, Fastify, Hono, Fetch, or other
+framework middleware. Framework mounting belongs to adapter packages such as
+`@monque/management-express`.
+
+## Package Boundary
+
+Install the Management Surface beside core:
+
+```bash
+bun add @monque/management @monque/core
+```
+
+`@monque/core` and `mongodb` are peer dependencies. Pass the same `Monque` instance that
+owns the scheduler you want to expose.
+
+```typescript
+import { Monque } from '@monque/core';
+import { createManagementSurface } from '@monque/management';
+import { MongoClient } from 'mongodb';
+
+const client = new MongoClient('mongodb://localhost:27017');
+await client.connect();
+
+const monque = new Monque(client.db('monque'));
+
+const management = createManagementSurface({
+	monque,
+	readOnly: true,
+	authorize: ({ action }) => action === 'read',
+});
+```
+
+Adapters mount `management.openApiHandler` and pass request context into Management hooks.
+The Management Surface itself owns the routes, schemas, DTOs, capabilities, authorization
+checks, payload serialization, and OpenAPI generation. See
+[`createManagementSurface()`](/monque/api-management/functions/createmanagementsurface/)
+and [`ManagementOptions`](/monque/api-management/interfaces/managementoptions/) for the
+full server-side API.
+
+## HTTP Contract
+
+The v1 Management Route Map is REST-shaped under `/api/v1`:
+
+| Method | Path | Operation |
+| ------ | ---- | --------- |
+| `GET` | `/api/v1/health` | Scheduler health |
+| `GET` | `/api/v1/capabilities` | Available read and write actions |
+| `GET` | `/api/v1/queue-views` | Queue View summaries |
+| `GET` | `/api/v1/jobs` | Cursor-paginated Job list |
+| `GET` | `/api/v1/jobs/stats` | Job statistics |
+| `GET` | `/api/v1/jobs/{id}` | Job detail |
+| `POST` | `/api/v1/jobs/{id}/actions/cancel` | Cancel one Job |
+| `POST` | `/api/v1/jobs/{id}/actions/retry` | Retry one Job |
+| `POST` | `/api/v1/jobs/{id}/actions/reschedule` | Reschedule one Job |
+| `DELETE` | `/api/v1/jobs/{id}` | Delete one Job |
+| `POST` | `/api/v1/jobs/actions/cancel` | Bulk cancel Jobs |
+| `POST` | `/api/v1/jobs/actions/retry` | Bulk retry Jobs |
+| `POST` | `/api/v1/jobs/actions/delete` | Bulk delete Jobs |
+
+The implementation uses oRPC server and OpenAPI packages. Management HTTP schemas use Zod
+v4, and DTO TypeScript types are derived from those schemas.
+
+OpenAPI is the stable interoperability contract for third-party clients. Adapters can serve
+the generated OpenAPI JSON from the mounted application, and
+[`generateManagementOpenApiDocument()`](/monque/api-management/functions/generatemanagementopenapidocument/)
+can generate it directly when a host needs to serve or inspect the document itself.
+Generated clients do not need to import runtime code from `@monque/management`.
+
+First-party TypeScript clients, including the future Dashboard, may use oRPC typed clients
+against the same REST-shaped `/api/v1` routes. The Dashboard will not get a separate
+Dashboard-only API shape.
+
+## Operator Controls
+
+Management v1 is built around host-controlled operations:
+
+- `readOnly: true` keeps read endpoints available and rejects every mutation with `403`.
+- `/api/v1/capabilities` reports actions available for the current surface and request.
+- Authentication belongs to the host application or adapter mounting layer.
+- Authorization is action-grained through
+  [`ManagementAuthorize`](/monque/api-management/type-aliases/managementauthorize/), so
+  hosts can allow reads while denying delete, retry, or reschedule.
+- Authorization hooks receive request context and the relevant Job or bulk selector when
+  the action has a target.
+- Payload serialization can be configured globally or per Job Name through
+  [`ManagementPayloadSerializer`](/monque/api-management/type-aliases/managementpayloadserializer/).
+- Payload serialization receives request context, so hosts can redact payload fields by
+  operator role or tenant.
+
+## V1 Scope
+
+Management v1 exposes existing public Monque read and action APIs. It does not include:
+
+- Dashboard UI
+- standalone Management server
+- Docker image
+- realtime updates through SSE or WebSocket
+- Queue View visibility filtering
+- Job creation endpoints such as enqueue, now, or schedule
+- Worker registration endpoints
+- scheduler lifecycle endpoints such as start or stop
+- Ts.ED management support inside `@monque/tsed`
+
+Ts.ED management support is planned as a future separate Management Adapter package, not as
+part of the existing Ts.ED scheduler integration.

@@ -70,6 +70,13 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Management',
+					items: [
+						{ label: 'Management Surface', slug: 'management/surface' },
+						{ label: 'Express Adapter', slug: 'management/express' },
+					],
+				},
+				{
 					label: 'Advanced',
 					items: [
 						{ label: 'Atomic Claim Pattern', slug: 'advanced/atomic-claim' },
@@ -97,6 +104,16 @@ export default defineConfig({
 						{
 							label: 'Ts.ED API',
 							autogenerate: { directory: 'api-tsed' },
+							collapsed: true,
+						},
+						{
+							label: 'Management API',
+							autogenerate: { directory: 'api-management' },
+							collapsed: true,
+						},
+						{
+							label: 'Management Express API',
+							autogenerate: { directory: 'api-management-express' },
 							collapsed: true,
 						},
 					],
@@ -142,6 +159,44 @@ export default defineConfig({
 					output: 'api-tsed',
 					sidebar: {
 						label: 'Ts.ED API',
+						collapsed: true,
+					},
+					typeDoc: {
+						excludePrivate: true,
+						excludeProtected: true,
+						excludeInternal: true,
+						readme: 'none',
+						parametersFormat: 'table',
+						enumMembersFormat: 'table',
+						useCodeBlocks: true,
+						gitRevision: 'main',
+					},
+				}),
+				starlightTypeDoc({
+					entryPoints: ['../../packages/management/src/index.ts'],
+					tsconfig: '../../packages/management/tsconfig.json',
+					output: 'api-management',
+					sidebar: {
+						label: 'Management API',
+						collapsed: true,
+					},
+					typeDoc: {
+						excludePrivate: true,
+						excludeProtected: true,
+						excludeInternal: true,
+						readme: 'none',
+						parametersFormat: 'table',
+						enumMembersFormat: 'table',
+						useCodeBlocks: true,
+						gitRevision: 'main',
+					},
+				}),
+				starlightTypeDoc({
+					entryPoints: ['../../packages/management-express/src/index.ts'],
+					tsconfig: '../../packages/management-express/tsconfig.json',
+					output: 'api-management-express',
+					sidebar: {
+						label: 'Management Express API',
 						collapsed: true,
 					},
 					typeDoc: {
