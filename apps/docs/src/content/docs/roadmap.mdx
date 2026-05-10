@@ -1,87 +1,54 @@
 ---
-title: Roadmap
-description: Future expansion plans for Monque core and ecosystem.
+title: Project Direction
+description: High-level direction for Monque core and ecosystem.
 ---
 
 import Roadmap from '../../components/Roadmap.astro';
 
-This document outlines the planned trajectory for Monque, moving from a robust job queue to a comprehensive orchestration platform.
+Monque development is usage-driven. The directions below are intentionally unversioned and
+do not commit to a delivery timeline.
 
-## Core Package (`@monque/core`)
+## Direction
 
 <Roadmap items={[
   {
-    title: 'The "Management" Release',
-    version: 'v1.1.0',
-    status: 'completed',
-    description: 'Foundational APIs needed for external tooling like dashboards.',
-    features: [
-      'Job Management APIs: Single & Bulk operations (cancel, retry, delete)',
-      'Stable Cursor Pagination for scalable list queries',
-      'Statistics & Aggregation APIs'
-    ]
-  },
-  {
-    title: 'The "Orchestration" Release',
-    version: 'v1.2.0',
+    title: 'Management Ecosystem',
     status: 'current',
-    description: 'Enable code-first orchestration for complex, multi-step processes.',
+    description: 'Keep management APIs framework-neutral while adapters handle host-framework mounting.',
     features: [
-      'Workflows Engine with runJob() helper',
-      'State Management (pause, resume, cancel workflows)',
-      'Expanded Event Bus for full lifecycle observability'
+      'Maintain OpenAPI as the stable third-party contract',
+      'Keep host-owned authentication and action-grained authorization',
+      'Add framework adapters only when there is clear demand'
     ]
   },
   {
-    title: 'The "Pipeline" Release',
-    version: 'v1.3.0',
+    title: 'Dashboard',
     status: 'planned',
-    description: 'Support user-defined flows via configuration rather than code.',
+    description: 'A UI for inspecting queues and operating existing Jobs through the Management Surface.',
     features: [
-      'Declarative JSON-based pipelines',
-      'Control Flow Primitives (if, switch, parallel, map, wait)',
-      'Pipeline execution events'
+      'Use the same REST-shaped Management routes as HTTP clients',
+      'Start with polling and existing Job actions',
+      'Defer realtime updates, Job creation, and visibility filtering until core APIs support them'
     ]
   },
   {
-    title: 'The "Enterprise" Release',
-    version: 'v1.4.0',
+    title: 'Orchestration And Pipelines',
     status: 'planned',
-    description: 'Features to support SaaS platforms and high-scale deployments.',
+    description: 'Higher-level primitives for coordinating multi-step work when the core model is ready.',
     features: [
-      'Multi-Tenancy / Namespacing',
-      'Global & Per-queue Rate Limiting',
-      'Priority Queues'
-    ]
-  }
-]} />
-
-## Ecosystem Packages
-
-<Roadmap items={[
-  {
-    title: 'Framework Integrations',
-    version: '@monque/ts-ed',
-    date: 'Post v1.1.0',
-    status: 'completed',
-    description: 'Primary integration for the Ts.ED framework, enabling dependency injection and decorator capabilities.',
-    features: [
-      'Decorator-based job registration (@Job, @Cron)',
-      'Native lifecycle integration',
-      'Type-safe job definitions'
+      'Code-first orchestration for related Jobs',
+      'Declarative pipeline definitions where configuration is a better fit',
+      'Lifecycle visibility through core events and Management surfaces'
     ]
   },
   {
-    title: 'Monque Dashboard',
-    version: '@monque/dashboard',
-    date: 'Post v1.2.0',
+    title: 'Operational Scale',
     status: 'planned',
-    description: 'A server-agnostic web UI for monitoring and managing queues.',
+    description: 'Large-deployment controls that need careful core, API, and operator-design work.',
     features: [
-      'Real-time job monitoring',
-      'Job inspection (payloads, stack traces)',
-      'Management actions (retry, cancel, delete)',
-      'Connect-compatible middleware (Express standard)'
+      'Namespace-aware or multi-tenant operations',
+      'Rate limits, priority controls, and operational policy hooks',
+      'Standalone server or Docker packaging if embedded adapters are not enough'
     ]
   }
 ]} />

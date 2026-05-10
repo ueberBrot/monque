@@ -54,7 +54,7 @@ export type ManagementExpressContextFactory<TContext = unknown> = (
  *
  * @defaultValue The Express mount path, based on `req.baseUrl`.
  *
- * @example
+ * @example Dynamic server URL.
  * ```typescript
  * createManagementExpressRouter({
  * 	monque,
@@ -111,7 +111,7 @@ export interface ManagementExpressOpenApiOptions {
  *
  * @typeParam TContext - Application-specific context exposed to management hooks.
  *
- * @example Mount the adapter under `/monque`.
+ * @example Mount the adapter under /monque.
  * ```typescript
  * import { createManagementExpressRouter } from '@monque/management-express';
  * import express from 'express';
