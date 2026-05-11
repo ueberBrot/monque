@@ -24,9 +24,10 @@ do not commit to a delivery timeline.
   {
     title: 'Dashboard',
     status: 'planned',
-    description: 'A UI for inspecting queues and operating existing Jobs through the Management Surface.',
+    description: 'A bundled operator UI for inspecting Queue Views and operating existing Jobs through the Management Surface.',
     features: [
-      'Use the same REST-shaped Management routes as HTTP clients',
+      'Ship as an asset/UI package that can be served by framework-specific adapters',
+      'Use the same REST-shaped Management routes as HTTP clients with first-party oRPC typing',
       'Start with polling and existing Job actions',
       'Defer realtime updates, Job creation, and visibility filtering until core APIs support them'
     ]
@@ -48,7 +49,7 @@ do not commit to a delivery timeline.
     features: [
       'Namespace-aware or multi-tenant operations',
       'Rate limits, priority controls, and operational policy hooks',
-      'Standalone server or Docker packaging if embedded adapters are not enough'
+      'Standalone Dashboard server or Docker packaging after the bundled Dashboard and serving adapters exist'
     ]
   }
 ]} />

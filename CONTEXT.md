@@ -31,6 +31,10 @@ _Avoid_: dashboard plugin
 by Management Adapters, OpenAPI generation, and Dashboard clients.
 _Avoid_: dashboard routes, adapter routes
 
+**Dashboard** — bundled operator UI for inspecting Queue Views and operating Jobs through
+the Management Route Map.
+_Avoid_: dashboard server, management adapter
+
 **Scheduler Instance** — running Monque process identified by `schedulerInstanceId`.
 It claims jobs, sends heartbeats, and releases ownership when work completes.
 
@@ -60,6 +64,32 @@ processing jobs block duplicates; completed and failed jobs do not.
 - Claims and owned-job transitions use atomic MongoDB preconditions.
 - A Queue View is derived from job names; it is not a persisted queue entity.
 - The Management Surface is separate from the Dashboard; the Dashboard is one possible client.
+- The Dashboard is an asset/UI-only client package; serving it is outside the Dashboard
+  package itself.
+- Dashboard serving adapters are framework-specific packages that serve bundled Dashboard
+  assets and SPA fallback; they are not Management Adapters.
+- Dashboard serving adapters inject mount-aware runtime configuration, including the
+  Management API base URL, so Dashboard assets do not need rebuilding per mount path.
+- Dashboard serving adapters expose mount-aware options such as `basePath` and
+  `apiBaseUrl`; host applications compose authentication middleware around them.
+- Dashboard serving adapters serve only Dashboard UI assets and do not mount the Management
+  API.
+- Host applications compose Dashboard serving adapters with Management Adapters and should
+  protect both UI and API mounts with authentication middleware when needed.
+- Dashboard runtime configuration is strictly validated at app boot; production builds do
+  not silently guess mount paths when config is missing.
+- The Dashboard package ships an HTML template and hashed assets; serving adapters inject
+  runtime configuration into the template and serve SPA fallbacks.
+- The Dashboard package exports asset metadata and runtime config types for serving
+  adapters; it does not expose a React component library in v1.
+- Dashboard development uses an unpublished repo-local dev shell separate from the published
+  asset/UI package.
+- Dashboard development mock mode uses oRPC mock Management handlers backed by seeded,
+  deterministic scenario factories.
+- Dashboard tests use mock Management handlers for UI integration; real MongoDB/Testcontainers
+  remain in core and Management integration tests.
+- Dashboard releases require Playwright smoke coverage for routing, core workflows, and
+  responsive layout sanity.
 - Framework-specific middleware belongs in Management Adapters, not in the Management Surface.
 - Standalone Dashboard and Docker distribution come after the Management Surface and at least
   one Management Adapter.
@@ -94,8 +124,49 @@ processing jobs block duplicates; completed and failed jobs do not.
   payload schemas first.
 - The Management Route Map is defined before the Dashboard, shared by adapters and clients,
   and uses an internal `/api/v1` prefix.
+- Dashboard code imports Management Route Map type/runtime contract data from a
+  browser-safe `@monque/management/contract` subpath, not from the Management Surface root.
+- The Management contract subpath exports the runtime Management contract plus all
+  Management DTO schemas and DTO types, but no server or Management Surface APIs.
+- The Dashboard package may depend on `@monque/management` at runtime only through the
+  browser-safe Management contract subpath.
+- Dashboard packages that consume the Management contract are versioned and released with
+  compatible Management contract changes.
+- Dashboard implementation starts with Management contract and Dashboard-grade listing
+  prerequisites before building the React UI.
+- Dashboard work release order is core listing support, Management contract/query support,
+  Dashboard asset package, then Dashboard serving adapter.
 - The Dashboard uses the same REST-shaped Management Route Map routes as third-party HTTP
   clients; there is no separate RPC-shaped Dashboard API.
+- The first Dashboard supports Queue Views, Job listing, Job details, scheduler health,
+  capabilities, and existing Job actions from the Management Route Map.
+- The first Dashboard uses Queue Views as its landing experience instead of synthetic KPI
+  cards; broader Overview metrics wait for explicit observability APIs.
+- The first Dashboard route set is Queue Views overview, Queue View detail by Job Name,
+  global Jobs table, Job detail, and health/capabilities.
+- Queue View detail shows Queue View summary information above the filtered Jobs table.
+- The Dashboard provides route navigation for switching between primary operator views.
+- The Dashboard uses a desktop sidebar and mobile drawer for primary navigation.
+- The Dashboard v1 accessibility baseline includes keyboard-navigable core workflows,
+  visible focus states, accessible action names, and non-color-only status communication.
+- Dashboard routes are resource-based; Job actions are in-screen controls, not separate
+  pages.
+- Dashboard filters and selections use URL state where practical so operator views can be
+  shared.
+- Dashboard URL state and Management query parameters use the same names where practical;
+  UI copy says Job Name even when the parameter is `name`.
+- Queue View detail routes imply the Job Name filter from the route and do not expose a
+  conflicting Job Name filter control.
+- Dashboard tables expose only server-backed sorting and filtering; the Dashboard does not
+  pretend to sort or filter beyond the current paginated result set.
+- Dashboard row selection is local client state, not URL state, so shared URLs do not carry
+  bulk-action selections.
+- The first Dashboard bulk actions operate only on explicitly selected Jobs and require
+  confirmation before execution.
+- The first Dashboard supports only operator-safe hotkeys; destructive Job actions are not
+  triggered directly by keyboard shortcuts.
+- The first Dashboard command palette is limited to navigation and safe view actions, not
+  destructive Job actions.
 - The Management Route Map groups operations by resource and uses action endpoints for job
   state transitions.
 - Management Adapters mount the oRPC OpenAPI HTTP handler instead of translating requests
@@ -105,6 +176,19 @@ processing jobs block duplicates; completed and failed jobs do not.
 - Job listing in the Management Route Map uses cursor pagination, not offset pagination.
 - Job listing filters in the Management Route Map only expose filters supported by public
   cursor listing in core.
+- Dashboard-grade Job listing requires server-backed date filters and whitelisted server
+  sorting in core and the Management Route Map before the UI exposes those controls.
+- The first Dashboard waits for Dashboard-grade Job listing rather than shipping a weak Jobs
+  table with only name and status filters.
+- Dashboard-grade cursor listing uses explicit whitelisted sort fields with a stable `_id`
+  tie-breaker; the default management browsing order is newest-created Jobs first.
+- Dashboard-grade cursor listing is added to core without breaking existing public
+  `getJobsWithCursor` calls.
+- Core cursor listing preserves public compatibility, while Management may explicitly choose
+  a Dashboard-oriented default sort for browsing.
+- Core owns practical index coverage for Dashboard-grade Job listing filters and sorts.
+- Dashboard-grade Job listing exposes created, updated, and next-run date filters first;
+  locked and heartbeat time filters are deferred.
 - Bulk job actions in the Management Route Map use a Management selector DTO that mirrors
   public core selector semantics and maps HTTP date strings to core `Date` values.
 - Invalid job state transitions in the Management Route Map are conflicts, not validation
@@ -122,6 +206,26 @@ processing jobs block duplicates; completed and failed jobs do not.
 - Management payload serialization can be configured globally and per job name.
 - Management payload serialization receives request or authorization context so payload
   visibility can vary per user.
+- Dashboard payload display is read-only; payload redaction belongs to Management payload
+  serialization, not Dashboard-side hiding.
+- Dashboard date display uses `date-fns`; timezone conversion uses `@date-fns/tz` only when
+  explicit timezone handling is needed.
+- Dashboard reusable UI components are shadcn-first, including compatible shadcn ecosystem
+  registries when they fit.
+- Dashboard feature components may compose shadcn primitives around domain concepts; Tailwind
+  is used for layout and local composition rather than hand-rolling reusable primitives.
+- Dashboard forms use TanStack Form for non-trivial forms and Zod v4 validation where client
+  validation is useful; simple controls do not require form machinery.
+- Dashboard validation reuses Management contract schemas for API wire contracts and uses
+  Dashboard-local schemas for UI state before serialization.
+- Dashboard data fetching uses oRPC TanStack Query utilities inside the Dashboard package
+  rather than hand-written API hook layers where generated utilities fit.
+- Dashboard Job listing uses normal query options with explicit cursor URL state, not
+  infinite-query behavior.
+- Dashboard builds use Vite-compatible bundling with route-level code splitting and bundle
+  visualization before release; the first Dashboard has no hard bundle byte budget.
+- The first Dashboard supports light, dark, and system theme modes; deeper visual design is
+  handled in the Dashboard implementation rather than domain policy.
 - The Management Surface exports an OpenAPI contract derived from the Management Route Map;
   adapters may serve it but do not generate it independently.
 - The Management OpenAPI contract includes all v1 routes and does not vary by mounted
@@ -141,10 +245,18 @@ processing jobs block duplicates; completed and failed jobs do not.
   documentation UI paths.
 - The first Management Route Map is request/response only; Dashboard freshness uses polling,
   not SSE or WebSocket.
+- Dashboard polling is screen-aware and must preserve valid local row selections across
+  refreshes.
 - Management health starts as a simple scheduler health DTO; deeper diagnostics require
   public core read APIs first.
 - Authentication belongs to the hosting application or Management Adapter; the Management
   Surface may enforce optional operation authorization hooks.
+- Dashboard API requests include browser credentials by default, while authentication remains
+  host-owned and no Dashboard login screen exists in v1.
+- Dashboard uses standard TanStack Router pending, error, and not-found boundaries at the
+  root with route-level overrides where needed.
+- Dashboard error handling uses oRPC typed errors where possible so Management API failures
+  map to specific operator-facing states.
 - The first Management Surface supports operation authorization, not Queue View visibility
   filtering.
 - Management operation authorization is action-grained.
