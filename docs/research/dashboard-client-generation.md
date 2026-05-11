@@ -4,6 +4,12 @@ This note compares OpenAPI-to-TypeScript client generation options for a future 
 Dashboard using TanStack Query. It is research input for a PRD, not a normative contract.
 Normative decisions live in `CONTEXT.md` and ADRs.
 
+Status update: ADR-0005 and the Dashboard architecture research now prefer an oRPC typed
+client for first-party Dashboard code through the browser-safe `@monque/management/contract`
+subpath. OpenAPI client generation remains relevant for third-party clients and as a
+fallback if the first-party oRPC path proves unsuitable. See
+[`dashboard-architecture-stack.md`](./dashboard-architecture-stack.md).
+
 ## Context
 
 The Dashboard should not import runtime code from `@monque/management` for API calls.
