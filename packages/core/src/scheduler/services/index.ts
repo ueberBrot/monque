@@ -7,6 +7,7 @@ export { JobQueryService } from './job-query.js';
 export { JobSelection } from './job-selection.js';
 export { JobStateTransitions } from './job-state-transitions.js';
 export { CLEANUP_STATUSES, LifecycleManager } from './lifecycle-manager.js';
+export { PendingNotificationRouter } from './pending-notification-router.js';
 // Types
 export {
 	RETRYABLE_JOB_STATUSES,
