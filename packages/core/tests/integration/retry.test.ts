@@ -289,24 +289,21 @@ describe('Retry Logic', () => {
 			await monque.initialize();
 
 			let callCount = 0;
+			let failureEvents = 0;
 			monque.register<{ test: boolean }>(TEST_CONSTANTS.JOB_NAME, async () => {
 				callCount++;
 				throw new Error(`Failure #${callCount}`);
+			});
+
+			monque.on('job:fail', () => {
+				failureEvents++;
 			});
 
 			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { test: true });
 			monque.start();
 
 			// Wait for second failure
-			await waitFor(
-				async () => {
-					const doc = (await db
-						.collection(collectionName)
-						.findOne({ _id: job._id })) as WithId<Document> | null;
-					return doc !== null && doc['failCount'] >= 2;
-				},
-				{ timeout: 5000 },
-			);
+			await waitFor(async () => failureEvents >= 2, { timeout: 5000 });
 
 			await monque.stop();
 

@@ -36,6 +36,7 @@ import {
 	JobProcessor,
 	JobQueryService,
 	LifecycleManager,
+	PendingNotificationRouter,
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
@@ -146,6 +147,7 @@ export class Monque extends EventEmitter {
 	private _processor: JobProcessor | null = null;
 	private _changeStreamHandler: ChangeStreamHandler | null = null;
 	private _lifecycleManager: LifecycleManager | null = null;
+	private _pendingNotificationRouter: PendingNotificationRouter | null = null;
 
 	constructor(db: Db, options: MonqueOptions = {}) {
 		super();
@@ -217,9 +219,10 @@ export class Monque extends EventEmitter {
 			this._manager = new JobManager(ctx);
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx);
-			this._changeStreamHandler = new ChangeStreamHandler(ctx, (targetNames) =>
-				this.handleChangeStreamPoll(targetNames),
+			this._pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
+				this.handlePendingNotificationPoll(targetNames),
 			);
+			this._changeStreamHandler = new ChangeStreamHandler(ctx, this._pendingNotificationRouter);
 			this._lifecycleManager = new LifecycleManager(ctx);
 
 			this.isInitialized = true;
@@ -297,13 +300,13 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Handle a change-stream-triggered poll and reset the safety poll timer.
+	 * Handle a Pending Notification poll and reset the safety poll timer.
 	 *
-	 * Used as the `onPoll` callback for {@link ChangeStreamHandler}. Runs a
-	 * targeted poll for the given worker names, then resets the adaptive safety
+	 * Used as the `onPoll` callback for {@link PendingNotificationRouter}. Runs a
+	 * targeted poll for the given Worker names, then resets the adaptive safety
 	 * poll timer so it doesn't fire redundantly.
 	 */
-	private async handleChangeStreamPoll(targetNames?: ReadonlySet<string>): Promise<void> {
+	private async handlePendingNotificationPoll(targetNames?: ReadonlySet<string>): Promise<void> {
 		await this.processor.poll(targetNames);
 		this.lifecycleManager.resetPollTimer();
 	}
@@ -325,11 +328,11 @@ export class Monque extends EventEmitter {
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
 			notifyPendingJob: (name: string, nextRunAt: Date) => {
-				if (!this.isRunning || !this._changeStreamHandler) {
+				if (!this.isRunning || !this._pendingNotificationRouter) {
 					return;
 				}
 
-				this._changeStreamHandler.notifyPendingJob(name, nextRunAt);
+				this._pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
 			},
 			notifyJobFinished: () => this.onJobFinished(),
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),

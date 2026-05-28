@@ -12,10 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockContext } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { ChangeStreamHandler } from '@/scheduler/services/change-stream-handler.js';
+import { PendingNotificationRouter } from '@/scheduler/services/pending-notification-router.js';
 
 describe('ChangeStreamHandler', () => {
 	let ctx: ReturnType<typeof createMockContext>;
 	let onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>;
+	let pendingNotifications: PendingNotificationRouter;
 	let handler: ChangeStreamHandler;
 
 	beforeEach(() => {
@@ -23,10 +25,12 @@ describe('ChangeStreamHandler', () => {
 		onPoll = vi.fn().mockResolvedValue(undefined) as unknown as (
 			targetNames?: ReadonlySet<string>,
 		) => Promise<void>;
-		handler = new ChangeStreamHandler(ctx, onPoll);
+		pendingNotifications = new PendingNotificationRouter(ctx, onPoll);
+		handler = new ChangeStreamHandler(ctx, pendingNotifications);
 	});
 
 	afterEach(() => {
+		pendingNotifications.close();
 		vi.clearAllMocks();
 		vi.useRealTimers();
 	});
@@ -684,30 +688,6 @@ describe('ChangeStreamHandler', () => {
 			vi.advanceTimersByTime(6000);
 			expect(onPoll).not.toHaveBeenCalled();
 		});
-
-		it('should route locally notified immediate jobs through debounced targeted poll', () => {
-			vi.useFakeTimers();
-
-			handler.notifyPendingJob('local-immediate', new Date(Date.now() - 1000));
-
-			vi.advanceTimersByTime(150);
-
-			expect(onPoll).toHaveBeenCalledOnce();
-			expect(onPoll).toHaveBeenCalledWith(new Set(['local-immediate']));
-		});
-
-		it('should schedule wakeup for locally notified future jobs', () => {
-			vi.useFakeTimers();
-
-			handler.notifyPendingJob('local-future', new Date(Date.now() + 1000));
-
-			vi.advanceTimersByTime(1100);
-			expect(onPoll).not.toHaveBeenCalled();
-
-			vi.advanceTimersByTime(100);
-			expect(onPoll).toHaveBeenCalledOnce();
-			expect(onPoll).toHaveBeenCalledWith();
-		});
 	});
 
 	describe('handleEvent - mixed immediate and future', () => {
@@ -853,7 +833,8 @@ describe('ChangeStreamHandler', () => {
 			const pollError = new Error('Poll failed');
 			const failingOnPoll = vi.fn().mockRejectedValue(pollError);
 
-			const handlerWithFailingPoll = new ChangeStreamHandler(ctx, failingOnPoll);
+			const failingRouter = new PendingNotificationRouter(ctx, failingOnPoll);
+			const handlerWithFailingPoll = new ChangeStreamHandler(ctx, failingRouter);
 
 			const changeEvent = {
 				operationType: 'insert' as const,

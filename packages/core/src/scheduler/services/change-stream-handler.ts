@@ -1,15 +1,9 @@
 import type { ChangeStream, ChangeStreamDocument, Document } from 'mongodb';
 
 import { JobStatus } from '@/jobs';
-import { toError } from '@/shared';
 
+import type { PendingNotificationRouter } from './pending-notification-router.js';
 import type { SchedulerContext } from './types.js';
-
-/** Minimum poll interval floor to prevent tight loops (ms) */
-const MIN_POLL_INTERVAL = 100;
-
-/** Grace period after nextRunAt before scheduling a wakeup poll (ms) */
-const POLL_GRACE_PERIOD = 200;
 
 /**
  * Internal service for MongoDB Change Stream lifecycle.
@@ -33,27 +27,15 @@ export class ChangeStreamHandler {
 	/** Maximum reconnection attempts before falling back to polling-only mode */
 	private readonly maxReconnectAttempts = 3;
 
-	/** Debounce timer for change stream event processing */
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
 	/** Timer ID for reconnection with exponential backoff */
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Whether the scheduler is currently using change streams */
 	private usingChangeStreams = false;
 
-	/** Job names collected during the current debounce window for targeted polling */
-	private pendingTargetNames: Set<string> = new Set();
-
-	/** Wakeup timer for the earliest known future job */
-	private wakeupTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/** Time of the currently scheduled wakeup */
-	private wakeupTime: Date | null = null;
-
 	constructor(
 		private readonly ctx: SchedulerContext,
-		private readonly onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>,
+		private readonly pendingNotifications: PendingNotificationRouter,
 	) {}
 
 	/**
@@ -173,10 +155,7 @@ export class ChangeStreamHandler {
 		// Slot-freed events: targeted poll for that worker to pick up waiting jobs
 		if (isSlotFreed) {
 			const jobName = fullDocument?.['name'] as string | undefined;
-			if (jobName) {
-				this.pendingTargetNames.add(jobName);
-			}
-			this.debouncedPoll();
+			this.pendingNotifications.notifyRunnableJob(jobName);
 			return;
 		}
 
@@ -185,88 +164,12 @@ export class ChangeStreamHandler {
 		const nextRunAt = fullDocument?.['nextRunAt'] as Date | undefined;
 
 		if (jobName && nextRunAt) {
-			this.notifyPendingJob(jobName, nextRunAt);
+			this.pendingNotifications.notifyPendingJob(jobName, nextRunAt);
 			return;
 		}
 
 		// Immediate job or missing metadata — collect for targeted/full poll
-		if (jobName) {
-			this.pendingTargetNames.add(jobName);
-		}
-		this.debouncedPoll();
-	}
-
-	/**
-	 * Notify the handler about a pending job created or updated by this process.
-	 *
-	 * Reuses the same routing logic as change stream events so local writes don't
-	 * depend on the MongoDB change stream cursor already being fully ready.
-	 *
-	 * @param jobName - Worker name for targeted polling
-	 * @param nextRunAt - When the job becomes eligible for processing
-	 */
-	notifyPendingJob(jobName: string, nextRunAt: Date): void {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		if (nextRunAt.getTime() > Date.now()) {
-			this.scheduleWakeup(nextRunAt);
-			return;
-		}
-
-		this.pendingTargetNames.add(jobName);
-		this.debouncedPoll();
-	}
-
-	/**
-	 * Schedule a debounced poll with collected target names.
-	 *
-	 * Collects job names from multiple change stream events during the debounce
-	 * window, then triggers a single targeted poll for only those workers.
-	 */
-	private debouncedPoll(): void {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-		}
-
-		this.debounceTimer = setTimeout(() => {
-			this.debounceTimer = null;
-			const names = this.pendingTargetNames.size > 0 ? new Set(this.pendingTargetNames) : undefined;
-			this.pendingTargetNames.clear();
-			this.onPoll(names).catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			});
-		}, 100);
-	}
-
-	/**
-	 * Schedule a wakeup timer for a future-dated job.
-	 *
-	 * Maintains a single timer set to the earliest known future job's `nextRunAt`.
-	 * When the timer fires, triggers a full poll to pick up all due jobs.
-	 *
-	 * @param nextRunAt - When the future job should become ready
-	 */
-	private scheduleWakeup(nextRunAt: Date): void {
-		// Only update if this job is earlier than the current wakeup
-		if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
-			return;
-		}
-
-		this.clearWakeupTimer();
-		this.wakeupTime = nextRunAt;
-
-		const delay = Math.max(nextRunAt.getTime() - Date.now() + POLL_GRACE_PERIOD, MIN_POLL_INTERVAL);
-
-		this.wakeupTimer = setTimeout(() => {
-			this.wakeupTime = null;
-			this.wakeupTimer = null;
-			// Full poll — there may be multiple jobs due at this time
-			this.onPoll().catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			});
-		}, delay);
+		this.pendingNotifications.notifyRunnableJob(jobName);
 	}
 
 	/**
@@ -349,22 +252,8 @@ export class ChangeStreamHandler {
 	 * the reconnect timer/attempts (callers manage reconnection lifecycle).
 	 */
 	private resetActiveState(): void {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-			this.debounceTimer = null;
-		}
-
-		this.pendingTargetNames.clear();
-		this.clearWakeupTimer();
+		this.pendingNotifications.close();
 		this.usingChangeStreams = false;
-	}
-
-	private clearWakeupTimer(): void {
-		if (this.wakeupTimer) {
-			clearTimeout(this.wakeupTimer);
-			this.wakeupTimer = null;
-		}
-		this.wakeupTime = null;
 	}
 
 	private closeChangeStream(): void {
