@@ -10,14 +10,14 @@
 	],
 	"enabledManagers": ["bun", "github-actions"],
 	"timezone": "Europe/Berlin",
-	"schedule": ["* 6-8 1-7 * 1"],
+	"schedule": ["* 6-18 1,15 * *"],
 	"labels": ["dependencies"],
 	"rangeStrategy": "bump",
 	"prConcurrentLimit": 4,
 	"prHourlyLimit": 2,
 	"lockFileMaintenance": {
 		"enabled": true,
-		"schedule": ["* 6-8 1-7 * 1"],
+		"schedule": ["* 6-18 1,15 * *"],
 		"automerge": true,
 		"platformAutomerge": true
 	},
