@@ -1,0 +1,6 @@
+{
+	"type": "module",
+	"main": "../dist/contract.cjs",
+	"module": "../dist/contract.mjs",
+	"types": "../dist/contract.d.mts"
+}

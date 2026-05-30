@@ -1,26 +1,18 @@
 export {
+	type ManagementContract,
+	managementContract,
+} from './orpc/contract.js';
+export {
 	type BulkActionErrorDto,
 	BulkActionErrorDtoSchema,
 	type BulkActionResultDto,
 	BulkActionResultDtoSchema,
-	type DeleteJobDto,
-	DeleteJobDtoSchema,
-	type JobSelectorDto,
-	JobSelectorDtoSchema,
-	type ManagementErrorDto,
-	ManagementErrorDtoSchema,
-	type RescheduleJobInputDto,
-	RescheduleJobInputDtoSchema,
-	type RescheduleJobRequestDto,
-	RescheduleJobRequestDtoSchema,
-} from './actions.js';
-export {
 	type CapabilitiesDto,
 	CapabilitiesDtoSchema,
 	type CapabilityActionsDto,
 	CapabilityActionsDtoSchema,
-} from './capabilities.js';
-export {
+	type DeleteJobDto,
+	DeleteJobDtoSchema,
 	type JobCursorPageDto,
 	JobCursorPageDtoSchema,
 	type JobDetailInputDto,
@@ -35,12 +27,14 @@ export {
 	JobListSortByDtoSchema,
 	type JobListSortDirectionDto,
 	JobListSortDirectionDtoSchema,
-	type JobStatusDto,
-	JobStatusDtoSchema,
-} from './job.js';
-export {
+	type JobSelectorDto,
+	JobSelectorDtoSchema,
 	type JobStatsQueryDto,
 	JobStatsQueryDtoSchema,
+	type JobStatusDto,
+	JobStatusDtoSchema,
+	type ManagementErrorDto,
+	ManagementErrorDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
 	type QueueViewSummaryDto,
@@ -49,8 +43,10 @@ export {
 	QueueViewSummaryListDtoSchema,
 	type QueueViewWorkerDto,
 	QueueViewWorkerDtoSchema,
-} from './queue-view.js';
-export {
+	type RescheduleJobInputDto,
+	RescheduleJobInputDtoSchema,
+	type RescheduleJobRequestDto,
+	RescheduleJobRequestDtoSchema,
 	type SchedulerHealthDto,
 	SchedulerHealthDtoSchema,
-} from './scheduler-health.js';
+} from './schemas/index.js';

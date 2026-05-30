@@ -43,10 +43,21 @@
 				"types": "./dist/index.d.cts",
 				"default": "./dist/index.cjs"
 			}
+		},
+		"./contract": {
+			"import": {
+				"types": "./dist/contract.d.mts",
+				"default": "./dist/contract.mjs"
+			},
+			"require": {
+				"types": "./dist/contract.d.cts",
+				"default": "./dist/contract.cjs"
+			}
 		}
 	},
 	"files": [
 		"dist",
+		"contract",
 		"src"
 	],
 	"scripts": {
@@ -70,7 +81,7 @@
 		"zod": "^4.4.3"
 	},
 	"peerDependencies": {
-		"@monque/core": "^1.8.0",
+		"@monque/core": "^1.10.0",
 		"mongodb": "^7.2.0"
 	},
 	"devDependencies": {
