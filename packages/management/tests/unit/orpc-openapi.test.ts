@@ -170,52 +170,6 @@ describe('oRPC Management OpenAPI contract', () => {
 					in: 'query',
 					explode: true,
 				}),
-				expect.objectContaining({
-					name: 'createdAtFrom',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'createdAtTo',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'updatedAtFrom',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'updatedAtTo',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'nextRunAtFrom',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'nextRunAtTo',
-					in: 'query',
-					schema: { type: 'string', format: 'date-time' },
-				}),
-				expect.objectContaining({
-					name: 'sortBy',
-					in: 'query',
-					schema: {
-						type: 'string',
-						enum: ['identifier', 'createdAt', 'updatedAt', 'nextRunAt'],
-					},
-				}),
-				expect.objectContaining({
-					name: 'sortDirection',
-					in: 'query',
-					schema: {
-						type: 'string',
-						enum: ['asc', 'desc'],
-					},
-				}),
 			]),
 		);
 		expect(document.paths?.['/api/v1/jobs']?.get?.responses?.['200']).toMatchObject({

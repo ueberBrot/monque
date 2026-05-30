@@ -54,18 +54,6 @@ export const JobCursorPageDtoSchema = z
 /** Cursor-paginated job list response. */
 export type JobCursorPageDto = z.infer<typeof JobCursorPageDtoSchema>;
 
-/** Sort fields accepted by job list endpoints: identifier, createdAt, updatedAt, or nextRunAt. */
-export const JobListSortByDtoSchema = z.enum(['identifier', 'createdAt', 'updatedAt', 'nextRunAt']);
-
-/** Sort field accepted by job list endpoints. */
-export type JobListSortByDto = z.infer<typeof JobListSortByDtoSchema>;
-
-/** Sort directions accepted by job list endpoints: ascending or descending. */
-export const JobListSortDirectionDtoSchema = z.enum(['asc', 'desc']);
-
-/** Sort direction accepted by job list endpoints. */
-export type JobListSortDirectionDto = z.infer<typeof JobListSortDirectionDtoSchema>;
-
 /** Query parameters accepted by `GET /api/v1/jobs`. */
 export const JobListQueryDtoSchema = z
 	.object({
@@ -73,14 +61,6 @@ export const JobListQueryDtoSchema = z
 		limit: z.string().optional(),
 		name: z.string().optional(),
 		status: z.union([JobStatusDtoSchema, z.array(JobStatusDtoSchema).min(1)]).optional(),
-		createdAtFrom: z.iso.datetime().optional(),
-		createdAtTo: z.iso.datetime().optional(),
-		updatedAtFrom: z.iso.datetime().optional(),
-		updatedAtTo: z.iso.datetime().optional(),
-		nextRunAtFrom: z.iso.datetime().optional(),
-		nextRunAtTo: z.iso.datetime().optional(),
-		sortBy: JobListSortByDtoSchema.optional(),
-		sortDirection: JobListSortDirectionDtoSchema.optional(),
 	})
 	.strict();
 

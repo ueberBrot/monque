@@ -23,9 +23,6 @@ export const JobStatsQueryDtoSchema = z
 	})
 	.strict();
 
-/** Query parameters accepted by `GET /api/v1/jobs/stats`. */
-export type JobStatsQueryDto = z.infer<typeof JobStatsQueryDtoSchema>;
-
 /** Local worker state for a queue view, when this scheduler has a worker registered. */
 export const QueueViewWorkerDtoSchema = z
 	.object({

@@ -43,21 +43,10 @@
 				"types": "./dist/index.d.cts",
 				"default": "./dist/index.cjs"
 			}
-		},
-		"./contract": {
-			"import": {
-				"types": "./dist/contract.d.mts",
-				"default": "./dist/contract.mjs"
-			},
-			"require": {
-				"types": "./dist/contract.d.cts",
-				"default": "./dist/contract.cjs"
-			}
 		}
 	},
 	"files": [
 		"dist",
-		"contract",
 		"src"
 	],
 	"scripts": {

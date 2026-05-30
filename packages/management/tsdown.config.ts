@@ -6,7 +6,7 @@ const packageJson = JSON.parse(
 ) as { version: string };
 
 export default defineConfig({
-	entry: ['src/index.ts', 'src/contract.ts'],
+	entry: ['src/index.ts'],
 	format: ['esm', 'cjs'],
 	dts: true,
 	clean: true,
