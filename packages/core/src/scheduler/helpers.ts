@@ -45,6 +45,8 @@ const DEFAULT_CURSOR_SORT: JobCursorSort = {
 	by: JobCursorSortField.IDENTIFIER,
 	direction: JobCursorSortDirection.ASC,
 };
+const LEGACY_CURSOR_PAYLOAD_BYTES = 12;
+const STRUCTURED_CURSOR_PAYLOAD_PREFIX = '{'.charCodeAt(0);
 
 /**
  * Build a MongoDB query filter from a selector or cursor filter.
@@ -214,20 +216,19 @@ export function decodeCursor(cursor: string): DecodedCursor {
 
 	try {
 		const buffer = Buffer.from(payload, 'base64url');
-		const jsonPayload = buffer.toString('utf8');
 
-		if (jsonPayload.startsWith('{')) {
-			return decodeStructuredCursor(jsonPayload, direction);
+		if (buffer.byteLength === LEGACY_CURSOR_PAYLOAD_BYTES) {
+			return {
+				id: new ObjectId(buffer.toString('hex')),
+				direction,
+			};
 		}
 
-		const hex = buffer.toString('hex');
-		if (hex.length !== 24) {
-			throw new InvalidCursorError('Invalid length');
+		if (buffer[0] === STRUCTURED_CURSOR_PAYLOAD_PREFIX) {
+			return decodeStructuredCursor(buffer.toString('utf8'), direction);
 		}
 
-		const id = new ObjectId(hex);
-
-		return { id, direction };
+		throw new InvalidCursorError('Invalid length');
 	} catch (error) {
 		if (error instanceof InvalidCursorError) {
 			throw error;
@@ -260,9 +261,11 @@ function decodeStructuredCursor(
 	const sort = payload['sort'];
 	const sortBy = sort['by'];
 	const sortDirection = sort['direction'];
+	const sortValueRaw = sort['value'];
 
 	if (
 		typeof id !== 'string' ||
+		typeof sortValueRaw !== 'string' ||
 		!ObjectId.isValid(id) ||
 		!isValidCursorSortField(sortBy) ||
 		!isValidCursorSortDirection(sortDirection)
@@ -270,7 +273,7 @@ function decodeStructuredCursor(
 		throw new InvalidCursorError('Invalid cursor payload');
 	}
 
-	const sortValue = new Date(sort['value'] as string);
+	const sortValue = new Date(sortValueRaw);
 
 	if (Number.isNaN(sortValue.getTime())) {
 		throw new InvalidCursorError('Invalid cursor payload');
