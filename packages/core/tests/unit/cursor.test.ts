@@ -55,6 +55,16 @@ describe('cursor pagination helpers', () => {
 			expect(result.id.equals(id)).toBe(true);
 		});
 
+		it('should decode legacy ObjectId cursors whose bytes start like JSON', () => {
+			const id = new ObjectId('7b0000000000000000000000');
+			const cursor = encodeCursor(id, CursorDirection.FORWARD);
+
+			const result = decodeCursor(cursor);
+
+			expect(result.direction).toBe(CursorDirection.FORWARD);
+			expect(result.id.equals(id)).toBe(true);
+		});
+
 		it('should throw InvalidCursorError for empty cursor', () => {
 			expect(() => decodeCursor('')).toThrow(InvalidCursorError);
 		});
