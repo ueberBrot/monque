@@ -6,9 +6,10 @@
  */
 
 import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
+import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
 import { JobCursorSortDirection, JobCursorSortField, JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
@@ -627,6 +628,19 @@ describe('JobQueryService', () => {
 	});
 
 	describe('getQueueViewSummaries', () => {
+		it('should expose readonly Queue View snapshots in the public contract', () => {
+			expectTypeOf<Pick<QueueViewSummary, 'stats'>>().toEqualTypeOf<
+				Readonly<Pick<QueueViewSummary, 'stats'>>
+			>();
+			expectTypeOf<Pick<QueueViewSummary, 'worker'>>().toEqualTypeOf<
+				Readonly<Pick<QueueViewSummary, 'worker'>>
+			>();
+			expectTypeOf<QueueViewSummary['stats']>().toEqualTypeOf<Readonly<QueueStats>>();
+			expectTypeOf<
+				QueueViewSummary['worker']
+			>().toEqualTypeOf<Readonly<QueueViewWorkerSummary> | null>();
+		});
+
 		it('should return persisted job names sorted by name with statistics', async () => {
 			const mockAggregateCursor = {
 				toArray: vi.fn().mockResolvedValueOnce([
@@ -715,6 +729,21 @@ describe('JobQueryService', () => {
 					},
 				},
 			]);
+		});
+
+		it('should return an empty immutable list when no jobs or workers exist', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toEqual([]);
+			expect(Object.isFrozen(summaries)).toBe(true);
 		});
 
 		it('should include historical-only job names with completed duration averages', async () => {

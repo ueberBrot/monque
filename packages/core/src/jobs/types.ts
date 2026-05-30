@@ -381,10 +381,10 @@ export interface QueueViewSummary {
 	readonly hasRegisteredWorker: boolean;
 
 	/** Aggregated persisted Job statistics for this Job Name */
-	stats: Readonly<QueueStats>;
+	readonly stats: Readonly<QueueStats>;
 
 	/** Local Worker observability, or null when no local Worker is registered */
-	worker: Readonly<QueueViewWorkerSummary> | null;
+	readonly worker: Readonly<QueueViewWorkerSummary> | null;
 }
 
 /**
