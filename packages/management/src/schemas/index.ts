@@ -31,10 +31,15 @@ export {
 	JobDtoSchema,
 	type JobListQueryDto,
 	JobListQueryDtoSchema,
+	type JobListSortByDto,
+	JobListSortByDtoSchema,
+	type JobListSortDirectionDto,
+	JobListSortDirectionDtoSchema,
 	type JobStatusDto,
 	JobStatusDtoSchema,
 } from './job.js';
 export {
+	type JobStatsQueryDto,
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,

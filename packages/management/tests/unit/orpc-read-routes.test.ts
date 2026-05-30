@@ -276,6 +276,53 @@ describe('oRPC Management read routes', () => {
 		});
 	});
 
+	test('maps Dashboard-grade Job list filters and sorting into core cursor options', async () => {
+		let capturedOptions: CursorOptions | undefined;
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async (options) => {
+					capturedOptions = options;
+
+					return {
+						jobs: [],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					};
+				},
+			}),
+		});
+
+		const response = await handleManagementGet(
+			surface,
+			'/api/v1/jobs?limit=200&name=send-email&status=failed&createdAtFrom=2026-01-01T00:00:00.000Z&createdAtTo=2026-01-31T00:00:00.000Z&updatedAtFrom=2026-02-01T00:00:00.000Z&updatedAtTo=2026-02-28T00:00:00.000Z&nextRunAtFrom=2026-03-01T00:00:00.000Z&nextRunAtTo=2026-03-31T00:00:00.000Z&sortBy=updatedAt&sortDirection=desc',
+		);
+
+		await expectJsonResponse(response, 200, {
+			jobs: [],
+			cursor: null,
+			hasNextPage: false,
+			hasPreviousPage: false,
+		});
+		expect(capturedOptions).toEqual({
+			limit: 100,
+			filter: {
+				name: 'send-email',
+				status: 'failed',
+				createdAtFrom: new Date('2026-01-01T00:00:00.000Z'),
+				createdAtTo: new Date('2026-01-31T00:00:00.000Z'),
+				updatedAtFrom: new Date('2026-02-01T00:00:00.000Z'),
+				updatedAtTo: new Date('2026-02-28T00:00:00.000Z'),
+				nextRunAtFrom: new Date('2026-03-01T00:00:00.000Z'),
+				nextRunAtTo: new Date('2026-03-31T00:00:00.000Z'),
+			},
+			sort: {
+				by: 'updatedAt',
+				direction: 'desc',
+			},
+		});
+	});
+
 	test('maps invalid Job list query shapes and malformed cursors to stable 400 responses', async () => {
 		const coreCalls: string[] = [];
 		const surface = createManagementSurface({
