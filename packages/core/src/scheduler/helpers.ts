@@ -14,6 +14,13 @@ import {
 import { InvalidCursorError } from '@/shared';
 
 type CursorQueryFilter = JobSelector | JobCursorFilter;
+type DateRangeField = 'createdAt' | 'updatedAt' | 'nextRunAt';
+type DateRangeQuery = {
+	$gt?: Date;
+	$gte?: Date;
+	$lt?: Date;
+	$lte?: Date;
+};
 
 type EncodedCursorPayload = {
 	id: string;
@@ -40,12 +47,11 @@ const DEFAULT_CURSOR_SORT: JobCursorSort = {
 };
 
 /**
- * Build a MongoDB query filter from a JobSelector.
+ * Build a MongoDB query filter from a selector or cursor filter.
  *
- * Translates the high-level `JobSelector` interface into a MongoDB `Filter<Document>`.
  * Handles array values for status (using `$in`) and date range filtering.
  *
- * @param filter - The user-provided job selector
+ * @param filter - The user-provided job selector or cursor filter
  * @returns A standard MongoDB filter object
  */
 export function buildSelectorQuery(filter: CursorQueryFilter): Filter<Document> {
@@ -63,44 +69,47 @@ export function buildSelectorQuery(filter: CursorQueryFilter): Filter<Document> 
 		}
 	}
 
-	if ('olderThan' in filter || 'newerThan' in filter) {
-		query['createdAt'] = {};
-		if (filter.olderThan) {
-			query['createdAt']['$lt'] = filter.olderThan;
-		}
-		if (filter.newerThan) {
-			query['createdAt']['$gt'] = filter.newerThan;
-		}
-	}
-
-	applyDateRange(query, 'createdAt', 'createdAtFrom' in filter ? filter.createdAtFrom : undefined);
-	applyDateRange(
-		query,
-		'createdAt',
-		undefined,
-		'createdAtTo' in filter ? filter.createdAtTo : undefined,
-	);
-	applyDateRange(query, 'updatedAt', 'updatedAtFrom' in filter ? filter.updatedAtFrom : undefined);
-	applyDateRange(
-		query,
-		'updatedAt',
-		undefined,
-		'updatedAtTo' in filter ? filter.updatedAtTo : undefined,
-	);
-	applyDateRange(query, 'nextRunAt', 'nextRunAtFrom' in filter ? filter.nextRunAtFrom : undefined);
-	applyDateRange(
-		query,
-		'nextRunAt',
-		undefined,
-		'nextRunAtTo' in filter ? filter.nextRunAtTo : undefined,
-	);
+	applySelectorCreatedAtRange(query, filter);
+	applyCursorDateRanges(query, filter);
 
 	return query;
 }
 
+function applySelectorCreatedAtRange(query: Filter<Document>, filter: CursorQueryFilter): void {
+	if (!('olderThan' in filter || 'newerThan' in filter)) {
+		return;
+	}
+
+	const range = getDateRange(query, 'createdAt');
+
+	if (filter.olderThan) {
+		range['$lt'] = filter.olderThan;
+	}
+
+	if (filter.newerThan) {
+		range['$gt'] = filter.newerThan;
+	}
+
+	query['createdAt'] = range;
+}
+
+function applyCursorDateRanges(query: Filter<Document>, filter: CursorQueryFilter): void {
+	if ('createdAtFrom' in filter || 'createdAtTo' in filter) {
+		applyDateRange(query, 'createdAt', filter.createdAtFrom, filter.createdAtTo);
+	}
+
+	if ('updatedAtFrom' in filter || 'updatedAtTo' in filter) {
+		applyDateRange(query, 'updatedAt', filter.updatedAtFrom, filter.updatedAtTo);
+	}
+
+	if ('nextRunAtFrom' in filter || 'nextRunAtTo' in filter) {
+		applyDateRange(query, 'nextRunAt', filter.nextRunAtFrom, filter.nextRunAtTo);
+	}
+}
+
 function applyDateRange(
 	query: Filter<Document>,
-	field: 'createdAt' | 'updatedAt' | 'nextRunAt',
+	field: DateRangeField,
 	from?: Date,
 	to?: Date,
 ): void {
@@ -108,11 +117,7 @@ function applyDateRange(
 		return;
 	}
 
-	const existing = query[field];
-	const range =
-		existing && typeof existing === 'object' && !Array.isArray(existing)
-			? (existing as Record<string, Date>)
-			: {};
+	const range = getDateRange(query, field);
 
 	if (from) {
 		range['$gte'] = from;
@@ -123,6 +128,16 @@ function applyDateRange(
 	}
 
 	query[field] = range;
+}
+
+function getDateRange(query: Filter<Document>, field: DateRangeField): DateRangeQuery {
+	const existing = query[field];
+
+	if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+		return existing as DateRangeQuery;
+	}
+
+	return {};
 }
 
 /**
@@ -141,7 +156,7 @@ export function encodeCursor(
 	sort: JobCursorSort = DEFAULT_CURSOR_SORT,
 	sortValue?: Date,
 ): string {
-	const prefix = direction === 'forward' ? 'F' : 'B';
+	const prefix = direction === CursorDirection.FORWARD ? 'F' : 'B';
 
 	if (
 		sort.by === JobCursorSortField.IDENTIFIER &&
@@ -201,7 +216,7 @@ export function decodeCursor(cursor: string): DecodedCursor {
 		const buffer = Buffer.from(payload, 'base64url');
 		const jsonPayload = buffer.toString('utf8');
 
-		if (looksLikeJsonPayload(jsonPayload)) {
+		if (jsonPayload.startsWith('{')) {
 			return decodeStructuredCursor(jsonPayload, direction);
 		}
 
@@ -225,47 +240,55 @@ export function normalizeCursorSort(sort?: JobCursorSort): JobCursorSort {
 	return sort ?? DEFAULT_CURSOR_SORT;
 }
 
-function looksLikeJsonPayload(value: string): boolean {
-	return value.startsWith('{');
-}
-
 function decodeStructuredCursor(
 	jsonPayload: string,
 	direction: CursorDirectionType,
 ): DecodedCursor {
-	let payload: EncodedCursorPayload;
+	let payload: unknown;
 
 	try {
-		payload = JSON.parse(jsonPayload) as EncodedCursorPayload;
+		payload = JSON.parse(jsonPayload);
 	} catch {
 		throw new InvalidCursorError('Invalid cursor payload');
 	}
 
+	if (!isRecord(payload) || !isRecord(payload['sort'])) {
+		throw new InvalidCursorError('Invalid cursor payload');
+	}
+
+	const id = payload['id'];
+	const sort = payload['sort'];
+	const sortBy = sort['by'];
+	const sortDirection = sort['direction'];
+
 	if (
-		typeof payload.id !== 'string' ||
-		!ObjectId.isValid(payload.id) ||
-		payload.sort === undefined ||
-		!isValidCursorSortField(payload.sort.by) ||
-		!isValidCursorSortDirection(payload.sort.direction)
+		typeof id !== 'string' ||
+		!ObjectId.isValid(id) ||
+		!isValidCursorSortField(sortBy) ||
+		!isValidCursorSortDirection(sortDirection)
 	) {
 		throw new InvalidCursorError('Invalid cursor payload');
 	}
 
-	const sortValue = new Date(payload.sort.value);
+	const sortValue = new Date(sort['value'] as string);
 
 	if (Number.isNaN(sortValue.getTime())) {
 		throw new InvalidCursorError('Invalid cursor payload');
 	}
 
 	return {
-		id: new ObjectId(payload.id),
+		id: new ObjectId(id),
 		direction,
 		sort: {
-			by: payload.sort.by,
-			direction: payload.sort.direction,
+			by: sortBy,
+			direction: sortDirection,
 			value: sortValue,
 		},
 	};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isValidCursorSortField(value: unknown): value is JobCursorSortFieldType {

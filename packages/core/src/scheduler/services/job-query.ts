@@ -18,7 +18,13 @@ import {
 } from '@/jobs';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError, toError } from '@/shared';
 
-import { buildSelectorQuery, decodeCursor, encodeCursor, normalizeCursorSort } from '../helpers.js';
+import {
+	buildSelectorQuery,
+	type DecodedCursor,
+	decodeCursor,
+	encodeCursor,
+	normalizeCursorSort,
+} from '../helpers.js';
 import type { SchedulerContext } from './types.js';
 
 interface StatsCacheEntry {
@@ -71,6 +77,11 @@ type MongoErrorWithTimeoutCode = Error & {
 		code?: unknown;
 	};
 };
+type MongoSortDirection = 1 | -1;
+type CursorAnchor = {
+	id: ObjectId | null;
+	sortValue: Date | null;
+};
 
 function isMongoMaxTimeMSExpiredError(error: Error): boolean {
 	const mongoError = error as MongoErrorWithTimeoutCode;
@@ -84,10 +95,10 @@ function isMongoMaxTimeMSExpiredError(error: Error): boolean {
 function buildMongoSort(
 	sort: JobCursorSort,
 	direction: CursorDirectionType,
-): Record<string, 1 | -1> {
-	const baseDirection = sort.direction === JobCursorSortDirection.ASC ? 1 : -1;
+): Record<string, MongoSortDirection> {
+	const baseDirection = getMongoSortDirection(sort);
 	const effectiveDirection =
-		direction === CursorDirection.FORWARD ? baseDirection : ((baseDirection * -1) as 1 | -1);
+		direction === CursorDirection.FORWARD ? baseDirection : reverseSortDirection(baseDirection);
 
 	if (sort.by === JobCursorSortField.IDENTIFIER) {
 		return { _id: effectiveDirection };
@@ -99,6 +110,14 @@ function buildMongoSort(
 	};
 }
 
+function getMongoSortDirection(sort: JobCursorSort): MongoSortDirection {
+	return sort.direction === JobCursorSortDirection.ASC ? 1 : -1;
+}
+
+function reverseSortDirection(direction: MongoSortDirection): MongoSortDirection {
+	return direction === 1 ? -1 : 1;
+}
+
 function applyCursorConstraint(
 	query: Filter<Document>,
 	sort: JobCursorSort,
@@ -106,7 +125,7 @@ function applyCursorConstraint(
 	anchorId: ObjectId | null,
 	anchorSortValue: Date | null,
 ): void {
-	if (!anchorId) {
+	if (anchorId === null) {
 		return;
 	}
 
@@ -117,7 +136,7 @@ function applyCursorConstraint(
 		return;
 	}
 
-	if (!anchorSortValue) {
+	if (anchorSortValue === null) {
 		throw new InvalidCursorError('Cursor does not match requested sort');
 	}
 
@@ -149,11 +168,44 @@ function createPageCursor<T>(
 		return null;
 	}
 
-	if (sort.by === JobCursorSortField.IDENTIFIER) {
-		return encodeCursor(lastJob._id, direction, sort);
+	switch (sort.by) {
+		case JobCursorSortField.IDENTIFIER:
+			return encodeCursor(lastJob._id, direction, sort);
+		case JobCursorSortField.CREATED_AT:
+			return encodeCursor(lastJob._id, direction, sort, lastJob.createdAt);
+		case JobCursorSortField.UPDATED_AT:
+			return encodeCursor(lastJob._id, direction, sort, lastJob.updatedAt);
+		case JobCursorSortField.NEXT_RUN_AT:
+			return encodeCursor(lastJob._id, direction, sort, lastJob.nextRunAt);
+	}
+}
+
+function decodeCursorAnchor(cursor: string | undefined, sort: JobCursorSort): CursorAnchor {
+	if (!cursor) {
+		return { id: null, sortValue: null };
 	}
 
-	return encodeCursor(lastJob._id, direction, sort, lastJob[sort.by]);
+	const decoded = decodeCursor(cursor);
+	assertCursorMatchesSort(decoded, sort);
+
+	return {
+		id: decoded.id,
+		sortValue: decoded.sort?.value ?? null,
+	};
+}
+
+function assertCursorMatchesSort(decoded: DecodedCursor, sort: JobCursorSort): void {
+	if (decoded.sort) {
+		if (decoded.sort.by !== sort.by || decoded.sort.direction !== sort.direction) {
+			throw new InvalidCursorError('Cursor does not match requested sort');
+		}
+
+		return;
+	}
+
+	if (sort.by !== JobCursorSortField.IDENTIFIER || sort.direction !== JobCursorSortDirection.ASC) {
+		throw new InvalidCursorError('Cursor does not match requested sort');
+	}
 }
 
 /**
@@ -324,33 +376,11 @@ export class JobQueryService {
 		const limit = options.limit ?? 50;
 		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
 		const sort = normalizeCursorSort(options.sort);
-		let anchorId: ObjectId | null = null;
-		let anchorSortValue: Date | null = null;
-
-		if (options.cursor) {
-			const decoded = decodeCursor(options.cursor);
-
-			if (
-				decoded.sort &&
-				(decoded.sort.by !== sort.by || decoded.sort.direction !== sort.direction)
-			) {
-				throw new InvalidCursorError('Cursor does not match requested sort');
-			}
-
-			if (
-				decoded.sort === undefined &&
-				(sort.by !== JobCursorSortField.IDENTIFIER || sort.direction !== JobCursorSortDirection.ASC)
-			) {
-				throw new InvalidCursorError('Cursor does not match requested sort');
-			}
-
-			anchorId = decoded.id;
-			anchorSortValue = decoded.sort?.value ?? null;
-		}
+		const anchor = decodeCursorAnchor(options.cursor, sort);
 
 		const query: Filter<Document> = options.filter ? buildSelectorQuery(options.filter) : {};
 		const mongoSort = buildMongoSort(sort, direction);
-		applyCursorConstraint(query, sort, direction, anchorId, anchorSortValue);
+		applyCursorConstraint(query, sort, direction, anchor.id, anchor.sortValue);
 		const fetchLimit = limit + 1;
 
 		let docs: WithId<Document>[];
@@ -365,10 +395,9 @@ export class JobQueryService {
 			);
 		}
 
-		let hasMore = false;
-		if (docs.length > limit) {
-			hasMore = true;
-			docs.pop(); // Remove the extra item
+		const hasMore = docs.length > limit;
+		if (hasMore) {
+			docs.pop();
 		}
 
 		if (direction === CursorDirection.BACKWARD) {
@@ -385,9 +414,9 @@ export class JobQueryService {
 		// Determine availability of next/prev pages
 		if (direction === CursorDirection.FORWARD) {
 			hasNextPage = hasMore;
-			hasPreviousPage = !!anchorId;
+			hasPreviousPage = anchor.id !== null;
 		} else {
-			hasNextPage = !!anchorId;
+			hasNextPage = anchor.id !== null;
 			hasPreviousPage = hasMore;
 		}
 

@@ -1,6 +1,7 @@
 import {
 	type CursorOptions,
 	isValidJobStatus,
+	type JobCursorFilter,
 	JobCursorSortDirection,
 	JobCursorSortField,
 	type JobSelector,
@@ -9,6 +10,17 @@ import {
 import { ObjectId } from 'mongodb';
 
 import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
+
+const JOB_LIST_DATE_FILTER_KEYS = [
+	'createdAtFrom',
+	'createdAtTo',
+	'updatedAtFrom',
+	'updatedAtTo',
+	'nextRunAtFrom',
+	'nextRunAtTo',
+] as const;
+
+type JobListDateFilterKey = (typeof JOB_LIST_DATE_FILTER_KEYS)[number];
 
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
 	if (!value || !ObjectId.isValid(value)) {
@@ -31,7 +43,7 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 		return statusesResult;
 	}
 
-	const filter: CursorOptions['filter'] = {};
+	const filter: JobCursorFilter = {};
 
 	if (query.name !== undefined) {
 		filter.name = query.name;
@@ -41,12 +53,9 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 		filter.status = statusesResult.status;
 	}
 
-	applyDateFilter(filter, 'createdAtFrom', query.createdAtFrom);
-	applyDateFilter(filter, 'createdAtTo', query.createdAtTo);
-	applyDateFilter(filter, 'updatedAtFrom', query.updatedAtFrom);
-	applyDateFilter(filter, 'updatedAtTo', query.updatedAtTo);
-	applyDateFilter(filter, 'nextRunAtFrom', query.nextRunAtFrom);
-	applyDateFilter(filter, 'nextRunAtTo', query.nextRunAtTo);
+	for (const key of JOB_LIST_DATE_FILTER_KEYS) {
+		applyDateFilter(filter, key, query[key]);
+	}
 
 	const options: CursorOptions = {
 		limit: limitResult.limit,
@@ -147,14 +156,8 @@ function parseStatuses(
 }
 
 function applyDateFilter(
-	filter: NonNullable<CursorOptions['filter']>,
-	key:
-		| 'createdAtFrom'
-		| 'createdAtTo'
-		| 'updatedAtFrom'
-		| 'updatedAtTo'
-		| 'nextRunAtFrom'
-		| 'nextRunAtTo',
+	filter: JobCursorFilter,
+	key: JobListDateFilterKey,
 	value: string | undefined,
 ): void {
 	if (value === undefined) {
