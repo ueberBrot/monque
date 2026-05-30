@@ -1,6 +1,8 @@
 import {
 	type CursorOptions,
 	isValidJobStatus,
+	JobCursorSortDirection,
+	JobCursorSortField,
 	type JobSelector,
 	type JobStatusType,
 } from '@monque/core';
@@ -39,6 +41,13 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 		filter.status = statusesResult.status;
 	}
 
+	applyDateFilter(filter, 'createdAtFrom', query.createdAtFrom);
+	applyDateFilter(filter, 'createdAtTo', query.createdAtTo);
+	applyDateFilter(filter, 'updatedAtFrom', query.updatedAtFrom);
+	applyDateFilter(filter, 'updatedAtTo', query.updatedAtTo);
+	applyDateFilter(filter, 'nextRunAtFrom', query.nextRunAtFrom);
+	applyDateFilter(filter, 'nextRunAtTo', query.nextRunAtTo);
+
 	const options: CursorOptions = {
 		limit: limitResult.limit,
 	};
@@ -49,6 +58,13 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 
 	if (Object.keys(filter).length > 0) {
 		options.filter = filter;
+	}
+
+	if (query.sortBy !== undefined || query.sortDirection !== undefined) {
+		options.sort = {
+			by: query.sortBy ?? JobCursorSortField.CREATED_AT,
+			direction: query.sortDirection ?? JobCursorSortDirection.DESC,
+		};
 	}
 
 	return options;
@@ -128,4 +144,22 @@ function parseStatuses(
 	return {
 		status: statuses.length > 1 ? statuses : statuses[0],
 	};
+}
+
+function applyDateFilter(
+	filter: NonNullable<CursorOptions['filter']>,
+	key:
+		| 'createdAtFrom'
+		| 'createdAtTo'
+		| 'updatedAtFrom'
+		| 'updatedAtTo'
+		| 'nextRunAtFrom'
+		| 'nextRunAtTo',
+	value: string | undefined,
+): void {
+	if (value === undefined) {
+		return;
+	}
+
+	filter[key] = new Date(value);
 }

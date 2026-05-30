@@ -9,7 +9,7 @@ import { ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
-import { JobStatus } from '@/jobs';
+import { JobCursorSortDirection, JobCursorSortField, JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
 
@@ -235,6 +235,43 @@ describe('JobQueryService', () => {
 
 			expect(page.jobs).toHaveLength(10); // Should trim to limit
 			expect(page.hasNextPage).toBe(true);
+		});
+
+		it('should sort by whitelisted field with identifier tie-breaker', async () => {
+			const jobs = JobFactory.buildList(2, {
+				updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+			});
+
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce(jobs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobsWithCursor({
+				limit: 10,
+				sort: {
+					by: JobCursorSortField.UPDATED_AT,
+					direction: JobCursorSortDirection.DESC,
+				},
+				filter: {
+					updatedAtFrom: new Date('2026-01-01T00:00:00.000Z'),
+				},
+			});
+
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
+				updatedAt: {
+					$gte: new Date('2026-01-01T00:00:00.000Z'),
+				},
+			});
+			expect(mockCursor.sort).toHaveBeenCalledWith({
+				updatedAt: -1,
+				_id: -1,
+			});
 		});
 
 		it('should throw ConnectionError when database operation fails', async () => {

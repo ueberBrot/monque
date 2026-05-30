@@ -345,6 +345,9 @@ export class Monque extends EventEmitter {
 	 * - `{status, nextRunAt}` - For efficient job polling queries
 	 * - `{name, uniqueKey}` - Partial unique index for deduplication (pending/processing only)
 	 * - `{name, status}` - For job lookup by type
+	 * - `{createdAt, _id}` - For dashboard browsing sorted by creation time
+	 * - `{updatedAt, _id}` - For dashboard browsing sorted by update time
+	 * - `{nextRunAt, _id}` - For dashboard browsing sorted by next run time
 	 * - `{claimedBy, status}` - For finding jobs owned by a specific scheduler instance
 	 * - `{lastHeartbeat, status}` - For monitoring/debugging queries (e.g., inspecting heartbeat age)
 	 * - `{name, status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs per worker)
@@ -371,6 +374,10 @@ export class Monque extends EventEmitter {
 			},
 			// Index for job lookup by name
 			{ key: { name: 1, status: 1 }, background: true },
+			// Dashboard-grade listing indexes with a stable identifier tie-breaker.
+			{ key: { createdAt: -1, _id: -1 }, background: true },
+			{ key: { updatedAt: -1, _id: -1 }, background: true },
+			{ key: { nextRunAt: -1, _id: -1 }, background: true },
 			// Compound index for finding jobs claimed by a specific scheduler instance.
 			// Used for heartbeat updates and cleanup on shutdown.
 			{ key: { claimedBy: 1, status: 1 }, background: true },
