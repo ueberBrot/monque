@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.10.0
+
+### Minor Changes
+
+- [#474](https://github.com/ueberBrot/monque/pull/474) [`aa09f65`](https://github.com/ueberBrot/monque/commit/aa09f652efc4feb5b692c71d8f072d3aa60e5a0e) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Add dashboard-grade job listing and queue view APIs.
+
 ## 1.9.0
 
 ### Minor Changes
