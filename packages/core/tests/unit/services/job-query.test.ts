@@ -629,12 +629,9 @@ describe('JobQueryService', () => {
 
 	describe('getQueueViewSummaries', () => {
 		it('should expose readonly Queue View snapshots in the public contract', () => {
-			expectTypeOf<Pick<QueueViewSummary, 'stats'>>().toEqualTypeOf<
-				Readonly<Pick<QueueViewSummary, 'stats'>>
-			>();
-			expectTypeOf<Pick<QueueViewSummary, 'worker'>>().toEqualTypeOf<
-				Readonly<Pick<QueueViewSummary, 'worker'>>
-			>();
+			type QueueViewNestedSnapshots = Pick<QueueViewSummary, 'stats' | 'worker'>;
+
+			expectTypeOf<QueueViewNestedSnapshots>().toEqualTypeOf<Readonly<QueueViewNestedSnapshots>>();
 			expectTypeOf<QueueViewSummary['stats']>().toEqualTypeOf<Readonly<QueueStats>>();
 			expectTypeOf<
 				QueueViewSummary['worker']
