@@ -39,6 +39,7 @@ export {
 	JobStatusDtoSchema,
 } from './job.js';
 export {
+	type JobStatsQueryDto,
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,

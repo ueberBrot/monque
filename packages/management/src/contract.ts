@@ -1,11 +1,18 @@
 export {
-	createManagementRouter,
-	generateManagementOpenApiDocument,
 	type ManagementContract,
-	type ManagementRouter,
 	managementContract,
-} from './orpc/index.js';
+} from './orpc/contract.js';
 export type {
+	BulkActionErrorDto,
+	BulkActionResultDto,
+	CapabilitiesDto,
+	CapabilityActionsDto,
+	DeleteJobDto,
+	JobCursorPageDto,
+	JobDetailInputDto,
+	JobDetailParamsDto,
+	JobDto,
+	JobListQueryDto,
 	JobListSortByDto,
 	JobListSortDirectionDto,
 	JobSelectorDto,
@@ -45,25 +52,3 @@ export {
 	RescheduleJobRequestDtoSchema,
 	SchedulerHealthDtoSchema,
 } from './schemas/index.js';
-export type {
-	BulkActionErrorDto,
-	BulkActionResultDto,
-	CapabilitiesDto,
-	CapabilityActionsDto,
-	DeleteJobDto,
-	JobCursorPageDto,
-	JobDetailInputDto,
-	JobDetailParamsDto,
-	JobDto,
-	JobListQueryDto,
-	ManagementAction,
-	ManagementAuthorizationInput,
-	ManagementAuthorize,
-	ManagementMonque,
-	ManagementOpenApiContext,
-	ManagementOptions,
-	ManagementPayloadSerializationInput,
-	ManagementPayloadSerializer,
-	ManagementSurface,
-} from './surface/index.js';
-export { createManagementSurface } from './surface/index.js';
