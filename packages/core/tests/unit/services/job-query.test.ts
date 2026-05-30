@@ -9,9 +9,15 @@ import { ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
+import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
 import { JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
+
+type Expect<T extends true> = T;
+type Equal<T, U> =
+	(<V>() => V extends T ? 1 : 2) extends <V>() => V extends U ? 1 : 2 ? true : false;
+type IsReadonlyProperty<T, TKey extends keyof T> = Equal<Pick<T, TKey>, Readonly<Pick<T, TKey>>>;
 
 describe('JobQueryService', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -590,6 +596,47 @@ describe('JobQueryService', () => {
 	});
 
 	describe('getQueueViewSummaries', () => {
+		it('should expose readonly Queue View snapshots in the public contract', () => {
+			const summary: QueueViewSummary = {
+				name: 'email-send',
+				hasPersistedJobs: true,
+				hasRegisteredWorker: true,
+				stats: {
+					pending: 1,
+					processing: 0,
+					completed: 0,
+					failed: 0,
+					cancelled: 0,
+					total: 1,
+				},
+				worker: {
+					concurrency: 3,
+					activeCount: 1,
+				},
+			};
+			const replacementStats: Readonly<QueueStats> = {
+				pending: 2,
+				processing: 0,
+				completed: 0,
+				failed: 0,
+				cancelled: 0,
+				total: 2,
+			};
+			const replacementWorker: Readonly<QueueViewWorkerSummary> = {
+				concurrency: 5,
+				activeCount: 0,
+			};
+			const statsPropertyIsReadonly: Expect<IsReadonlyProperty<QueueViewSummary, 'stats'>> = true;
+			const workerPropertyIsReadonly: Expect<IsReadonlyProperty<QueueViewSummary, 'worker'>> = true;
+
+			expect(summary.stats.total).toBe(1);
+			expect(summary.worker?.concurrency).toBe(3);
+			expect(statsPropertyIsReadonly).toBe(true);
+			expect(workerPropertyIsReadonly).toBe(true);
+			expect(replacementStats.total).toBe(2);
+			expect(replacementWorker.concurrency).toBe(5);
+		});
+
 		it('should return persisted job names sorted by name with statistics', async () => {
 			const mockAggregateCursor = {
 				toArray: vi.fn().mockResolvedValueOnce([
@@ -678,6 +725,21 @@ describe('JobQueryService', () => {
 					},
 				},
 			]);
+		});
+
+		it('should return an empty immutable list when no jobs or workers exist', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toEqual([]);
+			expect(Object.isFrozen(summaries)).toBe(true);
 		});
 
 		it('should include historical-only job names with completed duration averages', async () => {
