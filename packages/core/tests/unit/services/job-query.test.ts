@@ -6,18 +6,13 @@
  */
 
 import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
 import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
 import { JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
-
-type Expect<T extends true> = T;
-type Equal<T, U> =
-	(<V>() => V extends T ? 1 : 2) extends <V>() => V extends U ? 1 : 2 ? true : false;
-type IsReadonlyProperty<T, TKey extends keyof T> = Equal<Pick<T, TKey>, Readonly<Pick<T, TKey>>>;
 
 describe('JobQueryService', () => {
 	let ctx: ReturnType<typeof createMockContext>;
@@ -597,44 +592,16 @@ describe('JobQueryService', () => {
 
 	describe('getQueueViewSummaries', () => {
 		it('should expose readonly Queue View snapshots in the public contract', () => {
-			const summary: QueueViewSummary = {
-				name: 'email-send',
-				hasPersistedJobs: true,
-				hasRegisteredWorker: true,
-				stats: {
-					pending: 1,
-					processing: 0,
-					completed: 0,
-					failed: 0,
-					cancelled: 0,
-					total: 1,
-				},
-				worker: {
-					concurrency: 3,
-					activeCount: 1,
-				},
-			};
-			const replacementStats: Readonly<QueueStats> = {
-				pending: 2,
-				processing: 0,
-				completed: 0,
-				failed: 0,
-				cancelled: 0,
-				total: 2,
-			};
-			const replacementWorker: Readonly<QueueViewWorkerSummary> = {
-				concurrency: 5,
-				activeCount: 0,
-			};
-			const statsPropertyIsReadonly: Expect<IsReadonlyProperty<QueueViewSummary, 'stats'>> = true;
-			const workerPropertyIsReadonly: Expect<IsReadonlyProperty<QueueViewSummary, 'worker'>> = true;
-
-			expect(summary.stats.total).toBe(1);
-			expect(summary.worker?.concurrency).toBe(3);
-			expect(statsPropertyIsReadonly).toBe(true);
-			expect(workerPropertyIsReadonly).toBe(true);
-			expect(replacementStats.total).toBe(2);
-			expect(replacementWorker.concurrency).toBe(5);
+			expectTypeOf<Pick<QueueViewSummary, 'stats'>>().toEqualTypeOf<
+				Readonly<Pick<QueueViewSummary, 'stats'>>
+			>();
+			expectTypeOf<Pick<QueueViewSummary, 'worker'>>().toEqualTypeOf<
+				Readonly<Pick<QueueViewSummary, 'worker'>>
+			>();
+			expectTypeOf<QueueViewSummary['stats']>().toEqualTypeOf<Readonly<QueueStats>>();
+			expectTypeOf<
+				QueueViewSummary['worker']
+			>().toEqualTypeOf<Readonly<QueueViewWorkerSummary> | null>();
 		});
 
 		it('should return persisted job names sorted by name with statistics', async () => {
