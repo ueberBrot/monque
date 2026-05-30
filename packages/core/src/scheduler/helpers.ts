@@ -143,14 +143,19 @@ function getDateRange(query: Filter<Document>, field: DateRangeField): DateRange
 }
 
 /**
- * Encode an ObjectId and direction into an opaque cursor string.
+ * Encode cursor anchor metadata into an opaque cursor string.
  *
- * Format: `prefix` + `base64url(objectId)`
- * Prefix: 'F' (forward) or 'B' (backward)
+ * Structured cursors use `prefix` + `base64url(JSON)` where `prefix` is `F`
+ * for forward cursors or `B` for backward cursors. The JSON payload contains
+ * the anchor job `id`, `sort.by`, `sort.direction`, and `sort.value` metadata.
+ * Default identifier/ascending cursors without an explicit sort value keep the
+ * compact legacy ObjectId payload for backwards compatibility.
  *
  * @param id - The job ID to use as the cursor anchor (exclusive)
- * @param direction - 'forward' or 'backward'
- * @returns Base64url-encoded cursor string
+ * @param direction - Cursor traversal direction
+ * @param sort - Sort metadata for the cursor anchor; defaults to DEFAULT_CURSOR_SORT
+ * @param sortValue - Optional Date sort field value for non-identifier cursor anchors
+ * @returns Opaque base64url-encoded cursor string
  */
 export function encodeCursor(
 	id: ObjectId,
@@ -188,13 +193,14 @@ export function encodeCursor(
 }
 
 /**
- * Decode an opaque cursor string into an ObjectId and direction.
+ * Decode an opaque cursor string into cursor anchor metadata.
  *
- * Validates format and returns the components.
+ * Accepts structured JSON cursors with `id`, `sort.by`, `sort.direction`, and
+ * `sort.value` metadata, plus compact legacy ObjectId cursors.
  *
  * @param cursor - The opaque cursor string
- * @returns The decoded ID and direction
- * @throws {InvalidCursorError} If the cursor format is invalid or ID is malformed
+ * @returns The decoded ID, direction, and optional sort metadata with Date sort value
+ * @throws {InvalidCursorError} If the cursor format, ID, or sort metadata is invalid
  */
 export function decodeCursor(cursor: string): DecodedCursor {
 	if (!cursor || cursor.length < 2) {

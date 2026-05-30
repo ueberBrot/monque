@@ -87,6 +87,55 @@ describe('cursor pagination helpers', () => {
 
 			expect(() => decodeCursor(cursor)).toThrow(InvalidCursorError);
 		});
+
+		it.each([
+			{
+				name: 'bad sort.by value',
+				mutate: (payload: StructuredCursorPayload) => {
+					payload.sort.by = 'finishedAt';
+				},
+			},
+			{
+				name: 'bad sort.direction value',
+				mutate: (payload: StructuredCursorPayload) => {
+					payload.sort.direction = 'sideways';
+				},
+			},
+			{
+				name: 'non-Date sort.value',
+				mutate: (payload: StructuredCursorPayload) => {
+					payload.sort.value = 'not-a-date';
+				},
+			},
+			{
+				name: 'non-object sort',
+				mutate: (payload: StructuredCursorPayload) => {
+					Object.assign(payload, { sort: 'updatedAt' });
+				},
+			},
+		])('should throw InvalidCursorError through decodeStructuredCursor with $name', ({
+			mutate,
+		}) => {
+			const cursor = encodeStructuredCursor();
+			const prefix = cursor.charAt(0);
+			const payload = JSON.parse(
+				Buffer.from(cursor.slice(1), 'base64url').toString('utf8'),
+			) as StructuredCursorPayload;
+
+			mutate(payload);
+
+			const tamperedCursor = `${prefix}${Buffer.from(JSON.stringify(payload), 'utf8').toString(
+				'base64url',
+			)}`;
+
+			expect(() => decodeCursor(tamperedCursor)).toThrow(InvalidCursorError);
+		});
+
+		it('should throw InvalidCursorError for structured cursor with malformed JSON', () => {
+			const cursor = `F${Buffer.from('{', 'utf8').toString('base64url')}`;
+
+			expect(() => decodeCursor(cursor)).toThrow(InvalidCursorError);
+		});
 	});
 
 	describe('round trip', () => {
@@ -123,3 +172,24 @@ describe('cursor pagination helpers', () => {
 		});
 	});
 });
+
+type StructuredCursorPayload = {
+	id: string;
+	sort: {
+		by: unknown;
+		direction: unknown;
+		value: unknown;
+	};
+};
+
+function encodeStructuredCursor(): string {
+	return encodeCursor(
+		new ObjectId('507f1f77bcf86cd799439011'),
+		CursorDirection.FORWARD,
+		{
+			by: JobCursorSortField.UPDATED_AT,
+			direction: JobCursorSortDirection.DESC,
+		},
+		new Date('2026-02-01T12:00:00.000Z'),
+	);
+}

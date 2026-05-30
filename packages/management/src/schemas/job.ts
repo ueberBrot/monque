@@ -54,12 +54,16 @@ export const JobCursorPageDtoSchema = z
 /** Cursor-paginated job list response. */
 export type JobCursorPageDto = z.infer<typeof JobCursorPageDtoSchema>;
 
+/** Sort fields accepted by job list endpoints: identifier, createdAt, updatedAt, or nextRunAt. */
 export const JobListSortByDtoSchema = z.enum(['identifier', 'createdAt', 'updatedAt', 'nextRunAt']);
 
+/** Sort field accepted by job list endpoints. */
 export type JobListSortByDto = z.infer<typeof JobListSortByDtoSchema>;
 
+/** Sort directions accepted by job list endpoints: ascending or descending. */
 export const JobListSortDirectionDtoSchema = z.enum(['asc', 'desc']);
 
+/** Sort direction accepted by job list endpoints. */
 export type JobListSortDirectionDto = z.infer<typeof JobListSortDirectionDtoSchema>;
 
 /** Query parameters accepted by `GET /api/v1/jobs`. */
