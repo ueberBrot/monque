@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 
-import { CursorDirection } from '@/jobs';
+import { CursorDirection, JobCursorSortDirection, JobCursorSortField } from '@/jobs';
 import { decodeCursor, encodeCursor } from '@/scheduler/helpers.js';
 import { InvalidCursorError } from '@/shared';
 
@@ -87,6 +87,29 @@ describe('cursor pagination helpers', () => {
 
 			expect(decoded.id.toString()).toBe(originalId.toString());
 			expect(decoded.direction).toBe(CursorDirection.FORWARD);
+		});
+
+		it('should preserve sort metadata for Dashboard-grade cursors', () => {
+			const originalId = new ObjectId('507f1f77bcf86cd799439011');
+			const sortValue = new Date('2026-02-01T12:00:00.000Z');
+			const encoded = encodeCursor(
+				originalId,
+				CursorDirection.FORWARD,
+				{
+					by: JobCursorSortField.UPDATED_AT,
+					direction: JobCursorSortDirection.DESC,
+				},
+				sortValue,
+			);
+			const decoded = decodeCursor(encoded);
+
+			expect(decoded.id.toString()).toBe(originalId.toString());
+			expect(decoded.direction).toBe(CursorDirection.FORWARD);
+			expect(decoded.sort).toEqual({
+				by: JobCursorSortField.UPDATED_AT,
+				direction: JobCursorSortDirection.DESC,
+				value: sortValue,
+			});
 		});
 	});
 });

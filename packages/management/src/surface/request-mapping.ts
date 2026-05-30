@@ -1,12 +1,26 @@
 import {
 	type CursorOptions,
 	isValidJobStatus,
+	type JobCursorFilter,
+	JobCursorSortDirection,
+	JobCursorSortField,
 	type JobSelector,
 	type JobStatusType,
 } from '@monque/core';
 import { ObjectId } from 'mongodb';
 
 import type { JobListQueryDto, JobSelectorDto } from '../schemas/index.js';
+
+const JOB_LIST_DATE_FILTER_KEYS = [
+	'createdAtFrom',
+	'createdAtTo',
+	'updatedAtFrom',
+	'updatedAtTo',
+	'nextRunAtFrom',
+	'nextRunAtTo',
+] as const;
+
+type JobListDateFilterKey = (typeof JOB_LIST_DATE_FILTER_KEYS)[number];
 
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
 	if (!value || !ObjectId.isValid(value)) {
@@ -29,7 +43,7 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 		return statusesResult;
 	}
 
-	const filter: CursorOptions['filter'] = {};
+	const filter: JobCursorFilter = {};
 
 	if (query.name !== undefined) {
 		filter.name = query.name;
@@ -37,6 +51,10 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 
 	if (statusesResult.status !== undefined) {
 		filter.status = statusesResult.status;
+	}
+
+	for (const key of JOB_LIST_DATE_FILTER_KEYS) {
+		applyDateFilter(filter, key, query[key]);
 	}
 
 	const options: CursorOptions = {
@@ -49,6 +67,13 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 
 	if (Object.keys(filter).length > 0) {
 		options.filter = filter;
+	}
+
+	if (query.sortBy !== undefined || query.sortDirection !== undefined) {
+		options.sort = {
+			by: query.sortBy ?? JobCursorSortField.CREATED_AT,
+			direction: query.sortDirection ?? JobCursorSortDirection.DESC,
+		};
 	}
 
 	return options;
@@ -128,4 +153,16 @@ function parseStatuses(
 	return {
 		status: statuses.length > 1 ? statuses : statuses[0],
 	};
+}
+
+function applyDateFilter(
+	filter: JobCursorFilter,
+	key: JobListDateFilterKey,
+	value: string | undefined,
+): void {
+	if (value === undefined) {
+		return;
+	}
+
+	filter[key] = new Date(value);
 }

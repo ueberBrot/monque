@@ -4,11 +4,11 @@ import {
 	stopMonqueInstances,
 	uniqueCollectionName,
 } from '@test-utils/test-utils';
-import type { Db } from 'mongodb';
+import { type Db, ObjectId } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 
 import { JobFactory } from '@tests/factories';
-import { CursorDirection, JobStatus } from '@/jobs';
+import { CursorDirection, JobCursorSortDirection, JobCursorSortField, JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
 import { InvalidCursorError } from '@/shared';
 
@@ -216,6 +216,77 @@ describe('Management APIs: Cursor Pagination', () => {
 
 			expect(result.jobs).toHaveLength(100);
 			expect(duration).toBeLessThan(500); // Should be very fast (usually < 50ms)
+		});
+
+		test('keeps cursor pagination stable for duplicate primary sort values', async () => {
+			const collectionName = uniqueCollectionName('pagination_stable_sort');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+
+			const jobs = [
+				JobFactory.build({
+					_id: new ObjectId('000000000000000000000001'),
+					name: queueName,
+					updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+				}),
+				JobFactory.build({
+					_id: new ObjectId('000000000000000000000002'),
+					name: queueName,
+					updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+				}),
+				JobFactory.build({
+					_id: new ObjectId('000000000000000000000003'),
+					name: queueName,
+					updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+				}),
+				JobFactory.build({
+					_id: new ObjectId('000000000000000000000004'),
+					name: queueName,
+					updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+				}),
+			].map((job) => {
+				const { _id, ...rest } = job;
+
+				return {
+					_id,
+					...rest,
+				};
+			});
+
+			await db.collection(collectionName).insertMany(jobs);
+
+			const page1 = await monque.getJobsWithCursor({
+				limit: 2,
+				sort: {
+					by: JobCursorSortField.UPDATED_AT,
+					direction: JobCursorSortDirection.DESC,
+				},
+			});
+
+			expect(page1.jobs.map((job) => job._id.toHexString())).toEqual([
+				'000000000000000000000004',
+				'000000000000000000000003',
+			]);
+			expect(page1.cursor).not.toBeNull();
+
+			if (!page1.cursor) {
+				throw new Error('Cursor should not be null');
+			}
+
+			const page2 = await monque.getJobsWithCursor({
+				limit: 2,
+				cursor: page1.cursor,
+				sort: {
+					by: JobCursorSortField.UPDATED_AT,
+					direction: JobCursorSortDirection.DESC,
+				},
+			});
+
+			expect(page2.jobs.map((job) => job._id.toHexString())).toEqual([
+				'000000000000000000000002',
+				'000000000000000000000001',
+			]);
 		});
 	});
 });
