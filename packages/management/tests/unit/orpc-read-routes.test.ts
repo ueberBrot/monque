@@ -67,6 +67,10 @@ describe('oRPC Management read routes', () => {
 				name: 'send-email',
 				status: ['pending', 'failed'],
 			},
+			sort: {
+				by: 'createdAt',
+				direction: 'desc',
+			},
 		});
 		expect(serializedPayloads).toEqual([{ to: 'person@example.test', token: 'secret' }]);
 		await expectJsonResponse(response, 200, {
@@ -201,6 +205,10 @@ describe('oRPC Management read routes', () => {
 			filter: {
 				name: 'send-email',
 			},
+			sort: {
+				by: 'createdAt',
+				direction: 'desc',
+			},
 		});
 		await expectJsonResponse(response, 200, {
 			jobs: [
@@ -260,6 +268,10 @@ describe('oRPC Management read routes', () => {
 			limit: 50,
 			filter: {
 				status: 'failed',
+			},
+			sort: {
+				by: 'createdAt',
+				direction: 'desc',
 			},
 		});
 	});

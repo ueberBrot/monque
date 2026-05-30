@@ -41,6 +41,10 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
 
 	const options: CursorOptions = {
 		limit: limitResult.limit,
+		sort: {
+			by: query.sortBy ?? JobCursorSortField.CREATED_AT,
+			direction: query.sortDirection ?? JobCursorSortDirection.DESC,
+		},
 	};
 
 	if (query.cursor !== undefined) {
