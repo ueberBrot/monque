@@ -5,6 +5,7 @@
     "": {
       "name": "monque",
       "devDependencies": {
+        "@ai-hero/sandcastle": "^0.6.6",
         "@arethetypeswrong/cli": "^0.18.2",
         "@biomejs/biome": "^2.4.14",
         "@changesets/changelog-github": "^0.6.0",
@@ -17,11 +18,12 @@
         "turbo": "^2.9.8",
         "typescript": "^6.0.3",
         "unplugin-unused": "^0.5.7",
+        "zod": "^4.4.3",
       },
     },
     "apps/docs": {
       "name": "@monque/docs",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "dependencies": {
         "@astrojs/starlight": "^0.38.4",
         "@fontsource/quicksand": "^5.2.10",
@@ -63,7 +65,7 @@
     },
     "packages/management": {
       "name": "@monque/management",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@orpc/contract": "^1.14.2",
         "@orpc/openapi": "^1.14.2",
@@ -87,7 +89,7 @@
     },
     "packages/management-express": {
       "name": "@monque/management-express",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@monque/management": "workspace:*",
@@ -144,6 +146,8 @@
     "mongodb": "^7.2.0",
   },
   "packages": {
+    "@ai-hero/sandcastle": ["@ai-hero/sandcastle@0.6.6", "", { "dependencies": { "@clack/prompts": "^1.1.0" }, "peerDependencies": { "@daytona/sdk": "^0.164.0", "@vercel/sandbox": ">=1.0.0" }, "optionalPeers": ["@daytona/sdk", "@vercel/sandbox"], "bin": { "sandcastle": "dist/main.js" } }, "sha512-LeyODPZocHZQdIidNXPRIxzs2Hn7tPyl5GfBGakKV1zH2CIpbc7XGApQhSXpOW7r2zO8m3mqiBKdSd7ifaqWcw=="],
+
     "@andrewbranch/untar.js": ["@andrewbranch/untar.js@1.0.3", "", {}, "sha512-Jh15/qVmrLGhkKJBdXlK1+9tY4lZruYjsgkDFj08ZmDiWVBLJcqkok7Z0/R0In+i1rScBpJlSvrTS2Lm41Pbnw=="],
 
     "@antfu/install-pkg": ["@antfu/install-pkg@1.1.0", "", { "dependencies": { "package-manager-detector": "^1.3.0", "tinyexec": "^1.0.1" } }, "sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ=="],
