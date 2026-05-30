@@ -38,6 +38,17 @@ WORKDIR /home/agent
 RUN curl -fsSL https://bun.sh/install | bash \
   && bun install -g @openai/codex
 
+USER root
+
+# Codex executes tool commands through login shells, which may reset PATH.
+# Put Bun on a system PATH entry as well as the user-local install path.
+RUN ln -sf /home/agent/.bun/bin/bun /usr/local/bin/bun \
+  && ln -sf /home/agent/.bun/bin/bunx /usr/local/bin/bunx \
+  && ln -sf /home/agent/.bun/bin/codex /usr/local/bin/codex \
+  && printf 'export BUN_INSTALL=/home/agent/.bun\nexport PATH=/home/agent/.bun/bin:$PATH\n' > /etc/profile.d/bun.sh
+
+USER ${AGENT_UID}:${AGENT_GID}
+
 # In worktree sandbox mode, Sandcastle bind-mounts the git worktree at /home/agent/workspace
 # and overrides the working directory to /home/agent/workspace at container start.
 # Structure your Dockerfile so that /home/agent/workspace can serve as the project root.
