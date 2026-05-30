@@ -231,6 +231,23 @@ export const CursorDirection = {
 
 export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
 
+export const JobCursorSortField = {
+	IDENTIFIER: 'identifier',
+	CREATED_AT: 'createdAt',
+	UPDATED_AT: 'updatedAt',
+	NEXT_RUN_AT: 'nextRunAt',
+} as const;
+
+export type JobCursorSortFieldType = (typeof JobCursorSortField)[keyof typeof JobCursorSortField];
+
+export const JobCursorSortDirection = {
+	ASC: 'asc',
+	DESC: 'desc',
+} as const;
+
+export type JobCursorSortDirectionType =
+	(typeof JobCursorSortDirection)[keyof typeof JobCursorSortDirection];
+
 /**
  * Selector options for bulk operations.
  *
@@ -252,6 +269,22 @@ export interface JobSelector {
 	newerThan?: Date;
 }
 
+export interface JobCursorFilter {
+	name?: string;
+	status?: JobStatusType | JobStatusType[];
+	createdAtFrom?: Date;
+	createdAtTo?: Date;
+	updatedAtFrom?: Date;
+	updatedAtTo?: Date;
+	nextRunAtFrom?: Date;
+	nextRunAtTo?: Date;
+}
+
+export interface JobCursorSort {
+	by: JobCursorSortFieldType;
+	direction: JobCursorSortDirectionType;
+}
+
 /**
  * Options for cursor-based pagination.
  *
@@ -268,7 +301,8 @@ export interface CursorOptions {
 	cursor?: string;
 	limit?: number;
 	direction?: CursorDirectionType;
-	filter?: Pick<GetJobsFilter, 'name' | 'status'>;
+	filter?: JobCursorFilter;
+	sort?: JobCursorSort;
 }
 
 /**
@@ -347,10 +381,10 @@ export interface QueueViewSummary {
 	readonly hasRegisteredWorker: boolean;
 
 	/** Aggregated persisted Job statistics for this Job Name */
-	stats: Readonly<QueueStats>;
+	readonly stats: Readonly<QueueStats>;
 
 	/** Local Worker observability, or null when no local Worker is registered */
-	worker: Readonly<QueueViewWorkerSummary> | null;
+	readonly worker: Readonly<QueueViewWorkerSummary> | null;
 }
 
 /**

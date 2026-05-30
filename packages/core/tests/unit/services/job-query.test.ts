@@ -6,10 +6,11 @@
  */
 
 import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
-import { JobStatus } from '@/jobs';
+import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
+import { JobCursorSortDirection, JobCursorSortField, JobStatus } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
 
@@ -235,6 +236,43 @@ describe('JobQueryService', () => {
 
 			expect(page.jobs).toHaveLength(10); // Should trim to limit
 			expect(page.hasNextPage).toBe(true);
+		});
+
+		it('should sort by whitelisted field with identifier tie-breaker', async () => {
+			const jobs = JobFactory.buildList(2, {
+				updatedAt: new Date('2026-02-01T00:00:00.000Z'),
+			});
+
+			const mockCursor = {
+				sort: vi.fn().mockReturnThis(),
+				limit: vi.fn().mockReturnThis(),
+				toArray: vi.fn().mockResolvedValueOnce(jobs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			await queryService.getJobsWithCursor({
+				limit: 10,
+				sort: {
+					by: JobCursorSortField.UPDATED_AT,
+					direction: JobCursorSortDirection.DESC,
+				},
+				filter: {
+					updatedAtFrom: new Date('2026-01-01T00:00:00.000Z'),
+				},
+			});
+
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
+				updatedAt: {
+					$gte: new Date('2026-01-01T00:00:00.000Z'),
+				},
+			});
+			expect(mockCursor.sort).toHaveBeenCalledWith({
+				updatedAt: -1,
+				_id: -1,
+			});
 		});
 
 		it('should throw ConnectionError when database operation fails', async () => {
@@ -590,6 +628,16 @@ describe('JobQueryService', () => {
 	});
 
 	describe('getQueueViewSummaries', () => {
+		it('should expose readonly Queue View snapshots in the public contract', () => {
+			type QueueViewNestedSnapshots = Pick<QueueViewSummary, 'stats' | 'worker'>;
+
+			expectTypeOf<QueueViewNestedSnapshots>().toEqualTypeOf<Readonly<QueueViewNestedSnapshots>>();
+			expectTypeOf<QueueViewSummary['stats']>().toEqualTypeOf<Readonly<QueueStats>>();
+			expectTypeOf<
+				QueueViewSummary['worker']
+			>().toEqualTypeOf<Readonly<QueueViewWorkerSummary> | null>();
+		});
+
 		it('should return persisted job names sorted by name with statistics', async () => {
 			const mockAggregateCursor = {
 				toArray: vi.fn().mockResolvedValueOnce([
@@ -678,6 +726,21 @@ describe('JobQueryService', () => {
 					},
 				},
 			]);
+		});
+
+		it('should return an empty immutable list when no jobs or workers exist', async () => {
+			const mockAggregateCursor = {
+				toArray: vi.fn().mockResolvedValueOnce([]),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
+				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+			);
+
+			const summaries = await queryService.getQueueViewSummaries();
+
+			expect(summaries).toEqual([]);
+			expect(Object.isFrozen(summaries)).toBe(true);
 		});
 
 		it('should include historical-only job names with completed duration averages', async () => {

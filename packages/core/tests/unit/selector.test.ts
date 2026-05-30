@@ -67,5 +67,32 @@ describe('selector query builder', () => {
 				$lt: end,
 			});
 		});
+
+		it('should include Dashboard-grade date ranges', () => {
+			const createdAtFrom = new Date('2023-01-01T00:00:00.000Z');
+			const createdAtTo = new Date('2023-01-31T00:00:00.000Z');
+			const updatedAtFrom = new Date('2023-02-01T00:00:00.000Z');
+			const nextRunAtTo = new Date('2023-03-01T00:00:00.000Z');
+
+			const query = buildSelectorQuery({
+				createdAtFrom,
+				createdAtTo,
+				updatedAtFrom,
+				nextRunAtTo,
+			});
+
+			expect(query).toEqual({
+				createdAt: {
+					$gte: createdAtFrom,
+					$lte: createdAtTo,
+				},
+				updatedAt: {
+					$gte: updatedAtFrom,
+				},
+				nextRunAt: {
+					$lte: nextRunAtTo,
+				},
+			});
+		});
 	});
 });

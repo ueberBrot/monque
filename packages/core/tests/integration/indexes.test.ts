@@ -60,6 +60,9 @@ describe('Index creation', () => {
 			expect(indexKeys).toContain('status,nextRunAt');
 			expect(indexKeys).toContain('name,uniqueKey');
 			expect(indexKeys).toContain('name,status');
+			expect(indexKeys).toContain('createdAt,_id');
+			expect(indexKeys).toContain('updatedAt,_id');
+			expect(indexKeys).toContain('nextRunAt,_id');
 
 			// Atomic claim indexes
 			expect(indexKeys).toContain('claimedBy,status');
