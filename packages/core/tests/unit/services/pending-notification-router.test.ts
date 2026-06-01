@@ -81,6 +81,15 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledWith(undefined);
 	});
 
+	it('routes immediate pending notifications without a Job Name as a full poll', () => {
+		router.notifyPendingJob(undefined, new Date(Date.now() - 1000));
+
+		vi.advanceTimersByTime(150);
+
+		expect(onPoll).toHaveBeenCalledOnce();
+		expect(onPoll).toHaveBeenCalledWith(undefined);
+	});
+
 	it('allows close to be called repeatedly without polling', () => {
 		router.notifyPendingJob('email', new Date(Date.now() - 1000));
 		router.notifyPendingJob('late', new Date(Date.now() + 1000));

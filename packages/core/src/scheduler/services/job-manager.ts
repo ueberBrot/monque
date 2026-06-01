@@ -1,8 +1,8 @@
-import { ObjectId } from 'mongodb';
+import { type Document, ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
 import { buildSelectorQuery } from '@/scheduler';
-import { ConnectionError, MonqueError } from '@/shared';
+import { ConnectionError, MonqueError, toError } from '@/shared';
 
 import { JobStateTransitions } from './job-state-transitions.js';
 import {
@@ -10,6 +10,11 @@ import {
 	type RetryableJobStatusType,
 	type SchedulerContext,
 } from './types.js';
+
+type PendingNotificationDocument = Document & {
+	name?: unknown;
+	nextRunAt?: unknown;
+};
 
 /**
  * Internal service for job lifecycle management operations.
@@ -302,6 +307,10 @@ export class JobManager {
 
 			if (count > 0) {
 				this.ctx.emit('jobs:retried', { count });
+				await this.notifyRetriedPendingJobs(filter, now).catch((error: unknown) => {
+					this.ctx.emit('job:error', { error: toError(error) });
+					this.ctx.notifyPendingJob(filter.name, now);
+				});
 			}
 
 			return { count, errors: [] };
@@ -314,6 +323,32 @@ export class JobManager {
 				`Failed to retry jobs: ${message}`,
 				error instanceof Error ? { cause: error } : undefined,
 			);
+		}
+	}
+
+	/**
+	 * Emits local Pending Notifications for Jobs moved back to pending by bulk retry.
+	 *
+	 * The bulk update uses MongoDB-side staggered `nextRunAt` values, so this reads back the
+	 * changed Jobs by their shared `updatedAt` timestamp to preserve precise wakeup times.
+	 */
+	private async notifyRetriedPendingJobs(filter: JobSelector, updatedAt: Date): Promise<void> {
+		const query = buildRetryNotificationQuery(filter, updatedAt);
+		const cursor = this.ctx.collection.find<PendingNotificationDocument>(query, {
+			projection: { name: 1, nextRunAt: 1 },
+		});
+		const jobs = await cursor.toArray();
+
+		if (jobs.length === 0) {
+			this.ctx.notifyPendingJob(filter.name, updatedAt);
+			return;
+		}
+
+		for (const job of jobs) {
+			const name = typeof job.name === 'string' ? job.name : undefined;
+			const nextRunAt = job.nextRunAt instanceof Date ? job.nextRunAt : updatedAt;
+
+			this.ctx.notifyPendingJob(name, nextRunAt);
 		}
 	}
 
@@ -363,4 +398,31 @@ export class JobManager {
 			);
 		}
 	}
+}
+
+/**
+ * Build the post-retry lookup without the original terminal status filter.
+ *
+ * Retried Jobs are pending after the update, but name and created-at selector constraints still apply.
+ */
+function buildRetryNotificationQuery(filter: JobSelector, updatedAt: Date) {
+	const notificationFilter: JobSelector = {};
+
+	if (filter.name !== undefined) {
+		notificationFilter.name = filter.name;
+	}
+
+	if (filter.olderThan !== undefined) {
+		notificationFilter.olderThan = filter.olderThan;
+	}
+
+	if (filter.newerThan !== undefined) {
+		notificationFilter.newerThan = filter.newerThan;
+	}
+
+	const query = buildSelectorQuery(notificationFilter);
+	query['status'] = JobStatus.PENDING;
+	query['updatedAt'] = updatedAt;
+
+	return query;
 }

@@ -61,7 +61,7 @@ export interface SchedulerContext {
 	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
 
 	/** Notify the local scheduler about a pending job transition */
-	notifyPendingJob: (name: string, nextRunAt: Date) => void;
+	notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
 
 	/** Notify that a job has finished processing (for reactive shutdown drain) */
 	notifyJobFinished: () => void;
