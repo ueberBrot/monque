@@ -131,7 +131,7 @@
         "vitest": "^4.1.8",
       },
       "peerDependencies": {
-        "@monque/core": "^1.8.0",
+        "@monque/core": "^1.10.0",
         "@tsed/core": "^8.27.0",
         "@tsed/di": "^8.27.0",
         "@tsed/mongoose": "^8.27.0",
