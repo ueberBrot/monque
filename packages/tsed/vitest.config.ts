@@ -35,7 +35,7 @@ export default defineConfig({
 				statements: 85,
 			},
 		},
-		setupFiles: ['@tsed/testcontainers-mongo/vitest/setup'],
+		setupFiles: ['./tests/integration/helpers/testcontainers-setup.ts'],
 		fileParallelism: false,
 		testTimeout: 30000,
 		hookTimeout: 60000,

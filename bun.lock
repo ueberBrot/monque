@@ -122,7 +122,6 @@
         "@tsed/di": "^8.29.0",
         "@tsed/mongoose": "^8.29.0",
         "@tsed/platform-http": "^8.29.0",
-        "@tsed/testcontainers-mongo": "^8.29.0",
         "@types/node": "^22.19.19",
         "@vitest/coverage-v8": "^4.1.8",
         "mongodb": "^7.2.0",
@@ -785,8 +784,6 @@
     "@tsed/platform-views": ["@tsed/platform-views@8.29.0", "", { "dependencies": { "@tsed/engines": "8.29.0", "ejs": "^3.1.10", "tslib": ">=2.7.0" }, "peerDependencies": { "@tsed/core": ">=8.0.0", "@tsed/di": ">=8.0.0", "@tsed/exceptions": ">=8.0.0", "@tsed/schema": ">=8.0.0" } }, "sha512-0kGtise1vNkzaNEnSrjpAEuMGsssk9ztGsamnTkQpzUdtuiNsniHQLA13tXeizpoHei3dBF1BEQY3P4sefTVjg=="],
 
     "@tsed/schema": ["@tsed/schema@8.29.0", "", { "dependencies": { "@tsed/openspec": "8.29.0", "change-case": "^5.4.4", "json-schema": "0.4.0", "picomatch": "4.0.4", "statuses": "^2.0.1", "tslib": ">=2.7.0" }, "peerDependencies": { "@tsed/core": ">=8.0.0", "@tsed/hooks": ">=8.0.0" } }, "sha512-17IOsPrcRz4DRtZtuchYS49mfdwyKvKQFkY+a3ujdawv+FzgacXmk8wp4gLhrsQlEGOtJERge8BNMA54EkTTgw=="],
-
-    "@tsed/testcontainers-mongo": ["@tsed/testcontainers-mongo@8.29.0", "", { "dependencies": { "semver": "^7.6.3", "tslib": ">=2.7.0" }, "peerDependencies": { "@testcontainers/mongodb": ">=10.11.0", "@tsed/core": ">=8.0.0", "@tsed/di": ">=8.0.0", "@tsed/platform-http": ">=8.0.0", "mongodb": ">=6", "testcontainers": ">=10.11.0" } }, "sha512-P23RG/mhFE9BlJUlMWK9SUNE7Ut1BGRMtlXBGZtC+be7RjClehkvckJjt5bNeIymC8HcuIASlLxKQV62wE4Zag=="],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.9.16", "", { "os": "darwin", "cpu": "x64" }, "sha512-jLjApWTSNd7JZ5JaLYfelW1ytnGQOvB7ivl+2RD1xQvJTbi8I9gBjzcga7tDZVPyaxpl10YTfJt3BrYXR18KDw=="],
 

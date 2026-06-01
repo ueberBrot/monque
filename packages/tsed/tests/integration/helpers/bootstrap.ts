@@ -1,7 +1,7 @@
+import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
 import { Provider, type TokenProvider } from '@tsed/di';
 import { MongooseModule, MongooseService } from '@tsed/mongoose';
 import { PlatformTest } from '@tsed/platform-http/testing';
-import { TestContainersMongo } from '@tsed/testcontainers-mongo';
 import { type Db, MongoClient } from 'mongodb';
 
 import type { MonqueTsedConfig } from '@/config';
@@ -20,13 +20,28 @@ interface MonqueTestOptions {
 
 let client: MongoClient | null = null;
 let db: Db | null = null;
+let container: StartedMongoDBContainer | null = null;
+let containerPromise: Promise<StartedMongoDBContainer> | null = null;
 
 function uniqueDbName(): string {
 	return `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+async function getMongoUrl(): Promise<string> {
+	if (!containerPromise) {
+		containerPromise = new MongoDBContainer('mongo:8').start().catch((error: unknown) => {
+			containerPromise = null;
+			throw error;
+		});
+	}
+
+	container = await containerPromise;
+
+	return container.getConnectionString();
+}
+
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
-	const { url } = await TestContainersMongo.startMongoServer('mongo:8');
+	const url = await getMongoUrl();
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 
@@ -122,4 +137,12 @@ export function getTestDb(): Db {
 	}
 
 	throw new Error('Test database not initialized or not accessible');
+}
+
+export async function stopMongoContainer(): Promise<void> {
+	if (!container) return;
+
+	await container.stop();
+	container = null;
+	containerPromise = null;
 }
