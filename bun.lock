@@ -44,7 +44,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.10.0",
+      "version": "1.10.1",
       "dependencies": {
         "cron-parser": "^5.5.0",
       },
@@ -65,7 +65,7 @@
     },
     "packages/management": {
       "name": "@monque/management",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@orpc/contract": "^1.14.4",
         "@orpc/openapi": "^1.14.4",
@@ -113,7 +113,7 @@
     },
     "packages/tsed": {
       "name": "@monque/tsed",
-      "version": "1.9.0",
+      "version": "1.10.0",
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@testcontainers/mongodb": "^12.0.1",
