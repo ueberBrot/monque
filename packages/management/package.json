@@ -74,10 +74,10 @@
 		"lint": "biome check ."
 	},
 	"dependencies": {
-		"@orpc/contract": "^1.14.2",
-		"@orpc/openapi": "^1.14.2",
-		"@orpc/server": "^1.14.2",
-		"@orpc/zod": "^1.14.2",
+		"@orpc/contract": "^1.14.4",
+		"@orpc/openapi": "^1.14.4",
+		"@orpc/server": "^1.14.4",
+		"@orpc/zod": "^1.14.4",
 		"zod": "^4.4.3"
 	},
 	"peerDependencies": {
