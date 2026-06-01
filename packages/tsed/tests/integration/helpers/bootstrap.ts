@@ -1,13 +1,13 @@
 import { Provider, type TokenProvider } from '@tsed/di';
 import { MongooseModule, MongooseService } from '@tsed/mongoose';
 import { PlatformTest } from '@tsed/platform-http/testing';
-import { TestContainersMongo } from '@tsed/testcontainers-mongo';
 import { type Db, MongoClient } from 'mongodb';
 
 import type { MonqueTsedConfig } from '@/config';
 import { ProviderTypes } from '@/constants';
 import { MonqueModule } from '@/monque-module';
 
+import { getMongoUrl } from './mongo-container.js';
 import { Server } from './Server.js';
 
 type ConnectionStrategy = 'dbFactory' | 'db' | 'mongoose';
@@ -26,7 +26,7 @@ function uniqueDbName(): string {
 }
 
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
-	const { url } = await TestContainersMongo.startMongoServer('mongo:8');
+	const url = await getMongoUrl();
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 
