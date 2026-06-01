@@ -98,23 +98,23 @@ export default defineConfig({
 					items: [
 						{
 							label: 'Core API',
-							autogenerate: { directory: 'api' },
 							collapsed: true,
+							items: [{ autogenerate: { directory: 'api', collapsed: true } }],
 						},
 						{
 							label: 'Ts.ED API',
-							autogenerate: { directory: 'api-tsed' },
 							collapsed: true,
+							items: [{ autogenerate: { directory: 'api-tsed', collapsed: true } }],
 						},
 						{
 							label: 'Management API',
-							autogenerate: { directory: 'api-management' },
 							collapsed: true,
+							items: [{ autogenerate: { directory: 'api-management', collapsed: true } }],
 						},
 						{
 							label: 'Management Express API',
-							autogenerate: { directory: 'api-management-express' },
 							collapsed: true,
+							items: [{ autogenerate: { directory: 'api-management-express', collapsed: true } }],
 						},
 					],
 				},
