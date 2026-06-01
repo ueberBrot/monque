@@ -32,6 +32,7 @@ import {
 	ChangeStreamHandler,
 	CLEANUP_STATUSES,
 	JobIntake,
+	JobLifecycle,
 	JobManager,
 	JobProcessor,
 	JobQueryService,
@@ -144,6 +145,7 @@ export class Monque extends EventEmitter {
 	private _intake: JobIntake | null = null;
 	private _manager: JobManager | null = null;
 	private _query: JobQueryService | null = null;
+	private _jobLifecycle: JobLifecycle | null = null;
 	private _processor: JobProcessor | null = null;
 	private _changeStreamHandler: ChangeStreamHandler | null = null;
 	private _lifecycleManager: LifecycleManager | null = null;
@@ -205,20 +207,22 @@ export class Monque extends EventEmitter {
 				await this.createIndexes();
 			}
 
-			// Recover stale jobs if enabled
-			if (this.options.recoverStaleJobs) {
-				await this.recoverStaleJobs();
-			}
-
-			// Check for instance ID collisions (after stale recovery to avoid false positives)
-			await this.checkInstanceCollision();
-
 			// Initialize services with shared context
 			const ctx = this.buildContext();
+			const jobLifecycle = new JobLifecycle(ctx);
+
+			// Recover stale jobs before collision checks to avoid false positives
+			if (this.options.recoverStaleJobs) {
+				await jobLifecycle.recoverStaleJobs();
+			}
+
+			await jobLifecycle.assertNoActiveInstanceCollision();
+
+			this._jobLifecycle = jobLifecycle;
 			this._intake = new JobIntake(ctx);
 			this._manager = new JobManager(ctx);
 			this._query = new JobQueryService(ctx);
-			this._processor = new JobProcessor(ctx);
+			this._processor = new JobProcessor(ctx, jobLifecycle);
 			this._pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
 				this.handlePendingNotificationPoll(targetNames),
 			);
@@ -262,6 +266,15 @@ export class Monque extends EventEmitter {
 		}
 
 		return this._query;
+	}
+
+	/** @throws {ConnectionError} if not initialized */
+	private get jobLifecycle(): JobLifecycle {
+		if (!this._jobLifecycle) {
+			throw new ConnectionError('Monque not initialized. Call initialize() first.');
+		}
+
+		return this._jobLifecycle;
 	}
 
 	/** @throws {ConnectionError} if not initialized */
@@ -405,77 +418,6 @@ export class Monque extends EventEmitter {
 					]
 				: []),
 		]);
-	}
-
-	/**
-	 * Recover stale jobs that were left in 'processing' status.
-	 * A job is considered stale if its `lockedAt` timestamp exceeds the configured `lockTimeout`.
-	 * Stale jobs are reset to 'pending' so they can be picked up by workers again.
-	 */
-	private async recoverStaleJobs(): Promise<void> {
-		if (!this.collection) {
-			return;
-		}
-
-		const staleThreshold = new Date(Date.now() - this.options.lockTimeout);
-
-		const result = await this.collection.updateMany(
-			{
-				status: JobStatus.PROCESSING,
-				lockedAt: { $lt: staleThreshold },
-			},
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					updatedAt: new Date(),
-				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-				},
-			},
-		);
-
-		if (result.modifiedCount > 0) {
-			// Emit event for recovered jobs
-			this.emit('stale:recovered', {
-				count: result.modifiedCount,
-			});
-		}
-	}
-
-	/**
-	 * Check if another active instance is using the same schedulerInstanceId.
-	 * Uses heartbeat staleness to distinguish active instances from crashed ones.
-	 *
-	 * Called after stale recovery to avoid false positives: stale recovery resets
-	 * jobs with old `lockedAt`, so only jobs with recent heartbeats remain.
-	 *
-	 * @throws {ConnectionError} If an active instance with the same ID is detected
-	 */
-	private async checkInstanceCollision(): Promise<void> {
-		if (!this.collection) {
-			return;
-		}
-
-		// Look for any job currently claimed by this instance ID
-		// that has a recent heartbeat (within 2× heartbeat interval = "alive" threshold)
-		const aliveThreshold = new Date(Date.now() - this.options.heartbeatInterval * 2);
-
-		const activeJob = await this.collection.findOne({
-			claimedBy: this.options.schedulerInstanceId,
-			status: JobStatus.PROCESSING,
-			lastHeartbeat: { $gte: aliveThreshold },
-		});
-
-		if (activeJob) {
-			throw new ConnectionError(
-				`Another active Monque instance is using schedulerInstanceId "${this.options.schedulerInstanceId}". ` +
-					`Found processing job "${activeJob['name']}" with recent heartbeat. ` +
-					`Use a unique schedulerInstanceId or wait for the other instance to stop.`,
-			);
-		}
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -1150,7 +1092,7 @@ export class Monque extends EventEmitter {
 		// Delegate timer management to LifecycleManager
 		this.lifecycleManager.startTimers({
 			poll: () => this.processor.poll(),
-			updateHeartbeats: () => this.processor.updateHeartbeats(),
+			updateHeartbeats: () => this.jobLifecycle.updateOwnedHeartbeats(),
 			isChangeStreamActive: () => this.changeStreamHandler.isActive(),
 		});
 	}

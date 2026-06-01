@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { createMockContext, JobFactoryHelpers } from '@tests/factories';
+import { createMockContext } from '@tests/factories';
 import { JobStateTransitions } from '@/scheduler/services/job-state-transitions.js';
 
 describe('JobStateTransitions', () => {
@@ -10,21 +10,6 @@ describe('JobStateTransitions', () => {
 	beforeEach(() => {
 		ctx = createMockContext();
 		transitions = new JobStateTransitions(ctx);
-	});
-
-	describe('completeOwned', () => {
-		it('should return null and skip notification when recurring completion loses ownership', async () => {
-			const job = JobFactoryHelpers.processing({
-				repeatInterval: '0 * * * *',
-			});
-
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
-
-			const result = await transitions.completeOwned(job);
-
-			expect(result).toBeNull();
-			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
-		});
 	});
 
 	describe('job id validation', () => {

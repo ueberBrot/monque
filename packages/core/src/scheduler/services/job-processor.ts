@@ -2,8 +2,7 @@ import { type Job, JobStatus, type PersistedJob } from '@/jobs';
 import { toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
-import { JobSelection } from './job-selection.js';
-import { JobStateTransitions } from './job-state-transitions.js';
+import { JobLifecycle } from './job-lifecycle.js';
 import type { SchedulerContext } from './types.js';
 
 /**
@@ -30,12 +29,13 @@ export class JobProcessor {
 	 */
 	private _totalActiveJobs = 0;
 
-	private readonly selection: JobSelection;
-	private readonly transitions: JobStateTransitions;
+	private readonly lifecycle: JobLifecycle;
 
-	constructor(private readonly ctx: SchedulerContext) {
-		this.selection = new JobSelection(ctx);
-		this.transitions = new JobStateTransitions(ctx);
+	constructor(
+		private readonly ctx: SchedulerContext,
+		lifecycle?: JobLifecycle,
+	) {
+		this.lifecycle = lifecycle ?? new JobLifecycle(ctx);
 	}
 
 	/**
@@ -152,7 +152,7 @@ export class JobProcessor {
 								});
 							} else {
 								try {
-									await this.transitions.releaseOwnedClaim(job);
+									await this.lifecycle.releaseOwnedClaim(job);
 								} catch {
 									// Best-effort shutdown cleanup.
 								}
@@ -177,7 +177,7 @@ export class JobProcessor {
 	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
 	 */
 	async acquireJob(name: string): Promise<PersistedJob | null> {
-		return this.selection.acquireNext(name);
+		return this.lifecycle.claimNext(name);
 	}
 
 	/**
@@ -241,7 +241,7 @@ export class JobProcessor {
 	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
 	async completeJob(job: Job): Promise<PersistedJob | null> {
-		return this.transitions.completeOwned(job);
+		return this.lifecycle.completeOwned(job);
 	}
 
 	/**
@@ -263,7 +263,7 @@ export class JobProcessor {
 	 * @returns The updated job document, or `null` if the transition could not be applied
 	 */
 	async failJob(job: Job, error: Error): Promise<PersistedJob | null> {
-		return this.transitions.failOwned(job, error);
+		return this.lifecycle.failOwned(job, error);
 	}
 
 	/**
@@ -276,23 +276,6 @@ export class JobProcessor {
 	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
 	 */
 	async updateHeartbeats(): Promise<void> {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
-
-		const now = new Date();
-
-		await this.ctx.collection.updateMany(
-			{
-				claimedBy: this.ctx.instanceId,
-				status: JobStatus.PROCESSING,
-			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
-		);
+		await this.lifecycle.updateOwnedHeartbeats();
 	}
 }
