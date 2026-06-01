@@ -1,5 +1,19 @@
 # @monque/tsed
 
+## 1.10.0
+
+### Minor Changes
+
+- [#484](https://github.com/ueberBrot/monque/pull/484) [`b2b0f85`](https://github.com/ueberBrot/monque/commit/b2b0f858d7230952cbd51300a023896564be0a99) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/tsed: @monque/core (^1.8.0 → ^1.10.0)
+
+- [#487](https://github.com/ueberBrot/monque/pull/487) [`b760a36`](https://github.com/ueberBrot/monque/commit/b760a36b79048c8911b93da1c971f2f0d140bda6) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/tsed: @tsed/core (^8.27.0 → ^8.29.0)
+  - @monque/tsed: @tsed/di (^8.27.0 → ^8.29.0)
+  - @monque/tsed: @tsed/mongoose (^8.27.0 → ^8.29.0)
+
 ## 1.9.0
 
 ### Minor Changes

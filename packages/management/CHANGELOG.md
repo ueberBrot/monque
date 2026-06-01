@@ -1,5 +1,16 @@
 # @monque/management
 
+## 0.2.1
+
+### Patch Changes
+
+- [#481](https://github.com/ueberBrot/monque/pull/481) [`0a28767`](https://github.com/ueberBrot/monque/commit/0a287672e9813dfa78bdab5f0193a7800600238a) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/management: @orpc/contract (^1.14.2 → ^1.14.4)
+  - @monque/management: @orpc/openapi (^1.14.2 → ^1.14.4)
+  - @monque/management: @orpc/server (^1.14.2 → ^1.14.4)
+  - @monque/management: @orpc/zod (^1.14.2 → ^1.14.4)
+
 ## 0.2.0
 
 ### Minor Changes

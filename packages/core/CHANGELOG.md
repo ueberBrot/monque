@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.10.1
+
+### Patch Changes
+
+- [#478](https://github.com/ueberBrot/monque/pull/478) [`39961c3`](https://github.com/ueberBrot/monque/commit/39961c35fc0870e4c324b4e2d2de72f883914cae) Thanks [@ueberBrot](https://github.com/ueberBrot)! - Notify local schedulers after bulk retry moves jobs back to pending so retried jobs wake promptly instead of waiting for polling.
+
 ## 1.10.0
 
 ### Minor Changes
