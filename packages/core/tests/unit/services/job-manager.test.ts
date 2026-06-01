@@ -453,7 +453,29 @@ describe('JobManager', () => {
 	});
 
 	describe('retryJobs', () => {
+		function mockRetryNotificationDocs(docs = JobFactory.buildList(1)) {
+			const mockCursor = {
+				toArray: vi.fn().mockResolvedValueOnce(docs),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+
+			return mockCursor;
+		}
+
 		it('should retry all failed/cancelled jobs via updateMany with pipeline', async () => {
+			const bulkEmail = JobFactory.build({
+				name: 'bulk-email',
+				nextRunAt: new Date('2026-01-01T00:00:01.000Z'),
+			});
+			const bulkReport = JobFactory.build({
+				name: 'bulk-report',
+				nextRunAt: new Date('2026-01-01T00:00:02.000Z'),
+			});
+			const notificationJobs = [bulkEmail, bulkReport];
+			mockRetryNotificationDocs(notificationJobs);
 			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
 				modifiedCount: 5,
 				matchedCount: 5,
@@ -475,9 +497,19 @@ describe('JobManager', () => {
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({ event: 'jobs:retried', payload: { count: 5 } }),
 			);
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith(
+				expect.objectContaining({
+					status: JobStatus.PENDING,
+					updatedAt: expect.any(Date),
+				}),
+				{ projection: { name: 1, nextRunAt: 1 } },
+			);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('bulk-email', bulkEmail.nextRunAt);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('bulk-report', bulkReport.nextRunAt);
 		});
 
 		it('should respect explicit status filter and intersect with retryable statuses', async () => {
+			mockRetryNotificationDocs([]);
 			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
 				modifiedCount: 3,
 				matchedCount: 3,
@@ -494,6 +526,7 @@ describe('JobManager', () => {
 			const [query] = retryCall ?? [];
 			expect(query).toEqual(expect.objectContaining({ status: 'failed' }));
 			expect(result).toEqual({ count: 3, errors: [] });
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith(undefined, expect.any(Date));
 		});
 
 		it('should return count 0 when filter status does not include retryable statuses', async () => {
@@ -520,7 +553,37 @@ describe('JobManager', () => {
 			);
 		});
 
+		it('should keep bulk retry successful when notification lookup fails', async () => {
+			const notificationError = new Error('Notification lookup failed');
+			const mockCursor = {
+				toArray: vi.fn().mockRejectedValueOnce(notificationError),
+			};
+
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 1,
+				matchedCount: 1,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
+
+			const result = await manager.retryJobs({ name: 'bulk-retry' });
+
+			expect(result).toEqual({ count: 1, errors: [] });
+			expect(ctx.emitHistory).toContainEqual(
+				expect.objectContaining({
+					event: 'job:error',
+					payload: { error: notificationError },
+				}),
+			);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('bulk-retry', expect.any(Date));
+		});
+
 		it('should use pipeline-style update with $rand stagger', async () => {
+			mockRetryNotificationDocs([]);
 			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
 				modifiedCount: 1,
 				matchedCount: 1,

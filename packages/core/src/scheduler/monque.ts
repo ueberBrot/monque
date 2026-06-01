@@ -327,7 +327,7 @@ export class Monque extends EventEmitter {
 			isRunning: () => this.isRunning,
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
-			notifyPendingJob: (name: string, nextRunAt: Date) => {
+			notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
 				if (!this.isRunning || !this._pendingNotificationRouter) {
 					return;
 				}

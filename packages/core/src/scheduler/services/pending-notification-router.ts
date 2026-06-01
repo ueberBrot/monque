@@ -32,7 +32,7 @@ export class PendingNotificationRouter {
 		private readonly onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>,
 	) {}
 
-	notifyPendingJob(jobName: string, nextRunAt: Date): void {
+	notifyPendingJob(jobName: string | undefined, nextRunAt: Date): void {
 		if (!this.ctx.isRunning()) {
 			return;
 		}
