@@ -15,10 +15,19 @@
 			"!!**/.astro",
 			"!!**/.agents",
 			"!!**/.opencode",
-			"!!**/.github"
+			"!!**/.github",
+			"!!packages/dashboard/src/routeTree.gen.ts"
 		]
 	},
 	"overrides": [
+		{
+			"includes": ["packages/dashboard/src/styles.css"],
+			"css": {
+				"parser": {
+					"tailwindDirectives": true
+				}
+			}
+		},
 		{
 			"includes": ["apps/docs/src/styles/custom.css"],
 			"linter": {
