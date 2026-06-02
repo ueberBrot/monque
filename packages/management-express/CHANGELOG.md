@@ -1,5 +1,14 @@
 # @monque/management-express
 
+## 0.2.1
+
+### Patch Changes
+
+- [#494](https://github.com/ueberBrot/monque/pull/494) [`e5076bf`](https://github.com/ueberBrot/monque/commit/e5076bf6df19abc06e7861a5f27c28bfd8f7cb8d) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/management-express: @monque/core (^1.10.0 → ^1.10.1)
+  - @monque/management: @monque/core (^1.10.0 → ^1.10.1)
+
 ## 0.2.0
 
 ### Minor Changes
