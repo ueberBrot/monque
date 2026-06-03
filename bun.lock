@@ -143,6 +143,27 @@
         "vitest": "^4.1.8",
       },
     },
+    "packages/dashboard-express": {
+      "name": "@monque/dashboard-express",
+      "version": "0.1.0",
+      "dependencies": {
+        "@monque/dashboard": "workspace:*",
+      },
+      "devDependencies": {
+        "@total-typescript/ts-reset": "^0.6.1",
+        "@types/express": "^5.0.6",
+        "@types/node": "^22.19.19",
+        "@types/supertest": "^7.2.0",
+        "@vitest/coverage-v8": "^4.1.8",
+        "express": "^5.2.1",
+        "supertest": "^7.2.2",
+        "tsdown": "^0.22.1",
+        "vitest": "^4.1.8",
+      },
+      "peerDependencies": {
+        "express": "^5.2.1",
+      },
+    },
     "packages/management": {
       "name": "@monque/management",
       "version": "0.2.1",
@@ -636,6 +657,8 @@
     "@monque/dashboard": ["@monque/dashboard@workspace:packages/dashboard"],
 
     "@monque/dashboard-dev": ["@monque/dashboard-dev@workspace:apps/dashboard-dev"],
+
+    "@monque/dashboard-express": ["@monque/dashboard-express@workspace:packages/dashboard-express"],
 
     "@monque/docs": ["@monque/docs@workspace:apps/docs"],
 
