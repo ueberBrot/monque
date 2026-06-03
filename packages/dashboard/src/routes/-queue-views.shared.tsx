@@ -22,14 +22,9 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
-const queueViewsOverviewSkeletonKeys = [
-	'skeleton-1',
-	'skeleton-2',
-	'skeleton-3',
-	'skeleton-4',
-] as const;
+const queueViewSkeletonKeys = ['skeleton-1', 'skeleton-2', 'skeleton-3', 'skeleton-4'] as const;
 
-function QueueViewsOverviewState({
+function QueueViewsStatePanel({
 	children,
 	description,
 	title,
@@ -39,7 +34,7 @@ function QueueViewsOverviewState({
 	readonly title: string;
 }): ReactElement {
 	return (
-		<section className="grid gap-4 rounded-xl border border-border bg-card p-6">
+		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
 			<div className="grid gap-2">
 				<h1 className="text-2xl font-semibold text-balance">{title}</h1>
 				<p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
@@ -49,17 +44,17 @@ function QueueViewsOverviewState({
 	);
 }
 
-function QueueViewsOverviewLoading(): ReactElement {
+function QueueViewsLoadingState(): ReactElement {
 	return (
-		<QueueViewsOverviewState
+		<QueueViewsStatePanel
 			title="Queue Views"
 			description="Loading Queue Views from the Management API."
 		>
 			<div className="grid gap-3">
-				{queueViewsOverviewSkeletonKeys.map((key) => (
+				{queueViewSkeletonKeys.map((key) => (
 					<div
 						key={key}
-						className="grid gap-3 rounded-xl border border-border bg-background/70 p-4"
+						className="grid gap-3 rounded-lg border border-border bg-background/70 p-4"
 					>
 						<Skeleton className="h-5 w-40" />
 						<Skeleton className="h-4 w-full max-w-2xl" />
@@ -72,13 +67,13 @@ function QueueViewsOverviewLoading(): ReactElement {
 					</div>
 				))}
 			</div>
-		</QueueViewsOverviewState>
+		</QueueViewsStatePanel>
 	);
 }
 
 function QueueViewsEmptyState(): ReactElement {
 	return (
-		<QueueViewsOverviewState
+		<QueueViewsStatePanel
 			title="Queue Views"
 			description="No Queue Views are available yet. Persisted jobs and registered workers will appear here."
 		/>
@@ -93,7 +88,7 @@ function QueueViewsUnauthorizedState({
 	readonly message: string;
 }): ReactElement {
 	return (
-		<section className="grid gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-6">
+		<section className="grid gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-6">
 			<Badge variant="warning" className="w-fit">
 				<CircleAlert className="size-3.5" />
 				Unauthorized
@@ -116,7 +111,7 @@ function QueueViewsErrorState({
 	readonly onRetry: () => void;
 }): ReactElement {
 	return (
-		<section className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-6">
+		<section className="grid gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-6">
 			<Badge variant="danger" className="w-fit">
 				<CircleAlert className="size-3.5" />
 				Request failed
@@ -149,7 +144,7 @@ function QueueViewsOverview({
 					filtered jobs.
 				</p>
 			</div>
-			<div className="overflow-hidden rounded-xl border border-border bg-card">
+			<div className="overflow-hidden rounded-lg border border-border bg-card">
 				<div className="grid gap-px bg-border">
 					{queueViews.map((queueView) => (
 						<Link
@@ -203,7 +198,7 @@ function QueueViewDetailHeader({
 	readonly stats: QueueStatsDto;
 }): ReactElement {
 	return (
-		<section className="grid gap-4 rounded-xl border border-border bg-card p-6">
+		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="grid gap-2">
 					<div className="flex flex-wrap items-center gap-2">
@@ -244,8 +239,10 @@ function QueueViewJobsTable({
 	readonly onRefresh: () => void;
 	readonly onResetCursor: () => void;
 }): ReactElement {
+	const nextPageCursor = jobsPage.cursor;
+
 	return (
-		<section className="grid gap-4 rounded-xl border border-border bg-card p-6">
+		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="grid gap-1">
 					<h2 className="text-lg font-semibold">Filtered jobs</h2>
@@ -267,51 +264,41 @@ function QueueViewJobsTable({
 				</div>
 			</div>
 			{jobsPage.jobs.length === 0 ? (
-				<div className="rounded-xl border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
+				<div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-muted-foreground">
 					No persisted jobs match this Queue View right now.
 				</div>
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>Status</TableHead>
-							<TableHead>Job ID</TableHead>
-							<TableHead>Next run</TableHead>
-							<TableHead>Updated</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{jobsPage.jobs.map((job) => (
-							<QueueViewJobRow key={job.id} job={job} />
-						))}
-					</TableBody>
-				</Table>
+				<div className="min-w-0 overflow-x-auto">
+					<Table className="min-w-[44rem]">
+						<TableHeader>
+							<TableRow>
+								<TableHead>Status</TableHead>
+								<TableHead>Job ID</TableHead>
+								<TableHead>Next run</TableHead>
+								<TableHead>Updated</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{jobsPage.jobs.map((job) => (
+								<QueueViewJobRow key={job.id} job={job} />
+							))}
+						</TableBody>
+					</Table>
+				</div>
 			)}
 			<div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
 				<p className="text-sm text-muted-foreground">
 					{jobsPage.jobs.length} job{jobsPage.jobs.length === 1 ? '' : 's'} on this page
 				</p>
 				<div className="flex gap-2">
-					{jobsPage.cursor ? (
-						<NextPageButton cursor={jobsPage.cursor} onNextPage={onNextPage} />
+					{nextPageCursor ? (
+						<Button type="button" variant="outline" onClick={() => onNextPage(nextPageCursor)}>
+							Next page
+						</Button>
 					) : null}
 				</div>
 			</div>
 		</section>
-	);
-}
-
-function NextPageButton({
-	cursor,
-	onNextPage,
-}: {
-	readonly cursor: string;
-	readonly onNextPage: (cursor: string) => void;
-}): ReactElement {
-	return (
-		<Button type="button" variant="outline" onClick={() => onNextPage(cursor)}>
-			Next page
-		</Button>
 	);
 }
 
@@ -367,7 +354,7 @@ function QueueStatCard({
 	readonly value: number;
 }): ReactElement {
 	return (
-		<div className="rounded-xl border border-border bg-background/70 p-4">
+		<div className="rounded-lg border border-border bg-background/70 p-4">
 			<div className="flex items-center gap-2 text-sm text-muted-foreground">
 				{icon}
 				<span>{label}</span>
@@ -411,26 +398,10 @@ function formatDateTime(value: string): string {
 }
 
 function getQueryErrorMessage(error: unknown, fallback: string): string {
-	if (typeof error !== 'object' || error === null) {
-		return fallback;
-	}
+	const unauthorizedMessage = getUnauthorizedQueryErrorMessage(error);
 
-	const status = Reflect.get(error, 'status');
-
-	if (status === 401) {
-		const data = Reflect.get(error, 'data');
-
-		if (typeof data === 'object' && data !== null) {
-			const body = Reflect.get(data, 'body');
-
-			if (typeof body === 'object' && body !== null) {
-				const message = Reflect.get(body, 'error');
-
-				if (typeof message === 'string' && message.length > 0) {
-					return message;
-				}
-			}
-		}
+	if (unauthorizedMessage) {
+		return unauthorizedMessage;
 	}
 
 	if (error instanceof Error && error.message.length > 0) {
@@ -441,7 +412,35 @@ function getQueryErrorMessage(error: unknown, fallback: string): string {
 }
 
 function isUnauthorizedQueryError(error: unknown): boolean {
-	return typeof error === 'object' && error !== null && Reflect.get(error, 'status') === 401;
+	return getRecordValue(error, 'status') === 401;
+}
+
+function getUnauthorizedQueryErrorMessage(error: unknown): string | undefined {
+	if (!isUnauthorizedQueryError(error)) {
+		return undefined;
+	}
+
+	const data = getRecordValue(error, 'data');
+	const body = getRecordValue(data, 'body');
+	const message = getRecordValue(body, 'error');
+
+	if (typeof message === 'string' && message.length > 0) {
+		return message;
+	}
+
+	return undefined;
+}
+
+function getRecordValue(value: unknown, key: string): unknown {
+	if (!isRecord(value)) {
+		return undefined;
+	}
+
+	return value[key];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
 }
 
 export {
@@ -451,7 +450,7 @@ export {
 	QueueViewJobsTable,
 	QueueViewsEmptyState,
 	QueueViewsErrorState,
+	QueueViewsLoadingState,
 	QueueViewsOverview,
-	QueueViewsOverviewLoading,
 	QueueViewsUnauthorizedState,
 };

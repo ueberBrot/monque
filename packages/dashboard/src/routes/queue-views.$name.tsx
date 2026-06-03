@@ -2,7 +2,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 
-import { useDocumentVisible } from '@/lib/document-visibility';
+import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 
 import {
 	getQueryErrorMessage,
@@ -10,9 +10,11 @@ import {
 	QueueViewDetailHeader,
 	QueueViewJobsTable,
 	QueueViewsErrorState,
-	QueueViewsOverviewLoading,
+	QueueViewsLoadingState,
 	QueueViewsUnauthorizedState,
 } from './-queue-views.shared.js';
+
+const DEFAULT_QUEUE_VIEW_JOBS_LIMIT = 50;
 
 const QueueViewDetailSearchSchema = z
 	.object({
@@ -31,11 +33,7 @@ function QueueViewDetailRoute() {
 	const { name } = Route.useParams();
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const isDocumentCurrentlyVisible = useDocumentVisible();
-	const refetchInterval =
-		runtimeConfig.pollingIntervalMs && isDocumentCurrentlyVisible
-			? runtimeConfig.pollingIntervalMs
-			: false;
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const [queueViewsQuery, statsQuery] = useQueries({
 		queries: [
 			{
@@ -54,15 +52,18 @@ function QueueViewDetailRoute() {
 		...managementApi.orpc.jobs.queryOptions({
 			input: {
 				cursor: search.cursor,
-				limit: String(search.limit ?? 50),
+				limit: String(search.limit ?? DEFAULT_QUEUE_VIEW_JOBS_LIMIT),
 				name,
 			},
 		}),
 		refetchInterval,
 	});
+	const refetchQueueViewDetail = (): void => {
+		void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
+	};
 
 	if (queueViewsQuery.isPending || statsQuery.isPending || jobsQuery.isPending) {
-		return <QueueViewsOverviewLoading />;
+		return <QueueViewsLoadingState />;
 	}
 
 	const firstError = queueViewsQuery.error ?? statsQuery.error ?? jobsQuery.error;
@@ -84,9 +85,7 @@ function QueueViewDetailRoute() {
 					firstError,
 					'Refresh the route or confirm the Management API is reachable.',
 				)}
-				onRetry={() => {
-					void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
-				}}
+				onRetry={refetchQueueViewDetail}
 			/>
 		);
 	}
@@ -96,7 +95,7 @@ function QueueViewDetailRoute() {
 	const jobsPage = jobsQuery.data;
 
 	if (!queueViews || !stats || !jobsPage) {
-		return <QueueViewsOverviewLoading />;
+		return <QueueViewsLoadingState />;
 	}
 
 	const queueView = queueViews.find((candidate) => candidate.name === name);
@@ -107,9 +106,7 @@ function QueueViewDetailRoute() {
 			<QueueViewJobsTable
 				name={name}
 				jobsPage={jobsPage}
-				onRefresh={() => {
-					void Promise.all([statsQuery.refetch(), jobsQuery.refetch(), queueViewsQuery.refetch()]);
-				}}
+				onRefresh={refetchQueueViewDetail}
 				onResetCursor={() => {
 					void navigate({
 						to: '/queue-views/$name',
