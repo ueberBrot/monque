@@ -1,0 +1,24 @@
+import { expect, test } from '@playwright/test';
+
+test('loads the mock shell and switches scenarios on desktop', async ({ page }) => {
+	await page.goto('/');
+
+	await expect(page.getByRole('heading', { name: 'Queue Views' })).toBeVisible();
+	await expect(page.getByTestId('dashboard-dev-shell')).toContainText('Mock Management API');
+	await expect(page.getByTestId('scenario-summary')).toContainText('Queue Views');
+
+	await page.getByLabel('Scenario').selectOption('large-dataset');
+
+	await expect(page.getByTestId('dashboard-dev-shell')).toContainText('Large dataset');
+});
+
+test('keeps navigation usable on mobile', async ({ page, isMobile }) => {
+	test.skip(!isMobile, 'Mobile-only smoke.');
+
+	await page.goto('/');
+	await page.getByRole('button', { name: 'Open navigation' }).click();
+	await page.getByRole('link', { name: 'Health' }).click();
+
+	await expect(page.getByRole('heading', { name: 'Health' })).toBeVisible();
+	await expect(page.getByTestId('dashboard-dev-shell')).toBeVisible();
+});

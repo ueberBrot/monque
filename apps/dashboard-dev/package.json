@@ -1,0 +1,39 @@
+{
+	"name": "@monque/dashboard-dev",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev --host 127.0.0.1 --port 3400",
+		"build": "vite build",
+		"preview": "vite preview --host 127.0.0.1 --port 3400",
+		"type-check": "tsc --noEmit",
+		"test": "vitest run",
+		"test:unit": "bun run type-check && vitest run --coverage.enabled=false",
+		"test:smoke": "playwright test"
+	},
+	"dependencies": {
+		"@monque/dashboard": "workspace:*",
+		"@monque/management": "workspace:*",
+		"@orpc/openapi": "^1.14.4",
+		"@orpc/server": "^1.14.4",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.60.0",
+		"@tailwindcss/vite": "^4.3.0",
+		"@testing-library/dom": "^10.4.1",
+		"@testing-library/react": "^16.3.2",
+		"@types/node": "^22.19.19",
+		"@types/react": "^19.2.16",
+		"@types/react-dom": "^19.2.3",
+		"@vitejs/plugin-react": "^6.0.2",
+		"jsdom": "^29.1.1",
+		"playwright": "^1.60.0",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16",
+		"vitest": "^4.1.8"
+	}
+}
