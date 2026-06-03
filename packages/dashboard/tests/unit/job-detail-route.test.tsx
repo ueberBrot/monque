@@ -53,7 +53,7 @@ describe('Job detail route', () => {
 			expect(clipboardWriteText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
 		});
 		await waitFor(() => {
-			expect(clipboardWriteText).toHaveBeenCalledWith(`${window.location.origin}/jobs/${job.id}`);
+			expect(clipboardWriteText).toHaveBeenCalledWith(window.location.href);
 		});
 
 		expect(screen.getByRole('button', { name: 'Copy job ID' })).toBeTruthy();
@@ -112,6 +112,28 @@ describe('Job detail route', () => {
 
 		expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
 	});
+
+	it('confirms single delete, refetches detail, and shows not found after deletion', async () => {
+		const job = createJobDetail({
+			id: 'job-delete-me',
+		});
+		const fetchState = createJobDetailActionFetch(job);
+		const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+		renderJobDetailRoute({
+			fetch: fetchState.fetch,
+			jobId: job.id,
+		});
+
+		expect(await screen.findByRole('heading', { name: job.name })).toBeTruthy();
+
+		fireEvent.click(screen.getByRole('button', { name: 'Delete job' }));
+
+		expect(await screen.findByRole('heading', { name: 'Job not found' })).toBeTruthy();
+		expect(confirmSpy).toHaveBeenCalledWith('Delete is permanent. Confirm deletion for this job.');
+		expect(fetchState.deleteCount).toBe(1);
+		expect(fetchState.detailRequestCount).toBeGreaterThanOrEqual(2);
+	});
 });
 
 function renderJobDetailRoute(options: {
@@ -157,6 +179,22 @@ function createJobDetailFetch(job: JobDto): typeof fetch {
 	return async (input) => {
 		const request = input instanceof Request ? input : new Request(input);
 		const url = new URL(request.url);
+
+		if (request.method === 'GET' && url.pathname === '/api/v1/capabilities') {
+			return createJsonResponse({
+				readOnly: false,
+				actions: {
+					read: true,
+					cancel: true,
+					cancelBulk: true,
+					retry: true,
+					retryBulk: true,
+					reschedule: true,
+					delete: true,
+					deleteBulk: true,
+				},
+			});
+		}
 
 		if (request.method === 'GET' && url.pathname === `/api/v1/jobs/${job.id}`) {
 			return createJsonResponse(job);
@@ -225,5 +263,63 @@ function createJobDetail(overrides: Partial<JobDto> = {}): JobDto {
 		createdAt: '2026-06-03T11:45:00.000Z',
 		updatedAt: '2026-06-03T11:55:00.000Z',
 		...overrides,
+	};
+}
+
+function createJobDetailActionFetch(job: JobDto): {
+	readonly deleteCount: number;
+	readonly detailRequestCount: number;
+	readonly fetch: typeof fetch;
+} {
+	let deleted = false;
+	let deleteCount = 0;
+	let detailRequestCount = 0;
+
+	return {
+		get deleteCount() {
+			return deleteCount;
+		},
+		get detailRequestCount() {
+			return detailRequestCount;
+		},
+		fetch: async (input) => {
+			const request = input instanceof Request ? input : new Request(input);
+			const url = new URL(request.url);
+
+			if (request.method === 'GET' && url.pathname === '/api/v1/capabilities') {
+				return createJsonResponse({
+					readOnly: false,
+					actions: {
+						read: true,
+						cancel: true,
+						cancelBulk: true,
+						retry: true,
+						retryBulk: true,
+						reschedule: true,
+						delete: true,
+						deleteBulk: true,
+					},
+				});
+			}
+
+			if (request.method === 'GET' && url.pathname === `/api/v1/jobs/${job.id}`) {
+				detailRequestCount += 1;
+
+				if (deleted) {
+					return createOrpcErrorResponse('NOT_FOUND', 404, 'Job not found');
+				}
+
+				return createJsonResponse(job);
+			}
+
+			if (request.method === 'DELETE' && url.pathname === `/api/v1/jobs/${job.id}`) {
+				deleteCount += 1;
+				deleted = true;
+
+				return createJsonResponse({ deleted: true });
+			}
+
+			return createOrpcErrorResponse('NOT_FOUND', 404, 'Route not found');
+		},
 	};
 }

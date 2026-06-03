@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -133,6 +134,44 @@ describe('Jobs route', () => {
 
 		expect(await screen.findByText('Access denied')).toBeTruthy();
 	});
+
+	it('deletes only explicitly selected jobs after bulk confirmation and refetches the list', async () => {
+		const jobA = createListJob({
+			id: 'job-bulk-a',
+			name: 'send-email',
+			status: 'pending',
+		});
+		const jobB = createListJob({
+			id: 'job-bulk-b',
+			name: 'dispatch-webhook',
+			status: 'pending',
+		});
+		const fetchState = createJobsActionFetch({
+			jobs: [jobA, jobB],
+		});
+
+		renderJobsRoute({
+			fetch: fetchState.fetch,
+			initialEntry: '/jobs',
+		});
+
+		expect((await screen.findAllByText(jobA.id)).length).toBeGreaterThan(0);
+		expect(screen.getAllByText(jobB.id).length).toBeGreaterThan(0);
+
+		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: 'Select job row' })));
+		fireEvent.click(screen.getByRole('button', { name: 'Delete selected jobs' }));
+
+		expect(await screen.findByRole('heading', { name: 'Delete selected jobs?' })).toBeTruthy();
+		fireEvent.click(screen.getByRole('button', { name: 'Confirm delete selected jobs' }));
+
+		await waitFor(() => {
+			expect(screen.queryByText(jobA.id)).toBeNull();
+		});
+
+		expect(screen.getAllByText(jobB.id).length).toBeGreaterThan(0);
+		expect(fetchState.deletedJobIds).toEqual(['job-bulk-a']);
+		expect(fetchState.listRequestCount).toBeGreaterThanOrEqual(2);
+	});
 });
 
 function renderJobsRoute({
@@ -190,4 +229,129 @@ function getFirstElement<TElement>(elements: readonly TElement[]): TElement {
 	}
 
 	return firstElement;
+}
+
+function createJobsActionFetch(options: {
+	readonly capabilities?: CapabilitiesDto;
+	readonly jobs: readonly JobDto[];
+}): {
+	readonly deletedJobIds: string[];
+	readonly fetch: typeof fetch;
+	readonly listRequestCount: number;
+} {
+	const capabilities = options.capabilities ?? createCapabilities();
+	const jobs = [...options.jobs];
+	const deletedJobIds: string[] = [];
+	let listRequestCount = 0;
+
+	return {
+		deletedJobIds,
+		get listRequestCount() {
+			return listRequestCount;
+		},
+		fetch: async (input) => {
+			const request = input instanceof Request ? input : new Request(input);
+			const url = new URL(request.url, 'https://dashboard.test');
+
+			if (request.method === 'GET' && url.pathname === '/api/v1/capabilities') {
+				return createJsonResponse(capabilities);
+			}
+
+			if (request.method === 'GET' && url.pathname === '/api/v1/jobs') {
+				listRequestCount += 1;
+
+				return createJsonResponse({
+					jobs: [...jobs],
+					cursor: null,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				});
+			}
+
+			if (request.method === 'DELETE' && url.pathname.startsWith('/api/v1/jobs/')) {
+				const jobId = url.pathname.split('/').at(-1);
+
+				if (!jobId) {
+					return createJsonResponse({ error: 'Job not found' }, 404);
+				}
+
+				const jobIndex = jobs.findIndex((job) => job.id === jobId);
+
+				if (jobIndex === -1) {
+					return createOrpcErrorResponse('NOT_FOUND', 404, 'Job not found');
+				}
+
+				jobs.splice(jobIndex, 1);
+				deletedJobIds.push(jobId);
+				return createJsonResponse({ deleted: true });
+			}
+
+			return createOrpcErrorResponse('NOT_FOUND', 404, 'Route not found');
+		},
+	};
+}
+
+function createJsonResponse(body: unknown, status = 200): Response {
+	return new Response(JSON.stringify(body), {
+		status,
+		headers: {
+			'content-type': 'application/json',
+		},
+	});
+}
+
+function createOrpcErrorResponse(code: string, status: number, message: string): Response {
+	return createJsonResponse(
+		{
+			code,
+			data: {
+				error: message,
+			},
+			defined: false,
+			message,
+			status,
+		},
+		status,
+	);
+}
+
+function createCapabilities(overrides: Partial<CapabilitiesDto> = {}): CapabilitiesDto {
+	return {
+		readOnly: false,
+		actions: {
+			read: true,
+			cancel: true,
+			cancelBulk: true,
+			retry: true,
+			retryBulk: true,
+			reschedule: true,
+			delete: true,
+			deleteBulk: true,
+			...(overrides.actions ?? {}),
+		},
+		...overrides,
+	};
+}
+
+function createListJob(overrides: Partial<JobDto> = {}): JobDto {
+	return {
+		id: 'job-123',
+		name: 'send-email',
+		status: 'pending',
+		payload: {
+			recipient: 'person@example.test',
+		},
+		nextRunAt: '2026-06-03T12:00:00.000Z',
+		lockedAt: null,
+		claimedBy: null,
+		lastHeartbeat: null,
+		heartbeatInterval: undefined,
+		failCount: 0,
+		failureReason: null,
+		repeatInterval: undefined,
+		uniqueKey: 'send-email:person@example.test',
+		createdAt: '2026-06-03T11:45:00.000Z',
+		updatedAt: '2026-06-03T11:55:00.000Z',
+		...overrides,
+	};
 }

@@ -81,7 +81,10 @@ function renderDashboardAt(
 		readonly scenarioId?: 'pending-jobs' | 'unauthorized';
 	},
 ): void {
-	window.scrollTo = () => undefined;
+	Object.defineProperty(window, 'scrollTo', {
+		configurable: true,
+		value: () => undefined,
+	});
 	window.history.replaceState({}, '', pathname);
 
 	const managementApi = createDashboardManagementApi({

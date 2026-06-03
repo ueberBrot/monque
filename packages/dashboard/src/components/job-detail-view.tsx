@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 
 type JobDetailViewProps = {
+	readonly actions?: ReactElement;
 	readonly job: JobDto;
 	readonly onCopyJobId: () => void;
 	readonly onCopyPayload: () => void;
@@ -40,6 +41,7 @@ type JobStatusMeta = {
 };
 
 function JobDetailView({
+	actions,
 	job,
 	onCopyJobId,
 	onCopyPayload,
@@ -70,6 +72,7 @@ function JobDetailView({
 					</div>
 				</div>
 				<div className="flex flex-wrap gap-2 lg:justify-end">
+					{actions}
 					<Button type="button" variant="outline" size="sm" onClick={onCopyJobId}>
 						<Copy />
 						<span>Copy job ID</span>

@@ -1,5 +1,5 @@
-import type { JobDto } from '@monque/management/contract';
-import { useQuery } from '@tanstack/react-query';
+import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import {
 	type ColumnDef,
@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -33,6 +34,14 @@ import {
 	TableRow,
 } from '@/components/ui/table';
 import {
+	getActionErrorFeedback,
+	getActionSuccessFeedback,
+	getBulkJobActionAvailability,
+	getJobActionAvailability,
+	type JobActionFeedback,
+	type JobActionKey,
+} from '@/features/jobs/job-actions';
+import {
 	fromDateTimeLocalValue,
 	getJobsSearchIdentity,
 	getNextSort,
@@ -46,6 +55,7 @@ import {
 	toJobListQueryInput,
 } from '@/features/jobs/job-list-search';
 import { cn } from '@/lib/utils';
+import type { DashboardManagementApi } from '@/management-client';
 
 export const Route = createFileRoute('/jobs')({
 	validateSearch: parseJobsRouteSearch,
@@ -92,29 +102,52 @@ type JobDateFilterField = keyof Pick<
 >;
 type JobsColumnsOptions = {
 	readonly activeSortBy: JobListSortByDto;
+	readonly capabilities: CapabilitiesDto | undefined;
 	readonly direction: JobsRouteSearch['sortDirection'];
+	readonly onDelete: (job: JobDto) => void;
+	readonly onReschedule: (job: JobDto) => void;
+	readonly onRunAction: (
+		action: Exclude<JobActionKey, 'delete' | 'reschedule'>,
+		job: JobDto,
+	) => void;
 	readonly onSortChange: (sortBy: JobListSortByDto) => void;
 };
 type JobStatusBadgeVariant = 'danger' | 'outline' | 'success' | 'warning';
 type JobsStateVariant = 'danger' | 'default' | 'warning';
+type JobActionDialogState = {
+	readonly action: JobActionKey;
+	readonly jobIds: readonly string[];
+	readonly nextRunAt: string;
+	readonly scope: 'bulk' | 'single';
+};
 
 function JobsRoute() {
 	const pathname = useLocation().pathname;
 	const search = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
-	const { managementApi, runtimeConfig } = Route.useRouteContext();
+	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const [cursorHistory, setCursorHistory] = useState<readonly string[]>([]);
 	const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+	const [feedback, setFeedback] = useState<JobActionFeedback | null>(null);
+	const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
 	const cursorResetIdentityRef = useRef(getJobsSearchIdentity(search));
-	const jobsQueryOptions = managementApi.orpc.jobs.queryOptions({
-		input: toJobListQueryInput(search),
-		...(runtimeConfig.pollingIntervalMs
-			? { refetchInterval: runtimeConfig.pollingIntervalMs }
-			: {}),
-	});
-	const jobsQuery = useQuery(jobsQueryOptions);
+
+	const jobsQuery = useQuery(
+		managementApi.orpc.jobs.queryOptions({
+			input: toJobListQueryInput(search),
+			...(runtimeConfig.pollingIntervalMs
+				? { refetchInterval: runtimeConfig.pollingIntervalMs }
+				: {}),
+		}),
+	);
+	const capabilitiesQuery = useQuery(managementApi.orpc.capabilities.queryOptions());
 	const jobsPage = jobsQuery.data;
 	const jobs = jobsPage?.jobs ?? [];
+	const selectedJobs = useMemo(
+		() => tableSelectionToJobs(rowSelection, jobs),
+		[jobs, rowSelection],
+	);
+
 	const sorting = useMemo<SortingState>(
 		() => [
 			{
@@ -124,11 +157,72 @@ function JobsRoute() {
 		],
 		[search.sortBy, search.sortDirection],
 	);
+
+	const actionMutation = useMutation({
+		mutationFn: async (input: {
+			readonly action: JobActionKey;
+			readonly jobIds: readonly string[];
+			readonly nextRunAt?: string;
+		}) => {
+			for (const jobId of input.jobIds) {
+				await runJobAction(
+					managementApi,
+					input.nextRunAt
+						? {
+								action: input.action,
+								jobId,
+								nextRunAt: input.nextRunAt,
+							}
+						: {
+								action: input.action,
+								jobId,
+							},
+				);
+			}
+
+			return {
+				action: input.action,
+				count: input.jobIds.length,
+			};
+		},
+		onSuccess: async ({ action, count }) => {
+			setFeedback(getActionSuccessFeedback(action, count));
+			setRowSelection({});
+			await queryClient.invalidateQueries();
+		},
+		onError: async (error) => {
+			setFeedback(getActionErrorFeedback(error));
+			await queryClient.invalidateQueries();
+		},
+	});
+
 	const columns = createJobsColumns({
 		activeSortBy: search.sortBy,
+		capabilities: capabilitiesQuery.data,
 		direction: search.sortDirection,
+		onDelete: (job) => {
+			setDialogState({
+				action: 'delete',
+				jobIds: [job.id],
+				nextRunAt: '',
+				scope: 'single',
+			});
+		},
+		onReschedule: (job) => {
+			setDialogState({
+				action: 'reschedule',
+				jobIds: [job.id],
+				nextRunAt: toDateTimeLocalValue(job.nextRunAt),
+				scope: 'single',
+			});
+		},
+		onRunAction: (action, job) => {
+			setFeedback(null);
+			void actionMutation.mutateAsync({ action, jobIds: [job.id] });
+		},
 		onSortChange: handleSortChange,
 	});
+
 	const table = useReactTable({
 		data: jobs,
 		columns,
@@ -161,7 +255,7 @@ function JobsRoute() {
 		setRowSelection((currentSelection) => getSelectionForVisibleJobs(currentSelection, jobs));
 	}, [jobs]);
 
-	function updateSearch(updater: (search: JobsRouteSearch) => JobsRouteSearch): void {
+	function updateSearch(updater: (currentSearch: JobsRouteSearch) => JobsRouteSearch): void {
 		void navigate({
 			search: (currentSearch) => updater(currentSearch),
 			replace: true,
@@ -250,17 +344,75 @@ function JobsRoute() {
 		void jobsQuery.refetch();
 	}
 
+	function openBulkDialog(action: JobActionKey): void {
+		setDialogState({
+			action,
+			jobIds: selectedJobs.map((job) => job.id),
+			nextRunAt: action === 'reschedule' ? toDateTimeLocalValue(selectedJobs[0]?.nextRunAt) : '',
+			scope: 'bulk',
+		});
+	}
+
+	function handleDialogConfirm(): void {
+		if (!dialogState) {
+			return;
+		}
+
+		setFeedback(null);
+		const nextRunAt =
+			dialogState.action === 'reschedule'
+				? fromDateTimeLocalValue(dialogState.nextRunAt)
+				: undefined;
+
+		void actionMutation.mutateAsync(
+			nextRunAt
+				? {
+						action: dialogState.action,
+						jobIds: dialogState.jobIds,
+						nextRunAt,
+					}
+				: {
+						action: dialogState.action,
+						jobIds: dialogState.jobIds,
+					},
+		);
+		setDialogState(null);
+	}
+
 	if (pathname !== '/jobs') {
 		return <Outlet />;
 	}
 
-	if (jobsQuery.isPending) {
+	if (jobsQuery.isPending || capabilitiesQuery.isPending) {
 		return <JobsStatePanel description="Loading jobs from the Management API." title="Jobs" />;
 	}
 
-	if (jobsQuery.isError) {
-		return <JobsErrorPanel error={jobsQuery.error} />;
+	const error = jobsQuery.error ?? capabilitiesQuery.error;
+
+	if (error) {
+		return <JobsErrorPanel error={error} />;
 	}
+
+	const bulkCancelAvailability = getBulkJobActionAvailability(
+		selectedJobs,
+		capabilitiesQuery.data,
+		'cancel',
+	);
+	const bulkRetryAvailability = getBulkJobActionAvailability(
+		selectedJobs,
+		capabilitiesQuery.data,
+		'retry',
+	);
+	const bulkRescheduleAvailability = getBulkJobActionAvailability(
+		selectedJobs,
+		capabilitiesQuery.data,
+		'reschedule',
+	);
+	const bulkDeleteAvailability = getBulkJobActionAvailability(
+		selectedJobs,
+		capabilitiesQuery.data,
+		'delete',
+	);
 
 	return (
 		<section className="grid gap-5">
@@ -273,7 +425,7 @@ function JobsRoute() {
 				</div>
 				<div className="flex items-center gap-2">
 					{jobsQuery.isFetching ? (
-						<span className="text-xs text-muted-foreground">Refreshing…</span>
+						<span className="text-xs text-muted-foreground">Refreshing...</span>
 					) : null}
 					<Button type="button" variant="outline" onClick={handleRefresh}>
 						<RefreshCw className={cn('size-4', jobsQuery.isFetching && 'animate-spin')} />
@@ -348,6 +500,51 @@ function JobsRoute() {
 					to this screen.
 				</div>
 
+				{feedback ? <JobsFeedbackPanel feedback={feedback} /> : null}
+
+				<div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => openBulkDialog('cancel')}
+						disabled={bulkCancelAvailability.disabled || actionMutation.isPending}
+						title={bulkCancelAvailability.reason ?? undefined}
+					>
+						Cancel selected jobs
+					</Button>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => openBulkDialog('retry')}
+						disabled={bulkRetryAvailability.disabled || actionMutation.isPending}
+						title={bulkRetryAvailability.reason ?? undefined}
+					>
+						Retry selected jobs
+					</Button>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => openBulkDialog('reschedule')}
+						disabled={bulkRescheduleAvailability.disabled || actionMutation.isPending}
+						title={bulkRescheduleAvailability.reason ?? undefined}
+					>
+						Reschedule selected jobs
+					</Button>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => openBulkDialog('delete')}
+						disabled={bulkDeleteAvailability.disabled || actionMutation.isPending}
+						title={bulkDeleteAvailability.reason ?? undefined}
+					>
+						Delete selected jobs
+					</Button>
+				</div>
+
 				{jobs.length === 0 ? (
 					<JobsStatePanel
 						description="No jobs matched the current cursor and filters. Clear the filters or refresh the view."
@@ -410,13 +607,29 @@ function JobsRoute() {
 					</div>
 				</div>
 			</div>
+
+			<JobActionDialog
+				state={dialogState}
+				busy={actionMutation.isPending}
+				onClose={() => setDialogState(null)}
+				onConfirm={handleDialogConfirm}
+				onNextRunAtChange={(nextRunAt) => {
+					setDialogState((currentState) =>
+						currentState ? { ...currentState, nextRunAt } : currentState,
+					);
+				}}
+			/>
 		</section>
 	);
 }
 
 function createJobsColumns({
 	activeSortBy,
+	capabilities,
 	direction,
+	onDelete,
+	onReschedule,
+	onRunAction,
 	onSortChange,
 }: JobsColumnsOptions): ColumnDef<JobDto>[] {
 	return [
@@ -479,6 +692,20 @@ function createJobsColumns({
 			),
 			cell: ({ row }) => <span className="font-mono text-xs">{row.original.id}</span>,
 		},
+		{
+			id: 'actions',
+			enableSorting: false,
+			header: 'Actions',
+			cell: ({ row }) => (
+				<JobRowActions
+					job={row.original}
+					capabilities={capabilities}
+					onDelete={onDelete}
+					onReschedule={onReschedule}
+					onRunAction={onRunAction}
+				/>
+			),
+		},
 	];
 }
 
@@ -534,6 +761,136 @@ function JobsSortButton({
 			<span>{label}</span>
 			{sortIcon}
 		</Button>
+	);
+}
+
+function JobRowActions({
+	job,
+	capabilities,
+	onDelete,
+	onReschedule,
+	onRunAction,
+}: {
+	readonly capabilities: CapabilitiesDto | undefined;
+	readonly job: JobDto;
+	readonly onDelete: (job: JobDto) => void;
+	readonly onReschedule: (job: JobDto) => void;
+	readonly onRunAction: (
+		action: Exclude<JobActionKey, 'delete' | 'reschedule'>,
+		job: JobDto,
+	) => void;
+}) {
+	const cancelAvailability = getJobActionAvailability(job, capabilities, 'cancel');
+	const retryAvailability = getJobActionAvailability(job, capabilities, 'retry');
+	const rescheduleAvailability = getJobActionAvailability(job, capabilities, 'reschedule');
+	const deleteAvailability = getJobActionAvailability(job, capabilities, 'delete');
+
+	return (
+		<div className="flex flex-wrap gap-1">
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				onClick={() => onRunAction('cancel', job)}
+				disabled={cancelAvailability.disabled}
+				title={cancelAvailability.reason ?? undefined}
+			>
+				Cancel
+			</Button>
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				onClick={() => onRunAction('retry', job)}
+				disabled={retryAvailability.disabled}
+				title={retryAvailability.reason ?? undefined}
+			>
+				Retry
+			</Button>
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				onClick={() => onReschedule(job)}
+				disabled={rescheduleAvailability.disabled}
+				title={rescheduleAvailability.reason ?? undefined}
+			>
+				Reschedule
+			</Button>
+			<Button
+				type="button"
+				variant="ghost"
+				size="sm"
+				onClick={() => onDelete(job)}
+				disabled={deleteAvailability.disabled}
+				title={deleteAvailability.reason ?? undefined}
+			>
+				Delete job
+			</Button>
+		</div>
+	);
+}
+
+function JobActionDialog({
+	busy,
+	onClose,
+	onConfirm,
+	onNextRunAtChange,
+	state,
+}: {
+	readonly busy: boolean;
+	readonly onClose: () => void;
+	readonly onConfirm: () => void;
+	readonly onNextRunAtChange: (nextRunAt: string) => void;
+	readonly state: JobActionDialogState | null;
+}) {
+	const open = state !== null;
+	const requiresDate = state?.action === 'reschedule';
+	const invalidDate =
+		requiresDate && (!state.nextRunAt || fromDateTimeLocalValue(state.nextRunAt) === undefined);
+
+	return (
+		<Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
+			<DialogContent>
+				<DialogTitle>{getDialogTitle(state)}</DialogTitle>
+				<DialogDescription>{getDialogDescription(state)}</DialogDescription>
+				{requiresDate ? (
+					<Field>
+						<FieldLabel htmlFor="job-action-next-run-at">Next run at</FieldLabel>
+						<Input
+							id="job-action-next-run-at"
+							type="datetime-local"
+							value={state?.nextRunAt ?? ''}
+							onChange={(event) => onNextRunAtChange(event.target.value)}
+						/>
+					</Field>
+				) : null}
+				<div className="flex justify-end gap-2">
+					<Button type="button" variant="outline" onClick={onClose}>
+						Keep current state
+					</Button>
+					<Button type="button" onClick={onConfirm} disabled={busy || invalidDate}>
+						{getDialogConfirmLabel(state)}
+					</Button>
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function JobsFeedbackPanel({ feedback }: { readonly feedback: JobActionFeedback }) {
+	return (
+		<section
+			className={cn(
+				'border-b border-border px-4 py-3 text-sm',
+				feedback.tone === 'danger' && 'bg-destructive/8 text-destructive',
+				feedback.tone === 'success' && 'bg-primary/8 text-foreground',
+				feedback.tone === 'warning' && 'bg-amber-500/10 text-amber-200',
+			)}
+		>
+			<p className="font-medium">{feedback.title}</p>
+			<p className="text-muted-foreground">{feedback.description}</p>
+		</section>
 	);
 }
 
@@ -667,6 +1024,19 @@ function getSelectionForVisibleJobs(
 	);
 }
 
+function tableSelectionToJobs(
+	currentSelection: RowSelectionState,
+	jobs: readonly JobDto[],
+): readonly JobDto[] {
+	const selectedJobIds = new Set(
+		Object.entries(currentSelection)
+			.filter(([, selected]) => selected)
+			.map(([jobId]) => jobId),
+	);
+
+	return jobs.filter((job) => selectedJobIds.has(job.id));
+}
+
 function renderSortIcon(isActive: boolean, direction: JobsRouteSearch['sortDirection']) {
 	if (!isActive) {
 		return <ArrowUpDown className="size-3.5" />;
@@ -717,4 +1087,94 @@ function getJobStatusBadgeVariant(status: JobDto['status']): JobStatusBadgeVaria
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
+}
+
+async function runJobAction(
+	managementApi: DashboardManagementApi,
+	input: {
+		readonly action: JobActionKey;
+		readonly jobId: string;
+		readonly nextRunAt?: string;
+	},
+): Promise<void> {
+	switch (input.action) {
+		case 'cancel':
+			await managementApi.client.cancelJob({
+				params: { id: input.jobId },
+			});
+			return;
+		case 'retry':
+			await managementApi.client.retryJob({
+				params: { id: input.jobId },
+			});
+			return;
+		case 'reschedule':
+			await managementApi.client.rescheduleJob({
+				params: { id: input.jobId },
+				body: {
+					nextRunAt: input.nextRunAt ?? new Date().toISOString(),
+				},
+			});
+			return;
+		case 'delete':
+			await managementApi.client.deleteJob({
+				params: { id: input.jobId },
+			});
+			return;
+	}
+}
+
+function getDialogTitle(state: JobActionDialogState | null): string {
+	if (!state) {
+		return '';
+	}
+
+	switch (state.action) {
+		case 'cancel':
+			return 'Cancel selected jobs?';
+		case 'retry':
+			return 'Retry selected jobs?';
+		case 'reschedule':
+			return state.scope === 'single' ? 'Reschedule job' : 'Reschedule selected jobs?';
+		case 'delete':
+			return state.scope === 'single' ? 'Delete job?' : 'Delete selected jobs?';
+	}
+}
+
+function getDialogDescription(state: JobActionDialogState | null): string {
+	if (!state) {
+		return '';
+	}
+
+	const scopeText = state.scope === 'single' ? 'this job' : `${state.jobIds.length} selected jobs`;
+
+	switch (state.action) {
+		case 'cancel':
+			return `Confirm cancellation for ${scopeText}.`;
+		case 'retry':
+			return `Confirm retry for ${scopeText}.`;
+		case 'reschedule':
+			return `Choose a new run time for ${scopeText}.`;
+		case 'delete':
+			return `Delete is permanent. Confirm deletion for ${scopeText}.`;
+	}
+}
+
+function getDialogConfirmLabel(state: JobActionDialogState | null): string {
+	if (!state) {
+		return '';
+	}
+
+	switch (state.action) {
+		case 'cancel':
+			return 'Confirm cancel selected jobs';
+		case 'retry':
+			return 'Confirm retry selected jobs';
+		case 'reschedule':
+			return state.scope === 'single'
+				? 'Confirm reschedule job'
+				: 'Confirm reschedule selected jobs';
+		case 'delete':
+			return state.scope === 'single' ? 'Confirm delete job' : 'Confirm delete selected jobs';
+	}
 }
