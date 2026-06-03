@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router';
+import { useMemo } from 'react';
 
+import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 
 import {
@@ -25,6 +27,18 @@ function QueueViewsRoute() {
 		...managementApi.orpc.queueViews.queryOptions(),
 		refetchInterval,
 	});
+
+	const shellActions = useMemo(
+		() => ({
+			refresh: () => {
+				void queueViewsQuery.refetch();
+			},
+			viewLabel: 'Queue Views',
+		}),
+		[queueViewsQuery.refetch],
+	);
+
+	useDashboardShellRouteActions(shellActions);
 
 	if (location.pathname !== '/queue-views') {
 		return <Outlet />;

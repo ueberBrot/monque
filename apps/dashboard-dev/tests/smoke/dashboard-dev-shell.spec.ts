@@ -6,10 +6,16 @@ test('loads the mock shell and switches scenarios on desktop', async ({ page }) 
 	await expect(page.getByRole('heading', { name: 'Queue Views' })).toBeVisible();
 	await expect(page.getByTestId('dashboard-dev-shell')).toContainText('Mock Management API');
 	await expect(page.getByTestId('scenario-summary')).toContainText('Queue Views');
+	await expect(page.getByRole('button', { name: 'Command palette' })).toBeVisible();
 
 	await page.getByLabel('Scenario').selectOption('large-dataset');
 
 	await expect(page.getByTestId('dashboard-dev-shell')).toContainText('Large dataset');
+
+	await page.getByRole('button', { name: 'Command palette' }).click();
+	await page.locator('button', { hasText: 'Health' }).last().click();
+
+	await expect(page.getByRole('heading', { name: 'Health' })).toBeVisible();
 });
 
 test('keeps navigation usable on mobile', async ({ page, isMobile }) => {

@@ -106,6 +106,40 @@ describe('Jobs route', () => {
 		});
 	});
 
+	it('supports safe shell hotkeys for refresh and clearing URL-backed filters', async () => {
+		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
+		const { router } = renderJobsRoute({
+			fetch: fetchSpy,
+			initialEntry: '/jobs?name=dispatch-webhook&status=failed&limit=25',
+		});
+
+		await screen.findByRole('heading', { name: 'Jobs' });
+		await waitFor(() => {
+			expect(fetchSpy).toHaveBeenCalled();
+		});
+
+		const initialRequestCount = fetchSpy.mock.calls.length;
+
+		fireEvent.keyDown(window, { key: 'R', shiftKey: true });
+
+		await waitFor(() => {
+			expect(fetchSpy.mock.calls.length).toBeGreaterThan(initialRequestCount);
+		});
+
+		fireEvent.keyDown(window, { key: 'k', metaKey: true });
+		fireEvent.click(getLastElement(screen.getAllByText('Clear Jobs filters')));
+
+		await waitFor(() => {
+			expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('');
+			expect(router.state.location.search).toMatchObject({
+				limit: 50,
+				sortBy: 'createdAt',
+				sortDirection: 'desc',
+				status: [],
+			});
+		});
+	});
+
 	it('renders an empty state when no jobs match the current view', async () => {
 		renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'empty-state' }),
@@ -229,6 +263,16 @@ function getFirstElement<TElement>(elements: readonly TElement[]): TElement {
 	}
 
 	return firstElement;
+}
+
+function getLastElement<TElement>(elements: readonly TElement[]): TElement {
+	const lastElement = elements[elements.length - 1];
+
+	if (!lastElement) {
+		throw new Error('Expected at least one matching element.');
+	}
+
+	return lastElement;
 }
 
 function createJobsActionFetch(options: {
