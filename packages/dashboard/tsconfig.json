@@ -15,7 +15,8 @@
 		"paths": {
 			"#/*": ["./src/*"],
 			"@/*": ["./src/*"],
-			"@tests/*": ["./tests/*"]
+			"@tests/*": ["./tests/*"],
+			"@monque/management/contract": ["../management/src/contract.ts"]
 		},
 		"skipLibCheck": true,
 		"strict": true,
