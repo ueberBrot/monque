@@ -1,0 +1,80 @@
+{
+	"name": "@monque/dashboard-express",
+	"version": "0.1.0",
+	"description": "Express adapter for serving the Monque dashboard",
+	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ueberBrot/monque.git",
+		"directory": "packages/dashboard-express"
+	},
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/ueberBrot/monque/issues"
+	},
+	"homepage": "https://github.com/ueberBrot/monque#readme",
+	"sideEffects": false,
+	"type": "module",
+	"engines": {
+		"node": ">=22.12.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"monque",
+		"dashboard",
+		"express",
+		"jobs",
+		"scheduler"
+	],
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
+			"require": {
+				"types": "./dist/index.d.cts",
+				"default": "./dist/index.cjs"
+			}
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"check:exports": "publint && attw --pack .",
+		"clean": "rimraf dist coverage .turbo",
+		"type-check": "tsc --noEmit",
+		"pretest": "bun run type-check",
+		"test": "vitest run --config vitest.config.ts",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
+		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
+		"test:watch": "vitest",
+		"test:watch:unit": "vitest --config vitest.unit.config.ts",
+		"lint": "biome check ."
+	},
+	"dependencies": {
+		"@monque/dashboard": "workspace:*"
+	},
+	"peerDependencies": {
+		"express": "^5.2.1"
+	},
+	"devDependencies": {
+		"@total-typescript/ts-reset": "^0.6.1",
+		"@types/express": "^5.0.6",
+		"@types/node": "^22.19.19",
+		"@types/supertest": "^7.2.0",
+		"@vitest/coverage-v8": "^4.1.8",
+		"express": "^5.2.1",
+		"supertest": "^7.2.2",
+		"tsdown": "^0.22.1",
+		"vitest": "^4.1.8"
+	}
+}
