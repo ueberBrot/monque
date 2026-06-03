@@ -1,22 +1,30 @@
-import type { JobDto } from '@monque/management/contract';
+import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
 import { JobDetailStateView, JobDetailView } from '@/components/job-detail-view';
 import { Button } from '@/components/ui/button';
+import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
 import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	getJobActionAvailability,
 	type JobActionFeedback,
 	type JobActionKey,
+	runJobAction,
 } from '@/features/jobs/job-actions';
 import { mapJobDetailError, serializePayloadForClipboard } from '@/lib/job-detail';
+import type { DashboardManagementApi } from '@/management-client';
 
 export const Route = createFileRoute('/jobs/$jobId')({
 	component: JobDetailRoute,
 });
+
+type JobDetailActionInput = {
+	readonly action: JobActionKey;
+	readonly nextRunAt?: string;
+};
 
 function JobDetailRoute() {
 	const { managementApi, queryClient } = Route.useRouteContext();
@@ -24,41 +32,19 @@ function JobDetailRoute() {
 	const [detailState, setDetailState] = useState<JobDetailLoadState>({
 		status: 'pending',
 	});
-	const capabilitiesQuery = useQuery({
-		queryKey: ['capabilities'],
-		queryFn: () => managementApi.client.capabilities(),
-	});
+	const capabilitiesQuery = useQuery(managementApi.orpc.capabilities.queryOptions());
 
 	useEffect(() => {
 		let active = true;
 
 		setDetailState({ status: 'pending' });
-		void managementApi.client
-			.job({
-				params: {
-					id: jobId,
-				},
-			})
-			.then((job) => {
-				if (!active) {
-					return;
-				}
+		void loadJobDetail(managementApi, jobId).then((state) => {
+			if (!active) {
+				return;
+			}
 
-				setDetailState({
-					status: 'success',
-					job,
-				});
-			})
-			.catch((error: unknown) => {
-				if (!active) {
-					return;
-				}
-
-				setDetailState({
-					status: 'error',
-					error,
-				});
-			});
+			setDetailState(state);
+		});
 
 		return () => {
 			active = false;
@@ -66,49 +52,25 @@ function JobDetailRoute() {
 	}, [jobId, managementApi]);
 
 	const mutation = useMutation({
-		mutationFn: async (input: { readonly action: JobActionKey; readonly nextRunAt?: string }) => {
-			switch (input.action) {
-				case 'cancel':
-					await managementApi.client.cancelJob({ params: { id: jobId } });
-					break;
-				case 'retry':
-					await managementApi.client.retryJob({ params: { id: jobId } });
-					break;
-				case 'reschedule':
-					await managementApi.client.rescheduleJob({
-						params: { id: jobId },
-						body: {
-							nextRunAt: input.nextRunAt ?? new Date().toISOString(),
+		mutationFn: async (input: JobDetailActionInput) => {
+			return runJobAction(
+				managementApi,
+				input.nextRunAt
+					? {
+							action: input.action,
+							jobId,
+							nextRunAt: input.nextRunAt,
+						}
+					: {
+							action: input.action,
+							jobId,
 						},
-					});
-					break;
-				case 'delete':
-					await managementApi.client.deleteJob({ params: { id: jobId } });
-					break;
-			}
-
-			return input.action;
+			);
 		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries();
 			setDetailState({ status: 'pending' });
-			try {
-				const job = await managementApi.client.job({
-					params: {
-						id: jobId,
-					},
-				});
-
-				setDetailState({
-					status: 'success',
-					job,
-				});
-			} catch (error) {
-				setDetailState({
-					status: 'error',
-					error,
-				});
-			}
+			setDetailState(await loadJobDetail(managementApi, jobId));
 		},
 	});
 
@@ -121,99 +83,115 @@ function JobDetailRoute() {
 	}
 
 	const job = detailState.job;
-	const cancelAvailability = getJobActionAvailability(job, capabilitiesQuery.data, 'cancel');
-	const retryAvailability = getJobActionAvailability(job, capabilitiesQuery.data, 'retry');
-	const rescheduleAvailability = getJobActionAvailability(
-		job,
-		capabilitiesQuery.data,
-		'reschedule',
-	);
-	const deleteAvailability = getJobActionAvailability(job, capabilitiesQuery.data, 'delete');
 	const feedback = getFeedback(mutation.data, mutation.error);
 
 	return (
 		<section className="grid gap-4">
 			{feedback ? (
-				<section className="rounded-xl border border-border bg-card px-5 py-4 text-sm">
-					<p className="font-medium">{feedback.title}</p>
-					<p className="text-muted-foreground">{feedback.description}</p>
-				</section>
+				<JobActionFeedbackPanel
+					feedback={feedback}
+					className="rounded-xl border border-border px-5 py-4"
+				/>
 			) : null}
 			<JobDetailView
 				job={job}
 				actions={
-					<>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								void mutation.mutateAsync({ action: 'cancel' });
-							}}
-							disabled={cancelAvailability.disabled || mutation.isPending}
-							title={cancelAvailability.reason ?? undefined}
-						>
-							Cancel
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								void mutation.mutateAsync({ action: 'retry' });
-							}}
-							disabled={retryAvailability.disabled || mutation.isPending}
-							title={retryAvailability.reason ?? undefined}
-						>
-							Retry
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								const nextRunAt = window.prompt(
-									'Enter a new run time in ISO 8601 format.',
-									job.nextRunAt,
-								);
-
-								if (!nextRunAt || Number.isNaN(new Date(nextRunAt).getTime())) {
-									return;
-								}
-
-								void mutation.mutateAsync({
-									action: 'reschedule',
-									nextRunAt: new Date(nextRunAt).toISOString(),
-								});
-							}}
-							disabled={rescheduleAvailability.disabled || mutation.isPending}
-							title={rescheduleAvailability.reason ?? undefined}
-						>
-							Reschedule
-						</Button>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							onClick={() => {
-								if (!window.confirm('Delete is permanent. Confirm deletion for this job.')) {
-									return;
-								}
-
-								void mutation.mutateAsync({ action: 'delete' });
-							}}
-							disabled={deleteAvailability.disabled || mutation.isPending}
-							title={deleteAvailability.reason ?? undefined}
-						>
-							Delete job
-						</Button>
-					</>
+					<JobDetailActions
+						job={job}
+						busy={mutation.isPending}
+						capabilities={capabilitiesQuery.data}
+						onRunAction={(input) => {
+							void mutation.mutateAsync(input);
+						}}
+					/>
 				}
 				onCopyJobId={() => copyToClipboard(job.id)}
 				onCopyPayload={() => copyToClipboard(serializePayloadForClipboard(job.payload))}
 				onCopyShareableUrl={() => copyToClipboard(window.location.href)}
 			/>
 		</section>
+	);
+}
+
+function JobDetailActions({
+	busy,
+	capabilities,
+	job,
+	onRunAction,
+}: {
+	readonly busy: boolean;
+	readonly capabilities: CapabilitiesDto | undefined;
+	readonly job: JobDto;
+	readonly onRunAction: (input: JobDetailActionInput) => void;
+}) {
+	const cancelAvailability = getJobActionAvailability(job, capabilities, 'cancel');
+	const retryAvailability = getJobActionAvailability(job, capabilities, 'retry');
+	const rescheduleAvailability = getJobActionAvailability(job, capabilities, 'reschedule');
+	const deleteAvailability = getJobActionAvailability(job, capabilities, 'delete');
+
+	return (
+		<>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				onClick={() => onRunAction({ action: 'cancel' })}
+				disabled={cancelAvailability.disabled || busy}
+				title={cancelAvailability.reason ?? undefined}
+			>
+				Cancel
+			</Button>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				onClick={() => onRunAction({ action: 'retry' })}
+				disabled={retryAvailability.disabled || busy}
+				title={retryAvailability.reason ?? undefined}
+			>
+				Retry
+			</Button>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				onClick={() => {
+					const nextRunAt = window.prompt(
+						'Enter a new run time in ISO 8601 format.',
+						job.nextRunAt,
+					);
+
+					if (!nextRunAt || Number.isNaN(new Date(nextRunAt).getTime())) {
+						return;
+					}
+
+					onRunAction({
+						action: 'reschedule',
+						nextRunAt: new Date(nextRunAt).toISOString(),
+					});
+				}}
+				disabled={rescheduleAvailability.disabled || busy}
+				title={rescheduleAvailability.reason ?? undefined}
+			>
+				Reschedule
+			</Button>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				onClick={() => {
+					if (!window.confirm('Delete is permanent. Confirm deletion for this job.')) {
+						return;
+					}
+
+					onRunAction({ action: 'delete' });
+				}}
+				disabled={deleteAvailability.disabled || busy}
+				title={deleteAvailability.reason ?? undefined}
+			>
+				Delete job
+			</Button>
+		</>
 	);
 }
 
@@ -227,6 +205,29 @@ function getFeedback(action: JobActionKey | undefined, error: unknown): JobActio
 	}
 
 	return getActionSuccessFeedback(action);
+}
+
+async function loadJobDetail(
+	managementApi: DashboardManagementApi,
+	jobId: string,
+): Promise<JobDetailLoadState> {
+	try {
+		const job = await managementApi.client.job({
+			params: {
+				id: jobId,
+			},
+		});
+
+		return {
+			status: 'success',
+			job,
+		};
+	} catch (error) {
+		return {
+			status: 'error',
+			error,
+		};
+	}
 }
 
 type JobDetailLoadState =

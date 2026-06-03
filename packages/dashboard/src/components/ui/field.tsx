@@ -4,7 +4,11 @@ import { cn } from '@/lib/utils';
 
 function Field({ className, ...props }: FieldPrimitive.Root.Props) {
 	return (
-		<FieldPrimitive.Root data-slot="field" className={cn('grid gap-1.5', className)} {...props} />
+		<FieldPrimitive.Root
+			data-slot="field"
+			className={cn('grid min-w-0 gap-1.5', className)}
+			{...props}
+		/>
 	);
 }
 

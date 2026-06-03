@@ -1,8 +1,10 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { toORPCError } from '@orpc/client';
 
+import type { DashboardManagementApi } from '@/management-client';
+
 type JobActionKey = 'cancel' | 'delete' | 'reschedule' | 'retry';
-type BulkJobActionKey = 'cancel' | 'delete' | 'reschedule' | 'retry';
+type BulkJobActionKey = JobActionKey;
 type JobActionAvailability = {
 	readonly disabled: boolean;
 	readonly reason: string | null;
@@ -10,7 +12,13 @@ type JobActionAvailability = {
 type JobActionFeedback = {
 	readonly description: string;
 	readonly title: string;
-	readonly tone: 'danger' | 'success' | 'warning';
+	readonly tone: JobActionFeedbackTone;
+};
+type JobActionFeedbackTone = 'danger' | 'success' | 'warning';
+type RunJobActionInput = {
+	readonly action: JobActionKey;
+	readonly jobId: string;
+	readonly nextRunAt?: string;
 };
 
 const BULK_CAPABILITY_BY_ACTION = {
@@ -180,6 +188,37 @@ function getActionErrorFeedback(error: unknown): JobActionFeedback {
 	}
 }
 
+async function runJobAction(
+	managementApi: DashboardManagementApi,
+	input: RunJobActionInput,
+): Promise<JobActionKey> {
+	switch (input.action) {
+		case 'cancel':
+			await managementApi.client.cancelJob({
+				params: { id: input.jobId },
+			});
+			return input.action;
+		case 'retry':
+			await managementApi.client.retryJob({
+				params: { id: input.jobId },
+			});
+			return input.action;
+		case 'reschedule':
+			await managementApi.client.rescheduleJob({
+				params: { id: input.jobId },
+				body: {
+					nextRunAt: input.nextRunAt ?? new Date().toISOString(),
+				},
+			});
+			return input.action;
+		case 'delete':
+			await managementApi.client.deleteJob({
+				params: { id: input.jobId },
+			});
+			return input.action;
+	}
+}
+
 function readActionErrorMessage(error: ReturnType<typeof toORPCError>): string | null {
 	const data = error.data;
 
@@ -208,5 +247,8 @@ export {
 	getBulkJobActionAvailability,
 	getJobActionAvailability,
 	type JobActionFeedback,
+	type JobActionFeedbackTone,
 	type JobActionKey,
+	type RunJobActionInput,
+	runJobAction,
 };
