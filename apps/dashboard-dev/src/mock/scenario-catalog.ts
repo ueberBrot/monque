@@ -12,6 +12,9 @@ const dashboardDevScenarioIds = [
 	'failed-jobs',
 	'large-dataset',
 	'unauthorized',
+	'forbidden',
+	'read-only',
+	'api-error',
 	'mutation-conflict',
 ] as const;
 
@@ -26,6 +29,8 @@ type DashboardDevScenario = {
 	readonly jobs: readonly JobDto[];
 	readonly queueViews: readonly QueueViewSummaryDto[];
 	readonly unauthorized?: boolean;
+	readonly forbidden?: boolean;
+	readonly apiError?: string;
 	readonly mutationConflict?: boolean;
 };
 
@@ -105,6 +110,51 @@ function getDashboardDevScenarioCatalog(): readonly DashboardDevScenario[] {
 		},
 		{
 			...createScenario({
+				id: 'forbidden',
+				label: 'Forbidden',
+				description: 'The operator is signed in but denied access to Management routes.',
+				jobs: createGeneratedJobs({
+					seed: 46006,
+					count: 8,
+					queueNames: ['send-email', 'sync-billing'],
+					statuses: ['pending', 'failed'],
+				}),
+				workerNames: ['send-email'],
+			}),
+			forbidden: true,
+		},
+		{
+			...createScenario({
+				id: 'read-only',
+				label: 'Read only',
+				description: 'Reads work, but the Management surface exposes only read access.',
+				jobs: createGeneratedJobs({
+					seed: 46007,
+					count: 10,
+					queueNames: ['dispatch-webhook', 'sync-billing'],
+					statuses: ['pending', 'processing', 'completed'],
+				}),
+				workerNames: ['dispatch-webhook'],
+			}),
+			capabilities: createScenarioCapabilities({ readOnly: true }),
+		},
+		{
+			...createScenario({
+				id: 'api-error',
+				label: 'API error',
+				description: 'Every Management request returns a generic server error.',
+				jobs: createGeneratedJobs({
+					seed: 46008,
+					count: 6,
+					queueNames: ['send-email'],
+					statuses: ['pending', 'failed'],
+				}),
+				workerNames: ['send-email'],
+			}),
+			apiError: 'Management API unavailable for the current dashboard scenario.',
+		},
+		{
+			...createScenario({
 				id: 'mutation-conflict',
 				label: 'Mutation conflict',
 				description: 'Reads work, but every mutation returns a conflict.',
@@ -132,6 +182,7 @@ function createScenario(options: {
 	readonly label: string;
 	readonly description: string;
 	readonly jobs: readonly JobDto[];
+	readonly capabilities?: CapabilitiesDto;
 	readonly workerNames?: readonly string[];
 }): DashboardDevScenario {
 	return {
@@ -144,21 +195,25 @@ function createScenario(options: {
 				healthy: true,
 			},
 		},
-		capabilities: {
-			readOnly: false,
-			actions: {
-				read: true,
-				cancel: true,
-				cancelBulk: true,
-				retry: true,
-				retryBulk: true,
-				reschedule: true,
-				delete: true,
-				deleteBulk: true,
-			},
-		},
+		capabilities: options.capabilities ?? createScenarioCapabilities({ readOnly: false }),
 		jobs: options.jobs,
 		queueViews: buildQueueViews(options.jobs, options.workerNames ?? []),
+	};
+}
+
+function createScenarioCapabilities({ readOnly }: { readonly readOnly: boolean }): CapabilitiesDto {
+	return {
+		readOnly,
+		actions: {
+			read: true,
+			cancel: !readOnly,
+			cancelBulk: !readOnly,
+			retry: !readOnly,
+			retryBulk: !readOnly,
+			reschedule: !readOnly,
+			delete: !readOnly,
+			deleteBulk: !readOnly,
+		},
 	};
 }
 

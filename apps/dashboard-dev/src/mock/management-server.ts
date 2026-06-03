@@ -25,18 +25,20 @@ const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = 'pending-jobs';
 const MOCK_MUTATION_UPDATED_AT = '2026-06-03T12:00:00.000Z';
 
 const mockManagementRouter = managementImplementer.router({
-	health: managementImplementer.health.handler(({ context }) => getScenarioOrThrow(context).health),
+	health: managementImplementer.health.handler(
+		({ context }) => getReadableScenario(context).health,
+	),
 	capabilities: managementImplementer.capabilities.handler(
-		({ context }) => getAuthorizedScenario(context).capabilities,
+		({ context }) => getReadableScenario(context).capabilities,
 	),
 	queueViews: managementImplementer.queueViews.handler(({ context }) => ({
-		queueViews: [...getAuthorizedScenario(context).queueViews],
+		queueViews: [...getReadableScenario(context).queueViews],
 	})),
 	jobs: managementImplementer.jobs.handler(({ input, context }) =>
-		listJobs(input, getAuthorizedScenario(context)),
+		listJobs(input, getReadableScenario(context)),
 	),
 	jobStats: managementImplementer.jobStats.handler(({ input, context }) => {
-		const scenario = getAuthorizedScenario(context);
+		const scenario = getReadableScenario(context);
 		const jobs = input.name
 			? scenario.jobs.filter((job) => job.name === input.name)
 			: scenario.jobs;
@@ -44,10 +46,10 @@ const mockManagementRouter = managementImplementer.router({
 		return createQueueStats(jobs);
 	}),
 	job: managementImplementer.job.handler(({ input, context }) =>
-		getJobById(input.params.id, getAuthorizedScenario(context)),
+		getJobById(input.params.id, getReadableScenario(context)),
 	),
 	cancelJob: managementImplementer.cancelJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getAuthorizedScenario(context), (job) => ({
+		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
 			...job,
 			status: 'cancelled',
 			claimedBy: null,
@@ -57,7 +59,7 @@ const mockManagementRouter = managementImplementer.router({
 		})),
 	),
 	retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getAuthorizedScenario(context), (job) => ({
+		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
 			...job,
 			status: 'pending',
 			failCount: 0,
@@ -69,7 +71,7 @@ const mockManagementRouter = managementImplementer.router({
 		})),
 	),
 	rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getAuthorizedScenario(context), (job) => ({
+		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
 			...job,
 			status: 'pending',
 			nextRunAt: input.body.nextRunAt,
@@ -80,7 +82,7 @@ const mockManagementRouter = managementImplementer.router({
 		})),
 	),
 	deleteJob: managementImplementer.deleteJob.handler(({ input, context }) => {
-		const scenario = getAuthorizedScenario(context);
+		const scenario = getReadableScenario(context);
 
 		assertMutationAllowed(scenario);
 		assertJobExists(input.params.id, scenario);
@@ -88,13 +90,13 @@ const mockManagementRouter = managementImplementer.router({
 		return { deleted: true };
 	}),
 	cancelJobs: managementImplementer.cancelJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getAuthorizedScenario(context)),
+		mutateBulkJobs(input, getReadableScenario(context)),
 	),
 	retryJobs: managementImplementer.retryJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getAuthorizedScenario(context)),
+		mutateBulkJobs(input, getReadableScenario(context)),
 	),
 	deleteJobs: managementImplementer.deleteJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getAuthorizedScenario(context)),
+		mutateBulkJobs(input, getReadableScenario(context)),
 	),
 });
 
@@ -141,8 +143,20 @@ function getScenarioOrThrow(context: MockManagementContext): DashboardDevScenari
 	return scenario;
 }
 
-function getAuthorizedScenario(context: MockManagementContext): DashboardDevScenario {
+function getReadableScenario(context: MockManagementContext): DashboardDevScenario {
 	const scenario = getScenarioOrThrow(context);
+
+	assertScenarioResponseAllowed(scenario);
+	return scenario;
+}
+
+function assertScenarioResponseAllowed(scenario: DashboardDevScenario): void {
+	if (scenario.apiError) {
+		throw new ORPCError('INTERNAL_SERVER_ERROR', {
+			data: { error: scenario.apiError },
+			message: scenario.apiError,
+		});
+	}
 
 	if (scenario.unauthorized) {
 		throw new ORPCError('UNAUTHORIZED', {
@@ -151,7 +165,12 @@ function getAuthorizedScenario(context: MockManagementContext): DashboardDevScen
 		});
 	}
 
-	return scenario;
+	if (scenario.forbidden) {
+		throw new ORPCError('FORBIDDEN', {
+			data: { error: 'You do not have access to this dashboard scenario.' },
+			message: 'You do not have access to this dashboard scenario.',
+		});
+	}
 }
 
 function listJobs(input: JobListQueryDto, scenario: DashboardDevScenario): JobCursorPageDto {
