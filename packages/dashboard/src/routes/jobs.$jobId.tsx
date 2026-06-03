@@ -2,7 +2,7 @@ import { safe } from '@orpc/client';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { JobDetailStateView, JobDetailView } from '@/components/job-detail-view';
-import { mapJobDetailError } from '@/lib/job-detail';
+import { mapJobDetailError, serializePayloadForClipboard } from '@/lib/job-detail';
 
 export const Route = createFileRoute('/jobs/$jobId')({
 	component: JobDetailRoute,
@@ -29,13 +29,15 @@ function JobDetailRoute() {
 	return (
 		<JobDetailView
 			job={job}
-			onCopyJobId={() => void navigator.clipboard.writeText(job.id)}
-			onCopyPayload={() =>
-				void navigator.clipboard.writeText(JSON.stringify(job.payload, null, 2) ?? 'null')
-			}
-			onCopyShareableUrl={() => void navigator.clipboard.writeText(window.location.href)}
+			onCopyJobId={() => copyToClipboard(job.id)}
+			onCopyPayload={() => copyToClipboard(serializePayloadForClipboard(job.payload))}
+			onCopyShareableUrl={() => copyToClipboard(window.location.href)}
 		/>
 	);
+}
+
+function copyToClipboard(value: string): void {
+	void navigator.clipboard.writeText(value);
 }
 
 function JobDetailPending() {
