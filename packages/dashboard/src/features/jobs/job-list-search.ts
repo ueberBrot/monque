@@ -25,12 +25,8 @@ type JobsRouteSearch = {
 	readonly updatedAtTo: string | undefined;
 };
 
-type JobListSortByDto = JobListQueryDto['sortBy'] extends infer TValue
-	? Exclude<TValue, undefined>
-	: never;
-type JobListSortDirectionDto = JobListQueryDto['sortDirection'] extends infer TValue
-	? Exclude<TValue, undefined>
-	: never;
+type JobListSortByDto = NonNullable<JobListQueryDto['sortBy']>;
+type JobListSortDirectionDto = NonNullable<JobListQueryDto['sortDirection']>;
 type JobStatusDto = JobDto['status'];
 
 function parseJobsRouteSearch(search: Record<string, unknown>): JobsRouteSearch {
@@ -55,12 +51,7 @@ function toJobListQueryInput(search: JobsRouteSearch): JobListQueryDto {
 		cursor: search.cursor,
 		limit: String(search.limit),
 		name: search.name,
-		status:
-			search.status.length === 0
-				? undefined
-				: search.status.length === 1
-					? search.status[0]
-					: [...search.status],
+		status: toJobListStatusQuery(search.status),
 		createdAtFrom: search.createdAtFrom,
 		createdAtTo: search.createdAtTo,
 		updatedAtFrom: search.updatedAtFrom,
@@ -99,16 +90,13 @@ function toDateTimeLocalValue(value?: string): string {
 		return '';
 	}
 
-	return [
-		parsed.getFullYear(),
-		String(parsed.getMonth() + 1).padStart(2, '0'),
-		String(parsed.getDate()).padStart(2, '0'),
-	]
-		.join('-')
-		.concat('T')
-		.concat(String(parsed.getHours()).padStart(2, '0'))
-		.concat(':')
-		.concat(String(parsed.getMinutes()).padStart(2, '0'));
+	const year = parsed.getFullYear();
+	const month = toPaddedDatePart(parsed.getMonth() + 1);
+	const day = toPaddedDatePart(parsed.getDate());
+	const hour = toPaddedDatePart(parsed.getHours());
+	const minute = toPaddedDatePart(parsed.getMinutes());
+
+	return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
 function fromDateTimeLocalValue(value: string): string | undefined {
@@ -154,18 +142,15 @@ function getStatusLabel(status: JobStatusDto): string {
 }
 
 function parseLimit(value: unknown): number {
-	const parsed =
-		typeof value === 'number'
-			? value
-			: typeof value === 'string'
-				? Number.parseInt(value, 10)
-				: Number.NaN;
-
-	if (!Number.isInteger(parsed) || parsed <= 0) {
-		return DEFAULT_LIMIT;
+	if (typeof value === 'number') {
+		return normalizeLimit(value);
 	}
 
-	return Math.min(parsed, MAX_LIMIT);
+	if (typeof value === 'string') {
+		return normalizeLimit(Number.parseInt(value, 10));
+	}
+
+	return DEFAULT_LIMIT;
 }
 
 function parseStatusFilter(value: unknown): readonly JobStatusDto[] {
@@ -201,6 +186,30 @@ function getOptionalIsoDate(value: unknown): string | undefined {
 	return Number.isNaN(Date.parse(value)) ? undefined : value;
 }
 
+function normalizeLimit(value: number): number {
+	if (!Number.isInteger(value) || value <= 0) {
+		return DEFAULT_LIMIT;
+	}
+
+	return Math.min(value, MAX_LIMIT);
+}
+
+function toJobListStatusQuery(status: readonly JobStatusDto[]): JobListQueryDto['status'] {
+	if (status.length === 0) {
+		return undefined;
+	}
+
+	if (status.length === 1) {
+		return status[0];
+	}
+
+	return [...status];
+}
+
+function toPaddedDatePart(value: number): string {
+	return String(value).padStart(2, '0');
+}
+
 export {
 	DEFAULT_LIMIT,
 	fromDateTimeLocalValue,
@@ -212,6 +221,7 @@ export {
 	type JobListSortDirectionDto,
 	type JobStatusDto,
 	type JobsRouteSearch,
+	MAX_LIMIT,
 	parseJobsRouteSearch,
 	toDateTimeLocalValue,
 	toJobListQueryInput,
