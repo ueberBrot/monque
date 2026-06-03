@@ -21,7 +21,10 @@ const runtimeConfig: DashboardRuntimeConfig = {
 describe('Health route', () => {
 	beforeEach(() => {
 		window.history.replaceState({}, '', '/health');
-		window.scrollTo = () => {};
+		Object.defineProperty(window, 'scrollTo', {
+			configurable: true,
+			value: () => {},
+		});
 	});
 
 	it('shows scheduler health and Management capabilities', async () => {
