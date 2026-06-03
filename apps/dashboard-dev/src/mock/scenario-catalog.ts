@@ -136,19 +136,7 @@ function getDashboardDevScenarioCatalog(): readonly DashboardDevScenario[] {
 				}),
 				workerNames: ['dispatch-webhook'],
 			}),
-			capabilities: {
-				readOnly: true,
-				actions: {
-					read: true,
-					cancel: false,
-					cancelBulk: false,
-					retry: false,
-					retryBulk: false,
-					reschedule: false,
-					delete: false,
-					deleteBulk: false,
-				},
-			},
+			capabilities: createScenarioCapabilities({ readOnly: true }),
 		},
 		{
 			...createScenario({
@@ -207,21 +195,25 @@ function createScenario(options: {
 				healthy: true,
 			},
 		},
-		capabilities: options.capabilities ?? {
-			readOnly: false,
-			actions: {
-				read: true,
-				cancel: true,
-				cancelBulk: true,
-				retry: true,
-				retryBulk: true,
-				reschedule: true,
-				delete: true,
-				deleteBulk: true,
-			},
-		},
+		capabilities: options.capabilities ?? createScenarioCapabilities({ readOnly: false }),
 		jobs: options.jobs,
 		queueViews: buildQueueViews(options.jobs, options.workerNames ?? []),
+	};
+}
+
+function createScenarioCapabilities({ readOnly }: { readonly readOnly: boolean }): CapabilitiesDto {
+	return {
+		readOnly,
+		actions: {
+			read: true,
+			cancel: !readOnly,
+			cancelBulk: !readOnly,
+			retry: !readOnly,
+			retryBulk: !readOnly,
+			reschedule: !readOnly,
+			delete: !readOnly,
+			deleteBulk: !readOnly,
+		},
 	};
 }
 
