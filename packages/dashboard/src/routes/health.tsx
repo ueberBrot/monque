@@ -7,11 +7,26 @@ import type { ReactNode } from 'react';
 import { listDashboardCapabilityStates } from '@/capabilities';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { resolveDashboardApiErrorState } from '@/management-errors';
+import { cn } from '@/lib/utils';
+import { type DashboardApiErrorState, resolveDashboardApiErrorState } from '@/management-errors';
 
 export const Route = createFileRoute('/health')({
 	component: HealthRoute,
 });
+
+const HEALTH_PANEL_CLASS_NAME = 'rounded-lg border border-border bg-card p-5';
+const HEALTH_SECTION_LABEL_CLASS_NAME =
+	'text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase';
+const SUMMARY_SKELETON_CARD_COUNT = 3;
+
+type HealthSummaryCardProps = {
+	readonly title: string;
+	readonly heading: string;
+	readonly description: string;
+	readonly badgeLabel: string;
+	readonly badgeVariant: 'danger' | 'outline' | 'success' | 'warning';
+	readonly icon: ReactNode;
+};
 
 function HealthRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
@@ -55,6 +70,8 @@ function HealthRouteContent({
 }) {
 	const capabilityStates = listDashboardCapabilityStates(capabilities);
 	const availableActionCount = capabilityStates.filter((capability) => capability.available).length;
+	const schedulerSummary = getSchedulerSummary(health);
+	const managementModeSummary = getManagementModeSummary(capabilities);
 
 	return (
 		<section className="grid gap-6">
@@ -67,18 +84,7 @@ function HealthRouteContent({
 			</div>
 			<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-					<HealthSummaryCard
-						title="Scheduler"
-						heading={health.scheduler.healthy ? 'Scheduler healthy' : 'Scheduler unavailable'}
-						description={
-							health.scheduler.healthy
-								? 'The scheduler reports healthy state.'
-								: 'The scheduler reports an unavailable state.'
-						}
-						badgeLabel={health.status === 'ok' ? 'Healthy' : 'Unavailable'}
-						badgeVariant={health.status === 'ok' ? 'success' : 'danger'}
-						icon={<CheckCircle2 className="size-4" />}
-					/>
+					<HealthSummaryCard {...schedulerSummary} />
 					<HealthSummaryCard
 						title="Management API"
 						heading="Management API reachable"
@@ -87,27 +93,12 @@ function HealthRouteContent({
 						badgeVariant="success"
 						icon={<RefreshCcw className="size-4" />}
 					/>
-					<HealthSummaryCard
-						title="Mode"
-						heading={
-							capabilities.readOnly ? 'Read-only Management surface' : 'Writable Management surface'
-						}
-						description={
-							capabilities.readOnly
-								? 'Read routes remain available. Mutation actions stay visible but disabled.'
-								: 'Read and supported mutation actions are available for this surface.'
-						}
-						badgeLabel={capabilities.readOnly ? 'Read only' : 'Writable'}
-						badgeVariant={capabilities.readOnly ? 'warning' : 'outline'}
-						icon={<Lock className="size-4" />}
-					/>
+					<HealthSummaryCard {...managementModeSummary} />
 				</div>
-				<div className="rounded-xl border border-border bg-card p-5">
+				<HealthPanel>
 					<div className="flex items-center justify-between gap-3">
 						<div>
-							<p className="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
-								Runtime
-							</p>
+							<p className={HEALTH_SECTION_LABEL_CLASS_NAME}>Runtime</p>
 							<h2 className="mt-2 text-lg font-semibold">Client settings</h2>
 						</div>
 						<Badge variant="outline">Polling aware</Badge>
@@ -121,14 +112,12 @@ function HealthRouteContent({
 						</HealthDefinition>
 						<HealthDefinition term="Login surface">No Dashboard login screen.</HealthDefinition>
 					</dl>
-				</div>
+				</HealthPanel>
 			</div>
-			<section className="rounded-xl border border-border bg-card p-5">
+			<HealthPanel>
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
-						<p className="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
-							Capabilities
-						</p>
+						<p className={HEALTH_SECTION_LABEL_CLASS_NAME}>Capabilities</p>
 						<h2 className="mt-2 text-lg font-semibold">Action availability</h2>
 						<p className="mt-2 max-w-prose text-sm text-muted-foreground">
 							Downstream UI should read these capability states instead of hardcoding which actions
@@ -157,7 +146,7 @@ function HealthRouteContent({
 						</li>
 					))}
 				</ul>
-			</section>
+			</HealthPanel>
 		</section>
 	);
 }
@@ -171,20 +160,20 @@ function HealthRoutePendingState() {
 			</div>
 			<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-					{Array.from({ length: 3 }, (_, index) => (
-						<div key={String(index)} className="rounded-xl border border-border bg-card p-5">
+					{Array.from({ length: SUMMARY_SKELETON_CARD_COUNT }, (_, index) => (
+						<HealthPanel key={String(index)}>
 							<Skeleton className="h-4 w-20" />
 							<Skeleton className="mt-4 h-6 w-40" />
 							<Skeleton className="mt-3 h-4 w-full" />
-						</div>
+						</HealthPanel>
 					))}
 				</div>
-				<div className="rounded-xl border border-border bg-card p-5">
+				<HealthPanel>
 					<Skeleton className="h-4 w-20" />
 					<Skeleton className="mt-4 h-5 w-36" />
 					<Skeleton className="mt-4 h-4 w-full" />
 					<Skeleton className="mt-2 h-4 w-3/4" />
-				</div>
+				</HealthPanel>
 			</div>
 		</section>
 	);
@@ -192,21 +181,12 @@ function HealthRoutePendingState() {
 
 function HealthRouteErrorState({ error }: { readonly error: unknown }) {
 	const state = resolveDashboardApiErrorState(error);
+	const presentation = getErrorTonePresentation(state.tone);
 
 	return (
-		<section
-			className={`rounded-xl border p-6 ${
-				state.tone === 'warning'
-					? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-					: 'border-destructive/30 bg-destructive/10 text-destructive'
-			}`}
-		>
+		<section className={cn('rounded-lg border p-6', presentation.className)}>
 			<div className="flex items-start gap-3">
-				{state.tone === 'warning' ? (
-					<AlertTriangle className="mt-0.5 size-4 shrink-0" />
-				) : (
-					<ShieldX className="mt-0.5 size-4 shrink-0" />
-				)}
+				{presentation.icon}
 				<div className="grid gap-2">
 					<h1 className="text-lg font-semibold">{state.title}</h1>
 					<p className="max-w-prose text-sm">{state.description}</p>
@@ -223,20 +203,11 @@ function HealthSummaryCard({
 	badgeLabel,
 	badgeVariant,
 	icon,
-}: {
-	readonly title: string;
-	readonly heading: string;
-	readonly description: string;
-	readonly badgeLabel: string;
-	readonly badgeVariant: 'danger' | 'outline' | 'success' | 'warning';
-	readonly icon: ReactNode;
-}) {
+}: HealthSummaryCardProps) {
 	return (
-		<section className="rounded-xl border border-border bg-card p-5">
+		<HealthPanel>
 			<div className="flex items-center justify-between gap-3">
-				<p className="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
-					{title}
-				</p>
+				<p className={HEALTH_SECTION_LABEL_CLASS_NAME}>{title}</p>
 				<Badge variant={badgeVariant}>{badgeLabel}</Badge>
 			</div>
 			<div className="mt-4 flex items-start gap-3">
@@ -246,8 +217,18 @@ function HealthSummaryCard({
 					<p className="mt-2 text-sm text-muted-foreground">{description}</p>
 				</div>
 			</div>
-		</section>
+		</HealthPanel>
 	);
+}
+
+function HealthPanel({
+	children,
+	className,
+}: {
+	readonly children: ReactNode;
+	readonly className?: string;
+}) {
+	return <section className={cn(HEALTH_PANEL_CLASS_NAME, className)}>{children}</section>;
 }
 
 function HealthDefinition({
@@ -259,12 +240,72 @@ function HealthDefinition({
 }) {
 	return (
 		<div className="grid gap-1">
-			<dt className="text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
-				{term}
-			</dt>
+			<dt className={HEALTH_SECTION_LABEL_CLASS_NAME}>{term}</dt>
 			<dd className="text-sm">{children}</dd>
 		</div>
 	);
+}
+
+function getSchedulerSummary(health: SchedulerHealthDto): HealthSummaryCardProps {
+	if (health.scheduler.healthy) {
+		return {
+			title: 'Scheduler',
+			heading: 'Scheduler healthy',
+			description: 'The scheduler reports healthy state.',
+			badgeLabel: health.status === 'ok' ? 'Healthy' : 'Unavailable',
+			badgeVariant: health.status === 'ok' ? 'success' : 'danger',
+			icon: <CheckCircle2 className="size-4" />,
+		};
+	}
+
+	return {
+		title: 'Scheduler',
+		heading: 'Scheduler unavailable',
+		description: 'The scheduler reports an unavailable state.',
+		badgeLabel: health.status === 'ok' ? 'Healthy' : 'Unavailable',
+		badgeVariant: health.status === 'ok' ? 'success' : 'danger',
+		icon: <AlertTriangle className="size-4" />,
+	};
+}
+
+function getManagementModeSummary(capabilities: CapabilitiesDto): HealthSummaryCardProps {
+	if (capabilities.readOnly) {
+		return {
+			title: 'Mode',
+			heading: 'Read-only Management surface',
+			description: 'Read routes remain available. Mutation actions stay visible but disabled.',
+			badgeLabel: 'Read only',
+			badgeVariant: 'warning',
+			icon: <Lock className="size-4" />,
+		};
+	}
+
+	return {
+		title: 'Mode',
+		heading: 'Writable Management surface',
+		description: 'Read and supported mutation actions are available for this surface.',
+		badgeLabel: 'Writable',
+		badgeVariant: 'outline',
+		icon: <Lock className="size-4" />,
+	};
+}
+
+function getErrorTonePresentation(tone: DashboardApiErrorState['tone']): {
+	readonly className: string;
+	readonly icon: ReactNode;
+} {
+	switch (tone) {
+		case 'warning':
+			return {
+				className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+				icon: <AlertTriangle className="mt-0.5 size-4 shrink-0" />,
+			};
+		case 'danger':
+			return {
+				className: 'border-destructive/30 bg-destructive/10 text-destructive',
+				icon: <ShieldX className="mt-0.5 size-4 shrink-0" />,
+			};
+	}
 }
 
 function formatPollingInterval(pollingIntervalMs: number | undefined): string {

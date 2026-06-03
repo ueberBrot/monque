@@ -25,11 +25,9 @@ const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = 'pending-jobs';
 const MOCK_MUTATION_UPDATED_AT = '2026-06-03T12:00:00.000Z';
 
 const mockManagementRouter = managementImplementer.router({
-	health: managementImplementer.health.handler(({ context }) => {
-		const scenario = getScenarioOrThrow(context);
-		assertScenarioResponseAllowed(scenario);
-		return scenario.health;
-	}),
+	health: managementImplementer.health.handler(
+		({ context }) => getReadableScenario(context).health,
+	),
 	capabilities: managementImplementer.capabilities.handler(
 		({ context }) => getReadableScenario(context).capabilities,
 	),
