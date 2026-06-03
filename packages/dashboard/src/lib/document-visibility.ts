@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
+type PollingInterval = number | false;
+
 function subscribeToDocumentVisibility(onStoreChange: () => void): () => void {
 	if (typeof document === 'undefined') {
 		return () => undefined;
@@ -22,4 +24,14 @@ function useDocumentVisible(): boolean {
 	return useSyncExternalStore(subscribeToDocumentVisibility, isDocumentVisible, () => true);
 }
 
-export { isDocumentVisible, useDocumentVisible };
+function useDocumentVisiblePollingInterval(pollingIntervalMs: number | undefined): PollingInterval {
+	const documentVisible = useDocumentVisible();
+
+	if (!pollingIntervalMs || !documentVisible) {
+		return false;
+	}
+
+	return pollingIntervalMs;
+}
+
+export { isDocumentVisible, useDocumentVisible, useDocumentVisiblePollingInterval };

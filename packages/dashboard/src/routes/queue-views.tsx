@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router';
 
-import { useDocumentVisible } from '@/lib/document-visibility';
+import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 
 import {
 	getQueryErrorMessage,
 	isUnauthorizedQueryError,
 	QueueViewsEmptyState,
 	QueueViewsErrorState,
+	QueueViewsLoadingState,
 	QueueViewsOverview,
-	QueueViewsOverviewLoading,
 	QueueViewsUnauthorizedState,
 } from './-queue-views.shared.js';
 
@@ -19,17 +19,19 @@ export const Route = createFileRoute('/queue-views')({
 
 function QueueViewsRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
-	const isDocumentCurrentlyVisible = useDocumentVisible();
+	const location = useLocation();
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const queueViewsQuery = useQuery({
 		...managementApi.orpc.queueViews.queryOptions(),
-		refetchInterval:
-			runtimeConfig.pollingIntervalMs && isDocumentCurrentlyVisible
-				? runtimeConfig.pollingIntervalMs
-				: false,
+		refetchInterval,
 	});
 
+	if (location.pathname !== '/queue-views') {
+		return <Outlet />;
+	}
+
 	if (queueViewsQuery.isPending) {
-		return <QueueViewsOverviewLoading />;
+		return <QueueViewsLoadingState />;
 	}
 
 	if (queueViewsQuery.isError) {

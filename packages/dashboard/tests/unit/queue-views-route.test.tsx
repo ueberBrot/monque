@@ -2,7 +2,7 @@
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -31,7 +31,8 @@ describe('Queue Views routes', () => {
 
 		fireEvent.click(await screen.findByText('send-email'));
 
-		expect(await screen.findByRole('heading', { name: 'send-email' })).toBeTruthy();
+		expect(await screen.findByRole('heading', { name: 'Filtered jobs' })).toBeTruthy();
+		expect(screen.getByRole('heading', { level: 1, name: 'send-email' })).toBeTruthy();
 		expect(screen.queryByLabelText(/job name/i)).toBeNull();
 	});
 
@@ -68,6 +69,7 @@ describe('Queue Views routes', () => {
 });
 
 afterEach(() => {
+	cleanup();
 	setDocumentVisibilityState('visible');
 });
 

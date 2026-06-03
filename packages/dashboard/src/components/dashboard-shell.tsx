@@ -23,7 +23,13 @@ const dashboardThemeModes = ['light', 'dark', 'system'] as const;
 
 type DashboardNavItem = (typeof dashboardNavItems)[number];
 type DashboardThemeMode = (typeof dashboardThemeModes)[number];
-type DashboardNavLinkRenderer = (item: DashboardNavItem) => ReactNode;
+type DashboardNavLinkRendererOptions = {
+	readonly onNavigate: (() => void) | undefined;
+};
+type DashboardNavLinkRenderer = (
+	item: DashboardNavItem,
+	options: DashboardNavLinkRendererOptions,
+) => ReactNode;
 
 type DashboardShellProps = {
 	readonly children: ReactNode;
@@ -150,6 +156,7 @@ function DashboardShell({
 											ariaLabel="Mobile primary"
 											className="px-3 py-4"
 											currentPath={currentPath}
+											onNavigate={() => setMobileNavigationOpen(false)}
 											renderNavLink={renderNavLink}
 										/>
 										<div className="mt-auto border-t border-border px-5 py-4">
@@ -180,18 +187,20 @@ function DashboardNavigation({
 	ariaLabel,
 	className,
 	currentPath,
+	onNavigate,
 	renderNavLink,
 }: {
 	readonly ariaLabel: string;
 	readonly className?: string;
 	readonly currentPath: string;
+	readonly onNavigate?: () => void;
 	readonly renderNavLink: DashboardNavLinkRenderer | undefined;
 }): ReactElement {
 	return (
 		<nav className={cn('grid gap-1', className)} aria-label={ariaLabel}>
 			{dashboardNavItems.map((item) => (
 				<Fragment key={item.href}>
-					{renderDashboardNavLink({ currentPath, item, renderNavLink })}
+					{renderDashboardNavLink({ currentPath, item, onNavigate, renderNavLink })}
 				</Fragment>
 			))}
 		</nav>
@@ -201,18 +210,24 @@ function DashboardNavigation({
 function renderDashboardNavLink({
 	currentPath,
 	item,
+	onNavigate,
 	renderNavLink,
 }: {
 	readonly currentPath: string;
 	readonly item: DashboardNavItem;
+	readonly onNavigate: (() => void) | undefined;
 	readonly renderNavLink: DashboardNavLinkRenderer | undefined;
 }): ReactNode {
 	if (renderNavLink) {
-		return renderNavLink(item);
+		return renderNavLink(item, { onNavigate });
 	}
 
 	return (
-		<a href={item.href} className={getNavItemClassName(currentPath === item.href)}>
+		<a
+			href={item.href}
+			className={getNavItemClassName(currentPath === item.href)}
+			onClick={onNavigate}
+		>
 			{item.label}
 		</a>
 	);
