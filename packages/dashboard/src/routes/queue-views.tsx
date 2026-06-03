@@ -38,7 +38,7 @@ function QueueViewsRoute() {
 		[queueViewsQuery.refetch],
 	);
 
-	useDashboardShellRouteActions(shellActions);
+	useDashboardShellRouteActions(location.pathname === '/queue-views' ? shellActions : null);
 
 	if (location.pathname !== '/queue-views') {
 		return <Outlet />;

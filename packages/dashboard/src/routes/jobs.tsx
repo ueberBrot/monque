@@ -377,7 +377,7 @@ function JobsRoute() {
 		[handleRefresh, navigate],
 	);
 
-	useDashboardShellRouteActions(shellActions);
+	useDashboardShellRouteActions(pathname === '/jobs' ? shellActions : null);
 
 	function openBulkDialog(action: JobActionKey): void {
 		setDialogState({
