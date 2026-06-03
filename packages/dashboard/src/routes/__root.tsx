@@ -18,17 +18,26 @@ function RootComponent() {
 	return (
 		<DashboardShell
 			currentPath={currentPath}
-			renderNavLink={(item) => <DashboardRouterNavLink item={item} />}
+			renderNavLink={(item, options) => (
+				<DashboardRouterNavLink item={item} onNavigate={options.onNavigate} />
+			)}
 		>
 			<Outlet />
 		</DashboardShell>
 	);
 }
 
-function DashboardRouterNavLink({ item }: { readonly item: DashboardNavItem }) {
+function DashboardRouterNavLink({
+	item,
+	onNavigate,
+}: {
+	readonly item: DashboardNavItem;
+	readonly onNavigate: (() => void) | undefined;
+}) {
 	return (
 		<Link
 			to={item.href}
+			onClick={onNavigate}
 			className="flex h-10 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
 			activeProps={{
 				className: 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
