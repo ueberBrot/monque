@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDashboardManagementApi } from '../../../../packages/dashboard/src/management-client.js';
+import { createDashboardManagementApi } from '@/management-client';
+
 import { createMockManagementFetch } from '../../src/mock/management-server.js';
 
 describe('createMockManagementFetch', () => {

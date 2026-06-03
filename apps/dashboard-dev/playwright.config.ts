@@ -1,4 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
+
+const dashboardDevAppDirectory = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
 	testDir: './tests/smoke',
@@ -21,7 +24,7 @@ export default defineConfig({
 		command: 'bun run dev',
 		port: 3400,
 		reuseExistingServer: !process.env['CI'],
-		cwd: '/home/agent/workspace/apps/dashboard-dev',
+		cwd: dashboardDevAppDirectory,
 		env: {
 			MONQUE_DASHBOARD_DEV_MODE: 'mock',
 			MONQUE_DASHBOARD_DEV_SCENARIO: 'pending-jobs',

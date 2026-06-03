@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { parseDashboardRuntimeConfig } from '../../../packages/dashboard/src/runtime-config.js';
+import { type DashboardRuntimeConfig, parseDashboardRuntimeConfig } from '@/runtime-config';
+
 import {
 	type DashboardDevScenarioId,
 	dashboardDevScenarioIds,
@@ -38,7 +39,9 @@ function readDashboardDevEnvironment(
 	return parsed;
 }
 
-function createDashboardRuntimeConfig(environment: DashboardDevEnvironment) {
+function createDashboardRuntimeConfig(
+	environment: DashboardDevEnvironment,
+): DashboardRuntimeConfig {
 	return parseDashboardRuntimeConfig({
 		apiBaseUrl: environment.mode === 'mock' ? '/' : environment.liveApiBaseUrl,
 		basePath: '/',

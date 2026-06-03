@@ -1,11 +1,12 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 
-import { createDashboardManagementApi } from '../../../packages/dashboard/src/management-client.js';
-import { DashboardProviders } from '../../../packages/dashboard/src/providers.js';
-import { createDashboardQueryClient } from '../../../packages/dashboard/src/query-client.js';
-import { getRouter } from '../../../packages/dashboard/src/router.js';
-import { type DashboardDevScenarioId, dashboardDevScenarioIds } from './mock/scenario-catalog.js';
+import { createDashboardManagementApi } from '@/management-client';
+import { DashboardProviders } from '@/providers';
+import { createDashboardQueryClient } from '@/query-client';
+import { getRouter } from '@/router';
+
+import { type DashboardDevScenarioId, isDashboardDevScenarioId } from './mock/scenario-catalog.js';
 import {
 	createDashboardRuntimeConfig,
 	type DashboardDevEnvironment,
@@ -15,6 +16,8 @@ import {
 import { createScenarioHeaderFetch } from './scenario-header-fetch.js';
 
 const LOCAL_STORAGE_SCENARIO_KEY = 'monque-dashboard-dev-scenario';
+
+type DashboardDevManagementApiOptions = Parameters<typeof createDashboardManagementApi>[0];
 
 function DashboardDevShellApp({
 	environment,
@@ -52,16 +55,7 @@ function DashboardDevRuntime({
 }): ReactElement {
 	const runtimeConfig = createDashboardRuntimeConfig(environment);
 	const managementApi = createDashboardManagementApi(
-		environment.mode === 'mock'
-			? {
-					apiBaseUrl: runtimeConfig.apiBaseUrl,
-					fetch: createScenarioHeaderFetch(scenarioId),
-					origin: window.location.origin,
-				}
-			: {
-					apiBaseUrl: runtimeConfig.apiBaseUrl,
-					origin: window.location.origin,
-				},
+		createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
 	);
 	const queryClient = createDashboardQueryClient();
 	const router = getRouter({ managementApi, queryClient, runtimeConfig });
@@ -91,16 +85,7 @@ function DashboardDevOverlay({
 	useEffect(() => {
 		const runtimeConfig = createDashboardRuntimeConfig(environment);
 		const managementApi = createDashboardManagementApi(
-			environment.mode === 'mock'
-				? {
-						apiBaseUrl: runtimeConfig.apiBaseUrl,
-						fetch: createScenarioHeaderFetch(scenarioId),
-						origin: window.location.origin,
-					}
-				: {
-						apiBaseUrl: runtimeConfig.apiBaseUrl,
-						origin: window.location.origin,
-					},
+			createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
 		);
 
 		let cancelled = false;
@@ -135,6 +120,12 @@ function DashboardDevOverlay({
 		};
 	}, [environment, scenarioId]);
 
+	const handleScenarioChange = (value: string): void => {
+		if (isDashboardDevScenarioId(value)) {
+			onScenarioChange(value);
+		}
+	};
+
 	return (
 		<section
 			data-testid="dashboard-dev-shell"
@@ -144,12 +135,11 @@ function DashboardDevOverlay({
 				bottom: '1rem',
 				zIndex: 60,
 				width: 'min(22rem, calc(100vw - 2rem))',
-				borderRadius: '12px',
-				border: '1px solid rgba(255,255,255,0.12)',
-				background: 'rgba(9, 12, 13, 0.94)',
-				boxShadow: '0 18px 48px rgba(0, 0, 0, 0.35)',
+				borderRadius: '8px',
+				border: '1px solid #2a3639',
+				background: '#090c0d',
+				boxShadow: '0 8px 12px rgba(0, 0, 0, 0.36)',
 				color: '#e3ebeb',
-				backdropFilter: 'blur(16px)',
 			}}
 		>
 			<div style={{ padding: '0.9rem 1rem', display: 'grid', gap: '0.75rem' }}>
@@ -158,7 +148,7 @@ function DashboardDevOverlay({
 						style={{
 							margin: 0,
 							fontSize: '0.72rem',
-							letterSpacing: '0.16em',
+							letterSpacing: 0,
 							textTransform: 'uppercase',
 							color: '#a8b5b5',
 						}}
@@ -174,10 +164,10 @@ function DashboardDevOverlay({
 					<select
 						aria-label="Scenario"
 						value={scenarioId}
-						onChange={(event) => onScenarioChange(event.target.value as DashboardDevScenarioId)}
+						onChange={(event) => handleScenarioChange(event.target.value)}
 						style={{
 							borderRadius: '8px',
-							border: '1px solid rgba(255,255,255,0.14)',
+							border: '1px solid #2a3639',
 							padding: '0.55rem 0.7rem',
 							background: '#161d20',
 							color: '#e3ebeb',
@@ -220,8 +210,8 @@ function SummaryValue({
 	return (
 		<div
 			style={{
-				borderRadius: '10px',
-				border: '1px solid rgba(255,255,255,0.08)',
+				borderRadius: '8px',
+				border: '1px solid #2a3639',
 				background: '#111719',
 				padding: '0.65rem 0.75rem',
 			}}
@@ -232,6 +222,26 @@ function SummaryValue({
 	);
 }
 
+function createDashboardDevManagementApiOptions(
+	environment: DashboardDevEnvironment,
+	scenarioId: DashboardDevScenarioId,
+	apiBaseUrl: string,
+): DashboardDevManagementApiOptions {
+	const baseOptions = {
+		apiBaseUrl,
+		origin: window.location.origin,
+	};
+
+	if (environment.mode === 'mock') {
+		return {
+			...baseOptions,
+			fetch: createScenarioHeaderFetch(scenarioId),
+		};
+	}
+
+	return baseOptions;
+}
+
 function getStoredScenarioId(): DashboardDevScenarioId {
 	if (typeof window === 'undefined') {
 		return getDefaultScenarioId();
@@ -240,10 +250,6 @@ function getStoredScenarioId(): DashboardDevScenarioId {
 	const storedScenarioId = window.localStorage.getItem(LOCAL_STORAGE_SCENARIO_KEY);
 
 	return isDashboardDevScenarioId(storedScenarioId) ? storedScenarioId : getDefaultScenarioId();
-}
-
-function isDashboardDevScenarioId(value: string | null): value is DashboardDevScenarioId {
-	return value !== null && dashboardDevScenarioIds.includes(value as DashboardDevScenarioId);
 }
 
 export { DashboardDevShellApp };
