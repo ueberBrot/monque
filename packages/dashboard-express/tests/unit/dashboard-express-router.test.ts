@@ -5,6 +5,42 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import type { DashboardExpressRouterOptions } from '@/index';
+
+const dashboardAssetMetadata = {
+	assetDirectory: 'client',
+	htmlEntrypoint: 'index.html',
+	manifestPath: '.vite/manifest.json',
+	runtimeConfigGlobal: '__MONQUE_DASHBOARD_CONFIG__',
+	runtimeConfigScriptId: 'monque-dashboard-runtime-config',
+} as const;
+
+const dashboardHtmlTemplate = [
+	'<!doctype html>',
+	'<html lang="en">',
+	'<head>',
+	'  <meta charset="UTF-8" />',
+	'  <script id="monque-dashboard-runtime-config">',
+	'    window.__MONQUE_DASHBOARD_CONFIG__ = {',
+	"      basePath: '/',",
+	"      apiBaseUrl: '/',",
+	'      pollingIntervalMs: 5000',
+	'    };',
+	'  </script>',
+	'</head>',
+	'<body>',
+	'  <div id="app"></div>',
+	'  <script type="module" src="./assets/index-abc12345.js"></script>',
+	'</body>',
+	'</html>',
+].join('\n');
+
+type DashboardAppOptions = {
+	readonly apiBaseUrl?: DashboardExpressRouterOptions['apiBaseUrl'];
+	readonly mountPath?: string;
+	readonly pollingIntervalMs?: number;
+};
+
 describe('Dashboard Express Adapter', () => {
 	let assetDirectory: string;
 	let htmlEntrypointPath: string;
@@ -15,28 +51,7 @@ describe('Dashboard Express Adapter', () => {
 		htmlEntrypointPath = join(tempDirectory, 'index.html');
 
 		await mkdir(join(tempDirectory, 'assets'));
-		await writeFile(
-			htmlEntrypointPath,
-			[
-				'<!doctype html>',
-				'<html lang="en">',
-				'<head>',
-				'  <meta charset="UTF-8" />',
-				'  <script id="monque-dashboard-runtime-config">',
-				'    window.__MONQUE_DASHBOARD_CONFIG__ = {',
-				"      basePath: '/',",
-				"      apiBaseUrl: '/',",
-				'      pollingIntervalMs: 5000',
-				'    };',
-				'  </script>',
-				'</head>',
-				'<body>',
-				'  <div id="app"></div>',
-				'  <script type="module" src="./assets/index-abc12345.js"></script>',
-				'</body>',
-				'</html>',
-			].join('\n'),
-		);
+		await writeFile(htmlEntrypointPath, dashboardHtmlTemplate);
 		await writeFile(
 			join(tempDirectory, 'assets', 'index-abc12345.js'),
 			'console.log("dashboard");',
@@ -114,22 +129,10 @@ describe('Dashboard Express Adapter', () => {
 		await request(app).post('/dashboard/jobs').expect(404);
 	});
 
-	async function createDashboardApp(
-		options: {
-			readonly apiBaseUrl?: string | ((context: { req: Request; res: Response }) => string);
-			readonly mountPath?: string;
-			readonly pollingIntervalMs?: number;
-		} = {},
-	): Promise<Express> {
+	async function createDashboardApp(options: DashboardAppOptions = {}): Promise<Express> {
 		vi.doMock('@/dashboard-assets', () => ({
 			getDashboardAssetDirectory: () => assetDirectory,
-			getDashboardAssetMetadata: () => ({
-				assetDirectory: 'client',
-				htmlEntrypoint: 'index.html',
-				manifestPath: '.vite/manifest.json',
-				runtimeConfigGlobal: '__MONQUE_DASHBOARD_CONFIG__',
-				runtimeConfigScriptId: 'monque-dashboard-runtime-config',
-			}),
+			getDashboardAssetMetadata: () => dashboardAssetMetadata,
 			getDashboardHtmlEntrypointPath: () => htmlEntrypointPath,
 		}));
 
@@ -138,14 +141,22 @@ describe('Dashboard Express Adapter', () => {
 		const app = express();
 		app.use(
 			options.mountPath ?? '/dashboard',
-			createDashboardExpressRouter({
-				apiBaseUrl: options.apiBaseUrl ?? '/management/api/v1',
-				...(options.pollingIntervalMs === undefined
-					? {}
-					: { pollingIntervalMs: options.pollingIntervalMs }),
-			}),
+			createDashboardExpressRouter(createRouterOptions(options)),
 		);
 
 		return app;
+	}
+
+	function createRouterOptions(options: DashboardAppOptions): DashboardExpressRouterOptions {
+		const apiBaseUrl = options.apiBaseUrl ?? '/management/api/v1';
+
+		if (options.pollingIntervalMs === undefined) {
+			return { apiBaseUrl };
+		}
+
+		return {
+			apiBaseUrl,
+			pollingIntervalMs: options.pollingIntervalMs,
+		};
 	}
 });
