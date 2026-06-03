@@ -1,6 +1,6 @@
 import type { JobDto } from '@monque/management/contract';
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import {
 	type ColumnDef,
 	flexRender,
@@ -99,6 +99,7 @@ type JobStatusBadgeVariant = 'danger' | 'outline' | 'success' | 'warning';
 type JobsStateVariant = 'danger' | 'default' | 'warning';
 
 function JobsRoute() {
+	const pathname = useLocation().pathname;
 	const search = Route.useSearch();
 	const navigate = useNavigate({ from: Route.fullPath });
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
@@ -247,6 +248,10 @@ function JobsRoute() {
 
 	function handleRefresh(): void {
 		void jobsQuery.refetch();
+	}
+
+	if (pathname !== '/jobs') {
+		return <Outlet />;
 	}
 
 	if (jobsQuery.isPending) {
