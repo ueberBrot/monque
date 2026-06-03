@@ -1,8 +1,9 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
 import { JobDetailStateView, JobDetailView } from '@/components/job-detail-view';
 import { Button } from '@/components/ui/button';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
@@ -50,6 +51,21 @@ function JobDetailRoute() {
 			active = false;
 		};
 	}, [jobId, managementApi]);
+
+	const shellActions = useMemo(
+		() => ({
+			refresh: () => {
+				setDetailState({ status: 'pending' });
+				void loadJobDetail(managementApi, jobId).then((state) => {
+					setDetailState(state);
+				});
+			},
+			viewLabel: 'Job detail',
+		}),
+		[jobId, managementApi],
+	);
+
+	useDashboardShellRouteActions(shellActions);
 
 	const mutation = useMutation({
 		mutationFn: async (input: JobDetailActionInput) => {

@@ -1,7 +1,9 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { useMemo } from 'react';
 import { z } from 'zod';
 
+import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 
 import {
@@ -61,6 +63,29 @@ function QueueViewDetailRoute() {
 	const refetchQueueViewDetail = (): void => {
 		void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
 	};
+	const shellActions = useMemo(
+		() => ({
+			clearFilters: {
+				label: `Reset ${name} pagination`,
+				run: () => {
+					void navigate({
+						to: '/queue-views/$name',
+						params: { name },
+						search: {
+							limit: search.limit,
+						},
+					});
+				},
+			},
+			refresh: () => {
+				void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
+			},
+			viewLabel: `${name} Queue View`,
+		}),
+		[jobsQuery.refetch, navigate, name, queueViewsQuery.refetch, search.limit, statsQuery.refetch],
+	);
+
+	useDashboardShellRouteActions(shellActions);
 
 	if (queueViewsQuery.isPending || statsQuery.isPending || jobsQuery.isPending) {
 		return <QueueViewsLoadingState />;
