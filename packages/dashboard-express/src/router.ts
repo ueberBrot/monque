@@ -13,7 +13,19 @@ import {
 	getDashboardAssetMetadata,
 	getDashboardHtmlEntrypointPath,
 } from './dashboard-assets.js';
-import type { DashboardExpressRouterOptions } from './types.js';
+import type { DashboardExpressApiBaseUrlValue, DashboardExpressRouterOptions } from './types.js';
+
+type DashboardRuntimeConfig = {
+	readonly apiBaseUrl: string;
+	readonly basePath: string;
+	readonly pollingIntervalMs?: number;
+};
+
+type RuntimeConfigInjectionOptions = {
+	readonly runtimeConfig: DashboardRuntimeConfig;
+	readonly runtimeConfigGlobal: string;
+	readonly runtimeConfigScriptId: string;
+};
 
 export function createDashboardExpressRouter(options: DashboardExpressRouterOptions): Router {
 	const router = Router();
@@ -42,13 +54,7 @@ export function createDashboardExpressRouter(options: DashboardExpressRouterOpti
 		}
 
 		try {
-			const runtimeConfig = {
-				apiBaseUrl: await resolveApiBaseUrl(options, req, res),
-				basePath: normalizeBasePath(req.baseUrl),
-				...(options.pollingIntervalMs === undefined
-					? {}
-					: { pollingIntervalMs: options.pollingIntervalMs }),
-			};
+			const runtimeConfig = await createRuntimeConfig(options, req, res);
 
 			res.setHeader('Cache-Control', 'no-store');
 			res.type('html').send(
@@ -66,18 +72,27 @@ export function createDashboardExpressRouter(options: DashboardExpressRouterOpti
 	return router;
 }
 
-function injectRuntimeConfig(
-	htmlTemplate: string,
-	options: {
-		readonly runtimeConfig: {
-			readonly apiBaseUrl: string;
-			readonly basePath: string;
-			readonly pollingIntervalMs?: number;
-		};
-		readonly runtimeConfigGlobal: string;
-		readonly runtimeConfigScriptId: string;
-	},
-): string {
+async function createRuntimeConfig(
+	options: DashboardExpressRouterOptions,
+	req: Request,
+	res: Response,
+): Promise<DashboardRuntimeConfig> {
+	const runtimeConfig = {
+		apiBaseUrl: await resolveApiBaseUrl(options.apiBaseUrl, req, res),
+		basePath: normalizeBasePath(req.baseUrl),
+	};
+
+	if (options.pollingIntervalMs === undefined) {
+		return runtimeConfig;
+	}
+
+	return {
+		...runtimeConfig,
+		pollingIntervalMs: options.pollingIntervalMs,
+	};
+}
+
+function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjectionOptions): string {
 	const runtimeConfigJson = JSON.stringify(options.runtimeConfig).replaceAll('<', '\\u003c');
 	const runtimeConfigScript = [
 		`<script id="${options.runtimeConfigScriptId}">`,
@@ -114,15 +129,15 @@ function shouldServeDashboardHtml(req: Request): boolean {
 }
 
 async function resolveApiBaseUrl(
-	options: DashboardExpressRouterOptions,
+	apiBaseUrl: DashboardExpressApiBaseUrlValue,
 	req: Request,
 	res: Response,
 ): Promise<string> {
-	if (typeof options.apiBaseUrl === 'string') {
-		return options.apiBaseUrl;
+	if (typeof apiBaseUrl === 'string') {
+		return apiBaseUrl;
 	}
 
-	return options.apiBaseUrl({ req, res });
+	return apiBaseUrl({ req, res });
 }
 
 function escapeRegularExpression(value: string): string {
