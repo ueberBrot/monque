@@ -12,6 +12,9 @@ const dashboardDevScenarioIds = [
 	'failed-jobs',
 	'large-dataset',
 	'unauthorized',
+	'forbidden',
+	'read-only',
+	'api-error',
 	'mutation-conflict',
 ] as const;
 
@@ -26,6 +29,8 @@ type DashboardDevScenario = {
 	readonly jobs: readonly JobDto[];
 	readonly queueViews: readonly QueueViewSummaryDto[];
 	readonly unauthorized?: boolean;
+	readonly forbidden?: boolean;
+	readonly apiError?: string;
 	readonly mutationConflict?: boolean;
 };
 
@@ -105,6 +110,63 @@ function getDashboardDevScenarioCatalog(): readonly DashboardDevScenario[] {
 		},
 		{
 			...createScenario({
+				id: 'forbidden',
+				label: 'Forbidden',
+				description: 'The operator is signed in but denied access to Management routes.',
+				jobs: createGeneratedJobs({
+					seed: 46006,
+					count: 8,
+					queueNames: ['send-email', 'sync-billing'],
+					statuses: ['pending', 'failed'],
+				}),
+				workerNames: ['send-email'],
+			}),
+			forbidden: true,
+		},
+		{
+			...createScenario({
+				id: 'read-only',
+				label: 'Read only',
+				description: 'Reads work, but the Management surface exposes only read access.',
+				jobs: createGeneratedJobs({
+					seed: 46007,
+					count: 10,
+					queueNames: ['dispatch-webhook', 'sync-billing'],
+					statuses: ['pending', 'processing', 'completed'],
+				}),
+				workerNames: ['dispatch-webhook'],
+			}),
+			capabilities: {
+				readOnly: true,
+				actions: {
+					read: true,
+					cancel: false,
+					cancelBulk: false,
+					retry: false,
+					retryBulk: false,
+					reschedule: false,
+					delete: false,
+					deleteBulk: false,
+				},
+			},
+		},
+		{
+			...createScenario({
+				id: 'api-error',
+				label: 'API error',
+				description: 'Every Management request returns a generic server error.',
+				jobs: createGeneratedJobs({
+					seed: 46008,
+					count: 6,
+					queueNames: ['send-email'],
+					statuses: ['pending', 'failed'],
+				}),
+				workerNames: ['send-email'],
+			}),
+			apiError: 'Management API unavailable for the current dashboard scenario.',
+		},
+		{
+			...createScenario({
 				id: 'mutation-conflict',
 				label: 'Mutation conflict',
 				description: 'Reads work, but every mutation returns a conflict.',
@@ -132,6 +194,7 @@ function createScenario(options: {
 	readonly label: string;
 	readonly description: string;
 	readonly jobs: readonly JobDto[];
+	readonly capabilities?: CapabilitiesDto;
 	readonly workerNames?: readonly string[];
 }): DashboardDevScenario {
 	return {
@@ -144,7 +207,7 @@ function createScenario(options: {
 				healthy: true,
 			},
 		},
-		capabilities: {
+		capabilities: options.capabilities ?? {
 			readOnly: false,
 			actions: {
 				read: true,

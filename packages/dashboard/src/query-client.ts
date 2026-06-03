@@ -5,6 +5,7 @@ function createDashboardQueryClient(): QueryClient {
 		defaultOptions: {
 			queries: {
 				refetchOnWindowFocus: false,
+				retry: false,
 				staleTime: 1_000,
 			},
 		},
