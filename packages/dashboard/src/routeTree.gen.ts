@@ -14,6 +14,7 @@ import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as HealthRouteImport } from './routes/health'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as QueueViewsNameRouteImport } from './routes/queue-views.$name'
+import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 
 const QueueViewsRoute = QueueViewsRouteImport.update({
   id: '/queue-views',
@@ -40,47 +41,68 @@ const QueueViewsNameRoute = QueueViewsNameRouteImport.update({
   path: '/$name',
   getParentRoute: () => QueueViewsRoute,
 } as any)
+const JobsJobIdRoute = JobsJobIdRouteImport.update({
+  id: '/$jobId',
+  path: '/$jobId',
+  getParentRoute: () => JobsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
-  '/jobs': typeof JobsRoute
+  '/jobs': typeof JobsRouteWithChildren
   '/queue-views': typeof QueueViewsRouteWithChildren
+  '/jobs/$jobId': typeof JobsJobIdRoute
   '/queue-views/$name': typeof QueueViewsNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
-  '/jobs': typeof JobsRoute
+  '/jobs': typeof JobsRouteWithChildren
   '/queue-views': typeof QueueViewsRouteWithChildren
+  '/jobs/$jobId': typeof JobsJobIdRoute
   '/queue-views/$name': typeof QueueViewsNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/health': typeof HealthRoute
-  '/jobs': typeof JobsRoute
+  '/jobs': typeof JobsRouteWithChildren
   '/queue-views': typeof QueueViewsRouteWithChildren
+  '/jobs/$jobId': typeof JobsJobIdRoute
   '/queue-views/$name': typeof QueueViewsNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/health' | '/jobs' | '/queue-views' | '/queue-views/$name'
+  fullPaths:
+    | '/'
+    | '/health'
+    | '/jobs'
+    | '/queue-views'
+    | '/jobs/$jobId'
+    | '/queue-views/$name'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/health' | '/jobs' | '/queue-views' | '/queue-views/$name'
+  to:
+    | '/'
+    | '/health'
+    | '/jobs'
+    | '/queue-views'
+    | '/jobs/$jobId'
+    | '/queue-views/$name'
   id:
     | '__root__'
     | '/'
     | '/health'
     | '/jobs'
     | '/queue-views'
+    | '/jobs/$jobId'
     | '/queue-views/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HealthRoute: typeof HealthRoute
-  JobsRoute: typeof JobsRoute
+  JobsRoute: typeof JobsRouteWithChildren
   QueueViewsRoute: typeof QueueViewsRouteWithChildren
 }
 
@@ -121,8 +143,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QueueViewsNameRouteImport
       parentRoute: typeof QueueViewsRoute
     }
+    '/jobs/$jobId': {
+      id: '/jobs/$jobId'
+      path: '/$jobId'
+      fullPath: '/jobs/$jobId'
+      preLoaderRoute: typeof JobsJobIdRouteImport
+      parentRoute: typeof JobsRoute
+    }
   }
 }
+
+interface JobsRouteChildren {
+  JobsJobIdRoute: typeof JobsJobIdRoute
+}
+
+const JobsRouteChildren: JobsRouteChildren = {
+  JobsJobIdRoute: JobsJobIdRoute,
+}
+
+const JobsRouteWithChildren = JobsRoute._addFileChildren(JobsRouteChildren)
 
 interface QueueViewsRouteChildren {
   QueueViewsNameRoute: typeof QueueViewsNameRoute
@@ -139,7 +178,7 @@ const QueueViewsRouteWithChildren = QueueViewsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HealthRoute: HealthRoute,
-  JobsRoute: JobsRoute,
+  JobsRoute: JobsRouteWithChildren,
   QueueViewsRoute: QueueViewsRouteWithChildren,
 }
 export const routeTree = rootRouteImport

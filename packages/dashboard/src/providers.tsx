@@ -6,6 +6,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { DashboardDevtools } from '@/devtools';
 import type { getRouter } from '@/router';
 
+const shouldRenderDashboardDevtools = import.meta.env.MODE !== 'test';
+
 function DashboardProviders({
 	queryClient,
 	router,
@@ -17,7 +19,9 @@ function DashboardProviders({
 		<QueryClientProvider client={queryClient}>
 			<TooltipProvider>
 				<RouterProvider router={router} />
-				<DashboardDevtools queryClient={queryClient} router={router} />
+				{shouldRenderDashboardDevtools ? (
+					<DashboardDevtools queryClient={queryClient} router={router} />
+				) : null}
 			</TooltipProvider>
 		</QueryClientProvider>
 	);

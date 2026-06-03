@@ -21,9 +21,7 @@
 	},
 	"overrides": [
 		{
-			"includes": [
-				"scripts/**"
-			],
+			"includes": ["scripts/**"],
 			"linter": {
 				"rules": {
 					"suspicious": {
@@ -33,9 +31,7 @@
 			}
 		},
 		{
-			"includes": [
-				"packages/dashboard/src/styles.css"
-			],
+			"includes": ["packages/dashboard/src/styles.css"],
 			"css": {
 				"parser": {
 					"tailwindDirectives": true
@@ -43,9 +39,7 @@
 			}
 		},
 		{
-			"includes": [
-				"apps/docs/src/styles/custom.css"
-			],
+			"includes": ["apps/docs/src/styles/custom.css"],
 			"linter": {
 				"rules": {
 					"complexity": {
@@ -92,21 +86,10 @@
 					"options": {
 						"groups": [
 							":URL:",
-							[
-								":BUN:",
-								":NODE:",
-								":PACKAGE_WITH_PROTOCOL:"
-							],
-							[
-								":PACKAGE:",
-								"!@/**",
-								"!@tests/**"
-							],
+							[":BUN:", ":NODE:", ":PACKAGE_WITH_PROTOCOL:"],
+							[":PACKAGE:", "!@/**", "!@tests/**"],
 							":BLANK_LINE:",
-							[
-								"@/**",
-								"@tests/**"
-							],
+							["@/**", "@tests/**"],
 							":BLANK_LINE:",
 							":PATH:"
 						],
