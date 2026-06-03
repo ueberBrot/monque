@@ -2,18 +2,18 @@ import { createFormHook, createFormHookContexts } from '@tanstack/react-form';
 import { useSelector } from '@tanstack/react-store';
 import { useId } from 'react';
 
-import { Button } from '@/components/ui/button.js';
-import { Checkbox } from '@/components/ui/checkbox.js';
-import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field.js';
-import { Input } from '@/components/ui/input.js';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import {
 	Select,
 	SelectItem,
 	SelectPopup,
 	SelectTrigger,
 	SelectValue,
-} from '@/components/ui/select.js';
-import { Textarea } from '@/components/ui/textarea.js';
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 const { fieldContext, formContext, useFieldContext, useFormContext } = createFormHookContexts();
 
