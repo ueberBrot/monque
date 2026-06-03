@@ -1,12 +1,14 @@
-import { OpenAPIHandler } from '@orpc/openapi/fetch';
-import { implement, ORPCError } from '@orpc/server';
-
 import {
+	type BulkActionResultDto,
+	type JobCursorPageDto,
 	type JobDto,
 	type JobListQueryDto,
 	type JobSelectorDto,
 	managementContract,
-} from '../../../../packages/management/src/contract.ts';
+} from '@monque/management/contract';
+import { OpenAPIHandler } from '@orpc/openapi/fetch';
+import { implement, ORPCError } from '@orpc/server';
+
 import {
 	createQueueStats,
 	type DashboardDevScenario,
@@ -19,6 +21,8 @@ type MockManagementContext = {
 };
 
 const managementImplementer = implement(managementContract).$context<MockManagementContext>();
+const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = 'pending-jobs';
+const MOCK_MUTATION_UPDATED_AT = '2026-06-03T12:00:00.000Z';
 
 const mockManagementRouter = managementImplementer.router({
 	health: managementImplementer.health.handler(({ context }) => getScenarioOrThrow(context).health),
@@ -49,7 +53,7 @@ const mockManagementRouter = managementImplementer.router({
 			claimedBy: null,
 			lockedAt: null,
 			lastHeartbeat: null,
-			updatedAt: new Date('2026-06-03T12:00:00.000Z').toISOString(),
+			updatedAt: MOCK_MUTATION_UPDATED_AT,
 		})),
 	),
 	retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
@@ -61,7 +65,7 @@ const mockManagementRouter = managementImplementer.router({
 			claimedBy: null,
 			lockedAt: null,
 			lastHeartbeat: null,
-			updatedAt: new Date('2026-06-03T12:00:00.000Z').toISOString(),
+			updatedAt: MOCK_MUTATION_UPDATED_AT,
 		})),
 	),
 	rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
@@ -72,12 +76,14 @@ const mockManagementRouter = managementImplementer.router({
 			claimedBy: null,
 			lockedAt: null,
 			lastHeartbeat: null,
-			updatedAt: new Date('2026-06-03T12:00:00.000Z').toISOString(),
+			updatedAt: MOCK_MUTATION_UPDATED_AT,
 		})),
 	),
 	deleteJob: managementImplementer.deleteJob.handler(({ input, context }) => {
-		assertMutationAllowed(getAuthorizedScenario(context));
-		assertJobExists(input.params.id, getAuthorizedScenario(context));
+		const scenario = getAuthorizedScenario(context);
+
+		assertMutationAllowed(scenario);
+		assertJobExists(input.params.id, scenario);
 
 		return { deleted: true };
 	}),
@@ -103,7 +109,7 @@ function createMockManagementFetch(options?: {
 	readonly scenarioId?: DashboardDevScenarioId;
 }): typeof fetch {
 	const handler = createMockManagementOpenApiHandler();
-	const scenarioId = options?.scenarioId ?? 'pending-jobs';
+	const scenarioId = options?.scenarioId ?? DEFAULT_SCENARIO_ID;
 
 	return async (input, init) => {
 		const request = input instanceof Request ? input : new Request(input, init);
@@ -148,7 +154,7 @@ function getAuthorizedScenario(context: MockManagementContext): DashboardDevScen
 	return scenario;
 }
 
-function listJobs(input: JobListQueryDto, scenario: DashboardDevScenario) {
+function listJobs(input: JobListQueryDto, scenario: DashboardDevScenario): JobCursorPageDto {
 	const filteredJobs = applyJobFilters(scenario.jobs, input);
 	const sortedJobs = sortJobs(filteredJobs, input.sortBy, input.sortDirection);
 	const pageSize = normalizeLimit(input.limit);
@@ -186,32 +192,13 @@ function mutateSingleJob(
 	return transform(getJobById(id, scenario));
 }
 
-function mutateBulkJobs(input: JobSelectorDto, scenario: DashboardDevScenario) {
+function mutateBulkJobs(
+	input: JobSelectorDto,
+	scenario: DashboardDevScenario,
+): BulkActionResultDto {
 	assertMutationAllowed(scenario);
 
-	const jobs = scenario.jobs.filter((job) => {
-		if (input.name && job.name !== input.name) {
-			return false;
-		}
-
-		if (input.status) {
-			const statuses = Array.isArray(input.status) ? input.status : [input.status];
-
-			if (!statuses.includes(job.status)) {
-				return false;
-			}
-		}
-
-		if (input.olderThan && Date.parse(job.createdAt) >= Date.parse(input.olderThan)) {
-			return false;
-		}
-
-		if (input.newerThan && Date.parse(job.createdAt) <= Date.parse(input.newerThan)) {
-			return false;
-		}
-
-		return true;
-	});
+	const jobs = scenario.jobs.filter((job) => matchesJobSelector(job, input));
 
 	return {
 		count: jobs.length,
@@ -220,25 +207,45 @@ function mutateBulkJobs(input: JobSelectorDto, scenario: DashboardDevScenario) {
 }
 
 function applyJobFilters(jobs: readonly JobDto[], input: JobListQueryDto): readonly JobDto[] {
-	return jobs.filter((job) => {
-		if (input.name && job.name !== input.name) {
-			return false;
-		}
-
-		if (input.status) {
-			const statuses = Array.isArray(input.status) ? input.status : [input.status];
-
-			if (!statuses.includes(job.status)) {
-				return false;
-			}
-		}
-
-		return (
+	return jobs.filter(
+		(job) =>
+			matchesJobName(job, input.name) &&
+			matchesJobStatus(job, input.status) &&
 			matchesDateRange(job.createdAt, input.createdAtFrom, input.createdAtTo) &&
 			matchesDateRange(job.updatedAt, input.updatedAtFrom, input.updatedAtTo) &&
-			matchesDateRange(job.nextRunAt, input.nextRunAtFrom, input.nextRunAtTo)
-		);
-	});
+			matchesDateRange(job.nextRunAt, input.nextRunAtFrom, input.nextRunAtTo),
+	);
+}
+
+function matchesJobSelector(job: JobDto, input: JobSelectorDto): boolean {
+	return (
+		matchesJobName(job, input.name) &&
+		matchesJobStatus(job, input.status) &&
+		matchesExclusiveUpperDateBound(job.createdAt, input.olderThan) &&
+		matchesExclusiveLowerDateBound(job.createdAt, input.newerThan)
+	);
+}
+
+function matchesJobName(job: JobDto, name: string | undefined): boolean {
+	return !name || job.name === name;
+}
+
+function matchesJobStatus(
+	job: JobDto,
+	status: JobListQueryDto['status'] | JobSelectorDto['status'],
+): boolean {
+	const statuses = normalizeStatusFilter(status);
+	return !statuses || statuses.includes(job.status);
+}
+
+function normalizeStatusFilter(
+	status: JobListQueryDto['status'] | JobSelectorDto['status'],
+): readonly JobDto['status'][] | undefined {
+	if (!status) {
+		return undefined;
+	}
+
+	return Array.isArray(status) ? status : [status];
 }
 
 function matchesDateRange(value: string, from?: string, to?: string): boolean {
@@ -255,10 +262,26 @@ function matchesDateRange(value: string, from?: string, to?: string): boolean {
 	return true;
 }
 
+function matchesExclusiveUpperDateBound(value: string, upperBound?: string): boolean {
+	if (!upperBound) {
+		return true;
+	}
+
+	return Date.parse(value) < Date.parse(upperBound);
+}
+
+function matchesExclusiveLowerDateBound(value: string, lowerBound?: string): boolean {
+	if (!lowerBound) {
+		return true;
+	}
+
+	return Date.parse(value) > Date.parse(lowerBound);
+}
+
 function sortJobs(
 	jobs: readonly JobDto[],
-	sortBy?: string,
-	sortDirection?: string,
+	sortBy: JobListQueryDto['sortBy'],
+	sortDirection: JobListQueryDto['sortDirection'],
 ): readonly JobDto[] {
 	const direction = sortDirection === 'asc' ? 1 : -1;
 	const accessor = getSortAccessor(sortBy);
@@ -279,7 +302,7 @@ function sortJobs(
 	});
 }
 
-function getSortAccessor(sortBy?: string): (job: JobDto) => string {
+function getSortAccessor(sortBy: JobListQueryDto['sortBy']): (job: JobDto) => string {
 	switch (sortBy) {
 		case 'identifier':
 			return (job) => job.id;
@@ -312,14 +335,22 @@ function decodeCursor(cursor?: string): number {
 	}
 
 	try {
-		const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as {
-			offset?: unknown;
-		};
+		const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+		const offset = getCursorOffset(parsed);
 
-		return typeof parsed.offset === 'number' && parsed.offset >= 0 ? parsed.offset : 0;
+		return offset ?? 0;
 	} catch {
 		return 0;
 	}
+}
+
+function getCursorOffset(value: unknown): number | undefined {
+	if (typeof value !== 'object' || value === null || !Object.hasOwn(value, 'offset')) {
+		return undefined;
+	}
+
+	const offset = Reflect.get(value, 'offset');
+	return typeof offset === 'number' && offset >= 0 ? offset : undefined;
 }
 
 function assertMutationAllowed(scenario: DashboardDevScenario): void {

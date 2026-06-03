@@ -4,7 +4,7 @@ import type {
 	QueueStatsDto,
 	QueueViewSummaryDto,
 	SchedulerHealthDto,
-} from '../../../../packages/management/src/contract.ts';
+} from '@monque/management/contract';
 
 const dashboardDevScenarioIds = [
 	'empty-state',
@@ -28,6 +28,14 @@ type DashboardDevScenario = {
 	readonly unauthorized?: boolean;
 	readonly mutationConflict?: boolean;
 };
+
+function isDashboardDevScenarioId(
+	value: string | null | undefined,
+): value is DashboardDevScenarioId {
+	return (
+		typeof value === 'string' && dashboardDevScenarioIds.some((scenarioId) => scenarioId === value)
+	);
+}
 
 function getDashboardDevScenarioCatalog(): readonly DashboardDevScenario[] {
 	return [
@@ -233,11 +241,31 @@ function buildQueueViews(
 }
 
 function createQueueStats(jobs: readonly JobDto[]): QueueStatsDto {
-	const pending = jobs.filter((job) => job.status === 'pending').length;
-	const processing = jobs.filter((job) => job.status === 'processing').length;
-	const completed = jobs.filter((job) => job.status === 'completed').length;
-	const failed = jobs.filter((job) => job.status === 'failed').length;
-	const cancelled = jobs.filter((job) => job.status === 'cancelled').length;
+	let pending = 0;
+	let processing = 0;
+	let completed = 0;
+	let failed = 0;
+	let cancelled = 0;
+
+	for (const job of jobs) {
+		switch (job.status) {
+			case 'pending':
+				pending += 1;
+				break;
+			case 'processing':
+				processing += 1;
+				break;
+			case 'completed':
+				completed += 1;
+				break;
+			case 'failed':
+				failed += 1;
+				break;
+			case 'cancelled':
+				cancelled += 1;
+				break;
+		}
+	}
 
 	return {
 		pending,
@@ -269,4 +297,5 @@ export {
 	dashboardDevScenarioIds,
 	getDashboardDevScenario,
 	getDashboardDevScenarioCatalog,
+	isDashboardDevScenarioId,
 };

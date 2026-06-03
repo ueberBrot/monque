@@ -7,21 +7,12 @@ import { defineConfig, loadEnv } from 'vite';
 import { createMockManagementOpenApiHandler } from './src/mock/management-server.js';
 import {
 	type DashboardDevScenarioId,
-	dashboardDevScenarioIds,
+	isDashboardDevScenarioId,
 } from './src/mock/scenario-catalog.js';
 
-function getScenarioIdFromHeader(
-	headerValue: string | string[] | undefined,
-): DashboardDevScenarioId {
-	if (
-		typeof headerValue === 'string' &&
-		dashboardDevScenarioIds.includes(headerValue as DashboardDevScenarioId)
-	) {
-		return headerValue as DashboardDevScenarioId;
-	}
-
-	return 'pending-jobs';
-}
+const DEFAULT_SCENARIO_ID = 'pending-jobs';
+const MOCK_API_ORIGIN = 'http://127.0.0.1:3400';
+const MOCK_API_MOUNT_PATH = '/api';
 
 async function readNodeRequestBody(request: Connect.IncomingMessage): Promise<Buffer | undefined> {
 	if (request.method === 'GET' || request.method === 'HEAD') {
@@ -39,6 +30,40 @@ async function readNodeRequestBody(request: Connect.IncomingMessage): Promise<Bu
 	}
 
 	return Buffer.concat(chunks);
+}
+
+function createHeadersFromNodeRequest(request: Connect.IncomingMessage): Headers {
+	const headers = new Headers();
+
+	for (const [name, value] of Object.entries(request.headers)) {
+		if (typeof value === 'undefined') {
+			continue;
+		}
+
+		if (Array.isArray(value)) {
+			for (const item of value) {
+				headers.append(name, item);
+			}
+			continue;
+		}
+
+		headers.set(name, value);
+	}
+
+	return headers;
+}
+
+function getScenarioIdFromRequest(request: Connect.IncomingMessage): DashboardDevScenarioId {
+	const headerValue = request.headers['x-monque-dev-scenario'];
+	const scenarioId = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+
+	return isDashboardDevScenarioId(scenarioId) ? scenarioId : DEFAULT_SCENARIO_ID;
+}
+
+function createMockManagementRequestUrl(requestUrl: string): string {
+	const path = requestUrl.startsWith('/') ? requestUrl : `/${requestUrl}`;
+
+	return `${MOCK_API_ORIGIN}${MOCK_API_MOUNT_PATH}${path}`;
 }
 
 const config = defineConfig(({ mode }) => {
@@ -82,7 +107,7 @@ const config = defineConfig(({ mode }) => {
 						return;
 					}
 
-					server.middlewares.use('/api', async (request, response, next) => {
+					server.middlewares.use(MOCK_API_MOUNT_PATH, async (request, response, next) => {
 						if (!request.url) {
 							next();
 							return;
@@ -91,7 +116,7 @@ const config = defineConfig(({ mode }) => {
 						const body = await readNodeRequestBody(request);
 						const requestInit: RequestInit = {
 							method: request.method ?? 'GET',
-							headers: request.headers as HeadersInit,
+							headers: createHeadersFromNodeRequest(request),
 						};
 
 						if (body) {
@@ -99,10 +124,10 @@ const config = defineConfig(({ mode }) => {
 						}
 
 						const handlerResult = await mockHandler.handle(
-							new Request(`http://127.0.0.1:3400${request.url}`, requestInit),
+							new Request(createMockManagementRequestUrl(request.url), requestInit),
 							{
 								context: {
-									scenarioId: getScenarioIdFromHeader(request.headers['x-monque-dev-scenario']),
+									scenarioId: getScenarioIdFromRequest(request),
 								},
 							},
 						);
