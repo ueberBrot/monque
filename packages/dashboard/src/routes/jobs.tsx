@@ -33,6 +33,7 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
 import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
@@ -40,6 +41,7 @@ import {
 	getJobActionAvailability,
 	type JobActionFeedback,
 	type JobActionKey,
+	runJobAction,
 } from '@/features/jobs/job-actions';
 import {
 	fromDateTimeLocalValue,
@@ -55,7 +57,6 @@ import {
 	toJobListQueryInput,
 } from '@/features/jobs/job-list-search';
 import { cn } from '@/lib/utils';
-import type { DashboardManagementApi } from '@/management-client';
 
 export const Route = createFileRoute('/jobs')({
 	validateSearch: parseJobsRouteSearch,
@@ -415,9 +416,9 @@ function JobsRoute() {
 	);
 
 	return (
-		<section className="grid gap-5">
-			<div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-				<div className="grid gap-1">
+		<section className="grid min-w-0 gap-5">
+			<div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+				<div className="grid min-w-0 gap-1">
 					<h1 className="text-2xl font-semibold">Jobs</h1>
 					<p className="max-w-[72ch] text-sm text-muted-foreground">
 						Server-backed filters, sorting, and cursor pagination for global job inspection.
@@ -434,9 +435,9 @@ function JobsRoute() {
 				</div>
 			</div>
 
-			<div className="rounded-xl border border-border bg-card">
-				<div className="grid gap-4 border-b border-border p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-					<div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+			<div className="min-w-0 rounded-xl border border-border bg-card">
+				<div className="grid min-w-0 gap-4 border-b border-border p-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+					<div className="grid min-w-0 gap-4 lg:grid-cols-2 xl:grid-cols-4">
 						<Field>
 							<FieldLabel htmlFor="jobs-name-filter">Job name</FieldLabel>
 							<Input
@@ -478,7 +479,7 @@ function JobsRoute() {
 							/>
 						))}
 					</div>
-					<div className="grid gap-2 rounded-lg border border-border bg-background/70 p-3">
+					<div className="grid min-w-0 gap-2 rounded-lg border border-border bg-background/70 p-3">
 						<span className="text-xs font-medium text-muted-foreground">Status</span>
 						<div className="grid gap-2 sm:grid-cols-2">
 							{JOB_STATUS_ORDER.map((status) => (
@@ -500,7 +501,12 @@ function JobsRoute() {
 					to this screen.
 				</div>
 
-				{feedback ? <JobsFeedbackPanel feedback={feedback} /> : null}
+				{feedback ? (
+					<JobActionFeedbackPanel
+						feedback={feedback}
+						className="border-b border-border px-4 py-3"
+					/>
+				) : null}
 
 				<div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
 					<Button
@@ -878,22 +884,6 @@ function JobActionDialog({
 	);
 }
 
-function JobsFeedbackPanel({ feedback }: { readonly feedback: JobActionFeedback }) {
-	return (
-		<section
-			className={cn(
-				'border-b border-border px-4 py-3 text-sm',
-				feedback.tone === 'danger' && 'bg-destructive/8 text-destructive',
-				feedback.tone === 'success' && 'bg-primary/8 text-foreground',
-				feedback.tone === 'warning' && 'bg-amber-500/10 text-amber-200',
-			)}
-		>
-			<p className="font-medium">{feedback.title}</p>
-			<p className="text-muted-foreground">{feedback.description}</p>
-		</section>
-	);
-}
-
 function JobsErrorPanel({ error }: { readonly error: unknown }) {
 	const status = getErrorStatus(error);
 	const message = getErrorMessage(error);
@@ -1087,41 +1077,6 @@ function getJobStatusBadgeVariant(status: JobDto['status']): JobStatusBadgeVaria
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
-}
-
-async function runJobAction(
-	managementApi: DashboardManagementApi,
-	input: {
-		readonly action: JobActionKey;
-		readonly jobId: string;
-		readonly nextRunAt?: string;
-	},
-): Promise<void> {
-	switch (input.action) {
-		case 'cancel':
-			await managementApi.client.cancelJob({
-				params: { id: input.jobId },
-			});
-			return;
-		case 'retry':
-			await managementApi.client.retryJob({
-				params: { id: input.jobId },
-			});
-			return;
-		case 'reschedule':
-			await managementApi.client.rescheduleJob({
-				params: { id: input.jobId },
-				body: {
-					nextRunAt: input.nextRunAt ?? new Date().toISOString(),
-				},
-			});
-			return;
-		case 'delete':
-			await managementApi.client.deleteJob({
-				params: { id: input.jobId },
-			});
-			return;
-	}
 }
 
 function getDialogTitle(state: JobActionDialogState | null): string {
