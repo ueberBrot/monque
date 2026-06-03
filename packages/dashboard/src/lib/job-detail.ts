@@ -1,27 +1,17 @@
 import { type ORPCError, toORPCError } from '@orpc/client';
 import { format, parseISO } from 'date-fns';
 
-type JobDetailState =
-	| {
-			readonly code: 'unauthorized';
-			readonly description: string;
-			readonly title: string;
-	  }
-	| {
-			readonly code: 'forbidden';
-			readonly description: string;
-			readonly title: string;
-	  }
-	| {
-			readonly code: 'not-found';
-			readonly description: string;
-			readonly title: string;
-	  }
-	| {
-			readonly code: 'error';
-			readonly description: string;
-			readonly title: string;
-	  };
+type JobDetailStateCode = 'unauthorized' | 'forbidden' | 'not-found' | 'error';
+
+type JobDetailState = {
+	readonly code: JobDetailStateCode;
+	readonly description: string;
+	readonly title: string;
+};
+
+type ManagementErrorData = {
+	readonly error: unknown;
+};
 
 function formatDashboardDate(value: string | null | undefined): string {
 	if (!value) {
@@ -61,11 +51,15 @@ function isEmptyPayload(payload: unknown): boolean {
 	return false;
 }
 
-function serializePayloadForClipboard(payload: unknown): string {
+function formatPayloadForDisplay(payload: unknown): string {
 	if (typeof payload === 'string') {
 		return payload;
 	}
 
+	return serializePayloadForClipboard(payload);
+}
+
+function serializePayloadForClipboard(payload: unknown): string {
 	const serializedPayload = JSON.stringify(payload, null, 2);
 	return serializedPayload ?? 'null';
 }
@@ -114,19 +108,24 @@ function readManagementErrorMessage(
 	error: ORPCError<string, unknown>,
 	fallbackMessage: string,
 ): string {
-	if (typeof error.data === 'object' && error.data !== null && Object.hasOwn(error.data, 'error')) {
-		const message = Reflect.get(error.data, 'error');
+	if (hasManagementErrorData(error.data)) {
+		const message = error.data.error;
 
 		if (typeof message === 'string' && message.length > 0) {
 			return message;
 		}
 	}
 
-	return error.message || fallbackMessage;
+	return error.message.length > 0 ? error.message : fallbackMessage;
+}
+
+function hasManagementErrorData(data: unknown): data is ManagementErrorData {
+	return typeof data === 'object' && data !== null && Object.hasOwn(data, 'error');
 }
 
 export {
 	formatDashboardDate,
+	formatPayloadForDisplay,
 	getJobAttemptCount,
 	getOperatorTimeZoneLabel,
 	isEmptyPayload,

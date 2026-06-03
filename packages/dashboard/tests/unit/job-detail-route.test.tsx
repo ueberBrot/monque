@@ -42,9 +42,13 @@ describe('Job detail route', () => {
 		expect(screen.getByText(job.id)).toBeTruthy();
 		expect(screen.getByText('Payload')).toBeTruthy();
 
+		fireEvent.click(screen.getByRole('button', { name: 'Copy job ID' }));
 		fireEvent.click(screen.getByRole('button', { name: 'Copy payload' }));
 		fireEvent.click(screen.getByRole('button', { name: 'Copy shareable URL' }));
 
+		await waitFor(() => {
+			expect(clipboardWriteText).toHaveBeenCalledWith(job.id);
+		});
 		await waitFor(() => {
 			expect(clipboardWriteText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
 		});
