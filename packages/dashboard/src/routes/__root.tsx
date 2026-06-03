@@ -1,6 +1,6 @@
 import { createRootRouteWithContext, Link, Outlet, useLocation } from '@tanstack/react-router';
 
-import { DashboardShell } from '@/components/dashboard-shell.js';
+import { type DashboardNavItem, DashboardShell } from '@/components/dashboard-shell';
 
 import '../styles.css';
 import type { DashboardRouterContext } from '../router-context.js';
@@ -13,23 +13,29 @@ export const Route = createRootRouteWithContext<DashboardRouterContext>()({
 });
 
 function RootComponent() {
+	const currentPath = useLocation().pathname;
+
 	return (
 		<DashboardShell
-			currentPath={useLocation().pathname}
-			renderNavLink={(item) => (
-				<Link
-					to={item.href}
-					className="flex h-10 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-					activeProps={{
-						className: 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
-					}}
-				>
-					{item.label}
-				</Link>
-			)}
+			currentPath={currentPath}
+			renderNavLink={(item) => <DashboardRouterNavLink item={item} />}
 		>
 			<Outlet />
 		</DashboardShell>
+	);
+}
+
+function DashboardRouterNavLink({ item }: { readonly item: DashboardNavItem }) {
+	return (
+		<Link
+			to={item.href}
+			className="flex h-10 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+			activeProps={{
+				className: 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
+			}}
+		>
+			{item.label}
+		</Link>
 	);
 }
 

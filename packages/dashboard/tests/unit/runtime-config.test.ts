@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DashboardRuntimeConfigSchema, parseDashboardRuntimeConfig } from '@/runtime-config.js';
+import { DashboardRuntimeConfigSchema, parseDashboardRuntimeConfig } from '@/runtime-config';
 
 describe('parseDashboardRuntimeConfig', () => {
 	it('normalizes mount-aware base paths', () => {

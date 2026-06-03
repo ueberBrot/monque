@@ -2,9 +2,9 @@ import type { QueryClient } from '@tanstack/react-query';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 
-import { TooltipProvider } from '@/components/ui/tooltip.js';
-import { DashboardDevtools } from '@/devtools.js';
-import type { getRouter } from '@/router.js';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { DashboardDevtools } from '@/devtools';
+import type { getRouter } from '@/router';
 
 function DashboardProviders({
 	queryClient,

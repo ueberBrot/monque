@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { DashboardShell } from '@/components/dashboard-shell.js';
+import { DashboardShell } from '@/components/dashboard-shell';
 
 describe('DashboardShell', () => {
 	it('renders primary navigation and opens the mobile drawer', () => {
@@ -20,7 +20,11 @@ describe('DashboardShell', () => {
 
 		fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
 
+		const dialogContent = getDialogContent();
+
 		expect(screen.getByText('Dashboard navigation')).toBeTruthy();
+		expect(dialogContent.classList.contains('top-0')).toBe(true);
+		expect(dialogContent.classList.contains('bottom-0')).toBe(true);
 		expect(screen.getByText('Route content')).toBeTruthy();
 	});
 
@@ -52,4 +56,16 @@ function getThemeButton(): HTMLElement {
 	}
 
 	return firstThemeButton;
+}
+
+function getDialogContent(): HTMLElement {
+	const dialogContent = screen
+		.getByText('Dashboard navigation')
+		.closest('[data-slot="dialog-content"]');
+
+	if (!(dialogContent instanceof HTMLElement)) {
+		throw new Error('Expected dashboard navigation to be inside dialog content.');
+	}
+
+	return dialogContent;
 }
