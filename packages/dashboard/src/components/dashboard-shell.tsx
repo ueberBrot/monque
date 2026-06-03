@@ -87,6 +87,13 @@ type DashboardShellProps = {
 	readonly onNavigate?: (href: string) => void;
 	readonly renderNavLink?: DashboardNavLinkRenderer;
 };
+type DashboardShellCommandOptions = {
+	readonly onNavigate: DashboardShellProps['onNavigate'];
+	readonly openShortcutHelp: () => void;
+	readonly routeActions: DashboardShellRouteActions | null;
+	readonly setThemeMode: (themeMode: DashboardThemeMode) => void;
+	readonly themeMode: DashboardThemeMode;
+};
 
 const dashboardKeyboardShortcuts = [
 	{
@@ -160,6 +167,7 @@ function DashboardShell({
 	const [paletteQuery, setPaletteQuery] = useState('');
 	const [routeActions, setRouteActions] = useState<DashboardShellRouteActions | null>(null);
 	const restoreFocusRef = useRef<HTMLElement | null>(null);
+	const contextValue = useMemo<DashboardShellContextValue>(() => ({ setRouteActions }), []);
 
 	useEffect(() => {
 		applyThemeMode(themeMode);
@@ -277,89 +285,20 @@ function DashboardShell({
 		shortcutHelpOpen,
 	]);
 
-	const commands = useMemo<readonly DashboardShellCommand[]>(() => {
-		const safeActionCommands: DashboardShellCommand[] = [
-			{
-				description: 'Copy the current dashboard URL for sharing.',
-				icon: <Link2 className="size-4" />,
-				id: 'copy-url',
-				keywords: ['copy', 'share', 'url', 'link'],
-				label: 'Copy current URL',
-				run: () => {
-					void navigator.clipboard.writeText(window.location.href);
-				},
-			},
-			{
-				description: 'Toggle between light and dark operator modes.',
-				icon: getThemeModeIcon(themeMode),
-				id: 'toggle-theme',
-				keywords: ['theme', 'dark', 'light', 'appearance'],
-				label: 'Toggle theme',
-				run: () => {
-					setThemeMode(getNextThemeMode(themeMode));
-				},
-			},
-			{
-				description: 'Review the safe dashboard keyboard shortcuts.',
-				icon: <HelpCircle className="size-4" />,
-				id: 'shortcut-help',
-				keywords: ['help', 'shortcuts', 'keyboard'],
-				label: 'Show keyboard shortcuts',
-				run: () => {
-					openShortcutHelp();
-				},
-				shortcut: '?',
-			},
-		];
-
-		if (routeActions?.refresh) {
-			safeActionCommands.unshift({
-				description: `Refetch ${routeActions.viewLabel ?? 'the current view'} from the Management API.`,
-				icon: <RefreshCw className="size-4" />,
-				id: 'refresh',
-				keywords: ['refresh', 'reload', 'refetch'],
-				label: 'Refresh current view',
-				run: routeActions.refresh,
-				shortcut: 'Shift+R',
-			});
-		}
-
-		if (routeActions?.clearFilters) {
-			safeActionCommands.splice(1, 0, {
-				description: 'Return the current view to its default search state.',
-				icon: <FilterX className="size-4" />,
-				id: 'clear-filters',
-				keywords: ['filters', 'clear', 'reset', 'search'],
-				label: routeActions.clearFilters.label,
-				run: routeActions.clearFilters.run,
-			});
-		}
-
-		return [
-			...dashboardNavItems.map((item) => ({
-				description: `Navigate to ${item.label}.`,
-				icon: <Search className="size-4" />,
-				id: `nav-${item.href}`,
-				keywords: ['navigate', 'go', ...item.label.toLowerCase().split(' ')],
-				label: item.label,
-				run: () => navigateTo(item.href, onNavigate),
-			})),
-			...safeActionCommands,
-		];
-	}, [onNavigate, openShortcutHelp, routeActions, themeMode]);
+	const commands = useMemo(
+		() =>
+			createDashboardShellCommands({
+				onNavigate,
+				openShortcutHelp,
+				routeActions,
+				setThemeMode,
+				themeMode,
+			}),
+		[onNavigate, openShortcutHelp, routeActions, themeMode],
+	);
 
 	const filteredCommands = useMemo(() => {
-		const normalizedQuery = paletteQuery.trim().toLowerCase();
-
-		if (normalizedQuery.length === 0) {
-			return commands;
-		}
-
-		return commands.filter((command) =>
-			[command.label, command.description, ...command.keywords].some((value) =>
-				value.toLowerCase().includes(normalizedQuery),
-			),
-		);
+		return filterDashboardShellCommands(commands, paletteQuery);
 	}, [commands, paletteQuery]);
 
 	const runCommand = useCallback(
@@ -370,9 +309,25 @@ function DashboardShell({
 		},
 		[restoreFocus],
 	);
+	const handlePaletteOpenChange = useCallback(
+		(nextOpen: boolean): void => {
+			if (!nextOpen) {
+				closePalette();
+			}
+		},
+		[closePalette],
+	);
+	const handleShortcutHelpOpenChange = useCallback(
+		(nextOpen: boolean): void => {
+			if (!nextOpen) {
+				closeShortcutHelp();
+			}
+		},
+		[closeShortcutHelp],
+	);
 
 	return (
-		<DashboardShellContext.Provider value={{ setRouteActions }}>
+		<DashboardShellContext.Provider value={contextValue}>
 			<div className="min-h-dvh bg-background text-foreground">
 				<div className="mx-auto flex min-h-dvh max-w-[96rem]">
 					<aside className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col">
@@ -481,83 +436,119 @@ function DashboardShell({
 					</div>
 				</div>
 			</div>
-			<Dialog
+			<CommandPaletteDialog
+				commands={filteredCommands}
 				open={paletteOpen}
-				onOpenChange={(nextOpen) => (!nextOpen ? closePalette() : undefined)}
-			>
-				<DialogContent>
-					<DialogTitle>Command palette</DialogTitle>
-					<DialogDescription>
-						Navigate between primary routes and run safe dashboard actions only.
-					</DialogDescription>
-					<Input
-						autoFocus
-						placeholder="Search commands"
-						value={paletteQuery}
-						onChange={(event) => setPaletteQuery(event.target.value)}
-						aria-label="Search commands"
-					/>
-					<div className="max-h-80 overflow-y-auto rounded-lg border border-border">
-						{filteredCommands.length > 0 ? (
-							<div className="grid gap-px bg-border">
-								{filteredCommands.map((command) => (
-									<button
-										key={command.id}
-										type="button"
-										className="flex w-full items-start gap-3 bg-background px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-										onClick={() => runCommand(command)}
-									>
-										<span className="mt-0.5 text-muted-foreground">{command.icon}</span>
-										<span className="min-w-0 flex-1">
-											<span className="block text-sm font-medium">{command.label}</span>
-											<span className="mt-1 block text-sm text-muted-foreground">
-												{command.description}
-											</span>
-										</span>
-										{command.shortcut ? (
-											<span className="text-xs text-muted-foreground">{command.shortcut}</span>
-										) : null}
-									</button>
-								))}
-							</div>
-						) : (
-							<div className="px-3 py-6 text-sm text-muted-foreground">
-								No commands matched this search.
-							</div>
-						)}
-					</div>
-				</DialogContent>
-			</Dialog>
-			<Dialog
+				query={paletteQuery}
+				onOpenChange={handlePaletteOpenChange}
+				onQueryChange={setPaletteQuery}
+				onRunCommand={runCommand}
+			/>
+			<KeyboardShortcutsDialog
 				open={shortcutHelpOpen}
-				onOpenChange={(nextOpen) => (!nextOpen ? closeShortcutHelp() : undefined)}
-			>
-				<DialogContent>
-					<DialogTitle>Keyboard shortcuts</DialogTitle>
-					<DialogDescription>
-						Safe keyboard access for route navigation and view-level inspection.
-					</DialogDescription>
-					<ul className="grid gap-3">
-						{dashboardKeyboardShortcuts.map((shortcut) => (
-							<li
-								key={shortcut.label}
-								className="rounded-lg border border-border bg-background/80 px-3 py-3"
-							>
-								<div className="flex items-start justify-between gap-3">
-									<div>
-										<h3 className="text-sm font-medium">{shortcut.label}</h3>
-										<p className="mt-1 text-sm text-muted-foreground">{shortcut.description}</p>
-									</div>
-									<kbd className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium">
-										{shortcut.keybinding}
-									</kbd>
-								</div>
-							</li>
-						))}
-					</ul>
-				</DialogContent>
-			</Dialog>
+				onOpenChange={handleShortcutHelpOpenChange}
+			/>
 		</DashboardShellContext.Provider>
+	);
+}
+
+function CommandPaletteDialog({
+	commands,
+	open,
+	query,
+	onOpenChange,
+	onQueryChange,
+	onRunCommand,
+}: {
+	readonly commands: readonly DashboardShellCommand[];
+	readonly open: boolean;
+	readonly query: string;
+	readonly onOpenChange: (open: boolean) => void;
+	readonly onQueryChange: (query: string) => void;
+	readonly onRunCommand: (command: DashboardShellCommand) => void;
+}): ReactElement {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent>
+				<DialogTitle>Command palette</DialogTitle>
+				<DialogDescription>
+					Navigate between primary routes and run safe dashboard actions only.
+				</DialogDescription>
+				<Input
+					autoFocus
+					placeholder="Search commands"
+					value={query}
+					onChange={(event) => onQueryChange(event.target.value)}
+					aria-label="Search commands"
+				/>
+				<div className="max-h-80 overflow-y-auto rounded-lg border border-border">
+					{commands.length > 0 ? (
+						<div className="grid gap-px bg-border">
+							{commands.map((command) => (
+								<button
+									key={command.id}
+									type="button"
+									className="flex w-full items-start gap-3 bg-background px-3 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+									onClick={() => onRunCommand(command)}
+								>
+									<span className="mt-0.5 text-muted-foreground">{command.icon}</span>
+									<span className="min-w-0 flex-1">
+										<span className="block text-sm font-medium">{command.label}</span>
+										<span className="mt-1 block text-sm text-muted-foreground">
+											{command.description}
+										</span>
+									</span>
+									{command.shortcut ? (
+										<span className="text-xs text-muted-foreground">{command.shortcut}</span>
+									) : null}
+								</button>
+							))}
+						</div>
+					) : (
+						<div className="px-3 py-6 text-sm text-muted-foreground">
+							No commands matched this search.
+						</div>
+					)}
+				</div>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function KeyboardShortcutsDialog({
+	open,
+	onOpenChange,
+}: {
+	readonly open: boolean;
+	readonly onOpenChange: (open: boolean) => void;
+}): ReactElement {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent>
+				<DialogTitle>Keyboard shortcuts</DialogTitle>
+				<DialogDescription>
+					Safe keyboard access for route navigation and view-level inspection.
+				</DialogDescription>
+				<ul className="grid gap-3">
+					{dashboardKeyboardShortcuts.map((shortcut) => (
+						<li
+							key={shortcut.label}
+							className="rounded-lg border border-border bg-background/80 px-3 py-3"
+						>
+							<div className="flex items-start justify-between gap-3">
+								<div>
+									<h3 className="text-sm font-medium">{shortcut.label}</h3>
+									<p className="mt-1 text-sm text-muted-foreground">{shortcut.description}</p>
+								</div>
+								<kbd className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium">
+									{shortcut.keybinding}
+								</kbd>
+							</div>
+						</li>
+					))}
+				</ul>
+			</DialogContent>
+		</Dialog>
 	);
 }
 
@@ -608,6 +599,123 @@ function renderDashboardNavLink({
 		>
 			{item.label}
 		</a>
+	);
+}
+
+function createDashboardShellCommands(
+	options: DashboardShellCommandOptions,
+): readonly DashboardShellCommand[] {
+	return [...createNavigationCommands(options.onNavigate), ...createSafeActionCommands(options)];
+}
+
+function createNavigationCommands(
+	onNavigate: DashboardShellProps['onNavigate'],
+): readonly DashboardShellCommand[] {
+	return dashboardNavItems.map((item) => ({
+		description: `Navigate to ${item.label}.`,
+		icon: <Search className="size-4" />,
+		id: `nav-${item.href}`,
+		keywords: ['navigate', 'go', ...item.label.toLowerCase().split(' ')],
+		label: item.label,
+		run: () => navigateTo(item.href, onNavigate),
+	}));
+}
+
+function createSafeActionCommands({
+	openShortcutHelp,
+	routeActions,
+	setThemeMode,
+	themeMode,
+}: DashboardShellCommandOptions): readonly DashboardShellCommand[] {
+	const copyUrlCommand: DashboardShellCommand = {
+		description: 'Copy the current dashboard URL for sharing.',
+		icon: <Link2 className="size-4" />,
+		id: 'copy-url',
+		keywords: ['copy', 'share', 'url', 'link'],
+		label: 'Copy current URL',
+		run: () => {
+			void navigator.clipboard.writeText(window.location.href);
+		},
+	};
+	const toggleThemeCommand: DashboardShellCommand = {
+		description: 'Toggle between light and dark operator modes.',
+		icon: getThemeModeIcon(themeMode),
+		id: 'toggle-theme',
+		keywords: ['theme', 'dark', 'light', 'appearance'],
+		label: 'Toggle theme',
+		run: () => {
+			setThemeMode(getNextThemeMode(themeMode));
+		},
+	};
+	const shortcutHelpCommand: DashboardShellCommand = {
+		description: 'Review the safe dashboard keyboard shortcuts.',
+		icon: <HelpCircle className="size-4" />,
+		id: 'shortcut-help',
+		keywords: ['help', 'shortcuts', 'keyboard'],
+		label: 'Show keyboard shortcuts',
+		run: openShortcutHelp,
+		shortcut: '?',
+	};
+	const clearFiltersCommand = routeActions?.clearFilters
+		? createClearFiltersCommand(routeActions.clearFilters)
+		: null;
+
+	if (!routeActions?.refresh) {
+		return [
+			copyUrlCommand,
+			...(clearFiltersCommand ? [clearFiltersCommand] : []),
+			toggleThemeCommand,
+			shortcutHelpCommand,
+		];
+	}
+
+	return [
+		{
+			description: `Refetch ${routeActions.viewLabel ?? 'the current view'} from the Management API.`,
+			icon: <RefreshCw className="size-4" />,
+			id: 'refresh',
+			keywords: ['refresh', 'reload', 'refetch'],
+			label: 'Refresh current view',
+			run: routeActions.refresh,
+			shortcut: 'Shift+R',
+		},
+		...(clearFiltersCommand ? [clearFiltersCommand] : []),
+		copyUrlCommand,
+		toggleThemeCommand,
+		shortcutHelpCommand,
+	];
+}
+
+function createClearFiltersCommand(clearFilters: DashboardShellRouteAction): DashboardShellCommand {
+	return {
+		description: 'Return the current view to its default search state.',
+		icon: <FilterX className="size-4" />,
+		id: 'clear-filters',
+		keywords: ['filters', 'clear', 'reset', 'search'],
+		label: clearFilters.label,
+		run: clearFilters.run,
+	};
+}
+
+function filterDashboardShellCommands(
+	commands: readonly DashboardShellCommand[],
+	query: string,
+): readonly DashboardShellCommand[] {
+	const normalizedQuery = query.trim().toLowerCase();
+
+	if (normalizedQuery.length === 0) {
+		return commands;
+	}
+
+	return commands.filter((command) => matchesDashboardShellCommand(command, normalizedQuery));
+}
+
+function matchesDashboardShellCommand(
+	command: DashboardShellCommand,
+	normalizedQuery: string,
+): boolean {
+	return [command.label, command.description, ...command.keywords].some((value) =>
+		value.toLowerCase().includes(normalizedQuery),
 	);
 }
 
@@ -700,11 +808,11 @@ function getNavItemClassName(active: boolean): string {
 	return cn(baseClassName, 'text-muted-foreground hover:bg-background hover:text-foreground');
 }
 
-function useDashboardShellRouteActions(actions: DashboardShellRouteActions): void {
+function useDashboardShellRouteActions(actions: DashboardShellRouteActions | null): void {
 	const context = useContext(DashboardShellContext);
 
 	useLayoutEffect(() => {
-		if (!context) {
+		if (!context || !actions) {
 			return;
 		}
 

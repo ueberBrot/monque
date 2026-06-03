@@ -140,6 +140,37 @@ describe('Jobs route', () => {
 		});
 	});
 
+	it('keeps shell actions scoped to the job detail route', async () => {
+		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
+
+		renderJobsRoute({
+			fetch: fetchSpy,
+			initialEntry: '/jobs/scenario-46003-0001',
+		});
+
+		await screen.findByText('scenario-46003-0001');
+
+		fireEvent.keyDown(window, { key: 'k', metaKey: true });
+
+		expect(screen.getAllByText('Refresh current view').length).toBeGreaterThan(0);
+		expect(screen.queryAllByText('Clear Jobs filters')).toHaveLength(0);
+
+		fireEvent.keyDown(window, { key: 'Escape' });
+
+		const initialDetailRequestCount = countFetchRequests(
+			fetchSpy.mock.calls,
+			'/api/v1/jobs/scenario-46003-0001',
+		);
+
+		fireEvent.keyDown(window, { key: 'R', shiftKey: true });
+
+		await waitFor(() => {
+			expect(
+				countFetchRequests(fetchSpy.mock.calls, '/api/v1/jobs/scenario-46003-0001'),
+			).toBeGreaterThan(initialDetailRequestCount);
+		});
+	});
+
 	it('renders an empty state when no jobs match the current view', async () => {
 		renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'empty-state' }),
@@ -273,6 +304,17 @@ function getLastElement<TElement>(elements: readonly TElement[]): TElement {
 	}
 
 	return lastElement;
+}
+
+function countFetchRequests(calls: readonly Parameters<typeof fetch>[], pathname: string): number {
+	return calls.filter(([input]) => {
+		const url = new URL(
+			input instanceof Request ? input.url : String(input),
+			'https://dashboard.test',
+		);
+
+		return url.pathname === pathname;
+	}).length;
 }
 
 function createJobsActionFetch(options: {
