@@ -4,19 +4,22 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev --host 127.0.0.1 --port 3400",
+		"dev": "vite dev",
+		"dev:db": "MONQUE_DASHBOARD_DEV_MODE=db vite dev",
 		"build": "vite build",
-		"preview": "vite preview --host 127.0.0.1 --port 3400",
+		"preview": "vite preview",
 		"type-check": "tsc --noEmit",
 		"test": "vitest run",
 		"test:unit": "bun run type-check && vitest run --coverage.enabled=false",
 		"test:smoke": "playwright test"
 	},
 	"dependencies": {
+		"@monque/core": "workspace:*",
 		"@monque/dashboard": "workspace:*",
 		"@monque/management": "workspace:*",
 		"@orpc/openapi": "^1.14.4",
 		"@orpc/server": "^1.14.4",
+		"mongodb": "^7.2.0",
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7",
 		"zod": "^4.4.3"

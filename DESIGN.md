@@ -140,7 +140,6 @@ package, not a server, not a component library, and not a special API surface.
   Monque-specific feature components.
 - Explicit loading, empty, unauthorized, forbidden, conflict, not-found, read-only, disabled, and
   capability-limited states.
-- Keyboard navigable workflows with visible focus and no destructive hotkeys.
 
 ## 2. Colors
 
@@ -241,7 +240,7 @@ back to the system sans stack until a better bundled font is chosen.
 ## 4. Elevation
 
 Depth is conveyed through tonal layering and borders first. Shadows are reserved for overlays that
-must separate from dense content: command palette, dropdowns, popovers, dialogs, and toasts.
+must separate from dense content: dropdowns, popovers, dialogs, and toasts.
 Resting panels, cards, table rows, and buttons should not combine a decorative border with a wide
 soft shadow.
 
@@ -249,8 +248,8 @@ soft shadow.
 
 - **Popover lift** (`box-shadow: 0 8px 12px rgba(0, 0, 0, 0.36)`): Menus, dropdowns, tooltips,
   and compact floating surfaces.
-- **Dialog lift** (`box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5)`): Confirmation dialogs, command
-  palette, and modal error details. Do not pair this with a visible 1px border.
+- **Dialog lift** (`box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5)`): Confirmation dialogs and
+  modal error details. Do not pair this with a visible 1px border.
 - **Focus ring** (`0 0 0 2px #090c0d, 0 0 0 4px #11e167`): Keyboard focus on dark surfaces.
 
 ### Named Rules
@@ -265,8 +264,8 @@ not need a shadow.
 
 Components should compose shadcn ecosystem primitives with Monque-specific feature components.
 Tailwind CSS is the styling layer for layout, tokens, state variants, and local composition. Prefer
-standard affordances: buttons, inputs, tabs, dialogs, popovers, command palette, drawer, tables,
-menus, and tooltips.
+standard affordances: buttons, inputs, tabs, dialogs, popovers, drawer, tables, menus, and
+tooltips.
 
 The package shell should include the normal shadcn setup: `components.json`, Tailwind config,
 global CSS variables, a `cn` utility, and local primitive files generated or copied from the
@@ -318,7 +317,7 @@ summaries, action confirmations, payload panels, capability states, and route bo
 ### Navigation
 
 - **Desktop:** Persistent left sidebar with Monque label, Queue Views, Jobs, Health, theme control,
-  command palette trigger, and compact runtime/config status where needed.
+  and compact runtime/config status where needed.
 - **Mobile:** Drawer navigation with the same destinations and action vocabulary. Main content
   should prioritize filters and rows over decorative headers.
 - **Active State:** Green low background, green text, icon plus label.
@@ -370,14 +369,6 @@ summaries, action confirmations, payload panels, capability states, and route bo
   means stale data should disappear after refetch. Both states should trigger relevant refetches.
 - **Focus:** Dialogs trap focus and restore it to the invoking control.
 
-### Command Palette
-
-- **Scope:** Navigation to Queue Views, Jobs, Health, plus safe view actions: refresh, clear
-  filters, toggle theme, copy URL, and shortcut help.
-- **No Mutations:** Destructive and state-changing Job actions are never palette actions and never
-  hotkeys.
-- **Behavior:** Fast open, keyboard-first, searchable, and safe to dismiss with Escape.
-
 ## 6. Do's and Don'ts
 
 ### Do:
@@ -414,15 +405,14 @@ summaries, action confirmations, payload panels, capability states, and route bo
 - **Don't** add payload editing.
 - **Don't** add Dashboard-side payload redaction.
 - **Don't** add realtime protocols in v1.
-- **Don't** add destructive hotkeys.
 - **Don't** add "select all matching filter" bulk actions.
 - **Don't** import server-only Management Surface code into the browser bundle.
 - **Don't** import core scheduler code into the browser bundle.
 - **Don't** import MongoDB code into the browser bundle.
 - **Don't** import adapter internals into the browser bundle.
 - **Don't** import Management root exports into the browser bundle.
-- **Don't** hand-roll buttons, dialogs, drawers, tables, selects, popovers, tooltips, command
-  palette, skeletons, or form primitives when shadcn ecosystem components cover the behavior.
+- **Don't** hand-roll buttons, dialogs, drawers, tables, selects, popovers, tooltips, skeletons,
+  or form primitives when shadcn ecosystem components cover the behavior.
 - **Don't** bypass Tailwind tokens with one-off CSS values unless a component has a documented
   reason.
 - **Don't** use Inter as the Dashboard font.
@@ -430,4 +420,3 @@ summaries, action confirmations, payload panels, capability states, and route bo
 - **Don't** use green or orange as decoration.
 - **Don't** use glassmorphism, gradient text, decorative blobs, side-stripe borders, or a grid of
   identical cards as the main structure.
-- **Don't** put destructive actions in the command palette.

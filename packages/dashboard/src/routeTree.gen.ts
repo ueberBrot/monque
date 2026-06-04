@@ -9,21 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as QueueViewsRouteImport } from './routes/queue-views'
-import { Route as JobsRouteImport } from './routes/jobs'
-import { Route as HealthRouteImport } from './routes/health'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as QueueViewsNameRouteImport } from './routes/queue-views.$name'
+import { Route as HealthRouteImport } from './routes/health'
+import { Route as JobsRouteImport } from './routes/jobs'
+import { Route as QueueViewsRouteImport } from './routes/queue-views'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
+import { Route as QueueViewsNameRouteImport } from './routes/queue-views.$name'
 
-const QueueViewsRoute = QueueViewsRouteImport.update({
-  id: '/queue-views',
-  path: '/queue-views',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const JobsRoute = JobsRouteImport.update({
-  id: '/jobs',
-  path: '/jobs',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HealthRoute = HealthRouteImport.update({
@@ -31,20 +26,25 @@ const HealthRoute = HealthRouteImport.update({
   path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const JobsRoute = JobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const QueueViewsNameRoute = QueueViewsNameRouteImport.update({
-  id: '/$name',
-  path: '/$name',
-  getParentRoute: () => QueueViewsRoute,
+const QueueViewsRoute = QueueViewsRouteImport.update({
+  id: '/queue-views',
+  path: '/queue-views',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const JobsJobIdRoute = JobsJobIdRouteImport.update({
   id: '/$jobId',
   path: '/$jobId',
   getParentRoute: () => JobsRoute,
+} as any)
+const QueueViewsNameRoute = QueueViewsNameRouteImport.update({
+  id: '/$name',
+  path: '/$name',
+  getParentRoute: () => QueueViewsRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -108,18 +108,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/queue-views': {
-      id: '/queue-views'
-      path: '/queue-views'
-      fullPath: '/queue-views'
-      preLoaderRoute: typeof QueueViewsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/jobs': {
-      id: '/jobs'
-      path: '/jobs'
-      fullPath: '/jobs'
-      preLoaderRoute: typeof JobsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/health': {
@@ -129,19 +122,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/jobs': {
+      id: '/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof JobsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/queue-views/$name': {
-      id: '/queue-views/$name'
-      path: '/$name'
-      fullPath: '/queue-views/$name'
-      preLoaderRoute: typeof QueueViewsNameRouteImport
-      parentRoute: typeof QueueViewsRoute
+    '/queue-views': {
+      id: '/queue-views'
+      path: '/queue-views'
+      fullPath: '/queue-views'
+      preLoaderRoute: typeof QueueViewsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/jobs/$jobId': {
       id: '/jobs/$jobId'
@@ -149,6 +142,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/jobs/$jobId'
       preLoaderRoute: typeof JobsJobIdRouteImport
       parentRoute: typeof JobsRoute
+    }
+    '/queue-views/$name': {
+      id: '/queue-views/$name'
+      path: '/$name'
+      fullPath: '/queue-views/$name'
+      preLoaderRoute: typeof QueueViewsNameRouteImport
+      parentRoute: typeof QueueViewsRoute
     }
   }
 }

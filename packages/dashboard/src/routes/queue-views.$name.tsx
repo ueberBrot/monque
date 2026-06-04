@@ -1,9 +1,8 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { z } from 'zod';
 
-import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 
 import {
@@ -72,19 +71,6 @@ function QueueViewDetailRoute() {
 			},
 		});
 	}, [navigate, name, search.limit]);
-	const shellActions = useMemo(
-		() => ({
-			clearFilters: {
-				label: `Reset ${name} pagination`,
-				run: resetQueueViewPagination,
-			},
-			refresh: refetchQueueViewDetail,
-			viewLabel: `${name} Queue View`,
-		}),
-		[name, refetchQueueViewDetail, resetQueueViewPagination],
-	);
-
-	useDashboardShellRouteActions(shellActions);
 
 	if (queueViewsQuery.isPending || statsQuery.isPending || jobsQuery.isPending) {
 		return <QueueViewsLoadingState />;

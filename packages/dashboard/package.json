@@ -83,7 +83,6 @@
 		"@tanstack/react-devtools": "^0.10.5",
 		"@tanstack/react-form": "^1.33.0",
 		"@tanstack/react-form-devtools": "^0.2.29",
-		"@tanstack/react-hotkeys": "^0.10.0",
 		"@tanstack/react-query": "^5.100.14",
 		"@tanstack/react-query-devtools": "^5.100.14",
 		"@tanstack/react-router": "^1.170.11",

@@ -1,0 +1,19 @@
+services:
+  mongodb-atlas-local:
+    image: mongodb/mongodb-atlas-local:8.2.6-20260529T125201Z
+    container_name: monque-dashboard-atlas-local
+    ports:
+      - '27018:27017'
+    volumes:
+      - mongodb-atlas-local-data:/data/db
+      - mongodb-atlas-local-config:/data/configdb
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  mongodb-atlas-local-data:
+  mongodb-atlas-local-config:

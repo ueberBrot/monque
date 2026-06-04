@@ -8,7 +8,7 @@ import {
 	getDashboardDevScenarioCatalog,
 } from './mock/scenario-catalog.js';
 
-const DashboardDevModeSchema = z.enum(['mock', 'live']);
+const DashboardDevModeSchema = z.enum(['mock', 'live', 'db']);
 const DashboardDevScenarioIdSchema = z.enum(dashboardDevScenarioIds);
 
 const DashboardDevEnvironmentSchema = z
@@ -43,7 +43,7 @@ function createDashboardRuntimeConfig(
 	environment: DashboardDevEnvironment,
 ): DashboardRuntimeConfig {
 	return parseDashboardRuntimeConfig({
-		apiBaseUrl: environment.mode === 'mock' ? '/' : environment.liveApiBaseUrl,
+		apiBaseUrl: environment.mode === 'live' ? environment.liveApiBaseUrl : '/',
 		basePath: '/',
 		pollingIntervalMs: 10_000,
 	});

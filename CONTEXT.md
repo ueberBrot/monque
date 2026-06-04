@@ -163,10 +163,6 @@ processing jobs block duplicates; completed and failed jobs do not.
   bulk-action selections.
 - The first Dashboard bulk actions operate only on explicitly selected Jobs and require
   confirmation before execution.
-- The first Dashboard supports only operator-safe hotkeys; destructive Job actions are not
-  triggered directly by keyboard shortcuts.
-- The first Dashboard command palette is limited to navigation and safe view actions, not
-  destructive Job actions.
 - The Management Route Map groups operations by resource and uses action endpoints for job
   state transitions.
 - Management Adapters mount the oRPC OpenAPI HTTP handler instead of translating requests

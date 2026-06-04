@@ -102,16 +102,17 @@ describe('Job detail route', () => {
 			),
 			'Job detail could not be loaded',
 		],
-	] satisfies ReadonlyArray<
-		readonly [string, Response, string]
-	>)('maps typed %s states for operators', async (_name, response, heading) => {
-		renderJobDetailRoute({
-			fetch: createStaticFetch(response),
-			jobId: 'job-error-state',
-		});
+	] satisfies ReadonlyArray<readonly [string, Response, string]>)(
+		'maps typed %s states for operators',
+		async (_name, response, heading) => {
+			renderJobDetailRoute({
+				fetch: createStaticFetch(response),
+				jobId: 'job-error-state',
+			});
 
-		expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
-	});
+			expect(await screen.findByRole('heading', { name: heading })).toBeTruthy();
+		},
+	);
 
 	it('confirms single delete, refetches detail, and shows not found after deletion', async () => {
 		const job = createJobDetail({
