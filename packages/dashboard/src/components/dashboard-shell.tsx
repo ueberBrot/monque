@@ -1,3 +1,4 @@
+import { useHotkeys } from '@tanstack/react-hotkeys';
 import {
 	FilterX,
 	HelpCircle,
@@ -221,6 +222,53 @@ function DashboardShell({
 		setShortcutHelpOpen(false);
 		restoreFocus();
 	}, [restoreFocus]);
+
+	useHotkeys([
+		{
+			hotkey: 'Mod+K',
+			callback: () => {},
+			options: {
+				enabled: false,
+				meta: {
+					description: 'Open the command palette for navigation and safe actions.',
+					name: 'Command palette',
+				},
+			},
+		},
+		{
+			hotkey: '/',
+			callback: () => {},
+			options: {
+				enabled: false,
+				meta: {
+					description: 'Open the command palette for navigation and safe actions.',
+					name: 'Command palette',
+				},
+			},
+		},
+		{
+			hotkey: 'Shift+R',
+			callback: () => {},
+			options: {
+				enabled: false,
+				meta: {
+					description: 'Refresh the current view without reloading the page.',
+					name: 'Refresh current view',
+				},
+			},
+		},
+		{
+			hotkey: 'Escape',
+			callback: () => {},
+			options: {
+				enabled: false,
+				meta: {
+					description: 'Close the current dialog or palette.',
+					name: 'Close dialog',
+				},
+			},
+		},
+	]);
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent): void => {
