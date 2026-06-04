@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { z } from 'zod';
 
 import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
@@ -60,29 +60,28 @@ function QueueViewDetailRoute() {
 		}),
 		refetchInterval,
 	});
-	const refetchQueueViewDetail = (): void => {
+	const refetchQueueViewDetail = useCallback((): void => {
 		void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
-	};
+	}, [jobsQuery.refetch, queueViewsQuery.refetch, statsQuery.refetch]);
+	const resetQueueViewPagination = useCallback((): void => {
+		void navigate({
+			to: '/queue-views/$name',
+			params: { name },
+			search: {
+				limit: search.limit,
+			},
+		});
+	}, [navigate, name, search.limit]);
 	const shellActions = useMemo(
 		() => ({
 			clearFilters: {
 				label: `Reset ${name} pagination`,
-				run: () => {
-					void navigate({
-						to: '/queue-views/$name',
-						params: { name },
-						search: {
-							limit: search.limit,
-						},
-					});
-				},
+				run: resetQueueViewPagination,
 			},
-			refresh: () => {
-				void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
-			},
+			refresh: refetchQueueViewDetail,
 			viewLabel: `${name} Queue View`,
 		}),
-		[jobsQuery.refetch, navigate, name, queueViewsQuery.refetch, search.limit, statsQuery.refetch],
+		[name, refetchQueueViewDetail, resetQueueViewPagination],
 	);
 
 	useDashboardShellRouteActions(shellActions);
@@ -132,15 +131,7 @@ function QueueViewDetailRoute() {
 				name={name}
 				jobsPage={jobsPage}
 				onRefresh={refetchQueueViewDetail}
-				onResetCursor={() => {
-					void navigate({
-						to: '/queue-views/$name',
-						params: { name },
-						search: {
-							limit: search.limit,
-						},
-					});
-				}}
+				onResetCursor={resetQueueViewPagination}
 				onNextPage={(cursor) => {
 					void navigate({
 						to: '/queue-views/$name',
