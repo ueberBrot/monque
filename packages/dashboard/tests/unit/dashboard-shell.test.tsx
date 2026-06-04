@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DashboardShell } from '@/components/dashboard-shell';
 
 describe('DashboardShell', () => {
+	afterEach(() => {
+		cleanup();
+	});
+
 	it('renders primary navigation and opens the mobile drawer', () => {
 		render(
 			<DashboardShell currentPath="/queue-views">
@@ -62,9 +66,11 @@ describe('DashboardShell', () => {
 			</DashboardShell>,
 		);
 
-		fireEvent.keyDown(window, { key: 'k', metaKey: true });
+		dispatchKeyboardEvent({ key: 'k', metaKey: true });
 
-		expect(getCommandSearchInput()).toBeTruthy();
+		await waitFor(() => {
+			expect(getCommandSearchInput()).toBeTruthy();
+		});
 		expect(screen.getAllByText('Copy current URL').length).toBeGreaterThan(0);
 		expect(screen.getAllByText('Toggle theme').length).toBeGreaterThan(0);
 		expect(screen.queryAllByText('Delete job')).toHaveLength(0);
@@ -80,6 +86,39 @@ describe('DashboardShell', () => {
 		).toBe(true);
 	});
 
+	it('opens the command palette with slash but ignores slash while typing', async () => {
+		render(
+			<DashboardShell currentPath="/jobs">
+				<div>Route content</div>
+				<input aria-label="Standalone filter" />
+			</DashboardShell>,
+		);
+
+		dispatchKeyboardEvent({ key: '/' });
+		await waitFor(() => {
+			expect(getCommandSearchInput()).toBeTruthy();
+		});
+
+		dispatchKeyboardEvent({ key: 'Escape' });
+
+		await waitFor(() => {
+			expect(
+				screen
+					.queryAllByLabelText('Search commands')
+					.every((element) => !isVisibleElement(element)),
+			).toBe(true);
+		});
+
+		const standaloneFilter = screen.getByLabelText('Standalone filter');
+		standaloneFilter.focus();
+
+		standaloneFilter.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+
+		expect(
+			screen.queryAllByLabelText('Search commands').every((element) => !isVisibleElement(element)),
+		).toBe(true);
+	});
+
 	it('opens shortcut help with keyboard input and restores focus on close', async () => {
 		render(
 			<DashboardShell currentPath="/health">
@@ -87,15 +126,19 @@ describe('DashboardShell', () => {
 			</DashboardShell>,
 		);
 
-		const shortcutButton = screen.getByRole('button', { name: 'Open keyboard shortcuts' });
+		const shortcutButton = getLastElement(
+			screen.getAllByRole('button', { name: 'Open keyboard shortcuts' }),
+		);
 		shortcutButton.focus();
 
-		fireEvent.keyDown(window, { key: '?', shiftKey: true });
+		dispatchKeyboardEvent({ key: '?', shiftKey: true });
 
-		expect(screen.getAllByText('Keyboard shortcuts').length).toBeGreaterThan(0);
+		await waitFor(() => {
+			expect(screen.getAllByText('Keyboard shortcuts').length).toBeGreaterThan(0);
+		});
 		expect(screen.getAllByText('Refresh current view').length).toBeGreaterThan(0);
 
-		fireEvent.keyDown(window, { key: 'Escape' });
+		dispatchKeyboardEvent({ key: 'Escape' });
 
 		await waitFor(() => {
 			expect(document.activeElement).toBe(shortcutButton);
@@ -150,4 +193,8 @@ function getLastElement<TElement>(elements: readonly TElement[]): TElement {
 	}
 
 	return lastElement;
+}
+
+function dispatchKeyboardEvent(init: KeyboardEventInit): void {
+	document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
 }
