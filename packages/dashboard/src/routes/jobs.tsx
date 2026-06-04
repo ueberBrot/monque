@@ -12,7 +12,6 @@ import {
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -45,7 +44,6 @@ import {
 	runJobAction,
 } from '@/features/jobs/job-actions';
 import {
-	DEFAULT_LIMIT,
 	fromDateTimeLocalValue,
 	getJobsSearchIdentity,
 	getNextSort,
@@ -346,39 +344,6 @@ function JobsRoute() {
 	const handleRefresh = useCallback((): void => {
 		void jobsQuery.refetch();
 	}, [jobsQuery.refetch]);
-	const clearJobsFilters = useCallback((): void => {
-		void navigate({
-			search: (currentSearch) => ({
-				...currentSearch,
-				createdAtFrom: undefined,
-				createdAtTo: undefined,
-				cursor: undefined,
-				limit: DEFAULT_LIMIT,
-				name: undefined,
-				nextRunAtFrom: undefined,
-				nextRunAtTo: undefined,
-				sortBy: 'createdAt',
-				sortDirection: 'desc',
-				status: [],
-				updatedAtFrom: undefined,
-				updatedAtTo: undefined,
-			}),
-		});
-	}, [navigate]);
-
-	const shellActions = useMemo(
-		() => ({
-			clearFilters: {
-				label: 'Clear Jobs filters',
-				run: clearJobsFilters,
-			},
-			refresh: handleRefresh,
-			viewLabel: 'Jobs',
-		}),
-		[clearJobsFilters, handleRefresh],
-	);
-
-	useDashboardShellRouteActions(pathname === '/jobs' ? shellActions : null);
 
 	function openBulkDialog(action: JobActionKey): void {
 		setDialogState({

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DashboardShell } from '@/components/dashboard-shell';
 
@@ -49,101 +49,6 @@ describe('DashboardShell', () => {
 
 		expect(document.documentElement.classList.contains('dark')).toBe(false);
 	});
-
-	it('opens the command palette from the keyboard and runs safe view actions only', async () => {
-		const clipboardWriteText = vi.fn(async () => undefined);
-
-		Object.defineProperty(window.navigator, 'clipboard', {
-			configurable: true,
-			value: {
-				writeText: clipboardWriteText,
-			},
-		});
-
-		render(
-			<DashboardShell currentPath="/jobs">
-				<div>Route content</div>
-			</DashboardShell>,
-		);
-
-		dispatchKeyboardEvent({ key: 'k', metaKey: true });
-
-		await waitFor(() => {
-			expect(getCommandSearchInput()).toBeTruthy();
-		});
-		expect(screen.getAllByText('Copy current URL').length).toBeGreaterThan(0);
-		expect(screen.getAllByText('Toggle theme').length).toBeGreaterThan(0);
-		expect(screen.queryAllByText('Delete job')).toHaveLength(0);
-
-		fireEvent.click(getLastElement(screen.getAllByText('Copy current URL')));
-
-		await waitFor(() => {
-			expect(clipboardWriteText).toHaveBeenCalledWith(window.location.href);
-		});
-
-		expect(
-			screen.queryAllByLabelText('Search commands').every((element) => !isVisibleElement(element)),
-		).toBe(true);
-	});
-
-	it('opens the command palette with slash but ignores slash while typing', async () => {
-		render(
-			<DashboardShell currentPath="/jobs">
-				<div>Route content</div>
-				<input aria-label="Standalone filter" />
-			</DashboardShell>,
-		);
-
-		dispatchKeyboardEvent({ key: '/' });
-		await waitFor(() => {
-			expect(getCommandSearchInput()).toBeTruthy();
-		});
-
-		dispatchKeyboardEvent({ key: 'Escape' });
-
-		await waitFor(() => {
-			expect(
-				screen
-					.queryAllByLabelText('Search commands')
-					.every((element) => !isVisibleElement(element)),
-			).toBe(true);
-		});
-
-		const standaloneFilter = screen.getByLabelText('Standalone filter');
-		standaloneFilter.focus();
-
-		standaloneFilter.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
-
-		expect(
-			screen.queryAllByLabelText('Search commands').every((element) => !isVisibleElement(element)),
-		).toBe(true);
-	});
-
-	it('opens shortcut help with keyboard input and restores focus on close', async () => {
-		render(
-			<DashboardShell currentPath="/health">
-				<div>Route content</div>
-			</DashboardShell>,
-		);
-
-		const shortcutButton = getLastElement(
-			screen.getAllByRole('button', { name: 'Open keyboard shortcuts' }),
-		);
-		shortcutButton.focus();
-
-		dispatchKeyboardEvent({ key: '?', shiftKey: true });
-
-		await waitFor(() => {
-			expect(screen.getAllByText('Keyboard shortcuts').length).toBeGreaterThan(0);
-		});
-		expect(screen.getAllByText('Refresh current view').length).toBeGreaterThan(0);
-
-		dispatchKeyboardEvent({ key: 'Escape' });
-
-		await waitFor(() => {
-			expect(document.activeElement).toBe(shortcutButton);
-		});
-	});
 });
 
 function getThemeButton(): HTMLElement {
@@ -167,34 +72,4 @@ function getDialogContent(): HTMLElement {
 	}
 
 	return dialogContent;
-}
-
-function getCommandSearchInput(): HTMLInputElement {
-	const commandSearchInput = screen
-		.getAllByLabelText('Search commands')
-		.find((element) => element instanceof HTMLInputElement && element.tabIndex !== -1);
-
-	if (!(commandSearchInput instanceof HTMLInputElement)) {
-		throw new Error('Expected a visible command search input.');
-	}
-
-	return commandSearchInput;
-}
-
-function isVisibleElement(element: Element): boolean {
-	return !element.closest('[aria-hidden="true"]');
-}
-
-function getLastElement<TElement>(elements: readonly TElement[]): TElement {
-	const lastElement = elements[elements.length - 1];
-
-	if (!lastElement) {
-		throw new Error('Expected at least one matching element.');
-	}
-
-	return lastElement;
-}
-
-function dispatchKeyboardEvent(init: KeyboardEventInit): void {
-	document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ...init }));
 }

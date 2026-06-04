@@ -4,6 +4,7 @@ import viteReact from '@vitejs/plugin-react';
 import type { Connect } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 
+import { createLocalDbManagementServer } from './src/local-db/management-server.js';
 import { createMockManagementOpenApiHandler } from './src/mock/management-server.js';
 import {
 	type DashboardDevScenarioId,
@@ -11,7 +12,7 @@ import {
 } from './src/mock/scenario-catalog.js';
 
 const DEFAULT_SCENARIO_ID = 'pending-jobs';
-const MOCK_API_ORIGIN = 'http://127.0.0.1:3400';
+const MOCK_API_ORIGIN = 'http://dashboard-dev.local';
 const MOCK_API_MOUNT_PATH = '/api';
 
 async function readNodeRequestBody(request: Connect.IncomingMessage): Promise<Buffer | undefined> {
@@ -70,6 +71,8 @@ const config = defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
 	const devMode = env['MONQUE_DASHBOARD_DEV_MODE'] ?? 'mock';
 	const liveApiBaseUrl = env['MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL'];
+	const localDbMongoUri = env['MONQUE_DASHBOARD_DEV_MONGO_URI'];
+	const localDbDatabaseName = env['MONQUE_DASHBOARD_DEV_DATABASE_NAME'];
 	const mockHandler = createMockManagementOpenApiHandler();
 
 	return {
@@ -143,6 +146,24 @@ const config = defineConfig(({ mode }) => {
 						});
 						const responseBody = Buffer.from(await handlerResult.response.arrayBuffer());
 						response.end(responseBody);
+					});
+				},
+			},
+			{
+				name: 'monque-dashboard-dev-local-db-api',
+				configureServer(server) {
+					if (devMode !== 'db') {
+						return;
+					}
+
+					const localDbServer = createLocalDbManagementServer({
+						...(localDbMongoUri ? { mongoUri: localDbMongoUri } : {}),
+						...(localDbDatabaseName ? { databaseName: localDbDatabaseName } : {}),
+					});
+
+					server.middlewares.use(MOCK_API_MOUNT_PATH, localDbServer.middleware);
+					server.httpServer?.once('close', () => {
+						void localDbServer.close();
 					});
 				},
 			},

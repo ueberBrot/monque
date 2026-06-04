@@ -166,29 +166,6 @@ Sources:
 - TanStack Form basic concepts: https://tanstack.com/form/latest/docs/framework/react/guides/basic-concepts
 - TanStack Form validation: https://tanstack.com/form/latest/docs/framework/react/guides/validation
 
-## Hotkeys And Command Palette
-
-Findings:
-
-- TanStack Hotkeys provides React hooks such as `useHotkey` and `useHotkeys`.
-- Hotkey registrations can carry metadata, and registrations can be introspected for shortcut
-  palettes/help screens.
-- shadcn's Command component is a command menu for search and quick actions, backed by
-  `cmdk`.
-
-Implications:
-
-- Use `@tanstack/react-hotkeys` for operator-safe shortcuts.
-- Use shadcn Command/Dialog primitives for command palette UI.
-- The v1 command palette should be limited to navigation and safe view actions; destructive
-  Job actions should stay behind visible controls and confirmation dialogs.
-
-Sources:
-
-- TanStack Hotkeys guide: https://tanstack.com/hotkeys/latest/docs/framework/react/guides/hotkeys
-- TanStack Hotkeys `useHotkey`: https://tanstack.com/hotkeys/latest/docs/framework/react/reference/functions/useHotkey
-- shadcn Command: https://ui.shadcn.com/docs/components/command
-
 ## UI Component Policy
 
 Findings:
@@ -196,8 +173,8 @@ Findings:
 - shadcn supports a registry model for distributing component source, hooks, pages, config,
   rules, and other files.
 - shadcn-compatible registry components can be added as source and then adapted locally.
-- The shadcn Command and Data Table docs reinforce composition from primitives rather than
-  opaque design-system runtime packages.
+- The shadcn Data Table docs reinforce composition from primitives rather than opaque
+  design-system runtime packages.
 
 Implications:
 
@@ -212,7 +189,6 @@ Sources:
 
 - shadcn registry: https://ui.shadcn.com/docs/registry
 - shadcn registry index: https://ui.shadcn.com/docs/registry/registry-index
-- shadcn Command: https://ui.shadcn.com/docs/components/command
 
 ## Testing And Release Checks
 

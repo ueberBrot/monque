@@ -1,10 +1,4 @@
-import {
-	createRootRouteWithContext,
-	Link,
-	Outlet,
-	useLocation,
-	useNavigate,
-} from '@tanstack/react-router';
+import { createRootRouteWithContext, Link, Outlet, useLocation } from '@tanstack/react-router';
 
 import { type DashboardNavItem, DashboardShell } from '@/components/dashboard-shell';
 
@@ -20,14 +14,10 @@ export const Route = createRootRouteWithContext<DashboardRouterContext>()({
 
 function RootComponent() {
 	const currentPath = useLocation().pathname;
-	const navigate = useNavigate();
 
 	return (
 		<DashboardShell
 			currentPath={currentPath}
-			onNavigate={(href) => {
-				void navigate({ to: href });
-			}}
 			renderNavLink={(item, options) => (
 				<DashboardRouterNavLink item={item} onNavigate={options.onNavigate} />
 			)}

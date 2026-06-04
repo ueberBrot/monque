@@ -37,8 +37,8 @@ feature components instead of inventing a custom component language.
 Do not build a marketing-style analytics dashboard, synthetic KPI homepage, decorative SaaS
 surface, standalone server, Docker distribution, deep theme editor, or public React component
 library for v1. Do not add job creation, worker registration, scheduler lifecycle controls,
-payload editing, Dashboard-side payload redaction, realtime protocols, destructive hotkeys,
-or "select all matching filter" bulk actions. Do not import server-only Management Surface
+payload editing, Dashboard-side payload redaction, realtime protocols, or "select all matching filter"
+bulk actions. Do not import server-only Management Surface
 code, core scheduler code, MongoDB code, adapter internals, or Management root exports into
 the browser bundle.
 
