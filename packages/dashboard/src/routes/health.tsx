@@ -2,7 +2,7 @@ import type { CapabilitiesDto, SchedulerHealthDto } from '@monque/management/con
 import { useQueries } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { AlertTriangle, CheckCircle2, Lock, RefreshCcw, ShieldX } from 'lucide-react';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 
 import { listDashboardCapabilityStates } from '@/capabilities';
 import { useDashboardShellRouteActions } from '@/components/dashboard-shell';
@@ -38,14 +38,15 @@ function HealthRoute() {
 		],
 	});
 	const error = healthQuery.error ?? capabilitiesQuery.error;
+	const refreshHealth = useCallback((): void => {
+		void Promise.all([healthQuery.refetch(), capabilitiesQuery.refetch()]);
+	}, [capabilitiesQuery.refetch, healthQuery.refetch]);
 	const shellActions = useMemo(
 		() => ({
-			refresh: () => {
-				void Promise.all([healthQuery.refetch(), capabilitiesQuery.refetch()]);
-			},
+			refresh: refreshHealth,
 			viewLabel: 'Health',
 		}),
-		[capabilitiesQuery.refetch, healthQuery.refetch],
+		[refreshHealth],
 	);
 
 	useDashboardShellRouteActions(shellActions);

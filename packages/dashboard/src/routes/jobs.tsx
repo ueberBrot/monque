@@ -346,35 +346,36 @@ function JobsRoute() {
 	const handleRefresh = useCallback((): void => {
 		void jobsQuery.refetch();
 	}, [jobsQuery.refetch]);
+	const clearJobsFilters = useCallback((): void => {
+		void navigate({
+			search: (currentSearch) => ({
+				...currentSearch,
+				createdAtFrom: undefined,
+				createdAtTo: undefined,
+				cursor: undefined,
+				limit: DEFAULT_LIMIT,
+				name: undefined,
+				nextRunAtFrom: undefined,
+				nextRunAtTo: undefined,
+				sortBy: 'createdAt',
+				sortDirection: 'desc',
+				status: [],
+				updatedAtFrom: undefined,
+				updatedAtTo: undefined,
+			}),
+		});
+	}, [navigate]);
 
 	const shellActions = useMemo(
 		() => ({
 			clearFilters: {
 				label: 'Clear Jobs filters',
-				run: () => {
-					void navigate({
-						search: (currentSearch) => ({
-							...currentSearch,
-							createdAtFrom: undefined,
-							createdAtTo: undefined,
-							cursor: undefined,
-							limit: DEFAULT_LIMIT,
-							name: undefined,
-							nextRunAtFrom: undefined,
-							nextRunAtTo: undefined,
-							sortBy: 'createdAt',
-							sortDirection: 'desc',
-							status: [],
-							updatedAtFrom: undefined,
-							updatedAtTo: undefined,
-						}),
-					});
-				},
+				run: clearJobsFilters,
 			},
 			refresh: handleRefresh,
 			viewLabel: 'Jobs',
 		}),
-		[handleRefresh, navigate],
+		[clearJobsFilters, handleRefresh],
 	);
 
 	useDashboardShellRouteActions(pathname === '/jobs' ? shellActions : null);

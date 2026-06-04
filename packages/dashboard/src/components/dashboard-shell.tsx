@@ -96,27 +96,40 @@ type DashboardShellCommandOptions = {
 	readonly themeMode: DashboardThemeMode;
 };
 
-const dashboardKeyboardShortcuts = [
-	{
-		description: 'Open the command palette for navigation and safe actions.',
-		keybinding: 'Ctrl/Cmd+K or /',
-		label: 'Command palette',
-	},
-	{
-		description: 'Refresh the current view without reloading the page.',
-		keybinding: 'Shift+R',
-		label: 'Refresh current view',
-	},
-	{
-		description: 'Open keyboard shortcut help.',
-		keybinding: '?',
-		label: 'Shortcut help',
-	},
-	{
+type DashboardKeyboardShortcut = {
+	readonly description: string;
+	readonly keybinding: string;
+	readonly label: string;
+};
+
+const dashboardKeyboardShortcutConfig = {
+	closeDialog: {
 		description: 'Close the current dialog or palette.',
 		keybinding: 'Escape',
 		label: 'Close dialog',
 	},
+	commandPalette: {
+		description: 'Open the command palette for navigation and safe actions.',
+		keybinding: 'Ctrl/Cmd+K or /',
+		label: 'Command palette',
+	},
+	refreshCurrentView: {
+		description: 'Refresh the current view without reloading the page.',
+		keybinding: 'Shift+R',
+		label: 'Refresh current view',
+	},
+	shortcutHelp: {
+		description: 'Open keyboard shortcut help.',
+		keybinding: '?',
+		label: 'Shortcut help',
+	},
+} as const satisfies Record<string, DashboardKeyboardShortcut>;
+
+const dashboardKeyboardShortcuts = [
+	dashboardKeyboardShortcutConfig.commandPalette,
+	dashboardKeyboardShortcutConfig.refreshCurrentView,
+	dashboardKeyboardShortcutConfig.shortcutHelp,
+	dashboardKeyboardShortcutConfig.closeDialog,
 ] as const;
 const DashboardShellContext = createContext<DashboardShellContextValue | null>(null);
 
@@ -226,47 +239,30 @@ function DashboardShell({
 	useHotkeys([
 		{
 			hotkey: 'Mod+K',
-			callback: () => {},
-			options: {
-				enabled: false,
-				meta: {
-					description: 'Open the command palette for navigation and safe actions.',
-					name: 'Command palette',
-				},
-			},
+			callback: noop,
+			options: getDisabledDashboardHotkeyOptions(dashboardKeyboardShortcutConfig.commandPalette),
 		},
 		{
 			hotkey: '/',
-			callback: () => {},
-			options: {
-				enabled: false,
-				meta: {
-					description: 'Open the command palette for navigation and safe actions.',
-					name: 'Command palette',
-				},
-			},
+			callback: noop,
+			options: getDisabledDashboardHotkeyOptions(dashboardKeyboardShortcutConfig.commandPalette),
+		},
+		{
+			hotkey: { key: '?', shift: true },
+			callback: noop,
+			options: getDisabledDashboardHotkeyOptions(dashboardKeyboardShortcutConfig.shortcutHelp),
 		},
 		{
 			hotkey: 'Shift+R',
-			callback: () => {},
-			options: {
-				enabled: false,
-				meta: {
-					description: 'Refresh the current view without reloading the page.',
-					name: 'Refresh current view',
-				},
-			},
+			callback: noop,
+			options: getDisabledDashboardHotkeyOptions(
+				dashboardKeyboardShortcutConfig.refreshCurrentView,
+			),
 		},
 		{
 			hotkey: 'Escape',
-			callback: () => {},
-			options: {
-				enabled: false,
-				meta: {
-					description: 'Close the current dialog or palette.',
-					name: 'Close dialog',
-				},
-			},
+			callback: noop,
+			options: getDisabledDashboardHotkeyOptions(dashboardKeyboardShortcutConfig.closeDialog),
 		},
 	]);
 
@@ -766,6 +762,23 @@ function matchesDashboardShellCommand(
 		value.toLowerCase().includes(normalizedQuery),
 	);
 }
+
+function getDisabledDashboardHotkeyOptions(shortcut: DashboardKeyboardShortcut): {
+	readonly conflictBehavior: 'allow';
+	readonly enabled: false;
+	readonly meta: { readonly description: string; readonly name: string };
+} {
+	return {
+		conflictBehavior: 'allow',
+		enabled: false,
+		meta: {
+			description: shortcut.description,
+			name: shortcut.label,
+		},
+	};
+}
+
+function noop(): void {}
 
 function ThemeModeMenu({
 	themeMode,
