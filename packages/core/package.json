@@ -76,13 +76,13 @@
 	},
 	"devDependencies": {
 		"@faker-js/faker": "^10.4.0",
-		"@testcontainers/mongodb": "^12.0.1",
+		"@testcontainers/mongodb": "^12.0.2",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.19.19",
-		"@vitest/coverage-v8": "^4.1.8",
+		"@types/node": "^22.19.21",
+		"@vitest/coverage-v8": "^4.1.9",
 		"fishery": "^2.4.0",
 		"mongodb": "^7.2.0",
 		"tsdown": "^0.22.2",
-		"vitest": "^4.1.8"
+		"vitest": "^4.1.9"
 	}
 }

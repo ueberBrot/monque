@@ -81,17 +81,17 @@
 	},
 	"devDependencies": {
 		"@monque/core": "workspace:*",
-		"@testcontainers/mongodb": "^12.0.1",
+		"@testcontainers/mongodb": "^12.0.2",
 		"@total-typescript/ts-reset": "^0.6.1",
 		"@tsed/core": "^8.30.0",
 		"@tsed/di": "^8.30.0",
 		"@tsed/mongoose": "^8.30.0",
 		"@tsed/platform-http": "^8.30.0",
-		"@types/node": "^22.19.19",
-		"@vitest/coverage-v8": "^4.1.8",
+		"@types/node": "^22.19.21",
+		"@vitest/coverage-v8": "^4.1.9",
 		"mongodb": "^7.2.0",
 		"testcontainers": "^12.0.1",
 		"tsdown": "^0.22.2",
-		"vitest": "^4.1.8"
+		"vitest": "^4.1.9"
 	}
 }
