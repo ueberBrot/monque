@@ -72,7 +72,7 @@
 		"@tsed/core": "^8.30.0",
 		"@tsed/di": "^8.30.0",
 		"@tsed/mongoose": "^8.30.0",
-		"mongodb": "^7.2.0"
+		"mongodb": "^7.3.0"
 	},
 	"peerDependenciesMeta": {
 		"@tsed/mongoose": {
