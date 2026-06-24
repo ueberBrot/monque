@@ -1,5 +1,25 @@
 # @monque/management
 
+## 0.3.0
+
+### Minor Changes
+
+- [#506](https://github.com/ueberBrot/monque/pull/506) [`d655eb0`](https://github.com/ueberBrot/monque/commit/d655eb03a0451e82cb91f68ec165fc6cfbbf8d9a) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management-express: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/tsed: mongodb (^7.2.0 → ^7.3.0)
+
+### Patch Changes
+
+- [#504](https://github.com/ueberBrot/monque/pull/504) [`c6eb7a0`](https://github.com/ueberBrot/monque/commit/c6eb7a0570d999f27133e467c57e730d9356f11e) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/management: @orpc/contract (^1.14.4 → ^1.14.6)
+  - @monque/management: @orpc/openapi (^1.14.4 → ^1.14.6)
+  - @monque/management: @orpc/server (^1.14.4 → ^1.14.6)
+  - @monque/management: @orpc/zod (^1.14.4 → ^1.14.6)
+
 ## 0.2.2
 
 ### Patch Changes
