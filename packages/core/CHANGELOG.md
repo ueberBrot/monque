@@ -1,5 +1,16 @@
 # @monque/core
 
+## 1.11.0
+
+### Minor Changes
+
+- [#506](https://github.com/ueberBrot/monque/pull/506) [`d655eb0`](https://github.com/ueberBrot/monque/commit/d655eb03a0451e82cb91f68ec165fc6cfbbf8d9a) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management-express: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/tsed: mongodb (^7.2.0 → ^7.3.0)
+
 ## 1.10.1
 
 ### Patch Changes
