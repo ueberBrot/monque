@@ -60,7 +60,7 @@
         "vitest": "^4.1.9",
       },
       "peerDependencies": {
-        "mongodb": "^7.2.0",
+        "mongodb": "^7.3.0",
       },
     },
     "packages/management": {
@@ -84,7 +84,7 @@
       },
       "peerDependencies": {
         "@monque/core": "^1.10.1",
-        "mongodb": "^7.2.0",
+        "mongodb": "^7.3.0",
       },
     },
     "packages/management-express": {
@@ -108,7 +108,7 @@
         "@monque/core": "^1.10.1",
         "@monque/management": ">=0.1.0 <0.3.0",
         "express": "^5.2.1",
-        "mongodb": "^7.2.0",
+        "mongodb": "^7.3.0",
       },
     },
     "packages/tsed": {
@@ -134,7 +134,7 @@
         "@tsed/core": "^8.30.0",
         "@tsed/di": "^8.30.0",
         "@tsed/mongoose": "^8.30.0",
-        "mongodb": "^7.2.0",
+        "mongodb": "^7.3.0",
       },
       "optionalPeers": [
         "@tsed/mongoose",
@@ -142,7 +142,7 @@
     },
   },
   "overrides": {
-    "mongodb": "^7.2.0",
+    "mongodb": "^7.3.0",
   },
   "packages": {
     "@ai-hero/sandcastle": ["@ai-hero/sandcastle@0.7.0", "", { "dependencies": { "@clack/prompts": "^1.1.0" }, "peerDependencies": { "@daytona/sdk": "^0.164.0", "@vercel/sandbox": ">=1.0.0" }, "optionalPeers": ["@daytona/sdk", "@vercel/sandbox"], "bin": { "sandcastle": "dist/main.js" } }, "sha512-Rqb9FarzvtzDHqhBoofS7HqI1Tn5J/MuPoj+EVqO6F1jK1+Zzq+kT8Zl1K8Rs9ftLcLS0VKtQoPldn3UsSsGJw=="],
@@ -1923,7 +1923,7 @@
 
     "mkdirp-classic": ["mkdirp-classic@0.5.3", "", {}, "sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A=="],
 
-    "mongodb": ["mongodb@7.2.0", "", { "dependencies": { "@mongodb-js/saslprep": "^1.3.0", "bson": "^7.2.0", "mongodb-connection-string-url": "^7.0.0" }, "peerDependencies": { "@aws-sdk/credential-providers": "^3.806.0", "@mongodb-js/zstd": "^7.0.0", "gcp-metadata": "^7.0.1", "kerberos": "^7.0.0", "mongodb-client-encryption": ">=7.0.0 <7.1.0", "snappy": "^7.3.2", "socks": "^2.8.6" }, "optionalPeers": ["@aws-sdk/credential-providers", "@mongodb-js/zstd", "gcp-metadata", "kerberos", "mongodb-client-encryption", "snappy", "socks"] }, "sha512-F/2+BMZtLVhY30ioZp0dAmZ+IRZMBqI+nrv6t5+9/1AIwCa8sMRC3jBf81lpxMhnZgqq8CoUD503Z1oZWq1/sw=="],
+    "mongodb": ["mongodb@7.3.0", "", { "dependencies": { "@mongodb-js/saslprep": "^1.3.0", "bson": "^7.2.0", "mongodb-connection-string-url": "^7.0.0" }, "peerDependencies": { "@aws-sdk/credential-providers": "^3.806.0", "@mongodb-js/zstd": "^7.0.0", "gcp-metadata": "^7.0.1", "kerberos": "^7.0.0", "mongodb-client-encryption": ">=7.0.0 <7.1.0", "snappy": "^7.3.2", "socks": "^2.8.6" }, "optionalPeers": ["@aws-sdk/credential-providers", "@mongodb-js/zstd", "gcp-metadata", "kerberos", "mongodb-client-encryption", "snappy", "socks"] }, "sha512-WpCqSx7JAU9vcyjm/SU7ydnHls2YrfU3Y3sx4Ml9D7sPe4mXPlaapndiurDXrQ7/VvJkB4/i7b7WovHb8bd8sg=="],
 
     "mongodb-connection-string-url": ["mongodb-connection-string-url@7.0.1", "", { "dependencies": { "@types/whatwg-url": "^13.0.0", "whatwg-url": "^14.1.0" } }, "sha512-h0AZ9A7IDVwwHyMxmdMXKy+9oNlF0zFoahHiX3vQ8e3KFcSP3VmsmfvtRSuLPxmyv2vjIDxqty8smTgie/SNRQ=="],
 

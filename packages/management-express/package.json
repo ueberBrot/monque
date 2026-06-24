@@ -66,7 +66,7 @@
 		"@monque/core": "^1.10.1",
 		"@monque/management": ">=0.1.0 <0.3.0",
 		"express": "^5.2.1",
-		"mongodb": "^7.2.0"
+		"mongodb": "^7.3.0"
 	},
 	"devDependencies": {
 		"@monque/core": "workspace:*",
