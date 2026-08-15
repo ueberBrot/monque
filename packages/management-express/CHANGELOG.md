@@ -1,5 +1,28 @@
 # @monque/management-express
 
+## 1.0.0
+
+### Minor Changes
+
+- [#506](https://github.com/ueberBrot/monque/pull/506) [`d655eb0`](https://github.com/ueberBrot/monque/commit/d655eb03a0451e82cb91f68ec165fc6cfbbf8d9a) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management-express: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/management: mongodb (^7.2.0 → ^7.3.0)
+  - @monque/tsed: mongodb (^7.2.0 → ^7.3.0)
+
+- [#511](https://github.com/ueberBrot/monque/pull/511) [`d402a74`](https://github.com/ueberBrot/monque/commit/d402a742cb5730c32068354a6af9cfc41325fc0e) Thanks [@renovate](https://github.com/apps/renovate)! - chore(deps): update dependencies
+
+  - @monque/core: mongodb (^7.3.0 → ^7.5.0)
+  - @monque/management-express: mongodb (^7.3.0 → ^7.5.0)
+  - @monque/management: mongodb (^7.3.0 → ^7.5.0)
+  - @monque/tsed: mongodb (^7.3.0 → ^7.5.0)
+
+### Patch Changes
+
+- Updated dependencies [[`c6eb7a0`](https://github.com/ueberBrot/monque/commit/c6eb7a0570d999f27133e467c57e730d9356f11e), [`d655eb0`](https://github.com/ueberBrot/monque/commit/d655eb03a0451e82cb91f68ec165fc6cfbbf8d9a), [`d402a74`](https://github.com/ueberBrot/monque/commit/d402a742cb5730c32068354a6af9cfc41325fc0e)]:
+  - @monque/management@0.3.0
+
 ## 0.2.1
 
 ### Patch Changes
