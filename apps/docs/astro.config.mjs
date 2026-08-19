@@ -16,6 +16,7 @@ const coreVersion =
 
 // https://astro.build/config
 export default defineConfig({
+	compressHTML: true,
 	vite: {
 		define: {
 			__MONQUE_CORE_VERSION__: JSON.stringify(coreVersion),

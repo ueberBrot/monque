@@ -113,23 +113,24 @@ describe('cursor pagination helpers', () => {
 					Object.assign(payload, { sort: 'updatedAt' });
 				},
 			},
-		])('should throw InvalidCursorError through decodeStructuredCursor with $name', ({
-			mutate,
-		}) => {
-			const cursor = encodeStructuredCursor();
-			const prefix = cursor.charAt(0);
-			const payload = JSON.parse(
-				Buffer.from(cursor.slice(1), 'base64url').toString('utf8'),
-			) as StructuredCursorPayload;
+		])(
+			'should throw InvalidCursorError through decodeStructuredCursor with $name',
+			({ mutate }) => {
+				const cursor = encodeStructuredCursor();
+				const prefix = cursor.charAt(0);
+				const payload = JSON.parse(
+					Buffer.from(cursor.slice(1), 'base64url').toString('utf8'),
+				) as StructuredCursorPayload;
 
-			mutate(payload);
+				mutate(payload);
 
-			const tamperedCursor = `${prefix}${Buffer.from(JSON.stringify(payload), 'utf8').toString(
-				'base64url',
-			)}`;
+				const tamperedCursor = `${prefix}${Buffer.from(JSON.stringify(payload), 'utf8').toString(
+					'base64url',
+				)}`;
 
-			expect(() => decodeCursor(tamperedCursor)).toThrow(InvalidCursorError);
-		});
+				expect(() => decodeCursor(tamperedCursor)).toThrow(InvalidCursorError);
+			},
+		);
 
 		it('should throw InvalidCursorError for structured cursor with malformed JSON', () => {
 			const cursor = `F${Buffer.from('{', 'utf8').toString('base64url')}`;

@@ -62,7 +62,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"check:exports": "publint && attw --pack .",
+		"check:exports": "bun run ../../scripts/check-package-exports.ts",
 		"clean": "rimraf dist coverage .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
@@ -74,10 +74,10 @@
 		"lint": "biome check ."
 	},
 	"dependencies": {
-		"@orpc/contract": "^1.14.6",
-		"@orpc/openapi": "^1.14.6",
-		"@orpc/server": "^1.14.6",
-		"@orpc/zod": "^1.14.6",
+		"@orpc/contract": "^1.15.0",
+		"@orpc/openapi": "^1.15.0",
+		"@orpc/server": "^1.15.0",
+		"@orpc/zod": "^1.15.0",
 		"zod": "^4.4.3"
 	},
 	"peerDependencies": {
@@ -87,10 +87,10 @@
 	"devDependencies": {
 		"@monque/core": "workspace:*",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.19.19",
-		"@vitest/coverage-v8": "^4.1.8",
-		"mongodb": "^7.2.0",
-		"tsdown": "^0.22.2",
-		"vitest": "^4.1.8"
+		"@types/node": "^22.20.1",
+		"@vitest/coverage-v8": "^4.1.11",
+		"mongodb": "^7.5.0",
+		"tsdown": "^0.22.14",
+		"vitest": "^4.1.11"
 	}
 }

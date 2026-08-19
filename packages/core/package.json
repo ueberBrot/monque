@@ -42,7 +42,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"check:exports": "publint && attw --pack .",
+		"check:exports": "bun run ../../scripts/check-package-exports.ts",
 		"clean": "rimraf dist coverage .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
@@ -69,20 +69,20 @@
 		"persistence"
 	],
 	"dependencies": {
-		"cron-parser": "^5.5.0"
+		"cron-parser": "^5.10.0"
 	},
 	"peerDependencies": {
 		"mongodb": "^7.5.0"
 	},
 	"devDependencies": {
-		"@faker-js/faker": "^10.4.0",
-		"@testcontainers/mongodb": "^12.0.2",
+		"@faker-js/faker": "^10.6.0",
+		"@testcontainers/mongodb": "^12.1.0",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.19.21",
-		"@vitest/coverage-v8": "^4.1.9",
+		"@types/node": "^22.20.1",
+		"@vitest/coverage-v8": "^4.1.11",
 		"fishery": "^2.4.0",
-		"mongodb": "^7.2.0",
-		"tsdown": "^0.22.2",
-		"vitest": "^4.1.9"
+		"mongodb": "^7.5.0",
+		"tsdown": "^0.22.14",
+		"vitest": "^4.1.11"
 	}
 }

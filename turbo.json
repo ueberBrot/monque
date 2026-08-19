@@ -1,6 +1,7 @@
 {
 	"$schema": "https://turbo.build/schema.json",
 	"globalDependencies": ["**/.env.*local"],
+	"globalPassThroughEnv": ["BASE_SHA", "HEAD_SHA"],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
@@ -8,6 +9,7 @@
 		},
 		"check:exports": {
 			"dependsOn": ["build"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/check-package-exports.ts"],
 			"outputs": []
 		},
 		"type-check": {

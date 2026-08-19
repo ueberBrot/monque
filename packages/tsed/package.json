@@ -55,7 +55,7 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"check:exports": "publint && attw --pack .",
+		"check:exports": "bun run ../../scripts/check-package-exports.ts",
 		"clean": "rimraf dist coverage .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
@@ -69,9 +69,9 @@
 	},
 	"peerDependencies": {
 		"@monque/core": "^1.10.1",
-		"@tsed/core": "^8.30.0",
-		"@tsed/di": "^8.30.0",
-		"@tsed/mongoose": "^8.30.0",
+		"@tsed/core": "^8.38.0",
+		"@tsed/di": "^8.38.0",
+		"@tsed/mongoose": "^8.38.0",
 		"mongodb": "^7.5.0"
 	},
 	"peerDependenciesMeta": {
@@ -81,17 +81,19 @@
 	},
 	"devDependencies": {
 		"@monque/core": "workspace:*",
-		"@testcontainers/mongodb": "^12.0.2",
+		"@testcontainers/mongodb": "^12.1.0",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@tsed/core": "^8.30.0",
-		"@tsed/di": "^8.30.0",
-		"@tsed/mongoose": "^8.30.0",
-		"@tsed/platform-http": "^8.30.0",
-		"@types/node": "^22.19.21",
-		"@vitest/coverage-v8": "^4.1.9",
-		"mongodb": "^7.2.0",
-		"testcontainers": "^12.0.1",
-		"tsdown": "^0.22.2",
-		"vitest": "^4.1.9"
+		"@tsed/core": "^8.38.0",
+		"@tsed/di": "^8.38.0",
+		"@tsed/mongoose": "^8.38.0",
+		"@tsed/platform-http": "^8.38.0",
+		"@types/node": "^22.20.1",
+		"@vitest/coverage-v8": "^4.1.11",
+		"cookie": "^1.1.1",
+		"mongoose": "^9.9.3",
+		"mongodb": "^7.5.0",
+		"testcontainers": "^12.1.0",
+		"tsdown": "^0.22.14",
+		"vitest": "^4.1.11"
 	}
 }
