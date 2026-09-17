@@ -745,8 +745,7 @@ describe('uniqueKey deduplication', () => {
 				const result = await collection.insertOne(jobDoc);
 				const inserted = await collection.findOne({ _id: result.insertedId });
 
-				expect(inserted?.['lastHeartbeat']).toBeInstanceOf(Date);
-				expect((inserted?.['lastHeartbeat'] as Date).getTime()).toBe(heartbeatTime.getTime());
+				expect(inserted?.['lastHeartbeat']).toEqual(heartbeatTime);
 			});
 
 			it('should allow heartbeatInterval field with number value', async () => {

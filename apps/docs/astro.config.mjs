@@ -1,6 +1,7 @@
 // @ts-check
 
 import { readFileSync } from 'node:fs';
+import { unified } from '@astrojs/markdown-remark';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import astroMermaid from 'astro-mermaid';
@@ -16,13 +17,21 @@ const coreVersion =
 
 // https://astro.build/config
 export default defineConfig({
+	compressHTML: true,
 	vite: {
+		environments: {
+			prerender: {
+				resolve: {
+					external: ['satteri'],
+				},
+			},
+		},
 		define: {
 			__MONQUE_CORE_VERSION__: JSON.stringify(coreVersion),
 		},
 	},
 	markdown: {
-		remarkPlugins: [],
+		processor: unified(),
 	},
 	site: 'https://ueberBrot.github.io',
 	base: '/monque',
