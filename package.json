@@ -49,8 +49,6 @@
 		"check": "biome check --write . && bun run type-check",
 		"check:exports": "turbo check:exports",
 		"check:unused": "knip",
-		"changeset": "changeset",
-		"release": "changeset publish",
 		"sandcastle": "bun .sandcastle/main.ts"
 	},
 	"devDependencies": {
