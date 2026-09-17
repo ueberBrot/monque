@@ -12,12 +12,9 @@
 		"url": "https://github.com/ueberBrot/monque/issues"
 	},
 	"homepage": "https://github.com/ueberBrot/monque#readme",
-	"packageManager": "bun@1.3.11",
+	"packageManager": "bun@1.4.2",
 	"engines": {
 		"node": ">=22.12.0"
-	},
-	"overrides": {
-		"mongodb": "^7.5.0"
 	},
 	"workspaces": [
 		"packages/*",
@@ -57,19 +54,19 @@
 		"sandcastle": "bun .sandcastle/main.ts"
 	},
 	"devDependencies": {
-		"@ai-hero/sandcastle": "^0.7.0",
-		"@arethetypeswrong/cli": "^0.18.3",
-		"@biomejs/biome": "^2.4.16",
-		"@changesets/changelog-github": "^0.7.0",
-		"@changesets/cli": "^2.31.0",
-		"@types/node": "^22.19.19",
-		"knip": "^6.15.0",
-		"lefthook": "^2.1.9",
-		"publint": "^0.3.21",
+		"@ai-hero/sandcastle": "^0.12.0",
+		"@arethetypeswrong/cli": "^0.18.5",
+		"@biomejs/biome": "^2.5.14",
+		"@changesets/changelog-github": "^1.0.1",
+		"@changesets/cli": "^3.0.3",
+		"@types/node": "^22.20.3",
+		"knip": "^6.36.0",
+		"lefthook": "^2.1.14",
+		"publint": "^0.3.24",
 		"rimraf": "^6.1.3",
-		"turbo": "^2.9.16",
+		"turbo": "^2.10.13",
 		"typescript": "^6.0.3",
-		"unplugin-unused": "^0.5.7",
-		"zod": "^4.4.3"
+		"unplugin-unused": "^0.6.0",
+		"zod": "^4.6.5"
 	}
 }

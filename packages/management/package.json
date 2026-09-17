@@ -74,23 +74,23 @@
 		"lint": "biome check ."
 	},
 	"dependencies": {
-		"@orpc/contract": "^1.14.6",
-		"@orpc/openapi": "^1.14.6",
-		"@orpc/server": "^1.14.6",
-		"@orpc/zod": "^1.14.6",
-		"zod": "^4.4.3"
+		"@orpc/contract": "^1.15.1",
+		"@orpc/openapi": "^1.15.1",
+		"@orpc/server": "^1.15.1",
+		"@orpc/zod": "^1.15.1",
+		"zod": "^4.6.5"
 	},
 	"peerDependencies": {
 		"@monque/core": "^1.10.1",
-		"mongodb": "^7.5.0"
+		"mongodb": "^7.6.0"
 	},
 	"devDependencies": {
 		"@monque/core": "workspace:*",
 		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.19.19",
-		"@vitest/coverage-v8": "^4.1.8",
-		"mongodb": "^7.2.0",
-		"tsdown": "^0.22.2",
-		"vitest": "^4.1.8"
+		"@types/node": "^22.20.3",
+		"@vitest/coverage-v8": "^5.0.1",
+		"mongodb": "^7.6.0",
+		"tsdown": "^0.23.0",
+		"vitest": "^5.0.1"
 	}
 }

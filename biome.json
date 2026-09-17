@@ -20,6 +20,16 @@
 	},
 	"overrides": [
 		{
+			"includes": ["scripts/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noUndeclaredEnvVars": "off"
+					}
+				}
+			}
+		},
+		{
 			"includes": ["apps/docs/src/styles/custom.css"],
 			"linter": {
 				"rules": {
@@ -39,7 +49,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"correctness": {
 				"noUnusedImports": "error",
 				"noUnusedVariables": "error"
