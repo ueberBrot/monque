@@ -666,6 +666,10 @@ describe('JobProcessor', () => {
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.PENDING);
 			expect(result?.failCount).toBe(1);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledExactlyOnceWith(
+				retriedJob.name,
+				retriedJob.nextRunAt,
+			);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
@@ -697,6 +701,7 @@ describe('JobProcessor', () => {
 			expect(result).not.toBeNull();
 			expect(result?.status).toBe(JobStatus.FAILED);
 			expect(result?.failCount).toBe(3);
+			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.objectContaining({
@@ -719,6 +724,7 @@ describe('JobProcessor', () => {
 			const result = await processor.failJob(job, error);
 
 			expect(result).toBeNull();
+			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
 				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
 				expect.any(Object),
@@ -734,6 +740,7 @@ describe('JobProcessor', () => {
 			const result = await processor.failJob(nonPersistedJob, error);
 
 			expect(result).toBeNull();
+			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
 		});
 	});
