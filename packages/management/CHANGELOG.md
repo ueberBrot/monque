@@ -1,5 +1,11 @@
 # @monque/management
 
+## 0.3.1
+
+### Patch Changes
+
+- [#520](https://github.com/ueberBrot/monque/pull/520) [`c6d3f36`](https://github.com/ueberBrot/monque/commit/c6d3f3680b7af1cebcfc2c461bcfd1c693c777ab) - Only use explicitly defined per-job payload serializers. This prevents job names such as `constructor` from bypassing payload redaction and exposing raw job data or request context in management responses.
+
 ## 0.3.0
 
 ### Minor Changes
