@@ -1,11 +1,11 @@
 /**
- * Impeccable Live Variant Mode — Browser Script
+ * Impeccable Live Variant Mode - Browser Script
  *
  * Injected into the user's page via <script src="http://localhost:PORT/live.js">.
  * The server prepends window.__IMPECCABLE_TOKEN__ and window.__IMPECCABLE_PORT__
  * before this code.
  *
- * UI: a single floating bar that morphs between three states —
+ * UI: a single floating bar that morphs between three states -
  * configure (pick action + go), generating (progressive dots), and cycling
  * (prev/next + accept/discard). Feels like Spotlight, not a modal.
  */
@@ -21,14 +21,15 @@
 
   const TOKEN = window.__IMPECCABLE_TOKEN__;
   const PORT = window.__IMPECCABLE_PORT__;
+  const APP_ROOT = window.__IMPECCABLE_APP_ROOT__ || null;
   if (!TOKEN || !PORT) {
     window.__IMPECCABLE_LIVE_INIT__ = false; // reset so the real load can init
     return;
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Design tokens
-  // ---------------------------------------------------------------------------
+  //
 
   // Brand kinpaku (gold) is pinned to the site's neo-kinpaku tokens
   // (see site/styles/kinpaku-tokens.css) so Accept / knobs / cycle-dots /
@@ -46,7 +47,7 @@
     mist:      'oklch(90% 0.008 82 / 0.6)',     // light hairline
     white:     'oklch(99% 0 0)',
   };
-  // Picker bar chrome — mirrors .live-demo-gbar / .live-demo-ctx in kinpaku-kit.css.
+  // Picker bar chrome - mirrors .live-demo-gbar / .live-demo-ctx in kinpaku-kit.css.
   // Quiet neutral elevation: no gold halo ring (gold is reserved for the brand
   // mark and the active control, not the container outline).
   const PICKER_SHADOW =
@@ -57,6 +58,8 @@
   const Z = { highlight: 100001, bar: 100005, picker: 100007, toast: 100010 };
   const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'; // ease-out-quint
   const PREFIX = 'impeccable-live';
+  const IMPECCABLE_COMMAND = (window.__IMPECCABLE_COMMAND_PREFIX__ || '/') + 'impeccable';
+  const PICK_CURSOR_STYLE_ID = PREFIX + '-pick-cursor-style';
   const MANUAL_APPLY_STATE_TTL_MS = 15 * 60 * 1000;
   const sessionState = window.__IMPECCABLE_LIVE_SESSION__?.createLiveBrowserSessionState({
     prefix: PREFIX,
@@ -81,67 +84,140 @@
     'html', 'head', 'body', 'script', 'style', 'link', 'meta', 'noscript', 'br', 'wbr',
   ]);
 
-  // SVG icons stack above each chip label. All strokes use currentColor so the
-  // icon recolors to C.brand when its chip is selected. 20x20 render, 24-viewBox,
-  // 1.5 stroke — visually consistent with the Foundation grid on the homepage.
-  const ICON_ATTRS = 'width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"';
-  const ICONS = {
-    impeccable: `<svg ${ICON_ATTRS}><path d="M4 20l4-1L18 9l-3-3L5 16z"/><path d="M14 7l3 3"/></svg>`,
-    bolder:     `<svg ${ICON_ATTRS}><rect x="6" y="12" width="4" height="7" rx="0.5"/><rect x="14" y="5" width="4" height="14" rx="0.5"/></svg>`,
-    quieter:    `<svg ${ICON_ATTRS}><rect x="6" y="5" width="4" height="14" rx="0.5"/><rect x="14" y="12" width="4" height="7" rx="0.5"/></svg>`,
-    distill:    `<svg ${ICON_ATTRS}><path d="M4 5h16l-6 8v7l-4-2v-5z"/></svg>`,
-    polish:     `<svg ${ICON_ATTRS}><path d="M15 3l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/><path d="M7 13l0.6 1.8 1.8 0.6-1.8 0.6-0.6 1.8-0.6-1.8-1.8-0.6 1.8-0.6z"/></svg>`,
-    typeset:    `<svg ${ICON_ATTRS}><path d="M5 6h14" stroke-width="2.6"/><path d="M5 12h9" stroke-width="1.9"/><path d="M5 18h5" stroke-width="1.3"/></svg>`,
-    colorize:   `<svg ${ICON_ATTRS}><circle cx="9" cy="10" r="5"/><circle cx="15" cy="10" r="5"/><circle cx="12" cy="15" r="5"/></svg>`,
-    layout:     `<svg ${ICON_ATTRS}><rect x="3" y="4" width="8" height="16" rx="0.5"/><rect x="13" y="4" width="8" height="7" rx="0.5"/><rect x="13" y="13" width="8" height="7" rx="0.5"/></svg>`,
-    adapt:      `<svg ${ICON_ATTRS}><rect x="2.5" y="5" width="12" height="11" rx="1"/><line x1="2.5" y1="19" x2="14.5" y2="19"/><rect x="16.5" y="8" width="5" height="11" rx="1"/></svg>`,
-    animate:    `<svg ${ICON_ATTRS}><path d="M3 18c4-4 6-10 10-10"/><path d="M13 8c3 0 5 5 8 10"/><circle cx="13" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg>`,
-    delight:    `<svg ${ICON_ATTRS}><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>`,
-    overdrive:  `<svg ${ICON_ATTRS}><path d="M13 3L5 13h5l-1 8 9-12h-6z"/></svg>`,
-  };
+  // Command vocabulary (values + labels + icons) comes from the canonical source,
+  // skill/scripts/live/vocabulary.mjs, which live-server.mjs serializes into
+  // window.__IMPECCABLE_VOCAB__ when it serves /live.js (same injection path as
+  // the token/port above, so it is always present here). The icons stack above
+  // each chip label and recolor to C.brand when selected (strokes use
+  // currentColor). ACTIONS drives the picker grid; ICONS maps value -> svg.
+  const VOCAB = Array.isArray(window.__IMPECCABLE_VOCAB__) ? window.__IMPECCABLE_VOCAB__ : [];
+  const ICONS = {};
+  const ACTIONS = VOCAB.map((c) => {
+    ICONS[c.value] = c.icon;
+    return { value: c.value, label: c.label };
+  });
 
-  const ACTIONS = [
-    { value: 'impeccable', label: 'Freeform' },
-    { value: 'bolder',     label: 'Bolder' },
-    { value: 'quieter',    label: 'Quieter' },
-    { value: 'distill',    label: 'Distill' },
-    { value: 'polish',     label: 'Polish' },
-    { value: 'typeset',    label: 'Typeset' },
-    { value: 'colorize',   label: 'Colorize' },
-    { value: 'layout',     label: 'Layout' },
-    { value: 'adapt',      label: 'Adapt' },
-    { value: 'animate',    label: 'Animate' },
-    { value: 'delight',    label: 'Delight' },
-    { value: 'overdrive',  label: 'Overdrive' },
-  ];
+  // The Live chrome inventory (which surfaces exist, and the element ids each
+  // one owns) comes from the canonical source, skill/scripts/live/ui-surfaces.mjs,
+  // which the /live.js assembler serializes into these globals alongside the
+  // token/port/vocabulary. This file is served raw and injected as a classic
+  // script, so it cannot import that module; the private impeccable-site repo
+  // imports it directly to check its Live UI lab holds a snapshot for every
+  // surface, which only works while the list has exactly one definition.
+  // Add a surface in ui-surfaces.mjs, not here.
+  const LIVE_CHROME_MOUNT_CONTRACT = Array.isArray(window.__IMPECCABLE_LIVE_MOUNT_CONTRACT__)
+    ? window.__IMPECCABLE_LIVE_MOUNT_CONTRACT__
+    : ['root', 'transport', 'state', 'actions'];
+  const LIVE_UI_SURFACES = Array.isArray(window.__IMPECCABLE_LIVE_UI_SURFACES__)
+    ? window.__IMPECCABLE_LIVE_UI_SURFACES__
+    : [];
+  const LIVE_UI_COMPONENT_IDS = [...new Set(LIVE_UI_SURFACES.flatMap((surface) => surface.ids))];
 
-  // ---------------------------------------------------------------------------
+  //
   // State
-  // ---------------------------------------------------------------------------
+  //
 
   let state = 'IDLE';
   let hoveredElement = null;
   let selectedElement = null;
   let currentSessionId = null;
+  // Advances when the user begins configuring a fresh edit, before that edit
+  // has a server session id. Deferred recovery captures this revision so an
+  // older accept/discard can never reload over a replacement configuration.
+  let liveInteractionRevision = 0;
   let expectedVariants = 0;
   let arrivedVariants = 0;
   let visibleVariant = 0;
+  let generationPhase = null;
+  // Ascending order of the agent-generation lifecycle. The visible progress bar
+  // must never regress: a `browser_resumed`/behind checkpoint re-broadcasts an
+  // earlier phase (the server regresses the snapshot phase to `generating` on a
+  // behind checkpoint), and without this the bar jumps backward mid-generation.
+  // Unranked phases always pass so we never block a phase we do not model.
+  //
+  // Every `agent_phase` name here is emitted by recordAgentPhase() in
+  // live-server.mjs and listed in AGENT_PHASES in live/vocabulary.mjs, which the
+  // event validator enforces. This file is served raw and injected as an IIFE,
+  // so it cannot import that list; adding a phase means adding it in both.
+  // `queued`, `generating`, `variants_progress`, and `variants_ready` are set
+  // locally by this file and never arrive over the wire.
+  const PHASE_RANK = {
+    queued: 0,
+    picked_up: 1,
+    scaffolding: 2,
+    scaffold_fallback: 3,
+    source_ready: 4,
+    generation_ready: 5,
+    generating: 5,
+    variants_progress: 5,
+    first_reviewable: 8,
+    second_reviewable: 11,
+    all_variants_ready: 12,
+    variants_ready: 12,
+  };
+  function shouldAdvancePhase(current, next) {
+    if (!next || next === current) return false;
+    const nextRank = PHASE_RANK[next];
+    const currentRank = PHASE_RANK[current];
+    // Only block a known-lower phase from overwriting a known-higher one.
+    if (nextRank === undefined || currentRank === undefined) return true;
+    return nextRank >= currentRank;
+  }
+  let parameterGenerationState = 'idle';
+  let parameterReadyAnnouncedSession = null;
+  let svelteComponentSession = null;
+  let svelteRuntimePromise = null;
+  let pendingSvelteComponentRetryObserver = null;
+  // The persistent mount-error card. A failed import/mount used to wipe local
+  // session state and flash a 5s toast, which destroyed the only handle the
+  // user had on a session the server still considered live. The card stays up
+  // until the variant mounts, the user retries, or a new cycle starts.
+  let mountErrorEl = null;
+  let mountErrorState = null;
+  let lastReportedMountFailure = null;
+  let currentSourceFile = null;
+  let currentPreviewFile = null;
+  let currentPreviewMode = null;
+  let recoveryWaitingForAnchor = false;
+  let pickedAnchorSnapshot = null;
+  let pickedAnchorViewportTop = null;
+  let pendingVariantAnchorRetryObserver = null;
+  let pendingAcceptedSession = null;
+  // Survives cleanupAcceptedSession on purpose: the id of an accept whose
+  // POST was acknowledged (intent durable, epoch fenced) but whose actual
+  // source promotion hasn't reported back yet. Accept is optimistic, so the
+  // teardown nulls pendingAcceptedSession long before live-accept.mjs runs;
+  // this marker is what lets the SSE 'error' branch still recognize a late
+  // accept failure and say the variant was not saved (issue #384). Released
+  // when the real accept result arrives or a new session starts.
+  let awaitingAcceptResult = null;
   let variantObserver = null;
+  const discardedFrameworkWrapperWatchers = new Map();
+  const handledRuntimeWrapperWatchers = new Map();
+  const handledRuntimeWrapperReloadSessions = new Set();
+  let variantSelectionInFlight = false;
+  let variantSelectionPromise = null;
+  let recoveringEmptyCycling = false;
   let hasProjectContext = false;
   let selectedAction = 'impeccable';
   let selectedCount = 3;
   const browserOwner = sessionState.owner;
   let checkpointTimer = null;
 
-  // Scroll lock — holds window.scrollY at a fixed value while the session is
+  // Scroll lock - holds window.scrollY at a fixed value while the session is
   // active, so HMR DOM patches and variant swaps can't drift the page. See
   // startScrollLock / stopScrollLock below.
   let scrollLockObserver = null;
   let scrollLockTargetY = null;
+  let scrollLockAnchorTop = null;
   let scrollLockRaf = null;
   let scrollLockAbort = null;
+  const SCROLL_ANCHOR_LOCK_ID = 'impeccable-scroll-anchor-lock';
+  const VARIANT_STATE_STYLE_ID = 'impeccable-variant-state';
+  const DISCARD_STATE_STYLE_ID = 'impeccable-discard-state';
+  const HANDLED_WRAPPER_RELOAD_KEY = PREFIX + '-handled-wrapper-reload';
 
-  // Dedicated key for scroll position — SEPARATE from LS_KEY so that
+  // Dedicated key for scroll position - SEPARATE from LS_KEY so that
   // saveSession's state updates don't clobber a carefully-captured scrollY.
   // (Previously: saveSession wrote scrollY alongside state, so every call
   // during resume overwrote the pre-reload value with whatever the browser
@@ -174,79 +250,86 @@
   let highlightEl = null;
   let tooltipEl = null;
   let barEl = null;
+  let barHideSeq = 0;
   let pickerEl = null;
   let toastEl = null;
   let scrollRaf = null;
   let editBadgeEl = null;
+  let editBadgeProxyRoot = null;
+  let editBadgeProxyByTarget = new Map();
 
-  // ---------------------------------------------------------------------------
+  //
   // Helpers
-  // ---------------------------------------------------------------------------
+  //
 
-  function own(el) {
-    return el && (el.id?.startsWith(PREFIX) || el.closest?.('[id^="' + PREFIX + '"]'));
+  const domHelpers = window.__IMPECCABLE_LIVE_DOM__?.createLiveBrowserDomHelpers({
+    prefix: PREFIX,
+    skipTags: SKIP_TAGS,
+    document,
+  });
+  if (!domHelpers) {
+    console.error('[impeccable] live-browser-dom.js was not loaded. Live mode cannot start safely.');
+    window.__IMPECCABLE_LIVE_INIT__ = false;
+    return;
   }
+  const {
+    own,
+    pickable,
+    desc,
+    rectIsUsableAnchor,
+    makeFrozenAnchor,
+    hasFrameworkHmrOwnership,
+    id8,
+    cssId,
+    liveUiRoot,
+    uiAppend,
+    uiAppendStyle,
+    uiGetById,
+    activeElementDeep,
+    defangOutsideHandlers,
+  } = domHelpers;
 
-  function pickable(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (SKIP_TAGS.has(el.tagName.toLowerCase())) return false;
-    if (own(el)) return false;
-    const r = el.getBoundingClientRect();
-    return r.width >= 20 && r.height >= 20;
-  }
+  window.__IMPECCABLE_LIVE_CHROME_CORE__ = {
+    version: 1,
+    adapter: window.__IMPECCABLE_LIVE_ADAPTER__ || 'dom',
+    mountContract: LIVE_CHROME_MOUNT_CONTRACT,
+    surfaces: LIVE_UI_SURFACES,
+    componentIds: LIVE_UI_COMPONENT_IDS,
+    root: liveUiRoot,
+    append: uiAppend,
+    appendStyle: uiAppendStyle,
+    getById: uiGetById,
+    activeElementDeep,
+    debugState: () => ({
+      state,
+      currentSessionId,
+      expectedVariants,
+      arrivedVariants,
+      visibleVariant,
+      savedSession: loadSession(),
+      sourceFile: currentSourceFile,
+      previewFile: currentPreviewFile,
+      previewMode: currentPreviewMode,
+      barText: barEl?.textContent || null,
+      barConnected: !!barEl?.isConnected,
+      hasSvelteComponentSession: !!svelteComponentSession,
+      mountedSvelteVariant: svelteComponentSession?.mountedVariant || 0,
+      pickActive,
+      pendingApplyInFlight,
+      hoveredElement: hoveredElement ? {
+        tag: hoveredElement.tagName,
+        classes: hoveredElement.className,
+        pickable: pickable(hoveredElement),
+      } : null,
+      pendingSvelteComponentRetry: !!pendingSvelteComponentRetryObserver,
+      recoveryWaitingForAnchor,
+      evtSourceReadyState: evtSource ? evtSource.readyState : null,
+    }),
+  };
 
-  function desc(el) {
-    if (!el) return '';
-    let s = el.tagName.toLowerCase();
-    if (el.id) s += '#' + el.id;
-    else if (el.classList.length) s += '.' + [...el.classList].slice(0, 2).join('.');
-    return s;
-  }
-
-  function id8() { return crypto.randomUUID().replace(/-/g, '').slice(0, 8); }
-
-  // Modal-aware chrome: keep our floating UI clickable inside Radix /
-  // Headless UI / vaul portals.
   //
-  // Two host-page behaviors break us when the picked element lives inside a
-  // modal dialog:
-  //
-  //   1. Modal scroll-lock disables outside pointer events. Radix's
-  //      `DismissableLayer` sets `document.body.style.pointerEvents = 'none'`
-  //      while a modal is open and only restores `auto` on the layer. Our
-  //      chrome inherits `none` from <body> and becomes unclickable.
-  //   2. The dialog's outside-interaction handler (Radix's
-  //      `usePointerDownOutside`) listens at document level and dismisses
-  //      the dialog whenever a `pointerdown` lands outside the layer node.
-  //      Our chrome is a sibling of <body>, so Radix classifies our clicks
-  //      as outside and tears the dialog down mid-task.
-  //
-  // We can't reliably re-parent our chrome into the dialog subtree (z-index
-  // stacking, scroll containers, theming all become host-page concerns), so
-  // we defang both behaviors at our root:
-  //
-  //   - `pointer-events: auto !important` overrides the inherited `none`.
-  //   - Stop `pointerdown` / `mousedown` propagation so the document-level
-  //     dismiss listener never fires for our clicks.
-  //   - Stop `focusin` propagation so any focus shifts inside our chrome
-  //     don't read as "focus moved outside the dialog" to focus traps.
-  //
-  // Click events still bubble normally — only the early pointer/focus
-  // signals that drive outside-interaction detection are silenced.
-  function defangOutsideHandlers(rootEl, { setPointerEvents = true } = {}) {
-    if (!rootEl) return;
-    if (setPointerEvents) {
-      rootEl.style.setProperty('pointer-events', 'auto', 'important');
-    }
-    const stop = (e) => e.stopPropagation();
-    rootEl.addEventListener('pointerdown', stop);
-    rootEl.addEventListener('mousedown', stop);
-    rootEl.addEventListener('focusin', stop);
-  }
-
-  // ---------------------------------------------------------------------------
   // Highlight overlay
-  // ---------------------------------------------------------------------------
+  //
 
   function initHighlight() {
     highlightEl = document.createElement('div');
@@ -258,7 +341,7 @@
       transition: HIGHLIGHT_TRANSITION,
       display: 'none', opacity: '0',
     });
-    document.body.appendChild(highlightEl);
+    uiAppend(highlightEl);
 
     tooltipEl = document.createElement('div');
     tooltipEl.id = PREFIX + '-tooltip';
@@ -272,7 +355,18 @@
       letterSpacing: '0.02em',
       transition: TOOLTIP_TRANSITION,
     });
-    document.body.appendChild(tooltipEl);
+    uiAppend(tooltipEl);
+  }
+
+  function shouldShowHighlightTagTooltip() {
+    // Configure/edit carry the tag in the bar selection pill, so keep only the outline.
+    return state !== 'CONFIGURING' && state !== 'EDITING';
+  }
+
+  function hideHighlightTagTooltip() {
+    if (!tooltipEl) return;
+    tooltipEl.style.opacity = '0';
+    tooltipEl.style.display = 'none';
   }
 
   function showHighlight(el) {
@@ -281,25 +375,36 @@
     const r = el.getBoundingClientRect();
     const top = (r.top - 2) + 'px', left = (r.left - 2) + 'px';
     const width = (r.width + 4) + 'px', height = (r.height + 4) + 'px';
-    const tipTop = r.top - 20;
-    const tipY = (tipTop < 4 ? r.bottom + 4 : tipTop) + 'px';
-    const tipX = Math.max(4, r.left) + 'px';
-    tooltipEl.textContent = desc(el);
+    const showTagTooltip = shouldShowHighlightTagTooltip();
 
     const hiWasHidden = highlightEl.style.display === 'none' || highlightEl.style.opacity === '0';
     if (hiWasHidden) {
       // Snap to first target without animating from (0,0), then fade in.
       highlightEl.style.transition = 'none';
       Object.assign(highlightEl.style, { top, left, width, height, display: 'block' });
-      tooltipEl.style.transition = 'none';
-      Object.assign(tooltipEl.style, { top: tipY, left: tipX, display: 'block' });
       void highlightEl.offsetWidth;
       highlightEl.style.transition = HIGHLIGHT_TRANSITION;
       highlightEl.style.opacity = '1';
+    } else {
+      Object.assign(highlightEl.style, { top, left, width, height, display: 'block', opacity: '1' });
+    }
+
+    if (!showTagTooltip) {
+      hideHighlightTagTooltip();
+      return;
+    }
+
+    const tipTop = r.top - 20;
+    const tipY = (tipTop < 4 ? r.bottom + 4 : tipTop) + 'px';
+    const tipX = Math.max(4, r.left) + 'px';
+    tooltipEl.textContent = desc(el);
+    if (hiWasHidden) {
+      tooltipEl.style.transition = 'none';
+      Object.assign(tooltipEl.style, { top: tipY, left: tipX, display: 'block' });
+      void tooltipEl.offsetWidth;
       tooltipEl.style.transition = TOOLTIP_TRANSITION;
       tooltipEl.style.opacity = '1';
     } else {
-      Object.assign(highlightEl.style, { top, left, width, height, display: 'block', opacity: '1' });
       Object.assign(tooltipEl.style, { top: tipY, left: tipX, display: 'block', opacity: '1' });
     }
   }
@@ -309,7 +414,7 @@
     if (tooltipEl) { tooltipEl.style.opacity = '0'; tooltipEl.style.display = 'none'; }
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Annotation overlay (comment pins + kinpaku strokes)
   //
   // Active while state === 'CONFIGURING'. The overlay is a fixed-positioned
@@ -317,9 +422,9 @@
   // drag) drops a comment pin; drag paints a kinpaku SVG stroke. All coords
   // are stored in element-local CSS px so they survive scroll / resize and
   // correlate directly with the captured PNG.
-  // ---------------------------------------------------------------------------
+  //
 
-  const DRAG_THRESHOLD = 5;       // px — below this, treat pointerup as a click
+  const DRAG_THRESHOLD = 5;       // px - below this, treat pointerup as a click
   const PIN_DBL_CLICK_MS = 300;   // two clicks on the same pin within this delete it
   let annotOverlayEl = null;
   let annotSvgEl = null;
@@ -396,7 +501,7 @@
     annotOverlayEl.addEventListener('pointermove', onAnnotMove);
     annotOverlayEl.addEventListener('pointerup', onAnnotUp);
     annotOverlayEl.addEventListener('pointercancel', onAnnotUp);
-    document.body.appendChild(annotOverlayEl);
+    uiAppend(annotOverlayEl);
     // Modal-host friendliness: pointer-events is already 'auto' on this
     // overlay; we only need to silence the host's outside-interaction
     // listeners. Don't override pointer-events here (the overlay toggles
@@ -423,7 +528,7 @@
     placeholderResizeDrag = null;
     if (annotOverlayEl) annotOverlayEl.style.display = 'none';
     syncPlaceholderResizeHandles();
-    // Drop any in-progress edit without touching annotState — clearAnnotations
+    // Drop any in-progress edit without touching annotState - clearAnnotations
     // (if the caller is exiting configure mode) handles state reset.
     annotEditing = null;
   }
@@ -488,7 +593,7 @@
   function onAnnotDown(e) {
     if (!annotActive) return;
 
-    // 0) Insert placeholder edge resize — wins over draw / pins.
+    // 0) Insert placeholder edge resize - wins over draw / pins.
     const resizeEdge = e.target.closest?.('[data-impeccable-placeholder-resize]')?.dataset.impeccablePlaceholderResize;
     if (resizeEdge && configureKind === 'insert' && placeholderElement) {
       startPlaceholderEdgeResize(resizeEdge, e);
@@ -536,7 +641,7 @@
       // If editing a different pin, commit that edit before starting here.
       if (annotEditing && annotEditing.idx !== idx) finalizeEditingPin();
       // If already editing THIS pin and the user clicked the dot, let the
-      // input keep focus (don't start a drag — the click wasn't meant as one).
+      // input keep focus (don't start a drag - the click wasn't meant as one).
       if (annotEditing && annotEditing.idx === idx) return;
       const p = localCoords(e);
       const pin = annotState.comments[idx];
@@ -827,9 +932,9 @@
     return wrap;
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Element context extraction
-  // ---------------------------------------------------------------------------
+  //
 
   function stripManualEditRuntimeState(root) {
     if (!root || root.nodeType !== 1) return;
@@ -970,9 +1075,9 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
-  // ---------------------------------------------------------------------------
-  // The Bar — one floating element, three modes
-  // ---------------------------------------------------------------------------
+  //
+  // The Bar - one floating element, three modes
+  //
 
   // Contextual-bar palette. Cached at init so every build*Row reads a
   // consistent set of colors; detectPageTheme runs once rather than on every
@@ -1002,22 +1107,37 @@
       boxShadow: BP.shadow,
       transition: 'box-shadow 0.2s ease, opacity 0.25s ' + EASE + ', transform 0.3s ' + EASE,
       fontFamily: FONT, fontSize: '13px', color: BP.text,
-      padding: '6px',
-      maxWidth: '520px', minWidth: '320px',
+      padding: '5px',
+      maxWidth: '560px', minWidth: '340px',
     });
-    document.body.appendChild(barEl);
+    uiAppend(barEl);
     defangOutsideHandlers(barEl);
   }
 
   function positionBar() {
     if (!barEl) return;
-    const anchor = resolveBarAnchor();
-    if (!anchor) return;
-    const r = anchor.getBoundingClientRect();
     const barH = barEl.offsetHeight || 44;
     const barW = barEl.offsetWidth || 380;
     const GLOBAL_BAR_RESERVE = 64; // global bar height + bottom margin + breathing room
     const GAP = 8;
+
+    // Recovery pins to document.body when the picked element is off-screen or
+    // missing. Center the generating bar above the global bar instead of
+    // stacking a duplicate toast in the same slot.
+    if (recoveryWaitingForAnchor) {
+      const barRect = globalBarEl?.getBoundingClientRect();
+      const reserve = barRect && barRect.height > 0
+        ? Math.max(GLOBAL_BAR_RESERVE, window.innerHeight - barRect.top + 12)
+        : GLOBAL_BAR_RESERVE;
+      const top = window.innerHeight - barH - reserve;
+      const left = Math.max(GAP, (window.innerWidth - barW) / 2);
+      Object.assign(barEl.style, { top: top + 'px', left: left + 'px' });
+      return;
+    }
+
+    const anchor = resolveBarAnchor();
+    if (!anchor) return;
+    const r = anchor.getBoundingClientRect();
 
     // Prefer below the element; fall back to above; if neither fits (element
     // taller than viewport), pin to a stable viewport anchor so the bar
@@ -1040,12 +1160,20 @@
   }
 
   function showBar(mode) {
+    barHideSeq += 1;
+    if (mode === 'cycling' && !ensureCyclingRenderable('show-bar')) return;
     barEl.innerHTML = '';
     if (mode === 'configure') {
       barEl.appendChild(configureKind === 'insert' ? buildInsertConfigureRow() : buildConfigureRow());
       if (configureKind === 'insert') syncInsertCreateButton();
-    } else if (mode === 'generating') barEl.appendChild(buildGeneratingRow());
-    else if (mode === 'cycling') barEl.appendChild(buildCyclingRow());
+      applyConfigureBarChrome();
+    } else {
+      restorePickerBarChrome();
+      if (mode === 'generating') {
+        if (recoveryWaitingForAnchor) dismissToast();
+        barEl.appendChild(buildGeneratingRow());
+      } else if (mode === 'cycling') barEl.appendChild(buildCyclingRow());
+    }
     barEl.style.display = 'block';
     positionBar();
     requestAnimationFrame(() => {
@@ -1055,55 +1183,495 @@
     });
   }
 
-  function hideBar() {
+  function hideBar(instant) {
     if (!barEl) return;
+    const hideSeq = ++barHideSeq;
     stopVoice({ suppressSubmit: true });
     if (configureKind === 'insert') clearInsertPicking();
     barEl.style.opacity = '0';
-    barEl.style.transform = 'translateY(6px)';
-    setTimeout(() => { if (barEl) barEl.style.display = 'none'; }, 250);
+    barEl.style.transform = instant ? 'translateY(0)' : 'translateY(6px)';
+    if (instant) barEl.style.display = 'none';
+    else setTimeout(() => { if (barEl && hideSeq === barHideSeq) barEl.style.display = 'none'; }, 250);
     hideActionPicker();
     closeTunePopover();
+    hideConfigureBarTooltip();
     if (state === 'EDITING') restoreInlineEditDrafts();
     disableInlineEdit();
   }
 
   function updateBarContent(mode) {
     if (!barEl || barEl.style.display === 'none') return;
+    if (mode === 'cycling' && !ensureCyclingRenderable('update-bar')) return;
     barEl.innerHTML = '';
-    // Reset bar styling to the kinpaku picker palette
-    barEl.style.background = BP.surface;
-    barEl.style.border = '1px solid ' + BP.border;
-    barEl.style.boxShadow = BP.shadow;
     if (mode === 'configure') {
       barEl.appendChild(configureKind === 'insert' ? buildInsertConfigureRow() : buildConfigureRow());
       if (configureKind === 'insert') syncInsertCreateButton();
-    } else if (mode === 'generating') barEl.appendChild(buildGeneratingRow());
-    else if (mode === 'cycling') barEl.appendChild(buildCyclingRow());
-    else if (mode === 'saving') barEl.appendChild(buildSavingRow());
-    else if (mode === 'confirmed') {
-      barEl.appendChild(buildConfirmedRow());
-      barEl.style.background = 'oklch(95% 0.05 145)';
-      barEl.style.border = '1px solid oklch(75% 0.12 145 / 0.4)';
+      applyConfigureBarChrome();
+    } else {
+      restorePickerBarChrome();
+      if (mode === 'generating') barEl.appendChild(buildGeneratingRow());
+      else if (mode === 'cycling') barEl.appendChild(buildCyclingRow());
+      else if (mode === 'saving') barEl.appendChild(buildSavingRow());
+      else if (mode === 'confirmed') {
+        barEl.appendChild(buildConfirmedRow());
+        barEl.style.background = 'oklch(95% 0.05 145)';
+        barEl.style.border = '1px solid oklch(75% 0.12 145 / 0.4)';
+      }
     }
     syncPageChatFocus('update-bar-content');
   }
 
-  // --- Configure row ---
+  // Configure row: the floating bar surface IS the input; modifier pills sit left of the field.
 
-  function syncConfigureInputChrome() {
-    const wrap = document.getElementById(PREFIX + '-configure-input-wrap');
-    const input = document.getElementById(PREFIX + '-input');
-    if (!wrap || !input) return;
-    const focused = document.activeElement === input;
-    wrap.dataset.inputFocused = focused ? 'true' : 'false';
-    wrap.dataset.voiceListening = (voiceListening && voiceCtx?.mode === 'configure') ? 'true' : 'false';
-    wrap.style.borderColor = (voiceListening && voiceCtx?.mode === 'configure')
-      ? BP.patinaSoft
-      : (focused ? BP.accentSoft : BP.hairline);
+  const CONFIGURE_BAR_H = '36px';
+  // Compact selection pill + 7px inset balances vertical centering in the 36px bar.
+  const CONFIGURE_BAR_INSET = '7px';
+  const CONFIGURE_PILL_RADIUS = '7px';
+  const CONFIGURE_SELECTION_PILL_BORDER = '1px solid oklch(70% 0.12 188)';
+  const CONFIGURE_SELECTION_PILL_PAD = '1px 4px';
+  const CONFIGURE_ROW_FONT_SIZE = '12px';
+  const CONFIGURE_ROW_TRACK_H = '18px';
+  const CONFIGURE_PILL_PAD_Y = '3px';
+  const CONFIGURE_BAR_SURFACE = 'oklch(15% 0.008 95)';
+  const CONFIGURE_PILL_TEXT = 'oklch(94% 0.02 82)';
+  const ICON_CONFIGURE_SUBMIT =
+    '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>';
+
+  function applyConfigureBarChrome() {
+    if (!barEl) return;
+    barEl.dataset.configureSurface = 'true';
+    barEl.style.padding = '0';
+    barEl.style.background = CONFIGURE_BAR_SURFACE;
+    barEl.style.overflow = 'hidden';
+    syncConfigureInputChrome();
   }
 
-  // --- Insert mode helpers (mirrors skill/scripts/live-insert-ui.mjs) ---
+  function restorePickerBarChrome() {
+    if (!barEl) return;
+    barEl.dataset.configureSurface = 'false';
+    barEl.removeAttribute('data-input-focused');
+    barEl.removeAttribute('data-voice-listening');
+    barEl.style.padding = '5px';
+    barEl.style.background = BP.surface;
+    barEl.style.overflow = '';
+    barEl.style.border = '1px solid ' + BP.border;
+    barEl.style.borderColor = BP.border;
+    barEl.style.boxShadow = BP.shadow;
+  }
+
+  function syncConfigureInputChrome() {
+    const input = uiGetById(PREFIX + '-input') || uiGetById(PREFIX + '-insert-input');
+    const surface = barEl?.dataset.configureSurface === 'true' ? barEl : null;
+    if (!surface || !input) return;
+    const focused = activeElementDeep() === input;
+    const listening = voiceListening && voiceCtx?.mode === 'configure';
+    surface.dataset.inputFocused = focused ? 'true' : 'false';
+    surface.dataset.voiceListening = listening ? 'true' : 'false';
+    surface.style.borderColor = listening
+      ? BP.patinaSoft
+      : (focused ? BP.accentSoft : BP.border);
+    surface.style.boxShadow = BP.shadow;
+  }
+
+  function configureBarPalette() {
+    return BP || barPaletteForTheme(detectPageTheme());
+  }
+
+  function configureRowTextMetrics(extra = {}) {
+    return {
+      fontFamily: FONT,
+      fontSize: CONFIGURE_ROW_FONT_SIZE,
+      fontWeight: '500',
+      lineHeight: CONFIGURE_ROW_TRACK_H,
+      ...extra,
+    };
+  }
+
+  function configureInputFieldStyle(extra = {}) {
+    return {
+      flex: '1', minWidth: '0', width: '100%',
+      padding: '0', margin: '0',
+      border: 'none', background: 'transparent',
+      boxSizing: 'border-box',
+      height: CONFIGURE_ROW_TRACK_H,
+      color: CONFIGURE_PILL_TEXT,
+      caretColor: CONFIGURE_PILL_TEXT,
+      outline: 'none',
+      ...configureRowTextMetrics(),
+      ...extra,
+    };
+  }
+
+  function configureInputShellStyle() {
+    return {
+      display: 'flex', alignItems: 'center', gap: '6px',
+      flex: '1', minWidth: '0', height: '100%',
+      padding: '0 6px 0 ' + CONFIGURE_BAR_INSET,
+    };
+  }
+
+  function configureSelectionPillStyle(extra = {}) {
+    const P = configureBarPalette();
+    return {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      gap: '2px', height: 'auto', flexShrink: '0',
+      padding: CONFIGURE_SELECTION_PILL_PAD,
+      boxSizing: 'border-box',
+      border: CONFIGURE_SELECTION_PILL_BORDER,
+      borderRadius: CONFIGURE_PILL_RADIUS,
+      background: 'transparent',
+      color: P.patina,
+      cursor: 'pointer',
+      transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+      whiteSpace: 'nowrap',
+      ...configureRowTextMetrics({
+        fontFamily: MONO, fontWeight: '600', letterSpacing: '-0.01em',
+      }),
+      ...extra,
+    };
+  }
+
+  function configureModifierPillStyle(extra = {}) {
+    const P = configureBarPalette();
+    return {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      gap: '2px', height: 'auto', minHeight: CONFIGURE_ROW_TRACK_H,
+      padding: CONFIGURE_PILL_PAD_Y + ' 8px', flexShrink: '0',
+      boxSizing: 'border-box',
+      border: '1px solid transparent',
+      borderRadius: CONFIGURE_PILL_RADIUS,
+      background: 'transparent',
+      color: P.textDim, cursor: 'pointer',
+      transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+      whiteSpace: 'nowrap',
+      ...configureRowTextMetrics(),
+      ...extra,
+    };
+  }
+
+  function configureInlineControlStyle(extra = {}) {
+    const P = configureBarPalette();
+    return {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      gap: '2px', height: CONFIGURE_ROW_TRACK_H, flexShrink: '0',
+      padding: '0', margin: '0',
+      boxSizing: 'border-box',
+      border: 'none', borderRadius: '0',
+      background: 'transparent',
+      color: P.textDim, cursor: 'pointer',
+      transition: 'color 0.12s ease, background 0.12s ease',
+      whiteSpace: 'nowrap',
+      ...configureRowTextMetrics(),
+      ...extra,
+    };
+  }
+
+  function bindConfigureInlineControlHover(btn, controlsLocked) {
+    btn.addEventListener('mouseenter', () => {
+      if (controlsLocked) return;
+      const P = configureBarPalette();
+      btn.style.color = P.text;
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (controlsLocked) return;
+      btn.style.color = configureBarPalette().textDim;
+    });
+  }
+
+  function bindConfigureModifierPillHover(btn, controlsLocked) {
+    btn.addEventListener('mouseenter', () => {
+      if (controlsLocked) return;
+      const P = configureBarPalette();
+      btn.style.color = P.text;
+      btn.style.background = P.toggleActive;
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (controlsLocked) return;
+      const P = configureBarPalette();
+      btn.style.color = P.textDim;
+      btn.style.background = 'transparent';
+    });
+  }
+
+  let configureBarTooltipEl = null;
+
+  function ensureConfigureBarTooltip() {
+    if (configureBarTooltipEl) return configureBarTooltipEl;
+    const P = configureBarPalette();
+    configureBarTooltipEl = el('div', {
+      position: 'fixed',
+      display: 'none',
+      zIndex: String(Z.bar + 7),
+      pointerEvents: 'none',
+      maxWidth: 'min(360px, calc(100vw - 16px))',
+      padding: '6px 9px',
+      borderRadius: '7px',
+      background: P.chatSurface,
+      border: '1px solid ' + P.hairline,
+      boxShadow: P.shadow,
+      color: P.text,
+      fontFamily: FONT,
+      fontSize: '11px',
+      fontWeight: '500',
+      lineHeight: '1.35',
+      letterSpacing: '0.01em',
+      whiteSpace: 'normal',
+      wordBreak: 'break-word',
+    });
+    configureBarTooltipEl.id = PREFIX + '-configure-bar-tooltip';
+    uiAppend(configureBarTooltipEl);
+    return configureBarTooltipEl;
+  }
+
+  function showConfigureBarTooltip(anchor, message) {
+    if (!anchor || !message) return;
+    const tip = ensureConfigureBarTooltip();
+    tip.textContent = message;
+    tip.style.transition = 'none';
+    tip.style.display = 'block';
+    tip.style.opacity = '1';
+    const r = anchor.getBoundingClientRect();
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - tipW - 8, r.left + r.width / 2 - tipW / 2));
+    const top = Math.max(8, r.top - tipH - 8);
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+
+  function hideConfigureBarTooltip() {
+    if (!configureBarTooltipEl) return;
+    configureBarTooltipEl.style.display = 'none';
+    configureBarTooltipEl.style.opacity = '0';
+  }
+
+  function selectionTagLabel(el) {
+    if (!el) return '';
+    if (el.hasAttribute?.('data-impeccable-insert-placeholder')) return 'slot';
+    return el.tagName.toLowerCase();
+  }
+
+  function elementPath(el, maxDepth = 8) {
+    if (!el) return '';
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === 1 && node !== document.body) {
+      let part = node.tagName.toLowerCase();
+      if (node.id) part += '#' + node.id;
+      else if (node.classList?.length) part += '.' + [...node.classList].slice(0, 2).join('.');
+      parts.unshift(part);
+      node = node.parentElement;
+      if (parts.length >= maxDepth) break;
+    }
+    return parts.join(' \u203a ');
+  }
+
+  function variantCountTooltipText(count) {
+    const n = Number(count) || selectedCount;
+    const word = n === 1 ? 'variant' : 'variants';
+    return 'Click to change \u00b7 ' + n + ' ' + word;
+  }
+
+  function removeConfigureSelection() {
+    hideConfigureBarTooltip();
+    if (configureKind === 'insert') {
+      cancelInsertConfigure();
+      return;
+    }
+    selectedElement = null;
+    exitConfigureToPicking('selection-pill-remove', { clearHover: true });
+  }
+
+  function buildSelectionPill({ el: targetEl, controlsLocked }) {
+    const tag = selectionTagLabel(targetEl);
+    const path = elementPath(targetEl);
+    const P = configureBarPalette();
+    const pill = el('button', configureSelectionPillStyle({ minWidth: '32px' }));
+    pill.id = PREFIX + '-selection-pill';
+    pill.type = 'button';
+    pill.setAttribute('aria-label', 'Selected element: ' + tag);
+    pill.disabled = controlsLocked;
+    pill.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
+    pill.style.opacity = controlsLocked ? '0.58' : '1';
+    pill.style.flexShrink = '0';
+
+    const faceStack = el('span', {
+      display: 'grid', placeItems: 'center',
+      width: '100%', minWidth: '1.25em',
+      lineHeight: CONFIGURE_ROW_TRACK_H,
+    });
+    const tagFace = el('span', {
+      gridArea: '1 / 1',
+      transition: 'opacity 0.12s ease',
+      color: P.patina,
+    });
+    const clearFace = el('span', {
+      gridArea: '1 / 1',
+      opacity: '0',
+      transition: 'opacity 0.12s ease',
+      color: 'oklch(58% 0.15 35)',
+    });
+    tagFace.textContent = tag;
+    clearFace.textContent = '\u00D7';
+    faceStack.appendChild(tagFace);
+    faceStack.appendChild(clearFace);
+    pill.appendChild(faceStack);
+
+    const setArmed = (armed) => {
+      tagFace.style.opacity = armed ? '0' : '1';
+      clearFace.style.opacity = armed ? '1' : '0';
+      pill.style.background = armed ? P.toggleActive : 'transparent';
+      pill.style.border = CONFIGURE_SELECTION_PILL_BORDER;
+      pill.setAttribute('aria-label', armed ? 'Clear selection' : 'Selected element: ' + tag);
+    };
+    const arm = () => {
+      if (controlsLocked) {
+        showConfigureBarTooltip(pill, 'Apply is still running');
+        return;
+      }
+      setArmed(true);
+      if (path) showConfigureBarTooltip(pill, path);
+    };
+    const disarm = () => {
+      hideConfigureBarTooltip();
+      setArmed(false);
+    };
+    pill.addEventListener('mouseenter', arm);
+    pill.addEventListener('mouseleave', disarm);
+    pill.addEventListener('focus', arm);
+    pill.addEventListener('blur', disarm);
+    pill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (controlsLocked) { showManualApplyBusyToast(); return; }
+      removeConfigureSelection();
+    });
+    return pill;
+  }
+
+  function bindConfigureCountPillTooltip(count, controlsLocked) {
+    count.removeAttribute('title');
+    count.addEventListener('mouseenter', () => {
+      if (controlsLocked) {
+        showConfigureBarTooltip(count, 'Apply is still running');
+        return;
+      }
+      showConfigureBarTooltip(count, variantCountTooltipText(selectedCount));
+    });
+    count.addEventListener('mouseleave', hideConfigureBarTooltip);
+  }
+
+  function buildConfigureActionControl({ controlsLocked, onClick }) {
+    const control = el('button', configureInlineControlStyle());
+    const label = document.createElement('span');
+    label.textContent = actionLabel();
+    const caret = el('span', {
+      fontSize: '10px', lineHeight: '1',
+      marginLeft: '2px', pointerEvents: 'none',
+      color: 'inherit',
+    });
+    caret.textContent = '\u25BE';
+    caret.setAttribute('aria-hidden', 'true');
+    control.appendChild(label);
+    control.appendChild(caret);
+    control.disabled = controlsLocked;
+    control.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
+    control.style.opacity = controlsLocked ? '0.58' : '1';
+    bindConfigureInlineControlHover(control, controlsLocked);
+    control.addEventListener('click', onClick);
+    return control;
+  }
+
+  const VARIANT_COUNT_MIN = 1;
+  const VARIANT_COUNT_MAX = 4;
+
+  function cycleSelectedCount() {
+    if (selectedCount >= VARIANT_COUNT_MAX) selectedCount = VARIANT_COUNT_MIN;
+    else selectedCount += 1;
+    return selectedCount;
+  }
+
+  function buildConfigureCountControl({ controlsLocked, onClick }) {
+    const count = el('button', configureInlineControlStyle({
+      fontFamily: MONO, fontWeight: '600', letterSpacing: '0',
+    }));
+    count.textContent = '\u00D7' + selectedCount;
+    count.disabled = controlsLocked;
+    count.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
+    count.style.opacity = controlsLocked ? '0.58' : '1';
+    bindConfigureInlineControlHover(count, controlsLocked);
+    bindConfigureCountPillTooltip(count, controlsLocked);
+    count.addEventListener('click', onClick);
+    return count;
+  }
+
+  function buildConfigureVoiceButton({ id, controlsLocked, onClick }) {
+    const voiceBtn = el('button', {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      boxSizing: 'border-box',
+      width: CONFIGURE_BAR_H, height: '100%', flexShrink: '0',
+      padding: '0', margin: '0',
+      border: 'none', borderRight: '1px solid ' + BP.hairline,
+      borderRadius: '0', background: 'transparent',
+      color: BP.textDim, cursor: 'pointer',
+      transition: 'color 0.12s ease, background 0.12s ease',
+    });
+    voiceBtn.id = id;
+    voiceBtn.type = 'button';
+    voiceBtn.setAttribute('aria-label', 'Voice input');
+    voiceBtn.innerHTML = ICON_PAGE_VOICE;
+    voiceBtn.disabled = controlsLocked;
+    voiceBtn.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
+    voiceBtn.style.opacity = controlsLocked ? '0.58' : '1';
+    voiceBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    voiceBtn.addEventListener('click', onClick);
+    return voiceBtn;
+  }
+
+  function buildConfigureTrailingCluster(controls, voiceBtn, submitBtn) {
+    const cluster = el('div', {
+      display: 'inline-flex', alignItems: 'stretch', flexShrink: '0',
+      height: '100%', borderLeft: '1px solid ' + BP.hairline,
+    });
+    if (controls.length) {
+      const controlsWrap = el('div', {
+        display: 'inline-flex', alignItems: 'center', gap: '8px',
+        padding: '0 10px', flexShrink: '0', height: '100%',
+      });
+      controls.forEach((control) => controlsWrap.appendChild(control));
+      cluster.appendChild(controlsWrap);
+    }
+    voiceBtn.style.borderLeft = '1px solid ' + BP.hairline;
+    cluster.appendChild(voiceBtn);
+    cluster.appendChild(submitBtn);
+    return cluster;
+  }
+
+  function buildConfigureSubmitButton({ controlsLocked, onClick, ariaLabel }) {
+    const btn = el('button', {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      boxSizing: 'border-box', width: CONFIGURE_BAR_H, height: CONFIGURE_BAR_H,
+      padding: '0', flexShrink: '0',
+      border: 'none', borderLeft: '1px solid ' + BP.hairline,
+      borderRadius: '0',
+      background: BP.accent, color: C.ink,
+      cursor: controlsLocked ? 'not-allowed' : 'pointer',
+      transition: 'filter 0.12s ease, transform 0.1s ease',
+    });
+    btn.type = 'button';
+    btn.setAttribute('aria-label', ariaLabel);
+    btn.innerHTML = ICON_CONFIGURE_SUBMIT;
+    btn.disabled = controlsLocked;
+    btn.style.opacity = controlsLocked ? '0.58' : '1';
+    if (controlsLocked) btn.title = 'Apply is still running';
+    btn.addEventListener('mouseenter', () => { if (!controlsLocked) btn.style.filter = 'brightness(1.1)'; });
+    btn.addEventListener('mouseleave', () => btn.style.filter = 'none');
+    btn.addEventListener('mousedown', () => { if (!controlsLocked) btn.style.transform = 'scale(0.97)'; });
+    btn.addEventListener('mouseup', () => btn.style.transform = 'scale(1)');
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  // Insert mode helpers (mirrors skill/scripts/live/insert-ui.mjs)
 
   function detectInsertAxisFromStyle(style) {
     const display = style?.display || 'block';
@@ -1376,7 +1944,7 @@
       display: 'none',
       opacity: '0.9',
     });
-    document.body.appendChild(insertLineEl);
+    uiAppend(insertLineEl);
     defangOutsideHandlers(insertLineEl);
     return insertLineEl;
   }
@@ -1420,27 +1988,79 @@
     syncPageInteractionCursor();
   }
 
-  let pageInteractionCursorActive = false;
+  /**
+   * Drive the page-level pick / insert cursor through the textContent of one
+   * injected <style>, never by mutating <html> (className or inline style).
+   * Frameworks that server-render the <html>/<body> roots (Next.js App Router)
+   * report a React 19 hydration mismatch when the client adds an attribute the
+   * server HTML never emitted, so a `class`/inline `style` toggled on
+   * `document.documentElement` trips "a tree hydrated but some attributes ...
+   * didn't match" on the next Fast-Refresh re-render. Keying the cursor off a
+   * stable-id <style> keeps the effect off the hydrated host elements (same
+   * shape as the scroll-anchor lock). A falsy cursor clears the rule.
+   */
+  function setPageInteractionCursor(cursor) {
+    let style = document.getElementById(PICK_CURSOR_STYLE_ID);
+    if (!cursor) {
+      if (style) style.textContent = '';
+      return;
+    }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = PICK_CURSOR_STYLE_ID;
+      // Styles the host page, not the chrome - inside the adapter's shadow UI
+      // root (uiAppendStyle's target) these selectors would match nothing.
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent =
+      '* { cursor: ' + cursor + ' !important; }\n'
+      + '[id^="' + PREFIX + '"],\n'
+      + '[id^="' + PREFIX + '"] * { cursor: revert !important; }';
+  }
 
-  /** Page-level cursor while insert mode is choosing a before/after edge. */
+  /** Page-level cursor while pick or insert mode is targeting page elements. */
   function syncPageInteractionCursor() {
-    let next = '';
-    if (state === 'PICKING' && insertActive) {
-      next = insertHoverAnchor ? cursorForInsertAxis(insertHoverAxis || 'column') : '';
+    let cursor = '';
+    if (state === 'PICKING' && pickActive && !insertActive) {
+      cursor = 'crosshair';
+    } else if (state === 'PICKING' && insertActive && insertHoverAnchor) {
+      cursor = cursorForInsertAxis(insertHoverAxis || 'column');
     }
-    if (next) {
-      document.documentElement.style.cursor = next;
-      pageInteractionCursorActive = true;
-    } else if (pageInteractionCursorActive) {
-      document.documentElement.style.cursor = '';
-      pageInteractionCursorActive = false;
-    }
+    setPageInteractionCursor(cursor);
+  }
+
+  /**
+   * Single entry point for interaction-state transitions. The pick-mode
+   * crosshair is derived from `state`, so a bare `state = ...` assignment
+   * leaves the page cursor out of sync with the mode it advertises.
+   */
+  function setLiveState(next) {
+    state = next;
+    window.__IMPECCABLE_LIVE_STATE__ = next;
+    syncPageInteractionCursor();
+    // Whether a queued steer is still behind a generation is a function of this
+    // state, so the hint has to move with it, not only with the 5s poll.
+    syncSteerQueueHint();
+  }
+
+  function beginNewLiveConfiguration() {
+    liveInteractionRevision += 1;
+    setLiveState('CONFIGURING');
+  }
+
+  function deferredRecoverySuperseded(sessionId, recoveryRevision) {
+    return liveInteractionRevision !== recoveryRevision
+      || !!(currentSessionId && currentSessionId !== sessionId);
   }
 
   /** Element used to position the floating bar / shader during a session. */
   function resolveBarAnchor() {
+    if (svelteComponentSession?.sessionId === currentSessionId && (state === 'GENERATING' || state === 'CYCLING')) {
+      const anchor = resolveSvelteComponentAnchor();
+      if (anchor) return anchor;
+    }
     if (currentSessionId && (state === 'GENERATING' || state === 'CYCLING')) {
-      const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+      const wrapper = findVariantsWrapper(currentSessionId);
       if (wrapper) {
         const variantCount = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])').length;
         if (variantCount > 0 && visibleVariant > 0) {
@@ -1511,14 +2131,14 @@
 
   function isInsertGeneratingSession() {
     if (state !== 'GENERATING' || !currentSessionId) return false;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const wrapper = findVariantsWrapper(currentSessionId);
     return !!wrapper && wrapper.dataset.impeccableMode === 'insert';
   }
 
   /** Recreate the dotted placeholder if Astro/Vite HMR removed it mid-generation. */
   function ensureInsertPlaceholder() {
     if (!isInsertGeneratingSession()) return placeholderElement;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const wrapper = findVariantsWrapper(currentSessionId);
     const variantCount = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])').length;
     if (variantCount > 0) return placeholderElement;
     if (placeholderElement && document.body.contains(placeholderElement)) return placeholderElement;
@@ -1554,6 +2174,11 @@
     ph.style.marginTop = marginTop ? marginTop + 'px' : '';
     positionAnnotOverlay(ph);
     positionBar();
+  }
+
+  function showOrUpdateCyclingBar() {
+    if (barEl && barEl.style.display !== 'none') updateBarContent('cycling');
+    else showBar('cycling');
   }
 
   function buildPlaceholderResizeHandles() {
@@ -1664,7 +2289,7 @@
   }
 
   function isInsertCreateEnabled(btn) {
-    btn = btn || document.getElementById(PREFIX + '-insert-create');
+    btn = btn || uiGetById(PREFIX + '-insert-create');
     return !!btn && btn.getAttribute('aria-disabled') !== 'true';
   }
 
@@ -1690,7 +2315,7 @@
       lineHeight: '1.35',
     });
     insertCreateTooltipEl.id = PREFIX + '-insert-create-tooltip';
-    document.body.appendChild(insertCreateTooltipEl);
+    uiAppend(insertCreateTooltipEl);
     return insertCreateTooltipEl;
   }
 
@@ -1722,8 +2347,8 @@
   }
 
   function syncInsertCreateButton(btn, input) {
-    btn = btn || document.getElementById(PREFIX + '-insert-create');
-    input = input || document.getElementById(PREFIX + '-insert-input');
+    btn = btn || uiGetById(PREFIX + '-insert-create');
+    input = input || uiGetById(PREFIX + '-insert-input');
     if (!btn || !input) return;
     const gate = insertCreateGateState(input);
     const ok = canCreateInsert(gate);
@@ -1746,69 +2371,35 @@
     }
   }
 
+  /** Stylesheet shared by the replace and insert configure rows. */
+  function ensureConfigureInputStyle() {
+    if (uiGetById(PREFIX + '-configure-input-style')) return;
+    const s = document.createElement('style');
+    s.id = PREFIX + '-configure-input-style';
+    s.textContent =
+      '@keyframes impeccable-configure-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
+      '#' + PREFIX + '-input, #' + PREFIX + '-insert-input { box-sizing: border-box; height: ' + CONFIGURE_ROW_TRACK_H + '; line-height: ' + CONFIGURE_ROW_TRACK_H + '; padding: 0; margin: 0; caret-color: ' + CONFIGURE_PILL_TEXT + '; }' +
+      '#' + PREFIX + '-input::placeholder, #' + PREFIX + '-insert-input::placeholder { color: ' + BP.textDim + '; opacity: 1; }' +
+      '#' + PREFIX + '-configure-voice[data-listening="true"] svg, #' + PREFIX + '-insert-voice[data-listening="true"] svg { animation: impeccable-configure-voice-pulse 1.1s ease-in-out infinite; }' +
+      '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-configure-voice[data-listening="true"] svg, #' + PREFIX + '-insert-voice[data-listening="true"] svg { animation: none; opacity: 1; } }' +
+      '#' + PREFIX + '-configure-voice:hover, #' + PREFIX + '-insert-voice:hover { background: oklch(27% 0 0); color: ' + BP.accent + '; }';
+    uiAppendStyle(s);
+  }
+
   function buildConfigureRow() {
     const controlsLocked = pendingApplyInFlight === true;
     const row = el('div', {
-      display: 'flex', alignItems: 'center', gap: '6px',
+      display: 'flex', alignItems: 'stretch', width: '100%', height: CONFIGURE_BAR_H,
     });
 
-    // Action pill — dark graphite chip (matches kinpaku-kit .live-demo-ctx-pill)
-    const pill = el('button', {
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '5px 10px', borderRadius: '6px',
-      background: BP.chatSurface, color: BP.text,
-      fontFamily: FONT, fontSize: '12px', fontWeight: '500',
-      border: '1px solid ' + BP.hairline, cursor: 'pointer',
-      transition: 'background 0.12s ease, border-color 0.12s ease, transform 0.1s ease',
-      whiteSpace: 'nowrap', flexShrink: '0',
-    });
-    pill.textContent = actionLabel() + ' \u25BE';
-    pill.disabled = controlsLocked;
-    pill.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    pill.style.opacity = controlsLocked ? '0.58' : '1';
-    if (controlsLocked) pill.title = 'Apply is still running';
-    pill.addEventListener('mouseenter', () => {
-      if (controlsLocked) return;
-      pill.style.background = BP.accentSoft;
-      pill.style.borderColor = BP.accent;
-    });
-    pill.addEventListener('mouseleave', () => {
-      if (controlsLocked) return;
-      pill.style.background = BP.chatSurface;
-      pill.style.borderColor = BP.hairline;
-    });
-    pill.addEventListener('mousedown', () => { if (!controlsLocked) pill.style.transform = 'scale(0.97)'; });
-    pill.addEventListener('mouseup', () => pill.style.transform = 'scale(1)');
-    pill.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      toggleActionPicker();
-    });
-    row.appendChild(pill);
-
-    // Prompt field — same chat-surface chrome as the bottom Steer bar
-    const inputWrap = el('div', {
-      display: 'inline-flex', alignItems: 'center',
-      flex: '1', minWidth: '0', height: '28px',
-      borderRadius: '7px',
-      background: BP.chatSurface,
-      border: '1px solid ' + BP.hairline,
-      overflow: 'hidden',
-      transition: 'border-color 0.15s ease',
-    });
-    inputWrap.id = PREFIX + '-configure-input-wrap';
+    const inputShell = el('div', configureInputShellStyle());
 
     const input = document.createElement('input');
     input.id = PREFIX + '-input';
     input.type = 'text';
-    input.placeholder = selectedAction === 'impeccable' ? 'describe what you want…' : 'refine further (optional)…';
+    input.placeholder = '';
     input.setAttribute('aria-label', 'Describe the change');
-    Object.assign(input.style, {
-      flex: '1', minWidth: '0', width: '100%',
-      padding: '0 6px', border: 'none', background: 'transparent',
-      fontFamily: FONT, fontSize: '11.5px', color: BP.text,
-      outline: 'none',
-    });
+    Object.assign(input.style, configureInputFieldStyle());
     input.disabled = controlsLocked;
     if (controlsLocked) {
       input.placeholder = 'apply is running...';
@@ -1816,33 +2407,31 @@
       input.style.opacity = '0.58';
     }
 
-    const voiceBtn = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      padding: '0', boxSizing: 'border-box',
-      width: '28px', height: '28px', flexShrink: '0',
-      border: 'none', background: 'transparent',
-      color: BP.textDim, cursor: 'pointer',
-      transition: 'color 0.12s ease, background 0.12s ease',
+    const action = buildConfigureActionControl({
+      controlsLocked,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        toggleActionPicker();
+      },
     });
-    voiceBtn.id = PREFIX + '-configure-voice';
-    voiceBtn.type = 'button';
-    voiceBtn.setAttribute('aria-label', 'Voice input');
-    voiceBtn.innerHTML = ICON_PAGE_VOICE;
-    voiceBtn.disabled = controlsLocked;
-    voiceBtn.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    voiceBtn.style.opacity = controlsLocked ? '0.58' : '1';
 
-    if (!document.getElementById(PREFIX + '-configure-input-style')) {
-      const s = document.createElement('style');
-      s.id = PREFIX + '-configure-input-style';
-      s.textContent =
-        '@keyframes impeccable-configure-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
-        '#' + PREFIX + '-input::placeholder { color: ' + BP.textDim + '; opacity: 1; }' +
-        '#' + PREFIX + '-configure-voice[data-listening="true"] svg { animation: impeccable-configure-voice-pulse 1.1s ease-in-out infinite; }' +
-        '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-configure-voice[data-listening="true"] svg { animation: none; opacity: 1; } }' +
-        '#' + PREFIX + '-configure-voice:hover { background: oklch(78% 0.12 82 / 0.12); }';
-      document.head.appendChild(s);
-    }
+    const count = buildConfigureCountControl({
+      controlsLocked,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        count.textContent = '\u00D7' + cycleSelectedCount();
+        if (count.matches(':hover')) {
+          showConfigureBarTooltip(count, variantCountTooltipText(selectedCount));
+        }
+      },
+    });
+
+    inputShell.appendChild(buildSelectionPill({ el: selectedElement, controlsLocked }));
+    inputShell.appendChild(input);
+
+    ensureConfigureInputStyle();
 
     input.addEventListener('focus', () => syncConfigureInputChrome());
     input.addEventListener('blur', () => syncConfigureInputChrome());
@@ -1852,81 +2441,33 @@
         e.stopPropagation();
         e.preventDefault();
         input.blur();
-        disableInlineEdit();
-        hideBar();
-        renderEditBadge('hidden');
-        state = 'PICKING';
-        syncPageChatFocus('configure-input-escape');
+        exitConfigureToPicking('configure-input-escape');
         return;
       }
-      // Let arrow keys pass through to the element picker when the input is empty
       if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !input.value) return;
       e.stopPropagation();
     });
 
-    voiceBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-    voiceBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      toggleConfigureVoice();
+    const voiceBtn = buildConfigureVoiceButton({
+      id: PREFIX + '-configure-voice',
+      controlsLocked,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        toggleConfigureVoice();
+      },
     });
 
-    inputWrap.appendChild(input);
-    inputWrap.appendChild(voiceBtn);
-    row.appendChild(inputWrap);
+    const go = buildConfigureSubmitButton({
+      controlsLocked,
+      ariaLabel: 'Generate variants',
+      onClick: (e) => { e.stopPropagation(); handleGo(); },
+    });
+
+    row.appendChild(inputShell);
+    row.appendChild(buildConfigureTrailingCluster([action, count], voiceBtn, go));
     syncConfigureInputChrome();
 
-    // Variant count toggle
-    const count = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      boxSizing: 'border-box', height: '28px', padding: '0 6px',
-      borderRadius: '5px',
-      border: '1px solid ' + BP.hairline, background: 'transparent',
-      fontFamily: MONO, fontSize: '11px', fontWeight: '600',
-      color: BP.textDim, cursor: 'pointer',
-      transition: 'color 0.12s ease, border-color 0.12s ease',
-      flexShrink: '0', whiteSpace: 'nowrap',
-    });
-    count.textContent = '\u00D7' + selectedCount;
-    count.title = 'Variants: click to change';
-    count.disabled = controlsLocked;
-    count.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    count.style.opacity = controlsLocked ? '0.58' : '1';
-    if (controlsLocked) count.title = 'Apply is still running';
-    count.addEventListener('mouseenter', () => { if (!controlsLocked) { count.style.color = BP.text; count.style.borderColor = BP.text; } });
-    count.addEventListener('mouseleave', () => { if (!controlsLocked) { count.style.color = BP.textDim; count.style.borderColor = BP.hairline; } });
-    count.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      selectedCount = selectedCount >= 4 ? 2 : selectedCount + 1;
-      count.textContent = '\u00D7' + selectedCount;
-    });
-    row.appendChild(count);
-
-    // Go button
-    const go = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      boxSizing: 'border-box', height: '28px', padding: '0 12px',
-      borderRadius: '6px',
-      border: 'none', background: BP.accent, color: C.ink,
-      fontFamily: FONT, fontSize: '12px', fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'filter 0.12s ease, transform 0.1s ease',
-      flexShrink: '0', whiteSpace: 'nowrap',
-    });
-    go.textContent = 'Go \u2192';
-    go.disabled = controlsLocked;
-    go.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    go.style.opacity = controlsLocked ? '0.58' : '1';
-    if (controlsLocked) go.title = 'Apply is still running';
-    go.addEventListener('mouseenter', () => { if (!controlsLocked) go.style.filter = 'brightness(1.1)'; });
-    go.addEventListener('mouseleave', () => go.style.filter = 'none');
-    go.addEventListener('mousedown', () => { if (!controlsLocked) go.style.transform = 'scale(0.97)'; });
-    go.addEventListener('mouseup', () => go.style.transform = 'scale(1)');
-    go.addEventListener('click', (e) => { e.stopPropagation(); handleGo(); });
-    row.appendChild(go);
-
-    // Auto-focus input after a beat
     if (!controlsLocked) setTimeout(() => input.focus(), 60);
 
     return row;
@@ -1935,31 +2476,20 @@
   function buildInsertConfigureRow() {
     const controlsLocked = pendingApplyInFlight === true;
     const row = el('div', {
-      display: 'flex', alignItems: 'center', gap: '6px',
+      display: 'flex', alignItems: 'stretch', width: '100%', height: CONFIGURE_BAR_H,
     });
+    row.addEventListener('pointerdown', (e) => e.stopPropagation());
+    row.addEventListener('mousedown', (e) => e.stopPropagation());
+    row.addEventListener('click', (e) => e.stopPropagation());
 
-    const inputWrap = el('div', {
-      display: 'inline-flex', alignItems: 'center',
-      flex: '1', minWidth: '0', height: '28px',
-      borderRadius: '7px',
-      background: BP.chatSurface,
-      border: '1px solid ' + BP.hairline,
-      overflow: 'hidden',
-      transition: 'border-color 0.15s ease',
-    });
-    inputWrap.id = PREFIX + '-insert-input-wrap';
+    const inputShell = el('div', configureInputShellStyle());
 
     const input = document.createElement('input');
     input.id = PREFIX + '-insert-input';
     input.type = 'text';
-    input.placeholder = 'describe what to insert…';
+    input.placeholder = '';
     input.setAttribute('aria-label', 'Describe the new element');
-    Object.assign(input.style, {
-      flex: '1', minWidth: '0', width: '100%',
-      padding: '0 6px', border: 'none', background: 'transparent',
-      fontFamily: FONT, fontSize: '11.5px', color: BP.text,
-      outline: 'none',
-    });
+    Object.assign(input.style, configureInputFieldStyle());
     input.disabled = controlsLocked;
     if (controlsLocked) {
       input.placeholder = 'apply is running...';
@@ -1967,22 +2497,30 @@
       input.style.opacity = '0.58';
     }
 
-    const voiceBtn = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      padding: '0', boxSizing: 'border-box',
-      width: '28px', height: '28px', flexShrink: '0',
-      border: 'none', background: 'transparent',
-      color: BP.textDim, cursor: 'pointer',
+    const count = buildConfigureCountControl({
+      controlsLocked,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        count.textContent = '\u00D7' + cycleSelectedCount();
+        if (count.matches(':hover')) {
+          showConfigureBarTooltip(count, variantCountTooltipText(selectedCount));
+        }
+      },
     });
-    voiceBtn.id = PREFIX + '-insert-voice';
-    voiceBtn.type = 'button';
-    voiceBtn.setAttribute('aria-label', 'Voice input');
-    voiceBtn.innerHTML = ICON_PAGE_VOICE;
-    voiceBtn.disabled = controlsLocked;
-    voiceBtn.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    voiceBtn.style.opacity = controlsLocked ? '0.58' : '1';
+
+    inputShell.appendChild(buildSelectionPill({ el: selectedElement, controlsLocked }));
+    inputShell.appendChild(input);
+
+    ensureConfigureInputStyle();
 
     input.addEventListener('input', () => syncInsertCreateButton());
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
+    input.addEventListener('mousedown', (e) => e.stopPropagation());
+    input.addEventListener('click', (e) => {
+      e.stopPropagation();
+      try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+    });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.stopPropagation(); e.preventDefault();
@@ -1996,48 +2534,31 @@
       }
       e.stopPropagation();
     });
-    voiceBtn.addEventListener('mousedown', (e) => e.stopPropagation());
-    voiceBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      toggleConfigureVoice();
+    input.addEventListener('focus', () => syncConfigureInputChrome());
+    input.addEventListener('blur', () => syncConfigureInputChrome());
+
+    const voiceBtn = buildConfigureVoiceButton({
+      id: PREFIX + '-insert-voice',
+      controlsLocked,
+      onClick: (e) => {
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        toggleConfigureVoice();
+      },
     });
 
-    inputWrap.appendChild(input);
-    inputWrap.appendChild(voiceBtn);
-    row.appendChild(inputWrap);
-
-    const count = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      boxSizing: 'border-box', height: '28px', padding: '0 6px',
-      borderRadius: '5px',
-      border: '1px solid ' + BP.hairline, background: 'transparent',
-      fontFamily: MONO, fontSize: '11px', fontWeight: '600',
-      color: BP.textDim, cursor: 'pointer', flexShrink: '0', whiteSpace: 'nowrap',
-    });
-    count.textContent = '\u00D7' + selectedCount;
-    count.disabled = controlsLocked;
-    count.style.cursor = controlsLocked ? 'not-allowed' : 'pointer';
-    count.style.opacity = controlsLocked ? '0.58' : '1';
-    count.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      selectedCount = selectedCount >= 4 ? 2 : selectedCount + 1;
-      count.textContent = '\u00D7' + selectedCount;
-    });
-    row.appendChild(count);
-
-    const create = el('button', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      boxSizing: 'border-box', height: '28px', padding: '0 12px',
-      borderRadius: '6px',
-      border: 'none', background: BP.accent, color: C.ink,
-      fontFamily: FONT, fontSize: '12px', fontWeight: '600',
-      flexShrink: '0', whiteSpace: 'nowrap',
+    const create = buildConfigureSubmitButton({
+      controlsLocked,
+      ariaLabel: 'Create variants',
+      onClick: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (controlsLocked) { showManualApplyBusyToast(); return; }
+        if (!isInsertCreateEnabled(create)) return;
+        handleInsertCreate();
+      },
     });
     create.id = PREFIX + '-insert-create';
-    create.textContent = 'Create \u2192';
-    create.disabled = controlsLocked;
     create.addEventListener('mouseenter', () => {
       if (controlsLocked) return;
       if (isInsertCreateEnabled(create)) {
@@ -2047,19 +2568,15 @@
       showInsertCreateTooltip(create, insertCreateDisabledReason(insertCreateGateState(input)));
     });
     create.addEventListener('mouseleave', hideInsertCreateTooltip);
-    create.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (controlsLocked) { showManualApplyBusyToast(); return; }
-      if (!isInsertCreateEnabled(create)) return;
-      handleInsertCreate();
-    });
-    row.appendChild(create);
+    row.appendChild(inputShell);
+    row.appendChild(buildConfigureTrailingCluster([count], voiceBtn, create));
     syncInsertCreateButton(create, input);
+    syncConfigureInputChrome();
     if (!controlsLocked) setTimeout(() => input.focus(), 60);
     return row;
   }
 
-  // --- Generating row ---
+  // Generating row
 
   function buildGeneratingRow() {
     const row = el('div', {
@@ -2083,21 +2600,57 @@
       fontSize: '11px', color: BP.textDim, whiteSpace: 'nowrap',
       marginLeft: 'auto',
     });
-    // Variants currently arrive atomically in a single file edit, so a
-    // per-variant counter would lie. Say what's true.
-    status.textContent = arrivedVariants < expectedVariants
-      ? 'Generating ' + expectedVariants + ' variants...'
-      : 'Done';
+    status.textContent = recoveryWaitingForAnchor
+      ? 'Variants ready. Reveal the selected element to resume.'
+      : generationStatusText();
     row.appendChild(status);
 
     return row;
   }
 
-  // --- Cycling row ---
+  function generationStatusText() {
+    if (arrivedVariants >= expectedVariants && expectedVariants > 0) return 'Done';
+    if (generationPhase === 'picked_up') return 'Agent picked up the request...';
+    if (generationPhase === 'scaffolding') return 'Finding the source...';
+    if (generationPhase === 'source_ready') return 'Source ready. Generating...';
+    if (generationPhase === 'scaffold_fallback') return 'Agent is locating the source...';
+    if (generationPhase === 'first_reviewable') return 'First variant is ready. Exploring more...';
+    if (generationPhase === 'second_reviewable') return 'Checking the remaining variants...';
+    return 'Generating ' + expectedVariants + ' variants...';
+  }
+
+  // Cycling row
 
   const TUNE_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="flex-shrink:0"><line x1="4" y1="8" x2="20" y2="8"/><circle cx="14" cy="8" r="2.4" fill="currentColor" stroke="none"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="10" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg>';
 
+  /**
+   * Which variant the user is actually looking at. For component previews the
+   * mounted component is the truth; `visibleVariant` is the intent, and the two
+   * differ while a mount is in flight.
+   */
+  function cyclingShownVariant() {
+    return svelteComponentSession?.sessionId === currentSessionId && svelteComponentSession.mountedVariant > 0
+      ? svelteComponentSession.mountedVariant
+      : visibleVariant;
+  }
+
+  /**
+   * The single counter string. It is built here rather than at each call site
+   * because the row builder and the incremental sync used to disagree on the
+   * denominator: one showed the planned count, the other the arrived count, so
+   * "2/3" turned into "2/2" on the next sync without anything changing on
+   * screen. Arrived wins once anything has arrived; expected covers the window
+   * before the first variant lands.
+   */
+  function cyclingCounterText() {
+    const total = arrivedVariants > 0 ? arrivedVariants : expectedVariants;
+    return cyclingShownVariant() + '/' + total;
+  }
+
   function buildCyclingRow() {
+    if (!ensureCyclingRenderable('build-cycling-row')) {
+      return el('div', { display: 'none' });
+    }
     const row = el('div', {
       display: 'flex', alignItems: 'center', gap: '6px',
       padding: '1px 2px',
@@ -2105,8 +2658,9 @@
 
     // Prev
     const prev = navBtn('\u2190');
+    prev.id = PREFIX + '-variant-prev';
     prev.addEventListener('click', (e) => { e.stopPropagation(); cycleVariant(-1); });
-    if (visibleVariant <= 1) prev.style.opacity = '0.3';
+    if (cyclingShownVariant() <= 1) prev.style.opacity = '0.3';
     row.appendChild(prev);
 
     // Dots (clickable)
@@ -2117,19 +2671,23 @@
       fontFamily: MONO, fontSize: '11px', fontWeight: '500',
       color: BP.textDim, minWidth: '24px', textAlign: 'center',
     });
-    counter.textContent = visibleVariant + '/' + arrivedVariants;
+    counter.id = PREFIX + '-variant-counter';
+    counter.textContent = cyclingCounterText();
     row.appendChild(counter);
 
     // Next
     const next = navBtn('\u2192');
+    next.id = PREFIX + '-variant-next';
     next.addEventListener('click', (e) => { e.stopPropagation(); cycleVariant(1); });
-    if (visibleVariant >= arrivedVariants) next.style.opacity = '0.3';
+    if (cyclingShownVariant() >= arrivedVariants) next.style.opacity = '0.3';
     row.appendChild(next);
 
-    // Tune chip — only when the visible variant exposes params
+    // Tune chip stays visible while the deferred parameter phase is running,
+    // then becomes interactive as soon as this variant exposes controls.
     const visParams = parseVariantParams(getVisibleVariantEl());
     const hasParams = visParams.length > 0;
-    if (hasParams) {
+    const paramsPending = !hasParams && (parameterGenerationState === 'pending' || parameterGenerationState === 'loading');
+    if (hasParams || paramsPending) {
       const tune = el('button', {
         display: 'inline-flex', alignItems: 'center', gap: '6px',
         padding: '4px 10px', borderRadius: '5px',
@@ -2137,35 +2695,54 @@
         background: tuneOpen ? BP.accentSoft : 'transparent',
         color: tuneOpen ? BP.accent : BP.text,
         fontFamily: FONT, fontSize: '11px', fontWeight: '500',
-        cursor: 'pointer',
+        cursor: paramsPending ? 'wait' : 'pointer',
         transition: 'color 0.12s ease, background 0.12s ease',
         whiteSpace: 'nowrap',
       });
-      tune.innerHTML = TUNE_ICON_SVG;
+      if (paramsPending) {
+        const spinner = el('span', {
+          width: '11px', height: '11px', borderRadius: '50%',
+          border: '1.5px solid ' + BP.hairline,
+          borderTopColor: BP.accent,
+          animation: 'impeccable-spin 0.6s linear infinite',
+          boxSizing: 'border-box', flexShrink: '0',
+        });
+        spinner.setAttribute('aria-hidden', 'true');
+        tune.appendChild(spinner);
+      } else {
+        tune.innerHTML = TUNE_ICON_SVG;
+      }
       const tuneLabel = document.createElement('span');
       tuneLabel.textContent = 'Tune';
       tune.appendChild(tuneLabel);
-      const tuneBadge = document.createElement('span');
-      Object.assign(tuneBadge.style, {
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        minWidth: '16px', height: '16px', padding: '0 4px',
-        borderRadius: '999px',
-        background: tuneOpen ? C.brand : BP.hairline,
-        color: tuneOpen ? 'oklch(98% 0 0)' : 'inherit',
-        fontFamily: MONO, fontSize: '9.5px', fontWeight: '600',
-        lineHeight: '1',
-        boxSizing: 'border-box',
-      });
-      tuneBadge.textContent = String(visParams.length);
-      tune.appendChild(tuneBadge);
-      tune.title = 'Tune this variant (' + visParams.length + ' knob' + (visParams.length === 1 ? '' : 's') + ')';
-      tune.addEventListener('mouseenter', () => {
-        if (!tuneOpen) tune.style.background = BP.accentSoft;
-      });
-      tune.addEventListener('mouseleave', () => {
-        if (!tuneOpen) tune.style.background = 'transparent';
-      });
-      tune.addEventListener('click', (e) => { e.stopPropagation(); toggleTunePopover(); });
+      if (hasParams) {
+        const tuneBadge = document.createElement('span');
+        Object.assign(tuneBadge.style, {
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          minWidth: '16px', height: '16px', padding: '0 4px',
+          borderRadius: '999px',
+          background: tuneOpen ? C.brand : BP.hairline,
+          color: tuneOpen ? C.ink : 'inherit',
+          fontFamily: MONO, fontSize: '9.5px', fontWeight: '600',
+          lineHeight: '1',
+          boxSizing: 'border-box',
+        });
+        tuneBadge.textContent = String(visParams.length);
+        tune.appendChild(tuneBadge);
+        tune.title = 'Tune this variant (' + visParams.length + ' knob' + (visParams.length === 1 ? '' : 's') + ')';
+        tune.addEventListener('mouseenter', () => {
+          if (!tuneOpen) tune.style.background = BP.accentSoft;
+        });
+        tune.addEventListener('mouseleave', () => {
+          if (!tuneOpen) tune.style.background = 'transparent';
+        });
+        tune.addEventListener('click', (e) => { e.stopPropagation(); toggleTunePopover(); });
+      } else {
+        tune.disabled = true;
+        tune.setAttribute('aria-label', 'Tune controls are still being prepared');
+        tune.title = 'Tune controls are still being prepared';
+        tune.style.opacity = '0.72';
+      }
       tune.dataset.iceqTune = '1';
       row.appendChild(tune);
     }
@@ -2173,7 +2750,16 @@
     // Spacer
     row.appendChild(el('div', { flex: '1' }));
 
-    // Accept — primary action, kinpaku gold + lacquer-deep (matches demo .live-demo-ctx-accept)
+    if (arrivedVariants < expectedVariants) {
+      const remaining = expectedVariants - arrivedVariants;
+      const progress = el('span', {
+        fontSize: '11px', color: BP.textDim, whiteSpace: 'nowrap',
+      });
+      progress.textContent = remaining + ' more arriving...';
+      row.appendChild(progress);
+    }
+
+    // Accept - primary action, kinpaku gold + lacquer-deep (matches demo .live-demo-ctx-accept)
     const accept = el('button', {
       padding: '5px 14px', borderRadius: '5px',
       border: 'none', background: C.brand, color: C.ink,
@@ -2187,7 +2773,11 @@
     accept.addEventListener('mousedown', () => accept.style.transform = 'scale(0.97)');
     accept.addEventListener('mouseup', () => accept.style.transform = 'scale(1)');
     accept.addEventListener('click', (e) => { e.stopPropagation(); handleAccept(); });
-    if (arrivedVariants === 0) { accept.style.opacity = '0.3'; accept.style.pointerEvents = 'none'; }
+    if (arrivedVariants === 0) {
+      accept.style.opacity = '0.3';
+      accept.style.pointerEvents = 'none';
+      accept.title = 'Accept becomes available when the first variant arrives';
+    }
     row.appendChild(accept);
 
     // Discard
@@ -2207,9 +2797,9 @@
     return row;
   }
 
-  // --- Shared UI builders ---
+  // Shared UI builders
 
-  // --- Saving row (waiting for agent to process accept/discard) ---
+  // Saving row (waiting for agent to process accept/discard)
 
   function buildSavingRow() {
     const row = el('div', {
@@ -2234,7 +2824,7 @@
     return row;
   }
 
-  // --- Confirmed row (green success, auto-dismisses) ---
+  // Confirmed row (green success, auto-dismisses)
 
   function buildConfirmedRow() {
     const row = el('div', {
@@ -2243,19 +2833,19 @@
     });
     const check = el('span', {
       fontSize: '15px', lineHeight: '1', flexShrink: '0',
-      color: 'oklch(45% 0.15 145)',
+      color: 'oklch(45% 0.18 145)',
     });
     check.textContent = '\u2713';
     row.appendChild(check);
     const label = el('span', {
-      fontSize: '12px', color: 'oklch(35% 0.1 145)', fontWeight: '600',
+      fontSize: '12px', color: 'oklch(49% 0.08 188)', fontWeight: '600',
     });
     label.textContent = 'Variant applied';
     row.appendChild(label);
     return row;
   }
 
-  // --- Shared UI builders ---
+  // Shared UI builders
 
   function buildDots(clickable) {
     const container = el('div', {
@@ -2266,7 +2856,7 @@
       const active = i === visibleVariant;
       // active: solid site-brand kinpaku dot. arrived+inactive: muted neutral.
       // pending (not yet arrived): faint outline ring. No borders on arrived
-      // dots — the previous "accent ring + ash fill" combo read as noisy
+      // dots - the previous "accent ring + ash fill" combo read as noisy
       // kinpaku chips, especially when all variants had arrived and every
       // dot wore an accent ring.
       const dotBg = active ? C.brand
@@ -2289,10 +2879,7 @@
         const idx = i;
         dot.addEventListener('click', (e) => {
           e.stopPropagation();
-          visibleVariant = idx;
-          showVariantInDOM(currentSessionId, idx);
-          updateSelectedElement();
-          updateBarContent('cycling');
+          selectVariant(idx, 'variant_changed');
         });
       }
       container.appendChild(dot);
@@ -2322,13 +2909,14 @@
 
   function el(tag, styles) {
     const e = document.createElement(tag);
+    if (String(tag).toLowerCase() === 'button') e.type = 'button';
     if (styles) Object.assign(e.style, styles);
     return e;
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Action picker popover
-  // ---------------------------------------------------------------------------
+  //
 
   function initActionPicker() {
     const P = barPaletteForTheme(detectPageTheme());
@@ -2338,7 +2926,7 @@
       position: 'fixed', zIndex: Z.picker,
       display: 'none', opacity: '0',
       transform: 'scale(0.96) translateY(4px)',
-      transformOrigin: 'bottom left',
+      transformOrigin: 'bottom right',
       transition: 'opacity 0.18s ' + EASE + ', transform 0.2s ' + EASE,
       background: P.surface,
       border: '1px solid ' + P.border,
@@ -2383,16 +2971,20 @@
         chip.style.background = action.value === selectedAction ? P.accentSoft : 'transparent';
       });
       chip.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
+        const prompt = uiGetById(PREFIX + '-input')?.value || '';
         selectedAction = action.value;
         hideActionPicker();
         updateBarContent('configure');
+        const input = uiGetById(PREFIX + '-input');
+        if (input && prompt) input.value = prompt;
       });
       grid.appendChild(chip);
     });
 
     pickerEl.appendChild(grid);
-    document.body.appendChild(pickerEl);
+    uiAppend(pickerEl);
     defangOutsideHandlers(pickerEl);
 
     // Cache the palette on the picker so toggleActionPicker's state refresh
@@ -2410,14 +3002,18 @@
       chip.style.background = isActive ? P.accentSoft : 'transparent';
       chip.style.color = isActive ? P.accent : P.text;
     });
-    // Position above the bar
+    // Position above the bar, right-aligned to the configure bar edge.
     const barRect = barEl.getBoundingClientRect();
     const pickerH = 170; // approximate; grows with icon + label rows
     let top = barRect.top - pickerH - 6;
     if (top < 8) top = barRect.bottom + 6;
+    pickerEl.style.display = 'block';
+    const pickerW = pickerEl.offsetWidth;
+    let left = barRect.right - pickerW;
+    left = Math.max(8, Math.min(left, window.innerWidth - pickerW - 8));
     Object.assign(pickerEl.style, {
-      top: top + 'px', left: barRect.left + 'px',
-      display: 'block',
+      top: top + 'px',
+      left: left + 'px',
     });
     requestAnimationFrame(() => {
       pickerEl.style.opacity = '1';
@@ -2432,7 +3028,33 @@
     setTimeout(() => { if (pickerEl) pickerEl.style.display = 'none'; }, 180);
   }
 
-  // ---------------------------------------------------------------------------
+  function ensureCyclingRenderable(reason) {
+    if (arrivedVariants > 0) {
+      if (visibleVariant < 1 || visibleVariant > arrivedVariants) visibleVariant = 1;
+      return true;
+    }
+    recoverEmptyCycling(reason);
+    return false;
+  }
+
+  function recoverEmptyCycling(reason) {
+    if (recoveringEmptyCycling) return;
+    recoveringEmptyCycling = true;
+    try {
+      console.warn('[impeccable] Refusing to render empty variant cycling state:', reason);
+      const message = 'No variants were mounted. Please try again.';
+      if (svelteComponentSession?.sessionId === currentSessionId) {
+        resetSvelteComponentSession(currentSessionId, message);
+        return;
+      }
+      cleanup();
+      showToast(message, 5000);
+    } finally {
+      recoveringEmptyCycling = false;
+    }
+  }
+
+  //
   // Params panel (per-variant coarse controls)
   //
   // Variants may declare a parameter manifest via a JSON attribute on the
@@ -2445,18 +3067,18 @@
   // exposes 2-5 coarse knobs. Values apply to the variant wrapper so scoped
   // CSS can respond instantly without regeneration:
   //
-  //   range  / numeric toggle  → CSS var  (`--p-<id>`)  used via var(--p-foo, N)
+  //   range  / numeric toggle  -> CSS custom property used by variant styles
   //   steps  / boolean toggle  → data-p-<id> attribute  used via :scope[data-p-foo="..."]
   //
   // On variant switch, values reset to that variant's declared defaults.
   // On accept, current values are sent in the event payload so the agent
   // can bake them into the source-file write.
-  // ---------------------------------------------------------------------------
+  //
 
   let paramsPanelEl = null;     // outer wrapper (overflow:hidden, clips the slide)
   let paramsPanelInner = null;  // translating content (carries bg, padding, knobs)
   let paramsPanelBody = null;   // grid holding the knob cells
-  let paramsCurrentValues = {}; // {paramId: value} — mirror of the visible variant's live values
+  let paramsCurrentValues = {}; // {paramId: value} - mirror of the visible variant's live values
   let tuneOpen = false;         // whether the Tune popover is open right now
 
   // Theme-aware Tune popover. Appears as a drawer that slides out from the
@@ -2471,7 +3093,7 @@
     const P = paramsPanelPalette;
 
     // Single element, always in the DOM. The slide animation is a CSS mask
-    // with mask-size growing from 0% to 100% along the bar-facing axis — no
+    // with mask-size growing from 0% to 100% along the bar-facing axis - no
     // display toggle, no opacity toggle, no transform trickery. The mask
     // hides everything initially; as it grows, content is revealed from
     // the bar edge outward.
@@ -2494,7 +3116,7 @@
       transition: 'clip-path 0.44s ' + EASE,
 
       // Park off-screen until positionParamsPanel places it. These are NOT
-      // in the transition list, so they snap instantly — no fly-in from the
+      // in the transition list, so they snap instantly - no fly-in from the
       // top-left when first shown.
       top: '-9999px', left: '-9999px', width: '0',
     });
@@ -2506,7 +3128,7 @@
     });
 
     paramsPanelEl.appendChild(paramsPanelBody);
-    document.body.appendChild(paramsPanelEl);
+    uiAppend(paramsPanelEl);
     // Don't override pointer-events: the panel toggles between 'none' (closed,
     // click-through) and 'auto' (open) on its own. Just silence the host's
     // outside-interaction listeners while the panel is open.
@@ -2515,14 +3137,40 @@
   }
 
 
+  function getMountedSvelteComponentAnchor(session = svelteComponentSession) {
+    const el = session?.mountTargetEl?.firstElementChild || null;
+    if (!el || !document.body.contains(el)) return null;
+    return rectIsUsableAnchor(el.getBoundingClientRect()) ? el : null;
+  }
+
+  function resolveSvelteComponentAnchor(session = svelteComponentSession) {
+    return getMountedSvelteComponentAnchor(session)
+      || session?.swapAnchor
+      || null;
+  }
+
   function getVisibleVariantEl() {
     if (!currentSessionId) return null;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    if (svelteComponentSession?.sessionId === currentSessionId) {
+      return resolveSvelteComponentAnchor()
+        || svelteComponentSession.wrapperEl
+        || null;
+    }
+    const wrapper = findVariantsWrapper(currentSessionId);
     if (!wrapper) return null;
     return wrapper.querySelector('[data-impeccable-variant="' + visibleVariant + '"]');
   }
 
   function parseVariantParams(variantEl) {
+    // Svelte component variants can't carry a `data-impeccable-params` attribute:
+    // the compiler reads `{` inside attribute values as expression delimiters, so
+    // JSON-with-braces breaks the build. For that path the params live in a sidecar
+    // params.json keyed by variant number, loaded into the session at mount time.
+    if (svelteComponentSession?.sessionId === currentSessionId) {
+      const byVariant = svelteComponentSession.paramsByVariant || {};
+      const params = byVariant[String(visibleVariant)] || byVariant[visibleVariant];
+      return Array.isArray(params) ? params : [];
+    }
     if (!variantEl) return [];
     const raw = variantEl.getAttribute('data-impeccable-params');
     if (!raw) return [];
@@ -2538,16 +3186,26 @@
   function applyParamValue(variantEl, param, value) {
     if (!variantEl) return;
     const attr = 'data-p-' + param.id;
-    if (param.kind === 'range') {
-      variantEl.style.setProperty('--p-' + param.id, String(value));
-    } else if (param.kind === 'toggle') {
+    if (param.kind === 'toggle') {
       const on = !!value;
-      variantEl.style.setProperty('--p-' + param.id, on ? '1' : '0');
       if (on) variantEl.setAttribute(attr, 'on');
       else variantEl.removeAttribute(attr);
     } else if (param.kind === 'steps') {
       variantEl.setAttribute(attr, String(value));
     }
+    // Svelte component variants are client-mounted into
+    // [data-impeccable-component-mount] with no [data-impeccable-variant="N"]
+    // wrapper for the state stylesheet to target, and the element is not SSR'd,
+    // so there is no React hydration to mismatch. Drive range/toggle --p-* inline
+    // on the mounted element so scoped preview CSS resolves them.
+    if (svelteComponentSession?.sessionId === currentSessionId) {
+      if (param.kind === 'range') variantEl.style.setProperty('--p-' + param.id, String(value));
+      else if (param.kind === 'toggle') variantEl.style.setProperty('--p-' + param.id, value ? '1' : '0');
+      return;
+    }
+    // range/toggle --p-* custom properties are driven through the injected
+    // variant-state stylesheet so we never mutate inline style on SSR'd divs.
+    updateVariantStateStylesheet(currentSessionId, visibleVariant);
   }
 
   function applyParamDefaults(variantEl, params) {
@@ -2622,7 +3280,7 @@
           position: 'absolute', top: '2px',
           left: initial ? '18px' : '2px',
           width: '16px', height: '16px', borderRadius: '50%',
-          background: 'oklch(98% 0 0)',
+          background: C.ink,
           transition: 'left 0.18s ' + EASE,
           boxShadow: '0 1px 2px oklch(0% 0 0 / 0.2)',
         });
@@ -2656,7 +3314,7 @@
           const b = el('button', {
             padding: '5px 4px', border: 'none', borderRadius: '3px',
             background: active ? C.brand : 'transparent',
-            color: active ? 'oklch(98% 0 0)' : P.text,
+            color: active ? C.ink : P.text,
             fontFamily: FONT, fontSize: '10.5px', fontWeight: '500',
             cursor: 'pointer', whiteSpace: 'nowrap',
             transition: 'background 0.1s ease, color 0.1s ease',
@@ -2669,7 +3327,7 @@
             segBtns.forEach(({ btn, val }) => {
               const on = val === o.value;
               btn.style.background = on ? C.brand : 'transparent';
-              btn.style.color = on ? 'oklch(98% 0 0)' : P.text;
+              btn.style.color = on ? C.ink : P.text;
             });
             applyParamValue(variantEl, p, o.value);
             queueCheckpoint('param_changed');
@@ -2684,11 +3342,11 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Inline text editing — makes pure-text descendants of the picked element
+  //
+  // Inline text editing - makes pure-text descendants of the picked element
   // directly contenteditable. Save stages copy edits in the live buffer; the
   // Apply copy edits dock later asks the AI to apply the staged batch.
-  // ---------------------------------------------------------------------------
+  //
 
   let inlineEditRows = [];
   let inlineEditDrafts = new Map();
@@ -2802,7 +3460,7 @@
 
   function disableInlineEdit(opts = {}) {
     for (const row of inlineEditRows) {
-      if (document.activeElement === row.el) row.el.blur();
+      if (activeElementDeep() === row.el) row.el.blur();
       row.el.removeAttribute('contenteditable');
       delete row.el.dataset.impeccableEditable;
       delete row.el.dataset.impeccableOriginalText;
@@ -2848,7 +3506,7 @@
 
   function enterEditingMode() {
     if (pendingApplyInFlight) { showManualApplyBusyToast(); return; }
-    state = 'EDITING';
+    setLiveState('EDITING');
     hideBar();
     hideAnnotOverlay();
     renderEditBadge('editing');
@@ -2881,7 +3539,7 @@
   function cancelEditing() {
     restoreInlineEditDrafts();
     disableInlineEdit();
-    state = 'CONFIGURING';
+    setLiveState('CONFIGURING');
     showBar('configure');
     showAnnotOverlay(selectedElement);
     renderEditBadge('idle');
@@ -2895,10 +3553,31 @@
     hideAnnotOverlay();
     clearAnnotations();
     renderEditBadge('hidden');
-    state = 'PICKING';
+    setLiveState('PICKING');
     hoveredElement = null;
     hideHighlight();
     syncPageChatFocus('editing-outside-click');
+  }
+
+  function teardownConfigureChrome() {
+    hideConfigureBarTooltip();
+    // hideBar() restores unsaved EDITING drafts before it disables inline
+    // edit; disabling here first would wipe the draft metadata it needs.
+    hideBar();
+    stopScrollTracking();
+    hideAnnotOverlay();
+    clearAnnotations();
+    renderEditBadge('hidden');
+  }
+
+  function exitConfigureToPicking(reason, opts = {}) {
+    teardownConfigureChrome();
+    setLiveState('PICKING');
+    if (opts.clearHover) {
+      hoveredElement = null;
+      hideHighlight();
+    }
+    syncPageChatFocus(reason);
   }
 
   // Prefer the leaf's own id/class; if it has neither (e.g. a bare <em>),
@@ -3103,7 +3782,10 @@
     const container = copyEditContainerContext(contextElement);
     if (container) for (const op of ops) op.container = container;
     try {
-      const res = await fetch('http://localhost:' + PORT + '/manual-edit-stash', {
+      // Token in the query string as well as the body: the URL token is what
+      // authorizes the CORS preflight when the page runs on a non-loopback
+      // dev host (ddev, Valet), since the preflight carries no request body.
+      const res = await fetch('http://localhost:' + PORT + '/manual-edit-stash?token=' + encodeURIComponent(TOKEN), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3122,7 +3804,7 @@
       updatePendingCounter(stashResult.pendingCount || 0);
       maybeShowFirstSaveToast();
       disableInlineEdit();
-      state = 'CONFIGURING';
+      setLiveState('CONFIGURING');
       showBar('configure');
       showAnnotOverlay(selectedElement);
       renderEditBadge('idle');
@@ -3132,7 +3814,7 @@
       if (detail.includes('newText cannot contain') || detail.includes('newText cannot be empty')) {
         showToast('Save rejected: ' + detail.replace(/^manual_edits:\s*/, ''), 5500);
       } else {
-        showToast('Save failed — retry or cancel', 4000);
+        showToast('Save failed - retry or cancel', 4000);
       }
     }
   }
@@ -3180,11 +3862,11 @@
   }
 
   function ensureSpinKeyframes() {
-    if (document.getElementById(PREFIX + '-keyframes')) return;
+    if (uiGetById(PREFIX + '-keyframes')) return;
     const style = document.createElement('style');
     style.id = PREFIX + '-keyframes';
     style.textContent = '@keyframes impeccable-spin { to { transform: rotate(360deg); } }';
-    document.head.appendChild(style);
+    uiAppendStyle(style);
   }
 
   function pendingApplyLabel(count) {
@@ -3317,10 +3999,10 @@
       closeTunePopover();
     }
     if (barEl && barEl.style.display !== 'none' && state === 'CONFIGURING') {
-      const input = document.getElementById(PREFIX + '-input');
+      const input = uiGetById(PREFIX + '-input');
       const prompt = input ? input.value : '';
       updateBarContent('configure');
-      const nextInput = document.getElementById(PREFIX + '-input');
+      const nextInput = uiGetById(PREFIX + '-input');
       if (nextInput) nextInput.value = prompt;
     }
     if (editBadgeEl && editBadgeEl.style.display !== 'none') {
@@ -3454,19 +4136,19 @@
       updatePendingCounter(remaining);
       if (result.failed && result.failed.length > 0) {
         console.warn('[impeccable] some copy edits failed:', result.failed);
-        showToast('Applied ' + (result.applied?.length || 0) + ', ' + result.failed.length + ' failed — see console', 5000);
+        showToast('Applied ' + (result.applied?.length || 0) + ', ' + result.failed.length + ' failed - see console', 5000);
       } else {
         const n = Array.isArray(result.applied) ? result.applied.length : (result.cleared || 0);
         if (n > 0) {
           showToast('Applied ' + n + ' edit' + (n === 1 ? '' : 's'), 2500);
         } else {
           console.warn('[impeccable] apply returned no verified edits:', result);
-          showToast('No edits applied — see console', 4000);
+          showToast('No edits applied - see console', 4000);
         }
       }
     } catch (err) {
       console.error('[impeccable] commit failed:', err);
-      showToast('Apply failed — see console', 4000);
+      showToast('Apply failed - see console', 4000);
     } finally {
       if (waitForSseCompletion) return;
       const remainingCount = parseInt(pendingPillEl?.dataset.count || '0', 10) || 0;
@@ -3496,7 +4178,7 @@
       }
     } catch (err) {
       console.error('[impeccable] discard failed:', err);
-      showToast('Discard failed — see console', 4000);
+      showToast('Discard failed - see console', 4000);
     }
   }
 
@@ -3644,7 +4326,7 @@
         const failedCount = numberOrNull(msg.failedCount) || 0;
         const appliedCount = numberOrNull(msg.appliedCount) || numberOrNull(msg.cleared) || 0;
         if (failedCount > 0) {
-          showToast('Applied ' + appliedCount + ', ' + failedCount + ' failed — see console', 5000);
+          showToast('Applied ' + appliedCount + ', ' + failedCount + ' failed - see console', 5000);
         } else if (appliedCount > 0) {
           showToast('Applied ' + appliedCount + ' edit' + (appliedCount === 1 ? '' : 's'), 2500);
         }
@@ -3798,9 +4480,170 @@
     return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
   }
 
-  // ---------------------------------------------------------------------------
-  // Edit content badge — floating button at element top-right to enter EDITING mode
-  // ---------------------------------------------------------------------------
+  //
+  // Edit content badge - floating button at element top-right to enter EDITING mode
+  //
+
+  const EDIT_COPY_LABEL = 'Edit copy';
+  const EDIT_COPY_ICON =
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>' +
+    '</svg>';
+
+  function usesShadowChromeRoot() {
+    const root = liveUiRoot();
+    return root && root !== document.body && root.host && root.host.id === PREFIX + '-root';
+  }
+
+  function setImportantStyle(el, name, value) {
+    el.style.setProperty(name, value, 'important');
+  }
+
+  function initEditBadgeHitProxies() {
+    if (!usesShadowChromeRoot() || editBadgeProxyRoot) return;
+    editBadgeProxyRoot = document.createElement('div');
+    editBadgeProxyRoot.id = PREFIX + '-edit-badge-hit-proxies';
+    editBadgeProxyRoot.setAttribute('aria-hidden', 'true');
+    const styles = {
+      all: 'initial',
+      position: 'fixed',
+      inset: '0',
+      width: '100vw',
+      height: '100vh',
+      zIndex: String(Z.toast + 1),
+      pointerEvents: 'none',
+      background: 'transparent',
+      overflow: 'visible',
+    };
+    for (const [name, value] of Object.entries(styles)) {
+      setImportantStyle(editBadgeProxyRoot, name.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()), value);
+    }
+    document.body.appendChild(editBadgeProxyRoot);
+  }
+
+  function styleEditBadgeProxy(proxy, target) {
+    const rect = target.getBoundingClientRect();
+    const cursor = getComputedStyle(target).cursor || 'pointer';
+    const styles = {
+      all: 'initial',
+      position: 'fixed',
+      left: rect.left + 'px',
+      top: rect.top + 'px',
+      width: rect.width + 'px',
+      height: rect.height + 'px',
+      margin: '0',
+      padding: '0',
+      border: '0',
+      borderRadius: '0',
+      background: 'transparent',
+      color: 'transparent',
+      opacity: '0.001',
+      pointerEvents: 'auto',
+      cursor,
+      zIndex: String(Z.toast + 2),
+    };
+    for (const [name, value] of Object.entries(styles)) {
+      setImportantStyle(proxy, name.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()), value);
+    }
+  }
+
+  function proxyMouseEvent(type, source, target) {
+    let event;
+    try {
+      event = new MouseEvent(type, {
+        bubbles: type !== 'mouseenter' && type !== 'mouseleave',
+        cancelable: true,
+        composed: true,
+        clientX: source.clientX,
+        clientY: source.clientY,
+        screenX: source.screenX,
+        screenY: source.screenY,
+        button: source.button || 0,
+        buttons: source.buttons || 0,
+        ctrlKey: source.ctrlKey,
+        metaKey: source.metaKey,
+        shiftKey: source.shiftKey,
+        altKey: source.altKey,
+      });
+      target.dispatchEvent(event);
+    } catch {}
+  }
+
+  function bindEditBadgeProxy(proxy, target) {
+    const stop = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    proxy.addEventListener('mouseenter', (event) => {
+      stop(event);
+      proxyMouseEvent('mouseenter', event, target);
+      proxyMouseEvent('mouseover', event, target);
+    });
+    proxy.addEventListener('mouseleave', (event) => {
+      stop(event);
+      proxyMouseEvent('mouseleave', event, target);
+      proxyMouseEvent('mouseout', event, target);
+    });
+    proxy.addEventListener('mousedown', (event) => {
+      stop(event);
+      target.focus?.({ preventScroll: true });
+      proxyMouseEvent('mousedown', event, target);
+    });
+    proxy.addEventListener('mouseup', (event) => {
+      stop(event);
+      proxyMouseEvent('mouseup', event, target);
+    });
+    proxy.addEventListener('click', (event) => {
+      stop(event);
+      target.click();
+      syncEditBadgeHitProxies();
+    });
+  }
+
+  function editBadgeProxyTargets() {
+    if (!usesShadowChromeRoot() || !editBadgeEl || editBadgeEl.style.display === 'none') return [];
+    return [...editBadgeEl.querySelectorAll('button')].filter((target) => {
+      if (target.disabled) return false;
+      const rect = target.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return false;
+      const style = getComputedStyle(target);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    });
+  }
+
+  function syncEditBadgeHitProxies() {
+    if (!usesShadowChromeRoot()) {
+      if (editBadgeProxyRoot) editBadgeProxyRoot.remove();
+      editBadgeProxyRoot = null;
+      editBadgeProxyByTarget = new Map();
+      return;
+    }
+    initEditBadgeHitProxies();
+    if (!editBadgeProxyRoot) return;
+    const targets = editBadgeProxyTargets();
+    const active = new Set(targets);
+    for (const [target, proxy] of editBadgeProxyByTarget) {
+      if (!active.has(target) || !target.isConnected) {
+        proxy.remove();
+        editBadgeProxyByTarget.delete(target);
+      }
+    }
+    for (const target of targets) {
+      let proxy = editBadgeProxyByTarget.get(target);
+      if (!proxy) {
+        proxy = document.createElement('button');
+        proxy.type = 'button';
+        proxy.tabIndex = -1;
+        proxy.dataset.impeccableEditBadgeProxy = 'true';
+        proxy.setAttribute('aria-hidden', 'true');
+        bindEditBadgeProxy(proxy, target);
+        editBadgeProxyRoot.appendChild(proxy);
+        editBadgeProxyByTarget.set(target, proxy);
+      }
+      proxy.title = target.title || target.getAttribute('aria-label') || target.textContent || EDIT_COPY_LABEL;
+      styleEditBadgeProxy(proxy, target);
+    }
+  }
 
   function initEditBadge() {
     editBadgeEl = document.createElement('div');
@@ -3812,10 +4655,11 @@
       display: 'none',
       userSelect: 'none',
     });
-    document.body.appendChild(editBadgeEl);
+    uiAppend(editBadgeEl);
+    initEditBadgeHitProxies();
 
     // Remove focus rings on edit badge buttons + contenteditable elements
-    if (!document.getElementById(PREFIX + '-edit-badge-focus-style')) {
+    if (!uiGetById(PREFIX + '-edit-badge-focus-style')) {
       const s = document.createElement('style');
       s.id = PREFIX + '-edit-badge-focus-style';
       s.textContent =
@@ -3825,21 +4669,29 @@
         '[data-impeccable-editable="true"] { outline: none !important; box-shadow: none !important; }' +
         '[data-impeccable-editable="true"]:focus { outline: none !important; box-shadow: none !important; }' +
         '[data-impeccable-editable="true"]:focus-visible { outline: none !important; box-shadow: none !important; }';
-      document.head.appendChild(s);
+      uiAppendStyle(s);
     }
   }
 
   function positionEditBadge() {
-    if (!selectedElement || !editBadgeEl || editBadgeEl.style.display === 'none') return;
+    if (!selectedElement || !editBadgeEl || editBadgeEl.style.display === 'none') {
+      syncEditBadgeHitProxies();
+      return;
+    }
     const r = selectedElement.getBoundingClientRect();
     const bw = editBadgeEl.offsetWidth;
+    // Match showHighlight's 2px outset so the badge right edge lines up with the outline.
+    const outlineRight = r.right + 2;
     editBadgeEl.style.top = Math.max(4, r.top - 28) + 'px';
-    editBadgeEl.style.left = Math.min(window.innerWidth - bw - 4, r.right - bw) + 'px';
+    editBadgeEl.style.left = Math.min(window.innerWidth - bw - 4, outlineRight - bw) + 'px';
+    syncEditBadgeHitProxies();
   }
 
   function renderEditBadge(mode) {
     if (mode === 'hidden' || !editBadgeEl) {
+      hideConfigureBarTooltip();
       if (editBadgeEl) editBadgeEl.style.display = 'none';
+      syncEditBadgeHitProxies();
       return;
     }
     editBadgeEl.style.display = 'flex';
@@ -3853,14 +4705,19 @@
     const HAIRLINE = P.hairline;
     const calloutStyle = (color, borderColor) => ({
       fontFamily: FONT,
-      fontSize: '0.625rem',
+      fontSize: '10px',
       fontWeight: '600',
+      lineHeight: '16px',
       letterSpacing: '0.06em',
       color: color,
       background: SURFACE,
       padding: '2px 8px',
       border: '1px solid ' + (borderColor || color),
       borderRadius: '6px',
+      boxSizing: 'border-box',
+      minHeight: '22px',
+      margin: '0',
+      appearance: 'none',
       whiteSpace: 'nowrap',
       boxShadow: '0 4px 16px oklch(0% 0 0 / 0.16), 0 1px 3px oklch(0% 0 0 / 0.08)',
       cursor: 'pointer',
@@ -3870,21 +4727,41 @@
       const disabled = mode === 'idle-disabled';
       editBadgeEl.innerHTML = '';
       const btn = document.createElement('button');
-      btn.textContent = 'Edit copy';
-      Object.assign(btn.style, calloutStyle(disabled ? MUTED : ACCENT, disabled ? HAIRLINE : ACCENT));
+      btn.type = 'button';
+      btn.innerHTML = EDIT_COPY_ICON;
+      btn.setAttribute('aria-label', EDIT_COPY_LABEL);
+      Object.assign(btn.style, calloutStyle(
+        disabled ? MUTED : PRIMARY_TEXT,
+        disabled ? HAIRLINE : ACCENT,
+      ));
+      Object.assign(btn.style, {
+        padding: '4px',
+        minWidth: '22px',
+        width: '22px',
+        height: '22px',
+        minHeight: '22px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        lineHeight: '0',
+        letterSpacing: '0',
+        background: disabled ? SURFACE : ACCENT,
+      });
       if (disabled) {
         btn.style.cursor = 'not-allowed';
         btn.style.opacity = '0.55';
         btn.disabled = true;
-        btn.title = 'Edit copy is disabled while the current copy edit is applying';
+        const disabledTip = EDIT_COPY_LABEL + ' is disabled while the current copy edit is applying';
+        btn.addEventListener('mouseenter', () => showConfigureBarTooltip(btn, disabledTip));
+        btn.addEventListener('mouseleave', hideConfigureBarTooltip);
       } else {
-        btn.addEventListener('mouseenter', () => { btn.style.background = ACCENT; btn.style.color = PRIMARY_TEXT; });
-        btn.addEventListener('mouseleave', () => { btn.style.background = SURFACE; btn.style.color = ACCENT; });
+        btn.addEventListener('mouseenter', () => showConfigureBarTooltip(btn, EDIT_COPY_LABEL));
+        btn.addEventListener('mouseleave', hideConfigureBarTooltip);
         btn.onclick = enterEditingMode;
       }
       editBadgeEl.appendChild(btn);
     } else {
-      // 'editing' — show Cancel + Save separated
+      // 'editing' - show Cancel + Save separated
       editBadgeEl.innerHTML = '';
       editBadgeEl.style.gap = '8px';
       const cancel = document.createElement('button');
@@ -3895,9 +4772,8 @@
       cancel.onclick = cancelEditing;
       const save = document.createElement('button');
       save.textContent = 'Save';
-      Object.assign(save.style, calloutStyle(ACCENT));
-      save.addEventListener('mouseenter', () => { save.style.background = ACCENT; save.style.color = PRIMARY_TEXT; });
-      save.addEventListener('mouseleave', () => { save.style.background = SURFACE; save.style.color = ACCENT; });
+      Object.assign(save.style, calloutStyle(PRIMARY_TEXT, ACCENT));
+      save.style.background = ACCENT;
       save.onclick = applyEditing;
       editBadgeEl.append(cancel, save);
     }
@@ -4002,6 +4878,7 @@
       paramsCurrentValues = {};
       tuneOpen = false;
       hideParamsPanel();
+      if (currentSessionId && visibleVariant) updateVariantStateStylesheet(currentSessionId, visibleVariant);
       return;
     }
     applyParamDefaults(variantEl, params);
@@ -4015,6 +4892,39 @@
       else showParamsPanel();
     } else {
       hideParamsPanel();
+    }
+  }
+
+  function mountedParameterCount() {
+    if (svelteComponentSession?.sessionId === currentSessionId) {
+      return Object.values(svelteComponentSession.paramsByVariant || {})
+        .reduce((total, params) => total + (Array.isArray(params) ? params.length : 0), 0);
+    }
+    const wrapper = findVariantsWrapper(currentSessionId);
+    if (!wrapper) return 0;
+    return [...wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])')]
+      .reduce((total, variant) => total + parseVariantParams(variant).length, 0);
+  }
+
+  function completeParameterPublication() {
+    if (!currentSessionId) return;
+    const ready = mountedParameterCount() > 0;
+    parameterGenerationState = ready ? 'ready' : 'none';
+    if (ready && parameterReadyAnnouncedSession !== currentSessionId) {
+      parameterReadyAnnouncedSession = currentSessionId;
+      showToast('Tune controls are ready.', 3000);
+    }
+    if (state === 'CYCLING') {
+      refreshParamsPanel();
+      showOrUpdateCyclingBar();
+    }
+    saveSession();
+  }
+
+  function completeParameterGenerationIfReady() {
+    if (expectedVariants <= 0 || arrivedVariants < expectedVariants) return;
+    if (parameterGenerationState === 'pending' || parameterGenerationState === 'loading') {
+      completeParameterPublication();
     }
   }
 
@@ -4041,7 +4951,7 @@
       barEl.style.boxShadow = direction === 'below' ? BAR_SHADOW_UP : BAR_SHADOW_DOWN;
     }
     // Re-render the bar so the Tune chip picks up the active styling.
-    updateBarContent('cycling');
+    showOrUpdateCyclingBar();
   }
 
   function closeTunePopover() {
@@ -4049,60 +4959,1448 @@
     hideParamsPanel();
     if (barEl) barEl.style.boxShadow = BAR_SHADOW_DEFAULT;
     if (barEl && barEl.style.display !== 'none' && state === 'CYCLING') {
-      updateBarContent('cycling');
+      showOrUpdateCyclingBar();
     }
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Variant cycling in DOM
-  // ---------------------------------------------------------------------------
+  //
 
   function isVariantShown(el) {
     if (!el) return false;
-    if (el.hidden) return false;
-    if (el.style?.display === 'none') return false;
-    return true;
+    return getComputedStyle(el).display !== 'none';
   }
 
-  function setVariantShown(el, shown) {
-    if (!el) return;
-    if (shown) {
-      el.removeAttribute('hidden');
-      el.style.display = '';
-    } else {
-      el.setAttribute('hidden', '');
-      el.style.display = 'none';
-    }
+  function scheduleCyclingBarSync(sessionId, variantNum) {
+    requestAnimationFrame(() => {
+      if (state !== 'CYCLING') return;
+      if (currentSessionId !== sessionId) return;
+      if (visibleVariant !== variantNum) return;
+      showOrUpdateCyclingBar();
+      syncCyclingControls();
+      positionBar();
+    });
   }
 
-  function showVariantInDOM(sessionId, num) {
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
-    if (!wrapper) return;
-    for (const child of wrapper.children) {
-      const v = child.dataset ? child.dataset.impeccableVariant : null;
-      if (!v) continue;
-      setVariantShown(child, v === String(num));
+  function syncCyclingControls() {
+    const shown = cyclingShownVariant();
+    const counter = uiGetById(PREFIX + '-variant-counter');
+    if (counter) counter.textContent = cyclingCounterText();
+    const prev = uiGetById(PREFIX + '-variant-prev');
+    const next = uiGetById(PREFIX + '-variant-next');
+    if (prev) prev.style.opacity = shown <= 1 ? '0.3' : '1';
+    if (next) next.style.opacity = shown >= arrivedVariants ? '0.3' : '1';
+    if (currentSessionId && state === 'CYCLING') saveSession();
+  }
+
+  async function showVariantInDOM(sessionId, num) {
+    if (svelteComponentSession?.sessionId === sessionId) {
+      visibleVariant = num;
+      const mounted = await mountSvelteComponentVariant(num);
+      if (!mounted) return false;
+      updateSelectedElement();
+      refreshParamsPanel();
+      scheduleCyclingBarSync(sessionId, num);
+      return true;
     }
-    // Unconditional refresh — covers first-reveal (no-op if state isn't
+    const wrapper = findVariantsWrapper(sessionId);
+    if (!wrapper) return false;
+    updateVariantStateStylesheet(sessionId, num);
+    // Unconditional refresh - covers first-reveal (no-op if state isn't
     // CYCLING yet, the subsequent CYCLING transition triggers its own
     // refresh) and every cycle step.
     refreshParamsPanel();
+    return true;
+  }
+
+  function isSvelteComponentManifestPath(filePath) {
+    return String(filePath || '').endsWith('manifest.json');
+  }
+
+  function isFrameworkComponentPreviewMode(mode) {
+    return mode === 'svelte-component';
+  }
+
+  function parseOriginalMarkupElement(originalMarkup) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString('<div id="impeccable-anchor">' + originalMarkup + '</div>', 'text/html');
+    return doc.getElementById('impeccable-anchor')?.firstElementChild || null;
+  }
+
+  function normalizeElementClassName(el) {
+    if (!el) return '';
+    const raw = el.getAttribute?.('class');
+    if (typeof raw === 'string') return raw.trim();
+    if (el.className != null) {
+      const cls = el.className;
+      if (typeof cls === 'string') return cls.trim();
+      if (typeof cls.baseVal === 'string') return cls.baseVal.trim();
+    }
+    return '';
+  }
+
+  function buildPickedAnchorSnapshot(el) {
+    if (!el || el.nodeType !== 1) return null;
+    return {
+      tag: el.tagName,
+      id: el.id || '',
+      classes: [...el.classList],
+      text: (el.textContent || '').trim().slice(0, 120),
+    };
+  }
+
+  function isUsableInjectionAnchor(el) {
+    return !!el
+      && el.parentElement
+      && document.body.contains(el)
+      && !own(el)
+      && !el.closest?.('[data-impeccable-variants],[data-impeccable-carbonize]');
+  }
+
+  function elementMatchesOriginalMarkup(liveEl, origContent) {
+    if (!isUsableInjectionAnchor(liveEl) || !origContent) return false;
+    // A matching id is decisive on its own: ids are unique, while the source
+    // tag and class names may not survive the build (component tags, hashed
+    // CSS-module class names).
+    if (origContent.id) return liveEl.id === origContent.id;
+    if (liveEl.tagName !== origContent.tagName) return false;
+
+    const origClasses = normalizeElementClassName(origContent).split(/\s+/).filter(Boolean)
+      .filter((name) => /^[A-Za-z_-][\w-]*$/.test(name));
+    if (origClasses.length > 0 && !origClasses.every((name) => liveEl.classList.contains(name))) return false;
+
+    const origText = (origContent.textContent || '').trim();
+    if (origClasses.length === 0 && origText.length >= 4) {
+      const liveText = (liveEl.textContent || '').trim();
+      const needle = origText.slice(0, Math.min(40, origText.length));
+      if (!liveText.includes(needle) && !(liveText.length >= 4 && origText.includes(liveText.slice(0, 40)))) return false;
+    }
+    return true;
+  }
+
+  function findLiveElementFromAnchorSnapshot(snapshot) {
+    if (!snapshot) return null;
+    const tag = String(snapshot.tag || '').toLowerCase();
+    if (!tag) return null;
+    if (snapshot.id) {
+      const byId = document.getElementById(snapshot.id);
+      if (isUsableInjectionAnchor(byId)) return byId;
+    }
+    const classes = (snapshot.classes || []).filter((name) => /^[A-Za-z_-][\w-]*$/.test(name));
+    const needle = (snapshot.text || '').trim();
+    const candidates = [...document.getElementsByTagName(tag)];
+    for (const c of candidates) {
+      if (!isUsableInjectionAnchor(c)) continue;
+      if (classes.length > 0 && !classes.every((name) => c.classList.contains(name))) continue;
+      if (!snapshot.id && classes.length === 0 && needle.length >= 4) {
+        const text = (c.textContent || '').trim();
+        if (!text.includes(needle.slice(0, 40)) && !(text.length >= 4 && needle.includes(text.slice(0, 40)))) continue;
+      }
+      return c;
+    }
+    return null;
+  }
+
+  function findLiveElementForOriginalMarkup(originalMarkup) {
+    const origContent = parseOriginalMarkupElement(originalMarkup);
+    if (!origContent) return null;
+
+    const tag = origContent.tagName.toLowerCase();
+    const cls = normalizeElementClassName(origContent);
+    const candidates = [...document.getElementsByTagName(tag)];
+
+    if (origContent.id) {
+      const byId = document.getElementById(origContent.id);
+      if (elementMatchesOriginalMarkup(byId, origContent)) return byId;
+    }
+
+    if (cls) {
+      const expectedClasses = cls.split(/\s+/).filter((name) => /^[A-Za-z_-][\w-]*$/.test(name));
+      if (expectedClasses.length > 0) {
+        for (const c of candidates) {
+          if (!isUsableInjectionAnchor(c)) continue;
+          if (expectedClasses.every((name) => c.classList.contains(name))) return c;
+        }
+      }
+    }
+
+    const origText = (origContent.textContent || '').trim();
+    if (origText.length >= 4) {
+      const needle = origText.slice(0, 40);
+      let best = null;
+      let bestLen = Infinity;
+      for (const c of candidates) {
+        if (!isUsableInjectionAnchor(c)) continue;
+        const text = (c.textContent || '').trim();
+        if (!text.includes(needle) && !(text.length >= 4 && origText.includes(text.slice(0, 40)))) continue;
+        if (text.length < bestLen) { best = c; bestLen = text.length; }
+      }
+      if (best) return best;
+    }
+
+    return null;
+  }
+
+  function resolveLiveInjectionAnchor(originalMarkup) {
+    const origContent = parseOriginalMarkupElement(originalMarkup);
+    if (!origContent) return null;
+
+    const attempts = [
+      selectedElement,
+      findLiveElementFromAnchorSnapshot(pickedAnchorSnapshot),
+      findLiveElementForOriginalMarkup(originalMarkup),
+    ];
+    for (const candidate of attempts) {
+      if (elementMatchesOriginalMarkup(candidate, origContent)) return candidate;
+    }
+
+    if (isUsableInjectionAnchor(selectedElement) && selectedElement.tagName === origContent.tagName) {
+      const origClasses = normalizeElementClassName(origContent).split(/\s+/).filter(Boolean);
+      if (origContent.id && selectedElement.id === origContent.id) return selectedElement;
+      if (origClasses.length === 0) return selectedElement;
+      const overlap = origClasses.filter((name) => selectedElement.classList.contains(name));
+      if (overlap.length >= 1) return selectedElement;
+    }
+
+    return null;
+  }
+
+  function isSvelteInsertManifest(manifest) {
+    return manifest?.previewMode === 'svelte-component' && manifest?.mode === 'insert';
+  }
+
+  function findLiveElementForSvelteManifest(manifest) {
+    if (isSvelteInsertManifest(manifest)) {
+      const anchor = findInsertAnchorInDom();
+      if (anchor?.parentElement) return anchor;
+    }
+    return resolveLiveInjectionAnchor(manifest?.originalMarkup || manifest?.anchorMarkup || '');
+  }
+
+  function waitForVariantAnchorAndRetry({ filePath, sessionId, srcWrapper, checkpointReason }) {
+    if (pendingVariantAnchorRetryObserver) pendingVariantAnchorRetryObserver.disconnect();
+    const origContent = srcWrapper?.querySelector('[data-impeccable-variant="original"] > :first-child');
+    if (!origContent) return;
+    const originalMarkup = origContent.outerHTML;
+
+    pendingVariantAnchorRetryObserver = new MutationObserver(() => {
+      // Retry once either the anchor element or the session wrapper shows up.
+      // A wrapper can land incomplete ("wrap HMR landed, variant insert did
+      // not"); injectVariantsFromSource owns both cases - it replaces an
+      // existing wrapper from source and clears recoveryWaitingForAnchor.
+      const wrapperLanded = !!document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      if (!wrapperLanded) {
+        const liveEl = resolveLiveInjectionAnchor(originalMarkup);
+        if (!liveEl?.parentElement) return;
+      }
+      pendingVariantAnchorRetryObserver.disconnect();
+      pendingVariantAnchorRetryObserver = null;
+      injectVariantsFromSource(filePath, sessionId);
+    });
+    pendingVariantAnchorRetryObserver.observe(document.body, { childList: true, subtree: true });
+    if (checkpointReason) queueCheckpoint(checkpointReason);
+  }
+
+  function enterRecoveryWaitingForAnchor({ filePath, sessionId, srcWrapper, checkpointReason, trackScroll }) {
+    recoveryWaitingForAnchor = true;
+    selectedElement = document.body;
+    setLiveState('GENERATING');
+    showBar('generating');
+    if (trackScroll !== false) startScrollTracking();
+    saveSession();
+    if (srcWrapper && filePath && sessionId) {
+      waitForVariantAnchorAndRetry({ filePath, sessionId, srcWrapper, checkpointReason });
+    } else if (checkpointReason) {
+      queueCheckpoint(checkpointReason);
+    }
+  }
+
+  // The dev server may serve under a non-root base (vite `base`) or a root
+  // that differs from where the helper wrote the preview tree. Root-relative
+  // URLs are tried against the detected base first; the /@fs/ absolute form
+  // is the fallback that works regardless of base and root, as long as the
+  // path is inside the server's fs.allow.
+  let detectedDevBase = null;
+  function detectDevServerBase() {
+    if (detectedDevBase !== null) return detectedDevBase;
+    detectedDevBase = '/';
+    const scripts = document.querySelectorAll('script[type="module"][src]');
+    for (const script of scripts) {
+      const src = script.getAttribute('src') || '';
+      const idx = src.indexOf('/@vite/client');
+      if (idx > 0) { detectedDevBase = src.slice(0, idx) + '/'; break; }
+      if (idx === 0) { detectedDevBase = '/'; break; }
+    }
+    return detectedDevBase;
+  }
+
+  function componentModuleCandidates(manifest, modulePath, absPath) {
+    const base = detectDevServerBase();
+    const rel = String(modulePath || '').replace(/^\/+/, '');
+    const candidates = [new URL(base + rel, location.origin).href];
+    if (base !== '/') candidates.push(new URL('/' + rel, location.origin).href);
+    if (absPath) {
+      const fsRel = '@fs/' + String(absPath).replace(/^\/+/, '');
+      candidates.push(new URL(base + fsRel, location.origin).href);
+      // Vite versions differ on whether @fs is served under base or at the
+      // server root; with a non-root base, try both.
+      if (base !== '/') candidates.push(new URL('/' + fsRel, location.origin).href);
+    }
+    return candidates;
+  }
+
+  async function importFirstReachable(candidates, bust) {
+    let lastErr = null;
+    for (const candidate of candidates) {
+      try {
+        const url = bust ? candidate + (candidate.includes('?') ? '&' : '?') + 't=' + Date.now() : candidate;
+        const mod = await import(/* @vite-ignore */ url);
+        return { mod, url: candidate };
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw Object.assign(lastErr || new Error('no module candidates'), {
+      impeccableTriedUrls: candidates,
+    });
+  }
+
+  // Distinguishes "this variant is broken" from "the preview tree is not
+  // reachable from the dev server at all" (wrong root, unserved directory).
+  async function probePreviewTree(manifest) {
+    if (!manifest?.probeModule) return { ok: true, skipped: true };
+    const candidates = componentModuleCandidates(manifest, manifest.probeModule, manifest.probeModuleAbs);
+    try {
+      await importFirstReachable(candidates, false);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, tried: err.impeccableTriedUrls || candidates };
+    }
+  }
+
+  function loadSvelteRuntime(runtimeModule, manifest) {
+    const modulePath = runtimeModule || '/src/lib/impeccable/__runtime.js';
+    if (!svelteRuntimePromise) {
+      const candidates = componentModuleCandidates(manifest, modulePath, manifest?.runtimeModuleAbs);
+      svelteRuntimePromise = importFirstReachable(candidates, false).then((r) => r.mod);
+    }
+    return svelteRuntimePromise;
+  }
+
+  // Svelte component variants declare their params in a sidecar params.json under
+  // componentDir (keyed by variant number), because a `data-impeccable-params`
+  // attribute with JSON braces can't survive the Svelte compiler. Returns a map of
+  // { "1": [...params], "2": [...] }; an empty object when the agent declared none.
+  async function loadSvelteComponentParams(manifest) {
+    const dir = String(manifest?.revisionDir || manifest?.componentDir || '').replace(/^\/+/, '');
+    if (!dir) return {};
+    const paramsPath = dir + '/params.json';
+    const url = 'http://localhost:' + PORT + '/source?token=' + TOKEN + '&path=' + encodeURIComponent(paramsPath);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return {};
+      const parsed = JSON.parse(await res.text());
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const out = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        if (Array.isArray(value)) out[String(key)] = value;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+
+
+  // NOTE: the compiled component imported from the dev server already carries
+  // its own scoped styles (vite-plugin-svelte injects them on module
+  // evaluation). The old second injection re-fetched the raw source through
+  // the helper and re-prefixed every selector un-hashed, so the same rules
+  // applied twice with different specificity: preview and accepted cascades
+  // disagreed. The single compiled copy is the truth now.
+
+  function removeSvelteComponentVariantStyle(session = svelteComponentSession) {
+    const style = session?.styleEl;
+    if (style?.parentNode) style.parentNode.removeChild(style);
+    if (session) session.styleEl = null;
+  }
+
+
+  function scopeCssBlock(css, prefix) {
+    let out = '';
+    let i = 0;
+    while (i < css.length) {
+      const open = css.indexOf('{', i);
+      if (open === -1) {
+        out += css.slice(i);
+        break;
+      }
+      const semi = css.indexOf(';', i);
+      if (semi !== -1 && semi < open) {
+        out += css.slice(i, semi + 1);
+        i = semi + 1;
+        continue;
+      }
+      const prelude = css.slice(i, open).trim();
+      const close = findMatchingCssBrace(css, open);
+      if (close === -1) {
+        out += css.slice(i);
+        break;
+      }
+      const body = css.slice(open + 1, close);
+      if (shouldScopeNestedCssAtRule(prelude)) {
+        out += prelude + ' {\n' + scopeCssBlock(body, prefix) + '\n}';
+      } else if (prelude.startsWith('@')) {
+        out += prelude + ' {' + body + '}';
+      } else {
+        out += prefixCssSelectors(prelude, prefix) + ' {' + body + '}';
+      }
+      i = close + 1;
+    }
+    return out;
+  }
+
+  function shouldScopeNestedCssAtRule(prelude) {
+    return /^@(media|supports|container|layer)\b/i.test(prelude || '');
+  }
+
+  function findMatchingCssBrace(css, openIndex) {
+    let depth = 0;
+    let quote = '';
+    for (let i = openIndex; i < css.length; i++) {
+      const ch = css[i];
+      const prev = css[i - 1];
+      if (quote) {
+        if (ch === quote && prev !== '\\') quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '{') {
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  function prefixCssSelectors(prelude, prefix) {
+    return splitCssSelectorList(prelude)
+      .map((selector) => {
+        const s = unwrapSvelteGlobalSelector(selector.trim());
+        if (!s) return '';
+        if (s.startsWith(prefix.trim())) return s;
+        if (s.startsWith(':host')) return s.replace(/^:host\b/, prefix.trim());
+        return prefix + s;
+      })
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  function splitCssSelectorList(selectorList) {
+    const selectors = [];
+    let start = 0;
+    let depth = 0;
+    let quote = '';
+    for (let i = 0; i < selectorList.length; i++) {
+      const ch = selectorList[i];
+      const prev = selectorList[i - 1];
+      if (quote) {
+        if (ch === quote && prev !== '\\') quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '(' || ch === '[') {
+        depth++;
+      } else if ((ch === ')' || ch === ']') && depth > 0) {
+        depth--;
+      } else if (ch === ',' && depth === 0) {
+        selectors.push(selectorList.slice(start, i));
+        start = i + 1;
+      }
+    }
+    selectors.push(selectorList.slice(start));
+    return selectors;
+  }
+
+  function unwrapSvelteGlobalSelector(selector) {
+    return selector.replace(/:global\(([^()]*)\)/g, '$1');
+  }
+
+  function buildSveltePropValuesFromLiveElement(liveEl, manifest) {
+    const contract = manifest?.propContract || [];
+    const values = {};
+    if (!liveEl || contract.length === 0) return values;
+    if (Number(manifest.contractVersion) === 2) {
+      return buildSveltePropValuesV2(liveEl, manifest);
+    }
+    const sourceOriginal = parseOriginalMarkupElement(manifest.originalMarkup || '');
+    if (!sourceOriginal) return values;
+    const map = buildSvelteExpressionTextMap(sourceOriginal, liveEl);
+    for (const entry of contract) {
+      const token = entry.previewToken || ('{' + entry.expr + '}');
+      values[entry.prop] = map.get(token) || '';
+    }
+    return values;
+  }
+
+  // Contract v2 hydration. The scaffolder preserved control flow, so props
+  // come in kinds: `collection` hydrates from the live DOM's rendered items
+  // (count by the item root selector, texts by slot order), `condition` from
+  // whether the branch's probe element is currently rendered, `text` from the
+  // v1 index-zip run over the markup WITH control-flow regions stripped and
+  // the live tree WITH item elements excluded, so loop tokens can never shift
+  // slots again. `handler` props keep their no-op defaults.
+  function buildSveltePropValuesV2(liveEl, manifest) {
+    const contract = manifest.propContract || [];
+    const values = {};
+    const itemElsByProp = new Map();
+
+    for (const entry of contract) {
+      if (entry.kind === 'collection' && entry.item && entry.item.rootTag) {
+        const selector = entry.item.rootTag + (entry.item.rootClasses || []).map((c) => '.' + cssEscapeIdent(c)).join('');
+        let matches = [];
+        try { matches = Array.from(liveEl.querySelectorAll(selector)); } catch { matches = []; }
+        itemElsByProp.set(entry.prop, matches);
+        const statics = new Set((entry.item.staticTexts || []).map((t) => String(t).trim()));
+        const slots = entry.item.textSlots || [];
+        values[entry.prop] = matches.map((itemEl, index) => {
+          const texts = collectVisibleTexts(itemEl).filter((t) => !statics.has(t));
+          const item = {};
+          slots.forEach((slot, i) => { item[slot.key] = texts[i] != null ? texts[i] : ''; });
+          // Attribute-bound values (href={link.href}) hydrate from the
+          // rendered attribute on the live item element or a descendant.
+          for (const slot of entry.item.attrSlots || []) {
+            if (item[slot.key] != null || !slot.tag) continue;
+            const sel = slot.tag + (slot.classes || []).map((c) => '.' + cssEscapeIdent(c)).join('');
+            let el = null;
+            try { el = itemEl.matches(sel) ? itemEl : itemEl.querySelector(sel); } catch { el = null; }
+            const value = el ? el.getAttribute(slot.attr) : null;
+            if (value != null) item[slot.key] = value;
+          }
+          // Keyed each: the key field is never rendered, so hydrate it with a
+          // unique per-index value or Svelte throws each_key_duplicate.
+          if (entry.item.keyField && item[entry.item.keyField] == null) {
+            item[entry.item.keyField] = 'impeccable-live-' + index;
+          }
+          return item;
+        });
+      } else if (entry.kind === 'condition') {
+        if (entry.probe && entry.probe.tag) {
+          const selector = entry.probe.tag + (entry.probe.classes || []).map((c) => '.' + cssEscapeIdent(c)).join('');
+          try { values[entry.prop] = !!liveEl.querySelector(selector); } catch { /* keep default */ }
+        } else if (entry.probe && entry.probe.className) {
+          // class:name directive: the live DOM answers directly, either on
+          // the picked element itself or on a descendant carrying the class.
+          try {
+            values[entry.prop] = liveEl.classList.contains(entry.probe.className)
+              || !!liveEl.querySelector('.' + cssEscapeIdent(entry.probe.className));
+          } catch { /* keep default */ }
+        }
+      }
+    }
+
+    // Text props outside control flow: strip block regions from the source
+    // markup, exclude live text nodes inside any hydrated item element, then
+    // run the existing zip.
+    const textEntries = contract.filter((e) => e.kind === 'text' || e.kind === 'raw');
+    if (textEntries.length > 0) {
+      const strippedMarkup = stripSvelteBlockRegions(manifest.originalMarkup || '');
+      const sourceOriginal = parseOriginalMarkupElement(strippedMarkup);
+      if (sourceOriginal) {
+        const excluded = [];
+        for (const els of itemElsByProp.values()) excluded.push(...els);
+        const filteredLive = cloneWithoutElements(liveEl, excluded);
+        const map = buildSvelteExpressionTextMap(sourceOriginal, filteredLive);
+        for (const entry of textEntries) {
+          const token = '{' + entry.expr + '}';
+          if (map.has(token)) values[entry.prop] = map.get(token) || '';
+        }
+      }
+    }
+    return values;
+  }
+
+  function cssEscapeIdent(value) {
+    try { return CSS.escape(value); } catch { return String(value).replace(/[^a-zA-Z0-9_-]/g, ''); }
+  }
+
+  function collectVisibleTexts(rootEl) {
+    const texts = [];
+    const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const trimmed = String(node.textContent || '').trim();
+      if (trimmed) texts.push(trimmed);
+    }
+    return texts;
+  }
+
+  // Remove balanced {#each}...{/each} and {#if}...{/if} regions (including
+  // the delimiters) from a markup string. Nesting-aware. {#key} blocks keep
+  // their CONTENT (it always renders) but lose their delimiter tokens, which
+  // would otherwise consume live text slots in the zip and shift every
+  // following expression.
+  function stripSvelteBlockRegions(markup) {
+    let out = String(markup || '');
+    out = stripSvelteKeyDelimiters(out);
+    for (const kind of ['each', 'if']) {
+      const open = '{#' + kind;
+      const close = '{/' + kind + '}';
+      for (;;) {
+        const start = out.indexOf(open);
+        if (start === -1) break;
+        let depth = 0;
+        let i = start;
+        let end = -1;
+        while (i < out.length) {
+          if (out.startsWith(open, i)) { depth++; i += open.length; continue; }
+          if (out.startsWith(close, i)) {
+            depth--;
+            i += close.length;
+            if (depth === 0) { end = i; break; }
+            continue;
+          }
+          i++;
+        }
+        if (end === -1) break;
+        out = out.slice(0, start) + out.slice(end);
+      }
+    }
+    return out;
+  }
+
+  function stripSvelteKeyDelimiters(markup) {
+    let out = String(markup || '');
+    for (;;) {
+      const start = out.indexOf('{#key');
+      if (start === -1) break;
+      // The opening tag runs to its matching close brace (expressions inside
+      // may nest braces).
+      let depth = 0;
+      let i = start;
+      let openEnd = -1;
+      while (i < out.length) {
+        if (out[i] === '{') depth++;
+        else if (out[i] === '}') {
+          depth--;
+          if (depth === 0) { openEnd = i + 1; break; }
+        }
+        i++;
+      }
+      if (openEnd === -1) break;
+      out = out.slice(0, start) + out.slice(openEnd);
+    }
+    return out.split('{/key}').join('');
+  }
+
+  function cloneWithoutElements(rootEl, excludedEls) {
+    if (!excludedEls || excludedEls.length === 0) return rootEl;
+    const excludedSet = new Set(excludedEls);
+    // Mark originals, clone, then strip marked clones: identity does not
+    // survive cloneNode, attributes do.
+    const MARK = 'data-impeccable-hydration-excluded';
+    for (const el of excludedSet) { try { el.setAttribute(MARK, '1'); } catch { /* detached */ } }
+    let clone;
+    try {
+      clone = rootEl.cloneNode(true);
+      clone.querySelectorAll('[' + MARK + ']').forEach((el) => el.remove());
+    } finally {
+      for (const el of excludedSet) { try { el.removeAttribute(MARK); } catch { /* detached */ } }
+    }
+    return clone || rootEl;
+  }
+
+  async function mountSvelteComponentVariant(variantNum) {
+    if (!svelteComponentSession || !variantNum) return false;
+    const { manifest, mountTargetEl, sessionId } = svelteComponentSession;
+    // Resolved before the first await so the failure report can name the module
+    // the browser could not reach, whichever step threw.
+    const extension = manifest.componentExtension || 'svelte';
+    // Prefer the server-stamped revision dir: its path changes on every
+    // publish, which is what defeats stale transform caches for files the
+    // dev server does not watch.
+    const dirRel = manifest.revisionDir || manifest.componentDir || '';
+    const dirAbs = manifest.revisionDirAbs || manifest.componentDirAbs || null;
+    const moduleBase = manifest.componentModuleBase
+      || ('/' + String(dirRel).replace(/^\/+/, ''));
+    const modulePath = String(moduleBase).replace(/\/+$/, '') + '/v' + variantNum + '.' + extension;
+    const moduleAbs = dirAbs
+      ? String(dirAbs).replace(/\/+$/, '') + '/v' + variantNum + '.' + extension
+      : null;
+    const candidates = componentModuleCandidates(manifest, modulePath, moduleAbs);
+    let moduleUrl = candidates[0];
+    try {
+      const previousAnchor = getMountedSvelteComponentAnchor(svelteComponentSession) || selectedElement;
+      svelteComponentSession.swapAnchor = makeFrozenAnchor(previousAnchor) || svelteComponentSession.swapAnchor || null;
+      const runtime = await loadSvelteRuntime(manifest.runtimeModule, manifest);
+      const imported = await importFirstReachable(candidates, true);
+      moduleUrl = imported.url;
+      const mod = imported.mod;
+      const Component = mod.default;
+      if (svelteComponentSession.mountedInstance && runtime.unmount) {
+        await runtime.unmount(svelteComponentSession.mountedInstance);
+        svelteComponentSession.mountedInstance = null;
+      }
+      svelteComponentSession.mountedInstance = runtime.mount(Component, {
+        target: mountTargetEl,
+        props: { ...svelteComponentSession.propValues },
+        intro: false,
+      });
+      svelteComponentSession.mountedVariant = variantNum;
+      svelteComponentSession.runtime = runtime;
+      removeSvelteComponentVariantStyle(svelteComponentSession);
+      if (state === 'CYCLING') syncCyclingControls();
+      const nextAnchor = getMountedSvelteComponentAnchor(svelteComponentSession);
+      if (nextAnchor) {
+        if (!isSvelteInsertManifest(manifest)) {
+          applyOriginalAttrsToSvelteAnchor(nextAnchor, manifest.originalMarkup || '');
+        }
+        svelteComponentSession.swapAnchor = null;
+        selectedElement = nextAnchor;
+      } else {
+        requestAnimationFrame(() => {
+          if (svelteComponentSession?.sessionId !== sessionId) return;
+          const settledAnchor = getMountedSvelteComponentAnchor(svelteComponentSession);
+          if (!settledAnchor) return;
+          if (!isSvelteInsertManifest(manifest)) {
+            applyOriginalAttrsToSvelteAnchor(settledAnchor, manifest.originalMarkup || '');
+          }
+          svelteComponentSession.swapAnchor = null;
+          selectedElement = settledAnchor;
+        });
+      }
+      // Render truth, not publish truth: this is the only point in the whole
+      // pipeline that proves the user can see variant N.
+      reportVariantMounted(sessionId, variantNum, moduleUrl);
+      if (mountErrorState?.sessionId === sessionId && mountErrorState.variant === variantNum) {
+        clearMountErrorCard();
+      }
+      return true;
+    } catch (err) {
+      if (svelteComponentSession?.sessionId === sessionId) {
+        svelteComponentSession.swapAnchor = null;
+      }
+      console.error('[impeccable] Failed to mount component variant ' + variantNum + ' for ' + sessionId + ':', err);
+      reportVariantMountFailed(sessionId, variantNum, moduleUrl, err);
+      // Every mount failure gets the card, so the variant-switch path (which
+      // used to revert with no feedback whatsoever) says what broke too.
+      showMountErrorCard(sessionId, {
+        variant: variantNum,
+        url: moduleUrl,
+        message: await describeMountFailure(manifest, err),
+      });
+      return false;
+    }
+  }
+
+  // Distinguishes a broken variant from an unreachable preview tree; the
+  // recovery differs (fix the component vs fix the root/dev-server pair).
+  async function describeMountFailure(manifest, err) {
+    try {
+      const probe = await probePreviewTree(manifest);
+      if (probe.ok === false) {
+        return 'The preview tree is not reachable from the dev server (probe failed on '
+          + (probe.tried || []).join(', ')
+          + '). The resolved app root and the dev server root likely disagree; restart live from the app the dev server serves.';
+      }
+    } catch { /* probe is best-effort */ }
+    return 'The compiled component could not be imported or mounted. ' + (err?.message || 'Unknown error');
+  }
+
+  function teardownSvelteComponentSession(restoreOriginal) {
+    if (!svelteComponentSession) return;
+    const { wrapperEl, detachedOriginal, runtime, mountedInstance } = svelteComponentSession;
+    removeSvelteComponentVariantStyle(svelteComponentSession);
+    if (mountedInstance && runtime?.unmount) {
+      try { runtime.unmount(mountedInstance); } catch { /* non-fatal */ }
+    }
+    if (restoreOriginal && detachedOriginal && wrapperEl?.parentElement) {
+      wrapperEl.parentElement.replaceChild(detachedOriginal, wrapperEl);
+    } else if (wrapperEl?.parentElement) {
+      wrapperEl.remove();
+    }
+    svelteComponentSession = null;
+    svelteRuntimePromise = null;
+  }
+
+  function applyOriginalAttrsToSvelteAnchor(el, originalMarkup) {
+    if (!el || !originalMarkup) return;
+    const original = parseOriginalMarkupElement(originalMarkup);
+    if (!original || original.tagName !== el.tagName) return;
+    for (const attr of original.attributes) {
+      if (attr.name === 'class') {
+        for (const className of attr.value.split(/\s+/).filter(Boolean)) {
+          el.classList.add(className);
+        }
+      } else if (!el.hasAttribute(attr.name)) {
+        el.setAttribute(attr.name, attr.value);
+      }
+    }
+  }
+
+  function commitAcceptedSvelteComponentToDom(sessionId) {
+    if (!svelteComponentSession || svelteComponentSession.sessionId !== sessionId) return false;
+    const { wrapperEl, runtime, mountedInstance, manifest } = svelteComponentSession;
+    const anchor = getMountedSvelteComponentAnchor(svelteComponentSession);
+    if (!anchor || !wrapperEl?.parentElement) return false;
+    const committed = anchor.cloneNode(true);
+    if (!isSvelteInsertManifest(manifest)) {
+      applyOriginalAttrsToSvelteAnchor(committed, manifest.originalMarkup || '');
+    }
+    if (mountedInstance && runtime?.unmount) {
+      try { runtime.unmount(mountedInstance); } catch { /* non-fatal */ }
+    }
+    removeSvelteComponentVariantStyle(svelteComponentSession);
+    wrapperEl.parentElement.replaceChild(committed, wrapperEl);
+    svelteComponentSession = null;
+    svelteRuntimePromise = null;
+    selectedElement = committed;
+    return true;
+  }
+
+  async function injectSvelteComponentsFromManifest(manifestPath, sessionId) {
+    // Every (re)injection is a fresh attempt: reset the failure dedupe so a
+    // republish that is STILL broken at the same URL reports again instead of
+    // being swallowed while the agent believes the repair landed.
+    lastReportedMountFailure = null;
+    const url = 'http://localhost:' + PORT + '/source?token=' + TOKEN + '&path=' + encodeURIComponent(manifestPath);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      const manifest = JSON.parse(await res.text());
+      if (manifest.id !== sessionId) {
+        // A manifest at the expected path belonging to a different session is
+        // an agent-side publish error. Left as a bare return it stranded the
+        // bar in GENERATING with no explanation and no event.
+        const mismatch = 'Manifest at ' + manifestPath + ' belongs to session ' + (manifest.id || 'unknown') + ', not ' + sessionId + '.';
+        reportVariantMountFailed(sessionId, visibleVariant || 1, manifestPath, mismatch);
+        showMountErrorCard(sessionId, {
+          variant: visibleVariant || 0,
+          url: manifestPath,
+          message: 'The variant manifest is for a different session. Ask the agent to republish.',
+          previewFile: manifestPath,
+        });
+        return;
+      }
+
+      const paramsByVariant = await loadSvelteComponentParams(manifest);
+      const availableVariants = Number(manifest.arrivedVariants) || Number(manifest.count) || 1;
+      const componentPreviewMode = isFrameworkComponentPreviewMode(manifest.previewMode)
+        ? manifest.previewMode
+        : 'svelte-component';
+      currentSessionId = sessionId;
+      expectedVariants = Number(manifest.count) || expectedVariants || 1;
+      rememberSessionFileMeta({
+        sourceFile: manifest.sourceFile,
+        previewFile: manifestPath,
+        previewMode: componentPreviewMode,
+      });
+      if (state !== 'CYCLING') setLiveState('GENERATING');
+
+      const existingWrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      if (existingWrapper && svelteComponentSession?.sessionId === sessionId) {
+        recoveryWaitingForAnchor = false;
+        svelteComponentSession.manifest = manifest;
+        svelteComponentSession.paramsByVariant = paramsByVariant;
+        arrivedVariants = availableVariants;
+        expectedVariants = Number(manifest.count) || expectedVariants || arrivedVariants;
+        visibleVariant = visibleVariant > 0 && visibleVariant <= arrivedVariants ? visibleVariant : 1;
+        const remounted = await mountSvelteComponentVariant(visibleVariant || 1);
+        if (!remounted) {
+          // The mount already reported the failure and raised the card.
+          // Advancing to CYCLING here would show a bar claiming variants are
+          // ready over a page where nothing rendered.
+          saveSession();
+          return;
+        }
+        setLiveState('CYCLING');
+        hideShaderOverlay();
+        showOrUpdateCyclingBar();
+        saveSession();
+        completeParameterGenerationIfReady();
+        return;
+      }
+
+      const liveEl = findLiveElementForSvelteManifest(manifest);
+      if (!liveEl?.parentElement) {
+        console.warn('[impeccable] Could not find original element in live DOM.');
+        arrivedVariants = availableVariants;
+        expectedVariants = Number(manifest.count) || expectedVariants || arrivedVariants;
+        const saved = loadSession();
+        const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
+        visibleVariant = visibleVariant > 0 && visibleVariant <= arrivedVariants
+          ? visibleVariant
+          : (savedVisibleVariant > 0 && savedVisibleVariant <= arrivedVariants ? savedVisibleVariant : 1);
+        enterRecoveryWaitingForAnchor({ checkpointReason: 'component_preview_anchor_missing', trackScroll: true });
+        waitForSvelteComponentTargetAndRetry({ manifestPath, sessionId, manifest });
+        return;
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.dataset.impeccableVariants = sessionId;
+      wrapper.dataset.impeccableVariantCount = String(manifest.count || expectedVariants || 1);
+      wrapper.dataset.impeccablePreview = componentPreviewMode;
+      wrapper.style.display = 'contents';
+
+      const mountTarget = document.createElement('div');
+      mountTarget.dataset.impeccableComponentMount = sessionId;
+      mountTarget.style.display = 'contents';
+      wrapper.appendChild(mountTarget);
+
+      const insertMode = isSvelteInsertManifest(manifest);
+      const detachedOriginal = insertMode ? null : liveEl;
+      if (insertMode) {
+        removeInsertPlaceholderDom();
+        if (manifest.position === 'before') liveEl.parentElement.insertBefore(wrapper, liveEl);
+        else liveEl.parentElement.insertBefore(wrapper, liveEl.nextSibling);
+      } else {
+        liveEl.parentElement.replaceChild(wrapper, liveEl);
+      }
+
+      svelteComponentSession = {
+        sessionId,
+        manifest,
+        insertMode,
+        wrapperEl: wrapper,
+        mountTargetEl: mountTarget,
+        detachedOriginal,
+        mountedInstance: null,
+        mountedVariant: 0,
+        runtime: null,
+        propValues: buildSveltePropValuesFromLiveElement(detachedOriginal, manifest),
+        paramsByVariant,
+      };
+      if (pendingSvelteComponentRetryObserver) {
+        pendingSvelteComponentRetryObserver.disconnect();
+        pendingSvelteComponentRetryObserver = null;
+      }
+      recoveryWaitingForAnchor = false;
+
+      const previousVisibleVariant = currentSessionId === sessionId ? visibleVariant : 0;
+      arrivedVariants = availableVariants;
+      expectedVariants = Number(manifest.count) || expectedVariants || arrivedVariants;
+      const saved = loadSession();
+      const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
+      visibleVariant = previousVisibleVariant > 0 && previousVisibleVariant <= arrivedVariants
+        ? previousVisibleVariant
+        : (savedVisibleVariant > 0 && savedVisibleVariant <= arrivedVariants ? savedVisibleVariant : 1);
+
+      const mounted = await mountSvelteComponentVariant(visibleVariant);
+      if (!mounted) {
+        // The compiled component threw (e.g. a Svelte compile error in the
+        // variant file). mountSvelteComponentVariant already reported the
+        // failure and raised the card; tear the half-built preview down but
+        // keep the session so Retry and a republish still have something to
+        // act on.
+        abortSvelteComponentInjection(sessionId);
+        return;
+      }
+
+      selectedElement = mountTarget.firstElementChild || mountTarget;
+      setLiveState('CYCLING');
+      recoveryWaitingForAnchor = false;
+      hideShaderOverlay();
+      showOrUpdateCyclingBar();
+      disableInlineEdit();
+      refreshParamsPanel();
+      positionBar();
+      saveSession();
+      completeParameterGenerationIfReady();
+      console.log('[impeccable] Mounted ' + arrivedVariants + ' ' + manifest.framework + ' component variants.');
+    } catch (err) {
+      console.error('[impeccable] Failed to mount component-preview variants:', err);
+      // Report the manifest PATH, never the fetch URL: that URL carries the
+      // live helper token and this string is journaled.
+      reportVariantMountFailed(sessionId, visibleVariant || 1, manifestPath, err);
+      abortSvelteComponentInjection(sessionId, {
+        variant: visibleVariant || 0,
+        url: manifestPath,
+        message: 'Could not read the variant manifest. ' + (err?.message || 'Unknown error'),
+        previewFile: manifestPath,
+      });
+    }
+  }
+
+  function waitForSvelteComponentTargetAndRetry({ manifestPath, sessionId, manifest }) {
+    if (pendingSvelteComponentRetryObserver) pendingSvelteComponentRetryObserver.disconnect();
+    pendingSvelteComponentRetryObserver = new MutationObserver(() => {
+      if (svelteComponentSession?.sessionId === sessionId) {
+        pendingSvelteComponentRetryObserver.disconnect();
+        pendingSvelteComponentRetryObserver = null;
+        return;
+      }
+      const liveEl = findLiveElementForSvelteManifest(manifest);
+      if (!liveEl?.parentElement) return;
+      pendingSvelteComponentRetryObserver.disconnect();
+      pendingSvelteComponentRetryObserver = null;
+      injectSvelteComponentsFromManifest(manifestPath, sessionId);
+    });
+    pendingSvelteComponentRetryObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  //
+  // Mount acknowledgements
+  //
+  // The agent's `done` says it published files. Only the browser knows whether
+  // the import resolved and the component reached the DOM. These two events
+  // carry that answer back, so the journal, `live-status`, and `live-resume`
+  // can tell "the user is comparing variants" from "nothing ever rendered".
+
+  // Mirror of the caps in live/event-validation.mjs. Trimming here keeps a
+  // stack-trace-sized error from being rejected outright and lost.
+  const MOUNT_URL_MAX = 2000;
+  const MOUNT_ERROR_MAX = 1000;
+
+  function reportVariantMounted(sessionId, variantNum, moduleUrl) {
+    const variant = Math.floor(Number(variantNum) || 0);
+    if (!sessionId || variant < 1) return;
+    sendEvent({
+      type: 'variant_mounted',
+      id: sessionId,
+      variant,
+      url: moduleUrl ? String(moduleUrl).slice(0, MOUNT_URL_MAX) : undefined,
+    });
+  }
+
+  function reportVariantMountFailed(sessionId, variantNum, moduleUrl, error) {
+    if (!sessionId) return;
+    const parsed = Math.floor(Number(variantNum) || 0);
+    const variant = parsed >= 1 ? parsed : 1;
+    const url = String(moduleUrl || 'unknown').slice(0, MOUNT_URL_MAX);
+    const message = String(error?.message || error || 'Unknown mount error').slice(0, MOUNT_ERROR_MAX);
+    // Progressive delivery and the Retry button both re-enter the same failure.
+    // Report each distinct one once so the agent's poll queue and the journal
+    // stay readable; a genuinely new failure (different variant, URL, or
+    // message) still gets through.
+    const key = sessionId + '|' + variant + '|' + url + '|' + message;
+    if (lastReportedMountFailure === key) return;
+    lastReportedMountFailure = key;
+    sendEvent({ type: 'variant_mount_failed', id: sessionId, variant, url, error: message });
+  }
+
+  function truncateMiddle(value, max) {
+    const text = String(value || '');
+    if (text.length <= max) return text;
+    const head = Math.ceil((max - 1) / 2);
+    const tail = max - 1 - head;
+    return text.slice(0, head) + '…' + text.slice(text.length - tail);
+  }
+
+  /**
+   * Persistent failure surface. Replaces the old 5s toast: a toast that
+   * disappears while the session is unusable is indistinguishable from no
+   * feedback at all, and the wipe that came with it deleted the only handle on
+   * a session the server still considered live.
+   */
+  function showMountErrorCard(sessionId, details) {
+    mountErrorState = {
+      sessionId: sessionId || currentSessionId || null,
+      variant: Math.floor(Number(details?.variant) || 0),
+      url: details?.url ? String(details.url) : '',
+      message: details?.message || 'A variant failed to load.',
+      previewFile: details?.previewFile || currentPreviewFile || null,
+    };
+    renderMountErrorCard();
+  }
+
+  function clearMountErrorCard() {
+    mountErrorState = null;
+    if (mountErrorEl) {
+      mountErrorEl.remove();
+      mountErrorEl = null;
+    }
+  }
+
+  function mountErrorCardBottomOffset() {
+    const barRect = globalBarEl?.getBoundingClientRect();
+    return barRect && barRect.height > 0
+      ? Math.max(16, window.innerHeight - barRect.top + 12)
+      : 16;
+  }
+
+  function renderMountErrorCard() {
+    if (!mountErrorState) return;
+    if (mountErrorEl) mountErrorEl.remove();
+    const P = BP || barPaletteForTheme(detectPageTheme());
+    const card = el('div', {
+      position: 'fixed', bottom: mountErrorCardBottomOffset() + 'px', left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex', flexDirection: 'column', gap: '6px',
+      background: P.surface, color: P.text,
+      border: '1px solid oklch(65% 0.18 30 / 0.55)',
+      borderRadius: '8px', padding: '10px 12px',
+      fontFamily: FONT, fontSize: '12px',
+      boxShadow: P.shadow, zIndex: Z.toast,
+      maxWidth: 'min(520px, calc(100vw - 32px))',
+      pointerEvents: 'auto', textAlign: 'left',
+    });
+    card.id = PREFIX + '-mount-error';
+
+    const head = el('div', { display: 'flex', alignItems: 'center', gap: '8px' });
+    const glyph = el('span', { fontSize: '13px', lineHeight: '1', color: 'oklch(62% 0.19 30)', flexShrink: '0' });
+    glyph.textContent = '⚠';
+    head.appendChild(glyph);
+    const title = el('span', { fontWeight: '600', flex: '1' });
+    title.textContent = mountErrorState.variant > 0
+      ? 'Variant ' + mountErrorState.variant + ' failed to load'
+      : 'Variants failed to load';
+    head.appendChild(title);
+    const dismiss = el('button', {
+      border: 'none', background: 'transparent', color: P.textDim,
+      cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '1',
+      padding: '0 2px', flexShrink: '0',
+    });
+    dismiss.textContent = '×';
+    dismiss.setAttribute('aria-label', 'Dismiss');
+    dismiss.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearMountErrorCard();
+      // The card was the only recovery affordance while the bar is hidden;
+      // dismissing it must hand the user back a usable surface. PICKING
+      // reactivates the global mark and the picker. The saved session and
+      // server truth survive, so a later republish (SSE `done`) still
+      // resurrects the comparison through the normal handlers.
+      if (state === 'GENERATING') setLiveState('PICKING');
+    });
+    head.appendChild(dismiss);
+    card.appendChild(head);
+
+    const body = el('div', { color: P.textDim, lineHeight: '1.4' });
+    body.textContent = mountErrorState.message;
+    card.appendChild(body);
+
+    if (mountErrorState.url) {
+      const urlLine = el('div', {
+        fontFamily: MONO, fontSize: '11px', color: P.textDim,
+        wordBreak: 'break-all', opacity: '0.85',
+      });
+      urlLine.textContent = truncateMiddle(mountErrorState.url, 72);
+      urlLine.title = mountErrorState.url;
+      card.appendChild(urlLine);
+    }
+
+    const actions = el('div', { display: 'flex', gap: '8px', marginTop: '2px' });
+    const retry = el('button', {
+      border: '1px solid ' + P.hairline, background: 'transparent',
+      color: P.text, fontFamily: FONT, fontSize: '12px', fontWeight: '500',
+      borderRadius: '5px', padding: '4px 10px', cursor: 'pointer',
+    });
+    retry.textContent = 'Retry';
+    retry.dataset.impeccableMountRetry = 'true';
+    retry.addEventListener('click', (e) => { e.stopPropagation(); retryMountErrorCard(); });
+    actions.appendChild(retry);
+    card.appendChild(actions);
+
+    mountErrorEl = card;
+    uiAppend(card);
+    defangOutsideHandlers(card);
+  }
+
+  function retryMountErrorCard() {
+    const info = mountErrorState;
+    if (!info) return;
+    const sessionId = info.sessionId || currentSessionId;
+    const manifestPath = info.previewFile || currentPreviewFile;
+    clearMountErrorCard();
+    if (!sessionId || !manifestPath) {
+      showToast('No variant manifest to retry. Ask the agent to republish.', 5000);
+      return;
+    }
+    // A retry must be able to report the same failure again, otherwise a second
+    // attempt against an unchanged broken module would look silent.
+    lastReportedMountFailure = null;
+    if (state !== 'CYCLING') setLiveState('GENERATING');
+    injectSvelteComponentsFromManifest(manifestPath, sessionId);
+  }
+
+  // Tear down a component preview that could not mount, WITHOUT touching
+  // session identity. The old version cleared localStorage, nulled
+  // currentSessionId, and reset to PICKING, which orphaned a session the server
+  // still had in its journal and made every recovery path unreachable. The DOM
+  // teardown and observer cleanup are still right; the state wipe never was.
+  function abortSvelteComponentInjection(sessionId, details) {
+    try {
+      if (svelteComponentSession?.sessionId === sessionId) {
+        teardownSvelteComponentSession(true);
+      } else {
+        const orphan = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        if (orphan) orphan.remove();
+      }
+    } catch (err) {
+      console.warn('[impeccable] Svelte component abort cleanup failed:', err);
+    }
+    hideShaderOverlay();
+    if (pendingSvelteComponentRetryObserver) { pendingSvelteComponentRetryObserver.disconnect(); pendingSvelteComponentRetryObserver = null; }
+    if (pendingVariantAnchorRetryObserver) { pendingVariantAnchorRetryObserver.disconnect(); pendingVariantAnchorRetryObserver = null; }
+    // The generate submit armed a scroll lock and a variant observer; a page
+    // the user cannot scroll, watched by a stale observer, is exactly the
+    // wrong place to show a card asking them to act.
+    stopScrollLock();
+    if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
+    removeVariantStateStylesheet();
+    hideBar(true);
+    // currentSessionId, the saved session, and the file metadata all survive on
+    // purpose: Retry, a republish from the agent, and a page reload all need
+    // them. saveSession keeps the localStorage cache in step with the server.
+    saveSession();
+    if (details) showMountErrorCard(sessionId, details);
+    else if (!mountErrorState) {
+      showMountErrorCard(sessionId, { message: 'Variants could not be mounted. Retry, or ask the agent to republish.' });
+    }
+  }
+
+  // Hard reset for the one case that is not a mount failure: a cycling state
+  // with nothing to cycle. There is no variant to retry and no URL to report,
+  // so the session really is over.
+  function resetSvelteComponentSession(sessionId, message) {
+    try {
+      if (svelteComponentSession?.sessionId === sessionId) {
+        teardownSvelteComponentSession(true);
+      } else {
+        const orphan = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        if (orphan) orphan.remove();
+      }
+    } catch (err) {
+      console.warn('[impeccable] Svelte component reset cleanup failed:', err);
+    }
+    hideShaderOverlay();
+    if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
+    if (pendingSvelteComponentRetryObserver) { pendingSvelteComponentRetryObserver.disconnect(); pendingSvelteComponentRetryObserver = null; }
+    if (pendingVariantAnchorRetryObserver) { pendingVariantAnchorRetryObserver.disconnect(); pendingVariantAnchorRetryObserver = null; }
+    stopScrollLock();
+    removeVariantStateStylesheet();
+    clearMountErrorCard();
+    clearSession();
+    clearHandled();
+    resetSessionFileMeta();
+    currentSessionId = null;
+    parameterGenerationState = 'idle';
+    parameterReadyAnnouncedSession = null;
+    expectedVariants = 0;
+    arrivedVariants = 0;
+    visibleVariant = 0;
+    selectedElement = null;
+    setLiveState('PICKING');
+    hideBar();
+    if (message) showToast(message, 5000);
+  }
+
+  // How many delayed re-reads a completion-driven source fallback gets when
+  // the fetched source still shows only the preflight scaffold, before the
+  // failure is surfaced via recoverEmptyCycling.
+  const COMPLETED_SOURCE_FALLBACK_RETRIES = 3;
+  const COMPLETED_SOURCE_FALLBACK_RETRY_MS = 1200;
+
+  /**
+   * Terminal recovery for a session whose source-side scaffolding no longer
+   * exists. The discard event is best-effort: with no agent polling it parks
+   * the durable session in discard_requested, which no resume path adopts;
+   * with an agent attached it triggers the normal discard finalization.
+   */
+  function discardOrphanedSession(reason) {
+    const sessionId = currentSessionId;
+    if (!sessionId) return;
+    console.warn('[impeccable] Discarding orphaned session ' + sessionId + ': ' + reason);
+    sendEvent({ type: 'discard', id: sessionId, orphaned: true }).catch(() => {});
+    markSessionHandled();
+    cleanup({ instantChrome: true });
+    showToast('The previous live session no longer matches the source file, so it was discarded. Pick an element to start fresh.', 6000);
+  }
+
+  function isJsxSourceFile(filePath) {
+    return /\.[cm]?[jt]sx$/i.test(String(filePath || ''));
+  }
+
+  function sourceHasSessionWrapper(text, sessionId) {
+    const src = String(text || '');
+    return src.indexOf('data-impeccable-variants="' + sessionId + '"') !== -1
+      || src.indexOf("data-impeccable-variants='" + sessionId + "'") !== -1
+      || src.indexOf('impeccable-variants-start ' + sessionId) !== -1;
+  }
+
+  /**
+   * Orphan probe for JSX targets (#439 + #454). An unmounted wrapper and a
+   * wrapper deleted from source look identical in the DOM, and only the second
+   * is an orphan, so the DOM alone cannot decide. #454 forbids parsing or
+   * injecting raw JSX; reading the file as plain text and matching the session
+   * marker honors that, because no DOM is ever built from what comes back.
+   * Marker present means the component is simply not mounted right now (a
+   * closed modal, another route) and the variant observer keeps waiting.
+   * Marker absent after the same retry budget the HTML path uses means the
+   * file was edited out from under the session, which no reload, HMR push, or
+   * server restart can repair, so the session self-discards and hands the
+   * surface back to the picker.
+   */
+  function probeJsxWrapperForOrphan(filePath, sessionId, opts) {
+    const attempt = opts._orphanAttempt || 0;
+    const url = 'http://localhost:' + PORT + '/source?token=' + TOKEN + '&path=' + encodeURIComponent(filePath);
+    const stillActive = () => sessionId === currentSessionId && (state === 'GENERATING' || state === 'CYCLING');
+    const retryLater = () => {
+      setTimeout(() => {
+        if (!stillActive()) return;
+        injectVariantsFromSource(filePath, sessionId, { ...opts, _orphanAttempt: attempt + 1 });
+      }, COMPLETED_SOURCE_FALLBACK_RETRY_MS);
+    };
+    // Discarding is durable (the session moves to the discarded phase and the
+    // picker replaces it), so it needs evidence that the wrapper is gone: a
+    // read that answers without the marker, or a 404 (the file itself was
+    // renamed or deleted). Either kind retries on the shared budget first.
+    // A read that fails for any other reason (the server briefly away, a
+    // transient fetch error) says nothing about the wrapper; after the budget
+    // the session is kept, the user told, and the next event retries.
+    const onNoWrapper = (reason) => {
+      if (!stillActive()) return;
+      if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) { retryLater(); return; }
+      discardOrphanedSession(reason);
+    };
+    const onUnreadable = (detail) => {
+      if (!stillActive()) return;
+      if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) { retryLater(); return; }
+      console.warn('[impeccable] Could not read source to check the variant wrapper; keeping the session: ' + detail);
+      showToast('Could not read the source file to check this session; it stays open and is checked again on the next event.', 5500);
+    };
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error('source read failed: ' + r.status); return r.text(); })
+      .then(text => {
+        if (!stillActive()) return;
+        if (sourceHasSessionWrapper(text, sessionId)) return;
+        onNoWrapper('variant wrapper missing from source');
+      })
+      .catch(err => {
+        const detail = err && err.message ? err.message : 'fetch failed';
+        if (/source read failed: 404$/.test(detail)) {
+          onNoWrapper('source file missing (404) while checking for the variant wrapper');
+          return;
+        }
+        onUnreadable(detail);
+      });
+  }
+
+  function completeSourceInjection(wrapper, sessionId, opts) {
+    recoveryWaitingForAnchor = false;
+    if (pendingVariantAnchorRetryObserver) {
+      pendingVariantAnchorRetryObserver.disconnect();
+      pendingVariantAnchorRetryObserver = null;
+    }
+
+    const previousVisibleVariant = currentSessionId === sessionId ? visibleVariant : 0;
+    const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
+    arrivedVariants = variants.length;
+    expectedVariants = parseInt(wrapper.dataset.impeccableVariantCount || arrivedVariants);
+    if (arrivedVariants <= 0) {
+      if (state === 'GENERATING') {
+        // Mid-generation the source legitimately holds a scaffold wrapper
+        // with no variants yet (the server-side preflight wraps before the
+        // agent writes). Tearing the session down here would destroy an
+        // in-flight generation; stay in GENERATING — the variant observer
+        // is armed and the server re-delivers a missed `done`.
+        if (!opts.generationCompleted) {
+          console.log('[impeccable] Source has scaffold but no variants yet; still generating.');
+          return;
+        }
+        // Generation finished, yet the read shows only the scaffold: the
+        // source view is stale and no further event will fire. Re-read a
+        // few times before surfacing recovery — a single silent return
+        // here would strand the tab in GENERATING forever.
+        const attempt = opts.attempt || 0;
+        if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) {
+          console.log('[impeccable] Generation is done but source shows no variants yet; retrying read ('
+            + (attempt + 1) + '/' + COMPLETED_SOURCE_FALLBACK_RETRIES + ').');
+          setTimeout(() => {
+            if (state !== 'GENERATING' || currentSessionId !== sessionId) return;
+            if (arrivedVariants > 0) return;
+            injectVariantsFromSource(opts.filePath, sessionId, { ...opts, attempt: attempt + 1 });
+          }, COMPLETED_SOURCE_FALLBACK_RETRY_MS);
+          return;
+        }
+      }
+      recoverEmptyCycling('source-fallback-empty');
+      return;
+    }
+    const saved = loadSession();
+    const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
+    visibleVariant = previousVisibleVariant > 0 && previousVisibleVariant <= arrivedVariants
+      ? previousVisibleVariant
+      : (savedVisibleVariant > 0 && savedVisibleVariant <= arrivedVariants ? savedVisibleVariant : 1);
+    showVariantInDOM(sessionId, visibleVariant);
+
+    selectedElement = pickVariantContent(wrapper, visibleVariant) || wrapper.parentElement;
+
+    setLiveState('CYCLING');
+    recoveryWaitingForAnchor = false;
+    hideShaderOverlay();
+    showOrUpdateCyclingBar();
+    disableInlineEdit();
+    refreshParamsPanel();
+    positionBar();
+    saveSession();
+    completeParameterGenerationIfReady();
+    console.log('[impeccable] Injected ' + arrivedVariants + ' variants from source file.');
   }
 
   /**
    * No-HMR fallback: fetch the raw source file from the live server,
    * parse it, extract the variant wrapper, and inject it into the live DOM.
    * This works even when the dev server caches HTML (Bun, static servers).
+   *
+   * opts.generationCompleted marks callers that KNOW the agent finished (a
+   * `done` arrived or the server reported a completed generation). For them an
+   * empty read is a stale source view and no further event is coming, so the
+   * read retries a few times and then surfaces recovery. Callers without the
+   * flag may be mid-generation and wait indefinitely for the real completion.
    */
-  function injectVariantsFromSource(filePath, sessionId) {
+  function injectVariantsFromSource(filePath, sessionId, opts = {}) {
+    if (isSvelteComponentManifestPath(filePath)) {
+      injectSvelteComponentsFromManifest(filePath, sessionId);
+      return;
+    }
+    rememberSessionFileMeta({ file: filePath });
+    if (isJsxSourceFile(filePath)) {
+      const liveWrapper = findVariantsWrapper(sessionId);
+      if (liveWrapper && liveWrapper.querySelector('[data-impeccable-variant]:not([data-impeccable-variant="original"])')) {
+        completeSourceInjection(liveWrapper, sessionId, { ...opts, filePath });
+        return;
+      }
+      // #454: never fetch/parse JSX. Missing wrap waits for mount (closed
+      // modal / other route). Insert scaffolds stay for late HMR. A replace
+      // scaffold with no variants after retries is a failed generation.
+      if (opts.generationCompleted && sessionId === currentSessionId) {
+        const attempt = opts.attempt || 0;
+        if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) {
+          setTimeout(() => {
+            if (state !== 'GENERATING' || currentSessionId !== sessionId) return;
+            injectVariantsFromSource(filePath, sessionId, { ...opts, attempt: attempt + 1 });
+          }, COMPLETED_SOURCE_FALLBACK_RETRY_MS);
+          return;
+        }
+        if (!liveWrapper) {
+          showToast(
+            "Variants ready. If the picked element isn't visible, retrace the path that revealed it - they'll appear automatically.",
+            15000,
+          );
+          return;
+        }
+        if (liveWrapper.dataset.impeccableMode !== 'insert') {
+          recoverEmptyCycling('source-fallback-empty');
+        }
+        return;
+      }
+      if (opts.orphanDiscard && !liveWrapper && sessionId === currentSessionId) {
+        probeJsxWrapperForOrphan(filePath, sessionId, opts);
+      }
+      return;
+    }
     const url = 'http://localhost:' + PORT + '/source?token=' + TOKEN + '&path=' + encodeURIComponent(filePath);
     fetch(url)
       .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
       .then(html => {
         const parser = new DOMParser();
-        let srcWrapper = null;
-
-        // Full-file parse works for HTML/JSX; Astro/Vue sources need marker extraction.
         const startMark = '<!-- impeccable-variants-start ' + sessionId + ' -->';
         const endMark = '<!-- impeccable-variants-end ' + sessionId + ' -->';
         const startIdx = html.indexOf(startMark);
@@ -4111,66 +6409,58 @@
           ? html.slice(startIdx + startMark.length, endIdx).trim()
           : html;
         const doc = parser.parseFromString(block, 'text/html');
-        srcWrapper = doc.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        const srcWrapper = doc.querySelector('[data-impeccable-variants="' + sessionId + '"]');
         if (!srcWrapper) {
-          console.error('[impeccable] Variant wrapper not found in source file.');
+          console.warn('[impeccable] Variant wrapper not found in source file.');
+          // A resumed cycling session whose wrapper is gone from source is an
+          // ORPHAN: the file was edited or regenerated out from under it, so
+          // no reload, HMR push, or server restart can ever complete it, and
+          // the frozen picker it leaves behind used to need a manual
+          // live-complete --discarded. Retry a few reads first (an agent
+          // rewrite or HMR patch may be mid-flight), then self-discard and
+          // hand the surface back to the picker.
+          if (opts.orphanDiscard && sessionId === currentSessionId) {
+            const attempt = opts._orphanAttempt || 0;
+            if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) {
+              setTimeout(() => {
+                if (sessionId !== currentSessionId) return;
+                if (state !== 'GENERATING' && state !== 'CYCLING') return;
+                injectVariantsFromSource(filePath, sessionId, { ...opts, _orphanAttempt: attempt + 1 });
+              }, COMPLETED_SOURCE_FALLBACK_RETRY_MS);
+            } else {
+              discardOrphanedSession('variant wrapper missing from source');
+            }
+          }
           return;
         }
 
-        const previousVisibleVariant = currentSessionId === sessionId ? visibleVariant : 0;
-        const wrapper = srcWrapper.cloneNode(true);
-
-        // Wrapper already in DOM (wrap HMR landed, variant insert did not).
-        const existingWrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        const existingWrapper = findVariantsWrapper(sessionId);
         if (existingWrapper) {
+          const wrapper = srcWrapper.cloneNode(true);
           existingWrapper.parentElement.replaceChild(wrapper, existingWrapper);
-        } else {
-          const origContent = srcWrapper.querySelector('[data-impeccable-variant="original"] > :first-child');
-          if (!origContent) return;
-
-          const tag = origContent.tagName.toLowerCase();
-          const cls = origContent.className;
-          let liveEl = null;
-          if (origContent.id) {
-            liveEl = document.getElementById(origContent.id);
-          } else if (cls) {
-            const candidates = document.querySelectorAll(tag + '.' + cls.split(' ')[0]);
-            for (const c of candidates) {
-              if (c.className === cls && !own(c)) { liveEl = c; break; }
-            }
-          }
-
-          if (!liveEl) {
-            console.error('[impeccable] Could not find original element in live DOM.');
-            return;
-          }
-
-          liveEl.parentElement.replaceChild(wrapper, liveEl);
+          completeSourceInjection(wrapper, sessionId, { ...opts, filePath });
+          return;
         }
 
-        // Update state: count variants, preserving the user's current variant
-        // when a late HMR/source reinjection lands after they have cycled.
-        const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
-        arrivedVariants = variants.length;
-        expectedVariants = parseInt(wrapper.dataset.impeccableVariantCount || arrivedVariants);
-        const saved = loadSession();
-        const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
-        visibleVariant = previousVisibleVariant > 0 && previousVisibleVariant <= arrivedVariants
-          ? previousVisibleVariant
-          : (savedVisibleVariant > 0 && savedVisibleVariant <= arrivedVariants ? savedVisibleVariant : 1);
-        showVariantInDOM(sessionId, visibleVariant);
+        const wrapper = srcWrapper.cloneNode(true);
+        const origContent = srcWrapper.querySelector('[data-impeccable-variant="original"] > :first-child');
+        if (!origContent) return;
 
-        // Update selectedElement to the visible variant's content
-        selectedElement = pickVariantContent(wrapper, visibleVariant) || wrapper.parentElement;
+        const liveEl = resolveLiveInjectionAnchor(origContent.outerHTML);
+        if (!liveEl) {
+          console.warn('[impeccable] Could not find original element in live DOM.');
+          enterRecoveryWaitingForAnchor({
+            filePath,
+            sessionId,
+            srcWrapper,
+            checkpointReason: 'variant_anchor_missing',
+            trackScroll: false,
+          });
+          return;
+        }
 
-        state = 'CYCLING';
-        hideShaderOverlay();
-        updateBarContent('cycling');
-        disableInlineEdit();
-        refreshParamsPanel();
-        positionBar();
-        saveSession();
-        console.log('[impeccable] Injected ' + arrivedVariants + ' variants from source file.');
+        liveEl.parentElement.replaceChild(wrapper, liveEl);
+        completeSourceInjection(wrapper, sessionId, { ...opts, filePath });
       })
       .catch(err => {
         console.error('[impeccable] Failed to fetch source:', err);
@@ -4178,29 +6468,140 @@
       });
   }
 
-  function cycleVariant(dir) {
+  function buildSvelteExpressionTextMap(sourceOriginal, liveOriginal) {
+    const map = new Map();
+    if (!sourceOriginal || !liveOriginal) return map;
+
+    const sourceNodes = collectTextNodes(sourceOriginal)
+      .filter((node) => /\{[^{}]+\}/.test(node.nodeValue || ''));
+    const liveTexts = collectTextNodes(liveOriginal)
+      .map((node) => normalizePreviewText(node.nodeValue || ''))
+      .filter(Boolean);
+    let liveIndex = 0;
+
+    for (const sourceNode of sourceNodes) {
+      const sourceText = sourceNode.nodeValue || '';
+      const tokens = sourceText.match(/\{[^{}]+\}/g) || [];
+      if (tokens.length === 0) continue;
+
+      const liveText = liveTexts[liveIndex++] || '';
+      if (!liveText) continue;
+
+      if (tokens.length === 1) {
+        const token = tokens[0];
+        const normalizedSource = normalizePreviewText(sourceText);
+        if (normalizedSource === token) {
+          map.set(token, liveText);
+          continue;
+        }
+
+        const match = liveText.match(expressionTextMatcher(sourceText, [token]));
+        if (match && match[1]) map.set(token, match[1].trim());
+        continue;
+      }
+
+      if (normalizePreviewText(sourceText) === tokens.join(' ')) {
+        for (const token of tokens) {
+          const tokenLiveText = liveTexts[liveIndex - 1] || '';
+          if (tokenLiveText) map.set(token, tokenLiveText);
+        }
+      }
+    }
+
+    return map;
+  }
+
+  function expressionTextMatcher(sourceText, tokens) {
+    let pattern = '^';
+    let cursor = 0;
+    for (const token of tokens) {
+      const index = sourceText.indexOf(token, cursor);
+      if (index === -1) continue;
+      pattern += escapeRegExp(sourceText.slice(cursor, index)).replace(/\s+/g, '\\s*');
+      pattern += '(.*?)';
+      cursor = index + token.length;
+    }
+    pattern += escapeRegExp(sourceText.slice(cursor)).replace(/\s+/g, '\\s*') + '$';
+    return new RegExp(pattern);
+  }
+
+  function collectTextNodes(root) {
+    if (!root) return [];
+    const nodes = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      nodes.push(node);
+      node = walker.nextNode();
+    }
+    return nodes;
+  }
+
+  function normalizePreviewText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  async function selectVariant(next, checkpointReason) {
     if (pendingApplyInFlight) { showManualApplyBusyToast(); return; }
-    const next = visibleVariant + dir;
+    if (variantSelectionInFlight) return;
     if (next < 1 || next > arrivedVariants) return;
-    visibleVariant = next;
-    showVariantInDOM(currentSessionId, next); // calls refreshParamsPanel itself
-    updateSelectedElement();
-    updateBarContent('cycling');
-    positionBar();
-    saveSession();
-    queueCheckpoint('variant_changed');
+    if (next === visibleVariant) return;
+
+    const previous = visibleVariant;
+    variantSelectionInFlight = true;
+    const selectionPromise = (async () => {
+      visibleVariant = next;
+      showOrUpdateCyclingBar();
+      saveSession();
+      const shown = await showVariantInDOM(currentSessionId, next); // calls refreshParamsPanel itself
+      if (!shown) {
+        visibleVariant = previous;
+        await showVariantInDOM(currentSessionId, previous);
+        showOrUpdateCyclingBar();
+        saveSession();
+        return;
+      }
+      updateSelectedElement();
+      showOrUpdateCyclingBar();
+      positionBar();
+      saveSession();
+      if (checkpointReason) queueCheckpoint(checkpointReason);
+    })();
+    variantSelectionPromise = selectionPromise;
+    try {
+      await selectionPromise;
+    } finally {
+      if (variantSelectionPromise === selectionPromise) variantSelectionPromise = null;
+      variantSelectionInFlight = false;
+    }
+  }
+
+  function cycleVariant(dir) {
+    selectVariant(visibleVariant + dir, 'variant_changed');
   }
 
   function updateSelectedElement() {
     if (!currentSessionId) return;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    if (svelteComponentSession?.sessionId === currentSessionId) {
+      const anchor = resolveSvelteComponentAnchor();
+      if (anchor && !anchor.__impeccableFrozenAnchor) selectedElement = anchor;
+      return;
+    }
+    const wrapper = findVariantsWrapper(currentSessionId);
     if (!wrapper) return;
     const visEl = pickVariantContent(wrapper, visibleVariant);
     if (visEl) selectedElement = visEl;
   }
 
   function readVisibleVariantFromDOM(sessionId) {
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+    if (svelteComponentSession?.sessionId === sessionId && svelteComponentSession.mountedVariant > 0) {
+      return svelteComponentSession.mountedVariant;
+    }
+    const wrapper = findVariantsWrapper(sessionId);
     if (!wrapper) return 0;
     const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
     for (const variant of variants) {
@@ -4230,24 +6631,212 @@
     return variantDiv;
   }
 
+  // Variant visibility and range/toggle params are expressed through ONE
+  // injected stylesheet, never inline attributes on the variant divs. Those
+  // divs are scaffolded into page source, so SSR frameworks (Next.js App
+  // Router) server-render them; toggling their `hidden` / inline `style` /
+  // `--p-*` client-side trips a React 19 hydration mismatch on the next
+  // Fast-Refresh re-render — the same failure mode the scroll-anchor (#276)
+  // and pick-cursor (#286) fixes address. A stylesheet rule has the same
+  // computed effect without mutating any hydrated element's attributes.
+  // (steps params keep driving `data-p-*` attributes, matching scoped CSS.)
+  const VARIANT_HIDE_DECL = 'display: none !important;';
+  const VARIANT_SHOW_DECL = 'display: block !important;';
+
+  // Build a direct-child variant selector for a session. With `num`, targets a
+  // single variant (`… > [data-impeccable-variant="N"]`); without it, targets
+  // every variant via the bare `[data-impeccable-variant]` attribute.
+  function variantStateSelector(sessionId, num) {
+    const wrapper = '[data-impeccable-variants="' + sessionId + '"]';
+    const variant = num == null
+      ? '[data-impeccable-variant]'
+      : '[data-impeccable-variant="' + num + '"]';
+    return wrapper + ' > ' + variant;
+  }
+
+  // Serialize the visible variant's knob values into `--p-<id>` custom-property
+  // declarations. Only range (number) and toggle (boolean) values become a
+  // custom property; steps params drive `data-p-*` attributes instead.
+  function variantParamDecls(values) {
+    return Object.entries(values || {})
+      .map(([id, val]) => {
+        if (typeof val === 'number') return ' --p-' + id + ': ' + val + ';';
+        if (typeof val === 'boolean') return ' --p-' + id + ': ' + (val ? '1' : '0') + ';';
+        return '';
+      })
+      .join('');
+  }
+
+  function updateVariantStateStylesheet(sessionId, num) {
+    if (!sessionId || num == null || num < 1) return;
+
+    let styleEl = document.getElementById(VARIANT_STATE_STYLE_ID);
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = VARIANT_STATE_STYLE_ID;
+      (document.head || document.documentElement).appendChild(styleEl);
+    }
+
+    // Hide every variant except the visible one (incl. the SSR'd "original").
+    const hideOthers = variantStateSelector(sessionId)
+      + ':not([data-impeccable-variant="' + num + '"]) { ' + VARIANT_HIDE_DECL + ' }';
+
+    // Force-show the visible variant (beats the source inline display:none on
+    // v2/v3) and apply its knob values as custom properties.
+    const showVisible = variantStateSelector(sessionId, num)
+      + ' { ' + VARIANT_SHOW_DECL + variantParamDecls(paramsCurrentValues) + ' }';
+
+    styleEl.textContent = hideOthers + '\n' + showVisible + '\n';
+  }
+
+  function removeVariantStateStylesheet() {
+    document.getElementById(VARIANT_STATE_STYLE_ID)?.remove();
+  }
+
+  function discardStateStyleId(sessionId) {
+    return DISCARD_STATE_STYLE_ID + '-' + sessionId;
+  }
+
+  function showOriginalDuringDiscard(sessionId) {
+    if (!sessionId) return;
+    let styleEl = document.getElementById(discardStateStyleId(sessionId));
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = discardStateStyleId(sessionId);
+      (document.head || document.documentElement).appendChild(styleEl);
+    }
+    styleEl.dataset.impeccableDiscardSession = sessionId;
+    const wrapper = '[data-impeccable-variants="' + sessionId + '"]';
+    styleEl.textContent = wrapper + ' > [data-impeccable-variant]:not([data-impeccable-variant="original"]) { display:none !important; }\n'
+      + wrapper + ' > [data-impeccable-variant="original"] { display:block !important; }';
+  }
+
+  function removeDiscardStateStylesheet(sessionId) {
+    if (!sessionId) return;
+    document.getElementById(discardStateStyleId(sessionId))?.remove();
+  }
+
+  /**
+   * Every wrapper a discard has to unwind. A target inside a `.map()` renders
+   * one wrapper per item, so the hide, the release, and the existence checks
+   * all have to speak about the same set.
+   */
+  function discardedWrappers(sessionId) {
+    if (!sessionId) return [];
+    return [...document.querySelectorAll('[data-impeccable-variants="' + sessionId + '"]')];
+  }
+
+  function releaseDiscardedStaticWrapper(wrapper) {
+    if (!wrapper) return;
+    const orig = wrapper.querySelector('[data-impeccable-variant="original"]');
+    const content = orig?.firstElementChild;
+    if (content && wrapper.parentElement) {
+      wrapper.parentElement.replaceChild(content, wrapper);
+      return;
+    }
+    wrapper.remove();
+  }
+
+  /**
+   * Undo the discard hide on every wrapper it covered. Releasing only the
+   * first match left the other mapped items sitting at display:none with
+   * their original content never restored, on exactly the static and
+   * missed-HMR flows this fallback exists for.
+   */
+  function releaseDiscardedStaticWrappers(sessionId, wrappers) {
+    removeDiscardStateStylesheet(sessionId);
+    const set = wrappers && wrappers.length ? wrappers : discardedWrappers(sessionId);
+    for (const wrapper of set) releaseDiscardedStaticWrapper(wrapper);
+  }
+
+  function watchForDiscardedFrameworkWrapperRemoval(sessionId) {
+    if (!sessionId || !document.body) return;
+    if (discardedFrameworkWrapperWatchers.has(sessionId)) return;
+    const selector = '[data-impeccable-variants="' + sessionId + '"]';
+    let observer = null;
+    let timer = null;
+    const stopWatching = function() {
+      observer?.disconnect();
+      if (timer) clearTimeout(timer);
+      discardedFrameworkWrapperWatchers.delete(sessionId);
+    };
+    const finishIfGone = function() {
+      if (document.querySelector(selector)) return false;
+      removeDiscardStateStylesheet(sessionId);
+      stopWatching();
+      return true;
+    };
+    if (finishIfGone()) return;
+    observer = new MutationObserver(finishIfGone);
+    observer.observe(document.body, { childList: true, subtree: true });
+    const resolveStillMounted = function() {
+      if (finishIfGone()) return;
+      const replacementActive = !!currentSessionId
+        || (state !== 'IDLE' && state !== 'PICKING');
+      if (replacementActive) {
+        timer = setTimeout(resolveStillMounted, 12000);
+        discardedFrameworkWrapperWatchers.get(sessionId).timer = timer;
+        return;
+      }
+      removeDiscardStateStylesheet(sessionId);
+      stopWatching();
+      location.reload();
+    };
+    timer = setTimeout(resolveStillMounted, 12000);
+    discardedFrameworkWrapperWatchers.set(sessionId, { observer, timer });
+  }
+
+  function resolveScrollLockAnchorTop() {
+    const anchor = resolveBarAnchor();
+    if (!anchor?.isConnected) return null;
+    const top = anchor.getBoundingClientRect().top;
+    return Number.isFinite(top) ? top : null;
+  }
+
   // Hold window.scrollY at a fixed value across DOM mutations inside the
   // session's wrapper (HMR patches, variant inserts, cycle swaps).
-  function startScrollLock(sessionId, initialTargetY) {
+  function startScrollLock(sessionId, initialTargetY, initialAnchorTop) {
     stopScrollLock();
     scrollLockTargetY = typeof initialTargetY === 'number' && isFinite(initialTargetY)
       ? initialTargetY
       : window.scrollY;
+    scrollLockAnchorTop = typeof initialAnchorTop === 'number' && isFinite(initialAnchorTop)
+      ? initialAnchorTop
+      : resolveScrollLockAnchorTop();
 
     try { history.scrollRestoration = 'manual'; } catch {}
 
-    const prevHtmlAnchor = document.documentElement.style.overflowAnchor;
-    const prevBodyAnchor = document.body.style.overflowAnchor;
-    document.documentElement.style.overflowAnchor = 'none';
-    document.body.style.overflowAnchor = 'none';
+    // Suppress the browser's scroll-anchoring on the scroll root so it can't
+    // fight our manual scroll correction. Apply this as a stylesheet rule, not
+    // as inline `style` on <html>/<body>: those elements are server-rendered by
+    // frameworks like Next.js App Router, and mutating their inline style makes
+    // React 19 report a hydration mismatch on the next Fast-Refresh re-render.
+    // A <style> rule has the same computed effect without touching any hydrated
+    // element's attributes. Like the inline version, it is recreated on every
+    // startScrollLock call, so reload survival (driven by the persisted scroll
+    // key) is unaffected.
+    let anchorLockStyle = document.getElementById(SCROLL_ANCHOR_LOCK_ID);
+    if (!anchorLockStyle) {
+      anchorLockStyle = document.createElement('style');
+      anchorLockStyle.id = SCROLL_ANCHOR_LOCK_ID;
+      anchorLockStyle.textContent = 'html,body{overflow-anchor:none !important;}';
+      (document.head || document.documentElement).appendChild(anchorLockStyle);
+    }
 
     const correct = (why) => {
       scrollLockRaf = null;
       if (scrollLockTargetY == null) return;
+      const anchor = resolveBarAnchor();
+      if (anchor?.isConnected && typeof scrollLockAnchorTop === 'number' && isFinite(scrollLockAnchorTop)) {
+        const anchorTop = anchor.getBoundingClientRect().top;
+        const anchorDelta = anchorTop - scrollLockAnchorTop;
+        if (Math.abs(anchorDelta) >= 0.5) {
+          window.scrollTo({ top: window.scrollY + anchorDelta, left: window.scrollX, behavior: 'instant' });
+          scrollLockTargetY = window.scrollY;
+          writeScrollY(scrollLockTargetY);
+          return;
+        }
+      }
       const before = window.scrollY;
       const delta = before - scrollLockTargetY;
       if (Math.abs(delta) < 0.5) {
@@ -4278,8 +6867,7 @@
 
     scrollLockAbort = new AbortController();
     scrollLockAbort.signal.addEventListener('abort', () => {
-      document.documentElement.style.overflowAnchor = prevHtmlAnchor;
-      document.body.style.overflowAnchor = prevBodyAnchor;
+      document.getElementById(SCROLL_ANCHOR_LOCK_ID)?.remove();
     }, { once: true });
     const sig = { signal: scrollLockAbort.signal };
     // Track whether the most recent scroll came from a user gesture. We
@@ -4293,6 +6881,7 @@
       if (scrollLockRaf != null) { cancelAnimationFrame(scrollLockRaf); scrollLockRaf = null; }
       const prevTarget = scrollLockTargetY;
       scrollLockTargetY = window.scrollY;
+      scrollLockAnchorTop = resolveScrollLockAnchorTop();
       writeScrollY(scrollLockTargetY);
     };
     const markGesture = (why) => {
@@ -4318,7 +6907,7 @@
       window.scrollTo({ top: scrollLockTargetY, left: window.scrollX, behavior: 'instant' });
     }, { passive: true, ...sig });
 
-    // Apply target synchronously, not via rAF — racing the browser's
+    // Apply target synchronously, not via rAF - racing the browser's
     // restore or a smooth-scroll animation means we want to win now.
     if (Math.abs(window.scrollY - scrollLockTargetY) > 0.5) {
       window.scrollTo({ top: scrollLockTargetY, left: window.scrollX, behavior: 'instant' });
@@ -4330,14 +6919,51 @@
     if (scrollLockRaf != null) { cancelAnimationFrame(scrollLockRaf); scrollLockRaf = null; }
     if (scrollLockAbort) { scrollLockAbort.abort(); scrollLockAbort = null; }
     scrollLockTargetY = null;
+    scrollLockAnchorTop = null;
     // NOTE: do NOT clear the persistent scroll key here. startScrollLock
     // calls us as a reset, and clearing the key would nuke the Go-time
     // scrollY that the next resume needs to read.
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // MutationObserver for progressive variant reveal
-  // ---------------------------------------------------------------------------
+  //
+
+  // A session id can have more than one wrapper in the DOM: the target may sit
+  // inside a `.map()` callback (the wrapper renders once per item), or the
+  // agent may have relocated the wrapper out of the shared primitive live-wrap
+  // scaffolded into. A plain first match can then pin an empty scaffold while
+  // the real variants sit in a later wrapper, which strands the session at
+  // 0/N and leaves the bar, the params panel, and accept all reading the
+  // wrong element. Prefer a wrapper that actually holds variants. With zero
+  // or one match this is exactly the querySelector it replaces.
+  //
+  // Every lookup of the ACTIVE session's wrapper goes through here. The
+  // remaining raw `[data-impeccable-variants=...]` uses are deliberate: bare
+  // existence checks, selector strings for stylesheets and observers (which
+  // want to cover every match), `querySelectorAll` sweeps, and the parsed
+  // source document, which is not this document.
+  function pickPopulatedVariantsWrapper(selector) {
+    const matches = document.querySelectorAll(selector);
+    if (matches.length < 2) return matches[0] || null;
+    for (const candidate of matches) {
+      if (candidate.querySelector('[data-impeccable-variant]:not([data-impeccable-variant="original"])')) {
+        return candidate;
+      }
+    }
+    return matches[0];
+  }
+
+  /** The wrapper holding `sessionId`'s variants, or null without an id. */
+  function findVariantsWrapper(sessionId) {
+    if (!sessionId) return null;
+    return pickPopulatedVariantsWrapper('[data-impeccable-variants="' + sessionId + '"]');
+  }
+
+  /** Any live variant wrapper, for the resume paths that have no id yet. */
+  function findAnyVariantsWrapper() {
+    return pickPopulatedVariantsWrapper('[data-impeccable-variants]');
+  }
 
   function startVariantObserver(sessionId) {
     let updating = false; // re-entrancy guard
@@ -4368,7 +6994,7 @@
       }
       if (!dominated) return;
 
-      const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      const wrapper = findVariantsWrapper(sessionId);
       if (!wrapper) return;
 
       const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
@@ -4403,6 +7029,7 @@
 
       updating = true;
       arrivedVariants = count;
+      generationPhase = arrivedVariants >= expectedVariants ? 'variants_ready' : 'variants_progress';
       if (visibleVariant === 0 && arrivedVariants > 0) {
         const saved = loadSession();
         const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
@@ -4417,21 +7044,28 @@
 
       const expected = parseInt(wrapper.dataset.impeccableVariantCount || '0');
       if (expected > 0) expectedVariants = expected;
+      completeParameterGenerationIfReady();
 
-      if (arrivedVariants >= expectedVariants && expectedVariants > 0) {
-        state = 'CYCLING';
+      if (arrivedVariants > 0) {
+        setLiveState('CYCLING');
+        recoveryWaitingForAnchor = false;
         hideShaderOverlay();
         if (wrapper.dataset.impeccableMode === 'insert') finalizeInsertSession();
         updateSelectedElement();
-        updateBarContent('cycling');
+        showOrUpdateCyclingBar();
         disableInlineEdit();
-        refreshParamsPanel();
+        if (arrivedVariants >= expectedVariants && expectedVariants > 0) refreshParamsPanel();
+        else hideParamsPanel();
         positionBar();
       } else if (state === 'GENERATING') {
         updateBarContent('generating');
       }
       saveSession();
-      queueCheckpoint(state === 'CYCLING' ? 'variants_ready' : 'variants_progress');
+      sendCheckpoint(
+        arrivedVariants >= expectedVariants && expectedVariants > 0
+          ? 'variants_ready'
+          : 'variants_progress',
+      );
       updating = false;
     });
 
@@ -4439,9 +7073,9 @@
     return obs;
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Bar scroll tracking
-  // ---------------------------------------------------------------------------
+  //
 
   function startScrollTracking() {
     function tick() {
@@ -4477,10 +7111,10 @@
     if (scrollRaf) { cancelAnimationFrame(scrollRaf); scrollRaf = null; }
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // SSE (server→browser) + fetch POST (browser→server)
   // Zero-dependency replacement for WebSocket.
-  // ---------------------------------------------------------------------------
+  //
 
   let evtSource = null;
   let sseRetries = 0;
@@ -4499,15 +7133,50 @@
       switch (msg.type) {
         case 'connected':
           hasProjectContext = !!msg.hasProjectContext;
-          if (!hasProjectContext) showToast('No PRODUCT.md found. Variants will be brand-agnostic. Run /impeccable init to generate one.', 7000);
+          if (!hasProjectContext) showToast(`No PRODUCT.md found. Variants will be brand-agnostic. Run ${IMPECCABLE_COMMAND} init to generate one.`, 7000);
           console.log('[impeccable] Live mode connected.');
           syncAgentPollingUi(!!msg.agentPolling);
           startAgentStatusPoll();
-          if (state === 'IDLE' && (pickActive || insertActive)) state = 'PICKING';
+          restoreFromActiveSessions(msg.activeSessions, 'sse_connected');
+          recoverMissedGenerationCompletion(msg.activeSessions);
+          if (state === 'IDLE' && (pickActive || insertActive)) setLiveState('PICKING');
+          syncPageInteractionCursor();
           syncPageChatFocus('sse-connected');
           break;
         case 'agent_polling':
           syncAgentPollingUi(!!msg.connected);
+          break;
+        case 'agent_phase':
+          if (msg.id === currentSessionId && (state === 'GENERATING' || state === 'CYCLING')) {
+            // Advance the visible phase monotonically. A behind/resumed
+            // checkpoint may carry an earlier phase for internal bookkeeping,
+            // but the bar must not move backward.
+            if (shouldAdvancePhase(generationPhase, msg.phase)) generationPhase = msg.phase;
+            // The deferred parameter pass reports through `variant_progress`
+            // with publicationKind 'params', not through agent_phase.
+            updateBarContent(state === 'CYCLING' ? 'cycling' : 'generating');
+            saveSession();
+          }
+          break;
+        case 'variant_progress':
+          if (msg.id === currentSessionId) {
+            if (msg.publicationKind === 'params') parameterGenerationState = 'loading';
+            rememberSessionFileMeta(msg);
+            if (isFrameworkComponentPreviewMode(msg.previewMode) && msg.previewFile) {
+              // Component-preview (Svelte/Vue) progressive delivery: the browser
+              // mounts compiled components, so there is no framework-owned DOM
+              // to race. Keep streaming each checkpoint into the preview.
+              injectSvelteComponentsFromManifest(msg.previewFile, msg.id);
+            }
+            // Source-preview targets: do NOT source-inject per checkpoint.
+            // Immediate injection races framework (React/Vue) ownership mid-
+            // generation and triggers removeChild errors on the next HMR
+            // commit. Let HMR own reconciliation while variants stream in;
+            // source injection runs only on the final `done` (which keeps its
+            // 750ms settle + retry ladder for non-HMR harnesses like Cursor).
+            // The visible progress count still advances from the variant
+            // MutationObserver as HMR lands each variant.
+          }
           break;
         case 'steer_done':
           maybeCompleteSteer(msg);
@@ -4525,11 +7194,17 @@
           break;
         case 'done':
           if (maybeCompleteSteer(msg)) break;
+          rememberSessionFileMeta(msg);
+          if (msg.id === currentSessionId && isFrameworkComponentPreviewMode(currentPreviewMode) && currentPreviewFile) {
+            injectSvelteComponentsFromManifest(currentPreviewFile, msg.id);
+            break;
+          }
           // Variants already arrived via HMR → normal transition.
           if (arrivedVariants >= expectedVariants && expectedVariants > 0) {
             if (state === 'GENERATING') {
-              state = 'CYCLING';
-              updateBarContent('cycling');
+              setLiveState('CYCLING');
+              hideShaderOverlay();
+              showOrUpdateCyclingBar();
               disableInlineEdit();
               refreshParamsPanel();
             }
@@ -4537,7 +7212,11 @@
           }
           // Source fallback when HMR did not land variants in this tab.
           if (msg.file && msg.id && state === 'GENERATING' && msg.id === currentSessionId) {
-            injectVariantsFromSource(msg.file, msg.id);
+            setTimeout(() => {
+              if (arrivedVariants >= expectedVariants && expectedVariants > 0) return;
+              if (state !== 'GENERATING' || msg.id !== currentSessionId) return;
+              injectVariantsFromSource(msg.file, msg.id, { generationCompleted: true });
+            }, 750);
             break;
           }
           // Variants are in source but not in the DOM yet. Common when the
@@ -4545,24 +7224,85 @@
           // hidden tab, a route the user navigated away from). The variant
           // MutationObserver stays armed and auto-transitions to CYCLING
           // the moment the wrapper actually mounts. Nudge the user toward
-          // that path with a toast — better than the prior force-reload
+          // that path with a toast - better than the prior force-reload
           // which reset framework state and left the session stuck.
           setTimeout(() => {
             if (arrivedVariants >= expectedVariants && expectedVariants > 0) return;
             if (state !== 'GENERATING') return;
             showToast(
-              "Variants ready. If the picked element isn't visible, retrace the path that revealed it — they'll appear automatically.",
+              "Variants ready. If the picked element isn't visible, retrace the path that revealed it - they'll appear automatically.",
               15000,
             );
           }, 2000);
           break;
+        case 'complete':
+        case 'accept':
+          // The real accept result arrived: the awaited failure window closed.
+          if (awaitingAcceptResult?.id && msg.id === awaitingAcceptResult.id) awaitingAcceptResult = null;
+          if (maybeCompleteAcceptedSession(msg)) break;
+          break;
+        case 'agent_done':
+          // The deterministic accept has already committed the reviewed DOM
+          // and fenced generation. Carbonize may continue in the background;
+          // it must not hold the foreground picker hostage.
+          // Only a carbonize agent_done is provably accept-side: accept
+          // unlocks at the first variant, so a late generation agent_done
+          // for the same session id can still arrive after Accept and must
+          // not close the awaited failure window early (the SSE broadcast
+          // carries no sourceEventType to tell the two apart).
+          if (msg.data?.carbonize === true && awaitingAcceptResult?.id && msg.id === awaitingAcceptResult.id) awaitingAcceptResult = null;
+          if (msg.data?.carbonize === true && maybeCompleteAcceptedSession(msg)) break;
+          break;
+        case 'discarded':
+          if (msg.id && msg.id === currentSessionId) {
+            markSessionHandled();
+            cleanup();
+          }
+          break;
         case 'error':
+          if (pendingAcceptedSession?.id && msg.id === pendingAcceptedSession.id) {
+            pendingAcceptedSession = null;
+            awaitingAcceptResult = null;
+            setLiveState('CYCLING');
+            hideShaderOverlay();
+            updateBarContent('cycling');
+            showToast('Could not complete accept cleanup. Try Accept again.', 5000);
+            break;
+          }
+          // The optimistic teardown already released the session, so the
+          // CYCLING recovery above can no longer match; without this branch
+          // the failure fell through to the generic toast and the user had
+          // no hint their variant was never written (issue #384).
+          if (awaitingAcceptResult?.id && msg.id === awaitingAcceptResult.id) {
+            awaitingAcceptResult = null;
+            console.error('[impeccable] Accept failed after teardown:', msg.message);
+            // Hedged on purpose: a carbonize-phase failure raises this same
+            // error after the source WAS promoted, so "was not saved" would
+            // overclaim. Normalize the server message's terminal punctuation
+            // so the two sentences don't run together.
+            const acceptFailDetail = String(msg.message || 'unknown error').trim().replace(/[.!?]?$/, '.');
+            showToast('Accept failed: ' + acceptFailDetail + ' The variant may not have been saved. If the change is missing, pick the element and generate again.', 8000);
+            break;
+          }
           if (maybeCompleteSteer(msg)) break;
           console.error('[impeccable] Error:', msg.message);
           showToast('Error: ' + msg.message, 5000);
+          // An agent error reply is terminal for the session it names: tear
+          // it down exactly like 'discarded' (cleanup includes clearSession),
+          // or the durable localStorage checkpoint survives and every reload
+          // resurrects a GENERATING bar for a session the server no longer
+          // knows about (issue #362).
+          if (msg.id && msg.id === currentSessionId) {
+            markSessionHandled();
+            cleanup();
+            break;
+          }
+          // A stored-but-not-current checkpoint naming the errored session
+          // (the error raced a reload) must not resurrect either.
+          if (msg.id && loadSession()?.id === msg.id) clearSession();
           hideBar();
           renderEditBadge('hidden');
-          state = 'PICKING';
+          setLiveState('PICKING');
           break;
       }
     };
@@ -4585,7 +7325,7 @@
   function handleServerLost() {
     const recoveryState = currentSessionId ? state : 'IDLE';
     if (state === 'GENERATING' || state === 'CYCLING' || state === 'SAVING') {
-      showToast('Live server disconnected. Session ended.', 5000);
+      showToast('Live server connection lost. Your session is saved; reopen this page or restart live-poll.mjs to continue.', 6000);
     }
     hideBar();
     hideHighlight();
@@ -4600,26 +7340,66 @@
     // transient disconnect as an explicit discard.
     selectedElement = null;
     selectedAction = 'impeccable';
-    state = recoveryState;
+    setLiveState(recoveryState);
     if (currentSessionId) saveSession();
   }
+
+  // Progress events must never overtake the event that CREATES their session:
+  // the Go-time checkpoint and the generate POST are concurrent fetches, and
+  // when the checkpoint lands first the server rightly refuses it as
+  // unknown_session — which must mean "foreign leftovers", not "you raced
+  // your own Go click". The gate serializes creation before progress.
+  let sessionCreationGate = Promise.resolve();
 
   function sendEvent(msg, opts) {
     msg.token = TOKEN;
     function handleFailure(err) {
-      console.error('[impeccable] Failed to send event:', err);
-      if (opts && opts.throwOnError) throw err;
+      if (opts && opts.throwOnError) {
+        console.error('[impeccable] Failed to send event:', err);
+        throw err;
+      }
+      console.debug('[impeccable] Dropped optional live event:', err);
       return null;
     }
-    return fetch('http://localhost:' + PORT + '/events', {
+    // Token in the query string as well as the body: the URL token is what
+    // authorizes the CORS preflight when the page runs on a non-loopback
+    // dev host (ddev, Valet), since the preflight carries no request body.
+    const doSend = () => fetch('http://localhost:' + PORT + '/events?token=' + encodeURIComponent(TOKEN), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(msg),
     }).then(async res => {
       if (res.ok) return res;
       const body = await res.json().catch(() => ({}));
+      // The server refused to journal progress for a session it has never
+      // seen: this browser is carrying state from another project or a
+      // wiped store (two apps sharing a localhost port). Continuing to
+      // report it would freeze the picker behind a session that can never
+      // complete, so drop the local state and hand the surface back.
+      if (body.error === 'unknown_session' && msg.type === 'checkpoint'
+          && msg.id && msg.id === currentSessionId) {
+        abandonForeignSession(msg.id);
+        return null;
+      }
       return handleFailure(new Error(body.error || ('HTTP ' + res.status + ' ' + res.statusText)));
     }).catch(handleFailure);
+
+    if (msg.type === 'generate' || msg.type === 'steer') {
+      const creation = doSend();
+      sessionCreationGate = creation.then(() => {}, () => {});
+      return creation;
+    }
+    return sessionCreationGate.then(doSend);
+  }
+
+  let abandonedForeignSessionId = null;
+  function abandonForeignSession(sessionId) {
+    if (abandonedForeignSessionId === sessionId || sessionId !== currentSessionId) return;
+    abandonedForeignSessionId = sessionId;
+    console.warn('[impeccable] The live server has no record of session ' + sessionId + '; clearing stale local state.');
+    markSessionHandled();
+    cleanup({ instantChrome: true });
+    showToast('A saved live session belonged to a different project, so it was cleared. Pick an element to start fresh.', 6000);
   }
 
   function checkpointPayload(reason) {
@@ -4627,6 +7407,7 @@
       type: 'checkpoint',
       id: currentSessionId,
       revision: sessionState.nextCheckpointRevision(),
+      revisionDomain: 'browser',
       owner: browserOwner,
       phase: String(state || '').toLowerCase(),
       reason,
@@ -4634,6 +7415,9 @@
       expectedVariants,
       arrivedVariants,
       visibleVariant,
+      sourceFile: currentSourceFile || undefined,
+      previewFile: currentPreviewFile || undefined,
+      previewMode: currentPreviewMode || undefined,
       paramValues: { ...paramsCurrentValues },
     };
   }
@@ -4641,6 +7425,21 @@
   function sendCheckpoint(reason) {
     if (!currentSessionId) return Promise.resolve(null);
     return sendEvent(checkpointPayload(reason)).catch(() => null);
+  }
+
+  function sendSteerCheckpoint(id, reason, extra) {
+    if (!id) return Promise.resolve(null);
+    return sendEvent({
+      type: 'checkpoint',
+      id,
+      revision: sessionState.nextCheckpointRevision(),
+      revisionDomain: 'browser',
+      owner: browserOwner,
+      phase: 'steer',
+      reason,
+      pageUrl: location.pathname,
+      ...(extra || {}),
+    }).catch(() => null);
   }
 
   function queueCheckpoint(reason) {
@@ -4652,9 +7451,9 @@
     }, 120);
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Event handlers
-  // ---------------------------------------------------------------------------
+  //
 
   function handleMouseMove(e) {
     if (pendingApplyInFlight) return;
@@ -4722,15 +7521,7 @@
       && !selectedElement.contains(e.target)
     ) {
       if (configureKind === 'insert') { cancelInsertConfigure(); return; }
-      hideBar();
-      stopScrollTracking();
-      hideAnnotOverlay();
-      clearAnnotations();
-      renderEditBadge('hidden');
-      state = 'PICKING';
-      hoveredElement = null;
-      hideHighlight();
-      syncPageChatFocus('configure-outside-click');
+      exitConfigureToPicking('configure-outside-click', { clearHover: true });
       return;
     }
     if (state === 'PICKING' && insertActive) {
@@ -4747,13 +7538,12 @@
       hideInsertLine();
       configureKind = 'insert';
       selectedElement = placeholder;
-      state = 'CONFIGURING';
+      beginNewLiveConfiguration();
       hideHighlight();
       clearAnnotations();
       showAnnotOverlay(placeholder);
       showBar('configure');
       startScrollTracking();
-      syncPageInteractionCursor();
       return;
     }
     if (state !== 'PICKING' || !pickActive) return;
@@ -4766,7 +7556,7 @@
     e.preventDefault();
     e.stopPropagation();
     selectedElement = hoveredElement;
-    state = 'CONFIGURING';
+    beginNewLiveConfiguration();
     showHighlight(selectedElement);
     clearAnnotations();
     showAnnotOverlay(selectedElement);
@@ -4779,14 +7569,14 @@
 
   /**
    * Surface a brief, non-blocking heads-up when the picked element lives
-   * inside a container whose visibility is gated by ephemeral state — modals,
+   * inside a container whose visibility is gated by ephemeral state - modals,
    * collapsible panels, popovers, off-screen tab panels. If HMR remounts the
    * parent during generation (Vite Fast Refresh, SvelteKit page reload), the
    * variants land in source but stay invisible until the user re-opens the
    * container. Telling the user upfront is much friendlier than the silent
    * timeout-then-toast that they'd otherwise hit.
    *
-   * Heuristic, intentionally narrow — only fires for unambiguous cases so
+   * Heuristic, intentionally narrow - only fires for unambiguous cases so
    * we don't cry wolf on every nested element.
    */
   function maybeWarnConditionalAncestor(el) {
@@ -4804,7 +7594,7 @@
         showToast('Heads up: this element lives inside an open panel. If state resets during generation, you may need to re-open it.', 6000);
         return;
       }
-      // 3. Tab panel — only meaningful when the page also shows ANOTHER
+      // 3. Tab panel - only meaningful when the page also shows ANOTHER
       // tab as selected. A single tabpanel with no tablist is just a static
       // section in disguise and isn't conditional.
       if (node.getAttribute && node.getAttribute('role') === 'tabpanel') {
@@ -4833,12 +7623,12 @@
   // Fire a lightweight prefetch event the first time the user selects an
   // element on a given route. The agent uses this to Read the underlying file
   // into context before Go is hit, shaving the read off the critical path.
-  // Dedupe per session by pathname — clicking around on the same page doesn't
+  // Dedupe per session by pathname - clicking around on the same page doesn't
   // re-fire.
   //
   // DISABLED: quick-Go workflows pay an extra harness round trip because
   // prefetch + generate arrive as two events instead of one. Re-enable with
-  // a browser-side debounce (~800–1000ms, cancelled on Go) if we want to
+  // a browser-side debounce (~800-1000ms, cancelled on Go) if we want to
   // resurrect this. Server validator and skill dispatch remain in place so
   // flipping this flag is the only change needed.
   const PREFETCH_ENABLED = false;
@@ -4851,13 +7641,35 @@
     sendEvent({ type: 'prefetch', pageUrl: path });
   }
 
+  function shouldPassthroughElementNav(deepActive, e) {
+    if (!deepActive || !own(deepActive)) return false;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
+    if (!/^(INPUT|TEXTAREA)$/.test(deepActive.tagName || '')) return false;
+    if (deepActive.value) return false;
+    if (deepActive.id === PREFIX + '-input' && state === 'CONFIGURING') return true;
+    if (deepActive.id === PREFIX + '-page-chat-input' && state === 'PICKING') return true;
+    return false;
+  }
+
   function handleKeyDown(e) {
     // When the annotation input is focused, let it handle its own keys.
     if (annotEditing && annotEditing.input && e.target === annotEditing.input) return;
+    const deepActive = activeElementDeep();
+    if (
+      deepActive
+      && own(deepActive)
+      && /^(INPUT|TEXTAREA|SELECT)$/.test(deepActive.tagName || '')
+      && !shouldPassthroughElementNav(deepActive, e)
+    ) {
+      return;
+    }
+    if (isPageEditableElement(deepActive) && !isInlineEditActive(deepActive)) {
+      return;
+    }
     // While a contenteditable text-leaf is focused, let the browser handle
     // all keys except Escape. Escape cancels the current edit (restores
     // original text) and blurs without saving, staying in CONFIGURING.
-    if (e.target.isContentEditable && inlineEditRows.some((r) => r.el === e.target)) {
+    if (e.target.isContentEditable && isInlineEditActive(e.target)) {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
@@ -4889,14 +7701,15 @@
       if (state === 'EDITING') { cancelEditing(); return; }
       if (state === 'CONFIGURING') {
         if (configureKind === 'insert') { cancelInsertConfigure(); return; }
-        disableInlineEdit(); hideBar(); stopScrollTracking(); hideAnnotOverlay(); clearAnnotations(); renderEditBadge('hidden'); state = 'PICKING'; syncPageChatFocus('escape-from-configure'); return;
+        exitConfigureToPicking('escape-from-configure');
+        return;
       }
       if (state === 'CYCLING') { handleDiscard(); return; }
       if (state === 'SAVING' || state === 'CONFIRMED') return; // don't interrupt
       if (state === 'PICKING') {
         if (insertActive) toggleInsert();
         else if (pickActive) togglePick();
-        else { hideHighlight(); state = 'IDLE'; }
+        else { hideHighlight(); setLiveState('IDLE'); }
         return;
       }
     }
@@ -4920,7 +7733,7 @@
       } else if (e.key === 'Enter') {
         e.preventDefault();
         selectedElement = hoveredElement;
-        state = 'CONFIGURING';
+        beginNewLiveConfiguration();
         showHighlight(selectedElement);
         clearAnnotations();
         showAnnotOverlay(selectedElement);
@@ -4960,7 +7773,7 @@
     if (pendingApplyInFlight) { showManualApplyBusyToast(); return; }
     if (!selectedElement || state !== 'CONFIGURING') return;
     stopVoice({ suppressSubmit: true });
-    const input = document.getElementById(PREFIX + '-input');
+    const input = uiGetById(PREFIX + '-input');
     const prompt = input ? input.value.trim() : '';
 
     // Commit any pending pin edit BEFORE we snapshot annotations.
@@ -4969,17 +7782,31 @@
     disableInlineEdit();
     stripManualEditRuntimeState(selectedElement);
 
+    // A new cycle publishes new modules, so the previous cycle's mount failure
+    // is about files that no longer matter.
+    clearMountErrorCard();
+    lastReportedMountFailure = null;
+    pendingAcceptedSession = null;
+    // A new session supersedes any accept still awaiting its result; a late
+    // failure toast for the previous session would only mislead here.
+    awaitingAcceptResult = null;
     currentSessionId = id8();
     expectedVariants = selectedCount;
     arrivedVariants = 0;
     visibleVariant = 0;
+    generationPhase = 'queued';
+    parameterGenerationState = 'pending';
+    parameterReadyAnnouncedSession = null;
+    resetSessionFileMeta();
 
     // Flip to GENERATING immediately so the bar morphs without waiting on
     // capture + upload. The event is emitted from captureAndEmit() once the
-    // screenshot is uploaded (or capture fails — we still emit, just without
+    // screenshot is uploaded (or capture fails - we still emit, just without
     // screenshotPath).
     const elForCapture = selectedElement;
+    pickedAnchorSnapshot = buildPickedAnchorSnapshot(elForCapture);
     const captureRect = elForCapture.getBoundingClientRect();
+    pickedAnchorViewportTop = captureRect.top;
     const snapshot = {
       comments: annotState.comments.map(c => ({ x: c.x, y: c.y, text: c.text })),
       strokes: annotState.strokes.map(s => ({ points: s.points.map(p => [p[0], p[1]]) })),
@@ -4999,19 +7826,18 @@
     hideAnnotOverlay();
     clearAnnotations();
 
-    state = 'GENERATING';
+    setLiveState('GENERATING');
     // Disable the Edit badge: starting a manual text edit mid-generation would
     // conflict with the variant wrap that's about to land in the same DOM
-    // region. Only swap if the badge was visible — picked elements with no
+    // region. Only swap if the badge was visible - picked elements with no
     // text rows have it hidden already.
     if (editBadgeEl && editBadgeEl.style.display !== 'none') renderEditBadge('idle-disabled');
     showBar('generating');
     saveSession();
-    sendCheckpoint('generate_started');
     writeScrollY(window.scrollY);
     if (variantObserver) variantObserver.disconnect();
     variantObserver = startVariantObserver(currentSessionId);
-    startScrollLock(currentSessionId);
+    startScrollLock(currentSessionId, window.scrollY, pickedAnchorViewportTop);
 
     captureAndEmit(elForCapture, basePayload, snapshot, captureRect);
   }
@@ -5024,14 +7850,14 @@
     clearInsertPicking();
     configureKind = 'replace';
     selectedElement = null;
-    state = insertActive ? 'PICKING' : 'IDLE';
+    setLiveState(insertActive ? 'PICKING' : 'IDLE');
     hideHighlight();
     syncPageChatFocus('insert-configure-cancel');
   }
 
   function handleInsertCreate() {
     if (!placeholderElement || !insertAnchorElement || state !== 'CONFIGURING' || configureKind !== 'insert') return;
-    const input = document.getElementById(PREFIX + '-insert-input');
+    const input = uiGetById(PREFIX + '-insert-input');
     const prompt = input ? input.value.trim() : '';
     if (annotEditing) finalizeEditingPin();
     const snapshot = {
@@ -5041,15 +7867,28 @@
     if (!canCreateInsert({ prompt, comments: snapshot.comments, strokes: snapshot.strokes })) return;
 
     stopVoice({ suppressSubmit: true });
+    // A new cycle publishes new modules, so the previous cycle's mount failure
+    // is about files that no longer matter.
+    clearMountErrorCard();
+    lastReportedMountFailure = null;
+    pendingAcceptedSession = null;
+    // A new session supersedes any accept still awaiting its result; a late
+    // failure toast for the previous session would only mislead here.
+    awaitingAcceptResult = null;
     currentSessionId = id8();
     expectedVariants = selectedCount;
     arrivedVariants = 0;
     visibleVariant = 0;
+    generationPhase = 'queued';
+    parameterGenerationState = 'pending';
+    parameterReadyAnnouncedSession = null;
+    resetSessionFileMeta();
     selectedElement = placeholderElement;
     insertPlaceholderSnapshot = buildInsertPlaceholderSnapshotFromDom(insertAnchorElement, placeholderElement);
 
     const elForCapture = placeholderElement;
     const captureRect = elForCapture.getBoundingClientRect();
+    pickedAnchorViewportTop = captureRect.top;
     const basePayload = {
       type: 'generate',
       mode: 'insert',
@@ -5072,21 +7911,20 @@
     hideAnnotOverlay();
     clearAnnotations();
 
-    state = 'GENERATING';
+    setLiveState('GENERATING');
     showBar('generating');
     startScrollTracking();
     saveSession();
-    sendCheckpoint('generate_started');
     writeScrollY(window.scrollY);
     if (variantObserver) variantObserver.disconnect();
     variantObserver = startVariantObserver(currentSessionId);
-    startScrollLock(currentSessionId);
+    startScrollLock(currentSessionId, window.scrollY, pickedAnchorViewportTop);
     captureAndEmit(elForCapture, basePayload, snapshot, captureRect);
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Screenshot capture + upload
-  // ---------------------------------------------------------------------------
+  //
 
   let msLoadPromise = null;
   function loadModernScreenshot() {
@@ -5097,14 +7935,14 @@
       s.src = 'http://localhost:' + PORT + '/modern-screenshot.js';
       s.onload = () => resolve(window.modernScreenshot);
       s.onerror = () => { msLoadPromise = null; reject(new Error('modern-screenshot failed to load')); };
-      document.head.appendChild(s);
+      uiAppendStyle(s);
     });
     return msLoadPromise;
   }
 
   // Collect @font-face rules from every stylesheet on the page. Cross-origin
   // sheets (Google Fonts, Typekit, etc.) throw SecurityError on .cssRules
-  // access, so modern-screenshot can't embed them on its own — the resulting
+  // access, so modern-screenshot can't embed them on its own - the resulting
   // SVG falls back to system fonts and text re-wraps + renders with different
   // weight. We fetch the raw CSS text (CORS-permitted for these providers),
   // extract @font-face blocks, inline the referenced font files as base64
@@ -5188,7 +8026,7 @@
   // modern-screenshot force-sets `background-color: X !important` on the
   // cloned root whenever `backgroundColor` is passed, clobbering the
   // element's own background. So we only pass it when the element is
-  // genuinely transparent (no own color, no own image) — in that case
+  // genuinely transparent (no own color, no own image) - in that case
   // we resolve up the DOM to the nearest opaque ancestor so the capture
   // sits on the page's real background instead of rendering black.
   function resolveCanvasBackground(el) {
@@ -5206,10 +8044,88 @@
     // `getComputedStyle(body).backgroundColor || …` chain is a trap: that
     // call returns the literal string `"rgba(0, 0, 0, 0)"` for a page that
     // never set its own bg, which is truthy and short-circuits the chain to
-    // transparent-black — modern-screenshot then renders the capture on a
+    // transparent-black - modern-screenshot then renders the capture on a
     // black canvas and the shader overlay flashes solid black during load.
     // The browser canvas defaults to white, so we do too.
     return '#ffffff';
+  }
+
+  function captureChromeNodes() {
+    const nodes = [];
+    const add = (node) => {
+      if (!node || node === document.body || nodes.includes(node)) return;
+      nodes.push(node);
+    };
+    add(document.getElementById(PREFIX + '-root'));
+    [
+      PREFIX + '-highlight',
+      PREFIX + '-tooltip',
+      PREFIX + '-bar',
+      PREFIX + '-picker',
+      PREFIX + '-params-panel',
+      PREFIX + '-insert-line',
+      PREFIX + '-insert-placeholder',
+      PREFIX + '-insert-create-tooltip',
+      PREFIX + '-annot',
+      PREFIX + '-design-host',
+      PREFIX + '-toast',
+      PREFIX + '-shader',
+    ].forEach((id) => add(uiGetById(id)));
+    return nodes;
+  }
+
+  async function hideCaptureChromeForShaderProxy(fn) {
+    const saved = captureChromeNodes().map((node) => ({
+      node,
+      visibility: node.style.visibility,
+      priority: node.style.getPropertyPriority('visibility'),
+    }));
+    for (const { node } of saved) {
+      node.style.setProperty('visibility', 'hidden', 'important');
+    }
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    try {
+      return await fn();
+    } finally {
+      for (const { node, visibility, priority } of saved) {
+        node.style.setProperty('visibility', visibility, priority);
+      }
+    }
+  }
+
+  function shouldUseAncestorCropShaderProxy(el) {
+    // TODO: Enable this proxy for React/Vue/etc. adapters once their live
+    // preview mounts are covered by the same shader regression checks.
+    const adapter = String(window.__IMPECCABLE_LIVE_ADAPTER__ || '').toLowerCase();
+    if (adapter === 'svelte' || adapter === 'sveltekit') return true;
+    if (isFrameworkComponentPreviewMode(currentPreviewMode) || svelteComponentSession) return true;
+    const wrapper = el?.closest?.('[data-impeccable-variants]');
+    return isFrameworkComponentPreviewMode(wrapper?.dataset?.impeccablePreview);
+  }
+
+  function paintsShaderProxySurface(node) {
+    const s = getComputedStyle(node);
+    return !isTransparentColor(s.backgroundColor)
+      || (s.backgroundImage && s.backgroundImage !== 'none')
+      || paintsBackdrop(node);
+  }
+
+  function findShaderProxyCaptureRoot(el) {
+    const doc = el.ownerDocument || document;
+    const er = el.getBoundingClientRect();
+    let node = el.parentElement;
+    while (node && node !== doc.documentElement) {
+      const nr = node.getBoundingClientRect();
+      const containsElement =
+        nr.width > 0 && nr.height > 0 &&
+        nr.left <= er.left + 0.5 &&
+        nr.top <= er.top + 0.5 &&
+        nr.right >= er.right - 0.5 &&
+        nr.bottom >= er.bottom - 0.5;
+      if (containsElement && paintsShaderProxySurface(node)) return node;
+      node = node.parentElement;
+    }
+    return null;
   }
 
   // Capture the element (with current annotations baked in) and return
@@ -5217,6 +8133,30 @@
   // shader's halftone ground (so capture, upload, and shader all agree on what
   // sits behind the element). Shared between the Go flow (uploads the blob) and
   // the shader-resume path.
+  async function captureElementFromRenderedAncestor(ms, el, opts) {
+    const doc = el.ownerDocument || document;
+    const captureRoot = findShaderProxyCaptureRoot(el);
+    if (!captureRoot) throw new Error('No painted ancestor for Svelte shader proxy');
+    const rootCanvas = await ms.domToCanvas(captureRoot, opts);
+    const S = opts.scale;
+    const er = el.getBoundingClientRect();
+    const rr = captureRoot.getBoundingClientRect();
+    const sx = (er.left - rr.left) * S;
+    const sy = (er.top - rr.top) * S;
+    const sw = er.width * S;
+    const sh = er.height * S;
+    if (sw <= 0 || sh <= 0) throw new Error('Selected element has no visible capture rect');
+    const crop = doc.createElement('canvas');
+    crop.width = Math.max(1, Math.round(sw));
+    crop.height = Math.max(1, Math.round(sh));
+    const cctx = crop.getContext('2d', { willReadFrequently: true });
+    cctx.drawImage(rootCanvas, sx, sy, sw, sh, 0, 0, crop.width, crop.height);
+    const paper = dominantRgb01(cctx, crop.width, crop.height) || averageRgb01(cctx, crop.width, crop.height);
+    const blob = await new Promise((res) => crop.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('Ancestor crop failed to produce a PNG blob');
+    return { blob, paper };
+  }
+
   async function captureElementToBlob(el, snapshot, rect) {
     try { if (document.fonts?.ready) await document.fonts.ready; } catch {}
     const hasAnnotations = snapshot && (snapshot.comments.length > 0 || snapshot.strokes.length > 0);
@@ -5238,6 +8178,13 @@
         scale: Math.min(window.devicePixelRatio || 1, 2),
         font: fontCssText ? { cssText: fontCssText } : undefined,
       };
+      if (shouldUseAncestorCropShaderProxy(el)) {
+        try {
+          return await hideCaptureChromeForShaderProxy(() => captureElementFromRenderedAncestor(ms, el, opts));
+        } catch (err) {
+          console.warn('[impeccable] Svelte ancestor crop capture failed, falling back to element capture:', err);
+        }
+      }
       const bg = resolveCanvasBackground(el);
       // Fast path: the element paints its own background, or an opaque ancestor
       // color was found. modern-screenshot bakes that color; paper matches it.
@@ -5248,7 +8195,7 @@
       // Transparent up to the root. The visible backdrop may still come from an
       // ancestor's background-image or a covering positioned layer (e.g. a hero
       // art div) that the color walk can't see. Capture that ancestor and crop
-      // to the element so the real backdrop is embedded — correct for both the
+      // to the element so the real backdrop is embedded - correct for both the
       // shader and the screenshot sent to the model. Fall back to white only
       // when nothing is actually painted behind the element.
       const backdrop = findBackdropAncestor(el);
@@ -5281,6 +8228,18 @@
   }
 
   async function captureAndEmit(el, basePayload, snapshot, rect) {
+    const hasAnnotations = snapshot && (snapshot.comments.length > 0 || snapshot.strokes.length > 0);
+
+    // Plain requests do not send a screenshot to the agent, so capture is
+    // presentation-only. Wait only for the helper to accept the event before
+    // starting CPU-heavy capture; this yields the browser task and prevents
+    // rasterization from delaying the fetch itself.
+    if (!hasAnnotations) {
+      basePayload.clientSentAt = Date.now();
+      const created = await sendEvent(basePayload);
+      if (created?.ok && currentSessionId === basePayload.id) sendCheckpoint('generate_started');
+    }
+
     let screenshotPath;
     let blob;
     let paper;
@@ -5289,16 +8248,15 @@
     } catch (err) {
       console.warn('[impeccable] capture failed, proceeding without screenshot:', err);
     }
-    // Light up the shader overlay the moment capture is ready — no reason to
+    // Light up the shader overlay the moment capture is ready - no reason to
     // wait for the upload to complete before the user sees something alive.
     if (blob && state === 'GENERATING') {
       showShaderOverlay(el, blob, rect, paper);
     }
     // Only upload + forward the screenshot when annotations (comments/strokes)
-    // are present. Without annotations the image is pure visual anchoring —
+    // are present. Without annotations the image is pure visual anchoring -
     // it biases the model toward the current rendering and works against the
     // three-distinct-directions brief.
-    const hasAnnotations = snapshot && (snapshot.comments.length > 0 || snapshot.strokes.length > 0);
     if (blob && hasAnnotations) {
       try {
         const uploadRes = await fetch(
@@ -5316,16 +8274,24 @@
         console.warn('[impeccable] annotation upload failed:', err);
       }
     }
-    sendEvent(screenshotPath ? { ...basePayload, screenshotPath } : basePayload);
+    // Annotated requests must wait for capture + upload because the screenshot
+    // is semantic input. Plain requests were already dispatched above.
+    if (hasAnnotations) {
+      basePayload.clientSentAt = Date.now();
+      const created = await sendEvent(screenshotPath ? { ...basePayload, screenshotPath } : basePayload);
+      // Capture/upload can take seconds. Progress before this acknowledgment
+      // refers to an unknown session and would clear our own active work.
+      if (created?.ok && currentSessionId === basePayload.id) sendCheckpoint('generate_started');
+    }
   }
 
-  // ---------------------------------------------------------------------------
-  // Shader overlay — renders the captured screenshot as a WebGL texture and
+  //
+  // Shader overlay - renders the captured screenshot as a WebGL texture and
   // runs an editorial "ink-wash" fragment shader over it during generation.
   // A single rolling band sweeps top-to-bottom, desaturating + tinting kinpaku
   // and leaving a soft trail. Makes the wait feel like a letterpress scan
   // instead of a dead spinner.
-  // ---------------------------------------------------------------------------
+  //
 
   const SHADER_VS = `attribute vec2 a_position;
 attribute vec2 a_uv;
@@ -5343,7 +8309,7 @@ uniform vec3 u_accent;
 uniform vec3 u_paper;
 varying vec2 v_uv;
 
-// Asymmetric roller band. Product of two one-sided smoothsteps — peaks at
+// Asymmetric roller band. Product of two one-sided smoothsteps - peaks at
 // d=0 with a short sharp leading ramp and a longer soft trailing tail. Clean
 // outside the [-leadW, trailW] range (no rogue "trail=1 everywhere below"
 // failure that reversed-edge smoothstep would give).
@@ -5369,8 +8335,8 @@ void main() {
   vec2 sampleCenter = (cellId + 0.5) * cellPx / u_resolution;
   vec3 cellImg = texture2D(u_texture, sampleCenter).rgb;
   // Dot size tracks how much the cell DIFFERS from the element's own ground
-  // (u_paper), not absolute darkness. So the content — text, buttons, anything
-  // that deviates from the background — always becomes the dots, on light AND
+  // (u_paper), not absolute darkness. So the content - text, buttons, anything
+  // that deviates from the background - always becomes the dots, on light AND
   // dark surfaces. A plain darkness curve inverts on dark elements: the dark
   // background fills with ink and the lighter content punches holes instead.
   // Capped below the cell half-width so dense content stays separated dots.
@@ -5380,8 +8346,8 @@ void main() {
   // Two-stage dissolve as the roller passes, so the element is rebuilt purely
   // from dot size (its own halftone) and never bleeds through as raw pixels
   // behind the dots:
-  //   1. cover  — the element flattens to the uniform paper ground first.
-  //   2. dotAmt — kinpaku dots then emerge, sized by each cell's luma.
+  //   1. cover  - the element flattens to the uniform paper ground first.
+  //   2. dotAmt - kinpaku dots then emerge, sized by each cell's luma.
   // A plain mix(base, halftone, band) instead left the raw element visible
   // through the band's soft core/trail. The paper ground is u_paper (the
   // element's own bg tone) rather than a fixed white, so the dissolve reads the
@@ -5399,10 +8365,19 @@ void main() {
 
   // Kinpaku gold converted to approximate sRGB 0-1 (matches oklch(84% 0.19 80.46))
   const SHADER_ACCENT = [1.0, 0.78, 0.31];
-  // Fallback ground when an element and all its ancestors are transparent —
+  // Fallback ground when an element and all its ancestors are transparent -
   // matches the original off-white risograph paper.
   const SHADER_PAPER_FALLBACK = [0.975, 0.965, 0.955];
   let shaderState = null; // { canvas, gl, program, texture, rafId, startTime }
+  // showShaderOverlay is async: it appends its canvas, then awaits
+  // createImageBitmap and the GL setup before it publishes shaderState. A
+  // teardown that landed inside that window found shaderState still null,
+  // returned, and then watched the construction publish itself over a session
+  // that had already left GENERATING, with no teardown left to run. That is
+  // the generating loader frozen over a page that already cycles (issue #719).
+  // Every teardown bumps this epoch; a construction abandons its own canvas as
+  // soon as it sees the epoch move.
+  let shaderEpoch = 0;
 
   // The element's effective background tone, used as the uniform halftone
   // ground so content dissolves into dots over it. Unlike resolveCanvasBackground
@@ -5412,7 +8387,7 @@ void main() {
   // Rasterize any CSS color (oklch, color(), named, hex, rgb) through a 1x1
   // canvas and read back the sRGB pixel. String-parsing computed colors is a
   // trap: Chrome returns backgroundColor as oklch()/color() for oklch inputs,
-  // which a hex/rgb regex misses — every site token would fall back to white.
+  // which a hex/rgb regex misses - every site token would fall back to white.
   let colorParseCtx = null;
   function cssColorToRgb01(str) {
     if (!colorParseCtx) {
@@ -5440,7 +8415,7 @@ void main() {
 
   // When an element is transparent up to the root, its visible backdrop can
   // still come from an ancestor's background-image or a covering positioned
-  // layer that is a *child* of an ancestor (e.g. a hero's absolute art div) —
+  // layer that is a *child* of an ancestor (e.g. a hero's absolute art div) -
   // neither of which the ancestor background-COLOR walk can see. Return the
   // nearest such ancestor so we can capture it and crop, embedding the real
   // backdrop. Returns null when nothing is actually painted behind the element
@@ -5479,9 +8454,34 @@ void main() {
     return n ? [r / n / 255, g / n / 255, b / n / 255] : SHADER_PAPER_FALLBACK;
   }
 
+  // Pick the most common visible color cluster from a crop. A straight average
+  // gets pulled by text and icons; the dominant bucket usually represents the
+  // surface the shader should dissolve into.
+  function dominantRgb01(ctx, w, h) {
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const stride = Math.max(1, Math.floor((w * h) / 6000));
+    const buckets = new Map();
+    for (let p = 0; p < w * h; p += stride) {
+      const i = p * 4;
+      if (data[i + 3] < 16) continue;
+      const key = (data[i] >> 4) + ',' + (data[i + 1] >> 4) + ',' + (data[i + 2] >> 4);
+      const bucket = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+      bucket.count += 1;
+      bucket.r += data[i];
+      bucket.g += data[i + 1];
+      bucket.b += data[i + 2];
+      buckets.set(key, bucket);
+    }
+    let best = null;
+    for (const bucket of buckets.values()) {
+      if (!best || bucket.count > best.count) best = bucket;
+    }
+    return best ? [best.r / best.count / 255, best.g / best.count / 255, best.b / best.count / 255] : null;
+  }
+
   // Average the backdrop sampled just OUTSIDE an element's rect within a larger
   // canvas. The ground tone for the dissolve must be the real backdrop, not the
-  // mean of the element's own crop — averaging the crop folds in the element's
+  // mean of the element's own crop - averaging the crop folds in the element's
   // content (e.g. bright heading text), pulling the ground toward muddy gray.
   function sampleSurroundingRgb(ctx, sx, sy, sw, sh, W, H) {
     const pad = Math.max(2, Math.round(Math.min(sw, sh) * 0.12));
@@ -5524,50 +8524,86 @@ void main() {
     });
   }
 
+  /** Drop a shader node no shaderState owns (an abandoned construction). */
+  function removeStrayShaderNode() {
+    const stray = uiGetById(PREFIX + '-shader');
+    if (stray) stray.remove();
+  }
+
   function hideShaderOverlay() {
-    if (!shaderState) return;
+    // Bump first, unconditionally: this is what tells an in-flight
+    // showShaderOverlay to abandon itself rather than publish over a session
+    // that has already moved on.
+    shaderEpoch += 1;
+    if (!shaderState) {
+      removeStrayShaderNode();
+      return;
+    }
     if (shaderState.rafId) cancelAnimationFrame(shaderState.rafId);
     if (shaderState.canvas) shaderState.canvas.remove();
+    if (shaderState.objectUrl) URL.revokeObjectURL(shaderState.objectUrl);
     const lose = shaderState.gl?.getExtension?.('WEBGL_lose_context');
     try { lose?.loseContext(); } catch {}
     shaderState = null;
+    removeStrayShaderNode();
+  }
+
+  function showShaderBitmapFallback(canvas, blob) {
+    canvas.remove();
+    const objectUrl = URL.createObjectURL(blob);
+    const fallback = document.createElement('div');
+    fallback.id = PREFIX + '-shader';
+    // Copy positioning via cssText. Object.assign across CSSStyleDeclaration
+    // throws in modern Chromium because the source's indexed properties
+    // (style[0], [1], ...) are read-only and the engine forbids writing
+    // them on the destination.
+    fallback.style.cssText = canvas.style.cssText;
+    fallback.style.backgroundImage = 'url("' + objectUrl + '")';
+    fallback.style.backgroundSize = '100% 100%';
+    fallback.style.backgroundRepeat = 'no-repeat';
+    fallback.style.outline = '2px dashed ' + C.brand;
+    fallback.style.outlineOffset = '-2px';
+    uiAppend(fallback);
+    shaderState = { canvas: fallback, gl: null, program: null, texture: null, rafId: 0, startTime: 0, objectUrl };
   }
 
   async function showShaderOverlay(el, blob, rect, paper) {
     hideShaderOverlay();
     if (!blob || !el) return;
+    // hideShaderOverlay just bumped the epoch, so this run owns it until the
+    // next teardown. Every step past an await re-checks before it publishes.
+    const epoch = shaderEpoch;
+    const abandoned = (node, gl) => {
+      if (epoch === shaderEpoch) return false;
+      node.remove();
+      const lose = gl?.getExtension?.('WEBGL_lose_context');
+      try { lose?.loseContext(); } catch {}
+      return true;
+    };
     const canvas = document.createElement('canvas');
     canvas.id = PREFIX + '-shader';
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const radius = getComputedStyle(el).borderRadius;
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
     Object.assign(canvas.style, {
       position: 'fixed',
       top: rect.top + 'px', left: rect.left + 'px',
       width: rect.width + 'px', height: rect.height + 'px',
+      borderRadius: radius,
+      overflow: 'hidden',
       pointerEvents: 'none',
       zIndex: Z.bar - 1,
     });
-    document.body.appendChild(canvas);
+    uiAppend(canvas);
 
     const gl = canvas.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: false })
             || canvas.getContext('experimental-webgl');
     if (!gl) {
-      // WebGL unavailable — fall back to a plain <img> overlay so the user
-      // still sees something meaningful during generation.
-      canvas.remove();
-      const img = document.createElement('img');
-      img.src = URL.createObjectURL(blob);
-      img.id = PREFIX + '-shader';
-      // Copy positioning via cssText. Object.assign across CSSStyleDeclaration
-      // throws in modern Chromium because the source's indexed properties
-      // (style[0], [1], ...) are read-only and the engine forbids writing
-      // them on the destination.
-      img.style.cssText = canvas.style.cssText;
-      img.style.outline = '2px dashed ' + C.brand;
-      img.style.outlineOffset = '-2px';
-      document.body.appendChild(img);
-      shaderState = { canvas: img, gl: null, program: null, texture: null, rafId: 0, startTime: 0 };
+      // WebGL unavailable: use the captured bitmap as a background overlay so
+      // the user still sees something meaningful during generation.
+      if (abandoned(canvas, null)) return;
+      showShaderBitmapFallback(canvas, blob);
       return;
     }
 
@@ -5606,17 +8642,21 @@ void main() {
     }
 
     // Upload the screenshot as a texture
+    if (abandoned(canvas, gl)) return;
     let bitmap;
     try {
       bitmap = await createImageBitmap(blob);
-    } catch {
-      // Safari fallback: go via a regular Image
-      const imgUrl = URL.createObjectURL(blob);
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((r, rej) => { img.onload = r; img.onerror = rej; });
-      bitmap = img;
-      URL.revokeObjectURL(imgUrl);
+    } catch (err) {
+      console.warn('[impeccable] shader bitmap decode failed:', err);
+      if (abandoned(canvas, gl)) return;
+      const lose = gl.getExtension?.('WEBGL_lose_context');
+      try { lose?.loseContext(); } catch {}
+      showShaderBitmapFallback(canvas, blob);
+      return;
+    }
+    if (abandoned(canvas, gl)) {
+      if (bitmap.close) bitmap.close();
+      return;
     }
     texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -5636,6 +8676,7 @@ void main() {
     const paperRgb = paper || resolvePaperRgb(el);
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    if (abandoned(canvas, gl)) return;
     shaderState = { canvas, gl, program, texture, rafId: 0, startTime: performance.now(), reduced };
     function frame() {
       if (!shaderState) return;
@@ -5656,9 +8697,12 @@ void main() {
     frame();
   }
 
-  function handleAccept() {
+  async function handleAccept() {
     if (pendingApplyInFlight) { showManualApplyBusyToast(); return; }
-    if (!currentSessionId || arrivedVariants === 0) return;
+    if (pendingAcceptedSession || state === 'SAVING') return;
+    if (variantSelectionPromise) {
+      try { await variantSelectionPromise; } catch { /* failed selection falls back below */ }
+    }
     const domVisibleVariant = readVisibleVariantFromDOM(currentSessionId);
     if (domVisibleVariant > 0) visibleVariant = domVisibleVariant;
     const acceptPayload = {
@@ -5666,72 +8710,250 @@ void main() {
       id: currentSessionId,
       variantId: String(visibleVariant),
       pageUrl: location.pathname,
+      clientSentAt: Date.now(),
     };
+    if (!currentSessionId || arrivedVariants === 0) return;
+    const acceptWrapper = findVariantsWrapper(currentSessionId);
     if (Object.keys(paramsCurrentValues).length > 0) {
       acceptPayload.paramValues = { ...paramsCurrentValues };
     }
     // The accepted variant is already the only visible child of the wrapper
     // (all other variants are display:none). HMR from the source rewrite will
-    // replace the wrapper imminently. Don't eagerly replaceChild here — React
+    // replace the wrapper imminently. Don't eagerly replaceChild here - React
     // reconciliation races with our mutation and throws NotFoundError in Next
     // 16 / Turbopack. Schedule a fallback that runs the manual swap only if
     // HMR hasn't cleaned up by then (keeps static-server flows working).
     const acceptedSessionId = currentSessionId;
     const acceptedVariant = visibleVariant;
+    const acceptedIsSvelteComponent = svelteComponentSession?.sessionId === acceptedSessionId
+      || isFrameworkComponentPreviewMode(acceptWrapper?.dataset?.impeccablePreview);
+    const acceptedSnapshot = snapshotAcceptedVariantDom(acceptedSessionId, acceptedVariant);
 
-    state = 'SAVING';
+    setLiveState('SAVING');
     updateBarContent('saving');
+    pendingAcceptedSession = {
+      id: acceptedSessionId,
+      variant: String(acceptedVariant),
+      isSvelteComponent: acceptedIsSvelteComponent,
+      ...acceptedSnapshot,
+      finalizing: false,
+    };
+    saveSession();
 
     sendEvent(acceptPayload, { throwOnError: true })
       .then(() => {
+        const pending = pendingAcceptedSession;
+        if (!pending || pending.id !== acceptedSessionId) return;
+        // POST /events returns only after the accept intent is durable and the
+        // generation epoch is fenced. Source promotion/carbonize can finish in
+        // the background; the foreground picker is free immediately.
         markSessionHandled();
-        confirmAcceptAfterReceipt();
+        setLiveState('CONFIRMED');
+        document.documentElement.dataset.impeccableAcceptToPickingMs = String(Date.now() - acceptPayload.clientSentAt);
+        awaitingAcceptResult = { id: acceptedSessionId };
+        scheduleAcceptCleanup(pending);
       })
       .catch(() => {
-        state = 'CYCLING';
-        updateBarContent('cycling');
+        if (pendingAcceptedSession?.id === acceptedSessionId) pendingAcceptedSession = null;
+        setLiveState('CYCLING');
+        hideShaderOverlay();
+        showOrUpdateCyclingBar();
         showToast('Could not confirm accept with the live server. Session kept for recovery; try Accept again.', 5000);
       });
+  }
 
-    function confirmAcceptAfterReceipt() {
-      state = 'CONFIRMED';
-      updateBarContent('confirmed');
-      scheduleAcceptCleanup();
+  function maybeCompleteAcceptedSession(msg) {
+    const pending = pendingAcceptedSession;
+    if (!pending || !msg?.id || msg.id !== pending.id) return false;
+    if (currentSessionId && currentSessionId !== pending.id) {
+      pendingAcceptedSession = null;
+      return false;
     }
+    if (pending.finalizing) return true;
+    pending.finalizing = true;
+    markSessionHandled();
+    if (pending.isSvelteComponent) {
+      commitAcceptedSvelteComponentToDom(pending.id);
+    }
+    setLiveState('CONFIRMED');
+    updateBarContent('confirmed');
+    scheduleAcceptCleanup(pending);
+    return true;
+  }
 
-    function scheduleAcceptCleanup() {
-      setTimeout(function() {
-      hideBar();
-      hideHighlight();
-      stopScrollTracking();
-      if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
-      stopScrollLock();
-      clearScrollY();
-      clearSession();
-      selectedElement = null;
-      currentSessionId = null;
-      selectedAction = 'impeccable';
-      renderEditBadge('hidden');
-      state = 'PICKING';
-    }, 1800);
-
-    // Static-server / no-HMR fallback: if the wrapper is still around 2s after
-    // the cleanup above, swap it out manually. By now React has either moved
-    // on or the app isn't React at all. Preserve the `data-impeccable-variant="N"`
-    // div (with display:contents) so @scope rules anchored to the variant
-    // attribute keep matching until reload replaces it with the carbonize block.
-    setTimeout(function() {
-      const wrapper = document.querySelector('[data-impeccable-variants="' + acceptedSessionId + '"]');
-      if (!wrapper) return;
-      const accepted = wrapper.querySelector('[data-impeccable-variant="' + acceptedVariant + '"]');
-      if (accepted && accepted.firstElementChild) {
-        const parent = wrapper.parentElement;
-        if (!parent) return;
-        accepted.style.display = 'contents';
-        parent.replaceChild(accepted, wrapper);
+  function scheduleAcceptCleanup(accepted) {
+    const recoveryRevision = liveInteractionRevision;
+    queueMicrotask(function() {
+      if (pendingAcceptedSession?.id !== accepted?.id) return;
+      // Svelte previews live in an adapter-owned mount rather than in source
+      // wrapper markup. Promote the mounted variant before releasing the
+      // session so the old adapter instance cannot linger behind the next
+      // Pick → Go loop while carbonize finishes in the background.
+      if (accepted?.isSvelteComponent) {
+        commitAcceptedSvelteComponentToDom(accepted.id);
       }
-      }, 2000);
+      cleanupAcceptedSession();
+    });
+    // Let React/Vue/Svelte own the HMR reconciliation. Mutating their DOM in
+    // the same turn as the source update causes removeChild/NotFoundError
+    // races. Static servers still need a fallback, but it must not keep Live
+    // in SAVING or block the user's next pick.
+    if (!accepted?.isSvelteComponent) {
+      watchForHandledRuntimeWrapper(accepted?.id, recoveryRevision);
+      setTimeout(function() {
+        if (deferredRecoverySuperseded(accepted?.id, recoveryRevision)) return;
+        if (!acceptedDomAlreadyClean(accepted)) ensureAcceptedDomClean(accepted, recoveryRevision);
+      }, 1200);
     }
+  }
+
+  function snapshotAcceptedVariantDom(sessionId, variantId) {
+    const wrapper = findVariantsWrapper(sessionId);
+    const accepted = wrapper?.querySelector?.('[data-impeccable-variant="' + variantId + '"]');
+    const root = accepted?.firstElementChild || null;
+    return {
+      acceptedHtml: accepted ? accepted.innerHTML : '',
+      acceptedSelector: selectorForAcceptedRoot(root),
+      parentElement: wrapper?.parentElement || null,
+      parentSelector: selectorForAcceptedRoot(wrapper?.parentElement || null),
+      nextSibling: wrapper?.nextSibling || null,
+    };
+  }
+
+  function selectorForAcceptedRoot(root) {
+    if (!root || !root.tagName) return '';
+    const tag = root.tagName.toLowerCase();
+    const classes = [...(root.classList || [])].filter(Boolean);
+    if (classes.length === 0) return tag;
+    return tag + classes.map((cls) => '.' + cssIdent(cls)).join('');
+  }
+
+  function acceptedDomAlreadyClean(pending) {
+    if (!pending?.acceptedSelector) return false;
+    const matches = [...document.querySelectorAll(pending.acceptedSelector)];
+    return matches.length > 0
+      && matches.every((el) => !el.closest('[data-impeccable-variants],[data-impeccable-variant],[data-impeccable-carbonize]'));
+  }
+
+  function ensureAcceptedDomClean(pending, recoveryRevision) {
+    // Background cleanup for an accepted session must never mutate or reload
+    // a newer comparison the user has already started.
+    if (deferredRecoverySuperseded(pending?.id, recoveryRevision)) return;
+    if (acceptedDomAlreadyClean(pending)) return;
+    const sessionId = pending?.id;
+    const variantId = pending?.variant;
+    const wrappers = findAcceptedRuntimeWrappers(sessionId);
+    if (hasFrameworkHmrOwnership(wrappers[0] || pending?.parentElement)) {
+      // Vite can coalesce rapid scaffold/carbonize writes and leave the last
+      // framework-owned preview tree mounted even though source is clean. Give
+      // HMR another grace window, then reload from clean source rather than
+      // violating reconciler ownership with a manual DOM mutation.
+      setTimeout(function() {
+        if (deferredRecoverySuperseded(pending?.id, recoveryRevision)) return;
+        if (!acceptedDomAlreadyClean(pending)) location.reload();
+      }, 2000);
+      return;
+    }
+    if (wrappers.length === 0) {
+      restoreAcceptedDomFromSnapshot(pending, recoveryRevision);
+      return;
+    }
+    for (const wrapper of wrappers) {
+      if (!wrapper?.isConnected) continue;
+      const accepted = wrapper.querySelector?.('[data-impeccable-variant="' + variantId + '"]');
+      if (!accepted) {
+        wrapper.remove();
+        continue;
+      }
+      const parent = wrapper.parentElement;
+      if (!parent) continue;
+      while (accepted.firstChild) {
+        parent.insertBefore(accepted.firstChild, wrapper);
+      }
+      wrapper.remove();
+    }
+    if (!acceptedDomAlreadyClean(pending)) restoreAcceptedDomFromSnapshot(pending, recoveryRevision);
+  }
+
+  function findAcceptedRuntimeWrappers(sessionId) {
+    if (!sessionId) return [];
+    return [...new Set([
+      ...document.querySelectorAll('[data-impeccable-variants="' + sessionId + '"]'),
+      ...document.querySelectorAll('[data-impeccable-carbonize="' + sessionId + '"]'),
+    ])];
+  }
+
+  function restoreAcceptedDomFromSnapshot(pending, recoveryRevision) {
+    if (acceptedDomAlreadyClean(pending)) return;
+    if (!pending?.acceptedHtml) {
+      reloadAfterMissingAcceptedDom(pending, recoveryRevision);
+      return;
+    }
+    const parent = pending.parentElement?.isConnected
+      ? pending.parentElement
+      : (pending.parentSelector ? document.querySelector(pending.parentSelector) : null);
+    if (!parent) {
+      reloadAfterMissingAcceptedDom(pending, recoveryRevision);
+      return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = pending.acceptedHtml;
+    const anchor = pending.nextSibling?.isConnected && pending.nextSibling.parentElement === parent
+      ? pending.nextSibling
+      : null;
+    parent.insertBefore(template.content, anchor);
+    if (!acceptedDomAlreadyClean(pending)) reloadAfterMissingAcceptedDom(pending, recoveryRevision);
+  }
+
+  function reloadAfterMissingAcceptedDom(pending, recoveryRevision) {
+    if (deferredRecoverySuperseded(pending?.id, recoveryRevision)) return;
+    if (acceptedDomAlreadyClean(pending)) return;
+    if (pending?.id && document.querySelector('[data-impeccable-variants="' + pending.id + '"]')) return;
+    location.reload();
+  }
+
+  function cleanupAcceptedSession() {
+    hideBar();
+    hideHighlight();
+    stopScrollTracking();
+    if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
+    stopScrollLock();
+    removeVariantStateStylesheet();
+    clearScrollY();
+    clearSession();
+    resetSessionFileMeta();
+    selectedElement = null;
+    hoveredElement = null;
+    pagePickSkipClick = false;
+    currentSessionId = null;
+    parameterGenerationState = 'idle';
+    parameterReadyAnnouncedSession = null;
+    selectedAction = 'impeccable';
+    pendingAcceptedSession = null;
+    renderEditBadge('hidden');
+    setLiveState('PICKING');
+  }
+
+  function commitAcceptedVariantToDom(sessionId, variantId) {
+    const wrapper = findVariantsWrapper(sessionId);
+    if (!wrapper) return false;
+    const accepted = wrapper.querySelector('[data-impeccable-variant="' + variantId + '"]');
+    if (!accepted || !accepted.firstElementChild) return false;
+    const parent = wrapper.parentElement;
+    if (!parent) return false;
+
+    const style = wrapper.querySelector('style[data-impeccable-css]');
+    if (style && !document.querySelector('style[data-impeccable-accepted-css="' + sessionId + '"]')) {
+      const promotedStyle = style.cloneNode(true);
+      promotedStyle.setAttribute('data-impeccable-accepted-css', sessionId);
+      parent.insertBefore(promotedStyle, wrapper);
+    }
+
+    const committed = accepted.cloneNode(true);
+    committed.removeAttribute('hidden');
+    committed.style.display = 'contents';
+    parent.replaceChild(committed, wrapper);
+    return true;
   }
 
   function handleDiscard() {
@@ -5740,15 +8962,242 @@ void main() {
     sendEvent({ type: 'discard', id: currentSessionId }, { throwOnError: true })
       .then(() => {
         markSessionHandled();
-        cleanup();
+        cleanup({ restoreOriginal: true, instantChrome: true });
       })
       .catch(() => showToast('Could not confirm discard with the live server. Session kept for recovery.', 5000));
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Session persistence via live-browser-session.js
-  // ---------------------------------------------------------------------------
+  //
   // Survives page reloads, browser close/reopen, HMR, and accidental refreshes.
+
+  function normalizeSessionPath(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed.replace(/\\/g, '/') : null;
+  }
+
+  function resetSessionFileMeta() {
+    currentSourceFile = null;
+    currentPreviewFile = null;
+    currentPreviewMode = null;
+    recoveryWaitingForAnchor = false;
+    pickedAnchorSnapshot = null;
+    pickedAnchorViewportTop = null;
+  }
+
+  function rememberSessionFileMeta(meta = {}) {
+    const file = normalizeSessionPath(meta.file);
+    const sourceFile = normalizeSessionPath(meta.sourceFile);
+    const previewFile = normalizeSessionPath(meta.previewFile);
+    const previewMode = meta.previewMode || (isSvelteComponentManifestPath(previewFile || file) ? 'svelte-component' : null);
+
+    if (isFrameworkComponentPreviewMode(previewMode) || isSvelteComponentManifestPath(file)) {
+      currentPreviewMode = isFrameworkComponentPreviewMode(previewMode) ? previewMode : 'svelte-component';
+      currentPreviewFile = previewFile || (isSvelteComponentManifestPath(file) ? file : currentPreviewFile);
+      currentSourceFile = sourceFile || currentSourceFile;
+      return;
+    }
+
+    if (sourceFile || file) currentSourceFile = sourceFile || file;
+    if (previewFile) currentPreviewFile = previewFile;
+    if (previewMode) currentPreviewMode = previewMode;
+  }
+
+  function applySavedSessionMeta(saved) {
+    if (!saved) return;
+    rememberSessionFileMeta(saved);
+    if (saved.insertPlaceholder) insertPlaceholderSnapshot = saved.insertPlaceholder;
+    if (saved.pickedAnchor) pickedAnchorSnapshot = saved.pickedAnchor;
+    if (Number.isFinite(saved.pickedAnchorViewportTop)) pickedAnchorViewportTop = saved.pickedAnchorViewportTop;
+    if (saved.action) selectedAction = saved.action;
+    if (saved.count) selectedCount = saved.count;
+    if (saved.previewMode) currentPreviewMode = saved.previewMode;
+    if (saved.paramValues && typeof saved.paramValues === 'object') {
+      paramsCurrentValues = { ...saved.paramValues };
+    }
+    if (saved.parameterState) parameterGenerationState = saved.parameterState;
+    if (saved.generationPhase) generationPhase = saved.generationPhase;
+  }
+
+  function normalizePagePath(value) {
+    if (!value || typeof value !== 'string') return null;
+    try {
+      return new URL(value, location.origin).pathname;
+    } catch {
+      return value.split(/[?#]/)[0] || null;
+    }
+  }
+
+  function pageMatchesCurrent(value) {
+    const path = normalizePagePath(value);
+    return !path || path === location.pathname;
+  }
+
+  function isTerminalSessionSummary(session) {
+    return /^(completed|discarded|discard_requested|accept_requested)$/.test(String(session?.phase || ''));
+  }
+
+  function findActiveSessionSummary(saved, activeSessions) {
+    if (!saved?.id || !Array.isArray(activeSessions)) return null;
+    return activeSessions.find((session) =>
+      session?.id === saved.id
+      && pageMatchesCurrent(session.pageUrl || saved.pageUrl)
+      && !isTerminalSessionSummary(session)
+    ) || null;
+  }
+
+  function clampVariantIndex(value, count) {
+    const num = Number(value);
+    const max = Number(count);
+    if (!Number.isFinite(num) || num < 1) return 0;
+    if (Number.isFinite(max) && max > 0 && num > max) return 0;
+    return Math.floor(num);
+  }
+
+  /**
+   * A durable server session this page can adopt when the browser has no local
+   * record of it. Requires an explicit pageUrl match: a summary with no page is
+   * not evidence that it belongs to THIS page, and adopting it would hijack an
+   * unrelated route.
+   */
+  // Phases in which the user is (or should be) comparing variants. Only these
+  // are adoptable by a browser with no local record. Steer and manual-edit
+  // sessions have no wrapper to restore, and accept/carbonize phases are
+  // agent-side work: a reload mid-carbonize must not resurrect the bar over a
+  // page whose comparison is already decided (a slow-CI reload hit exactly
+  // that window and left the bar stranded after accept).
+  const ADOPTABLE_SESSION_PHASES = new Set([
+    'generate_requested', 'variants_ready', 'generating', 'cycling',
+  ]);
+
+  function findAdoptableServerSession(activeSessions) {
+    if (!Array.isArray(activeSessions)) return null;
+    return activeSessions.find((session) => (
+      session?.id
+      && !isTerminalSessionSummary(session)
+      && !isSessionHandled(session.id)
+      && session.pageUrl
+      && pageMatchesCurrent(session.pageUrl)
+      && (session.previewFile || session.sourceFile)
+      && Number(session.expectedVariants) > 0
+      && ADOPTABLE_SESSION_PHASES.has(String(session.phase || ''))
+    )) || null;
+  }
+
+  // Shape a server summary like a saved local session so one restore path
+  // serves both. The server has no browser state machine, so an adopted session
+  // always re-enters GENERATING and lets the injection settle the final state.
+  function serverSessionAsSavedShape(session) {
+    return {
+      id: session.id,
+      state: 'GENERATING',
+      expected: Number(session.expectedVariants) || 0,
+      arrived: Number(session.arrivedVariants) || 0,
+      visible: Number(session.visibleVariant) || 0,
+      sourceFile: session.sourceFile || undefined,
+      previewFile: session.previewFile || undefined,
+      previewMode: session.previewMode || undefined,
+      pageUrl: session.pageUrl || undefined,
+      paramValues: session.paramValues && typeof session.paramValues === 'object' ? session.paramValues : {},
+    };
+  }
+
+  function restoreSessionWithoutWrapper(reason, activeSessions) {
+    const cached = loadSession();
+    // localStorage is a cache, not a gate. A cleared tab, a second browser
+    // profile, or a teardown that dropped local state all leave the durable
+    // server session as the only record of work in progress; adopt it instead
+    // of stranding a session the server still considers live.
+    const adopted = cached?.id ? null : findAdoptableServerSession(activeSessions);
+    const saved = cached?.id ? cached : (adopted ? serverSessionAsSavedShape(adopted) : null);
+    if (!saved?.id || isSessionHandled(saved.id)) return false;
+    const savedState = String(saved.state || '').toUpperCase();
+    if (savedState !== 'GENERATING' && savedState !== 'CYCLING') return false;
+
+    const serverSession = findActiveSessionSummary(saved, activeSessions);
+    if (Array.isArray(activeSessions) && activeSessions.length > 0 && !serverSession) {
+      return false;
+    }
+
+    currentSessionId = saved.id;
+    applySavedSessionMeta(serverSession);
+    applySavedSessionMeta(saved);
+
+    expectedVariants = Number(saved.expected || serverSession?.expectedVariants || selectedCount || 0);
+    arrivedVariants = Number(saved.arrived || serverSession?.arrivedVariants || 0);
+    if (arrivedVariants <= 0 && currentPreviewFile) arrivedVariants = Number(serverSession?.expectedVariants || saved.expected || selectedCount || 0);
+    if (expectedVariants <= 0) expectedVariants = Number(serverSession?.expectedVariants || arrivedVariants || selectedCount || 0);
+    visibleVariant = clampVariantIndex(saved.visible, arrivedVariants || expectedVariants)
+      || clampVariantIndex(serverSession?.visibleVariant, arrivedVariants || expectedVariants)
+      || (arrivedVariants > 0 ? 1 : 0);
+
+    const restoredAnchor = findLiveElementFromAnchorSnapshot(pickedAnchorSnapshot);
+    selectedElement = restoredAnchor || document.body;
+    setLiveState('GENERATING');
+    recoveryWaitingForAnchor = !restoredAnchor;
+    showBar('generating');
+    startScrollTracking();
+    if (variantObserver) variantObserver.disconnect();
+    variantObserver = startVariantObserver(currentSessionId);
+    saveSession();
+    queueCheckpoint(reason || 'browser_restore_without_wrapper');
+
+    const restoreFile = isFrameworkComponentPreviewMode(currentPreviewMode)
+      ? currentPreviewFile
+      : (currentSourceFile || currentPreviewFile);
+    if (restoreFile) {
+      // A restored CYCLING session promises variants already written into
+      // source; if they are not there (after retries), the session is an
+      // orphan and must self-discard instead of freezing the picker (#439).
+      // GENERATING restores make no such promise: deferred-wrapper flows
+      // legitimately have no wrapper in source until the agent's write lands.
+      injectVariantsFromSource(restoreFile, currentSessionId, {
+        orphanDiscard: savedState === 'CYCLING' && !isFrameworkComponentPreviewMode(currentPreviewMode),
+      });
+      return true;
+    }
+
+    return true;
+  }
+
+  function restoreFromActiveSessions(activeSessions, reason) {
+    const wrapper = findAnyVariantsWrapper();
+    if (wrapper && !isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)) return false;
+    if (svelteComponentSession?.sessionId === currentSessionId) return false;
+    return restoreSessionWithoutWrapper(reason || 'sse_connected', activeSessions);
+  }
+
+  // Self-heal on SSE (re)connect. The preflight scaffold write triggers a
+  // framework full-reload (Astro reloads pages for any .astro edit); if the
+  // agent's variant write + `done` broadcast land while this page is
+  // mid-reload, both the done SSE and the second HMR reload are missed and
+  // the resumed page would wait in GENERATING at 0/N forever. The server's
+  // session summary carries the durable generationCompletedAt marker, so on
+  // every connect compare it against our own progress and pull the finished
+  // variants from source when behind. Mirrors the `done` handler's source
+  // fallback, including its give-HMR-the-first-chance settle delay.
+  function recoverMissedGenerationCompletion(activeSessions) {
+    if (!currentSessionId || state !== 'GENERATING') return;
+    if (!Array.isArray(activeSessions)) return;
+    const summary = activeSessions.find((session) => session?.id === currentSessionId);
+    if (!summary?.generationCompletedAt || summary.generationCanceled) return;
+    if (isTerminalSessionSummary(summary)) return;
+    if (arrivedVariants > 0 && arrivedVariants >= expectedVariants) return;
+    rememberSessionFileMeta(summary);
+    const sessionId = currentSessionId;
+    const file = isFrameworkComponentPreviewMode(currentPreviewMode)
+      ? currentPreviewFile
+      : (summary.sourceFile || summary.previewFile || currentSourceFile || currentPreviewFile);
+    if (!file) return;
+    console.log('[impeccable] Reconnected after generation completed; recovering variants from source.');
+    setTimeout(() => {
+      if (sessionId !== currentSessionId || state !== 'GENERATING') return;
+      if (arrivedVariants > 0 && arrivedVariants >= expectedVariants) return;
+      injectVariantsFromSource(file, sessionId, { generationCompleted: true });
+    }, 750);
+  }
 
   function saveSession() {
     if (!currentSessionId) return;
@@ -5756,18 +9205,39 @@ void main() {
     // it here would overwrite the Go-time value every time state changes.
     sessionState.saveSession({
       id: currentSessionId,
+      appRoot: APP_ROOT || undefined,
       state,
       action: selectedAction,
       count: selectedCount,
       expected: expectedVariants,
       arrived: arrivedVariants,
       visible: visibleVariant,
+      sourceFile: currentSourceFile || undefined,
+      previewFile: currentPreviewFile || undefined,
+      previewMode: currentPreviewMode || undefined,
+      pageUrl: location.pathname,
+      paramValues: { ...paramsCurrentValues },
+      parameterState: parameterGenerationState,
       insertPlaceholder: insertPlaceholderSnapshot || undefined,
+      pickedAnchor: pickedAnchorSnapshot || undefined,
+      pickedAnchorViewportTop: Number.isFinite(pickedAnchorViewportTop) ? pickedAnchorViewportTop : undefined,
+      pageHash: location.hash || undefined,
+      pageSearch: location.search || undefined,
     });
   }
 
   function loadSession() {
-    return sessionState.loadSession();
+    const saved = sessionState.loadSession();
+    // localStorage is per-origin, and two projects routinely reuse the same
+    // localhost port. A saved session stamped with another project's appRoot
+    // is that project's leftover, never a session this server can complete;
+    // resuming it freezes the picker behind an unfinishable banner.
+    if (saved?.appRoot && APP_ROOT && saved.appRoot !== APP_ROOT) {
+      console.warn('[impeccable] Ignoring saved live session from another project (' + saved.appRoot + ').');
+      sessionState.clearSession();
+      return null;
+    }
+    return saved;
   }
 
   function clearSession() {
@@ -5786,66 +9256,120 @@ void main() {
     return sessionState.isHandled(id);
   }
 
-  function clearHandled() {
-    sessionState.clearHandled();
+  function clearHandled(sessionId) {
+    sessionState.clearHandled(sessionId);
   }
 
-  function cleanup() {
-    // Hide the wrapper immediately so variants disappear. DON'T structurally
-    // mutate the DOM yet — HMR from the agent's source rewrite is on its way,
-    // and a manual replaceChild under React causes NotFoundError when the
-    // reconciler later tries to remove a wrapper we already removed.
-    // Schedule a 2s fallback that does the manual swap only if HMR hasn't
-    // replaced the wrapper by then (keeps static-server / no-HMR flows alive).
+  function cleanup(options) {
+    const restoreOriginal = options?.restoreOriginal === true;
+    const instantChrome = options?.instantChrome === true;
     const cleanupSessionId = currentSessionId;
-    if (cleanupSessionId) {
-      const wrapper = document.querySelector('[data-impeccable-variants="' + cleanupSessionId + '"]');
-      if (wrapper) wrapper.style.display = 'none';
-    }
-    setTimeout(function() {
-      if (!cleanupSessionId) return;
-      const wrapper = document.querySelector('[data-impeccable-variants="' + cleanupSessionId + '"]');
-      if (!wrapper) return;
-      const orig = wrapper.querySelector('[data-impeccable-variant="original"]');
-      if (orig) {
-        const content = orig.firstElementChild;
-        if (content) {
-          wrapper.parentElement.replaceChild(content, wrapper);
+    const cleanupRevision = liveInteractionRevision;
+    clearMountErrorCard();
+    lastReportedMountFailure = null;
+    if (svelteComponentSession?.sessionId === cleanupSessionId) {
+      teardownSvelteComponentSession(true);
+    } else if (cleanupSessionId) {
+      // Switch visibility immediately without structurally mutating the DOM.
+      // HMR from the agent's source rewrite may still be on its way,
+      // and a manual replaceChild under React causes NotFoundError when the
+      // reconciler later tries to remove a wrapper we already removed.
+      // Schedule a 2s fallback that does the manual swap only if HMR hasn't
+      // replaced the wrapper by then (keeps static-server / no-HMR flows alive).
+      // Every match, not the first: a target inside a `.map()` renders one
+      // wrapper per item, and hiding only one leaves the rest of the
+      // discarded variants on screen.
+      const discardWrappers = discardedWrappers(cleanupSessionId);
+      if (discardWrappers.length > 0) {
+        if (restoreOriginal) showOriginalDuringDiscard(cleanupSessionId);
+        else for (const discardWrapper of discardWrappers) discardWrapper.style.display = 'none';
+      }
+      setTimeout(function() {
+        const recoverySuperseded = deferredRecoverySuperseded(cleanupSessionId, cleanupRevision);
+        if (!cleanupSessionId) {
+          removeDiscardStateStylesheet();
           return;
         }
-      }
-      wrapper.remove();
-    }, 2000);
-    hideBar();
+        const lateWrappers = discardedWrappers(cleanupSessionId);
+        if (lateWrappers.length === 0) {
+          removeDiscardStateStylesheet(cleanupSessionId);
+          return;
+        }
+        // Duplicates all render from one source element, so HMR ownership is
+        // uniform across them; the first is a fair witness for the set.
+        const lateWrapper = lateWrappers[0];
+        if (recoverySuperseded) {
+          if (hasFrameworkHmrOwnership(lateWrapper)) {
+            watchForDiscardedFrameworkWrapperRemoval(cleanupSessionId);
+          } else {
+            releaseDiscardedStaticWrappers(cleanupSessionId, lateWrappers);
+          }
+          return;
+        }
+        if (hasFrameworkHmrOwnership(lateWrapper)) {
+          // As on accept, never restructure framework-owned DOM. If HMR missed
+          // the final source rewrite, reload once after a grace window so the
+          // discarded source becomes authoritative without a reconciler race.
+          setTimeout(function() {
+            const staleWrappers = discardedWrappers(cleanupSessionId);
+            if (deferredRecoverySuperseded(cleanupSessionId, cleanupRevision)) {
+              if (staleWrappers.length === 0) removeDiscardStateStylesheet(cleanupSessionId);
+              else watchForDiscardedFrameworkWrapperRemoval(cleanupSessionId);
+              return;
+            }
+            removeDiscardStateStylesheet(cleanupSessionId);
+            // A reload restores every wrapper's original at once, so there is
+            // nothing per-wrapper to do here.
+            if (staleWrappers.length > 0) location.reload();
+          }, 2000);
+          return;
+        }
+        releaseDiscardedStaticWrappers(cleanupSessionId, lateWrappers);
+      }, 2000);
+    }
+    hideBar(instantChrome);
     hideHighlight();
     stopScrollTracking();
     if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
+    if (pendingVariantAnchorRetryObserver) { pendingVariantAnchorRetryObserver.disconnect(); pendingVariantAnchorRetryObserver = null; }
     stopScrollLock();
+    removeVariantStateStylesheet();
     clearScrollY();
     finalizeInsertSession();
     clearSession();
+    resetSessionFileMeta();
     selectedElement = null;
+    hoveredElement = null;
+    pagePickSkipClick = false;
     currentSessionId = null;
+    parameterGenerationState = 'idle';
+    parameterReadyAnnouncedSession = null;
     selectedAction = 'impeccable';
     renderEditBadge('hidden');
-    state = 'PICKING';
+    setLiveState('PICKING');
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Toast
-  // ---------------------------------------------------------------------------
+  //
+
+  function dismissToast() {
+    if (!toastEl) return;
+    toastEl.remove();
+    toastEl = null;
+  }
 
   function showToast(message, duration) {
-    if (toastEl) toastEl.remove();
+    dismissToast();
     // Stack the toast above the global bar (which sits at bottom:14px) so
-    // the two never overlap. Read the bar's actual rect — its height varies
-    // with hover-expanded labels — and fall back to a sensible default
+    // the two never overlap. Read the bar's actual rect - its height varies
+    // with hover-expanded labels - and fall back to a sensible default
     // when the bar isn't mounted yet.
     const barRect = globalBarEl?.getBoundingClientRect();
     const barTopFromBottom = barRect && barRect.height > 0
       ? Math.max(16, window.innerHeight - barRect.top + 12)
       : 16;
-    toastEl = el('div', {
+    const currentToast = el('div', {
       position: 'fixed', bottom: barTopFromBottom + 'px', left: '50%',
       transform: 'translateX(-50%) translateY(8px)',
       background: C.ink, color: C.white,
@@ -5855,37 +9379,205 @@ void main() {
       transition: 'opacity 0.25s ' + EASE + ', transform 0.25s ' + EASE,
       pointerEvents: 'none', maxWidth: '420px', textAlign: 'center',
     });
-    toastEl.id = PREFIX + '-toast';
-    toastEl.textContent = message;
-    document.body.appendChild(toastEl);
+    toastEl = currentToast;
+    currentToast.id = PREFIX + '-toast';
+    currentToast.textContent = message;
+    uiAppend(currentToast);
     requestAnimationFrame(() => {
-      toastEl.style.opacity = '1';
-      toastEl.style.transform = 'translateX(-50%) translateY(0)';
+      if (toastEl !== currentToast) return;
+      currentToast.style.opacity = '1';
+      currentToast.style.transform = 'translateX(-50%) translateY(0)';
     });
     setTimeout(() => {
-      if (toastEl) {
-        toastEl.style.opacity = '0';
-        toastEl.style.transform = 'translateX(-50%) translateY(8px)';
-        setTimeout(() => { if (toastEl) { toastEl.remove(); toastEl = null; } }, 250);
-      }
+      if (toastEl !== currentToast) return;
+      currentToast.style.opacity = '0';
+      currentToast.style.transform = 'translateX(-50%) translateY(8px)';
+      setTimeout(() => {
+        if (toastEl !== currentToast) return;
+        currentToast.remove();
+        toastEl = null;
+      }, 250);
     }, duration);
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Init
-  // ---------------------------------------------------------------------------
+  //
 
   // Resume an active variant session after HMR/page reload.
   // If a [data-impeccable-variants] wrapper exists in the DOM, the agent wrote
   // variants before HMR fired. Pick up where we left off.
-  function resumeSession() {
-    const wrapper = document.querySelector('[data-impeccable-variants]');
-    if (!wrapper) { clearSession(); clearHandled(); return false; }
+  function handledWrapperReloadKey(sessionId) {
+    return HANDLED_WRAPPER_RELOAD_KEY + ':' + sessionId;
+  }
+
+  function clearHandledWrapperReloadStamp(sessionId) {
+    try {
+      if (sessionId) {
+        sessionStorage.removeItem(handledWrapperReloadKey(sessionId));
+        const legacy = sessionStorage.getItem(HANDLED_WRAPPER_RELOAD_KEY) || '';
+        if (legacy === sessionId || legacy.startsWith(sessionId + ':')) {
+          sessionStorage.removeItem(HANDLED_WRAPPER_RELOAD_KEY);
+        }
+        return;
+      }
+      sessionStorage.removeItem(HANDLED_WRAPPER_RELOAD_KEY);
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith(HANDLED_WRAPPER_RELOAD_KEY + ':')) sessionStorage.removeItem(key);
+      }
+    } catch {}
+  }
+
+  function scheduleHandledRuntimeWrapperReload(wrapper, recoveryRevision = liveInteractionRevision) {
+    const sessionId = wrapper?.dataset?.impeccableVariants
+      || wrapper?.dataset?.impeccableCarbonize;
+    if (!sessionId || !isSessionHandled(sessionId)) return false;
+    if (deferredRecoverySuperseded(sessionId, recoveryRevision)) return true;
+
+    if (handledRuntimeWrapperReloadSessions.has(sessionId)) return true;
+    let reloadAttempts = 0;
+    try {
+      reloadAttempts = Number(sessionStorage.getItem(handledWrapperReloadKey(sessionId))) || 0;
+      if (reloadAttempts >= 2) return true;
+      sessionStorage.setItem(handledWrapperReloadKey(sessionId), String(reloadAttempts + 1));
+    } catch {}
+    handledRuntimeWrapperReloadSessions.add(sessionId);
+
+    // A framework refresh can replace the variants tree with an intermediate
+    // carbonize tree and reload the page, cancelling the original accept timer.
+    // Let the file-side cleanup settle, then reload once from authoritative
+    // source. The sessionStorage stamp prevents a stale dev-server response
+    // from turning this recovery into a reload loop.
+    setTimeout(function() {
+      if (deferredRecoverySuperseded(sessionId, recoveryRevision)) {
+        clearHandledWrapperReloadStamp(sessionId);
+        handledRuntimeWrapperReloadSessions.delete(sessionId);
+        return;
+      }
+      const staleWrapper = document.querySelector(
+        '[data-impeccable-variants="' + sessionId + '"],'
+        + '[data-impeccable-carbonize="' + sessionId + '"]',
+      );
+      if (staleWrapper) location.reload();
+      else {
+        clearHandledWrapperReloadStamp(sessionId);
+        handledRuntimeWrapperReloadSessions.delete(sessionId);
+      }
+    }, 3000);
+    return true;
+  }
+
+  function watchForHandledRuntimeWrapper(sessionId, recoveryRevision = liveInteractionRevision) {
+    if (!sessionId || !document.body) return;
+    const existing = handledRuntimeWrapperWatchers.get(sessionId);
+    existing?.observer.disconnect();
+    if (existing?.timer) clearTimeout(existing.timer);
+
+    const findHandledWrapper = function() {
+      const wrapper = document.querySelector(
+        '[data-impeccable-variants="' + sessionId + '"],'
+        + '[data-impeccable-carbonize="' + sessionId + '"]',
+      );
+      if (wrapper) scheduleHandledRuntimeWrapperReload(wrapper, recoveryRevision);
+    };
+
+    // Vite can briefly render the clean accepted tree, then apply a delayed
+    // carbonize refresh after the one-shot accept fallback has already passed.
+    // Keep a bounded scout alive through that refresh window so a late stale
+    // framework tree still reloads from the now-authoritative source.
+    const observer = new MutationObserver(findHandledWrapper);
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = setTimeout(function() {
+      if (handledRuntimeWrapperWatchers.get(sessionId)?.observer !== observer) return;
+      observer.disconnect();
+      handledRuntimeWrapperWatchers.delete(sessionId);
+    }, 12000);
+    handledRuntimeWrapperWatchers.set(sessionId, { observer, timer });
+    findHandledWrapper();
+  }
+
+  function restoreSessionSupersedingHandledWrapper(runtimeWrapper) {
+    const handledSessionId = runtimeWrapper?.dataset?.impeccableVariants
+      || runtimeWrapper?.dataset?.impeccableCarbonize;
+    if (!handledSessionId || !isSessionHandled(handledSessionId)) return false;
+
+    // Accept releases the picker before carbonize finishes, so a replacement
+    // generation can already be durable while the prior handled wrapper is
+    // still mounted. Restore that newer session before the stale-wrapper
+    // recovery path gets a chance to reload or consume its retry budget.
+    const saved = loadSession();
+    if (!saved?.id || saved.id === handledSessionId || isSessionHandled(saved.id)) return false;
+    if (currentSessionId === saved.id) return true;
+    return restoreSessionWithoutWrapper('browser_resumed_over_handled_wrapper');
+  }
+
+  function resumeSession(recoveryRevision = liveInteractionRevision, opts = {}) {
+    // Which path resumed matters in the journal: an init resume is a fresh
+    // page load, the deferred-wrapper scout is a mid-page-load arrival. Both
+    // used to log the same `browser_resumed`, which made issue #719 take a
+    // DOM reconstruction to diagnose.
+    const resumeReason = opts.reason || 'browser_resumed';
+    const wrapper = findAnyVariantsWrapper();
+    const runtimeWrapper = wrapper || document.querySelector('[data-impeccable-carbonize]');
+    if (restoreSessionSupersedingHandledWrapper(runtimeWrapper)) return true;
+    if (scheduleHandledRuntimeWrapperReload(runtimeWrapper, recoveryRevision)) return false;
+    if (!wrapper) {
+      if (restoreSessionWithoutWrapper('browser_resumed_without_wrapper')) return true;
+      clearSession();
+      // Keep the bounded handled-id history durable. A framework can hydrate a
+      // completed wrapper well after initialization, and a later reload must
+      // still recognize that wrapper as recovery work rather than resume it.
+      return false;
+    }
 
     const sessionId = wrapper.dataset.impeccableVariants;
 
     // Don't resume if this session was already accepted/discarded
     if (isSessionHandled(sessionId)) return false;
+
+    // Svelte component sessions can't be resumed by counting DOM children: the
+    // wrapper holds a single mount target, not [data-impeccable-variant] nodes,
+    // and a page reload unmounts every compiled variant. Counting children here
+    // would strand the bar in CYCLING at 0/0. If there's no live in-memory mount
+    // for this wrapper, it's an orphan (reload / failed mount): drop it and let
+    // the live-server's SSE re-inject the manifest if the session is still live.
+    if (isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)
+        && svelteComponentSession?.sessionId !== sessionId) {
+      wrapper.remove();
+      if (restoreSessionWithoutWrapper('browser_resumed_svelte_orphan_wrapper')) return true;
+      clearSession();
+      clearHandled(sessionId);
+      return false;
+    }
+
+    if (isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)) {
+      if (!svelteComponentSession?.mountedVariant) {
+        return true;
+      }
+      currentSessionId = sessionId;
+      expectedVariants = Number(wrapper.dataset.impeccableVariantCount)
+        || Number(svelteComponentSession.manifest?.count)
+        || expectedVariants
+        || 1;
+      arrivedVariants = expectedVariants;
+      const saved = loadSession();
+      applySavedSessionMeta(saved);
+      const savedVisibleVariant = saved && saved.id === sessionId ? saved.visible : 0;
+      visibleVariant = svelteComponentSession.mountedVariant > 0 && svelteComponentSession.mountedVariant <= arrivedVariants
+        ? svelteComponentSession.mountedVariant
+        : (savedVisibleVariant > 0 && savedVisibleVariant <= arrivedVariants ? savedVisibleVariant : 1);
+      selectedElement = resolveSvelteComponentAnchor()
+        || wrapper.parentElement;
+      setLiveState('CYCLING');
+      hideShaderOverlay();
+      showBar('cycling');
+      startScrollTracking();
+      refreshParamsPanel();
+      saveSession();
+      queueCheckpoint('browser_resumed_svelte_component');
+      return true;
+    }
 
     currentSessionId = sessionId;
     expectedVariants = parseInt(wrapper.dataset.impeccableVariantCount || '0');
@@ -5895,6 +9587,7 @@ void main() {
     // Restore state from localStorage if available
     const saved = loadSession();
     if (saved && saved.id === sessionId) {
+      applySavedSessionMeta(saved);
       visibleVariant = (saved.visible > 0 && saved.visible <= arrivedVariants) ? saved.visible : (arrivedVariants > 0 ? 1 : 0);
       if (saved.action) selectedAction = saved.action;
       if (saved.count) selectedCount = saved.count;
@@ -5906,13 +9599,13 @@ void main() {
       insertPlaceholderSnapshot = saved.insertPlaceholder;
     }
 
-    const resumedState = arrivedVariants >= expectedVariants ? 'CYCLING' : 'GENERATING';
+    const resumedState = arrivedVariants > 0 ? 'CYCLING' : 'GENERATING';
 
     // Find the visible variant's content element for highlight positioning.
     const isInsert = wrapper.dataset.impeccableMode === 'insert';
     const visEl = visibleVariant > 0 ? pickVariantContent(wrapper, visibleVariant) : null;
     const origEl = pickVariantContent(wrapper, 'original');
-    state = resumedState;
+    setLiveState(resumedState);
     if (isInsert && resumedState === 'GENERATING' && arrivedVariants === 0) {
       selectedElement = ensureInsertPlaceholder() || findInsertAnchorInDom() || wrapper;
     } else {
@@ -5924,13 +9617,39 @@ void main() {
 
     showBar(state === 'CYCLING' ? 'cycling' : 'generating');
     startScrollTracking();
-    // Build the params panel for the restored visible variant. Previously
-    // this was missed on page-reload resume: showVariantInDOM above fires
-    // refreshParamsPanel, but state was still IDLE at that moment so it
-    // hid. Now that state is CYCLING, re-fire.
-    if (state === 'CYCLING') refreshParamsPanel();
+    // A resume can BE the arrival, not just a re-entry after one. The server's
+    // generation preflight runs live-wrap with --defer-source-write, so the
+    // wrapper and every variant reach the DOM in one HMR batch, and the
+    // deferred-wrapper scout (constructed at init) runs before the variant
+    // MutationObserver (constructed at Go) on that batch. Finish the same
+    // transition the observer would have finished. Without hideShaderOverlay
+    // the generating shader stays frozen over the target and the session looks
+    // stuck at GENERATING while the bar already cycles (issue #719).
+    if (state === 'CYCLING') {
+      recoveryWaitingForAnchor = false;
+      hideShaderOverlay();
+      if (isInsert) finalizeInsertSession();
+      disableInlineEdit();
+      // Build the params panel for the restored visible variant. Previously
+      // this was missed on page-reload resume: showVariantInDOM above fires
+      // refreshParamsPanel, but state was still IDLE at that moment so it
+      // hid. Now that state is CYCLING, re-fire.
+      refreshParamsPanel();
+    }
     saveSession();
-    queueCheckpoint('browser_resumed');
+    if (arrivedVariants > 0 && arrivedVariants < expectedVariants) {
+      sendCheckpoint('variants_progress');
+    } else {
+      queueCheckpoint(resumeReason);
+      // Only variants_progress and variants_ready count as publication
+      // progress. When the resume is the arrival, the observer never gets to
+      // report it (this function disconnects and re-creates it below, which
+      // drops the records it had already queued for this same batch), so
+      // without this the server never learns the variants were published.
+      if (arrivedVariants > 0 && arrivedVariants >= expectedVariants && expectedVariants > 0) {
+        sendCheckpoint('variants_ready');
+      }
+    }
 
     // Start observing for more variants AFTER initial setup
     if (variantObserver) variantObserver.disconnect();
@@ -5938,7 +9657,7 @@ void main() {
 
     // Hold the target at its saved viewport top through any subsequent
     // HMR patches, variant inserts, or cycle swaps.
-    startScrollLock(currentSessionId, readScrollY());
+    startScrollLock(currentSessionId, readScrollY(), pickedAnchorViewportTop);
 
     // If we reloaded mid-generation (Bun's HTML HMR destroys the shader
     // canvas), re-capture the original's content and restart the shader so
@@ -5965,14 +9684,15 @@ void main() {
     return true;
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Global bar (always visible at bottom)
-  // ---------------------------------------------------------------------------
+  //
 
   let globalBarEl = null;
   let globalBarBrandEl = null;
   let agentPollTooltipEl = null;
   let agentPollingConnected = false;
+  let agentStatusMessage = null;
   let agentStatusPollTimer = null;
   let steerFocusSuspended = false;
   let steerFocusPauseUntil = 0;
@@ -5981,6 +9701,10 @@ void main() {
   let steerFocusRecoverTimer = null;
   const STEER_PAGE_FOCUS_PAUSE_MS = 500;
   let detectActive = false;
+  let detectScanSeq = 0;
+  let activeDetectScanId = null;
+  let pendingDetectScanId = null;
+  const DETECT_EMPTY_MESSAGE = 'No detector issues found.';
   const PICK_PREFS_KEY = 'impeccable-live-pick';
   const INTERACTION_PREFS_KEY = 'impeccable-live-interaction';
   const PLACEHOLDER_DEFAULT_HEIGHT = 80;
@@ -6047,14 +9771,18 @@ void main() {
   let pendingApplyInFlight = false;
   let firstSaveOfSession = true;
 
-  // Steer — collapsed pill in the global bar; expands while typing for page-level chat.
+  // Steer - collapsed pill in the global bar; expands while typing for page-level chat.
   let pageChatEl = null;
   let pageChatInput = null;
   let pageChatHint = null;
   let pageChatVoiceBtn = null;
+  let pageChatSendBtn = null;
+  let pageChatQueueHintEl = null;
   let pageChatExpanded = false;
   let steerLocked = false;
   let steerRequestId = null;
+  let steerPendingMessage = '';
+  let steerInputWasFocused = false;
   let pageChatDotsEl = null;
   let steerAwaitTimer = null;
   let voiceRecognition = null;
@@ -6063,23 +9791,36 @@ void main() {
   let voiceInterimBase = '';
   /** @type {{ mode: 'steer'|'configure', input: HTMLInputElement, submit: () => void, beforeStart?: () => void } | null} */
   let voiceCtx = null;
-  const PAGE_CHAT_COLLAPSED_W = '88px';
-  const PAGE_CHAT_PROCESSING_W = '76px';
+  const PAGE_CHAT_COLLAPSED_W = '104px';
+  const PAGE_CHAT_QUEUED_W = '212px';
+  const PAGE_CHAT_PLACEHOLDER_COLLAPSED = 'Steer…';
+  const PAGE_CHAT_PLACEHOLDER_EXPANDED = 'Steer the page…';
   const STEER_AWAIT_TIMEOUT_MS = 120000;
   const AGENT_STATUS_POLL_MS = 5000;
-  const AGENT_DISCONNECTED_MARK = 'oklch(56% 0.032 82 / 0.78)';
-  const AGENT_DISCONNECTED_TIP = 'Agent disconnected — run live-poll.mjs to connect';
+  const AGENT_DISCONNECTED_MARK = 'oklch(62% 0 0 / 0.78)';
+  const AGENT_DISCONNECTED_TIP = 'Agent disconnected - run live-poll.mjs to connect';
+  // The indicator tracks whether a poll is parked, which is what decides if
+  // steering can reach the agent right now. That goes quiet two ways, and they
+  // need different copy: nobody is polling at all, or the agent took the work
+  // and is busy with it. Under one-shot foreground polling the second case is
+  // every normal generation, and telling the user to start a poll loop then is
+  // wrong advice about a healthy session.
+  const AGENT_BUSY_TIP = 'Agent is working - steering resumes when it finishes';
+  // Same distinction, said where the steer request is waiting. A submitted
+  // steer that lands while a generate holds the poll lease is not stuck, it is
+  // second in line, and the pulsing dots alone read as "nothing is happening".
+  const STEER_QUEUED_HINT = 'Queued behind current generation';
   const GLOBAL_BAR_SECTION_GAP = 8;
   const GLOBAL_BAR_INNER_GAP = 2;
   const GLOBAL_BAR_INNER_PAD_LEFT = 2;
-  const PAGE_CHAT_EXPANDED_W = 'min(280px, 38vw)';
+  const PAGE_CHAT_EXPANDED_MAX_W = 280;
   const ICON_PAGE_CHAT =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
   const ICON_PAGE_VOICE =
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
 
   // Theme-aware color palette for the global bar. We detect the page's
-  // ambient background and invert — dark bar on light pages, light bar on
+  // ambient background and invert - dark bar on light pages, light bar on
   // dark pages. This keeps the bar from fighting with the host design.
   function detectPageTheme() {
     try {
@@ -6092,7 +9833,7 @@ void main() {
       // Walk body → html, taking the first opaque background. The browser's
       // default body / html background is `rgba(0, 0, 0, 0)`, which a naive
       // regex would read as black and mislabel a perfectly white page as
-      // dark. Honoring alpha avoids that — and falling through to <html>
+      // dark. Honoring alpha avoids that - and falling through to <html>
       // catches the common pattern of a bg only on <html> (or only on body).
       function readOpaque(el) {
         if (!el) return null;
@@ -6134,14 +9875,14 @@ void main() {
       // Neutral hairline for internal control borders / dividers (was a warm
       // gold rule that read as muddy champagne edges on the pill / input / count).
       hairline: 'oklch(92% 0 0 / 0.12)',
-      text: 'oklch(84% 0.035 82)',
-      textDim: 'oklch(63% 0.024 82)',
+      text: 'oklch(91% 0 0)',
+      textDim: 'oklch(72% 0 0)',
       accent: C.brand,
       accentSoft: C.brandSoft,
       exitHover: 'oklch(58% 0.15 35 / 0.18)',
       shadow: PICKER_SHADOW,
       chatSurface: 'oklch(22% 0.012 82)',
-      // Verdigris patina — secondary state (see site/styles/kinpaku-tokens.css)
+      // Verdigris patina - secondary state (see site/styles/kinpaku-tokens.css)
       patina: 'oklch(70% 0.12 188)',
       patinaPale: 'oklch(82% 0.07 188)',
       patinaSoft: 'oklch(70% 0.12 188 / 0.28)',
@@ -6152,16 +9893,65 @@ void main() {
     return barPaletteForTheme(globalBarEl?.dataset.theme || detectPageTheme());
   }
 
+  function globalBarModeToggles() {
+    return [
+      uiGetById(PREFIX + '-pick-toggle'),
+      uiGetById(PREFIX + '-insert-toggle'),
+      uiGetById(PREFIX + '-detect-toggle'),
+      uiGetById(PREFIX + '-design-toggle'),
+    ].filter(Boolean);
+  }
+
+  function applyGlobalBarLabelState(expandInactive, forceCollapse = false) {
+    globalBarModeToggles().forEach((toggle) => {
+      if (forceCollapse) toggle._collapseLabel?.(true);
+      else if (expandInactive || toggle.dataset.active === 'true') toggle._expandLabel?.();
+      else toggle._collapseLabel?.();
+    });
+  }
+
+  function syncGlobalBarExpandedLabels(expanded = globalBarEl?.matches(':hover')) {
+    const expandInactive = !!(expanded && !pageChatExpanded);
+    applyGlobalBarLabelState(expandInactive, pageChatExpanded);
+
+    if (expandInactive && globalBarEl && globalBarEl.scrollWidth > window.innerWidth - 16) {
+      applyGlobalBarLabelState(false);
+    }
+  }
+
+  function pageChatCollapsedWidthPx() {
+    const parsed = parseFloat(PAGE_CHAT_COLLAPSED_W);
+    return Number.isFinite(parsed) ? parsed : 104;
+  }
+
+  function pageChatExpandedWidth() {
+    if (!pageChatEl || !globalBarEl) return PAGE_CHAT_EXPANDED_MAX_W + 'px';
+    const currentChatWidth = pageChatEl.getBoundingClientRect().width || pageChatCollapsedWidthPx();
+    const barWidth = Math.max(globalBarEl.getBoundingClientRect().width || 0, globalBarEl.scrollWidth || 0);
+    const nonChatWidth = Math.max(0, barWidth - currentChatWidth);
+    const available = window.innerWidth - 16 - nonChatWidth;
+    const next = Math.max(pageChatCollapsedWidthPx(), Math.min(PAGE_CHAT_EXPANDED_MAX_W, available));
+    return Math.round(next) + 'px';
+  }
+
+  function syncPageChatExpandedWidth() {
+    if (!pageChatEl || !pageChatExpanded) return;
+    pageChatEl.style.width = pageChatExpandedWidth();
+  }
+
   function syncPageChatChrome() {
     if (!pageChatEl) return;
     const P = pageChatPalette();
+    const inputFocused = pageChatInput && activeElementDeep() === pageChatInput;
     pageChatEl.style.background = P.chatSurface;
-    pageChatEl.style.borderColor = steerLocked
-      ? P.patinaSoft
-      : (pageChatExpanded ? P.accentSoft : P.hairline);
+    pageChatEl.style.borderColor = 'transparent';
     if (pageChatHint) pageChatHint.style.color = steerLocked ? P.patinaPale : P.textDim;
     const chatIcon = pageChatEl?.firstElementChild;
-    if (chatIcon) chatIcon.style.color = steerLocked ? P.patinaPale : P.textDim;
+    if (chatIcon) {
+      chatIcon.style.color = steerLocked
+        ? P.patinaPale
+        : (inputFocused || pageChatExpanded ? P.text : P.textDim);
+    }
     if (pageChatInput) pageChatInput.style.color = P.text;
     if (pageChatVoiceBtn) {
       const listening = pageChatVoiceBtn.dataset.listening === 'true';
@@ -6172,16 +9962,106 @@ void main() {
   }
 
   function syncPageChatVisual() {
-    if (!pageChatInput || steerLocked) return;
+    if (!pageChatInput || steerLocked) {
+      syncPageChatSendButton();
+      return;
+    }
     const hasText = pageChatInput.value.length > 0;
     if (hasText && !pageChatExpanded) expandPageChat({ focus: false });
     else if (!hasText && pageChatExpanded) collapsePageChat();
+    syncPageChatSendButton();
+  }
+
+  /**
+   * Send is visible once the pill is open for typing and enabled once there is
+   * something to send. It disappears entirely while a steer is in flight, the
+   * same way the mic does: a second submit during the lock has nowhere to go.
+   */
+  function syncPageChatSendButton() {
+    if (!pageChatSendBtn) return;
+    const P = pageChatPalette();
+    const hasText = !!pageChatInput?.value.trim();
+    const focused = pageChatInput && activeElementDeep() === pageChatInput;
+    const visible = !steerLocked && (pageChatExpanded || hasText || focused);
+    pageChatSendBtn.style.display = visible ? 'inline-flex' : 'none';
+    pageChatSendBtn.disabled = !visible || !hasText;
+    pageChatSendBtn.style.background = P.accent;
+    pageChatSendBtn.style.color = C.ink;
+    pageChatSendBtn.style.borderLeft = '1px solid ' + P.hairline;
+    pageChatSendBtn.style.opacity = pageChatSendBtn.disabled ? '0.42' : '1';
+    pageChatSendBtn.style.cursor = pageChatSendBtn.disabled ? 'not-allowed' : 'pointer';
+    pageChatSendBtn.title = pageChatSendBtn.disabled ? 'Type what to change first' : 'Send (Enter)';
+  }
+
+  /**
+   * A submitted steer is queued, not ignored, whenever no poll is parked and
+   * the browser knows a generation is in flight: the agent holds the lease and
+   * will not see the steer until it finishes. Saying so beats three dots that
+   * look identical to a lost request.
+   */
+  function steerQueuedBehindGeneration() {
+    return steerLocked && !agentPollingConnected && agentHasWorkInFlight();
+  }
+
+  function buildSteerQueueHint() {
+    const P = pageChatPalette();
+    const hint = el('span', {
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end',
+      flex: '1', minWidth: '0', marginLeft: 'auto',
+      padding: '0 10px 0 6px',
+      fontFamily: FONT, fontSize: '10.5px', fontWeight: '500',
+      color: P.patinaPale,
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      pointerEvents: 'none',
+    });
+    hint.id = PREFIX + '-page-chat-queue';
+    return hint;
+  }
+
+  function syncSteerQueueHint() {
+    if (!pageChatEl) return;
+    const queued = steerQueuedBehindGeneration();
+    if (queued) {
+      if (!pageChatQueueHintEl) {
+        pageChatQueueHintEl = buildSteerQueueHint();
+        pageChatEl.appendChild(pageChatQueueHintEl);
+      }
+      pageChatQueueHintEl.textContent = STEER_QUEUED_HINT;
+      if (pageChatDotsEl) pageChatDotsEl.style.display = 'none';
+      pageChatEl.style.width = PAGE_CHAT_QUEUED_W;
+      pageChatEl.setAttribute('aria-label', STEER_QUEUED_HINT);
+      return;
+    }
+    if (pageChatQueueHintEl?.parentNode) {
+      pageChatQueueHintEl.remove();
+      pageChatQueueHintEl = null;
+      if (steerLocked) {
+        pageChatEl.style.width = pageChatExpanded ? pageChatExpandedWidth() : PAGE_CHAT_COLLAPSED_W;
+        pageChatEl.setAttribute('aria-label', 'Processing steer request');
+      }
+    }
+    if (pageChatDotsEl) pageChatDotsEl.style.display = '';
   }
 
   function shouldFocusSteerChat() {
     return state !== 'CONFIGURING'
       && state !== 'EDITING'
       && !steerLocked;
+  }
+
+  function isPageEditableElement(el) {
+    if (!el || own(el)) return false;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || '')) return true;
+    return !!el.isContentEditable;
+  }
+
+  function isInlineEditActive(el) {
+    return !!el && inlineEditRows.some((r) => r.el === el);
+  }
+
+  function isPageEditableActive() {
+    const active = activeElementDeep();
+    return isPageEditableElement(active) && !isInlineEditActive(active);
   }
 
   function pageHasHostTextSelection() {
@@ -6197,6 +10077,7 @@ void main() {
   function shouldSteerAutoFocus() {
     return shouldFocusSteerChat()
       && !steerFocusSuspended
+      && !isPageEditableActive()
       && performance.now() >= steerFocusPauseUntil;
   }
 
@@ -6212,7 +10093,7 @@ void main() {
     const attempt = () => {
       steerFocusRecoverTimer = null;
       if (state === 'CONFIGURING' || steerLocked || voiceListening) return;
-      if (pageChatEl?.contains(document.activeElement)) return;
+      if (pageChatEl?.contains(activeElementDeep())) return;
       if (pageHasHostTextSelection()) {
         steerFocusRecoverTimer = setTimeout(attempt, 120);
         return;
@@ -6233,7 +10114,7 @@ void main() {
     steerFocusSuspended = true;
     steerFocusPauseUntil = performance.now() + STEER_PAGE_FOCUS_PAUSE_MS;
     pagePointerGesture = { x: e.clientX, y: e.clientY, dragged: false };
-    if (pageChatInput && document.activeElement === pageChatInput) {
+    if (pageChatInput && activeElementDeep() === pageChatInput) {
       pageChatInput.blur();
     }
   }
@@ -6293,7 +10174,7 @@ void main() {
       pickActive,
       pageChatReady: !!pageChatInput,
       pageChatExpanded,
-      active: steerFocusTargetLabel(document.activeElement),
+      active: steerFocusTargetLabel(activeElementDeep()),
       shouldSteer: shouldFocusSteerChat(),
       ...(extra || {}),
     });
@@ -6312,44 +10193,65 @@ void main() {
   function focusConfigureInput(reason) {
     steerFocusLog('focusConfigureInput', { reason });
     const inputId = configureKind === 'insert' ? PREFIX + '-insert-input' : PREFIX + '-input';
-    const input = document.getElementById(inputId);
+    const input = uiGetById(inputId);
     if (!input) {
       steerFocusLog('focusConfigureInput missing', { reason });
       return;
     }
     setTimeout(() => {
-      const before = document.activeElement;
+      const before = activeElementDeep();
       input.focus();
       steerFocusLog('focusConfigureInput result', {
         reason,
         before: steerFocusTargetLabel(before),
-        after: steerFocusTargetLabel(document.activeElement),
-        stuck: document.activeElement !== input,
+        after: steerFocusTargetLabel(activeElementDeep()),
+        stuck: activeElementDeep() !== input,
       });
     }, 60);
   }
 
   function syncPageChatFocusRing() {
     if (!pageChatEl || !pageChatInput) return;
-    const focused = document.activeElement === pageChatInput;
+    syncPageChatSendButton();
+    const focused = activeElementDeep() === pageChatInput;
+    const typingReady = focused && !steerLocked;
     pageChatEl.dataset.inputFocused = focused ? 'true' : 'false';
-    const P = pageChatPalette();
-    pageChatEl.style.borderColor = steerLocked
-      ? P.patinaSoft
-      : (pageChatExpanded ? P.accentSoft : P.hairline);
     pageChatEl.style.boxShadow = 'none';
+
+    if (pageChatExpanded) {
+      pageChatInput.placeholder = PAGE_CHAT_PLACEHOLDER_EXPANDED;
+      pageChatInput.style.width = '';
+      pageChatInput.style.padding = '0 6px';
+      pageChatInput.style.opacity = steerLocked ? '0.72' : '1';
+      pageChatInput.style.pointerEvents = steerLocked ? 'none' : 'auto';
+      return;
+    }
+
+    if (typingReady) {
+      // Collapsed type-to-steer: show the real input + caret instead of a
+      // truncated patina "Steer" label with an invisible focused field.
+      pageChatInput.placeholder = PAGE_CHAT_PLACEHOLDER_COLLAPSED;
+      if (pageChatHint) {
+        pageChatHint.style.display = 'none';
+        pageChatHint.style.opacity = '0';
+      }
+      pageChatInput.style.width = '';
+      pageChatInput.style.padding = '0 4px';
+      pageChatInput.style.opacity = '1';
+      pageChatInput.style.pointerEvents = 'auto';
+      return;
+    }
+
+    pageChatInput.placeholder = PAGE_CHAT_PLACEHOLDER_COLLAPSED;
     if (pageChatHint) {
-      pageChatHint.style.color = steerLocked
-        ? P.patinaPale
-        : ((!pageChatExpanded && focused) ? P.patinaPale : P.textDim);
+      pageChatHint.style.display = '';
+      pageChatHint.style.opacity = '1';
+      pageChatHint.style.visibility = '';
     }
-    if (!pageChatExpanded) {
-      pageChatInput.style.width = '0';
-      pageChatInput.style.padding = '0';
-      pageChatInput.style.opacity = '0';
-      pageChatInput.style.pointerEvents = focused ? 'auto' : 'none';
-      if (pageChatHint) pageChatHint.style.visibility = '';
-    }
+    pageChatInput.style.width = '0';
+    pageChatInput.style.padding = '0';
+    pageChatInput.style.opacity = '0';
+    pageChatInput.style.pointerEvents = 'none';
   }
 
   function focusSteerChat(reason) {
@@ -6365,15 +10267,16 @@ void main() {
     }
     syncPageChatVisual();
     pageChatInput.style.pointerEvents = 'auto';
-    const before = document.activeElement;
+    const before = activeElementDeep();
     try { window.focus(); } catch { /* embed may block */ }
     try { pageChatInput.focus({ preventScroll: true }); } catch { pageChatInput.focus(); }
     syncPageChatFocusRing();
+    syncPageChatChrome();
     steerFocusLog('focusSteerChat result', {
       reason,
       before: steerFocusTargetLabel(before),
-      after: steerFocusTargetLabel(document.activeElement),
-      stuck: document.activeElement !== pageChatInput,
+      after: steerFocusTargetLabel(activeElementDeep()),
+      stuck: activeElementDeep() !== pageChatInput,
     });
   }
 
@@ -6386,9 +10289,9 @@ void main() {
   function buildSteerProcessingDots() {
     const P = pageChatPalette();
     const wrap = el('span', {
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      gap: '5px', flex: '1', minWidth: '0',
-      padding: '0 12px 0 2px',
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end',
+      gap: '5px', flex: '0 0 auto', minWidth: '0', marginLeft: 'auto',
+      padding: '0 12px 0 8px',
       pointerEvents: 'none',
     });
     wrap.setAttribute('aria-hidden', 'true');
@@ -6404,6 +10307,53 @@ void main() {
     return wrap;
   }
 
+  function keepSteerPointerInside(e, opts = {}) {
+    e.stopPropagation();
+    if (opts.preventDefault !== false) e.preventDefault();
+  }
+
+  function preparePageChatInputForTyping() {
+    if (!pageChatEl || !pageChatInput) return false;
+    pageChatExpanded = true;
+    pageChatEl.dataset.expanded = 'true';
+    syncGlobalBarExpandedLabels(false);
+    pageChatEl.style.width = pageChatExpandedWidth();
+    pageChatEl.style.cursor = steerLocked ? 'default' : 'text';
+    pageChatInput.placeholder = PAGE_CHAT_PLACEHOLDER_EXPANDED;
+    if (pageChatHint) {
+      pageChatHint.style.display = 'none';
+      pageChatHint.style.opacity = '0';
+    }
+    pageChatInput.style.width = '';
+    pageChatInput.style.padding = '0 6px';
+    pageChatInput.style.opacity = steerLocked ? '0.72' : '1';
+    pageChatInput.style.pointerEvents = steerLocked ? 'none' : 'auto';
+    return true;
+  }
+
+  function armPageChatForTyping(opts = {}) {
+    if (!pageChatEl || !pageChatInput || steerLocked) return false;
+    const expand = opts.expand !== false;
+    const focus = opts.focus !== false;
+    if (expand && !pageChatExpanded) {
+      preparePageChatInputForTyping();
+      syncPageChatChrome();
+    }
+    if (focus) return focusPageChatInput('arm-page-chat');
+    syncPageChatFocusRing();
+    syncPageChatChrome();
+    return true;
+  }
+
+  function focusPageChatInput(reason) {
+    if (!preparePageChatInputForTyping() || steerLocked) return false;
+    try { pageChatInput.focus({ preventScroll: true }); } catch { pageChatInput.focus(); }
+    const focused = activeElementDeep() === pageChatInput;
+    if (focused) steerInputWasFocused = true;
+    syncPageChatFocusRing();
+    return focused;
+  }
+
   function clearSteerAwaitTimer() {
     if (steerAwaitTimer) {
       clearTimeout(steerAwaitTimer);
@@ -6416,9 +10366,26 @@ void main() {
     steerAwaitTimer = setTimeout(() => {
       if (!steerLocked || steerRequestId !== id) return;
       unlockSteerChat({
-        error: 'Steer timed out waiting for the agent. Check that live-poll is running and replies with steer_done.',
+        error: steerTimeoutMessage(),
+        restoreMessage: steerPendingMessage,
       });
     }, STEER_AWAIT_TIMEOUT_MS);
+  }
+
+  /**
+   * Two minutes of silence has three different causes and only one of them is
+   * "live-poll is not running". Naming the wrong one sends the user to restart
+   * a poll loop that was never the problem.
+   */
+  function steerTimeoutMessage() {
+    const head = 'Steer timed out after 2 minutes. ';
+    if (steerQueuedBehindGeneration()) {
+      return head + 'The agent is still busy with the current generation - your message was not lost, but it never got picked up. Send it again once the variants land.';
+    }
+    if (!agentPollingConnected) {
+      return head + 'No agent is polling right now. Run live-poll.mjs, then send it again.';
+    }
+    return head + 'The agent picked it up but never replied with steer_done. Check the agent session for a stalled or failed steer.';
   }
 
   function lockSteerChat() {
@@ -6427,19 +10394,12 @@ void main() {
     steerLocked = true;
     pageChatEl.dataset.processing = 'true';
     pageChatInput.disabled = true;
-    pageChatInput.value = '';
-    pageChatInput.blur();
+    preparePageChatInputForTyping();
     if (pageChatVoiceBtn) {
       pageChatVoiceBtn.disabled = true;
       pageChatVoiceBtn.style.display = 'none';
     }
-    pageChatExpanded = false;
-    pageChatEl.dataset.expanded = 'false';
-    pageChatEl.style.width = PAGE_CHAT_PROCESSING_W;
     pageChatEl.style.cursor = 'default';
-    pageChatInput.style.width = '0';
-    pageChatInput.style.padding = '0';
-    pageChatInput.style.opacity = '0';
     pageChatInput.style.pointerEvents = 'none';
     if (pageChatHint) {
       pageChatHint.style.display = 'none';
@@ -6451,23 +10411,33 @@ void main() {
       pageChatDotsEl = buildSteerProcessingDots();
       pageChatEl.appendChild(pageChatDotsEl);
     }
+    syncSteerQueueHint();
     syncPageChatFocusRing();
     syncPageChatChrome();
   }
 
   function unlockSteerChat(opts) {
     clearSteerAwaitTimer();
+    const restoreMessage = typeof opts?.restoreMessage === 'string' ? opts.restoreMessage : '';
+    const keepExpanded = Boolean(opts?.error && restoreMessage);
     steerLocked = false;
+    const completedId = steerRequestId;
     steerRequestId = null;
     if (!pageChatEl) return;
     pageChatEl.dataset.processing = 'false';
     pageChatEl.removeAttribute('aria-busy');
     pageChatEl.setAttribute('aria-label', 'Steer the page');
-    pageChatEl.style.width = PAGE_CHAT_COLLAPSED_W;
+    pageChatExpanded = keepExpanded;
+    pageChatEl.dataset.expanded = keepExpanded ? 'true' : 'false';
+    pageChatEl.style.width = keepExpanded ? pageChatExpandedWidth() : PAGE_CHAT_COLLAPSED_W;
     pageChatEl.style.cursor = 'pointer';
     if (pageChatInput) {
       pageChatInput.disabled = false;
-      pageChatInput.value = '';
+      pageChatInput.value = keepExpanded ? restoreMessage : '';
+      pageChatInput.style.width = keepExpanded ? '' : '0';
+      pageChatInput.style.padding = keepExpanded ? '0 6px' : '0';
+      pageChatInput.style.opacity = keepExpanded ? '1' : '0';
+      pageChatInput.style.pointerEvents = 'auto';
     }
     if (pageChatVoiceBtn) {
       pageChatVoiceBtn.disabled = false;
@@ -6475,18 +10445,32 @@ void main() {
     }
     if (pageChatHint) {
       pageChatHint.textContent = 'Steer';
-      pageChatHint.style.display = '';
-      pageChatHint.style.visibility = '';
+      pageChatHint.style.display = keepExpanded ? 'none' : '';
+      pageChatHint.style.visibility = keepExpanded ? 'hidden' : '';
+      pageChatHint.style.opacity = keepExpanded ? '0' : '1';
     }
     if (pageChatDotsEl?.parentNode) {
       pageChatDotsEl.remove();
       pageChatDotsEl = null;
     }
+    if (pageChatQueueHintEl?.parentNode) {
+      pageChatQueueHintEl.remove();
+      pageChatQueueHintEl = null;
+    }
+    steerPendingMessage = keepExpanded ? restoreMessage : '';
+    steerInputWasFocused = false;
     syncPageChatChrome();
     syncPageChatFocusRing();
     if (opts?.error) showToast(String(opts.error), 5000);
     else if (opts?.message) showToast(String(opts.message), 4000);
-    syncPageChatFocus('steer-unlock');
+    if (completedId) {
+      sendSteerCheckpoint(completedId, opts?.error ? 'steer_error' : 'steer_done', {
+        message: opts?.message || opts?.error || '',
+        file: opts?.file || '',
+      });
+    }
+    if (keepExpanded) focusPageChatInput('steer-error-restore');
+    else syncPageChatFocus('steer-unlock');
   }
 
   function steerSpeechRecognitionCtor() {
@@ -6540,7 +10524,9 @@ void main() {
       if (pageChatEl) pageChatEl.dataset.voiceListening = listening ? 'true' : 'false';
       syncPageChatChrome();
     } else if (voiceCtx?.mode === 'configure') {
-      const voiceBtn = document.getElementById(PREFIX + '-configure-voice');
+      // The bar shows either the replace row's voice button or the insert
+      // row's - both run voice through the 'configure' mode.
+      const voiceBtn = uiGetById(PREFIX + '-configure-voice') || uiGetById(PREFIX + '-insert-voice');
       if (voiceBtn) {
         voiceBtn.dataset.active = listening ? 'true' : 'false';
         voiceBtn.dataset.listening = listening ? 'true' : 'false';
@@ -6673,7 +10659,7 @@ void main() {
   }
 
   function configureVoiceContext() {
-    const input = document.getElementById(
+    const input = uiGetById(
       configureKind === 'insert' ? PREFIX + '-insert-input' : PREFIX + '-input',
     );
     return {
@@ -6708,26 +10694,40 @@ void main() {
     if (!text || steerLocked) return;
     const id = id8();
     steerRequestId = id;
+    steerPendingMessage = text;
     lockSteerChat();
     scheduleSteerAwaitTimeout(id);
+    // Checkpoints follow the steer event, never precede it: the steer event
+    // is what creates the session journal server-side, and a checkpoint for
+    // a not-yet-created session is rejected as unknown_session.
     sendEvent({
       type: 'steer',
       id,
       message: text,
       pageUrl: location.href,
     }).then((res) => {
-      if (!res) unlockSteerChat({ error: 'Could not reach live server' });
+      if (!res) {
+        unlockSteerChat({ error: 'Could not reach live server', restoreMessage: text });
+        return;
+      }
+      if (steerInputWasFocused) sendSteerCheckpoint(id, 'steer_input_focused', { focused: true });
+      sendSteerCheckpoint(id, 'steer_submitted', { message: text, pageUrl: location.href });
     });
   }
 
   function maybeCompleteSteer(msg) {
     if (!steerRequestId || msg.id !== steerRequestId) return false;
     if (msg.type === 'steer_done') {
-      unlockSteerChat({ message: msg.message });
+      unlockSteerChat({ message: msg.message, file: msg.file });
+      if (msg.file && /\.svelte(?:$|\?)/.test(String(msg.file))) {
+        setTimeout(() => {
+          if (!steerLocked) showToast('Steer applied. Reload if the page has not refreshed yet.', 5000);
+        }, 4500);
+      }
       return true;
     }
     if (msg.type === 'error') {
-      unlockSteerChat({ error: msg.message || 'Steer failed' });
+      unlockSteerChat({ error: msg.message || 'Steer failed', restoreMessage: steerPendingMessage });
       return true;
     }
     return false;
@@ -6736,21 +10736,10 @@ void main() {
   function expandPageChat(opts) {
     const focus = !opts || opts.focus !== false;
     if (!pageChatEl || !pageChatInput || steerLocked) return;
-    pageChatExpanded = true;
-    pageChatEl.dataset.expanded = 'true';
-    pageChatEl.style.width = PAGE_CHAT_EXPANDED_W;
-    pageChatEl.style.cursor = 'text';
-    if (pageChatHint) {
-      pageChatHint.style.display = 'none';
-      pageChatHint.style.opacity = '0';
-    }
-    pageChatInput.style.width = '';
-    pageChatInput.style.padding = '0 6px';
-    pageChatInput.style.opacity = '1';
-    pageChatInput.style.pointerEvents = 'auto';
+    preparePageChatInputForTyping();
     syncPageChatChrome();
     syncPageChatFocusRing();
-    if (focus) pageChatInput.focus();
+    if (focus) focusPageChatInput('expand-page-chat');
   }
 
   function collapsePageChat(opts) {
@@ -6761,13 +10750,14 @@ void main() {
     pageChatEl.dataset.expanded = 'false';
     pageChatEl.style.width = PAGE_CHAT_COLLAPSED_W;
     pageChatEl.style.cursor = 'pointer';
+    syncGlobalBarExpandedLabels(globalBarEl?.matches(':hover'));
     if (blur) {
       pageChatInput.blur();
       pageChatInput.style.pointerEvents = 'none';
     } else {
       pageChatInput.style.pointerEvents = 'auto';
     }
-    if (pageChatHint && document.activeElement !== pageChatInput) {
+    if (pageChatHint && activeElementDeep() !== pageChatInput) {
       pageChatHint.style.display = '';
       pageChatHint.style.opacity = '1';
     }
@@ -6782,7 +10772,7 @@ void main() {
       height: '28px', margin: '0 4px 0 ' + (GLOBAL_BAR_SECTION_GAP - GLOBAL_BAR_INNER_GAP) + 'px',
       borderRadius: '7px',
       background: P.chatSurface,
-      border: '1px solid ' + P.hairline,
+      border: '1px solid transparent',
       overflow: 'hidden',
       cursor: 'pointer',
       flexShrink: '0',
@@ -6813,13 +10803,14 @@ void main() {
     pageChatInput = document.createElement('input');
     pageChatInput.id = PREFIX + '-page-chat-input';
     pageChatInput.type = 'text';
-    pageChatInput.placeholder = 'Steer the page…';
+    pageChatInput.placeholder = PAGE_CHAT_PLACEHOLDER_COLLAPSED;
     pageChatInput.setAttribute('aria-label', 'Steer the page');
     Object.assign(pageChatInput.style, {
       flex: '1', minWidth: '0', width: '0',
       padding: '0', border: 'none', background: 'transparent',
       fontFamily: FONT, fontSize: '11.5px', color: P.text,
       outline: 'none', opacity: '0', pointerEvents: 'none',
+      caretColor: P.accent,
       transition: 'opacity 0.15s ease',
     });
 
@@ -6836,12 +10827,43 @@ void main() {
     pageChatVoiceBtn.setAttribute('aria-label', 'Voice input');
     pageChatVoiceBtn.innerHTML = ICON_PAGE_VOICE;
 
+    // Visible Send, same affordance the element-level Go bar gets from
+    // buildConfigureSubmitButton. Enter still submits; the button exists so a
+    // typed steer does not look like a dead-end text field.
+    pageChatSendBtn = el('button', {
+      display: 'none', alignItems: 'center', justifyContent: 'center',
+      padding: '0', boxSizing: 'border-box',
+      width: '28px', height: '28px', flexShrink: '0',
+      border: 'none', borderLeft: '1px solid ' + P.hairline,
+      borderRadius: '0',
+      background: P.accent, color: C.ink,
+      cursor: 'pointer',
+      transition: 'filter 0.12s ease, opacity 0.12s ease',
+    });
+    pageChatSendBtn.id = PREFIX + '-page-chat-send';
+    pageChatSendBtn.type = 'button';
+    pageChatSendBtn.setAttribute('aria-label', 'Send steer message');
+    pageChatSendBtn.innerHTML = ICON_CONFIGURE_SUBMIT;
+    pageChatSendBtn.addEventListener('pointerdown', keepSteerPointerInside);
+    pageChatSendBtn.addEventListener('mousedown', keepSteerPointerInside);
+    pageChatSendBtn.addEventListener('mouseenter', () => {
+      if (!pageChatSendBtn.disabled) pageChatSendBtn.style.filter = 'brightness(1.1)';
+    });
+    pageChatSendBtn.addEventListener('mouseleave', () => { pageChatSendBtn.style.filter = 'none'; });
+    pageChatSendBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      keepSteerPointerInside(e);
+      if (steerLocked || pageChatSendBtn.disabled) return;
+      submitSteerMessage();
+    });
+
     pageChatEl.appendChild(chatIcon);
     pageChatEl.appendChild(pageChatHint);
     pageChatEl.appendChild(pageChatInput);
     pageChatEl.appendChild(pageChatVoiceBtn);
+    pageChatEl.appendChild(pageChatSendBtn);
 
-    if (!document.getElementById(PREFIX + '-page-chat-style')) {
+    if (!uiGetById(PREFIX + '-page-chat-style')) {
       const s = document.createElement('style');
       s.id = PREFIX + '-page-chat-style';
       s.textContent =
@@ -6853,38 +10875,57 @@ void main() {
         '#' + PREFIX + '-page-chat[data-voice-listening="true"] { border-color: oklch(70% 0.12 188 / 0.45); }' +
         '#' + PREFIX + '-page-chat-voice[data-listening="true"] svg { animation: impeccable-voice-pulse 1.1s ease-in-out infinite; }' +
         '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-page-chat-voice[data-listening="true"] svg { animation: none; opacity: 1; } }' +
-        '#' + PREFIX + '-page-chat-input::placeholder { color: oklch(63% 0.024 82); opacity: 1; }' +
+        '#' + PREFIX + '-page-chat-input::placeholder { color: oklch(72% 0 0); opacity: 1; }' +
+        '#' + PREFIX + '-page-chat-input { caret-color: oklch(84% 0.19 80.46); }' +
+        '#' + PREFIX + '-page-chat[data-input-focused="true"]:not([data-expanded="true"]) #' + PREFIX + '-page-chat-input::placeholder { color: oklch(72% 0 0); }' +
         '#' + PREFIX + '-page-chat-voice:hover { background: oklch(78% 0.12 82 / 0.12); }';
-      document.head.appendChild(s);
+      uiAppendStyle(s);
     }
 
-    pageChatEl.addEventListener('mousedown', (e) => e.stopPropagation());
+    pageChatEl.addEventListener('pointerdown', (e) => {
+      keepSteerPointerInside(e);
+      if (steerLocked || pageChatVoiceBtn.contains(e.target) || pageChatSendBtn.contains(e.target)) return;
+      armPageChatForTyping({ expand: true, focus: false });
+    });
+    pageChatEl.addEventListener('mousedown', keepSteerPointerInside);
     pageChatEl.addEventListener('click', (e) => {
+      keepSteerPointerInside(e);
       if (steerLocked) return;
-      if (pageChatVoiceBtn.contains(e.target)) return;
-      expandPageChat();
+      if (pageChatVoiceBtn.contains(e.target) || pageChatSendBtn.contains(e.target)) return;
+      armPageChatForTyping({ expand: true, focus: true });
     });
 
-    pageChatVoiceBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    pageChatVoiceBtn.addEventListener('pointerdown', keepSteerPointerInside);
+    pageChatVoiceBtn.addEventListener('mousedown', keepSteerPointerInside);
     pageChatVoiceBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+      keepSteerPointerInside(e);
       if (steerLocked) return;
       toggleSteerVoice();
     });
 
+    pageChatInput.addEventListener('pointerdown', keepSteerPointerInside);
+    pageChatInput.addEventListener('mousedown', keepSteerPointerInside);
+    pageChatInput.addEventListener('click', (e) => {
+      keepSteerPointerInside(e);
+      if (!steerLocked) focusPageChatInput('page-chat-input-click');
+    });
+
     pageChatInput.addEventListener('input', () => {
       syncPageChatVisual();
+      syncPageChatSendButton();
     });
 
     pageChatInput.addEventListener('focus', () => {
+      steerInputWasFocused = true;
       syncPageChatFocusRing();
+      syncPageChatChrome();
     });
 
     pageChatInput.addEventListener('blur', () => {
       syncPageChatFocusRing();
       setTimeout(() => {
         if (state === 'CONFIGURING' || steerLocked || voiceListening) return;
-        if (pageChatEl?.contains(document.activeElement)) return;
+        if (pageChatEl?.contains(activeElementDeep())) return;
         if (!pageChatInput.value.trim()) collapsePageChat();
         scheduleSteerFocusRecover('steer-blur-recover');
       }, 120);
@@ -6913,7 +10954,7 @@ void main() {
     steerFocusLog('page-chat-mounted', {});
   }
 
-  // Impeccable mark — same paths as site/components/Header.astro + favicon.svg.
+  // Impeccable mark - same paths as site/components/Header.astro + favicon.svg.
   function brandMarkSvg(color = C.brand, size = 18) {
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" aria-hidden="true">
       <path d="M5 2.5 L13.5 2.5 L5.5 21.5 L5 21.5 Q2.5 21.5 2.5 19 L2.5 5 Q2.5 2.5 5 2.5 Z"/>
@@ -6921,24 +10962,47 @@ void main() {
     </svg>`;
   }
 
+  /**
+   * True while the browser is waiting on work it already handed to the agent.
+   * In these states a quiet poll indicator means "busy", not "absent".
+   */
+  function agentHasWorkInFlight() {
+    return state === 'GENERATING' || state === 'SAVING';
+  }
+
+  /**
+   * Derived at read time, not cached: which of the two reasons applies depends on
+   * the live state, which moves between the 5s status polls. The truthiness is
+   * the same either way, so the indicator's visuals can stay driven by the
+   * cached value while the wording stays current.
+   */
+  function agentStatusText() {
+    if (agentPollingConnected) return null;
+    return agentHasWorkInFlight() ? AGENT_BUSY_TIP : AGENT_DISCONNECTED_TIP;
+  }
+
   function syncAgentPollingUi(connected) {
     agentPollingConnected = !!connected;
+    syncSteerQueueHint();
     if (!globalBarBrandEl) return;
     const P = barPaletteForTheme(globalBarEl?.dataset.theme || detectPageTheme());
+    agentStatusMessage = agentStatusText();
     globalBarBrandEl.dataset.agentConnected = connected ? 'true' : 'false';
-    globalBarBrandEl.setAttribute('aria-label', connected
-      ? 'Impeccable live mode'
-      : 'Impeccable live mode — agent not polling');
+    // The tooltip is mouse-only, so carry the same distinction in the label or
+    // screen-reader users are left with the vaguer of the two readings.
+    globalBarBrandEl.setAttribute('aria-label', agentStatusMessage
+      ? 'Impeccable live mode - ' + (agentHasWorkInFlight() ? 'agent is working' : 'agent not polling')
+      : 'Impeccable live mode');
     globalBarBrandEl.removeAttribute('title');
-    globalBarBrandEl.style.cursor = connected ? 'default' : 'help';
+    globalBarBrandEl.style.cursor = agentStatusMessage ? 'help' : 'default';
     const mark = globalBarBrandEl.querySelector('[data-brand-mark]');
     if (mark) {
       mark.innerHTML = brandMarkSvg(connected ? P.accent : AGENT_DISCONNECTED_MARK, 18);
       mark.style.opacity = '1';
     }
     const dot = globalBarBrandEl.querySelector('[data-agent-dot]');
-    if (dot) dot.style.display = connected ? 'none' : 'block';
-    if (connected) hideAgentPollTooltip();
+    if (dot) dot.style.display = agentStatusMessage ? 'block' : 'none';
+    if (!agentStatusMessage) hideAgentPollTooltip();
   }
 
   function ensureAgentPollTooltip() {
@@ -6965,14 +11029,17 @@ void main() {
       whiteSpace: 'normal',
     });
     agentPollTooltipEl.id = PREFIX + '-agent-poll-tooltip';
-    agentPollTooltipEl.textContent = AGENT_DISCONNECTED_TIP;
-    document.body.appendChild(agentPollTooltipEl);
+    agentPollTooltipEl.textContent = agentStatusText() || AGENT_DISCONNECTED_TIP;
+    uiAppend(agentPollTooltipEl);
     return agentPollTooltipEl;
   }
 
   function showAgentPollTooltip(anchor) {
-    if (agentPollingConnected || !anchor) return;
+    if (!agentStatusMessage || !anchor) return;
     const tip = ensureAgentPollTooltip();
+    // Re-derive rather than reuse the cached copy: the live state may have moved
+    // since the last status poll set it.
+    tip.textContent = agentStatusText() || AGENT_DISCONNECTED_TIP;
     tip.style.transition = 'none';
     tip.style.display = 'block';
     tip.style.opacity = '1';
@@ -7002,7 +11069,9 @@ void main() {
     fetch('http://localhost:' + PORT + '/status?token=' + TOKEN, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && typeof data.agentPolling === 'boolean') syncAgentPollingUi(data.agentPolling);
+        if (data && typeof data.agentPolling === 'boolean') {
+          syncAgentPollingUi(data.agentPolling);
+        }
       })
       .catch(() => { /* server loss handled elsewhere */ });
   }
@@ -7020,7 +11089,7 @@ void main() {
     // Custom focus-visible for bar buttons. Browser default is a heavy
     // blue ring that looks jarring on the dark capsule. Replace with a
     // soft accent-tinted inner ring that respects the bar's palette.
-    if (!document.getElementById(PREFIX + '-bar-focus-style')) {
+    if (!uiGetById(PREFIX + '-bar-focus-style')) {
       const s = document.createElement('style');
       s.id = PREFIX + '-bar-focus-style';
       s.textContent =
@@ -7032,7 +11101,7 @@ void main() {
         '@keyframes impeccable-agent-dot { 0%, 100% { opacity: 0.45; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1); } }' +
         '#' + PREFIX + '-global-bar-brand[data-agent-connected="false"] [data-agent-dot] { animation: impeccable-agent-dot 1.4s ease-in-out infinite; }' +
         '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-global-bar-brand[data-agent-connected="false"] [data-agent-dot] { animation: none; opacity: 0.9; } }';
-      document.head.appendChild(s);
+      uiAppendStyle(s);
     }
 
     globalBarEl = el('div', {
@@ -7041,6 +11110,7 @@ void main() {
       zIndex: Z.bar + 5,
       display: 'flex', alignItems: 'stretch',
       gap: '0',
+      width: 'max-content',
       background: P.surface,
       border: '1px solid ' + P.border,
       borderRadius: '8px',
@@ -7048,12 +11118,14 @@ void main() {
       fontFamily: FONT, fontSize: '12px', lineHeight: '1',
       opacity: '0',
       overflow: 'hidden',          // clip the full-bleed brand mark to the bar radius
+      maxWidth: 'calc(100vw - 16px)',
+      boxSizing: 'border-box',
       transition: 'opacity 0.3s ' + EASE + ', transform 0.3s ' + EASE,
     });
     globalBarEl.id = PREFIX + '-global-bar';
     globalBarEl.dataset.theme = theme;
 
-    // Brand mark — kinpaku Impeccable icon (site header / favicon paths).
+    // Brand mark - kinpaku Impeccable icon (site header / favicon paths).
     const brand = el('span', {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       alignSelf: 'stretch', position: 'relative',
@@ -7065,7 +11137,7 @@ void main() {
     brand.id = PREFIX + '-global-bar-brand';
     brand.dataset.agentConnected = 'false';
     brand.setAttribute('role', 'img');
-    brand.setAttribute('aria-label', 'Impeccable live mode — agent not polling');
+    brand.setAttribute('aria-label', 'Impeccable live mode - agent not polling');
 
     const brandMark = el('span', {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -7077,7 +11149,7 @@ void main() {
     const agentDot = el('span', {
       position: 'absolute', right: '-1px', bottom: '7px',
       width: '6px', height: '6px', borderRadius: '50%',
-      background: 'oklch(78% 0.14 75)',
+      background: 'oklch(77% 0.13 82)',
       boxShadow: '0 0 0 2px ' + P.surface,
       display: 'none', pointerEvents: 'none',
     });
@@ -7096,15 +11168,19 @@ void main() {
     const inner = el('div', {
       display: 'flex', alignItems: 'center',
       padding: '4px 5px 4px ' + GLOBAL_BAR_INNER_PAD_LEFT + 'px', gap: GLOBAL_BAR_INNER_GAP + 'px',
+      flex: '0 0 auto',
     });
     inner.id = PREFIX + '-global-bar-inner';
     globalBarEl.appendChild(inner);
 
-    // --- button factory: icon-only at rest, label slides in on hover/active ---
+    // Button factory: icon-only at rest, label slides in on hover/active.
     function makeIconBtn({ id, svg, label, ariaLabel, labelFont, onClick }) {
       const b = el('button', {
         position: 'relative',
-        display: 'inline-flex', alignItems: 'center',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        boxSizing: 'border-box',
+        flex: '0 0 auto',
+        minWidth: '30px',
         padding: '6px 8px', borderRadius: '7px',
         border: 'none', background: 'transparent',
         color: P.textDim, fontFamily: FONT, fontSize: '11.5px', fontWeight: '500',
@@ -7123,14 +11199,14 @@ void main() {
         if (!labelEl) return;
         labelEl.style.maxWidth = '120px'; labelEl.style.opacity = '1'; labelEl.style.marginLeft = '6px'; labelEl.style.transform = 'translateX(0)';
       };
-      const collapse = () => {
-        if (!labelEl || b.dataset.active === 'true') return;
+      const collapse = (force = false) => {
+        if (!labelEl || (!force && b.dataset.active === 'true')) return;
         labelEl.style.maxWidth = '0'; labelEl.style.opacity = '0'; labelEl.style.marginLeft = '0'; labelEl.style.transform = 'translateX(-4px)';
       };
       // Per-button hover only changes color (no layout). The label expand/
       // collapse is driven by the bar-level mouseenter/mouseleave so moving
       // the mouse between adjacent buttons doesn't trigger per-button width
-      // thrashing — the whole bar grows once and shrinks once.
+      // thrashing - the whole bar grows once and shrinks once.
       b.addEventListener('mouseenter', () => { if (b.dataset.active !== 'true') b.style.color = P.text; });
       b.addEventListener('mouseleave', () => { if (b.dataset.active !== 'true') b.style.color = P.textDim; });
       b.addEventListener('click', onClick);
@@ -7139,7 +11215,7 @@ void main() {
       return b;
     }
 
-    // Pick toggle — restored from localStorage; both pick and insert may be off.
+    // Pick toggle - restored from localStorage; both pick and insert may be off.
     const pickBtn = makeIconBtn({
       id: PREFIX + '-pick-toggle',
       svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>',
@@ -7176,14 +11252,14 @@ void main() {
     detectBtn.appendChild(detectBadge);
     inner.appendChild(detectBtn);
 
-    // DESIGN.md panel toggle — quartet of color squares as the mark.
+    // DESIGN.md panel toggle - quartet of color squares as the mark.
     const designBtn = makeIconBtn({
       id: PREFIX + '-design-toggle',
-      svg: `<span style="display:inline-grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;width:14px;height:14px;border-radius:3px;overflow:hidden;box-shadow:inset 0 0 0 1px oklch(58% 0.065 82 / 0.55);flex-shrink:0">
+      svg: `<span style="display:inline-grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;width:14px;height:14px;border-radius:3px;overflow:hidden;box-shadow:inset 0 0 0 1px oklch(92% 0 0 / 0.13);flex-shrink:0">
         <span style="background:oklch(84% 0.19 80.46)"></span>
         <span style="background:oklch(70% 0.12 188)"></span>
-        <span style="background:oklch(84% 0.035 82)"></span>
-        <span style="background:oklch(34% 0.014 82)"></span>
+        <span style="background:oklch(91% 0 0)"></span>
+        <span style="background:oklch(34% 0 0)"></span>
       </span>`,
       label: 'DESIGN.md',
       ariaLabel: 'Toggle DESIGN.md panel',
@@ -7375,26 +11451,29 @@ void main() {
       width: '1px', height: '18px',
       background: P.hairline,
       margin: '0 4px 0 2px',
+      flexShrink: '0',
     });
     inner.appendChild(divider);
 
-    // Exit × on the right — intentionally subtle (textDim at rest, text on
+    // Exit × on the right - intentionally subtle (textDim at rest, text on
     // hover) so it sits behind the active toggles in visual hierarchy.
     //
     // Explicit padding + box-sizing here is load-bearing: a host page like
     // `button { padding: 0.5rem 1rem; }` (very common in resets) would
     // otherwise inflate this 24x24 button into 56x40 and push the SVG out
-    // of the visible bar — the X stays invisible even though the styles in
+    // of the visible bar - the X stays invisible even though the styles in
     // DevTools look fine. Every other chrome button sets padding inline;
     // this one needed it too.
     const exitBtn = el('button', {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       padding: '0', boxSizing: 'border-box',
       width: '24px', height: '24px', borderRadius: '6px',
+      flexShrink: '0',
       border: 'none', background: 'transparent',
       color: P.textDim, fontFamily: FONT, fontSize: '0', lineHeight: '0',
       cursor: 'pointer', transition: 'color 0.12s ease, background 0.12s ease',
     });
+    exitBtn.id = PREFIX + '-exit';
     exitBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="3" y1="3" x2="11" y2="11"/><line x1="11" y1="3" x2="3" y2="11"/></svg>';
     exitBtn.title = 'Exit live mode';
     exitBtn.addEventListener('mouseenter', () => { exitBtn.style.color = 'oklch(58% 0.15 35)'; exitBtn.style.background = P.exitHover; });
@@ -7402,16 +11481,16 @@ void main() {
     exitBtn.addEventListener('click', () => { sendEvent({ type: 'exit' }); teardown(); });
     inner.appendChild(exitBtn);
 
-    // Bar-level hover: expand every toggle's label at once; collapse on leave.
+    // Bar-level hover: expand mode labels unless Steer is using the space.
     // Buttons with dataset.active="true" ignore collapse (their label stays).
-    const toggles = [pickBtn, insertBtn, detectBtn, designBtn];
     globalBarEl.addEventListener('mouseenter', () => {
-      toggles.forEach((t) => t._expandLabel && t._expandLabel());
+      syncGlobalBarExpandedLabels(true);
+      syncPageChatExpandedWidth();
       schedulePendingDockPosition();
       setTimeout(schedulePendingDockPosition, 260);
     });
     globalBarEl.addEventListener('mouseleave', () => {
-      toggles.forEach((t) => t._collapseLabel && t._collapseLabel());
+      syncGlobalBarExpandedLabels(false);
       schedulePendingDockPosition();
       setTimeout(schedulePendingDockPosition, 260);
     });
@@ -7419,8 +11498,8 @@ void main() {
       try { window.focus(); } catch { /* in-app preview may block */ }
     }, true);
 
-    document.body.appendChild(pendingDockEl);
-    document.body.appendChild(globalBarEl);
+    uiAppend(pendingDockEl);
+    uiAppend(globalBarEl);
     defangOutsideHandlers(pendingDockEl);
     defangOutsideHandlers(globalBarEl);
 
@@ -7429,6 +11508,7 @@ void main() {
       pendingDockResizeObserver.observe(globalBarEl);
     }
     window.addEventListener('resize', positionPendingDock);
+    window.addEventListener('resize', syncPageChatExpandedWidth);
 
     requestAnimationFrame(() => {
       globalBarEl.style.opacity = '1';
@@ -7442,11 +11522,11 @@ void main() {
   }
 
   function updateGlobalBarState() {
-    const detectToggle = document.getElementById(PREFIX + '-detect-toggle');
-    const detectBadge = document.getElementById(PREFIX + '-detect-badge');
-    const pickToggle = document.getElementById(PREFIX + '-pick-toggle');
-    const insertToggle = document.getElementById(PREFIX + '-insert-toggle');
-    const designToggle = document.getElementById(PREFIX + '-design-toggle');
+    const detectToggle = uiGetById(PREFIX + '-detect-toggle');
+    const detectBadge = uiGetById(PREFIX + '-detect-badge');
+    const pickToggle = uiGetById(PREFIX + '-pick-toggle');
+    const insertToggle = uiGetById(PREFIX + '-insert-toggle');
+    const designToggle = uiGetById(PREFIX + '-design-toggle');
     const theme = globalBarEl?.dataset.theme || 'light';
     const P = barPaletteForTheme(theme);
 
@@ -7472,12 +11552,10 @@ void main() {
       btn.style.opacity = controlsLocked ? '0.55' : '1';
     });
 
-    // If the bar is currently under the cursor, keep all labels expanded —
+    // If the bar is currently under the cursor, keep all labels expanded -
     // otherwise clicking a toggle that deactivates (e.g. closing DESIGN.md)
     // would collapse its label while the user's mouse is still on the bar.
-    if (globalBarEl && globalBarEl.matches(':hover')) {
-      [pickToggle, insertToggle, detectToggle, designToggle].forEach((t) => t?._expandLabel?.());
-    }
+    syncGlobalBarExpandedLabels(globalBarEl && globalBarEl.matches(':hover'));
 
     if (detectBadge) {
       detectBadge.style.display = (detectActive && detectCount > 0) ? 'inline' : 'none';
@@ -7494,6 +11572,43 @@ void main() {
   let detectReady = false; // true once detect script posts 'impeccable-ready'
   let detectPendingScan = false; // scan requested before script was ready
 
+  function requestDetectScan() {
+    const scanId = String(++detectScanSeq);
+    activeDetectScanId = scanId;
+    pendingDetectScanId = scanId;
+    // Send the project's detector waivers with the scan so the overlay
+    // filters the same findings the CLI and the edit hook do (issue #639).
+    // live-browser-ignores.js resolves .impeccable config for this page:
+    // ignoreRules suppress outright, wildcard ignoreValues suppress their
+    // rule in the files they name, ignoreFiles that name the page skip the
+    // scan wholesale, and the rest match on the finding's own value inside
+    // the detector. Guarded twice: a stale cached live.js without the
+    // resolver part still scans, and a resolver that throws must not brick
+    // the detect toggle; both degrade to an unfiltered scan.
+    const ignoresApi = window.__IMPECCABLE_LIVE_IGNORES__;
+    let ignores = { disabledRules: [], disabledValues: [], skipScan: false };
+    if (typeof ignoresApi?.resolveDetectIgnores === 'function') {
+      try {
+        ignores = ignoresApi.resolveDetectIgnores({
+          ignores: window.__IMPECCABLE_PROJECT_IGNORES__,
+          pathname: location.pathname,
+        }) || ignores;
+      } catch (e) {
+        ignores = { disabledRules: [], disabledValues: [], skipScan: false };
+      }
+    }
+    window.postMessage({
+      source: 'impeccable-command',
+      action: 'scan',
+      config: {
+        scanId,
+        disabledRules: ignores.disabledRules || [],
+        disabledValues: ignores.disabledValues || [],
+        skipScan: ignores.skipScan === true,
+      },
+    }, '*');
+  }
+
   function toggleDetect() {
     if (pendingApplyInFlight) { showManualApplyBusyToast(); return; }
     detectActive = !detectActive;
@@ -7504,12 +11619,14 @@ void main() {
         detectPendingScan = true;
         loadDetectScript();
       } else if (detectReady) {
-        window.postMessage({ source: 'impeccable-command', action: 'scan' }, '*');
+        requestDetectScan();
       } else {
         detectPendingScan = true;
       }
     } else {
       window.postMessage({ source: 'impeccable-command', action: 'remove' }, '*');
+      activeDetectScanId = null;
+      pendingDetectScanId = null;
       detectCount = 0;
       updateGlobalBarState();
     }
@@ -7530,14 +11647,15 @@ void main() {
         cancelInsertConfigure();
         return;
       }
+      teardownConfigureChrome();
       hideHighlight();
-      hideBar();
       hideActionPicker();
       selectedElement = null;
+      hoveredElement = null;
       configureKind = 'replace';
-      if (state === 'PICKING' || state === 'CONFIGURING') state = 'IDLE';
+      if (state === 'PICKING' || state === 'CONFIGURING') setLiveState('IDLE');
     } else {
-      if (state === 'IDLE') state = 'PICKING';
+      if (state === 'IDLE') setLiveState('PICKING');
     }
     syncPageChatFocus('toggle-pick');
   }
@@ -7553,10 +11671,10 @@ void main() {
       selectedElement = null;
       configureKind = 'replace';
       if (state === 'CONFIGURING') cancelInsertConfigure();
-      else if (state === 'IDLE' || state === 'PICKING') state = 'PICKING';
+      else if (state === 'IDLE' || state === 'PICKING') setLiveState('PICKING');
     } else {
       clearInsertPicking();
-      if (state === 'PICKING' && !pickActive) state = 'IDLE';
+      if (state === 'PICKING' && !pickActive) setLiveState('IDLE');
     }
     saveInteractionPrefs();
     updateGlobalBarState();
@@ -7579,12 +11697,18 @@ void main() {
       detectReady = true;
       if (detectPendingScan && detectActive) {
         detectPendingScan = false;
-        window.postMessage({ source: 'impeccable-command', action: 'scan' }, '*');
+        requestDetectScan();
       }
     }
     // Scan results arrived
     if (e.data.source === 'impeccable-results') {
+      if (!detectActive) return;
+      if (activeDetectScanId && e.data.scanId !== activeDetectScanId) return;
       detectCount = e.data.count || 0;
+      if (detectActive && pendingDetectScanId && detectCount === 0) {
+        showToast(DETECT_EMPTY_MESSAGE, 3200);
+      }
+      pendingDetectScanId = null;
       updateGlobalBarState();
     }
   }
@@ -7621,8 +11745,9 @@ void main() {
       pendingApplyInFlight = false;
     }
     if (globalBarEl) {
-      globalBarEl.style.transform = 'translateY(100%)';
-      setTimeout(() => { if (globalBarEl) globalBarEl.remove(); globalBarEl = null; }, 300);
+      globalBarEl.style.transition = 'none';
+      globalBarEl.remove();
+      globalBarEl = null;
     }
     pageChatEl = null;
     pageChatInput = null;
@@ -7630,11 +11755,13 @@ void main() {
     pageChatVoiceBtn = null;
     pageChatExpanded = false;
     if (insertCreateTooltipEl) { insertCreateTooltipEl.remove(); insertCreateTooltipEl = null; }
+    if (configureBarTooltipEl) { configureBarTooltipEl.remove(); configureBarTooltipEl = null; }
     if (highlightEl) { highlightEl.remove(); highlightEl = null; }
     if (tooltipEl) { tooltipEl.remove(); tooltipEl = null; }
     if (barEl) { barEl.remove(); barEl = null; }
     if (pickerEl) { pickerEl.remove(); pickerEl = null; }
     if (paramsPanelEl) { paramsPanelEl.remove(); paramsPanelEl = null; paramsPanelInner = null; paramsPanelBody = null; }
+    if (editBadgeProxyRoot) { editBadgeProxyRoot.remove(); editBadgeProxyRoot = null; editBadgeProxyByTarget = new Map(); }
     if (evtSource) { evtSource.close(); evtSource = null; }
     document.removeEventListener('mousemove', handleMouseMove, true);
     document.removeEventListener('click', handleClick, true);
@@ -7642,14 +11769,16 @@ void main() {
     window.removeEventListener('message', onDetectMessage);
     // Remove detection overlays
     window.postMessage({ source: 'impeccable-command', action: 'remove' }, '*');
-    state = 'IDLE';
+    setLiveState('IDLE');
+    document.getElementById(PICK_CURSOR_STYLE_ID)?.remove();
+    removeVariantStateStylesheet();
     window.__IMPECCABLE_LIVE_INIT__ = false;
     console.log('[impeccable] Live mode exited.');
   }
 
-  // ---------------------------------------------------------------------------
-  // Design System Panel — visualizes the project's .impeccable/design.json sidecar
-  // ---------------------------------------------------------------------------
+  //
+  // Design System Panel - visualizes the project's .impeccable/design.json sidecar
+  //
 
   const DESIGN_PREFS_KEY = 'impeccable-live-design-panel';
   const DESIGN_PANEL_WIDTH = 440;
@@ -7674,7 +11803,7 @@ void main() {
   };
 
   function loadDesignPrefs() {
-    // `open` is intentionally NOT persisted — the panel always starts closed
+    // `open` is intentionally NOT persisted - the panel always starts closed
     // so live mode doesn't auto-slide a big panel over the page on startup.
     try {
       const raw = localStorage.getItem(DESIGN_PREFS_KEY);
@@ -7717,7 +11846,7 @@ void main() {
     root.className = 'root';
     designShadow.appendChild(root);
 
-    document.body.appendChild(designHost);
+    uiAppend(designHost);
     // The host is pointer-events: none; the panel inside the shadow DOM
     // manages its own auto/none. Events bubble through the shadow boundary,
     // so attaching here silences host-page outside-interaction handlers
@@ -7731,7 +11860,7 @@ void main() {
     }
   }
 
-  // Neutral panel palette — deliberately NOT Impeccable-branded. The panel is
+  // Neutral panel palette - deliberately NOT Impeccable-branded. The panel is
   // a viewer of the project's design system, not an Impeccable surface.
   const DP = {
     canvas:   'oklch(94% 0 0)',            // panel background
@@ -7742,8 +11871,8 @@ void main() {
     meta:     'oklch(55% 0 0)',
     hairline: 'oklch(88% 0 0)',
     hairlineSoft: 'oklch(92% 0 0)',
-    amber:    'oklch(70% 0.13 65)',         // stale-hint accent
-    amberBg:  'oklch(95% 0.05 80)',
+    amber:    'oklch(77% 0.13 82)',         // stale-hint accent
+    amberBg:  'oklch(89% 0.055 84)',
   };
 
   function designPanelCss(BP) {
@@ -7759,7 +11888,7 @@ void main() {
       .root * { box-sizing: border-box; }
       button { font: inherit; color: inherit; }
 
-      /* --- Panel shell: chrome matches the bar; body canvas stays neutral --- */
+      /* Panel shell: chrome matches the bar; body canvas stays neutral */
       .panel {
         position: fixed; top: 12px; bottom: 72px; right: 12px;
         width: ${DESIGN_PANEL_WIDTH}px; max-width: calc(100vw - 24px);
@@ -7825,7 +11954,7 @@ void main() {
       .panel-body::-webkit-scrollbar { width: 8px; }
       .panel-body::-webkit-scrollbar-thumb { background: ${DP.hairline}; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 
-      /* --- States --- */
+      /* States */
       .empty, .loading, .error {
         margin: 16px 4px;
         padding: 28px 20px; text-align: center;
@@ -7834,9 +11963,9 @@ void main() {
       }
       .empty strong { color: ${DP.ink}; display: block; margin-bottom: 6px; font-size: 14px; }
       .empty code { font-family: ${MONO}; background: ${DP.canvas}; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: ${DP.ink}; }
-      .error { color: oklch(45% 0.15 25); }
+      .error { color: oklch(58% 0.15 35); }
 
-      /* --- Stale hint --- */
+      /* Stale hint */
       .stale {
         display: flex; align-items: center; gap: 8px;
         margin: 8px 4px 12px;
@@ -7849,7 +11978,7 @@ void main() {
       .stale-text { flex: 1; min-width: 0; }
       .stale-text strong { color: ${DP.ink}; font-weight: 600; }
 
-      /* --- Parsed-md fallback banner --- */
+      /* Parsed-md fallback banner */
       .parsed-md-cta {
         margin: 8px 4px 14px;
         padding: 14px 16px;
@@ -7861,7 +11990,7 @@ void main() {
       .parsed-md-cta strong { color: ${DP.ink}; display: block; margin-bottom: 4px; font-size: 13px; font-weight: 600; }
       .parsed-md-cta code { font-family: ${MONO}; background: ${DP.canvas}; padding: 1px 5px; border-radius: 4px; font-size: 11.5px; color: ${DP.ink}; }
 
-      /* --- Tile primitives --- */
+      /* Tile primitives */
       .tile {
         position: relative;
         background: ${DP.tile};
@@ -7880,7 +12009,7 @@ void main() {
       }
       .tile-meta .name { color: ${DP.ink}; font-weight: 600; letter-spacing: 0.05em; text-transform: none; font-family: ${FONT}; font-size: 12.5px; }
 
-      /* --- Color tile --- */
+      /* Color tile */
       .c-tile { cursor: pointer; transition: transform 0.2s ${EASE}; }
       .c-tile:hover { transform: translateY(-1px); }
       .c-hero {
@@ -7895,7 +12024,7 @@ void main() {
       .c-ramp > span { flex: 1; }
       .c-desc { margin-top: 8px; font-size: 11.5px; line-height: 1.45; color: ${DP.ink2}; }
 
-      /* --- Type tile --- */
+      /* Type tile */
       .t-tile { }
       .t-specimen {
         margin: 4px 0 6px;
@@ -7905,7 +12034,7 @@ void main() {
       .t-family { margin-top: 4px; font-size: 12px; font-weight: 600; color: ${DP.ink}; }
       .t-purpose { margin-top: 4px; font-size: 11px; line-height: 1.45; color: ${DP.ink2}; }
 
-      /* --- Shadow tile --- */
+      /* Shadow tile */
       .s-tile { }
       .s-surface {
         height: 60px; margin: 8px 2px 10px;
@@ -7915,14 +12044,14 @@ void main() {
       .s-value { font-family: ${MONO}; font-size: 10px; color: ${DP.meta}; word-break: break-all; line-height: 1.4; }
       .s-purpose { margin-top: 4px; font-size: 11px; color: ${DP.ink2}; line-height: 1.45; }
 
-      /* --- Radii strip --- */
+      /* Radii strip */
       .r-strip { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
       .r-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 60px; }
       .r-sample { width: 44px; height: 44px; background: ${DP.canvas}; box-shadow: inset 0 0 0 1px oklch(0% 0 0 / 0.08); }
       .r-label { font-family: ${MONO}; font-size: 10px; color: ${DP.meta}; letter-spacing: 0.05em; text-transform: uppercase; }
       .r-val { font-family: ${MONO}; font-size: 10px; color: ${DP.ink}; }
 
-      /* --- Component tile (hosts live primitives) --- */
+      /* Component tile (hosts live primitives) */
       .cmp-tile { }
       .cmp-stage {
         margin: 12px -4px 0;
@@ -7936,7 +12065,7 @@ void main() {
       .cmp-sublabel { font-family: ${MONO}; font-size: 10px; color: ${DP.meta}; letter-spacing: 0.06em; }
       .cmp-kind { font-family: ${MONO}; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: ${DP.meta}; }
 
-      /* --- Collapsible --- */
+      /* Collapsible */
       .coll {
         margin: 0 4px 8px;
         background: ${DP.tile};
@@ -7986,8 +12115,8 @@ void main() {
         content: ''; position: absolute; left: 4px; top: 13px;
         width: 8px; height: 8px; border-radius: 50%;
       }
-      .coll .do::before { background: oklch(62% 0.16 145); }
-      .coll .dont::before { background: oklch(58% 0.22 25); }
+      .coll .do::before { background: oklch(45% 0.18 145); }
+      .coll .dont::before { background: oklch(58% 0.15 35); }
 
       .coll .overview-body {
         font-size: 12px; line-height: 1.55; color: ${DP.ink2};
@@ -8001,7 +12130,7 @@ void main() {
       .coll .overview-body ul { margin: 6px 0 0; padding-left: 16px; font-size: 11.5px; }
       .coll .overview-body li { margin-bottom: 3px; }
 
-      /* --- raw tab markdown (unchanged layout, neutralized palette) --- */
+      /* raw tab markdown (unchanged layout, neutralized palette) */
       .md { padding: 4px 10px 20px; font-size: 13px; line-height: 1.6; color: ${DP.ink}; }
       .md h1, .md h2, .md h3, .md h4 { margin: 20px 0 8px; color: ${DP.ink}; font-weight: 600; }
       .md h1 { font-size: 18px; }
@@ -8025,7 +12154,7 @@ void main() {
     const root = designShadow.querySelector('.root');
     root.innerHTML = '';
 
-    // (Panel toggle lives in the global bar — no floating FAB.)
+    // (Panel toggle lives in the global bar - no floating FAB.)
     // Panel
     const panel = document.createElement('aside');
     panel.className = 'panel';
@@ -8131,7 +12260,7 @@ void main() {
     if (designState.present === false) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.innerHTML = `<strong>No DESIGN.md yet</strong>Create one by running <code>/impeccable document</code> in your terminal, then re-open this panel.`;
+      empty.innerHTML = `<strong>No DESIGN.md yet</strong>Create one by running <code>${IMPECCABLE_COMMAND} document</code> in your terminal, then re-open this panel.`;
       body.appendChild(empty);
       return;
     }
@@ -8141,7 +12270,7 @@ void main() {
       return;
     }
 
-    // Visual tab — single unified render path.
+    // Visual tab - single unified render path.
     if (designState.mdNewerThanJson) body.appendChild(renderStaleHint());
     if (designState.hasMd && !designState.hasSidecar) {
       body.appendChild(renderParsedMdCta());
@@ -8161,7 +12290,7 @@ void main() {
     box.className = 'stale';
     box.innerHTML = `
       <span class="stale-dot"></span>
-      <span class="stale-text"><strong>DESIGN.md is newer than .impeccable/design.json.</strong> Run <code>/impeccable document</code> to refresh the sidecar.</span>
+      <span class="stale-text"><strong>DESIGN.md is newer than .impeccable/design.json.</strong> Run <code>${IMPECCABLE_COMMAND} document</code> to refresh the sidecar.</span>
     `;
     return box;
   }
@@ -8169,13 +12298,34 @@ void main() {
   function renderParsedMdCta() {
     const box = document.createElement('div');
     box.className = 'parsed-md-cta';
-    box.innerHTML = `<strong>Basic view</strong>This panel reads the tokens in your <code>DESIGN.md</code> frontmatter. Running <code>/impeccable document</code> also generates a <code>.impeccable/design.json</code> sidecar with your project's actual component snippets (button, input, nav) and tonal ramps, rendered live below the tokens.`;
+    box.innerHTML = `<strong>Basic view</strong>This panel reads the tokens in your <code>DESIGN.md</code> frontmatter. Running <code>${IMPECCABLE_COMMAND} document</code> also generates a <code>.impeccable/design.json</code> sidecar with your project's actual component snippets (button, input, nav) and tonal ramps, rendered live below the tokens.`;
     return box;
   }
 
-  // --- Unified render: merge parsed DESIGN.md frontmatter with sidecar v2 ---
+  // Unified render: merge parsed DESIGN.md frontmatter with sidecar v2
+
+  /**
+   * The empty state has to say which emptiness it is. `present:false` (no
+   * DESIGN.md at all) is handled upstream in renderDesignBody; everything here
+   * means the helper found a design system and this panel found nothing in it
+   * worth drawing. Telling that user "no design system data" reads as "your
+   * DESIGN.md is missing" and sends them to write a file they already have.
+   */
+  function designEmptyMessage() {
+    if (designState.hasMd && !designState.hasSidecar) {
+      return 'DESIGN.md found, no structured tokens to display. Run ' + IMPECCABLE_COMMAND + ' document to generate the .impeccable/design.json sidecar.';
+    }
+    if (designState.hasMd) {
+      return 'DESIGN.md and its sidecar were found, but neither carries colors, type, radii, or components to display.';
+    }
+    return 'No design system data available.';
+  }
 
   function renderDesignVisual(body, parsed, sidecar) {
+    // Count only what this function draws: renderDesignBody may already have
+    // appended a stale-sidecar hint or the basic-view CTA, and those must not
+    // pass for token content.
+    const beforeCount = body.childElementCount;
     const frontmatter = parsed?.frontmatter || {};
     const extensions = sidecar?.extensions || {};
     const proseColors = parsed?.colors || null;
@@ -8203,8 +12353,8 @@ void main() {
       body.appendChild(renderOverviewCollapsible(narrative));
     }
 
-    if (body.childElementCount === 0) {
-      body.appendChild(msgDiv('empty', 'No design system data available.'));
+    if (body.childElementCount === beforeCount) {
+      body.appendChild(msgDiv('empty', designEmptyMessage()));
     }
   }
 
@@ -8289,7 +12439,9 @@ void main() {
       rules: [
         ...(md.colors?.rules || []).map((r) => ({ ...r, section: 'colors' })),
         ...(md.typography?.rules || []).map((r) => ({ ...r, section: 'typography' })),
+        ...(md.layout?.rules || []).map((r) => ({ ...r, section: 'layout' })),
         ...(md.elevation?.rules || []).map((r) => ({ ...r, section: 'elevation' })),
+        ...(md.shapes?.rules || []).map((r) => ({ ...r, section: 'shapes' })),
       ],
       dos: md.dosDonts?.dos || [],
       donts: md.dosDonts?.donts || [],
@@ -8357,7 +12509,7 @@ void main() {
       specimen.style.fontFamily = fontStack(t);
       specimen.style.fontWeight = String(t.weight || 400);
       specimen.style.fontStyle = t.style || 'normal';
-      specimen.style.fontSize = '56px';  // Fixed specimen size — compare faces, not scales.
+      specimen.style.fontSize = '56px';  // Fixed specimen size - compare faces, not scales.
       specimen.style.letterSpacing = 'normal';
       specimen.style.textTransform = 'none';
       tile.appendChild(specimen);
@@ -8501,7 +12653,7 @@ void main() {
       }
 
       // Single shared description if all items carry the same one; otherwise
-      // skip — per-item descriptions clutter a grouped tile.
+      // skip - per-item descriptions clutter a grouped tile.
       if (group.length === 1 && group[0].description) {
         const d = document.createElement('div');
         d.className = 'c-desc';
@@ -8537,7 +12689,7 @@ void main() {
     return labels[kind] || (kind ? kind.charAt(0).toUpperCase() + kind.slice(1) + 's' : 'Components');
   }
 
-  // --- Collapsibles ---------------------------------------------------------
+  // Collapsibles.
 
   function buildCollapsible(key, label, count) {
     const wrap = document.createElement('div');
@@ -8645,7 +12797,7 @@ void main() {
     return s.replace(/\s+#.*$/, '').trim();
   }
 
-  // --- Raw tab: minimal markdown renderer (subset) --------------------------
+  // Raw tab: minimal markdown renderer (subset)
 
   function renderRawTab(body, md) {
     const wrap = document.createElement('div');
@@ -8778,9 +12930,9 @@ void main() {
     } catch { /* ignore */ }
   }
 
-  // ---------------------------------------------------------------------------
+  //
   // Init
-  // ---------------------------------------------------------------------------
+  //
 
   function init() {
     try { history.scrollRestoration = 'manual'; } catch {}
@@ -8801,24 +12953,32 @@ void main() {
     connectSSE();
 
     // Check for an active session to resume (variant wrapper already in DOM after HMR)
-    if (!resumeSession()) {
+    const resumed = resumeSession();
+    if (!resumed) {
       console.log('[impeccable] Live variant mode ready. Hover over elements to pick one.');
-      // SvelteKit (and any framework that hydrates after HTML parse) may add
-      // the variant wrapper AFTER init runs. Watch for it and retry resume
-      // once it appears. Disconnect on first hit.
-      const scout = new MutationObserver(() => {
-        const wrapper = document.querySelector('[data-impeccable-variants]');
-        if (!wrapper) return;
-        scout.disconnect();
-        if (resumeSession()) {
-          console.log('[impeccable] Resumed deferred session ' + currentSessionId + ' (post-hydration).');
-        }
-      });
-      scout.observe(document.body, { childList: true, subtree: true });
     } else {
       console.log('[impeccable] Resumed active variant session ' + currentSessionId + ' (' + arrivedVariants + '/' + expectedVariants + ' variants).');
     }
 
+    // SvelteKit, React, and other frameworks may restore a durable session
+    // before hydration adds its variant wrapper. Keep a deferred-wrapper scout
+    // whenever init did not see a runtime wrapper, even if local/server state
+    // was already restored successfully. Disconnect on the first wrapper hit.
+    if (!resumed || !document.querySelector('[data-impeccable-variants],[data-impeccable-carbonize]')) {
+      const deferredResumeRevision = liveInteractionRevision;
+      const scout = new MutationObserver(() => {
+        const wrapper = document.querySelector('[data-impeccable-variants],[data-impeccable-carbonize]');
+        if (!wrapper) return;
+        scout.disconnect();
+        if (resumeSession(deferredResumeRevision, { reason: 'browser_resumed_deferred_wrapper' })) {
+          console.log('[impeccable] Resumed deferred session ' + currentSessionId + ' (post-hydration).');
+        }
+      });
+      scout.observe(document.body, { childList: true, subtree: true });
+    }
+
+    if (state === 'IDLE' && (pickActive || insertActive)) setLiveState('PICKING');
+    syncPageInteractionCursor();
     syncPageChatFocus('init-complete');
   }
 
