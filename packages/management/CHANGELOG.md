@@ -1,5 +1,15 @@
 # @monque/management
 
+## 0.3.0
+
+### Minor Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require MongoDB driver ^7.6.0 instead of ^7.2.0.
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Update @orpc/contract, @orpc/openapi, @orpc/server, and @orpc/zod from 1.14.4 to 1.15.1.
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Update Zod from 4.4.3 to 4.6.5.
+
 ## 0.2.2
 
 ### Patch Changes

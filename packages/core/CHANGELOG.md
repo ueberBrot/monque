@@ -1,5 +1,17 @@
 # @monque/core
 
+## 1.11.0
+
+### Minor Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Update cron-parser from 5.5.0 to 5.10.1.
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require MongoDB driver ^7.6.0 instead of ^7.2.0.
+
+### Patch Changes
+
+- [#518](https://github.com/ueberBrot/monque/pull/518) [`1f522f7`](https://github.com/ueberBrot/monque/commit/1f522f71ec620d3f9478e3b11c098a3914f75d02) - Wake locally scheduled retries without waiting for change-stream delivery or the safety poll interval.
+
 ## 1.10.1
 
 ### Patch Changes

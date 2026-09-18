@@ -1,5 +1,15 @@
 # @monque/management-express
 
+## 0.3.0
+
+### Minor Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require MongoDB driver ^7.6.0 instead of ^7.2.0.
+
+### Patch Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Accept management 0.3.x alongside 0.1.x and 0.2.x.
+
 ## 0.2.1
 
 ### Patch Changes
