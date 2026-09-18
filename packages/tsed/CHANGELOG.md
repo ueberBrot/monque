@@ -1,5 +1,17 @@
 # @monque/tsed
 
+## 1.11.0
+
+### Minor Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require MongoDB driver ^7.6.0 instead of ^7.2.0.
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require @tsed/core, @tsed/di, and optional @tsed/mongoose ^8.38.7 instead of ^8.29.0.
+
+### Patch Changes
+
+- [#515](https://github.com/ueberBrot/monque/pull/515) [`16070f6`](https://github.com/ueberBrot/monque/commit/16070f63406160f35e892c82442016540daf0639) - Require @monque/core ^1.10.1 instead of ^1.10.0.
+
 ## 1.10.0
 
 ### Minor Changes
