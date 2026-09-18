@@ -160,84 +160,88 @@ describe('oRPC Management read routes', () => {
 		expect(coreCalls).toEqual([]);
 	});
 
-	test('uses default Job page size and per Job Name payload serialization', async () => {
-		const jobId = new ObjectId();
-		let capturedOptions: CursorOptions | undefined;
-		const job = createManagementJob({
-			_id: jobId,
-			data: { token: 'secret' },
-			lockedAt: new Date('2026-01-01T00:00:01.000Z'),
-			claimedBy: 'scheduler-1',
-			lastHeartbeat: new Date('2026-01-01T00:00:02.000Z'),
-			heartbeatInterval: 5000,
-			repeatInterval: '0 * * * *',
-			uniqueKey: 'send-email:user-1',
-		});
-		const surface = createManagementSurface<{ role: string }>({
-			monque: createManagementMonque({
-				getJobsWithCursor: async (options) => {
-					capturedOptions = options;
+	test.each(['send-email', 'constructor', '__proto__', 'hasOwnProperty'])(
+		'uses default Job page size and explicit payload serialization for %s',
+		async (name) => {
+			const jobId = new ObjectId();
+			let capturedOptions: CursorOptions | undefined;
+			const job = createManagementJob({
+				_id: jobId,
+				name,
+				data: { token: 'secret' },
+				lockedAt: new Date('2026-01-01T00:00:01.000Z'),
+				claimedBy: 'scheduler-1',
+				lastHeartbeat: new Date('2026-01-01T00:00:02.000Z'),
+				heartbeatInterval: 5000,
+				repeatInterval: '0 * * * *',
+				uniqueKey: 'send-email:user-1',
+			});
+			const surface = createManagementSurface<{ role: string }>({
+				monque: createManagementMonque({
+					getJobsWithCursor: async (options) => {
+						capturedOptions = options;
 
-					return {
-						jobs: [job],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					};
-				},
-			}),
-			serializePayload: () => Promise.resolve({ source: 'global' }),
-			serializePayloadByJobName: {
-				'send-email': ({ context }) =>
-					Promise.resolve({
-						source: 'job',
-						role: context.role,
-					}),
-			},
-		});
-
-		const response = await handleManagementGet(surface, '/api/v1/jobs?name=send-email', {
-			managementContext: { role: 'admin' },
-		});
-
-		expect(capturedOptions).toEqual({
-			limit: 50,
-			filter: {
-				name: 'send-email',
-			},
-			sort: {
-				by: 'createdAt',
-				direction: 'desc',
-			},
-		});
-		await expectJsonResponse(response, 200, {
-			jobs: [
-				{
-					id: jobId.toHexString(),
-					name: 'send-email',
-					status: 'pending',
-					payload: {
-						source: 'job',
-						role: 'admin',
+						return {
+							jobs: [job],
+							cursor: null,
+							hasNextPage: false,
+							hasPreviousPage: false,
+						};
 					},
-					nextRunAt: '2026-01-01T00:00:00.000Z',
-					lockedAt: '2026-01-01T00:00:01.000Z',
-					claimedBy: 'scheduler-1',
-					lastHeartbeat: '2026-01-01T00:00:02.000Z',
-					heartbeatInterval: 5000,
-					failCount: 0,
-					failureReason: null,
-					repeatInterval: '0 * * * *',
-					uniqueKey: 'send-email:user-1',
-					createdAt: '2025-12-31T23:00:00.000Z',
-					updatedAt: '2026-01-01T00:01:00.000Z',
+				}),
+				serializePayload: () => Promise.resolve({ source: 'global' }),
+				serializePayloadByJobName: {
+					[name]: ({ context }) =>
+						Promise.resolve({
+							source: 'job',
+							role: context.role,
+						}),
 				},
-			],
-			cursor: null,
-			hasNextPage: false,
-			hasPreviousPage: false,
-		});
-	});
+			});
+
+			const response = await handleManagementGet(surface, `/api/v1/jobs?name=${name}`, {
+				managementContext: { role: 'admin' },
+			});
+
+			expect(capturedOptions).toEqual({
+				limit: 50,
+				filter: {
+					name,
+				},
+				sort: {
+					by: 'createdAt',
+					direction: 'desc',
+				},
+			});
+			await expectJsonResponse(response, 200, {
+				jobs: [
+					{
+						id: jobId.toHexString(),
+						name,
+						status: 'pending',
+						payload: {
+							source: 'job',
+							role: 'admin',
+						},
+						nextRunAt: '2026-01-01T00:00:00.000Z',
+						lockedAt: '2026-01-01T00:00:01.000Z',
+						claimedBy: 'scheduler-1',
+						lastHeartbeat: '2026-01-01T00:00:02.000Z',
+						heartbeatInterval: 5000,
+						failCount: 0,
+						failureReason: null,
+						repeatInterval: '0 * * * *',
+						uniqueKey: 'send-email:user-1',
+						createdAt: '2025-12-31T23:00:00.000Z',
+						updatedAt: '2026-01-01T00:01:00.000Z',
+					},
+				],
+				cursor: null,
+				hasNextPage: false,
+				hasPreviousPage: false,
+			});
+		},
+	);
 
 	test('passes a single Job status query as a scalar core filter', async () => {
 		let capturedOptions: CursorOptions | undefined;

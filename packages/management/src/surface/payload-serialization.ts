@@ -20,5 +20,11 @@ function getPayloadSerializer<TContext>(
 	options: ManagementOptions<TContext>,
 	jobName: string,
 ): ManagementPayloadSerializer<TContext> | undefined {
-	return options.serializePayloadByJobName?.[jobName] ?? options.serializePayload;
+	const serializers = options.serializePayloadByJobName;
+
+	if (serializers && Object.hasOwn(serializers, jobName)) {
+		return serializers[jobName] ?? options.serializePayload;
+	}
+
+	return options.serializePayload;
 }
