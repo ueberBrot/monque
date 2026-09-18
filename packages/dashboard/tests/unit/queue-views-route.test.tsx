@@ -18,9 +18,7 @@ describe('Queue Views routes', () => {
 
 		expect(await screen.findByRole('heading', { name: 'Queue Views' })).toBeTruthy();
 		expect(
-			await screen.findByText(
-				'Start from job-name groupings, then drill into one queue family for its live summary and filtered jobs.',
-			),
+			await screen.findByText('Jobs grouped by name. Open a view to investigate.'),
 		).toBeTruthy();
 		expect(screen.getByText('dispatch-webhook')).toBeTruthy();
 		expect(screen.getByText('send-email')).toBeTruthy();

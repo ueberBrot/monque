@@ -16,7 +16,7 @@ describe('dashboard dev runtime config', () => {
 		expect(createDashboardRuntimeConfig(environment)).toEqual({
 			apiBaseUrl: '/',
 			basePath: '/',
-			pollingIntervalMs: 10_000,
+			pollingIntervalMs: 1_000,
 		});
 	});
 

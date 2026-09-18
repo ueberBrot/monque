@@ -32,7 +32,7 @@ describe('Job detail route', () => {
 		});
 		const clipboardWriteText = installClipboardSpy();
 
-		renderJobDetailRoute({
+		await renderJobDetailRoute({
 			fetch: createJobDetailFetch(job),
 			jobId: job.id,
 		});
@@ -66,15 +66,13 @@ describe('Job detail route', () => {
 			payload: {},
 		});
 
-		renderJobDetailRoute({
+		await renderJobDetailRoute({
 			fetch: createJobDetailFetch(job),
 			jobId: job.id,
 		});
 
 		expect(await screen.findByRole('heading', { name: job.name })).toBeTruthy();
-		expect(
-			screen.getByText('No payload value was provided by the Management serialization output.'),
-		).toBeTruthy();
+		expect(screen.getByText('This job has no payload.')).toBeTruthy();
 	});
 
 	it.each([
@@ -105,7 +103,7 @@ describe('Job detail route', () => {
 	] satisfies ReadonlyArray<readonly [string, Response, string]>)(
 		'maps typed %s states for operators',
 		async (_name, response, heading) => {
-			renderJobDetailRoute({
+			await renderJobDetailRoute({
 				fetch: createStaticFetch(response),
 				jobId: 'job-error-state',
 			});
@@ -114,14 +112,13 @@ describe('Job detail route', () => {
 		},
 	);
 
-	it('confirms single delete, refetches detail, and shows not found after deletion', async () => {
+	it('returns to jobs after deletion without refetching the deleted detail', async () => {
 		const job = createJobDetail({
 			id: 'job-delete-me',
 		});
 		const fetchState = createJobDetailActionFetch(job);
-		const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-		renderJobDetailRoute({
+		await renderJobDetailRoute({
 			fetch: fetchState.fetch,
 			jobId: job.id,
 		});
@@ -129,18 +126,19 @@ describe('Job detail route', () => {
 		expect(await screen.findByRole('heading', { name: job.name })).toBeTruthy();
 
 		fireEvent.click(screen.getByRole('button', { name: 'Delete job' }));
+		expect(fetchState.deleteCount).toBe(0);
+		fireEvent.click(await screen.findByRole('button', { name: 'Confirm delete job' }));
 
-		expect(await screen.findByRole('heading', { name: 'Job not found' })).toBeTruthy();
-		expect(confirmSpy).toHaveBeenCalledWith('Delete is permanent. Confirm deletion for this job.');
+		expect(await screen.findByRole('heading', { name: 'No jobs found' })).toBeTruthy();
 		expect(fetchState.deleteCount).toBe(1);
-		expect(fetchState.detailRequestCount).toBeGreaterThanOrEqual(2);
+		expect(fetchState.detailRequestCount).toBe(1);
 	});
 });
 
-function renderJobDetailRoute(options: {
+async function renderJobDetailRoute(options: {
 	readonly fetch: typeof fetch;
 	readonly jobId: string;
-}): void {
+}): Promise<void> {
 	Object.defineProperty(window, 'scrollTo', {
 		configurable: true,
 		value: vi.fn(),
@@ -160,6 +158,7 @@ function renderJobDetailRoute(options: {
 	const queryClient = createDashboardQueryClient();
 	const router = getRouter({ managementApi, queryClient, runtimeConfig });
 
+	await router.load();
 	render(<DashboardProviders queryClient={queryClient} router={router} />);
 }
 
@@ -311,6 +310,15 @@ function createJobDetailActionFetch(job: JobDto): {
 				}
 
 				return createJsonResponse(job);
+			}
+
+			if (request.method === 'GET' && url.pathname === '/api/v1/jobs') {
+				return createJsonResponse({
+					jobs: [],
+					hasNextPage: false,
+					hasPreviousPage: false,
+					cursor: null,
+				});
 			}
 
 			if (request.method === 'DELETE' && url.pathname === `/api/v1/jobs/${job.id}`) {

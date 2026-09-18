@@ -21,7 +21,7 @@ function DashboardDevtools({ queryClient, router }: DashboardDevtoolsProps) {
 				position: 'bottom-right',
 			}}
 			eventBusConfig={{
-				connectToServerBus: true,
+				connectToServerBus: false,
 			}}
 			plugins={[
 				formDevtoolsPlugin(),

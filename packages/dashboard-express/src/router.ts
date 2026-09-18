@@ -93,6 +93,17 @@ async function createRuntimeConfig(
 }
 
 function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjectionOptions): string {
+	const assetBasePath = `${options.runtimeConfig.basePath.replace(/\/$/, '')}/assets/`
+		.replaceAll('&', '&amp;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;');
+	// Relative Vite assets otherwise resolve below a deep-link route (for example /jobs/:id).
+	const mountAwareHtml = htmlTemplate.replace(
+		/\b(src|href)=(['"])\.\/assets\//g,
+		(_match, attribute: string, quote: string) => `${attribute}=${quote}${assetBasePath}`,
+	);
 	const runtimeConfigJson = JSON.stringify(options.runtimeConfig).replaceAll('<', '\\u003c');
 	const runtimeConfigScript = [
 		`<script id="${options.runtimeConfigScriptId}">`,
@@ -100,7 +111,7 @@ function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjecti
 		'</script>',
 	].join('');
 
-	return htmlTemplate.replace(
+	return mountAwareHtml.replace(
 		new RegExp(
 			`<script\\s+id=["']${escapeRegularExpression(options.runtimeConfigScriptId)}["'][^>]*>[\\s\\S]*?<\\/script>`,
 		),

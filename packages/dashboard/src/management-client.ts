@@ -1,5 +1,6 @@
 import { type ManagementContract, managementContract } from '@monque/management/contract';
-import { createORPCClient } from '@orpc/client';
+import { createORPCClient, ORPCError } from '@orpc/client';
+import { getMalformedResponseErrorCode } from '@orpc/client/standard';
 import type { ContractRouterClient } from '@orpc/contract';
 import type { JsonifiedClient } from '@orpc/openapi-client';
 import { OpenAPILink } from '@orpc/openapi-client/fetch';
@@ -43,6 +44,15 @@ function createDashboardManagementClient(
 	const link = new OpenAPILink(managementContract, {
 		url: resolveDashboardManagementApiBaseUrl(options.apiBaseUrl, options.origin),
 		fetch: fetchWithBrowserCredentials(options.fetch ?? globalThis.fetch.bind(globalThis)),
+		customErrorResponseBodyDecoder: (body, response) => {
+			if (typeof body !== 'object' || body === null || !('error' in body)) return undefined;
+			if (typeof body.error !== 'string') return undefined;
+			return new ORPCError(getMalformedResponseErrorCode(response.status), {
+				status: response.status,
+				message: body.error,
+				data: body,
+			});
+		},
 	});
 
 	return createORPCClient<DashboardManagementClient>(link);

@@ -1,22 +1,30 @@
-import { LaptopMinimal, Menu, Moon, Sun } from 'lucide-react';
+import { Activity, LaptopMinimal, Layers, ListTodo, Menu, Moon, Sun } from 'lucide-react';
 import { Fragment, type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
+import monqueLogo from '@/assets/monque.svg';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogTitle,
+	DialogTrigger,
+} from '@/components/ui/dialog';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
 
 const THEME_STORAGE_KEY = 'monque-dashboard-theme';
 
 const dashboardNavItems = [
-	{ href: '/queue-views', label: 'Queue Views' },
-	{ href: '/jobs', label: 'Jobs' },
-	{ href: '/health', label: 'Health' },
+	{ href: '/queue-views', label: 'Queue Views', icon: Layers },
+	{ href: '/jobs', label: 'Jobs', icon: ListTodo },
+	{ href: '/health', label: 'Health', icon: Activity },
 ] as const;
 
 const dashboardThemeModes = ['light', 'dark', 'system'] as const;
@@ -100,33 +108,43 @@ function DashboardShell({
 		return () => mediaQuery.removeEventListener('change', handleChange);
 	}, [themeMode]);
 
+	useEffect(() => {
+		const toggle = () =>
+			setThemeMode(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
+		window.addEventListener('monque:toggle-theme', toggle);
+		return () => window.removeEventListener('monque:toggle-theme', toggle);
+	}, []);
+
 	return (
-		<div className="min-h-dvh bg-background text-foreground">
-			<div className="mx-auto flex min-h-dvh max-w-[96rem]">
-				<aside className="hidden w-72 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col">
-					<div className="border-b border-border px-5 py-5">
-						<p className="text-[0.7rem] font-semibold tracking-[0.24em] text-muted-foreground uppercase">
-							Monque
-						</p>
-						<h1 className="mt-2 text-xl font-semibold text-balance">Dashboard</h1>
-						<p className="mt-2 text-sm text-muted-foreground">
-							Inspect queues, jobs, and health from a single operator surface.
-						</p>
+		<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
+			<Toaster theme={themeMode} closeButton duration={5_000} position="bottom-right" />
+			<a
+				href="#main-content"
+				className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-4"
+			>
+				Skip to content
+			</a>
+			<div className="flex min-h-0 flex-1">
+				<aside className="hidden min-h-0 w-56 shrink-0 border-r border-border bg-sidebar lg:flex lg:flex-col">
+					<div className="flex h-16 shrink-0 items-center gap-3 px-5">
+						<img src={monqueLogo} alt="" className="size-8 shrink-0" width={32} height={32} />
+						<span className="text-lg font-semibold tracking-tight">Monque</span>
+						<span className="ml-auto text-xs text-muted-foreground">Dashboard</span>
 					</div>
-					<div className="flex flex-1 flex-col justify-between px-3 py-4">
+					<div className="flex min-h-0 flex-1 flex-col justify-between px-3 py-4">
 						<DashboardNavigation
+							className="min-h-0 overflow-y-auto"
 							ariaLabel="Primary"
 							currentPath={currentPath}
 							renderNavLink={renderNavLink}
 						/>
-						<div className="grid gap-3 rounded-lg border border-border bg-background/80 p-3">
-							<p className="text-xs font-medium text-muted-foreground">Theme</p>
+						<div className="grid shrink-0 gap-3 px-1 py-3">
 							<ThemeModeMenu themeMode={themeMode} onThemeModeChange={setThemeMode} />
 						</div>
 					</div>
 				</aside>
-				<div className="flex min-w-0 flex-1 flex-col">
-					<header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
+				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+					<header className="shrink-0 border-b border-border bg-background lg:hidden">
 						<div className="flex items-center justify-between gap-3 px-4 py-3 lg:px-8">
 							<div className="flex items-center gap-3">
 								<Dialog open={mobileNavigationOpen} onOpenChange={setMobileNavigationOpen}>
@@ -143,11 +161,19 @@ function DashboardShell({
 											</Button>
 										}
 									/>
-									<DialogContent className="top-0 right-0 bottom-0 left-auto flex h-dvh w-[20rem] translate-x-0 translate-y-0 flex-col rounded-none border-l border-border p-0">
+									<DialogContent
+										showCloseButton={false}
+										className="top-0 right-0 bottom-0 left-auto flex h-dvh w-[20rem] translate-x-0 translate-y-0 flex-col rounded-none border-l border-border p-0"
+									>
 										<div className="border-b border-border px-5 py-4">
-											<DialogTitle>Dashboard navigation</DialogTitle>
+											<div className="flex items-center justify-between gap-2">
+												<DialogTitle>Dashboard navigation</DialogTitle>
+												<DialogClose render={<Button variant="ghost" size="sm" />}>
+													Close
+												</DialogClose>
+											</div>
 											<p className="mt-2 text-sm text-muted-foreground">
-												Queue Views stay first so operators land in the job families that matter.
+												Inspect jobs and scheduler health.
 											</p>
 										</div>
 										<DashboardNavigation
@@ -162,11 +188,9 @@ function DashboardShell({
 										</div>
 									</DialogContent>
 								</Dialog>
-								<div>
-									<p className="text-[0.7rem] font-semibold tracking-[0.24em] text-muted-foreground uppercase">
-										Monque
-									</p>
-									<p className="text-sm font-semibold">Operator Dashboard</p>
+								<div className="flex items-center gap-2">
+									<img src={monqueLogo} alt="" className="size-8 shrink-0" width={32} height={32} />
+									<p className="text-sm font-semibold">Monque</p>
 								</div>
 							</div>
 							<div className="flex items-center gap-2">
@@ -176,7 +200,13 @@ function DashboardShell({
 							</div>
 						</div>
 					</header>
-					<main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">{children}</main>
+					<main
+						id="main-content"
+						tabIndex={-1}
+						className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8"
+					>
+						<div className="mx-auto w-full max-w-[96rem]">{children}</div>
+					</main>
 				</div>
 			</div>
 		</div>
@@ -228,6 +258,7 @@ function renderDashboardNavLink({
 			className={getNavItemClassName(isActiveNavItem(currentPath, item.href))}
 			onClick={onNavigate}
 		>
+			<item.icon className="size-4" />
 			{item.label}
 		</a>
 	);
@@ -313,7 +344,7 @@ function getThemeModeMenuLabel(themeMode: DashboardThemeMode): string {
 
 function getNavItemClassName(active: boolean): string {
 	const baseClassName =
-		'flex h-10 items-center rounded-lg px-3 text-sm font-medium transition-colors';
+		'flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors';
 
 	if (active) {
 		return cn(baseClassName, 'bg-primary/12 text-primary');
@@ -326,10 +357,4 @@ function isActiveNavItem(currentPath: string, itemHref: string): boolean {
 	return currentPath === itemHref || currentPath.startsWith(`${itemHref}/`);
 }
 
-export {
-	applyThemeMode,
-	type DashboardNavItem,
-	DashboardShell,
-	type DashboardThemeMode,
-	getStoredThemeMode,
-};
+export { type DashboardNavItem, DashboardShell, type DashboardThemeMode };

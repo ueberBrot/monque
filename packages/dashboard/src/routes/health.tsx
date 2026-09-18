@@ -1,12 +1,16 @@
 import type { CapabilitiesDto, SchedulerHealthDto } from '@monque/management/contract';
 import { useQueries } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { AlertTriangle, CheckCircle2, Lock, RefreshCcw, ShieldX } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Lock, RefreshCw, ShieldX } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { listDashboardCapabilityStates } from '@/capabilities';
+import { QueryFreshness } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { cn } from '@/lib/utils';
 import { type DashboardApiErrorState, resolveDashboardApiErrorState } from '@/management-errors';
 
@@ -15,8 +19,7 @@ export const Route = createFileRoute('/health')({
 });
 
 const HEALTH_PANEL_CLASS_NAME = 'rounded-lg border border-border bg-card p-5';
-const HEALTH_SECTION_LABEL_CLASS_NAME =
-	'text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase';
+const HEALTH_SECTION_LABEL_CLASS_NAME = 'text-sm font-medium text-muted-foreground';
 const SUMMARY_SKELETON_CARD_COUNT = 3;
 
 type HealthSummaryCardProps = {
@@ -30,10 +33,11 @@ type HealthSummaryCardProps = {
 
 function HealthRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const [healthQuery, capabilitiesQuery] = useQueries({
 		queries: [
-			managementApi.orpc.health.queryOptions(),
-			managementApi.orpc.capabilities.queryOptions(),
+			{ ...managementApi.orpc.health.queryOptions(), refetchInterval },
+			{ ...managementApi.orpc.capabilities.queryOptions(), refetchInterval },
 		],
 	});
 	const error = healthQuery.error ?? capabilitiesQuery.error;
@@ -52,6 +56,21 @@ function HealthRoute() {
 
 	return (
 		<HealthRouteContent
+			freshness={
+				<QueryFreshness
+					updatedAt={Math.min(healthQuery.dataUpdatedAt, capabilitiesQuery.dataUpdatedAt)}
+					fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
+					paused={
+						healthQuery.fetchStatus === 'paused' || capabilitiesQuery.fetchStatus === 'paused'
+					}
+					pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+				/>
+			}
+			fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
+			onRefresh={() => {
+				void healthQuery.refetch();
+				void capabilitiesQuery.refetch();
+			}}
 			health={healthQuery.data}
 			capabilities={capabilitiesQuery.data}
 			pollingIntervalMs={runtimeConfig.pollingIntervalMs}
@@ -60,10 +79,16 @@ function HealthRoute() {
 }
 
 function HealthRouteContent({
+	freshness,
+	fetching,
+	onRefresh,
 	health,
 	capabilities,
 	pollingIntervalMs,
 }: {
+	readonly onRefresh: () => void;
+	readonly freshness: ReactNode;
+	readonly fetching: boolean;
 	readonly health: SchedulerHealthDto;
 	readonly capabilities: CapabilitiesDto;
 	readonly pollingIntervalMs: number | undefined;
@@ -76,68 +101,75 @@ function HealthRouteContent({
 	return (
 		<section className="grid gap-6">
 			<div className="grid gap-2">
-				<h1 className="text-2xl font-semibold">Health</h1>
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<h1 className="text-2xl font-semibold">Health</h1>
+					<div className="flex flex-wrap items-center gap-3">
+						{freshness}
+						<Button variant="outline" onClick={onRefresh} aria-label="Refresh" aria-busy={fetching}>
+							<RefreshCw className="size-4" />
+							Refresh
+						</Button>
+					</div>
+				</div>
 				<p className="max-w-prose text-sm text-muted-foreground">
-					Scheduler health, Management reachability, and capability state for the current operator
-					session.
+					Scheduler status and the actions available to you.
 				</p>
 			</div>
-			<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+			<div className="grid gap-4">
+				<div className="grid gap-4 lg:grid-cols-3">
 					<HealthSummaryCard {...schedulerSummary} />
 					<HealthSummaryCard
 						title="Management API"
 						heading="Management API reachable"
-						description="Health and capabilities were fetched from the typed Management contract."
+						description="Connected. Health and permissions are available."
 						badgeLabel="Reachable"
 						badgeVariant="success"
-						icon={<RefreshCcw className="size-4" />}
+						icon={<RefreshCw className="size-4" />}
 					/>
 					<HealthSummaryCard {...managementModeSummary} />
 				</div>
-				<HealthPanel>
-					<div className="flex items-center justify-between gap-3">
-						<div>
-							<p className={HEALTH_SECTION_LABEL_CLASS_NAME}>Runtime</p>
-							<h2 className="mt-2 text-lg font-semibold">Client settings</h2>
-						</div>
-						<Badge variant="outline">Polling aware</Badge>
-					</div>
-					<dl className="mt-4 grid gap-3 text-sm">
-						<HealthDefinition term="Polling interval">
-							{formatPollingInterval(pollingIntervalMs)}
-						</HealthDefinition>
-						<HealthDefinition term="Auth model">
-							Host-owned session auth, browser credentials included by default.
-						</HealthDefinition>
-						<HealthDefinition term="Login surface">No Dashboard login screen.</HealthDefinition>
-					</dl>
-				</HealthPanel>
+				<Collapsible className="rounded-lg border border-border bg-card px-5 py-3">
+					<CollapsibleTrigger
+						render={<Button variant="ghost" className="w-full justify-between" />}
+					>
+						Connection details{' '}
+						<span className="text-xs text-muted-foreground">
+							Auto-refresh: {formatPollingInterval(pollingIntervalMs)}
+						</span>
+					</CollapsibleTrigger>
+					<CollapsibleContent>
+						<dl className="grid gap-3 py-3 text-sm sm:grid-cols-2">
+							<HealthDefinition term="Auto-refresh">
+								{formatPollingInterval(pollingIntervalMs)}
+							</HealthDefinition>
+							<HealthDefinition term="Access">
+								Your host application manages sign-in and permissions.
+							</HealthDefinition>
+						</dl>
+					</CollapsibleContent>
+				</Collapsible>
 			</div>
 			<HealthPanel>
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
-						<p className={HEALTH_SECTION_LABEL_CLASS_NAME}>Capabilities</p>
 						<h2 className="mt-2 text-lg font-semibold">Action availability</h2>
 						<p className="mt-2 max-w-prose text-sm text-muted-foreground">
-							Downstream UI should read these capability states instead of hardcoding which actions
-							exist.
+							Permissions are set by your host application.
 						</p>
 					</div>
 					<Badge variant={availableActionCount === capabilityStates.length ? 'success' : 'warning'}>
 						{availableActionCount} of {capabilityStates.length} available
 					</Badge>
 				</div>
-				<ul className="mt-5 grid gap-3 sm:grid-cols-2">
+				<ul className="mt-5 grid gap-x-6 sm:grid-cols-2">
 					{capabilityStates.map((capability) => (
-						<li
-							key={capability.action}
-							className="rounded-lg border border-border bg-background/80 p-4"
-						>
+						<li key={capability.action} className="border-t border-border py-3">
 							<div className="flex items-start justify-between gap-3">
 								<div>
 									<h3 className="text-sm font-medium">{capability.label}</h3>
-									<p className="mt-2 text-sm text-muted-foreground">{capability.reason}</p>
+									{!capability.available ? (
+										<p className="mt-2 text-sm text-muted-foreground">{capability.reason}</p>
+									) : null}
 								</div>
 								<Badge variant={capability.available ? 'success' : 'outline'}>
 									{capability.available ? 'Available' : 'Unavailable'}
@@ -158,8 +190,8 @@ function HealthRoutePendingState() {
 				<Skeleton className="h-8 w-24" />
 				<Skeleton className="h-4 w-[24rem] max-w-full" />
 			</div>
-			<div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+			<div className="grid gap-4">
+				<div className="grid gap-4 lg:grid-cols-3">
 					{Array.from({ length: SUMMARY_SKELETON_CARD_COUNT }, (_, index) => (
 						<HealthPanel key={String(index)}>
 							<Skeleton className="h-4 w-20" />
@@ -211,7 +243,18 @@ function HealthSummaryCard({
 				<Badge variant={badgeVariant}>{badgeLabel}</Badge>
 			</div>
 			<div className="mt-4 flex items-start gap-3">
-				<div className="rounded-full bg-primary/10 p-2 text-primary">{icon}</div>
+				<div
+					className={cn(
+						'rounded-full p-2',
+						badgeVariant === 'danger'
+							? 'bg-destructive/10 text-destructive'
+							: badgeVariant === 'success'
+								? 'bg-success/10 text-success'
+								: 'bg-muted text-muted-foreground',
+					)}
+				>
+					{icon}
+				</div>
 				<div>
 					<h2 className="text-base font-semibold">{heading}</h2>
 					<p className="mt-2 text-sm text-muted-foreground">{description}</p>
@@ -272,8 +315,8 @@ function getManagementModeSummary(capabilities: CapabilitiesDto): HealthSummaryC
 	if (capabilities.readOnly) {
 		return {
 			title: 'Mode',
-			heading: 'Read-only Management surface',
-			description: 'Read routes remain available. Mutation actions stay visible but disabled.',
+			heading: 'Read-only access',
+			description: 'You can inspect jobs. Changes are disabled.',
 			badgeLabel: 'Read only',
 			badgeVariant: 'warning',
 			icon: <Lock className="size-4" />,
@@ -282,8 +325,8 @@ function getManagementModeSummary(capabilities: CapabilitiesDto): HealthSummaryC
 
 	return {
 		title: 'Mode',
-		heading: 'Writable Management surface',
-		description: 'Read and supported mutation actions are available for this surface.',
+		heading: 'Job actions enabled',
+		description: 'Your permissions determine which job actions are available.',
 		badgeLabel: 'Writable',
 		badgeVariant: 'outline',
 		icon: <Lock className="size-4" />,
@@ -310,8 +353,9 @@ function getErrorTonePresentation(tone: DashboardApiErrorState['tone']): {
 
 function formatPollingInterval(pollingIntervalMs: number | undefined): string {
 	if (typeof pollingIntervalMs !== 'number') {
-		return 'Not configured';
+		return 'Off';
 	}
 
-	return `${Math.round(pollingIntervalMs / 1_000)} seconds`;
+	const seconds = Math.round(pollingIntervalMs / 1_000);
+	return `${seconds} second${seconds === 1 ? '' : 's'}`;
 }

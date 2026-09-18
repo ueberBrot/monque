@@ -30,10 +30,9 @@ type DashboardCapabilityState = {
 	readonly reason: string;
 };
 
-const AVAILABLE_CAPABILITY_REASON = 'Available in this Management surface.';
-const READ_ONLY_CAPABILITY_REASON = 'Disabled by Management read-only mode.';
-const UNAVAILABLE_CAPABILITY_REASON =
-	'Unavailable for this Management surface or current authorization policy.';
+const AVAILABLE_CAPABILITY_REASON = 'Available to you.';
+const READ_ONLY_CAPABILITY_REASON = 'This dashboard is read-only.';
+const UNAVAILABLE_CAPABILITY_REASON = 'Your host application has not enabled this action for you.';
 
 function getDashboardCapabilityState(
 	capabilities: CapabilitiesDto,

@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router';
+import { createFileRoute, Outlet, useMatchRoute } from '@tanstack/react-router';
+import { RefreshCw } from 'lucide-react';
 
+import { QueryFreshness } from '@/components/query-freshness';
+import { Button } from '@/components/ui/button';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
+import { getQueryErrorMessage, isUnauthorizedQueryError } from '@/management-errors';
 
 import {
-	getQueryErrorMessage,
-	isUnauthorizedQueryError,
 	QueueViewsEmptyState,
 	QueueViewsErrorState,
 	QueueViewsLoadingState,
@@ -18,17 +20,17 @@ export const Route = createFileRoute('/queue-views')({
 });
 
 function QueueViewsRoute() {
+	const matchRoute = useMatchRoute();
+	return matchRoute({ to: '/queue-views/$name' }) ? <Outlet /> : <QueueViewsListRoute />;
+}
+
+function QueueViewsListRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
-	const location = useLocation();
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const queueViewsQuery = useQuery({
 		...managementApi.orpc.queueViews.queryOptions(),
 		refetchInterval,
 	});
-
-	if (location.pathname !== '/queue-views') {
-		return <Outlet />;
-	}
 
 	if (queueViewsQuery.isPending) {
 		return <QueueViewsLoadingState />;
@@ -61,5 +63,28 @@ function QueueViewsRoute() {
 		return <QueueViewsEmptyState />;
 	}
 
-	return <QueueViewsOverview queueViews={queueViewsQuery.data.queueViews} />;
+	return (
+		<QueueViewsOverview
+			queueViews={queueViewsQuery.data.queueViews}
+			refresh={
+				<div className="flex flex-wrap items-center gap-3">
+					<QueryFreshness
+						updatedAt={queueViewsQuery.dataUpdatedAt}
+						fetching={queueViewsQuery.isFetching}
+						paused={queueViewsQuery.fetchStatus === 'paused'}
+						pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+					/>
+					<Button
+						variant="outline"
+						onClick={() => void queueViewsQuery.refetch()}
+						aria-label="Refresh"
+						aria-busy={queueViewsQuery.isFetching}
+					>
+						<RefreshCw className="size-4" />
+						Refresh
+					</Button>
+				</div>
+			}
+		/>
+	);
 }

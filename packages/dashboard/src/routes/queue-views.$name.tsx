@@ -1,13 +1,14 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { z } from 'zod';
 
+import { QueryFreshness } from '@/components/query-freshness';
+import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
+import { getQueryErrorMessage, isUnauthorizedQueryError } from '@/management-errors';
 
 import {
-	getQueryErrorMessage,
-	isUnauthorizedQueryError,
 	QueueViewDetailHeader,
 	QueueViewJobsTable,
 	QueueViewsErrorState,
@@ -17,12 +18,10 @@ import {
 
 const DEFAULT_QUEUE_VIEW_JOBS_LIMIT = 50;
 
-const QueueViewDetailSearchSchema = z
-	.object({
-		cursor: z.string().optional(),
-		limit: z.coerce.number().int().min(1).max(100).optional(),
-	})
-	.strict();
+const QueueViewDetailSearchSchema = z.strictObject({
+	cursor: z.string().optional(),
+	limit: z.coerce.number().int().min(1).max(100).optional(),
+});
 
 export const Route = createFileRoute('/queue-views/$name')({
 	validateSearch: (search) => QueueViewDetailSearchSchema.parse(search),
@@ -113,7 +112,23 @@ function QueueViewDetailRoute() {
 	return (
 		<div className="grid gap-4">
 			<QueueViewDetailHeader name={name} queueView={queueView} stats={stats} />
+			<Link
+				to="/jobs"
+				search={parseJobsRouteSearch({ name })}
+				className="w-fit text-sm font-medium text-primary underline underline-offset-4"
+			>
+				Filter and manage jobs
+			</Link>
 			<QueueViewJobsTable
+				search={search}
+				freshness={
+					<QueryFreshness
+						updatedAt={Math.min(jobsQuery.dataUpdatedAt, statsQuery.dataUpdatedAt)}
+						fetching={jobsQuery.isFetching || statsQuery.isFetching}
+						paused={jobsQuery.fetchStatus === 'paused' || statsQuery.fetchStatus === 'paused'}
+						pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+					/>
+				}
 				name={name}
 				jobsPage={jobsPage}
 				onRefresh={refetchQueueViewDetail}

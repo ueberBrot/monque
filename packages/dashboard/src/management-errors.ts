@@ -72,4 +72,55 @@ function getNonEmptyString(value: unknown): string | undefined {
 	return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-export { type DashboardApiErrorState, resolveDashboardApiErrorState };
+function getQueryErrorMessage(error: unknown, fallback: string): string {
+	const unauthorizedMessage = getUnauthorizedQueryErrorMessage(error);
+
+	if (unauthorizedMessage) {
+		return unauthorizedMessage;
+	}
+
+	if (error instanceof Error && error.message.length > 0) {
+		return error.message;
+	}
+
+	return fallback;
+}
+
+function isUnauthorizedQueryError(error: unknown): boolean {
+	return getRecordValue(error, 'status') === 401;
+}
+
+function getUnauthorizedQueryErrorMessage(error: unknown): string | undefined {
+	if (!isUnauthorizedQueryError(error)) {
+		return undefined;
+	}
+
+	const data = getRecordValue(error, 'data');
+	const body = getRecordValue(data, 'body');
+	const message = getRecordValue(body, 'error');
+
+	if (typeof message === 'string' && message.length > 0) {
+		return message;
+	}
+
+	return undefined;
+}
+
+function getRecordValue(value: unknown, key: string): unknown {
+	if (!isRecord(value)) {
+		return undefined;
+	}
+
+	return value[key];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+export {
+	type DashboardApiErrorState,
+	getQueryErrorMessage,
+	isUnauthorizedQueryError,
+	resolveDashboardApiErrorState,
+};

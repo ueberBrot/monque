@@ -20,6 +20,42 @@ type RunJobActionInput = {
 	readonly jobId: string;
 	readonly nextRunAt?: string;
 };
+type RunJobActionsInput = Omit<RunJobActionInput, 'jobId'> & {
+	readonly jobIds: readonly string[];
+};
+type JobActionsResult = {
+	readonly action: JobActionKey;
+	readonly count: number;
+	readonly failed: string[];
+	readonly firstError: unknown;
+};
+
+const MAX_CONCURRENT_JOB_ACTIONS = 5;
+
+async function runJobActions(
+	managementApi: DashboardManagementApi,
+	input: RunJobActionsInput,
+): Promise<JobActionsResult> {
+	async function runBatch(offset: number): Promise<PromiseSettledResult<JobActionKey>[]> {
+		const batch = input.jobIds.slice(offset, offset + MAX_CONCURRENT_JOB_ACTIONS);
+		if (batch.length === 0) return [];
+
+		const results = await Promise.allSettled(
+			batch.map((jobId) => runJobAction(managementApi, { ...input, jobId })),
+		);
+		return [...results, ...(await runBatch(offset + MAX_CONCURRENT_JOB_ACTIONS))];
+	}
+
+	const results = await runBatch(0);
+	const failed = input.jobIds.filter((_, index) => results[index]?.status === 'rejected');
+	const firstFailure = results.find((result) => result.status === 'rejected');
+	return {
+		action: input.action,
+		count: results.length - failed.length,
+		failed,
+		firstError: firstFailure?.reason,
+	};
+}
 
 const BULK_CAPABILITY_BY_ACTION = {
 	cancel: 'cancelBulk',
@@ -44,8 +80,8 @@ function getJobActionAvailability(
 		return {
 			disabled: true,
 			reason: capabilities?.readOnly
-				? 'Disabled by Management read-only mode.'
-				: 'Unavailable for this Management surface or current authorization policy.',
+				? 'This dashboard is read-only.'
+				: 'Your host application has not enabled this action for you.',
 		};
 	}
 
@@ -85,12 +121,15 @@ function getBulkJobActionAvailability(
 		};
 	}
 
-	if (!capabilities?.actions[BULK_CAPABILITY_BY_ACTION[action]]) {
+	if (
+		!capabilities?.actions[BULK_CAPABILITY_BY_ACTION[action]] ||
+		!capabilities.actions[SINGLE_CAPABILITY_BY_ACTION[action]]
+	) {
 		return {
 			disabled: true,
 			reason: capabilities?.readOnly
-				? 'Disabled by Management read-only mode.'
-				: 'Unavailable for this Management surface or current authorization policy.',
+				? 'This dashboard is read-only.'
+				: 'Your host application has not enabled this action for you.',
 		};
 	}
 
@@ -250,5 +289,7 @@ export {
 	type JobActionFeedbackTone,
 	type JobActionKey,
 	type RunJobActionInput,
+	type RunJobActionsInput,
 	runJobAction,
+	runJobActions,
 };

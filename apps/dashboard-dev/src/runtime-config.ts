@@ -11,13 +11,11 @@ import {
 const DashboardDevModeSchema = z.enum(['mock', 'live', 'db']);
 const DashboardDevScenarioIdSchema = z.enum(dashboardDevScenarioIds);
 
-const DashboardDevEnvironmentSchema = z
-	.object({
-		mode: DashboardDevModeSchema,
-		scenarioId: DashboardDevScenarioIdSchema,
-		liveApiBaseUrl: z.string().min(1).optional(),
-	})
-	.strict();
+const DashboardDevEnvironmentSchema = z.strictObject({
+	mode: DashboardDevModeSchema,
+	scenarioId: DashboardDevScenarioIdSchema,
+	liveApiBaseUrl: z.string().min(1).optional(),
+});
 
 type DashboardDevEnvironment = z.infer<typeof DashboardDevEnvironmentSchema>;
 
@@ -43,9 +41,9 @@ function createDashboardRuntimeConfig(
 	environment: DashboardDevEnvironment,
 ): DashboardRuntimeConfig {
 	return parseDashboardRuntimeConfig({
-		apiBaseUrl: environment.mode === 'live' ? environment.liveApiBaseUrl : '/',
+		apiBaseUrl: '/',
 		basePath: '/',
-		pollingIntervalMs: 10_000,
+		pollingIntervalMs: environment.mode === 'db' ? 1_000 : 10_000,
 	});
 }
 

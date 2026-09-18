@@ -616,3 +616,23 @@ describe('oRPC Management read routes', () => {
 		expect(statsCalls).toEqual([]);
 	});
 });
+
+test('omits null optional fields from persisted jobs at the DTO boundary', async () => {
+	const job = createManagementJob();
+	// BSON stores explicit undefined properties as null by default.
+	Object.defineProperties(job, {
+		heartbeatInterval: { value: null },
+		repeatInterval: { value: null },
+		uniqueKey: { value: null },
+	});
+	const surface = createManagementSurface({
+		monque: createManagementMonque({ getJob: async () => job }),
+	});
+	const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(body).not.toHaveProperty('heartbeatInterval');
+	expect(body).not.toHaveProperty('repeatInterval');
+	expect(body).not.toHaveProperty('uniqueKey');
+	expect(body).toMatchObject({ id: job._id.toHexString(), name: job.name });
+});

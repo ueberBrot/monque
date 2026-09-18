@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type { Collection, Db, Document, ObjectId, WithId } from 'mongodb';
+import { type Collection, type Db, type Document, ObjectId, type WithId } from 'mongodb';
 
 import type { MonqueEventMap } from '@/events';
 import {
@@ -760,14 +760,14 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Get a single job by its MongoDB ObjectId.
+	 * Get a single job by its MongoDB ObjectId or hexadecimal ID string.
 	 *
 	 * Useful for retrieving job details when you have a job ID from events,
 	 * logs, or stored references.
 	 *
 	 * @template T - The expected type of the job data payload
-	 * @param id - The job's ObjectId
-	 * @returns Promise resolving to the job if found, null otherwise
+	 * @param id - The job's ObjectId or hexadecimal ID string
+	 * @returns Promise resolving to the job if found, null for missing or invalid IDs
 	 * @throws {ConnectionError} If scheduler not initialized
 	 *
 	 * @example Look up job from event
@@ -792,9 +792,10 @@ export class Monque extends EventEmitter {
 	 *
 	 * @see {@link JobQueryService.getJob}
 	 */
-	async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
+	async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
 		this.ensureInitialized();
-		return this.query.getJob<T>(id);
+		if (typeof id === 'string' && !ObjectId.isValid(id)) return null;
+		return this.query.getJob<T>(typeof id === 'string' ? new ObjectId(id) : id);
 	}
 
 	/**

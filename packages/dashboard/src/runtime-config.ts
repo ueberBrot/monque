@@ -1,12 +1,10 @@
 import { z } from 'zod';
 
-const DashboardRuntimeConfigSchema = z
-	.object({
-		apiBaseUrl: z.string().min(1),
-		basePath: z.string().min(1),
-		pollingIntervalMs: z.number().int().positive().optional(),
-	})
-	.strict();
+const DashboardRuntimeConfigSchema = z.strictObject({
+	apiBaseUrl: z.string().min(1),
+	basePath: z.string().min(1),
+	pollingIntervalMs: z.number().int().positive().optional(),
+});
 
 type DashboardRuntimeConfig = z.infer<typeof DashboardRuntimeConfigSchema>;
 

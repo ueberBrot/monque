@@ -1,5 +1,6 @@
 import { createRootRouteWithContext, Link, Outlet, useLocation } from '@tanstack/react-router';
 
+import { CommandMenu } from '@/components/command-menu';
 import { type DashboardNavItem, DashboardShell } from '@/components/dashboard-shell';
 
 import '../styles.css';
@@ -22,6 +23,7 @@ function RootComponent() {
 				<DashboardRouterNavLink item={item} onNavigate={options.onNavigate} />
 			)}
 		>
+			<CommandMenu />
 			<Outlet />
 		</DashboardShell>
 	);
@@ -38,11 +40,12 @@ function DashboardRouterNavLink({
 		<Link
 			to={item.href}
 			onClick={onNavigate}
-			className="flex h-10 items-center rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+			className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
 			activeProps={{
 				className: 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
 			}}
 		>
+			<item.icon className="size-4" />
 			{item.label}
 		</Link>
 	);

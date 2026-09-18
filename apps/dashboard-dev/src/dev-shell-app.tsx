@@ -1,6 +1,15 @@
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select';
 import { createDashboardManagementApi } from '@/management-client';
 import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
@@ -32,15 +41,15 @@ function DashboardDevShellApp({
 
 	return (
 		<>
-			<DashboardDevRuntime
-				key={`${environment.mode}:${scenarioId}`}
-				environment={environment}
-				scenarioId={scenarioId}
-			/>
 			<DashboardDevOverlay
 				environment={environment}
 				scenarioId={scenarioId}
 				onScenarioChange={setScenarioId}
+			/>
+			<DashboardDevRuntime
+				key={`${environment.mode}:${scenarioId}`}
+				environment={environment}
+				scenarioId={scenarioId}
 			/>
 		</>
 	);
@@ -53,12 +62,15 @@ function DashboardDevRuntime({
 	readonly environment: DashboardDevEnvironment;
 	readonly scenarioId: DashboardDevScenarioId;
 }): ReactElement {
-	const runtimeConfig = createDashboardRuntimeConfig(environment);
-	const managementApi = createDashboardManagementApi(
-		createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
-	);
-	const queryClient = createDashboardQueryClient();
-	const router = getRouter({ managementApi, queryClient, runtimeConfig });
+	const [{ router, queryClient }] = useState(() => {
+		const runtimeConfig = createDashboardRuntimeConfig(environment);
+		const managementApi = createDashboardManagementApi(
+			createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
+		);
+		const queryClient = createDashboardQueryClient();
+		const router = getRouter({ managementApi, queryClient, runtimeConfig });
+		return { router, queryClient };
+	});
 
 	return <DashboardProviders queryClient={queryClient} router={router} />;
 }
@@ -72,153 +84,64 @@ function DashboardDevOverlay({
 	readonly scenarioId: DashboardDevScenarioId;
 	readonly onScenarioChange: (scenarioId: DashboardDevScenarioId) => void;
 }): ReactElement {
-	const [summary, setSummary] = useState<{
-		queueViewCount: number;
-		jobCount: number;
-		error: string | null;
-	}>({
-		queueViewCount: 0,
-		jobCount: 0,
-		error: null,
-	});
-
-	useEffect(() => {
-		const runtimeConfig = createDashboardRuntimeConfig(environment);
-		const managementApi = createDashboardManagementApi(
-			createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
-		);
-
-		let cancelled = false;
-
-		void Promise.all([managementApi.client.queueViews(), managementApi.client.jobs({ limit: '5' })])
-			.then(([queueViews, jobs]) => {
-				if (cancelled) {
-					return;
-				}
-
-				setSummary({
-					queueViewCount: queueViews.queueViews.length,
-					jobCount: jobs.jobs.length,
-					error: null,
-				});
-			})
-			.catch((error: unknown) => {
-				if (cancelled) {
-					return;
-				}
-
-				const message = error instanceof Error ? error.message : String(error);
-				setSummary({
-					queueViewCount: 0,
-					jobCount: 0,
-					error: message,
-				});
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [environment, scenarioId]);
-
-	const handleScenarioChange = (value: string): void => {
-		if (isDashboardDevScenarioId(value)) {
-			onScenarioChange(value);
-		}
-	};
-
 	return (
-		<section
+		<Collapsible
 			data-testid="dashboard-dev-shell"
-			style={{
-				position: 'fixed',
-				right: '1rem',
-				bottom: '1rem',
-				zIndex: 60,
-				width: 'min(22rem, calc(100vw - 2rem))',
-				borderRadius: '8px',
-				border: '1px solid #2a3639',
-				background: '#090c0d',
-				boxShadow: '0 8px 12px rgba(0, 0, 0, 0.36)',
-				color: '#e3ebeb',
-			}}
+			className="max-h-[40dvh] shrink-0 overflow-y-auto border-b border-border bg-muted/50 px-4 py-2 text-xs"
 		>
-			<div style={{ padding: '0.9rem 1rem', display: 'grid', gap: '0.75rem' }}>
-				<div style={{ display: 'grid', gap: '0.2rem' }}>
-					<p
-						style={{
-							margin: 0,
-							fontSize: '0.72rem',
-							letterSpacing: 0,
-							textTransform: 'uppercase',
-							color: '#a8b5b5',
-						}}
-					>
-						Dev shell
-					</p>
-					<p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>
-						{environment.mode === 'mock' ? 'Mock Management API' : 'Live Management API'}
-					</p>
+			<CollapsibleTrigger
+				render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}
+			>
+				Development ·{' '}
+				{environment.mode === 'db'
+					? 'Local MongoDB'
+					: environment.mode === 'live'
+						? 'Live Management API'
+						: 'Mock Management API'}
+			</CollapsibleTrigger>
+			<CollapsibleContent>
+				<div className="flex flex-wrap items-center gap-3 py-3">
+					{environment.mode === 'mock' ? (
+						<>
+							<label htmlFor="dev-scenario" className="flex items-center gap-2">
+								Scenario
+								<Select
+									value={scenarioId}
+									onValueChange={(value) => {
+										if (isDashboardDevScenarioId(value)) onScenarioChange(value);
+									}}
+								>
+									<SelectTrigger id="dev-scenario" aria-label="Scenario" className="w-48">
+										<SelectValue>
+											{
+												dashboardDevScenarioOptions.find((scenario) => scenario.id === scenarioId)
+													?.label
+											}
+										</SelectValue>
+									</SelectTrigger>
+									<SelectContent>
+										{dashboardDevScenarioOptions.map((scenario) => (
+											<SelectItem key={scenario.id} value={scenario.id}>
+												{scenario.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</label>
+							<span className="text-muted-foreground">
+								Changes last until the development server restarts.
+							</span>
+						</>
+					) : (
+						<span className="text-muted-foreground">
+							{environment.mode === 'db'
+								? 'Local MongoDB with running workers. Demo jobs arrive every 15 seconds; views refresh every second.'
+								: 'Requests use the configured Management API proxy.'}
+						</span>
+					)}
 				</div>
-				<label style={{ display: 'grid', gap: '0.35rem' }}>
-					<span style={{ fontSize: '0.8rem', color: '#a8b5b5' }}>Scenario</span>
-					<select
-						aria-label="Scenario"
-						value={scenarioId}
-						onChange={(event) => handleScenarioChange(event.target.value)}
-						style={{
-							borderRadius: '8px',
-							border: '1px solid #2a3639',
-							padding: '0.55rem 0.7rem',
-							background: '#161d20',
-							color: '#e3ebeb',
-						}}
-						disabled={environment.mode !== 'mock'}
-					>
-						{dashboardDevScenarioOptions.map((scenario) => (
-							<option key={scenario.id} value={scenario.id}>
-								{scenario.label}
-							</option>
-						))}
-					</select>
-				</label>
-				<div
-					data-testid="scenario-summary"
-					style={{
-						display: 'grid',
-						gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-						gap: '0.6rem',
-					}}
-				>
-					<SummaryValue label="Queue Views" value={String(summary.queueViewCount)} />
-					<SummaryValue label="Listed Jobs" value={String(summary.jobCount)} />
-				</div>
-				<p style={{ margin: 0, fontSize: '0.8rem', color: summary.error ? '#fda4af' : '#a8b5b5' }}>
-					{summary.error ?? 'Summary calls run through the dashboard oRPC OpenAPI client path.'}
-				</p>
-			</div>
-		</section>
-	);
-}
-
-function SummaryValue({
-	label,
-	value,
-}: {
-	readonly label: string;
-	readonly value: string;
-}): ReactElement {
-	return (
-		<div
-			style={{
-				borderRadius: '8px',
-				border: '1px solid #2a3639',
-				background: '#111719',
-				padding: '0.65rem 0.75rem',
-			}}
-		>
-			<p style={{ margin: 0, fontSize: '0.76rem', color: '#a8b5b5' }}>{label}</p>
-			<p style={{ margin: '0.2rem 0 0', fontSize: '1.05rem', fontWeight: 600 }}>{value}</p>
-		</div>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }
 

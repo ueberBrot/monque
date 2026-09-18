@@ -1,24 +1,35 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { z } from 'zod';
 
 import { JobDetailStateView, JobDetailView } from '@/components/job-detail-view';
+import { QueryFreshness } from '@/components/query-freshness';
 import { Button } from '@/components/ui/button';
+import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
+import { JobActionHelp } from '@/features/jobs/job-action-help';
 import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	getJobActionAvailability,
-	type JobActionFeedback,
 	type JobActionKey,
 	runJobAction,
 } from '@/features/jobs/job-actions';
+import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
+import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/lib/dates';
+import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { mapJobDetailError, serializePayloadForClipboard } from '@/lib/job-detail';
-import type { DashboardManagementApi } from '@/management-client';
 
 export const Route = createFileRoute('/jobs/$jobId')({
 	component: JobDetailRoute,
+	validateSearch: z.object({
+		queueView: z.string().optional(),
+		queueCursor: z.string().optional(),
+		queueLimit: z.coerce.number().int().min(1).max(100).optional(),
+	}).parse,
 });
 
 type JobDetailActionInput = {
@@ -27,29 +38,27 @@ type JobDetailActionInput = {
 };
 
 function JobDetailRoute() {
-	const { managementApi, queryClient } = Route.useRouteContext();
+	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const { jobId } = Route.useParams();
-	const [detailState, setDetailState] = useState<JobDetailLoadState>({
-		status: 'pending',
+	const search = Route.useSearch();
+	const navigate = Route.useNavigate();
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
+	const jobQuery = useQuery({
+		...managementApi.orpc.job.queryOptions({ input: { params: { id: jobId } } }),
+		refetchInterval,
 	});
 	const capabilitiesQuery = useQuery(managementApi.orpc.capabilities.queryOptions());
-
-	useEffect(() => {
-		let active = true;
-
-		setDetailState({ status: 'pending' });
-		void loadJobDetail(managementApi, jobId).then((state) => {
-			if (!active) {
-				return;
-			}
-
-			setDetailState(state);
-		});
-
-		return () => {
-			active = false;
-		};
-	}, [jobId, managementApi]);
+	async function copy(value: string): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(value);
+			toast.success('Copied to clipboard');
+		} catch {
+			toast.error('Copy failed', {
+				description: 'Select and copy the value manually.',
+				duration: Number.POSITIVE_INFINITY,
+			});
+		}
+	}
 
 	const mutation = useMutation({
 		mutationFn: async (input: JobDetailActionInput) => {
@@ -67,32 +76,70 @@ function JobDetailRoute() {
 						},
 			);
 		},
+		onSuccess: async (action) => {
+			const success = getActionSuccessFeedback(action);
+			toast.success(success.title, { description: success.description });
+			if (action !== 'delete') return;
+			if (search.queueView) {
+				await navigate({
+					to: '/queue-views/$name',
+					params: { name: search.queueView },
+					search: { cursor: search.queueCursor, limit: search.queueLimit },
+					replace: true,
+				});
+			} else {
+				await navigate({ to: '/jobs', search: parseJobsRouteSearch(search), replace: true });
+			}
+		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries();
-			setDetailState({ status: 'pending' });
-			setDetailState(await loadJobDetail(managementApi, jobId));
 		},
 	});
 
-	if (detailState.status === 'pending') {
+	if (jobQuery.isPending) {
 		return <JobDetailPending />;
 	}
 
-	if (detailState.status === 'error') {
-		return <JobDetailStateView state={mapJobDetailError(detailState.error)} />;
+	if (jobQuery.isError) {
+		return <JobDetailStateView state={mapJobDetailError(jobQuery.error)} />;
 	}
 
-	const job = detailState.job;
-	const feedback = getFeedback(mutation.data, mutation.error);
+	const job = jobQuery.data;
+	const feedback = mutation.error ? getActionErrorFeedback(mutation.error) : null;
 
 	return (
-		<section className="grid gap-4">
+		<section className="grid min-w-0 gap-4">
+			{search.queueView ? (
+				<Link
+					to="/queue-views/$name"
+					params={{ name: search.queueView }}
+					search={{ cursor: search.queueCursor, limit: search.queueLimit }}
+					className="w-fit text-sm text-muted-foreground hover:text-primary"
+				>
+					← Back to {search.queueView}
+				</Link>
+			) : (
+				<Link
+					to="/jobs"
+					search={parseJobsRouteSearch(search)}
+					className="w-fit text-sm text-muted-foreground hover:text-primary"
+				>
+					← Back to jobs
+				</Link>
+			)}
 			{feedback ? (
 				<JobActionFeedbackPanel
 					feedback={feedback}
+					onDismiss={() => mutation.reset()}
 					className="rounded-xl border border-border px-5 py-4"
 				/>
 			) : null}
+			<QueryFreshness
+				updatedAt={jobQuery.dataUpdatedAt}
+				fetching={jobQuery.isFetching}
+				paused={jobQuery.fetchStatus === 'paused'}
+				pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+			/>
 			<JobDetailView
 				job={job}
 				actions={
@@ -101,13 +148,19 @@ function JobDetailRoute() {
 						busy={mutation.isPending}
 						capabilities={capabilitiesQuery.data}
 						onRunAction={(input) => {
-							void mutation.mutateAsync(input);
+							mutation.mutate(input);
 						}}
 					/>
 				}
-				onCopyJobId={() => copyToClipboard(job.id)}
-				onCopyPayload={() => copyToClipboard(serializePayloadForClipboard(job.payload))}
-				onCopyShareableUrl={() => copyToClipboard(window.location.href)}
+				onCopyJobId={() => {
+					void copy(job.id);
+				}}
+				onCopyPayload={() => {
+					void copy(serializePayloadForClipboard(job.payload));
+				}}
+				onCopyShareableUrl={() => {
+					void copy(window.location.href);
+				}}
 			/>
 		</section>
 	);
@@ -129,10 +182,19 @@ function JobDetailActions({
 	const rescheduleAvailability = getJobActionAvailability(job, capabilities, 'reschedule');
 	const deleteAvailability = getJobActionAvailability(job, capabilities, 'delete');
 
+	const [state, setState] = useState<JobActionDialogState | null>(null);
+	function open(action: 'delete' | 'reschedule'): void {
+		setState({
+			action,
+			scope: 'single',
+			jobIds: [job.id],
+			jobName: job.name,
+			nextRunAt: toDateTimeLocalValue(job.nextRunAt),
+		});
+	}
 	return (
 		<>
 			<Button
-				type="button"
 				variant="outline"
 				size="sm"
 				onClick={() => onRunAction({ action: 'cancel' })}
@@ -142,7 +204,6 @@ function JobDetailActions({
 				Cancel
 			</Button>
 			<Button
-				type="button"
 				variant="outline"
 				size="sm"
 				onClick={() => onRunAction({ action: 'retry' })}
@@ -152,99 +213,48 @@ function JobDetailActions({
 				Retry
 			</Button>
 			<Button
-				type="button"
 				variant="outline"
 				size="sm"
-				onClick={() => {
-					const nextRunAt = window.prompt(
-						'Enter a new run time in ISO 8601 format.',
-						job.nextRunAt,
-					);
-
-					if (!nextRunAt || Number.isNaN(new Date(nextRunAt).getTime())) {
-						return;
-					}
-
-					onRunAction({
-						action: 'reschedule',
-						nextRunAt: new Date(nextRunAt).toISOString(),
-					});
-				}}
+				onClick={() => open('reschedule')}
 				disabled={rescheduleAvailability.disabled || busy}
 				title={rescheduleAvailability.reason ?? undefined}
 			>
 				Reschedule
 			</Button>
 			<Button
-				type="button"
-				variant="outline"
+				variant="destructive"
 				size="sm"
-				onClick={() => {
-					if (!window.confirm('Delete is permanent. Confirm deletion for this job.')) {
-						return;
-					}
-
-					onRunAction({ action: 'delete' });
-				}}
+				onClick={() => open('delete')}
 				disabled={deleteAvailability.disabled || busy}
 				title={deleteAvailability.reason ?? undefined}
 			>
 				Delete job
 			</Button>
+			<JobActionHelp
+				actions={[
+					{ label: 'Cancel', reason: cancelAvailability.reason },
+					{ label: 'Retry', reason: retryAvailability.reason },
+					{ label: 'Reschedule', reason: rescheduleAvailability.reason },
+					{ label: 'Delete', reason: deleteAvailability.reason },
+				]}
+			/>
+			<JobActionDialog
+				state={state}
+				busy={busy}
+				onClose={() => setState(null)}
+				onNextRunAtChange={(nextRunAt) =>
+					setState((current) => (current ? { ...current, nextRunAt } : null))
+				}
+				onConfirm={() => {
+					if (!state) return;
+					const nextRunAt =
+						state.action === 'reschedule' ? fromDateTimeLocalValue(state.nextRunAt) : undefined;
+					onRunAction(nextRunAt ? { action: state.action, nextRunAt } : { action: state.action });
+					setState(null);
+				}}
+			/>
 		</>
 	);
-}
-
-function getFeedback(action: JobActionKey | undefined, error: unknown): JobActionFeedback | null {
-	if (error) {
-		return getActionErrorFeedback(error);
-	}
-
-	if (!action) {
-		return null;
-	}
-
-	return getActionSuccessFeedback(action);
-}
-
-async function loadJobDetail(
-	managementApi: DashboardManagementApi,
-	jobId: string,
-): Promise<JobDetailLoadState> {
-	try {
-		const job = await managementApi.client.job({
-			params: {
-				id: jobId,
-			},
-		});
-
-		return {
-			status: 'success',
-			job,
-		};
-	} catch (error) {
-		return {
-			status: 'error',
-			error,
-		};
-	}
-}
-
-type JobDetailLoadState =
-	| {
-			readonly status: 'pending';
-	  }
-	| {
-			readonly error: unknown;
-			readonly status: 'error';
-	  }
-	| {
-			readonly job: JobDto;
-			readonly status: 'success';
-	  };
-
-function copyToClipboard(value: string): void {
-	void navigator.clipboard.writeText(value);
 }
 
 function JobDetailPending() {

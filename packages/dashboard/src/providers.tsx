@@ -1,12 +1,17 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
+import { lazy, Suspense } from 'react';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { DashboardDevtools } from '@/devtools';
+
+const DashboardDevtools = lazy(() =>
+	import('@/devtools').then((module) => ({ default: module.DashboardDevtools })),
+);
+
 import type { getRouter } from '@/router';
 
-const shouldRenderDashboardDevtools = import.meta.env.MODE !== 'test';
+const shouldRenderDashboardDevtools = import.meta.env.DEV && import.meta.env.MODE !== 'test';
 
 function DashboardProviders({
 	queryClient,
@@ -20,7 +25,9 @@ function DashboardProviders({
 			<TooltipProvider>
 				<RouterProvider router={router} />
 				{shouldRenderDashboardDevtools ? (
-					<DashboardDevtools queryClient={queryClient} router={router} />
+					<Suspense fallback={null}>
+						<DashboardDevtools queryClient={queryClient} router={router} />
+					</Suspense>
 				) : null}
 			</TooltipProvider>
 		</QueryClientProvider>

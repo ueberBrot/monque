@@ -9,19 +9,21 @@ import {
 	Copy,
 	type LucideIcon,
 } from 'lucide-react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
+import { JobTimestamp } from '@/components/job-timestamp';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getOperatorTimeZoneLabel } from '@/lib/dates';
 import {
-	formatDashboardDate,
 	formatPayloadForDisplay,
 	getJobAttemptCount,
-	getOperatorTimeZoneLabel,
+	getJobRunLabel,
 	isEmptyPayload,
 	isStructuredPayload,
 	type JobDetailState,
 } from '@/lib/job-detail';
+import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
 
 type JobDetailViewProps = {
@@ -32,10 +34,10 @@ type JobDetailViewProps = {
 	readonly onCopyShareableUrl: () => void;
 };
 
-type MetadataItem = readonly [label: string, value: string];
+type MetadataItem = readonly [label: string, value: ReactNode];
 
 type JobStatusMeta = {
-	readonly badgeVariant: 'danger' | 'default' | 'outline' | 'success' | 'warning';
+	readonly badgeVariant: 'danger' | 'info' | 'outline' | 'success';
 	readonly icon: LucideIcon;
 	readonly label: string;
 };
@@ -50,48 +52,50 @@ function JobDetailView({
 	const statusMeta = getJobStatusMeta(job.status);
 	const StatusIcon = statusMeta.icon;
 	const operatorTimeZone = getOperatorTimeZoneLabel();
-	const lifecycleItems = getLifecycleMetadataItems(job);
+	const now = useNow();
+	const lifecycleItems = getLifecycleMetadataItems(job, now);
 	const schedulingItems = getSchedulingMetadataItems(job);
 
 	return (
-		<section className="grid gap-6">
-			<header className="grid gap-4 rounded-xl border border-border bg-card p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-				<div className="grid min-w-0 gap-3">
-					<div className="flex flex-wrap items-center gap-3">
-						<Badge variant={statusMeta.badgeVariant} className="h-7 gap-1.5 px-2.5 text-[0.78rem]">
-							<StatusIcon className="size-3.5" />
-							<span>{statusMeta.label}</span>
-						</Badge>
-						<span className="text-xs font-medium tracking-[0.16em] text-muted-foreground uppercase">
-							Job detail
-						</span>
-					</div>
-					<div className="grid gap-2">
-						<h1 className="text-2xl font-semibold text-balance">{job.name}</h1>
-						<p className="break-all font-mono text-xs text-muted-foreground">{job.id}</p>
-					</div>
+		<section className="grid min-w-0 gap-6">
+			<header className="grid min-w-0 gap-4">
+				<div className="flex flex-wrap items-center gap-3">
+					<h1 className="break-all text-2xl font-semibold text-balance">{job.name}</h1>
+					<Badge variant={statusMeta.badgeVariant} className="h-7 gap-1.5 px-2.5">
+						<StatusIcon className="size-3.5" />
+						{statusMeta.label}
+					</Badge>
 				</div>
-				<div className="flex flex-wrap gap-2 lg:justify-end">
-					{actions}
-					<Button type="button" variant="outline" size="sm" onClick={onCopyJobId}>
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="break-all font-mono text-xs text-muted-foreground">{job.id}</p>
+					<Button type="button" variant="ghost" size="sm" onClick={onCopyJobId}>
 						<Copy />
-						<span>Copy job ID</span>
+						Copy job ID
 					</Button>
-					<Button type="button" variant="outline" size="sm" onClick={onCopyPayload}>
+					<Button type="button" variant="ghost" size="sm" onClick={onCopyShareableUrl}>
 						<Copy />
-						<span>Copy payload</span>
-					</Button>
-					<Button type="button" variant="outline" size="sm" onClick={onCopyShareableUrl}>
-						<Copy />
-						<span>Copy shareable URL</span>
+						Copy shareable URL
 					</Button>
 				</div>
+				{job.failureReason ? (
+					<section className="grid gap-2 rounded-xl border border-destructive/25 bg-destructive/8 p-4">
+						<h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+							<AlertTriangle className="size-4" />
+							{job.status === 'failed' ? 'Failure reason' : 'Last failure'}
+						</h2>
+						<p className="break-words text-sm">{job.failureReason}</p>
+					</section>
+				) : null}
+				<div className="flex flex-wrap items-center gap-2">{actions}</div>
 			</header>
 
-			<section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+			<section className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border py-4 xl:grid-cols-4">
 				<SummaryTile label="Attempts" value={String(getJobAttemptCount(job.failCount))} />
 				<SummaryTile label="Failed attempts" value={String(job.failCount)} />
-				<SummaryTile label="Next run" value={formatDashboardDate(job.nextRunAt)} />
+				<SummaryTile
+					label={getJobRunLabel(job)}
+					value={<JobTimestamp value={job.nextRunAt} now={now} />}
+				/>
 				<SummaryTile
 					label="Schedule"
 					value={job.repeatInterval ?? 'One-time job'}
@@ -99,36 +103,28 @@ function JobDetailView({
 				/>
 			</section>
 
-			<div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
-				<div className="grid gap-6">
+			<div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
+				<div className="grid min-w-0 gap-6">
 					<section className="grid gap-4 rounded-xl border border-border bg-card p-5">
 						<div className="grid gap-1">
-							<h2 className="text-sm font-semibold">Payload</h2>
-							<p className="max-w-prose text-sm text-muted-foreground">
-								Read-only Management serialization output. No Dashboard redaction is applied here.
-							</p>
+							<div className="flex items-center justify-between gap-2">
+								<h2 className="text-sm font-semibold">Payload</h2>
+								<Button type="button" variant="ghost" size="sm" onClick={onCopyPayload}>
+									<Copy />
+									Copy payload
+								</Button>
+							</div>
+							<p className="max-w-prose text-sm text-muted-foreground">Read-only job data.</p>
 						</div>
 						{renderPayload(job.payload)}
 					</section>
-
-					{job.failureReason ? (
-						<section className="grid gap-3 rounded-xl border border-destructive/25 bg-destructive/8 p-5">
-							<div className="flex items-center gap-2 text-sm font-semibold text-destructive">
-								<AlertTriangle className="size-4" />
-								<span>Failure reason</span>
-							</div>
-							<p className="text-sm text-foreground">{job.failureReason}</p>
-						</section>
-					) : null}
 				</div>
 
-				<aside className="grid gap-6">
+				<aside className="grid min-w-0 gap-6">
 					<section className="grid gap-4 rounded-xl border border-border bg-card p-5">
 						<div className="grid gap-1">
 							<h2 className="text-sm font-semibold">Lifecycle</h2>
-							<p className="text-sm text-muted-foreground">
-								Timestamps render in operator local time: {operatorTimeZone}.
-							</p>
+							<p className="text-sm text-muted-foreground">Local time: {operatorTimeZone}.</p>
 						</div>
 						<MetadataList items={lifecycleItems} />
 					</section>
@@ -136,9 +132,7 @@ function JobDetailView({
 					<section className="grid gap-4 rounded-xl border border-border bg-card p-5">
 						<div className="grid gap-1">
 							<h2 className="text-sm font-semibold">Scheduling</h2>
-							<p className="text-sm text-muted-foreground">
-								Operational identifiers and scheduler metadata for this persisted Job.
-							</p>
+							<p className="text-sm text-muted-foreground">Identifiers and recurring schedule.</p>
 						</div>
 						<MetadataList items={schedulingItems} />
 					</section>
@@ -154,9 +148,6 @@ function JobDetailStateView({ state }: { readonly state: JobDetailState }): Reac
 	return (
 		<section className={cn('grid gap-3 rounded-xl border p-6', toneClassName)}>
 			<div className="grid gap-2">
-				<p className="text-[0.72rem] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-					Job detail
-				</p>
 				<h1 className="text-xl font-semibold">{state.title}</h1>
 			</div>
 			<p className="max-w-prose text-sm text-muted-foreground">{state.description}</p>
@@ -168,7 +159,7 @@ function renderPayload(payload: unknown): ReactElement {
 	if (isEmptyPayload(payload)) {
 		return (
 			<div className="rounded-lg border border-dashed border-border bg-background/60 px-4 py-6 text-sm text-muted-foreground">
-				No payload value was provided by the Management serialization output.
+				This job has no payload.
 			</div>
 		);
 	}
@@ -199,24 +190,24 @@ function SummaryTile({
 	className,
 }: {
 	readonly label: string;
-	readonly value: string;
+	readonly value: ReactNode;
 	readonly className?: string;
 }): ReactElement {
 	return (
-		<div className="min-w-0 rounded-xl border border-border bg-card px-4 py-4">
+		<div className="min-w-0">
 			<p className="text-xs font-medium text-muted-foreground">{label}</p>
-			<p className={cn('mt-2 break-words text-sm font-semibold text-foreground', className)}>
+			<div className={cn('mt-1 break-words text-sm font-semibold text-foreground', className)}>
 				{value}
-			</p>
+			</div>
 		</div>
 	);
 }
 
 function MetadataList({ items }: { readonly items: readonly MetadataItem[] }): ReactElement {
 	return (
-		<dl className="divide-y divide-border/70 rounded-lg border border-border bg-background/45">
+		<dl className="divide-y divide-border/70">
 			{items.map(([label, value]) => (
-				<div key={label} className="grid min-w-0 gap-1 px-3 py-3">
+				<div key={label} className="grid min-w-0 gap-1 py-3 first:pt-0 last:pb-0">
 					<dt className="text-xs font-medium text-muted-foreground">{label}</dt>
 					<dd className="break-words font-mono text-xs text-foreground">{value}</dd>
 				</div>
@@ -225,12 +216,12 @@ function MetadataList({ items }: { readonly items: readonly MetadataItem[] }): R
 	);
 }
 
-function getLifecycleMetadataItems(job: JobDto): readonly MetadataItem[] {
+function getLifecycleMetadataItems(job: JobDto, now: Date): readonly MetadataItem[] {
 	return [
-		['Created', formatDashboardDate(job.createdAt)],
-		['Updated', formatDashboardDate(job.updatedAt)],
-		['Locked', formatDashboardDate(job.lockedAt)],
-		['Last heartbeat', formatDashboardDate(job.lastHeartbeat)],
+		['Created', <JobTimestamp key="createdAt" value={job.createdAt} now={now} />],
+		['Updated', <JobTimestamp key="updatedAt" value={job.updatedAt} now={now} />],
+		['Locked', <JobTimestamp key="lockedAt" value={job.lockedAt} now={now} />],
+		['Last heartbeat', <JobTimestamp key="lastHeartbeat" value={job.lastHeartbeat} now={now} />],
 		['Heartbeat interval', job.heartbeatInterval ? `${job.heartbeatInterval} ms` : 'Not set'],
 	];
 }
@@ -267,7 +258,7 @@ function getJobStatusMeta(status: JobDto['status']): JobStatusMeta {
 			};
 		case 'processing':
 			return {
-				badgeVariant: 'warning',
+				badgeVariant: 'info',
 				icon: Clock3,
 				label: 'Processing',
 			};
@@ -279,7 +270,7 @@ function getJobStatusMeta(status: JobDto['status']): JobStatusMeta {
 			};
 		default:
 			return {
-				badgeVariant: 'default',
+				badgeVariant: 'outline',
 				icon: CalendarClock,
 				label: 'Pending',
 			};

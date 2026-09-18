@@ -15,7 +15,8 @@ type DashboardExpressRouterOptions = {
 	/**
 	 * Management API base URL exposed to the Dashboard runtime config.
 	 *
-	 * This should point at the mounted Management API root, for example `/ops/api/v1`.
+	 * This should point at the Management adapter mount, for example `/ops`.
+	 * Contract paths such as `/api/v1/jobs` are appended by the dashboard client.
 	 */
 	readonly apiBaseUrl: DashboardExpressApiBaseUrlValue;
 	/**

@@ -6,6 +6,8 @@ import {
 	JobStatusDtoSchema,
 } from '@monque/management/contract';
 
+import { parseDashboardDate } from '@/lib/dates';
+
 const JOB_STATUS_ORDER = ['pending', 'processing', 'completed', 'failed', 'cancelled'] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -77,35 +79,6 @@ function getJobsSearchIdentity(search: JobsRouteSearch): string {
 		sortBy: search.sortBy,
 		sortDirection: search.sortDirection,
 	});
-}
-
-function toDateTimeLocalValue(value?: string): string {
-	if (!value) {
-		return '';
-	}
-
-	const parsed = new Date(value);
-
-	if (Number.isNaN(parsed.getTime())) {
-		return '';
-	}
-
-	const year = parsed.getFullYear();
-	const month = toPaddedDatePart(parsed.getMonth() + 1);
-	const day = toPaddedDatePart(parsed.getDate());
-	const hour = toPaddedDatePart(parsed.getHours());
-	const minute = toPaddedDatePart(parsed.getMinutes());
-
-	return `${year}-${month}-${day}T${hour}:${minute}`;
-}
-
-function fromDateTimeLocalValue(value: string): string | undefined {
-	if (!value) {
-		return undefined;
-	}
-
-	const parsed = new Date(value);
-	return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
 function getNextSort(
@@ -183,7 +156,7 @@ function getOptionalIsoDate(value: unknown): string | undefined {
 		return undefined;
 	}
 
-	return Number.isNaN(Date.parse(value)) ? undefined : value;
+	return parseDashboardDate(value)?.toISOString();
 }
 
 function normalizeLimit(value: number): number {
@@ -206,13 +179,8 @@ function toJobListStatusQuery(status: readonly JobStatusDto[]): JobListQueryDto[
 	return [...status];
 }
 
-function toPaddedDatePart(value: number): string {
-	return String(value).padStart(2, '0');
-}
-
 export {
 	DEFAULT_LIMIT,
-	fromDateTimeLocalValue,
 	getJobsSearchIdentity,
 	getNextSort,
 	getStatusLabel,
@@ -223,6 +191,5 @@ export {
 	type JobsRouteSearch,
 	MAX_LIMIT,
 	parseJobsRouteSearch,
-	toDateTimeLocalValue,
 	toJobListQueryInput,
 };

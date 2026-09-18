@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
+import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
-import viteReact from '@vitejs/plugin-react';
+import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
 import type { Connect } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 
@@ -74,8 +75,18 @@ const config = defineConfig(({ mode }) => {
 	const localDbMongoUri = env['MONQUE_DASHBOARD_DEV_MONGO_URI'];
 	const localDbDatabaseName = env['MONQUE_DASHBOARD_DEV_DATABASE_NAME'];
 	const mockHandler = createMockManagementOpenApiHandler();
+	let localDbServer: ReturnType<typeof createLocalDbManagementServer> | undefined;
 
 	return {
+		define: {
+			'import.meta.env.MONQUE_DASHBOARD_DEV_MODE': JSON.stringify(devMode),
+			'import.meta.env.MONQUE_DASHBOARD_DEV_SCENARIO': JSON.stringify(
+				env['MONQUE_DASHBOARD_DEV_SCENARIO'] ?? DEFAULT_SCENARIO_ID,
+			),
+			'import.meta.env.MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL': JSON.stringify(
+				liveApiBaseUrl ?? '',
+			),
+		},
 		resolve: {
 			alias: {
 				'@': fileURLToPath(new URL('../../packages/dashboard/src', import.meta.url)),
@@ -92,6 +103,7 @@ const config = defineConfig(({ mode }) => {
 		server:
 			devMode === 'live' && liveApiBaseUrl
 				? {
+						port: 3400,
 						proxy: {
 							'/api': {
 								changeOrigin: true,
@@ -99,10 +111,11 @@ const config = defineConfig(({ mode }) => {
 							},
 						},
 					}
-				: {},
+				: { port: 3400 },
 		plugins: [
 			tailwindcss(),
 			viteReact(),
+			babel({ presets: [reactCompilerPreset({ target: '19' })] }),
 			{
 				name: 'monque-dashboard-dev-mock-api',
 				configureServer(server) {
@@ -156,15 +169,18 @@ const config = defineConfig(({ mode }) => {
 						return;
 					}
 
-					const localDbServer = createLocalDbManagementServer({
+					localDbServer = createLocalDbManagementServer({
 						...(localDbMongoUri ? { mongoUri: localDbMongoUri } : {}),
 						...(localDbDatabaseName ? { databaseName: localDbDatabaseName } : {}),
 					});
 
 					server.middlewares.use(MOCK_API_MOUNT_PATH, localDbServer.middleware);
-					server.httpServer?.once('close', () => {
-						void localDbServer.close();
+					void localDbServer.start().catch((error: unknown) => {
+						server.config.logger.error(error instanceof Error ? error.message : String(error));
 					});
+				},
+				async closeBundle() {
+					await localDbServer?.close();
 				},
 			},
 		],

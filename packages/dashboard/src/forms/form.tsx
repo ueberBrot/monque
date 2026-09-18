@@ -8,8 +8,8 @@ import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui
 import { Input } from '@/components/ui/input';
 import {
 	Select,
+	SelectContent,
 	SelectItem,
-	SelectPopup,
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
@@ -49,18 +49,21 @@ function getFieldErrors(errors: ReadonlyArray<unknown>): string | undefined {
 
 function TextField({ description, label, placeholder, type = 'text' }: TextFieldProps) {
 	const field = useFieldContext<string>();
+	const fieldId = useId();
 	const error = getFieldErrors(field.state.meta.errors);
 
 	return (
-		<Field invalid={Boolean(error)}>
-			<FieldLabel>{label}</FieldLabel>
+		<Field data-invalid={Boolean(error)}>
+			<FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
 			<Input
+				id={fieldId}
+				aria-invalid={Boolean(error)}
 				name={field.name}
 				type={type}
 				value={field.state.value}
 				placeholder={placeholder}
 				onBlur={field.handleBlur}
-				onValueChange={(value) => field.handleChange(value)}
+				onChange={(event) => field.handleChange(event.currentTarget.value)}
 			/>
 			{description ? <FieldDescription>{description}</FieldDescription> : null}
 			{error ? <FieldError>{error}</FieldError> : null}
@@ -70,12 +73,15 @@ function TextField({ description, label, placeholder, type = 'text' }: TextField
 
 function TextareaField({ description, label, placeholder, rows }: TextareaFieldProps) {
 	const field = useFieldContext<string>();
+	const fieldId = useId();
 	const error = getFieldErrors(field.state.meta.errors);
 
 	return (
-		<Field invalid={Boolean(error)}>
-			<FieldLabel>{label}</FieldLabel>
+		<Field data-invalid={Boolean(error)}>
+			<FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
 			<Textarea
+				id={fieldId}
+				aria-invalid={Boolean(error)}
 				name={field.name}
 				value={field.state.value}
 				placeholder={placeholder}
@@ -95,7 +101,7 @@ function CheckboxField({ description, label }: CheckboxFieldProps) {
 	const fieldId = useId();
 
 	return (
-		<Field invalid={Boolean(error)}>
+		<Field data-invalid={Boolean(error)}>
 			<div className="flex items-center gap-2">
 				<Checkbox
 					id={fieldId}
@@ -114,26 +120,27 @@ function CheckboxField({ description, label }: CheckboxFieldProps) {
 
 function SelectField({ description, label, options, placeholder }: SelectFieldProps) {
 	const field = useFieldContext<string>();
+	const fieldId = useId();
 	const error = getFieldErrors(field.state.meta.errors);
 
 	return (
-		<Field invalid={Boolean(error)}>
-			<FieldLabel>{label}</FieldLabel>
+		<Field data-invalid={Boolean(error)}>
+			<FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
 			<Select
 				name={field.name}
 				value={field.state.value}
 				onValueChange={(value) => field.handleChange(value ?? '')}
 			>
-				<SelectTrigger onBlur={field.handleBlur}>
+				<SelectTrigger id={fieldId} aria-invalid={Boolean(error)} onBlur={field.handleBlur}>
 					<SelectValue placeholder={placeholder} />
 				</SelectTrigger>
-				<SelectPopup>
+				<SelectContent>
 					{options.map((option) => (
 						<SelectItem key={option.value} value={option.value}>
 							{option.label}
 						</SelectItem>
 					))}
-				</SelectPopup>
+				</SelectContent>
 			</Select>
 			{description ? <FieldDescription>{description}</FieldDescription> : null}
 			{error ? <FieldError>{error}</FieldError> : null}

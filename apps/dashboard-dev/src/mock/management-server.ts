@@ -24,83 +24,103 @@ const managementImplementer = implement(managementContract).$context<MockManagem
 const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = 'pending-jobs';
 const MOCK_MUTATION_UPDATED_AT = '2026-06-03T12:00:00.000Z';
 
-const mockManagementRouter = managementImplementer.router({
-	health: managementImplementer.health.handler(
-		({ context }) => getReadableScenario(context).health,
-	),
-	capabilities: managementImplementer.capabilities.handler(
-		({ context }) => getReadableScenario(context).capabilities,
-	),
-	queueViews: managementImplementer.queueViews.handler(({ context }) => ({
-		queueViews: [...getReadableScenario(context).queueViews],
-	})),
-	jobs: managementImplementer.jobs.handler(({ input, context }) =>
-		listJobs(input, getReadableScenario(context)),
-	),
-	jobStats: managementImplementer.jobStats.handler(({ input, context }) => {
-		const scenario = getReadableScenario(context);
-		const jobs = input.name
-			? scenario.jobs.filter((job) => job.name === input.name)
-			: scenario.jobs;
-
-		return createQueueStats(jobs);
-	}),
-	job: managementImplementer.job.handler(({ input, context }) =>
-		getJobById(input.params.id, getReadableScenario(context)),
-	),
-	cancelJob: managementImplementer.cancelJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
-			...job,
-			status: 'cancelled',
-			claimedBy: null,
-			lockedAt: null,
-			lastHeartbeat: null,
-			updatedAt: MOCK_MUTATION_UPDATED_AT,
-		})),
-	),
-	retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
-			...job,
-			status: 'pending',
-			failCount: 0,
-			failureReason: null,
-			claimedBy: null,
-			lockedAt: null,
-			lastHeartbeat: null,
-			updatedAt: MOCK_MUTATION_UPDATED_AT,
-		})),
-	),
-	rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
-		mutateSingleJob(input.params.id, getReadableScenario(context), (job) => ({
-			...job,
-			status: 'pending',
-			nextRunAt: input.body.nextRunAt,
-			claimedBy: null,
-			lockedAt: null,
-			lastHeartbeat: null,
-			updatedAt: MOCK_MUTATION_UPDATED_AT,
-		})),
-	),
-	deleteJob: managementImplementer.deleteJob.handler(({ input, context }) => {
-		const scenario = getReadableScenario(context);
-
-		assertMutationAllowed(scenario);
-		assertJobExists(input.params.id, scenario);
-
-		return { deleted: true };
-	}),
-	cancelJobs: managementImplementer.cancelJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getReadableScenario(context)),
-	),
-	retryJobs: managementImplementer.retryJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getReadableScenario(context)),
-	),
-	deleteJobs: managementImplementer.deleteJobs.handler(({ input, context }) =>
-		mutateBulkJobs(input, getReadableScenario(context)),
-	),
-});
+type MutableScenario = Omit<DashboardDevScenario, 'jobs'> & { jobs: JobDto[] };
 
 function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementContext> {
+	const scenarios = new Map<DashboardDevScenarioId, MutableScenario>();
+	function getReadableScenario(context: MockManagementContext): MutableScenario {
+		let scenario = scenarios.get(context.scenarioId);
+		if (!scenario) {
+			const source = getScenarioOrThrow(context);
+			scenario = { ...source, jobs: source.jobs.map((job) => ({ ...job })) };
+			scenarios.set(context.scenarioId, scenario);
+		}
+		assertScenarioResponseAllowed(scenario);
+		return scenario;
+	}
+	const mockManagementRouter = managementImplementer.router({
+		health: managementImplementer.health.handler(
+			({ context }) => getReadableScenario(context).health,
+		),
+		capabilities: managementImplementer.capabilities.handler(
+			({ context }) => getReadableScenario(context).capabilities,
+		),
+		queueViews: managementImplementer.queueViews.handler(({ context }) => ({
+			queueViews: getReadableScenario(context).queueViews.map((view) => ({
+				...view,
+				stats: createQueueStats(
+					getReadableScenario(context).jobs.filter((job) => job.name === view.name),
+				),
+				hasPersistedJobs: getReadableScenario(context).jobs.some((job) => job.name === view.name),
+			})),
+		})),
+		jobs: managementImplementer.jobs.handler(({ input, context }) =>
+			listJobs(input, getReadableScenario(context)),
+		),
+		jobStats: managementImplementer.jobStats.handler(({ input, context }) => {
+			const scenario = getReadableScenario(context);
+			const jobs = input.name
+				? scenario.jobs.filter((job) => job.name === input.name)
+				: scenario.jobs;
+
+			return createQueueStats(jobs);
+		}),
+		job: managementImplementer.job.handler(({ input, context }) =>
+			getJobById(input.params.id, getReadableScenario(context)),
+		),
+		cancelJob: managementImplementer.cancelJob.handler(({ input, context }) =>
+			mutateSingleJob(input.params.id, getReadableScenario(context), 'cancel', (job) => ({
+				...job,
+				status: 'cancelled',
+				claimedBy: null,
+				lockedAt: null,
+				lastHeartbeat: null,
+				updatedAt: MOCK_MUTATION_UPDATED_AT,
+			})),
+		),
+		retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
+			mutateSingleJob(input.params.id, getReadableScenario(context), 'retry', (job) => ({
+				...job,
+				status: 'pending',
+				failCount: 0,
+				failureReason: null,
+				claimedBy: null,
+				lockedAt: null,
+				lastHeartbeat: null,
+				updatedAt: MOCK_MUTATION_UPDATED_AT,
+			})),
+		),
+		rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
+			mutateSingleJob(input.params.id, getReadableScenario(context), 'reschedule', (job) => ({
+				...job,
+				status: 'pending',
+				nextRunAt: input.body.nextRunAt,
+				claimedBy: null,
+				lockedAt: null,
+				lastHeartbeat: null,
+				updatedAt: MOCK_MUTATION_UPDATED_AT,
+			})),
+		),
+		deleteJob: managementImplementer.deleteJob.handler(({ input, context }) => {
+			const scenario = getReadableScenario(context);
+
+			assertMutationAllowed(scenario);
+			assertJobExists(input.params.id, scenario);
+			scenario.jobs = scenario.jobs.filter((job) => job.id !== input.params.id);
+
+			return { deleted: true };
+		}),
+		cancelJobs: managementImplementer.cancelJobs.handler(({ input, context }) =>
+			mutateBulkJobs(input, getReadableScenario(context), 'cancel'),
+		),
+		retryJobs: managementImplementer.retryJobs.handler(({ input, context }) =>
+			mutateBulkJobs(input, getReadableScenario(context), 'retry'),
+		),
+		deleteJobs: managementImplementer.deleteJobs.handler(({ input, context }) =>
+			mutateBulkJobs(input, getReadableScenario(context), 'delete'),
+		),
+	});
+
 	return new OpenAPIHandler(mockManagementRouter, {
 		customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) =>
 			typeof error.data === 'object' && error.data !== null ? error.data : { error: error.message },
@@ -140,13 +160,6 @@ function getScenarioOrThrow(context: MockManagementContext): DashboardDevScenari
 		});
 	}
 
-	return scenario;
-}
-
-function getReadableScenario(context: MockManagementContext): DashboardDevScenario {
-	const scenario = getScenarioOrThrow(context);
-
-	assertScenarioResponseAllowed(scenario);
 	return scenario;
 }
 
@@ -204,23 +217,58 @@ function getJobById(id: string, scenario: DashboardDevScenario): JobDto {
 
 function mutateSingleJob(
 	id: string,
-	scenario: DashboardDevScenario,
+	scenario: MutableScenario,
+	action: 'cancel' | 'retry' | 'reschedule',
 	transform: (job: JobDto) => JobDto,
 ): JobDto {
 	assertMutationAllowed(scenario);
-	return transform(getJobById(id, scenario));
+	const job = getJobById(id, scenario);
+	const updated = transform(job);
+
+	if (!scenario.capabilities.actions[action]) throw new ORPCError('FORBIDDEN');
+	if (
+		(action === 'retry' && job.status !== 'failed' && job.status !== 'cancelled') ||
+		(action !== 'retry' && job.status !== 'pending')
+	)
+		throw new ORPCError('CONFLICT', {
+			message: 'Job state changed before the mutation completed.',
+		});
+	scenario.jobs = scenario.jobs.map((candidate) => (candidate.id === id ? updated : candidate));
+	return updated;
 }
 
 function mutateBulkJobs(
 	input: JobSelectorDto,
-	scenario: DashboardDevScenario,
+	scenario: MutableScenario,
+	action: 'cancel' | 'retry' | 'delete',
 ): BulkActionResultDto {
 	assertMutationAllowed(scenario);
 
 	const jobs = scenario.jobs.filter((job) => matchesJobSelector(job, input));
 
+	const eligible = jobs.filter(
+		(job) =>
+			action === 'delete' ||
+			(action === 'cancel'
+				? job.status === 'pending'
+				: job.status === 'failed' || job.status === 'cancelled'),
+	);
+	const ids = new Set(eligible.map((job) => job.id));
+	scenario.jobs =
+		action === 'delete'
+			? scenario.jobs.filter((job) => !ids.has(job.id))
+			: scenario.jobs.map((job) =>
+					ids.has(job.id)
+						? {
+								...job,
+								status: action === 'cancel' ? 'cancelled' : 'pending',
+								failCount: action === 'retry' ? 0 : job.failCount,
+								updatedAt: MOCK_MUTATION_UPDATED_AT,
+							}
+						: job,
+				);
 	return {
-		count: jobs.length,
+		count: eligible.length,
 		errors: [],
 	};
 }
@@ -373,6 +421,8 @@ function getCursorOffset(value: unknown): number | undefined {
 }
 
 function assertMutationAllowed(scenario: DashboardDevScenario): void {
+	if (scenario.capabilities.readOnly)
+		throw new ORPCError('FORBIDDEN', { message: 'This Management API is read-only.' });
 	if (scenario.mutationConflict) {
 		throw new ORPCError('CONFLICT', {
 			data: { error: 'Job state changed before the mutation completed.' },

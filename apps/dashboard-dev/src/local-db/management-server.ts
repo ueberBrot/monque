@@ -1,8 +1,11 @@
-import { JobStatus, Monque } from '@monque/core';
-import type { ManagementMonque, ManagementSurface } from '@monque/management';
+import { Monque } from '@monque/core';
+import type { ManagementSurface } from '@monque/management';
 import { createManagementSurface } from '@monque/management';
-import { type Collection, type Document, MongoClient, ObjectId, type WithId } from 'mongodb';
+import { type Collection, type Document, MongoClient, type WithId } from 'mongodb';
 import type { Connect } from 'vite';
+
+import { startDemoWorkload } from './demo-workload.js';
+import { createScenario, registerScenarioWorkers } from './scenarios.js';
 
 const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27018/?directConnection=true';
 const DEFAULT_DATABASE_NAME = 'monque_dashboard_dev';
@@ -30,11 +33,13 @@ class LocalDbConnectionError extends Error {
 
 type LocalDbManagementServer = {
 	readonly middleware: Connect.NextHandleFunction;
+	readonly start: () => Promise<void>;
 	readonly close: () => Promise<void>;
 };
 
 type LocalDbRuntime = {
 	readonly client: MongoClient;
+	readonly monque: Monque;
 	readonly management: ManagementSurface;
 };
 
@@ -43,16 +48,27 @@ type DashboardSeedJob = WithId<Document> & {
 	readonly uniqueKey: string;
 };
 
-let runtimePromise: Promise<LocalDbRuntime> | null = null;
-
 function createLocalDbManagementServer(options?: {
 	readonly mongoUri?: string;
 	readonly databaseName?: string;
 }): LocalDbManagementServer {
 	const mongoUri = options?.mongoUri ?? DEFAULT_MONGO_URI;
 	const databaseName = options?.databaseName ?? DEFAULT_DATABASE_NAME;
+	let runtimePromise: Promise<LocalDbRuntime> | null = null;
+	let closing: Promise<void> | null = null;
+	async function getRuntime(): Promise<LocalDbRuntime> {
+		await closing;
+		runtimePromise ??= createLocalDbRuntime({ mongoUri, databaseName }).catch((error: unknown) => {
+			runtimePromise = null;
+			throw error;
+		});
+		return runtimePromise;
+	}
 
 	return {
+		start: async () => {
+			await getRuntime();
+		},
 		middleware: async (request, response, next) => {
 			if (!request.url) {
 				next();
@@ -60,7 +76,7 @@ function createLocalDbManagementServer(options?: {
 			}
 
 			try {
-				const runtime = await getLocalDbRuntime({ mongoUri, databaseName });
+				const runtime = await getRuntime();
 				const result = await runtime.management.openApiHandler.handle(
 					await createFetchRequest(request),
 					{
@@ -100,19 +116,27 @@ function createLocalDbManagementServer(options?: {
 			}
 		},
 		close: async () => {
-			const runtime = await runtimePromise;
-			runtimePromise = null;
-			await runtime?.client.close();
+			closing ??= (async () => {
+				try {
+					const runtime = await runtimePromise;
+					if (runtime) {
+						try {
+							await runtime.monque.stop();
+						} finally {
+							await runtime.client.close();
+						}
+					}
+				} finally {
+					runtimePromise = null;
+				}
+			})();
+			try {
+				await closing;
+			} finally {
+				closing = null;
+			}
 		},
 	};
-}
-
-async function getLocalDbRuntime(options: {
-	readonly mongoUri: string;
-	readonly databaseName: string;
-}): Promise<LocalDbRuntime> {
-	runtimePromise ??= createLocalDbRuntime(options);
-	return runtimePromise;
 }
 
 async function createLocalDbRuntime(options: {
@@ -136,41 +160,32 @@ async function createLocalDbRuntime(options: {
 		collectionName: COLLECTION_NAME,
 		workerConcurrency: 2,
 		statsCacheTtlMs: 0,
+		pollInterval: 250,
+		safetyPollInterval: 1_000,
+		maxRetries: 2,
+		baseRetryInterval: 1_000,
 	});
-	await monque.initialize();
-
-	registerDemoWorkers(monque);
-	await seedDashboardJobs(db.collection(COLLECTION_NAME), db.collection(SEED_MARKER_COLLECTION));
+	try {
+		await monque.initialize();
+		registerScenarioWorkers(monque, db);
+		await seedDashboardJobs(db.collection(COLLECTION_NAME), db.collection(SEED_MARKER_COLLECTION));
+		await startDemoWorkload(monque);
+	} catch (error) {
+		try {
+			await monque.stop();
+		} finally {
+			await client.close();
+		}
+		throw error;
+	}
 
 	return {
 		client,
+		monque,
 		management: createManagementSurface({
-			monque: createManagementMonqueFacade(monque),
+			monque,
 		}),
 	};
-}
-
-function createManagementMonqueFacade(monque: Monque): ManagementMonque {
-	return {
-		isHealthy: monque.isHealthy.bind(monque),
-		getQueueViewSummaries: monque.getQueueViewSummaries.bind(monque),
-		getJobsWithCursor: monque.getJobsWithCursor.bind(monque),
-		getJob: (id) => monque.getJob(new ObjectId(id)),
-		getQueueStats: monque.getQueueStats.bind(monque),
-		cancelJob: monque.cancelJob.bind(monque),
-		retryJob: monque.retryJob.bind(monque),
-		rescheduleJob: monque.rescheduleJob.bind(monque),
-		deleteJob: monque.deleteJob.bind(monque),
-		cancelJobs: monque.cancelJobs.bind(monque),
-		retryJobs: monque.retryJobs.bind(monque),
-		deleteJobs: monque.deleteJobs.bind(monque),
-	};
-}
-
-function registerDemoWorkers(monque: Monque): void {
-	for (const name of ['send-email', 'sync-billing', 'dispatch-webhook', 'rebuild-search']) {
-		monque.register(name, async () => {}, { concurrency: 2 });
-	}
 }
 
 async function seedDashboardJobs(
@@ -207,49 +222,10 @@ async function seedDashboardJobs(
 }
 
 function createSeedJobs(): DashboardSeedJob[] {
-	const now = Date.now();
-	const names = ['send-email', 'sync-billing', 'dispatch-webhook', 'rebuild-search'];
-	const statuses = [
-		JobStatus.PENDING,
-		JobStatus.PENDING,
-		JobStatus.PROCESSING,
-		JobStatus.COMPLETED,
-		JobStatus.FAILED,
-		JobStatus.CANCELLED,
-	] as const;
-
-	return Array.from({ length: 36 }, (_, index) => {
-		const name = names[index % names.length] ?? 'send-email';
-		const status = statuses[index % statuses.length] ?? JobStatus.PENDING;
-		const createdAt = new Date(now - index * 1000 * 60 * 45);
-		const updatedAt = new Date(createdAt.getTime() + 1000 * 60 * (5 + (index % 8)));
-		const nextRunAt = new Date(now + (index - 8) * 1000 * 60 * 10);
-		const isProcessing = status === JobStatus.PROCESSING;
-		const isFailed = status === JobStatus.FAILED;
-
-		return {
-			_id: new ObjectId(),
-			name,
-			data: {
-				attempt: isFailed ? 3 : 1,
-				customerId: `cust-${String(index + 1).padStart(3, '0')}`,
-				priority: index % 3 === 0 ? 'high' : 'normal',
-				source: 'dashboard-dev-db',
-			},
-			status,
-			nextRunAt,
-			lockedAt: isProcessing ? updatedAt : null,
-			claimedBy: isProcessing ? `dashboard-dev-worker-${(index % 2) + 1}` : null,
-			lastHeartbeat: isProcessing ? new Date(updatedAt.getTime() + 15_000) : null,
-			heartbeatInterval: isProcessing ? 30_000 : undefined,
-			failCount: isFailed ? 3 : 0,
-			failReason: isFailed ? `Seeded failure ${index + 1}` : undefined,
-			repeatInterval: index % 9 === 0 ? '*/15 * * * *' : undefined,
-			uniqueKey: `dashboard-dev-seed-${SEED_VERSION}-${index + 1}`,
-			createdAt,
-			updatedAt,
-		};
-	});
+	return [...createScenario('mixed'), ...createScenario('pagination')].map((job, index) => ({
+		...job,
+		uniqueKey: `dashboard-dev-seed-${SEED_VERSION}-${index + 1}`,
+	}));
 }
 
 async function createFetchRequest(request: Connect.IncomingMessage): Promise<Request> {

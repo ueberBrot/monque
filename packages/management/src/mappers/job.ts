@@ -38,15 +38,15 @@ export async function toJobDto<TContext>(
 		updatedAt: job.updatedAt.toISOString(),
 	};
 
-	if (job.heartbeatInterval !== undefined) {
+	if (job.heartbeatInterval != null) {
 		dto.heartbeatInterval = job.heartbeatInterval;
 	}
 
-	if (job.repeatInterval !== undefined) {
+	if (job.repeatInterval != null) {
 		dto.repeatInterval = job.repeatInterval;
 	}
 
-	if (job.uniqueKey !== undefined) {
+	if (job.uniqueKey != null) {
 		dto.uniqueKey = job.uniqueKey;
 	}
 

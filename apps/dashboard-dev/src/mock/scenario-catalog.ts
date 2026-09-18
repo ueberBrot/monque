@@ -267,7 +267,8 @@ function buildQueueViews(
 	jobs: readonly JobDto[],
 	workerNames: readonly string[],
 ): readonly QueueViewSummaryDto[] {
-	const queueNames = new Set<string>(workerNames);
+	const registeredWorkers = new Set(workerNames);
+	const queueNames = new Set(registeredWorkers);
 
 	for (const job of jobs) {
 		queueNames.add(job.name);
@@ -278,7 +279,7 @@ function buildQueueViews(
 		.map((name, index) => {
 			const queueJobs = jobs.filter((job) => job.name === name);
 			const stats = createQueueStats(queueJobs);
-			const hasRegisteredWorker = workerNames.includes(name);
+			const hasRegisteredWorker = registeredWorkers.has(name);
 
 			return {
 				name,

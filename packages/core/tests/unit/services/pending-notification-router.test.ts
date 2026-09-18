@@ -141,6 +141,17 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledWith();
 	});
 
+	it('waits for a distant job without overflowing the timer or polling early', () => {
+		const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+		router.notifyPendingJob('annual-report', new Date(Date.now() + ninetyDays));
+
+		vi.advanceTimersByTime(ninetyDays - 1);
+		expect(onPoll).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(201);
+		expect(onPoll).toHaveBeenCalledOnce();
+	});
+
 	it('emits job:error when a future wakeup poll rejects', async () => {
 		const pollError = new Error('Wakeup poll failed');
 		onPoll = vi.fn().mockRejectedValueOnce(pollError) as unknown as (

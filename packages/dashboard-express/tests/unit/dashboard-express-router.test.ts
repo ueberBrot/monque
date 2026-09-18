@@ -92,6 +92,21 @@ describe('Dashboard Express Adapter', () => {
 		expect(response.headers['cache-control']).toContain('immutable');
 	});
 
+	test.each(['/', '/ops/queue'])(
+		'resolves assets from a deep link mounted at %s',
+		async (mountPath) => {
+			const app = await createDashboardApp({ mountPath });
+			const prefix = mountPath === '/' ? '' : mountPath;
+			const response = await request(app).get(`${prefix}/jobs/job-123`).expect(200);
+			const source = response.text.match(/src="([^"]+\.js)"/)?.[1];
+			expect(source).toBe(`${prefix}/assets/index-abc12345.js`);
+			await request(app)
+				.get(source ?? '')
+				.expect(200)
+				.expect('content-type', /javascript/);
+		},
+	);
+
 	test('does not mount or proxy management API routes', async () => {
 		const app = await createDashboardApp();
 

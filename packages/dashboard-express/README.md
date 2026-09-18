@@ -1,22 +1,21 @@
 # @monque/dashboard-express
 
-Express adapter for serving the Monque Dashboard SPA.
-
-`@monque/dashboard-express` is a UI-only serving adapter. It serves the built
-`@monque/dashboard` assets, injects mount-aware runtime config into the Dashboard HTML,
-provides SPA fallback routes, and leaves Management API mounting to the host application.
-
-It does not mount the Management API, proxy API requests, or implement authentication.
+Serve the Monque dashboard from an Express application, with support for nested mount paths
+and direct links to jobs.
 
 ## Installation
 
+Requires Node.js 22.12 or newer and Express 5.2.1 or newer within version 5.
+
 ```bash
-bun add @monque/dashboard-express @monque/management-express @monque/dashboard express
+bun add @monque/dashboard-express @monque/management-express @monque/management @monque/core express mongodb
 ```
 
-`express` is a peer dependency. `@monque/dashboard` is a direct dependency of this adapter.
+The dashboard's built assets are included. No frontend build is required.
 
 ## Usage
+
+Mount both routers using your initialized `Monque` instance:
 
 ```typescript
 import { createDashboardExpressRouter } from '@monque/dashboard-express';
@@ -25,36 +24,50 @@ import express from 'express';
 
 const app = express();
 
-app.use('/ops', requireOperator);
-app.use(
-	'/ops',
-	createManagementExpressRouter({
-		monque,
-		openApi: false,
-	}),
-);
+app.use('/ops', createManagementExpressRouter({ monque }));
 app.use(
 	'/ops/dashboard',
 	createDashboardExpressRouter({
-		apiBaseUrl: '/ops/api/v1',
+		apiBaseUrl: '/ops',
 		pollingIntervalMs: 15_000,
 	}),
 );
+
+app.listen(3000);
 ```
 
-The host owns composition:
+Open `http://localhost:3000/ops/dashboard`. The Management API is available under
+`/ops/api/v1`, with OpenAPI JSON at `/ops/openapi.json`. Pass `openApi: false` to the
+Management router to disable the OpenAPI endpoint.
 
-- auth middleware wraps both routers
-- `@monque/management-express` mounts the Management API
-- `@monque/dashboard-express` serves only Dashboard UI assets and SPA routes
+See [`@monque/core`](../core/README.md) for scheduler setup and
+[`@monque/management-express`](../management-express/README.md) for API options.
 
-## Runtime config
+## Options
 
-The adapter injects:
+| Option              | Meaning                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `apiBaseUrl`        | Required Management adapter mount URL, such as `/ops`. Also accepts a sync or async `({ req, res }) => string` resolver. |
+| `pollingIntervalMs` | Optional positive integer in milliseconds. Omit to disable periodic polling.                                             |
 
-- `basePath` from the Express mount path
-- `apiBaseUrl` from the adapter option
-- optional `pollingIntervalMs`
+The client appends API paths such as `/api/v1/jobs` to `apiBaseUrl`. The dashboard's own
+base path is inferred from its Express mount. HTML is served with `Cache-Control: no-store`;
+hashed assets use a one-year immutable cache.
 
-Dashboard HTML responses are served with `Cache-Control: no-store`. Hashed static assets under
-`/assets/*` are served with `Cache-Control: public, max-age=31536000, immutable`.
+## Optional authentication and permissions
+
+The example allows unauthenticated access. To require authentication, mount your existing
+middleware **before both routers**:
+
+```typescript
+app.use('/ops', requireOperator);
+```
+
+This protects dashboard pages, assets, API requests, and OpenAPI. Your application supplies
+the login flow. Dashboard requests include browser credentials, so same-origin session cookies
+work without additional dashboard configuration.
+
+For action-specific permissions, pass the authenticated principal through the Management router's
+`context` callback and check it in `authorize`. The API enforces permissions and the dashboard
+disables unavailable actions. Set `readOnly: true` on the Management router to disable all
+mutations. See the [Management options](../management/README.md) for authorization details.

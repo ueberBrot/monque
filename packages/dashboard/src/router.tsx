@@ -15,6 +15,7 @@ function getRouter(
 		context,
 		...(options?.history ? { history: options.history } : {}),
 		scrollRestoration: true,
+		scrollToTopSelectors: ['#main-content'],
 		defaultPreload: 'intent',
 		defaultPreloadStaleTime: 0,
 	});

@@ -3,10 +3,11 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { createDashboardManagementApi } from '@/management-client';
 import { createDashboardQueryClient } from '@/query-client';
 import { getRouter } from '@/router';
@@ -21,7 +22,7 @@ describe('Jobs route', () => {
 	it('restores URL-backed filters and sorting into the Jobs table query', async () => {
 		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
 
-		renderJobsRoute({
+		await renderJobsRoute({
 			fetch: fetchSpy,
 			initialEntry:
 				'/jobs?name=dispatch-webhook&status=failed&sortBy=updatedAt&sortDirection=asc&limit=25',
@@ -56,7 +57,7 @@ describe('Jobs route', () => {
 	});
 
 	it('navigates with cursor pagination and keeps selection out of URL state', async () => {
-		const { router } = renderJobsRoute({
+		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
 			initialEntry: '/jobs?limit=10',
 		});
@@ -64,7 +65,7 @@ describe('Jobs route', () => {
 		const matchingCells = await screen.findAllByRole('cell', { name: /scenario-46003-/i });
 		expect(matchingCells.length).toBeGreaterThan(0);
 
-		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: 'Select job row' })));
+		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: /^Select job row / })));
 		expect(router.state.location.search).not.toHaveProperty('selected');
 
 		const nextPageButtons = screen.getAllByRole('button', { name: 'Next page' });
@@ -85,14 +86,14 @@ describe('Jobs route', () => {
 	});
 
 	it('preserves selected rows across refreshes when the rows remain valid', async () => {
-		const { router } = renderJobsRoute({
+		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'pending-jobs' }),
 			initialEntry: '/jobs?limit=10',
 		});
 
-		await screen.findAllByRole('checkbox', { name: 'Select job row' });
+		await screen.findAllByRole('checkbox', { name: /^Select job row / });
 
-		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: 'Select job row' })));
+		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: /^Select job row / })));
 		expect(router.state.location.search).not.toHaveProperty('selected');
 
 		await waitFor(() => {
@@ -106,8 +107,54 @@ describe('Jobs route', () => {
 		});
 	});
 
+	it('clears page selection and cursor history when URL filters change', async () => {
+		const { router } = await renderJobsRoute({
+			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+			initialEntry: '/jobs?limit=10',
+		});
+		await screen.findAllByRole('checkbox', { name: /^Select job row / });
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+		});
+		await waitFor(() => {
+			expect(router.state.location.search.cursor).toEqual(expect.any(String));
+			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
+				false,
+			);
+		});
+		fireEvent.click(
+			getFirstElement(await screen.findAllByRole('checkbox', { name: /^Select job row / })),
+		);
+		await screen.findByText('1 rows selected on this page');
+		await router.navigate({
+			to: '/jobs',
+			search: parseJobsRouteSearch({ name: 'send-email', limit: 10 }),
+		});
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
+				true,
+			);
+			expect(screen.getByText('No rows selected')).toBeTruthy();
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+		});
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
+				false,
+			);
+		});
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+		});
+		await waitFor(() => {
+			expect(router.state.location.search.cursor).toBeUndefined();
+			expect(router.state.location.search.name).toBe('send-email');
+		});
+	});
+
 	it('renders an empty state when no jobs match the current view', async () => {
-		renderJobsRoute({
+		await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'empty-state' }),
 			initialEntry: '/jobs',
 		});
@@ -116,7 +163,7 @@ describe('Jobs route', () => {
 	});
 
 	it('renders an unauthorized state when the API returns 401', async () => {
-		renderJobsRoute({
+		await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'unauthorized' }),
 			initialEntry: '/jobs',
 		});
@@ -127,7 +174,7 @@ describe('Jobs route', () => {
 	it('renders a forbidden state when the API returns 403', async () => {
 		cleanup();
 
-		renderJobsRoute({
+		await renderJobsRoute({
 			fetch: createForbiddenFetch(),
 			initialEntry: '/jobs',
 		});
@@ -150,7 +197,7 @@ describe('Jobs route', () => {
 			jobs: [jobA, jobB],
 		});
 
-		renderJobsRoute({
+		await renderJobsRoute({
 			fetch: fetchState.fetch,
 			initialEntry: '/jobs',
 		});
@@ -158,7 +205,7 @@ describe('Jobs route', () => {
 		expect((await screen.findAllByText(jobA.id)).length).toBeGreaterThan(0);
 		expect(screen.getAllByText(jobB.id).length).toBeGreaterThan(0);
 
-		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: 'Select job row' })));
+		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: /^Select job row / })));
 		fireEvent.click(screen.getByRole('button', { name: 'Delete selected jobs' }));
 
 		expect(await screen.findByRole('heading', { name: 'Delete selected jobs?' })).toBeTruthy();
@@ -174,7 +221,7 @@ describe('Jobs route', () => {
 	});
 });
 
-function renderJobsRoute({
+async function renderJobsRoute({
 	fetch: fetchImplementation,
 	initialEntry,
 }: {
@@ -200,6 +247,7 @@ function renderJobsRoute({
 		},
 	);
 
+	await router.load();
 	render(
 		<QueryClientProvider client={queryClient}>
 			<TooltipProvider>

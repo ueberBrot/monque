@@ -5,12 +5,12 @@ import type {
 	QueueViewSummaryDto,
 } from '@monque/management/contract';
 import { Link } from '@tanstack/react-router';
-import { formatDistanceToNowStrict } from 'date-fns';
 import { Activity, CircleAlert, CircleCheckBig, Clock3, RefreshCw, ServerCog } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { JobTimestamp } from '@/components/job-timestamp';
 import { Badge } from '@/components/ui/badge';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
 	Table,
@@ -20,6 +20,10 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
+import { getOperatorTimeZoneLabel } from '@/lib/dates';
+import { getJobRunLabel } from '@/lib/job-detail';
+import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
 
 const queueViewSkeletonKeys = ['skeleton-1', 'skeleton-2', 'skeleton-3', 'skeleton-4'] as const;
@@ -34,7 +38,7 @@ function QueueViewsStatePanel({
 	readonly title: string;
 }): ReactElement {
 	return (
-		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
+		<section className="grid min-w-0 gap-4">
 			<div className="grid gap-2">
 				<h1 className="text-2xl font-semibold text-balance">{title}</h1>
 				<p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
@@ -52,10 +56,7 @@ function QueueViewsLoadingState(): ReactElement {
 		>
 			<div className="grid gap-3">
 				{queueViewSkeletonKeys.map((key) => (
-					<div
-						key={key}
-						className="grid gap-3 rounded-lg border border-border bg-background/70 p-4"
-					>
+					<div key={key} className="grid gap-3 min-w-0">
 						<Skeleton className="h-5 w-40" />
 						<Skeleton className="h-4 w-full max-w-2xl" />
 						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -131,59 +132,81 @@ function QueueViewsErrorState({
 }
 
 function QueueViewsOverview({
+	refresh,
 	queueViews,
 }: {
 	readonly queueViews: readonly QueueViewSummaryDto[];
+	readonly refresh?: ReactNode;
 }): ReactElement {
 	return (
-		<section className="grid gap-4">
-			<div className="grid gap-2">
-				<h1 className="text-2xl font-semibold text-balance">Queue Views</h1>
-				<p className="max-w-3xl text-sm text-muted-foreground">
-					Start from job-name groupings, then drill into one queue family for its live summary and
-					filtered jobs.
-				</p>
-			</div>
-			<div className="overflow-hidden rounded-lg border border-border bg-card">
-				<div className="grid gap-px bg-border">
-					{queueViews.map((queueView) => (
-						<Link
-							key={queueView.name}
-							to="/queue-views/$name"
-							params={{ name: queueView.name }}
-							className="grid gap-4 bg-card p-4 transition-colors hover:bg-muted/40"
-						>
-							<div className="flex flex-wrap items-start justify-between gap-3">
-								<div className="grid gap-2">
-									<div className="flex flex-wrap items-center gap-2">
-										<h2 className="text-base font-semibold">{queueView.name}</h2>
-										{queueView.hasRegisteredWorker ? (
-											<Badge variant="success">
-												<ServerCog className="size-3.5" />
-												Worker registered
-											</Badge>
-										) : (
-											<Badge variant="outline">
-												<Clock3 className="size-3.5" />
-												Historical only
-											</Badge>
-										)}
-									</div>
-									<p className="text-sm text-muted-foreground">
-										{getQueueViewDescription(queueView)}
-									</p>
-								</div>
-								<span
-									className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'self-start')}
-								>
-									Open detail
-								</span>
-							</div>
-							<QueueStatsGrid stats={queueView.stats} />
-						</Link>
-					))}
+		<section className="grid min-w-0 gap-6">
+			<div className="flex flex-wrap items-end justify-between gap-3">
+				<div>
+					<h1 className="text-2xl font-semibold">Queue Views</h1>
+					<p className="mt-1 text-sm text-muted-foreground">
+						Jobs grouped by name. Open a view to investigate.
+					</p>
+				</div>
+				<div className="grid gap-2 sm:justify-items-end">
+					<span className="text-sm text-muted-foreground">{queueViews.length} job names</span>
+					{refresh}
 				</div>
 			</div>
+			<div className="overflow-hidden rounded-lg border border-border bg-card">
+				<div className="hidden grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(4rem,1fr))] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-xs font-medium text-muted-foreground md:grid">
+					<span>Job name</span>
+					<span className="text-right">Pending</span>
+					<span className="text-right">Processing</span>
+					<span className="text-right">Failed</span>
+					<span className="text-right">Total</span>
+				</div>
+				{queueViews.map((view) => (
+					<Link
+						key={view.name}
+						to="/queue-views/$name"
+						params={{ name: view.name }}
+						className="grid gap-4 border-b border-border px-5 py-3 transition-colors last:border-0 hover:bg-muted/50 md:grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(4rem,1fr))] md:items-center"
+					>
+						<div className="min-w-0">
+							<h2 className="break-all text-sm font-semibold">{view.name}</h2>
+							<p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+								<ServerCog className="size-3.5" />
+								{view.hasRegisteredWorker
+									? `${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`
+									: 'Historical only · No registered worker'}
+							</p>
+						</div>
+						<div className="grid grid-cols-4 gap-3 md:contents">
+							{(['pending', 'processing', 'failed', 'total'] as const).map((key) => (
+								<div key={key} className="md:text-right">
+									<span className="mb-1 block text-xs text-muted-foreground md:sr-only">
+										{key === 'pending'
+											? 'Pending'
+											: key === 'processing'
+												? 'Processing'
+												: key === 'failed'
+													? 'Failed'
+													: 'Total'}
+									</span>
+									<span
+										className={cn(
+											'text-sm tabular-nums',
+											key === 'failed' && view.stats.failed > 0
+												? 'font-semibold text-destructive'
+												: 'text-foreground',
+										)}
+									>
+										{view.stats[key]}
+									</span>
+								</div>
+							))}
+						</div>
+					</Link>
+				))}
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Includes registered workers and historical jobs.
+			</p>
 		</section>
 	);
 }
@@ -198,7 +221,7 @@ function QueueViewDetailHeader({
 	readonly stats: QueueStatsDto;
 }): ReactElement {
 	return (
-		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
+		<section className="grid min-w-0 gap-4">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="grid gap-2">
 					<div className="flex flex-wrap items-center gap-2">
@@ -212,13 +235,13 @@ function QueueViewDetailHeader({
 						) : null}
 					</div>
 					<p className="max-w-3xl text-sm text-muted-foreground">
-						Queue View detail implies the Job Name filter from the route. The table below stays
-						scoped to <span className="font-medium text-foreground">{name}</span>.
+						Jobs and worker activity for <span className="font-medium text-foreground">{name}</span>
+						.
 					</p>
 				</div>
 				<div className="grid gap-1 text-right text-sm text-muted-foreground">
 					<span>Persisted jobs: {queueView?.hasPersistedJobs ? 'Yes' : 'No'}</span>
-					<span>Registered worker: {queueView?.hasRegisteredWorker ? 'Yes' : 'No'}</span>
+					{!queueView?.hasRegisteredWorker ? <span>No registered worker</span> : null}
 				</div>
 			</div>
 			<QueueStatsGrid stats={stats} />
@@ -227,6 +250,8 @@ function QueueViewDetailHeader({
 }
 
 function QueueViewJobsTable({
+	search,
+	freshness,
 	jobsPage,
 	name,
 	onNextPage,
@@ -234,24 +259,28 @@ function QueueViewJobsTable({
 	onRefresh,
 }: {
 	readonly jobsPage: JobCursorPageDto;
+	readonly freshness?: ReactNode;
+	readonly search?: { readonly cursor?: string | undefined; readonly limit?: number | undefined };
 	readonly name: string;
 	readonly onNextPage: (cursor: string) => void;
 	readonly onRefresh: () => void;
 	readonly onResetCursor: () => void;
 }): ReactElement {
 	const nextPageCursor = jobsPage.cursor;
+	const now = useNow();
 
 	return (
-		<section className="grid gap-4 rounded-lg border border-border bg-card p-6">
+		<section className="grid min-w-0 gap-4">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="grid gap-1">
 					<h2 className="text-lg font-semibold">Filtered jobs</h2>
 					<p className="text-sm text-muted-foreground">
-						Showing jobs for <span className="font-medium text-foreground">{name}</span>. The route
-						implies the Job Name filter, so there is no duplicate editable name control here.
+						Showing jobs for <span className="font-medium text-foreground">{name}</span>. Times in{' '}
+						{getOperatorTimeZoneLabel()}.
 					</p>
 				</div>
-				<div className="flex flex-wrap gap-2">
+				<div className="flex flex-wrap items-center gap-2">
+					{freshness}
 					<Button type="button" variant="outline" onClick={onRefresh}>
 						<RefreshCw className="size-4" />
 						Refresh
@@ -269,18 +298,24 @@ function QueueViewJobsTable({
 				</div>
 			) : (
 				<div className="min-w-0 overflow-x-auto">
-					<Table className="min-w-[44rem]">
+					<Table className="min-w-[48rem] table-fixed">
 						<TableHeader>
 							<TableRow>
-								<TableHead>Status</TableHead>
-								<TableHead>Job ID</TableHead>
-								<TableHead>Next run</TableHead>
-								<TableHead>Updated</TableHead>
+								<TableHead className="w-28">Status</TableHead>
+								<TableHead className="w-56">Job ID</TableHead>
+								<TableHead className="w-56">Next run</TableHead>
+								<TableHead className="w-56">Updated</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{jobsPage.jobs.map((job) => (
-								<QueueViewJobRow key={job.id} job={job} />
+								<QueueViewJobRow
+									key={job.id}
+									job={job}
+									now={now}
+									queueCursor={search?.cursor}
+									queueLimit={search?.limit}
+								/>
 							))}
 						</TableBody>
 					</Table>
@@ -302,18 +337,43 @@ function QueueViewJobsTable({
 	);
 }
 
-function QueueViewJobRow({ job }: { readonly job: JobDto }): ReactElement {
+function QueueViewJobRow({
+	job,
+	now,
+	queueCursor,
+	queueLimit,
+}: {
+	readonly job: JobDto;
+	readonly now: Date;
+	readonly queueCursor: string | undefined;
+	readonly queueLimit: number | undefined;
+}): ReactElement {
 	return (
 		<TableRow>
 			<TableCell>
 				<JobStatusBadge status={job.status} />
 			</TableCell>
-			<TableCell className="font-mono text-xs">{job.id}</TableCell>
-			<TableCell className="text-sm text-muted-foreground">
-				{formatDateTime(job.nextRunAt)}
+			<TableCell className="font-mono text-xs">
+				<Link
+					to="/jobs/$jobId"
+					search={{
+						...parseJobsRouteSearch({ name: job.name }),
+						queueView: job.name,
+						queueCursor,
+						queueLimit,
+					}}
+					params={{ jobId: job.id }}
+					className="underline decoration-border underline-offset-4 hover:text-primary"
+				>
+					{job.id}
+				</Link>
 			</TableCell>
 			<TableCell className="text-sm text-muted-foreground">
-				{formatDateTime(job.updatedAt)}
+				<span className="text-xs">{getJobRunLabel(job)}</span>
+				<JobTimestamp value={job.nextRunAt} now={now} />
+			</TableCell>
+			<TableCell className="text-sm text-muted-foreground">
+				<JobTimestamp value={job.updatedAt} now={now} />
 			</TableCell>
 		</TableRow>
 	);
@@ -321,22 +381,23 @@ function QueueViewJobRow({ job }: { readonly job: JobDto }): ReactElement {
 
 function QueueStatsGrid({ stats }: { readonly stats: QueueStatsDto }): ReactElement {
 	return (
-		<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+		<div className="grid grid-cols-3 gap-4 border-y border-border py-4 sm:grid-cols-6">
 			<QueueStatCard icon={<Clock3 className="size-4" />} label="Pending" value={stats.pending} />
 			<QueueStatCard
-				icon={<Activity className="size-4" />}
+				icon={<Activity className="size-4 text-info" />}
 				label="Processing"
 				value={stats.processing}
 			/>
 			<QueueStatCard
-				icon={<CircleCheckBig className="size-4" />}
+				icon={<CircleCheckBig className="size-4 text-success" />}
 				label="Completed"
 				value={stats.completed}
 			/>
 			<QueueStatCard
-				icon={<CircleAlert className="size-4" />}
+				icon={<CircleAlert className="size-4 text-destructive" />}
 				label="Failed"
 				value={stats.failed}
+				highlight={stats.failed > 0}
 			/>
 			<QueueStatCard label="Cancelled" value={stats.cancelled} />
 			<QueueStatCard label="Total" value={stats.total} />
@@ -345,21 +406,23 @@ function QueueStatsGrid({ stats }: { readonly stats: QueueStatsDto }): ReactElem
 }
 
 function QueueStatCard({
+	highlight = false,
 	icon,
 	label,
 	value,
 }: {
 	readonly icon?: ReactNode;
+	readonly highlight?: boolean;
 	readonly label: string;
 	readonly value: number;
 }): ReactElement {
 	return (
-		<div className="rounded-lg border border-border bg-background/70 p-4">
+		<div className="min-w-0">
 			<div className="flex items-center gap-2 text-sm text-muted-foreground">
 				{icon}
 				<span>{label}</span>
 			</div>
-			<p className="mt-3 text-2xl font-semibold">{value}</p>
+			<p className={cn('mt-1 text-lg font-semibold', highlight && 'text-destructive')}>{value}</p>
 		</div>
 	);
 }
@@ -369,7 +432,7 @@ function JobStatusBadge({ status }: { readonly status: JobDto['status'] }): Reac
 		case 'pending':
 			return <Badge variant="outline">Pending</Badge>;
 		case 'processing':
-			return <Badge variant="warning">Processing</Badge>;
+			return <Badge variant="info">Processing</Badge>;
 		case 'completed':
 			return <Badge variant="success">Completed</Badge>;
 		case 'failed':
@@ -379,73 +442,7 @@ function JobStatusBadge({ status }: { readonly status: JobDto['status'] }): Reac
 	}
 }
 
-function getQueueViewDescription(queueView: QueueViewSummaryDto): string {
-	const workerText = queueView.hasRegisteredWorker
-		? `Concurrency ${queueView.worker?.concurrency ?? 0}, ${queueView.worker?.activeCount ?? 0} active workers.`
-		: 'No registered worker on this scheduler.';
-
-	return `${queueView.stats.total} tracked jobs. ${workerText}`;
-}
-
-function formatDateTime(value: string): string {
-	const date = new Date(value);
-
-	return `${date.toLocaleString('en-US', {
-		dateStyle: 'medium',
-		timeStyle: 'short',
-		timeZone: 'UTC',
-	})} (${formatDistanceToNowStrict(date, { addSuffix: true })})`;
-}
-
-function getQueryErrorMessage(error: unknown, fallback: string): string {
-	const unauthorizedMessage = getUnauthorizedQueryErrorMessage(error);
-
-	if (unauthorizedMessage) {
-		return unauthorizedMessage;
-	}
-
-	if (error instanceof Error && error.message.length > 0) {
-		return error.message;
-	}
-
-	return fallback;
-}
-
-function isUnauthorizedQueryError(error: unknown): boolean {
-	return getRecordValue(error, 'status') === 401;
-}
-
-function getUnauthorizedQueryErrorMessage(error: unknown): string | undefined {
-	if (!isUnauthorizedQueryError(error)) {
-		return undefined;
-	}
-
-	const data = getRecordValue(error, 'data');
-	const body = getRecordValue(data, 'body');
-	const message = getRecordValue(body, 'error');
-
-	if (typeof message === 'string' && message.length > 0) {
-		return message;
-	}
-
-	return undefined;
-}
-
-function getRecordValue(value: unknown, key: string): unknown {
-	if (!isRecord(value)) {
-		return undefined;
-	}
-
-	return value[key];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
-}
-
 export {
-	getQueryErrorMessage,
-	isUnauthorizedQueryError,
 	QueueViewDetailHeader,
 	QueueViewJobsTable,
 	QueueViewsEmptyState,

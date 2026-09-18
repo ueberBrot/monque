@@ -1,5 +1,5 @@
+import type { JobDto } from '@monque/management/contract';
 import { type ORPCError, toORPCError } from '@orpc/client';
-import { format, parseISO } from 'date-fns';
 
 type JobDetailStateCode = 'unauthorized' | 'forbidden' | 'not-found' | 'error';
 
@@ -12,18 +12,6 @@ type JobDetailState = {
 type ManagementErrorData = {
 	readonly error: unknown;
 };
-
-function formatDashboardDate(value: string | null | undefined): string {
-	if (!value) {
-		return 'Not available';
-	}
-
-	return format(parseISO(value), "MMM d, yyyy 'at' HH:mm:ss");
-}
-
-function getOperatorTimeZoneLabel(): string {
-	return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local time';
-}
 
 function getJobAttemptCount(failCount: number): number {
 	return failCount + 1;
@@ -123,11 +111,14 @@ function hasManagementErrorData(data: unknown): data is ManagementErrorData {
 	return typeof data === 'object' && data !== null && Object.hasOwn(data, 'error');
 }
 
+function getJobRunLabel(job: Pick<JobDto, 'status'>): string {
+	return job.status === 'pending' ? 'Next run' : 'Scheduled for';
+}
+
 export {
-	formatDashboardDate,
 	formatPayloadForDisplay,
 	getJobAttemptCount,
-	getOperatorTimeZoneLabel,
+	getJobRunLabel,
 	isEmptyPayload,
 	isStructuredPayload,
 	type JobDetailState,

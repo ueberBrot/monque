@@ -57,9 +57,9 @@ describe('Health route', () => {
 	it('shows capability-disabled actions for a read-only Management surface', async () => {
 		renderHealthRoute('read-only');
 
-		expect(await screen.findByText('Read-only Management surface')).toBeTruthy();
+		expect(await screen.findByText('Read-only access')).toBeTruthy();
 		expect(await screen.findByText('1 of 8 available')).toBeTruthy();
-		expect((await screen.findAllByText('Disabled by Management read-only mode.')).length).toBe(7);
+		expect((await screen.findAllByText('This dashboard is read-only.')).length).toBe(7);
 		expect((await screen.findAllByText('Retry selected jobs')).length).toBeGreaterThan(0);
 	});
 
