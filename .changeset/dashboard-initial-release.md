@@ -2,4 +2,4 @@
 "@monque/dashboard": minor
 ---
 
-Introduce the Monque dashboard with job inspection, filtering, shareable views, job actions and scheduler health. Includes a responsive interface and ready-to-serve assets, with support for your application's authentication and permissions.
+Initial release of the Monque dashboard: Queue Views, filterable and shareable job lists, payload and error inspection, individual and bulk job actions, and scheduler health. Includes responsive light and dark themes, prebuilt assets, and support for your application's authentication and permissions.

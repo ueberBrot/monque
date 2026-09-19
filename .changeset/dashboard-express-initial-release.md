@@ -2,4 +2,4 @@
 "@monque/dashboard-express": minor
 ---
 
-Serve the Monque dashboard from Express without a frontend build. Supports nested mount paths, direct links, optional automatic refresh and your application's authentication middleware.
+Initial release of the Express dashboard adapter. Serve the bundled dashboard without a frontend build, with configurable Management API URLs, nested mount paths, direct links, optional automatic refresh, and your application's authentication middleware.
