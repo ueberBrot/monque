@@ -24,6 +24,7 @@ export const BulkActionErrorDtoSchema = z
 	.object({
 		jobId: z.string(),
 		error: z.string(),
+		status: z.number().int().optional(),
 	})
 	.strict();
 
@@ -83,3 +84,16 @@ export const ManagementErrorDtoSchema = z
 
 /** Standard management error response body. */
 export type ManagementErrorDto = z.infer<typeof ManagementErrorDtoSchema>;
+
+const SelectedJobIdsSchema = z.array(JobDetailParamsDtoSchema.shape.id).min(1).max(100);
+
+/** Operate only on the explicitly selected jobs, with per-job authorization. */
+export const SelectedJobActionsDtoSchema = z.discriminatedUnion('action', [
+	z.strictObject({ action: z.enum(['cancel', 'retry', 'delete']), ids: SelectedJobIdsSchema }),
+	z.strictObject({
+		action: z.literal('reschedule'),
+		ids: SelectedJobIdsSchema,
+		nextRunAt: z.iso.datetime(),
+	}),
+]);
+export type SelectedJobActionsDto = z.infer<typeof SelectedJobActionsDtoSchema>;

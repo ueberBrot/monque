@@ -35,6 +35,9 @@ export function createManagementRouter<TContext = unknown>(
 	const requireContext = requiresOpenApiManagementContext(options);
 
 	return managementImplementer.router({
+		selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) =>
+			operations.selectedJobActions(input, getOpenApiManagementContext(context, requireContext)),
+		),
 		health: managementImplementer.health.handler(() => operations.getHealth()),
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
 			operations.getCapabilities(getOpenApiManagementContext(context, requireContext)),

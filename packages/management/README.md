@@ -72,9 +72,32 @@ The v1 API is REST-shaped under `/api/v1` and includes:
 | `POST` | `/jobs/actions/cancel` | `cancelJobs` |
 | `POST` | `/jobs/actions/retry` | `retryJobs` |
 | `POST` | `/jobs/actions/delete` | `deleteJobs` |
+| `POST` | `/jobs/actions/selected` | `selectedJobActions` |
 
 Unsupported scheduler actions remain in the OpenAPI contract and return `403` at runtime.
 `readOnly: true` also keeps read endpoints available while write actions return `403`.
+
+`GET /jobs?view=summary` returns job metadata with `payload: null`, without reading payloads
+from MongoDB when supported by the scheduler. The default `view=full` and job detail retain
+payload serialization and redaction.
+
+For selected jobs, post `{ action: 'retry', ids: ['<MongoDB ObjectId>', ...] }` to
+`/jobs/actions/selected`. Supports cancel, retry, delete and reschedule; reschedule also requires
+`nextRunAt` as an ISO timestamp. At most 100 IDs are accepted. Duplicate IDs run once; up to five
+jobs run concurrently. The API checks the bulk permission and then each job's individual
+permission. The bulk authorization input includes `ids`; per-job checks include `job`. It returns `{ count, errors }` with a status for every failed ID. Reschedule uses its
+individual permission for both checks. Existing selector-based bulk routes remain available.
+
+## Request cost and permissions
+
+Core caches queue statistics for `statsCacheTtlMs` (default 5 seconds), including Queue Views.
+Concurrent reads share an in-flight query; management mutations invalidate cached counts.
+Worker registration and activity remain live. Set the core option to `0` for uncached counts.
+
+Resolve shared permissions once in your adapter's request context, then reuse them in
+`authorize`. For independent asynchronous permission checks, opt in to
+`parallelCapabilityChecks: true` on the Management surface or Express router. The default checks
+capabilities sequentially; authorization results are never shared between requests.
 
 ## OpenAPI
 

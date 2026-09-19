@@ -5,6 +5,8 @@ export {
 export {
 	toJobCursorPageDto,
 	toJobDto,
+	toJobSummaryDto,
+	toJobSummaryPageDto,
 } from './job.js';
 export {
 	toQueueStatsDto,

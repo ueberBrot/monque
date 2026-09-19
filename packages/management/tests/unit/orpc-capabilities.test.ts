@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import {
 	createManagementMonque,
@@ -9,6 +9,28 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management capabilities route', () => {
+	test('can evaluate independent capability checks concurrently without sharing request context', async () => {
+		const gate = Promise.withResolvers<void>();
+		const checks: string[] = [];
+		const surface = createManagementSurface<{ user: string }>({
+			monque: createManagementMonque({}, { mutations: true }),
+			parallelCapabilityChecks: true,
+			authorize: async ({ action, context }) => {
+				checks.push(`${context.user}:${action}`);
+				await gate.promise;
+				return action === 'read';
+			},
+		});
+		const pending = handleManagementGet(surface, '/api/v1/capabilities', {
+			managementContext: { user: 'alice' },
+		});
+		await vi.waitFor(() => expect(checks).toHaveLength(8));
+		gate.resolve();
+		const response = await pending;
+		expect(await response.json()).toMatchObject({ actions: { read: true, delete: false } });
+		expect(checks.every((check) => check.startsWith('alice:'))).toBe(true);
+	});
+
 	test('reports every Management action available when the scheduler supports them', async () => {
 		const surface = createManagementSurface({
 			monque: createManagementMonque({}, { mutations: true }),

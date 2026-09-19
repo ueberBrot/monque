@@ -3,6 +3,7 @@ import { JobStateError } from '@monque/core';
 import { describe, expect, test } from 'vitest';
 
 import {
+	createManagementJob,
 	createManagementMonque,
 	expectJsonResponse,
 	handleManagementPost,
@@ -10,6 +11,111 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management bulk action routes', () => {
+	test('selected actions authorize each job and report partial failures without touching other jobs', async () => {
+		const allowed = createManagementJob({ status: 'failed' });
+		const denied = createManagementJob({ status: 'failed' });
+		const changed: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque(
+				{
+					getJob: async (id) =>
+						[allowed, denied].find((job) => job._id.toHexString() === id) ?? null,
+					retryJob: async (id) => {
+						changed.push(id);
+						return { ...allowed, status: 'pending' };
+					},
+				},
+				{ mutations: true },
+			),
+			authorize: ({ job, ids }) => {
+				if (ids) expect(ids).toEqual([allowed._id.toHexString(), denied._id.toHexString()]);
+				return !job || job._id.equals(allowed._id);
+			},
+			serializePayload: () => {
+				throw new Error('Bulk actions do not return payloads');
+			},
+		});
+		const response = await handleManagementPost(
+			surface,
+			'/api/v1/jobs/actions/selected',
+			{
+				action: 'retry',
+				ids: [allowed._id.toHexString(), denied._id.toHexString(), allowed._id.toHexString()],
+			},
+			{ managementContext: {} },
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			count: 1,
+			errors: [{ jobId: denied._id.toHexString(), status: 403 }],
+		});
+		expect(changed).toEqual([allowed._id.toHexString()]);
+	});
+
+	test.each(['cancel', 'retry', 'delete', 'reschedule'] as const)(
+		'selected %s is bounded and reports missing jobs independently',
+		async (action) => {
+			const jobs = Array.from({ length: 12 }, () => createManagementJob());
+			let active = 0;
+			let maximum = 0;
+			const changed: string[] = [];
+			const mutate = async (id: string) => {
+				active++;
+				maximum = Math.max(active, maximum);
+				await new Promise((resolve) => setTimeout(resolve, 2));
+				active--;
+				changed.push(id);
+				return createManagementJob();
+			};
+			const surface = createManagementSurface({
+				monque: createManagementMonque(
+					{
+						getJob: async (id) => jobs.find((job) => job._id.toHexString() === id) ?? null,
+						cancelJob: mutate,
+						retryJob: mutate,
+						rescheduleJob: mutate,
+						deleteJob: async (id) => {
+							await mutate(id);
+							return true;
+						},
+					},
+					{ mutations: true },
+				),
+			});
+			const missing = createManagementJob()._id.toHexString();
+			const response = await handleManagementPost(surface, '/api/v1/jobs/actions/selected', {
+				action,
+				ids: [...jobs.map((job) => job._id.toHexString()), missing],
+				...(action === 'reschedule' ? { nextRunAt: '2027-01-01T00:00:00.000Z' } : {}),
+			});
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				count: 12,
+				errors: [{ jobId: missing, status: 404 }],
+			});
+			expect(maximum).toBe(5);
+			expect(changed).toHaveLength(12);
+		},
+	);
+
+	test('rejects oversized selections and read-only mutations before touching jobs', async () => {
+		const surface = createManagementSurface({
+			monque: createManagementMonque({}, { mutations: true }),
+			readOnly: true,
+		});
+		const id = createManagementJob()._id.toHexString();
+		const oversized = await handleManagementPost(surface, '/api/v1/jobs/actions/selected', {
+			action: 'retry',
+			ids: Array.from({ length: 101 }, () => id),
+		});
+		expect(oversized.status).toBe(400);
+		const denied = await handleManagementPost(surface, '/api/v1/jobs/actions/selected', {
+			action: 'retry',
+			ids: [id],
+		});
+		expect(denied.status).toBe(403);
+	});
+
 	test('bulk cancels Jobs through public core API with selector DTOs', async () => {
 		const coreCalls: JobSelector[] = [];
 		const authorizeCalls: unknown[] = [];

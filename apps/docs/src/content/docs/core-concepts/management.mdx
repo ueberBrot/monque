@@ -20,6 +20,26 @@ Monque serves a comprehensive set of APIs for managing jobs throughout their lif
 | [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats) | Queue statistics |
 | [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) | Queue View summaries |
 
+## Metadata-only listings
+
+Use [`getJobSummariesWithCursor()`](/monque/api/classes/monque/#getjobsummarieswithcursor) for
+list views that do not need job payloads:
+
+```typescript
+const page = await monque.getJobSummariesWithCursor({ name: 'send-email', limit: 50 });
+```
+
+It accepts the same filters and cursors as `getJobsWithCursor()` and omits `data` from both the
+MongoDB projection and returned jobs. Use `getJob()` to load a payload when needed.
+Cursor listings have a 30-second server-side query deadline. Created-time pagination with a
+name or status filter uses dedicated compound indexes, created during initialization.
+
+`statsCacheTtlMs` controls cached counts for both `getQueueStats()` and
+`getQueueViewSummaries()` (default: 5 seconds). Concurrent reads share one aggregation.
+Management mutations invalidate both caches; worker registration and activity are read fresh.
+Changes from other processes become visible after the TTL. Set the option to `0` to disable
+cached snapshots while retaining concurrent request coalescing.
+
 ## Single Job Operations
 
 Manage individual jobs using their unique ID.
@@ -176,11 +196,11 @@ Behaviour details:
 - Each per-filter entry adheres to the configured TTL (default 5s).
 - Cached results are returned without hitting MongoDB until the TTL expires.
 - The cache is cleared entirely when `stop()` is called.
-- Set `statsCacheTtlMs: 0` to disable caching entirely and always run the aggregation live.
+- Set `statsCacheTtlMs: 0` to disable cached snapshots. Concurrent reads still share one live aggregation.
 
 ```typescript
 const monque = new Monque(db, {
-  statsCacheTtlMs: 0  // Always run live aggregation
+  statsCacheTtlMs: 0  // Disable cached snapshots
 });
 ```
 

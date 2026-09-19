@@ -49,4 +49,6 @@ export {
 	RescheduleJobRequestDtoSchema,
 	type SchedulerHealthDto,
 	SchedulerHealthDtoSchema,
+	type SelectedJobActionsDto,
+	SelectedJobActionsDtoSchema,
 } from './schemas/index.js';

@@ -252,7 +252,7 @@ processing jobs block duplicates; completed and failed jobs do not.
 - The first Management Surface supports operation authorization, not Queue View visibility
   filtering.
 - Management operation authorization is action-grained.
-- Management operation authorization receives request context and the relevant job or selector
+- Management operation authorization receives request context and the relevant job, selector, or selected job IDs
   when an action has a target.
 - Management request context is generic at the Management Surface and created by
   Management Adapters from framework-native requests.

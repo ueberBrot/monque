@@ -17,6 +17,28 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management read routes', () => {
+	test('summary listings omit payloads without invoking payload serializers', async () => {
+		const job = createManagementJob();
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async () => ({
+					jobs: [job],
+					cursor: null,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				}),
+			}),
+			serializePayload: () => {
+				throw new Error('Summary reads must not serialize payloads');
+			},
+		});
+		const response = await handleManagementGet(surface, '/api/v1/jobs?view=summary');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			jobs: [{ id: job._id.toHexString(), payload: null }],
+		});
+	});
+
 	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;

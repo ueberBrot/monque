@@ -47,6 +47,8 @@ export {
 	RescheduleJobRequestDtoSchema,
 	type SchedulerHealthDto,
 	SchedulerHealthDtoSchema,
+	type SelectedJobActionsDto,
+	SelectedJobActionsDtoSchema,
 } from './contract.js';
 export {
 	createManagementRouter,
