@@ -1,6 +1,6 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -37,6 +37,7 @@ function JobDetailRoute() {
 	const { jobId } = Route.useParams();
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
+	const router = useRouter();
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const jobQuery = useQuery({
 		...managementApi.orpc.job.queryOptions({ input: { params: { id: jobId } } }),
@@ -56,13 +57,14 @@ function JobDetailRoute() {
 	}
 
 	const mutation = useMutation({
+		onMutate: () => router.state.location,
 		mutationFn: async (input: JobActionRequest) => {
 			return runJobAction(managementApi, { ...input, jobId });
 		},
-		onSuccess: async (action) => {
+		onSuccess: async (action, _input, origin) => {
 			const success = getActionSuccessFeedback(action);
 			toast.success(success.title, { description: success.description });
-			if (action !== 'delete') return;
+			if (action !== 'delete' || router.state.location !== origin) return;
 			if (search.queueView) {
 				await navigate({
 					to: '/queue-views/$name',

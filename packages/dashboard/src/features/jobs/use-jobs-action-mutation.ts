@@ -40,8 +40,10 @@ function useJobsActionMutation({
 			}
 			setRowSelection((selection) => {
 				const nextSelection = { ...selection };
-				for (const id of input.jobIds) delete nextSelection[id];
-				for (const id of failed) nextSelection[id] = true;
+				const failedIds = new Set(failed);
+				for (const id of input.jobIds) {
+					if (!failedIds.has(id)) delete nextSelection[id];
+				}
 				return nextSelection;
 			});
 			await queryClient.invalidateQueries();
