@@ -1,5 +1,6 @@
 import { type QueryClient, useMutation } from '@tanstack/react-query';
 import type { RowSelectionState } from '@tanstack/react-table';
+import type { Dispatch, SetStateAction } from 'react';
 import { toast } from 'sonner';
 
 import type { DashboardManagementApi } from '@/management-client';
@@ -21,11 +22,11 @@ function useJobsActionMutation({
 	readonly managementApi: DashboardManagementApi;
 	readonly queryClient: QueryClient;
 	readonly setFeedback: (feedback: JobActionFeedback | null) => void;
-	readonly setRowSelection: (selection: RowSelectionState) => void;
+	readonly setRowSelection: Dispatch<SetStateAction<RowSelectionState>>;
 }) {
 	return useMutation({
 		mutationFn: (input: RunJobActionsInput) => runJobActions(managementApi, input),
-		onSuccess: async ({ action, count, failed, firstError }) => {
+		onSuccess: async ({ action, count, failed, firstError }, input) => {
 			const errorFeedback = getActionErrorFeedback(firstError);
 			if (failed.length) {
 				setFeedback({
@@ -37,7 +38,12 @@ function useJobsActionMutation({
 				const success = getActionSuccessFeedback(action, count);
 				toast.success(success.title, { description: success.description });
 			}
-			setRowSelection(Object.fromEntries(failed.map((id) => [id, true])));
+			setRowSelection((selection) => {
+				const nextSelection = { ...selection };
+				for (const id of input.jobIds) delete nextSelection[id];
+				for (const id of failed) nextSelection[id] = true;
+				return nextSelection;
+			});
 			await queryClient.invalidateQueries();
 		},
 		onError: async (error) => {

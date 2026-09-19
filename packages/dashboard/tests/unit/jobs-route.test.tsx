@@ -210,6 +210,62 @@ describe('Jobs route', () => {
 		expect(await screen.findByText('Access denied')).toBeTruthy();
 	});
 
+	it('disables row actions until an outstanding mutation and its refresh finish', async () => {
+		const job = createListJob();
+		const otherJob = createListJob({ id: 'other-job', name: 'other-job' });
+		const state = createJobsActionFetch({ jobs: [job, otherJob] });
+		const response = Promise.withResolvers<Response>();
+		const refresh = Promise.withResolvers<Response>();
+		let listRequests = 0;
+		const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+			const request = new Request(input, init);
+			if (request.method === 'POST') return response.promise;
+			if (new URL(request.url).pathname === '/api/v1/jobs' && ++listRequests > 1)
+				return refresh.promise;
+			return state.fetch(request);
+		});
+		await renderJobsRoute({ fetch, initialEntry: '/jobs' });
+		const actionButton = () => screen.getByRole('button', { name: `Actions for ${job.id}` });
+		fireEvent.click(
+			await screen.findByRole('checkbox', { name: 'Select job row other-job other-job' }),
+		);
+		fireEvent.click(await screen.findByRole('button', { name: `Actions for ${job.id}` }));
+		fireEvent.click(await screen.findByRole('menuitem', { name: 'Cancel job' }));
+		await waitFor(() =>
+			expect(
+				fetch.mock.calls.some(([input]) => input instanceof Request && input.method === 'POST'),
+			).toBe(true),
+		);
+		try {
+			expect(actionButton().hasAttribute('disabled')).toBe(true);
+			await act(async () => response.resolve(createJsonResponse({ cancelled: true })));
+			await waitFor(() => expect(listRequests).toBe(2));
+			expect(actionButton().hasAttribute('disabled')).toBe(true);
+		} finally {
+			await act(async () => {
+				response.resolve(createJsonResponse({ cancelled: true }));
+				refresh.resolve(
+					createJsonResponse({
+						jobs: [{ ...job, status: 'cancelled' }, otherJob],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					}),
+				);
+			});
+		}
+		await waitFor(() => expect(actionButton().hasAttribute('disabled')).toBe(false));
+		expect(
+			screen
+				.getByRole('checkbox', { name: 'Select job row other-job other-job' })
+				.getAttribute('aria-checked'),
+		).toBe('true');
+		fireEvent.click(actionButton());
+		expect(
+			(await screen.findByRole('menuitem', { name: 'Cancel job' })).getAttribute('aria-disabled'),
+		).toBe('true');
+	});
+
 	it('deletes only explicitly selected jobs after bulk confirmation and refetches the list', async () => {
 		const jobA = createListJob({
 			id: 'job-bulk-a',

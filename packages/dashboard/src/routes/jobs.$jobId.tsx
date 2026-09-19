@@ -15,11 +15,11 @@ import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	getJobActionAvailability,
-	type JobActionKey,
+	type JobActionRequest,
 	runJobAction,
 } from '@/features/jobs/job-actions';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
-import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/lib/dates';
+import { toDateTimeLocalValue } from '@/lib/dates';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { mapJobDetailError, serializePayloadForClipboard } from '@/lib/job-detail';
 
@@ -31,11 +31,6 @@ export const Route = createFileRoute('/jobs/$jobId')({
 		queueLimit: z.coerce.number().int().min(1).max(100).optional(),
 	}).parse,
 });
-
-type JobDetailActionInput = {
-	readonly action: JobActionKey;
-	readonly nextRunAt?: string;
-};
 
 function JobDetailRoute() {
 	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
@@ -61,20 +56,8 @@ function JobDetailRoute() {
 	}
 
 	const mutation = useMutation({
-		mutationFn: async (input: JobDetailActionInput) => {
-			return runJobAction(
-				managementApi,
-				input.nextRunAt
-					? {
-							action: input.action,
-							jobId,
-							nextRunAt: input.nextRunAt,
-						}
-					: {
-							action: input.action,
-							jobId,
-						},
-			);
+		mutationFn: async (input: JobActionRequest) => {
+			return runJobAction(managementApi, { ...input, jobId });
 		},
 		onSuccess: async (action) => {
 			const success = getActionSuccessFeedback(action);
@@ -175,7 +158,7 @@ function JobDetailActions({
 	readonly busy: boolean;
 	readonly capabilities: CapabilitiesDto | undefined;
 	readonly job: JobDto;
-	readonly onRunAction: (input: JobDetailActionInput) => void;
+	readonly onRunAction: (input: JobActionRequest) => void;
 }) {
 	const cancelAvailability = getJobActionAvailability(job, capabilities, 'cancel');
 	const retryAvailability = getJobActionAvailability(job, capabilities, 'retry');
@@ -245,11 +228,8 @@ function JobDetailActions({
 				onNextRunAtChange={(nextRunAt) =>
 					setState((current) => (current ? { ...current, nextRunAt } : null))
 				}
-				onConfirm={() => {
-					if (!state) return;
-					const nextRunAt =
-						state.action === 'reschedule' ? fromDateTimeLocalValue(state.nextRunAt) : undefined;
-					onRunAction(nextRunAt ? { action: state.action, nextRunAt } : { action: state.action });
+				onConfirm={(input) => {
+					onRunAction(input);
 					setState(null);
 				}}
 			/>

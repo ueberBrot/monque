@@ -50,6 +50,7 @@ import {
 	getJobActionAvailability,
 	type JobActionFeedback,
 	type JobActionKey,
+	type RunJobActionsInput,
 } from '@/features/jobs/job-actions';
 import {
 	getJobsSearchIdentity,
@@ -63,12 +64,7 @@ import {
 import { JobsBulkActions } from '@/features/jobs/jobs-bulk-actions';
 import { JobsFilters } from '@/features/jobs/jobs-filters';
 import { useJobsActionMutation } from '@/features/jobs/use-jobs-action-mutation';
-import {
-	formatRelativeDate,
-	fromDateTimeLocalValue,
-	getOperatorTimeZoneLabel,
-	toDateTimeLocalValue,
-} from '@/lib/dates';
+import { formatRelativeDate, getOperatorTimeZoneLabel, toDateTimeLocalValue } from '@/lib/dates';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { getJobRunLabel } from '@/lib/job-detail';
 import { useNow } from '@/lib/use-now';
@@ -98,6 +94,7 @@ const SORTABLE_DATE_COLUMNS = [
 	readonly label: string;
 }[];
 type JobsColumnsOptions = {
+	readonly busy: boolean;
 	readonly now: Date;
 	readonly activeSortBy: JobListSortByDto;
 	readonly capabilities: CapabilitiesDto | undefined;
@@ -169,6 +166,7 @@ function JobsListRoute() {
 	});
 
 	const columnOptions: JobsColumnsOptions = {
+		busy: actionMutation.isPending,
 		now,
 		activeSortBy: search.sortBy,
 		capabilities: capabilitiesQuery.data,
@@ -243,29 +241,9 @@ function JobsListRoute() {
 		});
 	}
 
-	function handleDialogConfirm(): void {
-		if (!dialogState) {
-			return;
-		}
-
+	function handleDialogConfirm(input: RunJobActionsInput): void {
 		setFeedback(null);
-		const nextRunAt =
-			dialogState.action === 'reschedule'
-				? fromDateTimeLocalValue(dialogState.nextRunAt)
-				: undefined;
-
-		actionMutation.mutate(
-			nextRunAt
-				? {
-						action: dialogState.action,
-						jobIds: dialogState.jobIds,
-						nextRunAt,
-					}
-				: {
-						action: dialogState.action,
-						jobIds: dialogState.jobIds,
-					},
-		);
+		actionMutation.mutate(input);
 		setDialogState(null);
 	}
 
@@ -645,9 +623,10 @@ function JobColumnSortHeader({
 }
 
 function JobActionsCell({ row }: JobCellProps) {
-	const { capabilities, onDelete, onReschedule, onRunAction } = useJobsColumnsOptions();
+	const { busy, capabilities, onDelete, onReschedule, onRunAction } = useJobsColumnsOptions();
 	return (
 		<JobRowActions
+			busy={busy}
 			job={row.original}
 			capabilities={capabilities}
 			onDelete={onDelete}
@@ -688,12 +667,14 @@ function JobsSortButton({
 }
 
 function JobRowActions({
+	busy,
 	job,
 	capabilities,
 	onDelete,
 	onReschedule,
 	onRunAction,
 }: {
+	readonly busy: boolean;
 	readonly capabilities: CapabilitiesDto | undefined;
 	readonly job: JobDto;
 	readonly onDelete: (job: JobDto) => void;
@@ -712,14 +693,14 @@ function JobRowActions({
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				render={
-					<Button variant="ghost" size="icon" aria-label={`Actions for ${job.id}`}>
+					<Button variant="ghost" size="icon" disabled={busy} aria-label={`Actions for ${job.id}`}>
 						<MoreHorizontal className="size-4" />
 					</Button>
 				}
 			/>
 			<DropdownMenuContent className="w-44" align="end">
 				<DropdownMenuItem
-					disabled={cancelAvailability.disabled}
+					disabled={busy || cancelAvailability.disabled}
 					aria-label="Cancel job"
 					aria-describedby={cancelAvailability.reason ? `${job.id}-cancel-reason` : undefined}
 					onClick={() => onRunAction('cancel', job)}
@@ -734,7 +715,7 @@ function JobRowActions({
 					</div>
 				</DropdownMenuItem>
 				<DropdownMenuItem
-					disabled={retryAvailability.disabled}
+					disabled={busy || retryAvailability.disabled}
 					aria-label="Retry job"
 					aria-describedby={retryAvailability.reason ? `${job.id}-retry-reason` : undefined}
 					onClick={() => onRunAction('retry', job)}
@@ -749,7 +730,7 @@ function JobRowActions({
 					</div>
 				</DropdownMenuItem>
 				<DropdownMenuItem
-					disabled={rescheduleAvailability.disabled}
+					disabled={busy || rescheduleAvailability.disabled}
 					aria-label="Reschedule job"
 					aria-describedby={
 						rescheduleAvailability.reason ? `${job.id}-reschedule-reason` : undefined
@@ -767,7 +748,7 @@ function JobRowActions({
 				</DropdownMenuItem>
 				<DropdownMenuItem
 					className="text-destructive"
-					disabled={deleteAvailability.disabled}
+					disabled={busy || deleteAvailability.disabled}
 					aria-label="Delete job"
 					aria-describedby={deleteAvailability.reason ? `${job.id}-delete-reason` : undefined}
 					onClick={() => onDelete(job)}

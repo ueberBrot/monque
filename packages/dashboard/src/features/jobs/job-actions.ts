@@ -15,14 +15,11 @@ type JobActionFeedback = {
 	readonly tone: JobActionFeedbackTone;
 };
 type JobActionFeedbackTone = 'danger' | 'success' | 'warning';
-type RunJobActionInput = {
-	readonly action: JobActionKey;
-	readonly jobId: string;
-	readonly nextRunAt?: string;
-};
-type RunJobActionsInput = Omit<RunJobActionInput, 'jobId'> & {
-	readonly jobIds: readonly string[];
-};
+type JobActionRequest =
+	| { readonly action: Exclude<JobActionKey, 'reschedule'> }
+	| { readonly action: 'reschedule'; readonly nextRunAt: string };
+type RunJobActionInput = JobActionRequest & { readonly jobId: string };
+type RunJobActionsInput = JobActionRequest & { readonly jobIds: readonly string[] };
 type JobActionsResult = {
 	readonly action: JobActionKey;
 	readonly count: number;
@@ -241,7 +238,7 @@ async function runJobAction(
 			await managementApi.client.rescheduleJob({
 				params: { id: input.jobId },
 				body: {
-					nextRunAt: input.nextRunAt ?? new Date().toISOString(),
+					nextRunAt: input.nextRunAt,
 				},
 			});
 			return input.action;
@@ -269,6 +266,7 @@ export {
 	type JobActionFeedback,
 	type JobActionFeedbackTone,
 	type JobActionKey,
+	type JobActionRequest,
 	type RunJobActionInput,
 	type RunJobActionsInput,
 	runJobAction,

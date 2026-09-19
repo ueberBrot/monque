@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Field, FieldLabel } from '@/components/ui/field';
 import { fromDateTimeLocalValue } from '@/lib/dates';
 
-import type { JobActionKey } from './job-actions.js';
+import type { JobActionKey, RunJobActionsInput } from './job-actions.js';
 
 type JobActionDialogState = {
 	readonly action: JobActionKey;
@@ -23,7 +23,7 @@ function JobActionDialog({
 }: {
 	readonly busy: boolean;
 	readonly onClose: () => void;
-	readonly onConfirm: () => void;
+	readonly onConfirm: (input: RunJobActionsInput) => void;
 	readonly onNextRunAtChange: (nextRunAt: string) => void;
 	readonly state: JobActionDialogState | null;
 }) {
@@ -31,6 +31,17 @@ function JobActionDialog({
 	const requiresDate = state?.action === 'reschedule';
 	const invalidDate =
 		requiresDate && (!state.nextRunAt || fromDateTimeLocalValue(state.nextRunAt) === undefined);
+
+	function confirm(): void {
+		if (!state || busy) return;
+		if (state.action === 'reschedule') {
+			const nextRunAt = fromDateTimeLocalValue(state.nextRunAt);
+			if (!nextRunAt) return;
+			onConfirm({ action: 'reschedule', jobIds: state.jobIds, nextRunAt });
+		} else {
+			onConfirm({ action: state.action, jobIds: state.jobIds });
+		}
+	}
 
 	return (
 		<Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
@@ -64,7 +75,7 @@ function JobActionDialog({
 					<Button
 						type="button"
 						variant={state?.action === 'delete' ? 'destructive' : 'default'}
-						onClick={onConfirm}
+						onClick={confirm}
 						disabled={busy || invalidDate}
 					>
 						{getDialogConfirmLabel(state)}

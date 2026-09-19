@@ -57,7 +57,7 @@ function createLocalDbManagementServer(options?: {
 	let runtimePromise: Promise<LocalDbRuntime> | null = null;
 	let closing: Promise<void> | null = null;
 	async function getRuntime(): Promise<LocalDbRuntime> {
-		await closing;
+		if (closing) await closing;
 		runtimePromise ??= createLocalDbRuntime({ mongoUri, databaseName }).catch((error: unknown) => {
 			runtimePromise = null;
 			throw error;
