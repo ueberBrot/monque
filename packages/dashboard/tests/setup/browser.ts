@@ -1,4 +1,7 @@
-import { vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import { afterEach, vi } from 'vitest';
+
+afterEach(cleanup);
 
 // jsdom has no scrolling implementation; browser tests verify workspace geometry.
 if (typeof Element !== 'undefined') {
@@ -6,6 +9,7 @@ if (typeof Element !== 'undefined') {
 }
 
 if (typeof window !== 'undefined') {
+	Object.defineProperty(window, 'scrollTo', { configurable: true, value: vi.fn() });
 	Object.defineProperty(window, 'matchMedia', {
 		configurable: true,
 		value: vi.fn(
