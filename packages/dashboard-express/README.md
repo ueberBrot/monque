@@ -1,7 +1,9 @@
 # @monque/dashboard-express
 
-Serve the Monque dashboard from an Express application, with support for nested mount paths
-and direct links to jobs.
+Serve the Monque dashboard from your Express application, alongside its Management API.
+Includes the built dashboard, nested mount paths, and direct links to jobs.
+
+[View screenshots](../dashboard/README.md#screenshots).
 
 ## Installation
 
@@ -11,16 +13,24 @@ Requires Node.js 22.12 or newer and Express 5.2.1 or newer within version 5.
 bun add @monque/dashboard-express @monque/management-express @monque/management @monque/core express mongodb
 ```
 
-The dashboard's built assets are included. No frontend build is required.
+No frontend build, React installation, or separate dashboard server is required.
 
 ## Usage
 
-Mount both routers using your initialized `Monque` instance:
+Add the routers to your existing Express app and reuse its initialized `Monque` instance.
+For a new application, the following is a complete server entrypoint:
 
 ```typescript
+import { Monque } from '@monque/core';
 import { createDashboardExpressRouter } from '@monque/dashboard-express';
 import { createManagementExpressRouter } from '@monque/management-express';
 import express from 'express';
+import { MongoClient } from 'mongodb';
+
+const client = await MongoClient.connect('mongodb://localhost:27017');
+const monque = new Monque(client.db('my-app'));
+await monque.initialize();
+monque.start();
 
 const app = express();
 
@@ -36,38 +46,48 @@ app.use(
 app.listen(3000);
 ```
 
-Open `http://localhost:3000/ops/dashboard`. The Management API is available under
-`/ops/api/v1`, with OpenAPI JSON at `/ops/openapi.json`. Pass `openApi: false` to the
-Management router to disable the OpenAPI endpoint.
+Open **http://localhost:3000/ops/dashboard**. Register your application's workers before
+`monque.start()` and enqueue or schedule jobs through Monque. On application shutdown,
+call `await monque.stop()` before closing the MongoDB client.
+See the [core README](../core/README.md) for workers and scheduling.
 
-See [`@monque/core`](../core/README.md) for scheduler setup and
-[`@monque/management-express`](../management-express/README.md) for API options.
+## Configuration
 
-## Options
+Configure the dashboard in `createDashboardExpressRouter()` in your server code.
+There is no browser script or `window` object to configure manually.
 
-| Option              | Meaning                                                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `apiBaseUrl`        | Required Management adapter mount URL, such as `/ops`. Also accepts a sync or async `({ req, res }) => string` resolver. |
-| `pollingIntervalMs` | Optional positive integer in milliseconds. Omit to disable periodic polling.                                             |
+| Setting | Example | Meaning |
+| --- | --- | --- |
+| Dashboard mount | `app.use('/ops/dashboard', …)` | URL where the dashboard is served; its base path is inferred automatically. |
+| `apiBaseUrl` | `'/ops'` | Required Management router mount URL. The dashboard appends `/api/v1/...`. |
+| `pollingIntervalMs` | `15_000` | Refresh every 15 seconds while visible. Omit to disable periodic polling. |
 
-The client appends API paths such as `/api/v1/jobs` to `apiBaseUrl`. The dashboard's own
-base path is inferred from its Express mount. HTML is served with `Cache-Control: no-store`;
-hashed assets use a one-year immutable cache.
+**Do not include `/api/v1` in `apiBaseUrl`.** In the example, the jobs endpoint is
+`/ops/api/v1/jobs`. The API and dashboard may use different mount paths.
 
-## Optional authentication and permissions
+`apiBaseUrl` also accepts a sync or async `({ req, res }) => string` resolver for
+request-dependent URLs. Router options can come from your application's environment configuration;
+no dashboard-specific environment variables are required.
 
-The example allows unauthenticated access. To require authentication, mount your existing
-middleware **before both routers**:
+The Management API exposes OpenAPI JSON at `/ops/openapi.json` in this example.
+Pass `openApi: false` to `createManagementExpressRouter()` to disable it.
+
+## Authentication and permissions
+
+The example allows unauthenticated access. To require your application's existing login/session,
+mount its middleware **before both routers**:
 
 ```typescript
 app.use('/ops', requireOperator);
 ```
 
-This protects dashboard pages, assets, API requests, and OpenAPI. Your application supplies
-the login flow. Dashboard requests include browser credentials, so same-origin session cookies
-work without additional dashboard configuration.
+`requireOperator` is middleware supplied by your application. This mount protects the dashboard,
+assets, API, and OpenAPI document. Browser API requests include credentials, so same-origin
+session cookies work automatically. If you use separate mount prefixes, protect both.
 
-For action-specific permissions, pass the authenticated principal through the Management router's
-`context` callback and check it in `authorize`. The API enforces permissions and the dashboard
-disables unavailable actions. Set `readOnly: true` on the Management router to disable all
-mutations. See the [Management options](../management/README.md) for authorization details.
+Pass the authenticated principal through the Management router's `context` callback and check
+permissions in `authorize`. For a read-only dashboard, pass `readOnly: true` to the Management
+router. Permissions are enforced by the API and reflected in available dashboard actions.
+
+See [Management Express](../management-express/README.md) for API configuration and
+[Management](../management/README.md) for authorization options.

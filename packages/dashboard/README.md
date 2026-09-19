@@ -1,61 +1,71 @@
 # @monque/dashboard
 
-A web dashboard for inspecting and managing Monque jobs, queues, and scheduler health.
+A dashboard for Monque jobs, queues, and scheduler health. Inspect payloads and failures,
+filter and share job lists, and retry, cancel, reschedule, or delete jobs with API-enforced permissions.
+Supports light and dark themes and mobile layouts.
 
-- Filter jobs by queue, status, and date; sort and paginate results.
-- Inspect job payloads, errors, and scheduling details.
-- Retry, cancel, reschedule, or delete individual jobs and selections, subject to API permissions.
-- Share URLs that preserve filters, date ranges, sorting, page size, and cursor.
+## Installation
 
-Dates use the browser's local timezone. Shared date filters preserve the same instants across
-timezones. Recipients need access to the same Management API to open shared views.
-
-## Serve with Express
-
-Use [`@monque/dashboard-express`](../dashboard-express/README.md) to mount the dashboard
-alongside the Management API. The adapter includes this package and handles asset serving
-and runtime configuration. No frontend build or separate React installation is required in
-an application consuming the published packages.
-
-For local development, see [`apps/dashboard-dev`](../../apps/dashboard-dev/README.md).
-
-## Custom server integration
-
-Requires Node.js 22.12 or newer.
+For Express applications, install the dashboard and Management API adapters:
 
 ```bash
-bun add @monque/dashboard
+bun add @monque/dashboard-express @monque/management-express @monque/management @monque/core express mongodb
 ```
 
-The package provides built browser assets and server-side helpers; it has no React component API.
-To serve it from another framework:
+Requires Node.js 22.12 or newer and Express 5.2.1 or newer within version 5.
+The dashboard is included in the Express adapter. No frontend build or React installation is required.
 
-1. Serve the directory returned by `getDashboardAssetDirectory()` at your dashboard mount path.
-2. Read the HTML from `getDashboardHtmlEntrypointPath()` and resolve its asset URLs against that
-   mount path, including when serving nested routes.
-3. Populate the `monque-dashboard-runtime-config` script before the application loads:
+## Usage
 
-   ```javascript
-   window.__MONQUE_DASHBOARD_CONFIG__ = {
-     basePath: '/ops/dashboard',
-     apiBaseUrl: '/ops',
-     pollingIntervalMs: 15_000,
-   };
-   ```
+In your Express server, mount both routers using your initialized `Monque` instance:
 
-4. Return the configured HTML for dashboard routes, including direct links to job details.
-   Serve HTML without caching and hashed assets with immutable caching.
+```typescript
+import { createDashboardExpressRouter } from '@monque/dashboard-express';
+import { createManagementExpressRouter } from '@monque/management-express';
 
-| Option              | Meaning                                                               |
-| ------------------- | --------------------------------------------------------------------- |
-| `basePath`          | Dashboard mount path, such as `/ops/dashboard` or `/`.                |
-| `apiBaseUrl`        | Management API mount URL. The client appends `/api/v1/...`.           |
-| `pollingIntervalMs` | Optional positive integer; enables polling while the page is visible. |
+app.use('/ops', createManagementExpressRouter({ monque }));
+app.use(
+	'/ops/dashboard',
+	createDashboardExpressRouter({
+		apiBaseUrl: '/ops',
+		pollingIntervalMs: 15_000,
+	}),
+);
+```
 
-Use `parseDashboardRuntimeConfig()` to validate and normalize configuration, or import
-`DashboardRuntimeConfigSchema` and `DashboardRuntimeConfig` for schema and type access.
-`getDashboardAssetMetadata()` exposes the script identifiers and asset filenames;
-`getDashboardManifestPath()` locates the asset manifest.
+Open `/ops/dashboard` on your application's origin. `apiBaseUrl` is the Management router's
+mount path, **without `/api/v1`**. The dashboard's base path comes from its Express mount.
+Omit `pollingIntervalMs` to disable automatic polling.
 
-Mount the Management API separately and protect both surfaces with your application's
-authentication middleware. Browser requests include credentials for session cookies.
+All configuration is passed through the router options in your server code. The Express adapter
+handles browser configuration, assets, and direct links automatically.
+
+See the [Express README](../dashboard-express/README.md) for a complete server example,
+authentication, and configuration options.
+
+## Screenshots
+
+<table>
+  <tr>
+    <th>Queue Views</th>
+    <th>Jobs</th>
+    <th>Health</th>
+  </tr>
+  <tr>
+    <td><a href="../../assets/dashboard/queue-views-light.png"><img src="../../assets/dashboard/queue-views-light.png" width="300" alt="Queue Views in light mode with job counts and worker activity"></a></td>
+    <td><a href="../../assets/dashboard/jobs-dark.png"><img src="../../assets/dashboard/jobs-dark.png" width="300" alt="Jobs in dark mode with filters, statuses, timestamps, and actions"></a></td>
+    <td><a href="../../assets/dashboard/health-light.png"><img src="../../assets/dashboard/health-light.png" width="300" alt="Health in light mode with scheduler status and action permissions"></a></td>
+  </tr>
+  <tr>
+    <td><a href="../../assets/dashboard/queue-views-light.png">Light</a> · <a href="../../assets/dashboard/queue-views-dark.png">Dark</a></td>
+    <td><a href="../../assets/dashboard/jobs-light.png">Light</a> · <a href="../../assets/dashboard/jobs-dark.png">Dark</a></td>
+    <td><a href="../../assets/dashboard/health-light.png">Light</a> · <a href="../../assets/dashboard/health-dark.png">Dark</a></td>
+  </tr>
+</table>
+
+## Other integrations
+
+This package provides built browser assets and server-side helpers, rather than an embeddable
+React component. For another server framework, see the [custom server adapter reference](docs/custom-server.md).
+
+To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).
