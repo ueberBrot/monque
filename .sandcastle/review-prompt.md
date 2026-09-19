@@ -30,6 +30,8 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
    - Are new/changed behaviours covered by tests?
    - Are there unsafe casts, `any` types, or unchecked assumptions?
    - Does the change introduce injection vulnerabilities, credential leaks, or other security issues?
+   - If the branch touches dashboard UI, React components, CSS, design tokens, or browser-facing flows, use the `impeccable` skill and verify the UI in a browser at desktop and mobile sizes.
+   - For frontend changes, fix visible layout, contrast, overflow, spacing, and interaction defects while preserving the intended behavior.
 
 4. **Maintain balance**: Avoid over-simplification that could:
    - Reduce code clarity or maintainability

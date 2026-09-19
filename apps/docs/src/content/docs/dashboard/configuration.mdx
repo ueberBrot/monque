@@ -1,0 +1,93 @@
+---
+title: Dashboard configuration
+description: Configure dashboard URLs, refresh intervals, authentication, and deployment.
+---
+
+Pass options to `createDashboardExpressRouter()` in your server code:
+
+```typescript
+app.use(
+  '/ops/dashboard',
+  createDashboardExpressRouter({
+    apiBaseUrl: '/ops',
+    pollingIntervalMs: 15_000,
+  }),
+);
+```
+
+| Option | Required | Meaning |
+| --- | --- | --- |
+| `apiBaseUrl` | Yes | Management router mount URL, such as `/ops`. Do not include `/api/v1`. |
+| `pollingIntervalMs` | No | Positive integer in milliseconds. Omit to disable periodic refresh. |
+
+The dashboard base path is inferred from its Express mount. Keep the public dashboard path
+and the path Express receives consistent when configuring a reverse proxy.
+
+## Request-dependent API URLs
+
+`apiBaseUrl` also accepts a synchronous or asynchronous `({ req, res }) => string`
+resolver. Use it when the public API URL depends on the request. Resolve the URL from
+trusted application configuration or authenticated request context.
+
+The URL must be reachable by the browser, not just by the server hosting the dashboard.
+Never include credentials or secrets in it.
+
+## Automatic refresh
+
+With `pollingIntervalMs: 15_000`:
+
+| Data | Base interval |
+| --- | --- |
+| Job lists and job details | 15 seconds |
+| Queue statistics and scheduler health | 45 seconds |
+| Permissions | 90 seconds |
+
+Each interval adds up to 10% random delay to spread requests across clients. Requests back
+off after errors, and periodic polling pauses while the tab is hidden. Job actions refresh
+the affected data when they finish. Responses with status 401 or 403 stop automatic polling
+until access is restored and a request succeeds.
+
+Omitting `pollingIntervalMs` disables periodic polling. Pages still fetch data when opened,
+and the Refresh button and job actions can request updated data.
+
+Relative timestamps such as "6 minutes ago" update using the browser clock, without API
+or MongoDB requests. Dates are displayed in the browser's timezone, shown
+beside job lists; API timestamps use ISO 8601 UTC strings.
+
+The dashboard's polling is separate from Monque's scheduler. The scheduler uses
+[Change Streams and polling](/monque/advanced/change-streams/) to discover jobs. Changing
+the dashboard refresh interval does not change when workers process jobs.
+
+## Statistics freshness
+
+Core caches queue counts for `statsCacheTtlMs`, which defaults to 5 seconds. Dashboard
+polling reads these counts through the Management API. Worker activity reflects the local
+scheduler instance at the time of the request.
+
+Use [statistics caching options](/monque/core-concepts/management/#stats-caching) to balance
+query load and freshness. Lowering the dashboard polling interval below the cache TTL may
+return the same counts several times.
+
+## Assets and compression
+
+The Express adapter serves the built dashboard and sets cache headers for fingerprinted
+assets. Enable gzip or Brotli at your reverse proxy or with Express compression middleware
+mounted before the dashboard router. Keep HTML and runtime configuration uncached so URL
+and refresh changes take effect on reload.
+
+For a custom server adapter, `@monque/dashboard` exports `getDashboardAssetMetadata()` and
+runtime configuration types. See the [Dashboard API reference](/monque/api-dashboard/readme/).
+Express applications only need the router options above.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| API requests return 404 | `apiBaseUrl` must point to the Management mount, without `/api/v1`. |
+| Direct job links fail after reload | Serve dashboard paths through the dashboard router and preserve the mount path at the proxy. |
+| API requests return 401 or 403 | Check session middleware, cookies, `readOnly`, and `authorize`. |
+| Jobs remain pending | Register a worker for the exact job name and call `monque.start()` after initialization. Check the job's scheduled time. |
+| Scheduler is unavailable but jobs are visible | Health describes the `Monque` instance passed to the API. An initialized instance that has not been started can read jobs but reports unhealthy. |
+| Worker activity is zero despite jobs processing elsewhere | Worker registration and activity describe the local instance, not every process using the collection. |
+| A recent status change is not visible yet | Wait for the next refresh or use Refresh. Statistics also have a cache TTL. |
+| Relative times appear in the future | Compare browser and server clocks. A future scheduled run is expected; future creation or update times can indicate clock skew. |

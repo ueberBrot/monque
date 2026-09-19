@@ -42,6 +42,28 @@ describe('Management APIs: Cursor Pagination', () => {
 	});
 
 	describe('getJobsWithCursor', () => {
+		test('summary pages omit payloads and share full listing cursors', async () => {
+			const collectionName = uniqueCollectionName('pagination_summary');
+			monque = new Monque(db, { collectionName });
+			monqueInstances.push(monque);
+			await monque.initialize();
+			await createJobs(db, collectionName, 5, queueName);
+			const full = await monque.getJobsWithCursor({ limit: 2 });
+			const summary = await monque.getJobSummariesWithCursor({ limit: 2 });
+			expect(summary).toEqual({ ...full, jobs: full.jobs.map(({ data: _data, ...job }) => job) });
+			expect(summary.jobs.every((job) => !('data' in job))).toBe(true);
+			if (!summary.cursor) throw new Error('Expected cursor');
+			const next = await monque.getJobsWithCursor({ limit: 2, cursor: summary.cursor });
+			expect(next.jobs[0]?.data).toEqual({ index: 2 });
+			const indexes = await db.collection(collectionName).indexes();
+			expect(indexes.map((index) => index.key)).toEqual(
+				expect.arrayContaining([
+					{ name: 1, createdAt: -1, _id: -1 },
+					{ status: 1, createdAt: -1, _id: -1 },
+				]),
+			);
+		});
+
 		test('returns first page with cursor and hasNextPage', async () => {
 			const collectionName = uniqueCollectionName('pagination_first');
 			monque = new Monque(db, { collectionName });

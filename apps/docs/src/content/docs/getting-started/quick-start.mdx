@@ -1,259 +1,119 @@
 ---
 title: Quick Start
-description: Build your first job queue with Monque in under 5 minutes.
+description: Register a worker, enqueue a job, and start processing with Monque.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
-This guide will walk you through creating a working job queue in under 5 minutes.
-
-## What We'll Build
-
-A simple email notification system that:
-- Accepts email jobs via `enqueue()`
-- Processes them asynchronously with a worker
-- Handles failures with automatic retries
-- Provides observability via events
-
-## Set Up MongoDB Connection
+After [installing Monque and MongoDB](/monque/getting-started/installation/), create a server
+entrypoint with a worker and an initial job:
 
 ```typescript
-import { MongoClient } from 'mongodb';
 import { Monque } from '@monque/core';
+import { MongoClient } from 'mongodb';
 
-// Connect to MongoDB
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
-const db = client.db('myapp');
+const client = await MongoClient.connect('mongodb://localhost:27017');
+const monque = new Monque(client.db('my-app'));
 
-// Create Monque instance
-const monque = new Monque(db);
-await monque.initialize();
-```
-
-<Aside type="note">
-  `initialize()` creates necessary indexes and recovers any stale jobs from previous crashes.
-</Aside>
-
-## Define Your Job Type
-
-TypeScript generics ensure type safety for your job payloads:
-
-```typescript
-interface EmailJobData {
-  to: string;
-  subject: string;
-  body: string;
-  priority?: 'high' | 'normal' | 'low';
-}
-```
-
-## Register a Worker
-
-Workers process jobs of a specific type:
-
-```typescript
-monque.register<EmailJobData>('send-email', async (job) => {
-  console.log(`📧 Sending email to ${job.data.to}`);
-  
-  // Your email sending logic here
-  await sendEmail(job.data.to, job.data.subject, job.data.body);
-  
-  console.log(`✅ Email sent successfully`);
-});
-```
-
-<Aside type="tip">
-  Workers can be `async` functions. If they throw an error or return a rejected promise, the job will be retried automatically.
-</Aside>
-
-<Aside type="caution">
-  **Idempotency Required:** Monque provides at-least-once delivery. Jobs may run more than once due to retries or [stale recovery](/monque/advanced/heartbeat/). Design your workers to be idempotent—safe to run multiple times with the same input. See [Idempotent Operations](/monque/core-concepts/jobs/#idempotent-operations) and the [Production Checklist](/monque/advanced/production-checklist/).
-</Aside>
-
-## Subscribe to Events
-
-Monitor job lifecycle for logging and metrics:
-
-```typescript
-monque.on('job:start', (job) => {
-  console.log(`🚀 Starting job: ${job.name} (${job._id})`);
+monque.register<{ message: string }>('print-message', async (job) => {
+  console.log(job.data.message);
 });
 
 monque.on('job:complete', ({ job, duration }) => {
-  console.log(`✅ Completed: ${job.name} in ${duration}ms`);
+  console.log(`${job.name} completed in ${duration}ms`);
 });
-
 monque.on('job:fail', ({ job, error, willRetry }) => {
-  console.log(`❌ Failed: ${job.name} - ${error.message}`);
-  if (willRetry) {
-    console.log(`🔄 Will retry (attempt ${job.failCount + 1})`);
-  }
+  console.error(job._id, error.message, { willRetry });
 });
-```
+monque.on('job:error', ({ error }) => {
+  console.error('Scheduler error:', error.message);
+});
 
-## Start the Scheduler
-
-```typescript
+await monque.initialize();
 monque.start();
-console.log('🎯 Monque scheduler started');
+
+await monque.now('print-message', { message: 'Hello from Monque' });
+
+async function shutdown() {
+  await monque.stop();
+  await client.close();
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 ```
 
-## Enqueue Jobs
+`initialize()` creates indexes and prepares the scheduler. `start()` begins processing.
+The handler receives the persisted job, including its MongoDB `_id` and `data` payload.
+Replace `console.log` with the work your application needs to perform.
 
-Now you can enqueue jobs from anywhere in your application:
+## Worker failures
+
+If a handler throws or returns a rejected promise, Monque applies its retry policy.
+Successful one-time jobs become `completed`; jobs that exhaust retries become `failed`.
+See [Retry & Backoff](/monque/core-concepts/retry/) to configure delays and limits.
+
+Jobs may run more than once after retries or crash recovery. Make workers idempotent:
+repeating a job should not repeat an unwanted side effect, such as charging an order twice.
+See [Idempotent operations](/monque/core-concepts/jobs/#idempotent-operations).
+
+## Delay a job
 
 ```typescript
-// Simple immediate job
-await monque.now('send-email', {
-  to: 'user@example.com',
-  subject: 'Welcome!',
-  body: 'Thanks for signing up.'
-});
-
-// With options
-await monque.enqueue('send-email', {
-  to: 'vip@example.com',
-  subject: 'Exclusive Offer',
-  body: 'Special deal just for you!',
-  priority: 'high'
-}, {
-  // Prevent duplicates
-  uniqueKey: 'welcome-email-vip@example.com',
-  // Schedule for later
-  runAt: new Date(Date.now() + 60000) // 1 minute from now
-});
+await monque.enqueue(
+  'print-message',
+  { message: 'One minute later' },
+  {
+    runAt: new Date(Date.now() + 60_000),
+    uniqueKey: 'delayed-message',
+  },
+);
 ```
+
+`uniqueKey` prevents another pending or processing job with the same name and key from
+being created. It does not prevent a later job after the earlier one completes or fails.
+
+## Schedule recurring work
+
+```typescript
+await monque.schedule(
+  '0 * * * *',
+  'print-message',
+  { message: 'Hourly message' },
+  { uniqueKey: 'hourly-message' },
+);
+```
+
+The same registered worker handles recurring jobs. After a successful run, the job returns
+to pending with the next cron time. See [Scheduling](/monque/core-concepts/scheduling/) for
+cron expressions, timezone behavior, and cancellation.
+
+## Inspect jobs
+
+```typescript
+const page = await monque.getJobSummariesWithCursor({
+  filter: { name: 'print-message' },
+  limit: 20,
+});
+console.log(page.jobs);
+```
+
+Use [Job Management](/monque/core-concepts/management/) for queries and actions in server
+code, or add the [dashboard](/monque/dashboard/express/) to your Express application.
 
 ## Handle Graceful Shutdown
 
-Ensure in-progress jobs complete before your application exits:
+Call `stop()` before closing your MongoDB client. It waits for running handlers up to
+`shutdownTimeout`. If that limit is reached, jobs remain available for stale recovery.
 
-```typescript
-process.on('SIGTERM', async () => {
-  console.log('🛑 Shutting down...');
-  await monque.stop(); // Waits for in-progress jobs
-  await client.close();
-  console.log('👋 Goodbye!');
-  process.exit(0);
-});
-```
-
-If `stop()` hits the configured `shutdownTimeout`, in-progress jobs are left in `processing` so stale job recovery can safely re-claim them later.
-
-## Complete Example
-
-Here's the full working example:
-
-```typescript
-import { MongoClient } from 'mongodb';
-import { Monque } from '@monque/core';
-
-// Types
-interface EmailJobData {
-  to: string;
-  subject: string;
-  body: string;
-}
-
-async function main() {
-  // Setup
-  const client = new MongoClient('mongodb://localhost:27017');
-  await client.connect();
-  const db = client.db('myapp');
-  
-  const monque = new Monque(db);
-  await monque.initialize();
-
-  // Register worker
-  monque.register<EmailJobData>('send-email', async (job) => {
-    console.log(`📧 Sending to ${job.data.to}: ${job.data.subject}`);
-    // Simulate sending email
-    await new Promise(resolve => setTimeout(resolve, 100));
-  });
-
-  // Events
-  monque.on('job:complete', ({ job, duration }) => {
-    console.log(`✅ ${job.name} completed in ${duration}ms`);
-  });
-
-  // Start processing
-  monque.start();
-
-  // Enqueue some jobs
-  await monque.enqueue('send-email', {
-    to: 'alice@example.com',
-    subject: 'Hello Alice',
-    body: 'Welcome to our platform!'
-  });
-
-  await monque.enqueue('send-email', {
-    to: 'bob@example.com',
-    subject: 'Hello Bob',
-    body: 'Welcome to our platform!'
-  });
-
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    await monque.stop();
-    await client.close();
-    process.exit(0);
-  });
-
-  console.log('🎯 Scheduler running. Press Ctrl+C to stop.');
-}
-
-main().catch(console.error);
-```
-
-## Recurring Jobs
-
-For scheduled tasks, use cron expressions:
-
-```typescript
-// Run every hour at minute 0
-await monque.schedule('0 * * * *', 'hourly-cleanup', {
-  type: 'temp-files',
-  maxAge: 3600
-});
-
-// Daily at midnight
-await monque.schedule('0 0 * * *', 'daily-report', {
-  reportType: 'sales'
-});
-
-// Every 5 minutes
-await monque.schedule('*/5 * * * *', 'health-check', {
-  endpoints: ['api', 'database', 'cache']
-});
-```
-
-## Configuration Options
-
-Customize Monque behavior with options:
-
-For the full list of options and defaults, see the [MonqueOptions API Reference](/monque/api/interfaces/monqueoptions/).
+Set scheduler options in your application's code:
 
 ```typescript
 const monque = new Monque(db, {
-  collectionName: 'jobs',
-  pollInterval: 1000,
-  safetyPollInterval: 30000,   // Safety poll interval when Change Streams active
-  maxRetries: 10,
-  baseRetryInterval: 1000,
-  shutdownTimeout: 30000,
   workerConcurrency: 5,
   instanceConcurrency: 20,
-  lockTimeout: 1800000,
-  heartbeatInterval: 30000,
-  maxPayloadSize: 100_000,   // Reject payloads over 100 KB
-  statsCacheTtlMs: 5000,     // Cache getQueueStats() results for 5 s
+  maxRetries: 10,
+  shutdownTimeout: 30_000,
 });
 ```
 
-## Next Steps
-
-- [Core Concepts: Jobs](/monque/core-concepts/jobs/) - Understand the job lifecycle
-- [Core Concepts: Workers](/monque/core-concepts/workers/) - Learn about worker configuration
-- [Scheduling](/monque/core-concepts/scheduling/) - Deep dive into cron scheduling
-- [Retry & Backoff](/monque/core-concepts/retry/) - Configure retry behavior
+See [`MonqueOptions`](/monque/api/interfaces/monqueoptions/) for all options and defaults,
+and the [Production Checklist](/monque/advanced/production-checklist/) before deployment.

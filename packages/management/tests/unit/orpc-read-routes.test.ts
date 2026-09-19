@@ -17,6 +17,28 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management read routes', () => {
+	test('summary listings omit payloads without invoking payload serializers', async () => {
+		const job = createManagementJob();
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async () => ({
+					jobs: [job],
+					cursor: null,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				}),
+			}),
+			serializePayload: () => {
+				throw new Error('Summary reads must not serialize payloads');
+			},
+		});
+		const response = await handleManagementGet(surface, '/api/v1/jobs?view=summary');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			jobs: [{ id: job._id.toHexString(), payload: null }],
+		});
+	});
+
 	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;
@@ -615,4 +637,24 @@ describe('oRPC Management read routes', () => {
 		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
 		expect(statsCalls).toEqual([]);
 	});
+});
+
+test('omits null optional fields from persisted jobs at the DTO boundary', async () => {
+	const job = createManagementJob();
+	// BSON stores explicit undefined properties as null by default.
+	Object.defineProperties(job, {
+		heartbeatInterval: { value: null },
+		repeatInterval: { value: null },
+		uniqueKey: { value: null },
+	});
+	const surface = createManagementSurface({
+		monque: createManagementMonque({ getJob: async () => job }),
+	});
+	const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(body).not.toHaveProperty('heartbeatInterval');
+	expect(body).not.toHaveProperty('repeatInterval');
+	expect(body).not.toHaveProperty('uniqueKey');
+	expect(body).toMatchObject({ id: job._id.toHexString(), name: job.name });
 });

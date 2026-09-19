@@ -52,6 +52,32 @@ describe('Management APIs: Queue View Summaries', () => {
 	}
 
 	describe('getQueueViewSummaries', () => {
+		test('cached counts remain isolated, workers stay fresh, and mutations invalidate snapshots', async () => {
+			const monque = new Monque(db, {
+				collectionName: uniqueCollectionName('cached_views'),
+				statsCacheTtlMs: 60_000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+			const job = await monque.enqueue('email', {});
+			const views = await monque.getQueueViewSummaries();
+			const first = views[0];
+			if (!first) throw new Error('Expected queue');
+			expect(Object.isFrozen(first.stats)).toBe(true);
+			monque.register('new-worker', async () => undefined);
+			expect(await monque.getQueueViewSummaries()).toMatchObject([
+				{ name: 'email', stats: { pending: 1 } },
+				{ name: 'new-worker', hasRegisteredWorker: true },
+			]);
+			await monque.getQueueStats();
+			await monque.cancelJob(job._id.toHexString());
+			expect(await monque.getQueueViewSummaries()).toMatchObject([
+				{ name: 'email', stats: { pending: 0, cancelled: 1 } },
+				{ name: 'new-worker' },
+			]);
+			expect(await monque.getQueueStats()).toMatchObject({ pending: 0, cancelled: 1 });
+		});
+
 		test('returns an empty list when no persisted jobs or workers exist', async () => {
 			const monque = await createInitializedMonque('queue_view_empty');
 

@@ -59,6 +59,9 @@ export interface ManagementMonque {
 	isHealthy: Pick<Monque, 'isHealthy'>['isHealthy'];
 	getQueueViewSummaries: Pick<Monque, 'getQueueViewSummaries'>['getQueueViewSummaries'];
 	getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
+	getJobSummariesWithCursor?(
+		options?: CursorOptions,
+	): Promise<Omit<CursorPage, 'jobs'> & { jobs: Omit<PersistedJob, 'data'>[] }>;
 	getJob(id: string): Promise<PersistedJob | null>;
 	getQueueStats(filter?: { name?: string }): Promise<QueueStats>;
 	cancelJob?(id: string): Promise<PersistedJob | null>;
@@ -73,7 +76,7 @@ export interface ManagementMonque {
 /**
  * Input passed to the optional authorization callback.
  *
- * Single-job mutations include `job`; bulk mutations include `selector`. Read checks omit
+ * Single-job mutations include `job`; bulk mutations include `selector` or selected `ids`. Read checks omit
  * both and should decide from `action` and `context`.
  *
  * @template TContext - Application context supplied through the OpenAPI handler call.
@@ -83,6 +86,7 @@ export interface ManagementAuthorizationInput<TContext = unknown> {
 	context: TContext;
 	job?: PersistedJob | undefined;
 	selector?: JobSelector | undefined;
+	ids?: readonly string[] | undefined;
 }
 
 /**
@@ -130,6 +134,8 @@ export interface ManagementOptions<TContext = unknown> {
 	readOnly?: boolean;
 	/** Optional authorization hook invoked before reads and mutations. */
 	authorize?: ManagementAuthorize<TContext>;
+	/** Opt in only when authorization checks can run independently. Defaults to sequential. */
+	parallelCapabilityChecks?: boolean;
 	/** Default payload serializer for returned jobs. */
 	serializePayload?: ManagementPayloadSerializer<TContext>;
 	/** Payload serializers keyed by job name, taking precedence over `serializePayload`. */

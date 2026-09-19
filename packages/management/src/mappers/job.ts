@@ -17,17 +17,26 @@ export async function toJobCursorPageDto<TContext>(
 	};
 }
 
+export function toJobSummaryPageDto(
+	page: Omit<CursorPage, 'jobs'> & { jobs: Omit<PersistedJob, 'data'>[] },
+): JobCursorPageDto {
+	return { ...page, jobs: page.jobs.map(toJobSummaryDto) };
+}
+
 export async function toJobDto<TContext>(
 	options: ManagementOptions<TContext>,
 	job: PersistedJob,
 	context: TContext,
 ): Promise<JobDto> {
-	const payload = await serializeJobPayload(options, job, context);
+	return { ...toJobSummaryDto(job), payload: await serializeJobPayload(options, job, context) };
+}
+
+export function toJobSummaryDto(job: Omit<PersistedJob, 'data'>): JobDto {
 	const dto: JobDto = {
 		id: job._id.toHexString(),
 		name: job.name,
 		status: job.status,
-		payload,
+		payload: null,
 		nextRunAt: job.nextRunAt.toISOString(),
 		lockedAt: toIsoStringOrNull(job.lockedAt),
 		claimedBy: job.claimedBy ?? null,
@@ -38,15 +47,15 @@ export async function toJobDto<TContext>(
 		updatedAt: job.updatedAt.toISOString(),
 	};
 
-	if (job.heartbeatInterval !== undefined) {
+	if (job.heartbeatInterval != null) {
 		dto.heartbeatInterval = job.heartbeatInterval;
 	}
 
-	if (job.repeatInterval !== undefined) {
+	if (job.repeatInterval != null) {
 		dto.repeatInterval = job.repeatInterval;
 	}
 
-	if (job.uniqueKey !== undefined) {
+	if (job.uniqueKey != null) {
 		dto.uniqueKey = job.uniqueKey;
 	}
 

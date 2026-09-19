@@ -1,0 +1,86 @@
+{
+	"schemaVersion": 2,
+	"generatedAt": "2026-06-01T00:00:00.000Z",
+	"title": "Design System: Monque Dashboard",
+	"extensions": {
+		"colorMeta": {
+			"primary": {
+				"role": "primary",
+				"displayName": "Monque Operator Green",
+				"canonical": "#11e167",
+				"tonalRamp": ["#10291b", "#0f7a3d", "#11e167", "#b8f5d2"],
+				"usage": "Active navigation, selected states, safe primary actions, and focus rings."
+			},
+			"secondary": {
+				"role": "secondary",
+				"displayName": "Scheduler Orange",
+				"canonical": "#fc991b",
+				"tonalRamp": ["#31220d", "#fc991b", "#ffd19a"],
+				"usage": "Pending, scheduled, warning, and time-sensitive attention."
+			},
+			"neutral": {
+				"role": "neutral",
+				"displayName": "Graphite Console",
+				"canonical": "#090c0d",
+				"tonalRamp": ["#090c0d", "#0d1213", "#111719", "#161d20", "#1d2629", "#2a3639", "#3a4a4e"],
+				"usage": "Dark-first app background, panels, tables, inputs, and dividers."
+			},
+			"danger": {
+				"role": "semantic",
+				"displayName": "Conflict Red",
+				"canonical": "#f05252",
+				"tonalRamp": ["#321415", "#f05252"],
+				"usage": "Failed Jobs, destructive actions, hard errors, and conflict outcomes."
+			}
+		},
+		"typographyMeta": {
+			"display": {
+				"displayName": "Route Display",
+				"purpose": "Route titles only. Fixed size, never viewport-fluid. Uses Geist, not Inter."
+			},
+			"body": {
+				"displayName": "Operator Body",
+				"purpose": "Dense product UI copy, table cells, filters, and error text. Uses Geist, not Inter."
+			},
+			"mono": {
+				"displayName": "Operational Mono",
+				"purpose": "Job IDs, JSON payloads, cursors, ISO dates, and config values. Uses Geist Mono."
+			}
+		},
+		"implementation": {
+			"styling": "Tailwind CSS with CSS variables mapped from DESIGN.md tokens.",
+			"primitives": "Use shadcn ecosystem components for reusable UI primitives. Do not hand-roll covered primitives.",
+			"font": "Geist Variable and Geist Mono Variable via @fontsource-variable/geist and @fontsource-variable/geist-mono, bundled locally. Inter is explicitly not the Dashboard font."
+		},
+		"elevation": {
+			"popover": "0 8px 12px rgba(0, 0, 0, 0.36)",
+			"dialog": "0 18px 40px rgba(0, 0, 0, 0.5)",
+			"focusRing": "0 0 0 2px #090c0d, 0 0 0 4px #11e167"
+		},
+		"motion": {
+			"durationFast": "150ms",
+			"durationBase": "200ms",
+			"durationSlow": "250ms",
+			"easeOut": "cubic-bezier(0.16, 1, 0.3, 1)",
+			"reducedMotion": "Disable non-essential transitions and preserve instant state changes."
+		},
+		"breakpoints": {
+			"mobile": "0px",
+			"tablet": "768px",
+			"desktop": "1024px",
+			"wide": "1280px"
+		},
+		"componentGuidance": {
+			"shell": "Persistent desktop sidebar, mobile drawer, Queue Views first, Jobs second, Health third.",
+			"tables": "Manual cursor pagination, server-backed filters and sorting, local row selection, visible refresh and polling state.",
+			"actions": "Single delete and all bulk actions require confirmation. Destructive actions are not available through hotkeys or command palette.",
+			"states": "Represent loading, empty, unauthorized, forbidden, conflict, not found, read-only, disabled, and capability-limited states explicitly."
+		},
+		"references": {
+			"product": "PRODUCT.md",
+			"prd": "https://github.com/ueberBrot/monque/issues/455",
+			"implementationIssues": "https://github.com/ueberBrot/monque/issues/459 through https://github.com/ueberBrot/monque/issues/468",
+			"architecture": "docs/adr/0006-dashboard-asset-package-and-serving-adapters.md"
+		}
+	}
+}

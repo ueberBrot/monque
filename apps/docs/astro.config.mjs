@@ -81,8 +81,16 @@ export default defineConfig({
 				{
 					label: 'Management',
 					items: [
-						{ label: 'Management Surface', slug: 'management/surface' },
+						{ label: 'Management API', slug: 'management/surface' },
 						{ label: 'Express Adapter', slug: 'management/express' },
+					],
+				},
+				{
+					label: 'Dashboard',
+					items: [
+						{ label: 'Express Setup', slug: 'dashboard/express' },
+						{ label: 'Configuration', slug: 'dashboard/configuration' },
+						{ label: 'Screenshots', slug: 'dashboard/screenshots' },
 					],
 				},
 				{
@@ -124,6 +132,16 @@ export default defineConfig({
 							label: 'Management Express API',
 							collapsed: true,
 							items: [{ autogenerate: { directory: 'api-management-express', collapsed: true } }],
+						},
+						{
+							label: 'Dashboard API',
+							collapsed: true,
+							items: [{ autogenerate: { directory: 'api-dashboard', collapsed: true } }],
+						},
+						{
+							label: 'Dashboard Express API',
+							collapsed: true,
+							items: [{ autogenerate: { directory: 'api-dashboard-express', collapsed: true } }],
 						},
 					],
 				},
@@ -206,6 +224,44 @@ export default defineConfig({
 					output: 'api-management-express',
 					sidebar: {
 						label: 'Management Express API',
+						collapsed: true,
+					},
+					typeDoc: {
+						excludePrivate: true,
+						excludeProtected: true,
+						excludeInternal: true,
+						readme: 'none',
+						parametersFormat: 'table',
+						enumMembersFormat: 'table',
+						useCodeBlocks: true,
+						gitRevision: 'main',
+					},
+				}),
+				starlightTypeDoc({
+					entryPoints: ['../../packages/dashboard/src/index.ts'],
+					tsconfig: '../../packages/dashboard/tsconfig.json',
+					output: 'api-dashboard',
+					sidebar: {
+						label: 'Dashboard API',
+						collapsed: true,
+					},
+					typeDoc: {
+						excludePrivate: true,
+						excludeProtected: true,
+						excludeInternal: true,
+						readme: 'none',
+						parametersFormat: 'table',
+						enumMembersFormat: 'table',
+						useCodeBlocks: true,
+						gitRevision: 'main',
+					},
+				}),
+				starlightTypeDoc({
+					entryPoints: ['../../packages/dashboard-express/src/index.ts'],
+					tsconfig: '../../packages/dashboard-express/tsconfig.json',
+					output: 'api-dashboard-express',
+					sidebar: {
+						label: 'Dashboard Express API',
 						collapsed: true,
 					},
 					typeDoc: {

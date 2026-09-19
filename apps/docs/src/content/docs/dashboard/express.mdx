@@ -1,0 +1,143 @@
+---
+title: Set up the dashboard
+description: Add the Monque dashboard and Management API to your Express application.
+---
+
+The Monque dashboard shows job counts, worker activity, job details, and scheduler health.
+You can filter and share job lists, inspect payloads and failures, and retry, cancel,
+reschedule, or delete jobs.
+
+`@monque/dashboard-express` includes the built dashboard. You do not need React, a frontend
+build, or a separate dashboard server in your application.
+
+See [Dashboard screenshots](/monque/dashboard/screenshots/) for Queue Views, Jobs, and Health.
+
+## Install
+
+Requires Node.js 22.12 or newer, Express 5.2.1 or newer within version 5, and a
+[compatible MongoDB deployment](/monque/getting-started/installation/).
+
+```bash
+bun add @monque/dashboard-express @monque/management-express @monque/management @monque/core express mongodb
+```
+
+## Add to an existing application
+
+Pass your initialized `Monque` instance to the Management router, then mount the dashboard:
+
+```typescript
+import { createDashboardExpressRouter } from '@monque/dashboard-express';
+import { createManagementExpressRouter } from '@monque/management-express';
+
+app.use('/ops', createManagementExpressRouter({ monque }));
+app.use(
+  '/ops/dashboard',
+  createDashboardExpressRouter({
+    apiBaseUrl: '/ops',
+    pollingIntervalMs: 15_000,
+  }),
+);
+```
+
+Open `/ops/dashboard` on your application's origin. The example allows unauthenticated
+access. Add your application's authentication middleware as described below before
+exposing it to other users.
+
+| URL | Purpose |
+| --- | --- |
+| `/ops/dashboard` | Dashboard |
+| `/ops/api/v1/jobs` | Job list endpoint |
+| `/ops/openapi.json` | Management OpenAPI document |
+
+`apiBaseUrl` is the Management router's mount URL, without `/api/v1`. The dashboard's own
+base path comes from its Express mount. Configure these through router options in your
+server code. No dashboard-specific environment variables or browser scripts are required.
+
+## Start a complete instance
+
+This server registers a worker, schedules a recurring job, and serves the dashboard:
+
+```typescript
+import { Monque } from '@monque/core';
+import { createDashboardExpressRouter } from '@monque/dashboard-express';
+import { createManagementExpressRouter } from '@monque/management-express';
+import express from 'express';
+import { MongoClient } from 'mongodb';
+
+const client = await MongoClient.connect('mongodb://localhost:27017');
+const monque = new Monque(client.db('my-app'));
+
+monque.register<{ message: string }>('print-message', async (job) => {
+  console.log(job.data.message);
+});
+
+await monque.initialize();
+monque.start();
+
+await monque.now('print-message', { message: 'Hello from Monque' });
+await monque.schedule(
+  '* * * * *',
+  'print-message',
+  { message: 'A recurring job ran' },
+  { uniqueKey: 'minute-message' },
+);
+
+const app = express();
+app.use('/ops', createManagementExpressRouter({ monque }));
+app.use(
+  '/ops/dashboard',
+  createDashboardExpressRouter({ apiBaseUrl: '/ops', pollingIntervalMs: 15_000 }),
+);
+
+const server = app.listen(3000);
+
+async function shutdown() {
+  server.close();
+  await monque.stop();
+  await client.close();
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
+```
+
+Open `http://localhost:3000/ops/dashboard`. Replace the example worker with your application's
+job handlers. Jobs remain in MongoDB between server restarts; configure
+[job retention](/monque/core-concepts/jobs/#job-retention) when you want automatic cleanup.
+
+## Authentication
+
+Use your application's login or session middleware before both routers. For the mount paths
+above, protect the shared `/ops` prefix:
+
+```typescript
+app.use('/ops', requireOperator);
+app.use('/ops', createManagementExpressRouter({ monque }));
+app.use('/ops/dashboard', createDashboardExpressRouter({ apiBaseUrl: '/ops' }));
+```
+
+`requireOperator` is middleware provided by your application that rejects unauthenticated
+requests. This placement protects the dashboard, its assets, the Management API, and the
+OpenAPI document. Protect both prefixes if you mount the API and dashboard separately.
+
+Browser API requests include credentials, so same-origin session cookies work automatically.
+For APIs on another origin, configure credentialed CORS and cookies in your application.
+The dashboard does not provide a login page or issue sessions.
+
+## Permissions
+
+For read-only access:
+
+```typescript
+app.use('/ops', createManagementExpressRouter({ monque, readOnly: true }));
+```
+
+For role-based permissions, pass the authenticated principal through `context` and check
+it in `authorize`. See [Management authorization](/monque/management/surface/#authorization)
+for the callback inputs and an example. Permissions are enforced by the API and reflected
+in dashboard actions. Filtering a dashboard view does not restrict API access to other jobs.
+
+## Configuration and deployment
+
+See [Dashboard configuration](/monque/dashboard/configuration/) for refresh intervals,
+reverse proxies, scheduler health, and asset caching.

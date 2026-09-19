@@ -88,6 +88,46 @@ jobs:
           path: packages/*/dist
           retention-days: 1
 
+  dashboard-e2e:
+    name: Dashboard MongoDB E2E (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [mongo-desktop, mongo-mobile, mongo-desktop-auth, mongo-mobile-auth]
+    services:
+      mongodb:
+        image: mongodb/mongodb-atlas-local:8.2.6-20260529T125201Z
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
+      - name: Install Chromium
+        working-directory: apps/dashboard-dev
+        run: bunx playwright install --with-deps chromium
+      - name: Test built dashboard with MongoDB and Express
+        working-directory: apps/dashboard-dev
+        run: bun run test:e2e --project=${{ matrix.project }}
+      - name: Upload browser reports and failure traces
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dashboard-e2e-${{ matrix.project }}
+          path: |
+            apps/dashboard-dev/playwright-report
+            apps/dashboard-dev/test-results
+          retention-days: 7
+
   check-changeset:
     name: Check Changeset
     if: github.event_name == 'pull_request'
@@ -98,13 +138,13 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [lint, test, build, check-changeset]
+    needs: [lint, test, build, dashboard-e2e, check-changeset]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}" "${{ needs.check-changeset.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}" "${{ needs.dashboard-e2e.result }}" "${{ needs.check-changeset.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
               echo "Job failed with result: $r"

@@ -197,7 +197,7 @@ For `'0 * * * *'` (hourly at minute 0):
 
 ## Preventing Duplicate Schedules
 
-Use `uniqueKey` to ensure only one scheduled instance exists:
+Use `uniqueKey` to avoid creating another active job with the same name and key:
 
 ```typescript
 // Only one hourly report job will exist
@@ -249,7 +249,8 @@ await monque.schedule('60 * * * *', 'job', {});
 ## Timezone Considerations
 
 <Aside type="caution">
-  Cron expressions are evaluated in the server's local timezone unless the environment is specifically configured for UTC. For consistent behavior across deployments, it is recommended to set your server or container timezone to UTC.
+  Monque evaluates cron expressions in the server's local timezone. Set the server or
+  container timezone to UTC if schedules should run at the same UTC time across deployments.
 </Aside>
 
 ```typescript
@@ -280,17 +281,16 @@ for (const job of scheduledJobs) {
 
 ### Cancel a Scheduled Job
 
-To stop a recurring job, delete it from the database:
+Cancel a recurring job while it is pending to stop future runs:
 
 ```typescript
-const collection = db.collection('monque_jobs');
-
-// Delete by uniqueKey
-await collection.deleteOne({ uniqueKey: 'hourly-report-singleton' });
-
-// Or by name (careful: deletes all jobs with this name)
-await collection.deleteMany({ name: 'hourly-report' });
+await monque.cancelJob(jobId);
 ```
+
+Use `deleteJob(jobId)` to remove the schedule permanently. A processing job cannot be
+cancelled, and deleting its document does not interrupt the running handler. Stop the
+scheduler and wait for handlers to finish if you need to remove an active schedule safely.
+See [Job Management](/monque/core-concepts/management/) for action constraints.
 
 ## Best Practices
 
@@ -318,7 +318,7 @@ await monque.schedule('0 9 * * 1', 'weekly-report', {
 
 ### 3. Handle Overlapping Runs
 
-For long-running scheduled jobs, use `uniqueKey` to prevent overlap:
+Use `uniqueKey` when registering a long-running schedule to avoid creating duplicate active jobs:
 
 ```typescript
 // If job takes longer than 1 hour, next run waits

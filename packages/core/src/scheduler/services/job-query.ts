@@ -11,6 +11,7 @@ import {
 	JobCursorSortField,
 	type JobSelector,
 	JobStatus,
+	type JobSummaryPage,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -25,12 +26,8 @@ import {
 	encodeCursor,
 	normalizeCursorSort,
 } from '../helpers.js';
+import { QueryCache } from './query-cache.js';
 import type { SchedulerContext } from './types.js';
-
-interface StatsCacheEntry {
-	data: QueueStats;
-	expiresAt: number;
-}
 
 const MONGO_MAX_TIME_MS_EXPIRED_CODE = 50;
 
@@ -217,8 +214,8 @@ function assertCursorMatchesSort(decoded: DecodedCursor, sort: JobCursorSort): v
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobQueryService {
-	private readonly statsCache = new Map<string, StatsCacheEntry>();
-	private static readonly MAX_CACHE_SIZE = 100;
+	private readonly statsCache = new QueryCache<QueueStats>();
+	private readonly queueViewCache = new QueryCache<ReadonlyMap<string, QueueStats>>();
 
 	constructor(private readonly ctx: SchedulerContext) {}
 
@@ -372,7 +369,21 @@ export class JobQueryService {
 	 * }
 	 * ```
 	 */
+
 	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+		return this.queryJobsWithCursor<T>(options, true);
+	}
+
+	/** List job metadata using the same cursor as full listings, without reading payloads. */
+	async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
+		const page = await this.queryJobsWithCursor(options, false);
+		return { ...page, jobs: page.jobs.map(({ data: _data, ...summary }) => summary) };
+	}
+
+	private async queryJobsWithCursor<T>(
+		options: CursorOptions,
+		includePayload: boolean,
+	): Promise<CursorPage<T>> {
 		const limit = options.limit ?? 50;
 		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
 		const sort = normalizeCursorSort(options.sort);
@@ -385,7 +396,11 @@ export class JobQueryService {
 
 		let docs: WithId<Document>[];
 		try {
-			docs = await this.ctx.collection.find(query).sort(mongoSort).limit(fetchLimit).toArray();
+			docs = await this.ctx.collection
+				.find(query, { maxTimeMS: 30_000, ...(includePayload ? {} : { projection: { data: 0 } }) })
+				.sort(mongoSort)
+				.limit(fetchLimit)
+				.toArray();
 		} catch (error) {
 			const message =
 				error instanceof Error ? error.message : 'Unknown error during getJobsWithCursor';
@@ -429,12 +444,13 @@ export class JobQueryService {
 	}
 
 	/**
-	 * Clear all cached getQueueStats() results.
+	 * Clear statistics and Queue View snapshots, including in-flight cache writes.
 	 * Called on scheduler stop() for clean state on restart.
 	 * @internal
 	 */
 	clearStatsCache(): void {
 		this.statsCache.clear();
+		this.queueViewCache.clear();
 	}
 
 	/**
@@ -464,16 +480,15 @@ export class JobQueryService {
 	 * ```
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
-		const ttl = this.ctx.options.statsCacheTtlMs;
-		const cacheKey = filter?.name ?? '';
+		const stats = await this.statsCache.get(
+			filter?.name ?? '',
+			this.ctx.options.statsCacheTtlMs,
+			() => this.loadQueueStats(filter),
+		);
+		return { ...stats };
+	}
 
-		if (ttl > 0) {
-			const cached = this.statsCache.get(cacheKey);
-			if (cached && cached.expiresAt > Date.now()) {
-				return { ...cached.data };
-			}
-		}
-
+	private async loadQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
 		const matchStage: Document = {};
 
 		if (filter?.name) {
@@ -578,23 +593,6 @@ export class JobQueryService {
 				}
 			}
 
-			// Cache the result if TTL is enabled
-			if (ttl > 0) {
-				// Delete existing entry first so re-insertion moves it to end (Map insertion order = LRU)
-				this.statsCache.delete(cacheKey);
-				// LRU eviction: if cache is still full after removing existing key, evict the oldest entry
-				if (this.statsCache.size >= JobQueryService.MAX_CACHE_SIZE) {
-					const oldestKey = this.statsCache.keys().next().value;
-					if (oldestKey !== undefined) {
-						this.statsCache.delete(oldestKey);
-					}
-				}
-				this.statsCache.set(cacheKey, {
-					data: { ...stats },
-					expiresAt: Date.now() + ttl,
-				});
-			}
-
 			return stats;
 		} catch (error) {
 			const err = toError(error);
@@ -615,6 +613,36 @@ export class JobQueryService {
 	 * observability snapshots.
 	 */
 	async getQueueViewSummaries(): Promise<readonly QueueViewSummary[]> {
+		const persistedStats = await this.queueViewCache.get(
+			'all',
+			this.ctx.options.statsCacheTtlMs,
+			() => this.loadQueueViewStats(),
+		);
+
+		const names = new Set([...persistedStats.keys(), ...this.ctx.workers.keys()]);
+		const summaries = [...names]
+			.sort((a, b) => a.localeCompare(b))
+			.map((name): QueueViewSummary => {
+				const worker = this.ctx.workers.get(name);
+				const workerSummary = worker
+					? {
+							concurrency: worker.concurrency,
+							activeCount: worker.activeJobs.size,
+						}
+					: null;
+
+				return Object.freeze({
+					name,
+					hasPersistedJobs: persistedStats.has(name),
+					hasRegisteredWorker: worker !== undefined,
+					stats: freezeQueueStats(persistedStats.get(name) ?? createEmptyQueueStats()),
+					worker: freezeWorkerSummary(workerSummary),
+				});
+			});
+
+		return Object.freeze(summaries);
+	}
+	private async loadQueueViewStats(): Promise<ReadonlyMap<string, QueueStats>> {
 		const persistedStats = new Map<string, QueueStats>();
 
 		try {
@@ -691,27 +719,6 @@ export class JobQueryService {
 			});
 		}
 
-		const names = new Set([...persistedStats.keys(), ...this.ctx.workers.keys()]);
-		const summaries = [...names]
-			.sort((a, b) => a.localeCompare(b))
-			.map((name): QueueViewSummary => {
-				const worker = this.ctx.workers.get(name);
-				const workerSummary = worker
-					? {
-							concurrency: worker.concurrency,
-							activeCount: worker.activeJobs.size,
-						}
-					: null;
-
-				return Object.freeze({
-					name,
-					hasPersistedJobs: persistedStats.has(name),
-					hasRegisteredWorker: worker !== undefined,
-					stats: freezeQueueStats(persistedStats.get(name) ?? createEmptyQueueStats()),
-					worker: freezeWorkerSummary(workerSummary),
-				});
-			});
-
-		return Object.freeze(summaries);
+		return persistedStats;
 	}
 }

@@ -33,6 +33,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 export interface ManagementActionTarget {
 	job?: PersistedJob | undefined;
 	selector?: JobSelector | undefined;
+	ids?: readonly string[] | undefined;
 }
 
 export type ManagementActionDecision = { allowed: true } | { allowed: false; message: string };
@@ -44,12 +45,17 @@ export async function getManagementCapabilities<TContext>(
 	const readOnly = options.readOnly ?? false;
 	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
-	for (const action of MANAGEMENT_ACTIONS) {
+	const check = async (action: ManagementAction): Promise<void> => {
 		const decision = await decideManagementAction(options, action, context, {
 			supported: isManagementActionSupported(options.monque, action),
 		});
 
 		actions[action] = decision.allowed;
+	};
+	if (options.parallelCapabilityChecks) {
+		await Promise.all(MANAGEMENT_ACTIONS.map(check));
+	} else {
+		for (const action of MANAGEMENT_ACTIONS) await check(action);
 	}
 
 	return {
@@ -135,5 +141,6 @@ async function isAllowedByAuthorization<TContext>(
 		context,
 		job: target.job,
 		selector: target.selector,
+		ids: target.ids,
 	});
 }

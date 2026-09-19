@@ -5,7 +5,7 @@ description: Critical considerations and gotchas when deploying Monque in produc
 
 import { Aside } from '@astrojs/starlight/components';
 
-Before deploying Monque to production, review this checklist to avoid common pitfalls and ensure reliable job processing.
+Before deploying, check how your workers handle retries, shutdown, and jobs left running after a crash.
 
 ## Quick Reference
 
@@ -22,14 +22,15 @@ Before deploying Monque to production, review this checklist to avoid common pit
 ## 1. Design for Idempotency
 
 <Aside type="caution">
-  **Critical:** Monque provides at-least-once delivery semantics. Your workers **must** be idempotent—safe to run multiple times with the same input.
+  A job may run more than once. Make workers idempotent so repeating an input does not
+  repeat an unwanted side effect.
 </Aside>
 
 Jobs may be executed more than once due to:
 
-- **Retries**: Failed jobs are automatically retried with [exponential backoff](/monque/core-concepts/retry/)
-- **Stale Recovery**: If a worker crashes, the [heartbeat mechanism](/monque/advanced/heartbeat/) recovers stuck jobs
-- **Network Issues**: Transient failures during completion acknowledgment
+- Failed attempts retry with [exponential backoff](/monque/core-concepts/retry/).
+- After a crash, [startup recovery](/monque/advanced/heartbeat/) can return jobs with expired locks to pending.
+- A network failure can prevent Monque from recording a completed run.
 
 ### Idempotency Patterns
 
@@ -101,7 +102,7 @@ Without `uniqueKey`, calling [`schedule()`](/monque/api/classes/monque/#schedule
 
 ---
 
-## 3. MongoDB Replica Set Required
+## 3. Use a Replica Set for Change Streams
 
 <Aside type="caution">
   [Change Streams](/monque/advanced/change-streams/) require a MongoDB Replica Set or Sharded Cluster. Standalone MongoDB instances do not support Change Streams.
@@ -141,7 +142,7 @@ docker exec -it <container> mongosh --eval "rs.initiate()"
 
 ## 4. Configure Graceful Shutdown
 
-Ensure in-progress jobs complete before your application exits:
+Give running handlers time to finish before your application exits:
 
 ```typescript
 const monque = new Monque(db, {
@@ -157,7 +158,7 @@ process.on('SIGTERM', async () => {
 ```
 
 <Aside type="note">
-  If [`stop()`](/monque/api/classes/monque/#stop) hits the configured [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout), in-progress jobs remain in `processing` status. The [stale recovery](/monque/advanced/heartbeat/) mechanism will reclaim them when another instance starts.
+  If [`stop()`](/monque/api/classes/monque/#stop) hits the configured [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout), in-progress jobs remain in `processing` status. [Startup recovery](/monque/advanced/heartbeat/) can reclaim them once their locks expire.
 </Aside>
 
 ### Kubernetes Considerations
@@ -179,7 +180,8 @@ spec:
 
 ## 5. Tune `lockTimeout` for Your Workload
 
-The [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) determines how long a job can remain in `processing` before it's considered stale and recovered.
+The [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) sets the lock age
+at which a processing job becomes eligible for recovery during initialization.
 
 <Aside type="tip">
   Set `lockTimeout` to at least **2× your longest expected job duration**. This prevents false-positive stale recovery for legitimately long-running jobs.
@@ -232,7 +234,7 @@ const monque = new Monque(db, {
 });
 ```
 
-This prevents a single instance from overwhelming system resources when running multiple high-concurrency workers.
+Choose a limit that fits the CPU, memory, and database connections available to one process.
 
 See [Concurrency Strategy](/monque/core-concepts/workers/#concurrency-strategy) for guidelines.
 
@@ -240,13 +242,13 @@ See [Concurrency Strategy](/monque/core-concepts/workers/#concurrency-strategy) 
 
 ## 7. Consider Producer-Consumer Architecture
 
-For high-scale deployments, separate job producers (API servers) from consumers (worker servers):
+Run API servers and workers in separate processes when they need different resources or
+deployment schedules:
 
 ### Benefits
 
-- **Independent Scaling**: Scale API and worker tiers separately based on load
-- **Resource Isolation**: API response times unaffected by background job processing
-- **Deployment Flexibility**: Deploy worker updates without touching API servers
+You can add worker capacity or deploy new handlers without redeploying the API servers.
+Workers also get their own CPU and memory, reducing contention with HTTP requests.
 
 ### Implementation
 
@@ -293,7 +295,7 @@ See [Ts.ED Producer-only Mode](/monque/integrations/tsed/#producer-only-mode) fo
 
 ## 8. Monitor Job Events
 
-Subscribe to events for observability:
+Log job failures and recovery events:
 
 ```typescript
 // Track failures
@@ -351,22 +353,20 @@ const monque = new Monque(db, {
 
 ## 10. Ensure Index Permissions
 
-Monque creates MongoDB indexes during [`initialize()`](/monque/api/classes/monque/#initialize). Your database user must have index creation permissions.
+Monque creates MongoDB indexes during [`initialize()`](/monque/api/classes/monque/#initialize).
+Grant index creation permissions to that connection. Precreating
+indexes does not skip that initialization step. See [Indexes](/monque/core-concepts/jobs/#indexes)
+for listing and retention indexes.
 
-If index creation is restricted in production, create indexes ahead of time:
+## 11. Configure Management and Dashboard Access
 
-```javascript
-// Required indexes (see Jobs documentation for full list)
-db.monque_jobs.createIndex({ status: 1, nextRunAt: 1 });
-db.monque_jobs.createIndex({ name: 1, status: 1 });
-db.monque_jobs.createIndex({ claimedBy: 1, status: 1 });
-db.monque_jobs.createIndex({ status: 1, nextRunAt: 1, claimedBy: 1 });
-// ... see Jobs docs for complete list
-```
+If you serve the dashboard, mount authentication middleware before both the dashboard and
+Management routers. Set API permissions with `authorize` or `readOnly`, and redact payload
+fields that operators should not see. Protect the OpenAPI route with the same middleware.
 
-See [Indexes](/monque/core-concepts/jobs/#indexes) for the complete list.
-
----
+Set a refresh interval appropriate for the number of open dashboards and your database
+load. Configure compression at the proxy or in Express, and preserve dashboard mount paths
+for direct links. See [Dashboard configuration](/monque/dashboard/configuration/).
 
 ## Pre-Deployment Checklist
 
@@ -380,7 +380,9 @@ See [Indexes](/monque/core-concepts/jobs/#indexes) for the complete list.
 - [ ] Producer-consumer separation considered for high-scale deployments
 - [ ] Event handlers for `job:fail` and `stale:recovered`
 - [ ] Job retention is configured
-- [ ] Database user has index creation permissions (or indexes pre-created)
+- [ ] Database user has index creation permissions
+- [ ] Dashboard, Management API, and OpenAPI routes require the intended authentication
+- [ ] Payload redaction and action permissions are configured for operators
 
 ---
 

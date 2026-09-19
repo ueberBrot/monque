@@ -208,6 +208,11 @@ describe('Monque', () => {
 	describe('delegation', () => {
 		beforeEach(async () => {
 			await monque.initialize();
+			Object.defineProperty(monque, '_query', {
+				value: { clearStatsCache: vi.fn() },
+				configurable: true,
+				writable: true,
+			});
 		});
 
 		it('should delegate enqueue to intake', async () => {
@@ -271,6 +276,23 @@ describe('Monque', () => {
 			const id = new Object();
 			await monque.getJob(id as unknown as ObjectId);
 			expect(spy).toHaveBeenCalledWith(id);
+		});
+
+		it('converts Management string IDs before querying MongoDB', async () => {
+			const job = { _id: new ObjectId(), name: 'test-job' };
+			const getJob = vi.fn().mockResolvedValue(job);
+			Object.defineProperty(monque, '_query', { value: { getJob }, configurable: true });
+
+			expect(await monque.getJob(job._id.toHexString())).toBe(job);
+			expect(getJob).toHaveBeenCalledWith(job._id);
+		});
+
+		it('returns null for invalid string IDs without querying MongoDB', async () => {
+			const getJob = vi.fn();
+			Object.defineProperty(monque, '_query', { value: { getJob }, configurable: true });
+
+			expect(await monque.getJob('invalid-id')).toBeNull();
+			expect(getJob).not.toHaveBeenCalled();
 		});
 
 		it('should delegate getJobs to query service', async () => {

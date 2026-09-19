@@ -86,10 +86,6 @@ processing jobs block duplicates; completed and failed jobs do not.
   asset/UI package.
 - Dashboard development mock mode uses oRPC mock Management handlers backed by seeded,
   deterministic scenario factories.
-- Dashboard tests use mock Management handlers for UI integration; real MongoDB/Testcontainers
-  remain in core and Management integration tests.
-- Dashboard releases require Playwright smoke coverage for routing, core workflows, and
-  responsive layout sanity.
 - Framework-specific middleware belongs in Management Adapters, not in the Management Surface.
 - Standalone Dashboard and Docker distribution come after the Management Surface and at least
   one Management Adapter.
@@ -163,10 +159,6 @@ processing jobs block duplicates; completed and failed jobs do not.
   bulk-action selections.
 - The first Dashboard bulk actions operate only on explicitly selected Jobs and require
   confirmation before execution.
-- The first Dashboard supports only operator-safe hotkeys; destructive Job actions are not
-  triggered directly by keyboard shortcuts.
-- The first Dashboard command palette is limited to navigation and safe view actions, not
-  destructive Job actions.
 - The Management Route Map groups operations by resource and uses action endpoints for job
   state transitions.
 - Management Adapters mount the oRPC OpenAPI HTTP handler instead of translating requests
@@ -260,7 +252,7 @@ processing jobs block duplicates; completed and failed jobs do not.
 - The first Management Surface supports operation authorization, not Queue View visibility
   filtering.
 - Management operation authorization is action-grained.
-- Management operation authorization receives request context and the relevant job or selector
+- Management operation authorization receives request context and the relevant job, selector, or selected job IDs
   when an action has a target.
 - Management request context is generic at the Management Surface and created by
   Management Adapters from framework-native requests.

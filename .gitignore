@@ -48,3 +48,11 @@ apps/docs/src/content/docs/api/
 apps/docs/src/content/docs/api-tsed/
 apps/docs/src/content/docs/api-management/
 apps/docs/src/content/docs/api-management-express/
+apps/docs/src/content/docs/api-dashboard/
+apps/docs/src/content/docs/api-dashboard-express/
+
+# Playwright reports, screenshots, videos, and traces
+playwright-report*/
+test-results*/
+blob-report/
+playwright/.cache/
