@@ -5,12 +5,11 @@ import { toast } from 'sonner';
 
 import type { DashboardManagementApi } from '@/management-client';
 
+import { jobActionMutationOptions } from './job-action-mutation.js';
 import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	type JobActionFeedback,
-	type RunJobActionsInput,
-	runJobActions,
 } from './job-actions.js';
 
 function useJobsActionMutation({
@@ -25,8 +24,8 @@ function useJobsActionMutation({
 	readonly setRowSelection: Dispatch<SetStateAction<RowSelectionState>>;
 }) {
 	return useMutation({
-		mutationFn: (input: RunJobActionsInput) => runJobActions(managementApi, input),
-		onSuccess: async ({ action, count, failed, firstError }, input) => {
+		...jobActionMutationOptions(managementApi, queryClient),
+		onSuccess: ({ action, count, failed, firstError }, input) => {
 			const errorFeedback = getActionErrorFeedback(firstError);
 			if (failed.length) {
 				setFeedback({
@@ -46,11 +45,9 @@ function useJobsActionMutation({
 				}
 				return nextSelection;
 			});
-			await queryClient.invalidateQueries();
 		},
-		onError: async (error) => {
+		onError: (error) => {
 			setFeedback(getActionErrorFeedback(error));
-			await queryClient.invalidateQueries();
 		},
 	});
 }

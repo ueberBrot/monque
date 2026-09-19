@@ -1,19 +1,12 @@
 import type { JobDto } from '@monque/management/contract';
 import JsonView from '@uiw/react-json-view';
-import {
-	AlertTriangle,
-	CalendarClock,
-	CheckCircle2,
-	CircleX,
-	Clock3,
-	Copy,
-	type LucideIcon,
-} from 'lucide-react';
+import { AlertTriangle, Copy } from 'lucide-react';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
+import { JobStatusBadge } from '@/components/job-status-badge';
 import { JobTimestamp } from '@/components/job-timestamp';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { copyToClipboard } from '@/lib/clipboard';
 import { getOperatorTimeZoneLabel } from '@/lib/dates';
 import {
 	formatPayloadForDisplay,
@@ -22,38 +15,20 @@ import {
 	isEmptyPayload,
 	isStructuredPayload,
 	type JobDetailState,
+	serializePayloadForClipboard,
 } from '@/lib/job-detail';
-import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
 
 type JobDetailViewProps = {
 	readonly actions?: ReactElement;
 	readonly job: JobDto;
-	readonly onCopyJobId: () => void;
-	readonly onCopyPayload: () => void;
-	readonly onCopyShareableUrl: () => void;
 };
 
 type MetadataItem = readonly [label: string, value: ReactNode];
 
-type JobStatusMeta = {
-	readonly badgeVariant: 'danger' | 'info' | 'outline' | 'success';
-	readonly icon: LucideIcon;
-	readonly label: string;
-};
-
-function JobDetailView({
-	actions,
-	job,
-	onCopyJobId,
-	onCopyPayload,
-	onCopyShareableUrl,
-}: JobDetailViewProps): ReactElement {
-	const statusMeta = getJobStatusMeta(job.status);
-	const StatusIcon = statusMeta.icon;
+function JobDetailView({ actions, job }: JobDetailViewProps): ReactElement {
 	const operatorTimeZone = getOperatorTimeZoneLabel();
-	const now = useNow();
-	const lifecycleItems = getLifecycleMetadataItems(job, now);
+	const lifecycleItems = getLifecycleMetadataItems(job);
 	const schedulingItems = getSchedulingMetadataItems(job);
 
 	return (
@@ -61,21 +36,12 @@ function JobDetailView({
 			<header className="grid min-w-0 gap-4">
 				<div className="flex flex-wrap items-center gap-3">
 					<h1 className="break-all text-2xl font-semibold text-balance">{job.name}</h1>
-					<Badge variant={statusMeta.badgeVariant} className="h-7 gap-1.5 px-2.5">
-						<StatusIcon className="size-3.5" />
-						{statusMeta.label}
-					</Badge>
+					<JobStatusBadge status={job.status} withIcon />
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					<p className="break-all font-mono text-xs text-muted-foreground">{job.id}</p>
-					<Button type="button" variant="ghost" size="sm" onClick={onCopyJobId}>
-						<Copy />
-						Copy job ID
-					</Button>
-					<Button type="button" variant="ghost" size="sm" onClick={onCopyShareableUrl}>
-						<Copy />
-						Copy shareable URL
-					</Button>
+					<CopyButton label="Copy job ID" getText={() => job.id} />
+					<CopyButton label="Copy shareable URL" getText={() => window.location.href} />
 				</div>
 				{job.failureReason ? (
 					<section className="grid gap-2 rounded-xl border border-destructive/25 bg-destructive/8 p-4">
@@ -92,10 +58,7 @@ function JobDetailView({
 			<section className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border py-4 xl:grid-cols-4">
 				<SummaryTile label="Attempts" value={String(getJobAttemptCount(job.failCount))} />
 				<SummaryTile label="Failed attempts" value={String(job.failCount)} />
-				<SummaryTile
-					label={getJobRunLabel(job)}
-					value={<JobTimestamp value={job.nextRunAt} now={now} />}
-				/>
+				<SummaryTile label={getJobRunLabel(job)} value={<JobTimestamp value={job.nextRunAt} />} />
 				<SummaryTile
 					label="Schedule"
 					value={job.repeatInterval ?? 'One-time job'}
@@ -109,10 +72,10 @@ function JobDetailView({
 						<div className="grid gap-1">
 							<div className="flex items-center justify-between gap-2">
 								<h2 className="text-sm font-semibold">Payload</h2>
-								<Button type="button" variant="ghost" size="sm" onClick={onCopyPayload}>
-									<Copy />
-									Copy payload
-								</Button>
+								<CopyButton
+									label="Copy payload"
+									getText={() => serializePayloadForClipboard(job.payload)}
+								/>
 							</div>
 							<p className="max-w-prose text-sm text-muted-foreground">Read-only job data.</p>
 						</div>
@@ -139,6 +102,28 @@ function JobDetailView({
 				</aside>
 			</div>
 		</section>
+	);
+}
+
+function CopyButton({
+	label,
+	getText,
+}: {
+	readonly label: string;
+	readonly getText: () => string;
+}) {
+	return (
+		<Button
+			type="button"
+			variant="ghost"
+			size="sm"
+			onClick={() => {
+				void copyToClipboard(getText());
+			}}
+		>
+			<Copy />
+			{label}
+		</Button>
 	);
 }
 
@@ -216,12 +201,12 @@ function MetadataList({ items }: { readonly items: readonly MetadataItem[] }): R
 	);
 }
 
-function getLifecycleMetadataItems(job: JobDto, now: Date): readonly MetadataItem[] {
+function getLifecycleMetadataItems(job: JobDto): readonly MetadataItem[] {
 	return [
-		['Created', <JobTimestamp key="createdAt" value={job.createdAt} now={now} />],
-		['Updated', <JobTimestamp key="updatedAt" value={job.updatedAt} now={now} />],
-		['Locked', <JobTimestamp key="lockedAt" value={job.lockedAt} now={now} />],
-		['Last heartbeat', <JobTimestamp key="lastHeartbeat" value={job.lastHeartbeat} now={now} />],
+		['Created', <JobTimestamp key="createdAt" value={job.createdAt} />],
+		['Updated', <JobTimestamp key="updatedAt" value={job.updatedAt} />],
+		['Locked', <JobTimestamp key="lockedAt" value={job.lockedAt} />],
+		['Last heartbeat', <JobTimestamp key="lastHeartbeat" value={job.lastHeartbeat} />],
 		['Heartbeat interval', job.heartbeatInterval ? `${job.heartbeatInterval} ms` : 'Not set'],
 	];
 }
@@ -240,41 +225,6 @@ function getJobDetailStateToneClassName(code: JobDetailState['code']): string {
 	}
 
 	return 'border-border bg-card text-foreground';
-}
-
-function getJobStatusMeta(status: JobDto['status']): JobStatusMeta {
-	switch (status) {
-		case 'completed':
-			return {
-				badgeVariant: 'success',
-				icon: CheckCircle2,
-				label: 'Completed',
-			};
-		case 'failed':
-			return {
-				badgeVariant: 'danger',
-				icon: AlertTriangle,
-				label: 'Failed',
-			};
-		case 'processing':
-			return {
-				badgeVariant: 'info',
-				icon: Clock3,
-				label: 'Processing',
-			};
-		case 'cancelled':
-			return {
-				badgeVariant: 'outline',
-				icon: CircleX,
-				label: 'Cancelled',
-			};
-		default:
-			return {
-				badgeVariant: 'outline',
-				icon: CalendarClock,
-				label: 'Pending',
-			};
-	}
 }
 
 const jsonViewTheme = {

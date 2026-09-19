@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Outlet, useMatchRoute } from '@tanstack/react-router';
-import { RefreshCw } from 'lucide-react';
 
-import { QueryFreshness } from '@/components/query-freshness';
-import { Button } from '@/components/ui/button';
+import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { getQueryErrorMessage, isUnauthorizedQueryError } from '@/management-errors';
 
@@ -26,7 +24,7 @@ function QueueViewsRoute() {
 
 function QueueViewsListRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
-	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
 	const queueViewsQuery = useQuery({
 		...managementApi.orpc.queueViews.queryOptions(),
 		refetchInterval,
@@ -74,15 +72,10 @@ function QueueViewsListRoute() {
 						paused={queueViewsQuery.fetchStatus === 'paused'}
 						pollingIntervalMs={runtimeConfig.pollingIntervalMs}
 					/>
-					<Button
-						variant="outline"
-						onClick={() => void queueViewsQuery.refetch()}
-						aria-label="Refresh"
-						aria-busy={queueViewsQuery.isFetching}
-					>
-						<RefreshCw className="size-4" />
-						Refresh
-					</Button>
+					<RefreshButton
+						onRefresh={() => void queueViewsQuery.refetch()}
+						fetching={queueViewsQuery.isFetching}
+					/>
 				</div>
 			}
 		/>

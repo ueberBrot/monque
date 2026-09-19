@@ -8,6 +8,8 @@ import {
 
 import { parseDashboardDate } from '@/lib/dates';
 
+import { JOB_STATUS_META } from './job-status.js';
+
 const JOB_STATUS_ORDER = ['pending', 'processing', 'completed', 'failed', 'cancelled'] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -33,7 +35,7 @@ type JobStatusDto = JobDto['status'];
 
 function parseJobsRouteSearch(search: Record<string, unknown>): JobsRouteSearch {
 	return {
-		cursor: getOptionalString(search['cursor']),
+		cursor: getOptionalString(search['cursor'])?.trim() || undefined,
 		limit: parseLimit(search['limit']),
 		name: getOptionalString(search['name']),
 		status: parseStatusFilter(search['status']),
@@ -49,36 +51,11 @@ function parseJobsRouteSearch(search: Record<string, unknown>): JobsRouteSearch 
 }
 
 function toJobListQueryInput(search: JobsRouteSearch): JobListQueryDto {
-	return {
-		cursor: search.cursor,
-		limit: String(search.limit),
-		name: search.name,
-		status: toJobListStatusQuery(search.status),
-		createdAtFrom: search.createdAtFrom,
-		createdAtTo: search.createdAtTo,
-		updatedAtFrom: search.updatedAtFrom,
-		updatedAtTo: search.updatedAtTo,
-		nextRunAtFrom: search.nextRunAtFrom,
-		nextRunAtTo: search.nextRunAtTo,
-		sortBy: search.sortBy,
-		sortDirection: search.sortDirection,
-	};
+	return { ...search, limit: String(search.limit), status: toJobListStatusQuery(search.status) };
 }
 
-function getJobsSearchIdentity(search: JobsRouteSearch): string {
-	return JSON.stringify({
-		limit: search.limit,
-		name: search.name,
-		status: search.status,
-		createdAtFrom: search.createdAtFrom,
-		createdAtTo: search.createdAtTo,
-		updatedAtFrom: search.updatedAtFrom,
-		updatedAtTo: search.updatedAtTo,
-		nextRunAtFrom: search.nextRunAtFrom,
-		nextRunAtTo: search.nextRunAtTo,
-		sortBy: search.sortBy,
-		sortDirection: search.sortDirection,
-	});
+function getJobsSearchIdentity({ cursor: _cursor, ...filters }: JobsRouteSearch): string {
+	return JSON.stringify(filters);
 }
 
 function getNextSort(
@@ -100,18 +77,7 @@ function getNextSort(
 }
 
 function getStatusLabel(status: JobStatusDto): string {
-	switch (status) {
-		case 'pending':
-			return 'Pending';
-		case 'processing':
-			return 'Processing';
-		case 'completed':
-			return 'Completed';
-		case 'failed':
-			return 'Failed';
-		case 'cancelled':
-			return 'Cancelled';
-	}
+	return JOB_STATUS_META[status].label;
 }
 
 function parseLimit(value: unknown): number {
@@ -148,7 +114,7 @@ function parseSortDirection(value: unknown): JobListSortDirectionDto {
 }
 
 function getOptionalString(value: unknown): string | undefined {
-	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+	return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function getOptionalIsoDate(value: unknown): string | undefined {

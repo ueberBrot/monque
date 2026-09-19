@@ -60,7 +60,7 @@ There is no browser script or `window` object to configure manually.
 | --- | --- | --- |
 | Dashboard mount | `app.use('/ops/dashboard', …)` | URL where the dashboard is served; its base path is inferred automatically. |
 | `apiBaseUrl` | `'/ops'` | Required Management router mount URL. The dashboard appends `/api/v1/...`. |
-| `pollingIntervalMs` | `15_000` | Refresh every 15 seconds while visible. Omit to disable periodic polling. |
+| `pollingIntervalMs` | `15_000` | Base job refresh interval while visible. Statistics and health refresh less often. Omit to disable periodic polling. |
 
 **Do not include `/api/v1` in `apiBaseUrl`.** In the example, the jobs endpoint is
 `/ops/api/v1/jobs`. The API and dashboard may use different mount paths.
@@ -91,3 +91,9 @@ router. Permissions are enforced by the API and reflected in available dashboard
 
 See [Management Express](../management-express/README.md) for API configuration and
 [Management](../management/README.md) for authorization options.
+
+## Serving assets
+
+Enable gzip or Brotli at your reverse proxy or through Express compression middleware mounted
+before the routers. The adapter sets cache headers for fingerprinted assets; keep HTML and
+runtime configuration uncached so configuration changes take effect on reload.

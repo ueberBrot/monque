@@ -1,5 +1,7 @@
 import { formatDistanceStrict } from 'date-fns';
+import { RefreshCw } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import { formatDashboardDate } from '@/lib/dates';
 import { useDocumentVisible } from '@/lib/document-visibility';
 import { useNow } from '@/lib/use-now';
@@ -43,4 +45,19 @@ function QueryFreshness({
 	);
 }
 
-export { QueryFreshness };
+function RefreshButton({
+	onRefresh,
+	fetching,
+}: {
+	readonly onRefresh: () => void;
+	readonly fetching?: boolean;
+}) {
+	return (
+		<Button type="button" variant="outline" onClick={onRefresh} aria-busy={fetching}>
+			<RefreshCw className="size-4" />
+			Refresh
+		</Button>
+	);
+}
+
+export { QueryFreshness, RefreshButton };

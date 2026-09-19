@@ -1,10 +1,16 @@
+import { useState } from 'react';
+
 import { DateTimePicker } from '@/components/date-time-picker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { fromDateTimeLocalValue } from '@/lib/dates';
 
-import type { JobActionKey, RunJobActionsInput } from './job-actions.js';
+import {
+	JOB_ACTION_DEFINITIONS,
+	type JobActionKey,
+	type RunJobActionsInput,
+} from './job-actions.js';
 
 type JobActionDialogState = {
 	readonly action: JobActionKey;
@@ -14,28 +20,49 @@ type JobActionDialogState = {
 	readonly scope: 'bulk' | 'single';
 };
 
-function JobActionDialog({
-	busy,
-	onClose,
-	onConfirm,
-	onNextRunAtChange,
-	state,
-}: {
+type JobActionDialogProps = {
 	readonly busy: boolean;
 	readonly onClose: () => void;
 	readonly onConfirm: (input: RunJobActionsInput) => void;
-	readonly onNextRunAtChange: (nextRunAt: string) => void;
 	readonly state: JobActionDialogState | null;
-}) {
-	const open = state !== null;
-	const requiresDate = state?.action === 'reschedule';
-	const invalidDate =
-		requiresDate && (!state.nextRunAt || fromDateTimeLocalValue(state.nextRunAt) === undefined);
+};
+
+function JobActionDialog({ state, ...props }: JobActionDialogProps) {
+	return (
+		<Dialog
+			open={state !== null}
+			onOpenChange={(open) => {
+				if (!open) props.onClose();
+			}}
+		>
+			<DialogContent>
+				{state ? (
+					<JobActionDialogForm
+						key={`${state.action}:${state.scope}:${state.jobIds.join(',')}`}
+						state={state}
+						{...props}
+					/>
+				) : null}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function JobActionDialogForm({
+	state,
+	busy,
+	onClose,
+	onConfirm,
+}: Omit<JobActionDialogProps, 'state'> & { readonly state: JobActionDialogState }) {
+	const [date, setDate] = useState(state.nextRunAt);
+	const requiresDate = state.action === 'reschedule';
+	const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
+	const noun = state.scope === 'single' ? 'job' : 'selected jobs';
+	const label = JOB_ACTION_DEFINITIONS[state.action].label;
 
 	function confirm(): void {
-		if (!state || busy) return;
+		if (busy) return;
 		if (state.action === 'reschedule') {
-			const nextRunAt = fromDateTimeLocalValue(state.nextRunAt);
 			if (!nextRunAt) return;
 			onConfirm({ action: 'reschedule', jobIds: state.jobIds, nextRunAt });
 		} else {
@@ -44,70 +71,50 @@ function JobActionDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
-			<DialogContent>
-				<DialogTitle>{getDialogTitle(state)}</DialogTitle>
-				<DialogDescription>{getDialogDescription(state)}</DialogDescription>
-				{state?.scope === 'single' ? (
-					<div className="min-w-0 rounded-lg border border-border p-3">
-						<p className="break-all text-sm font-medium">{state.jobName}</p>
-						<p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-							{state.jobIds[0]}
-						</p>
-					</div>
-				) : null}
-				{requiresDate ? (
-					<Field>
-						<FieldLabel htmlFor="job-action-next-run-at">Next run at</FieldLabel>
-						<DateTimePicker
-							id="job-action-next-run-at"
-							label="Next run at"
-							allowClear={false}
-							value={state?.nextRunAt ?? ''}
-							onChange={onNextRunAtChange}
-						/>
-					</Field>
-				) : null}
-				<div className="flex flex-wrap justify-end gap-2">
-					<Button type="button" variant="outline" onClick={onClose}>
-						Keep current state
-					</Button>
-					<Button
-						type="button"
-						variant={state?.action === 'delete' ? 'destructive' : 'default'}
-						onClick={confirm}
-						disabled={busy || invalidDate}
-					>
-						{getDialogConfirmLabel(state)}
-					</Button>
+		<>
+			<DialogTitle>
+				{label} {noun}
+				{state.scope === 'single' && requiresDate ? '' : '?'}
+			</DialogTitle>
+			<DialogDescription>{getDialogDescription(state)}</DialogDescription>
+			{state.scope === 'single' ? (
+				<div className="min-w-0 rounded-lg border border-border p-3">
+					<p className="break-all text-sm font-medium">{state.jobName}</p>
+					<p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+						{state.jobIds[0]}
+					</p>
 				</div>
-			</DialogContent>
-		</Dialog>
+			) : null}
+			{requiresDate ? (
+				<Field>
+					<FieldLabel htmlFor="job-action-next-run-at">Next run at</FieldLabel>
+					<DateTimePicker
+						id="job-action-next-run-at"
+						label="Next run at"
+						allowClear={false}
+						value={date}
+						onChange={setDate}
+					/>
+				</Field>
+			) : null}
+			<div className="flex flex-wrap justify-end gap-2">
+				<Button type="button" variant="outline" onClick={onClose}>
+					Keep current state
+				</Button>
+				<Button
+					type="button"
+					variant={state.action === 'delete' ? 'destructive' : 'default'}
+					onClick={confirm}
+					disabled={busy || (requiresDate && !nextRunAt)}
+				>
+					Confirm {state.action} {noun}
+				</Button>
+			</div>
+		</>
 	);
 }
 
-function getDialogTitle(state: JobActionDialogState | null): string {
-	if (!state) {
-		return '';
-	}
-
-	switch (state.action) {
-		case 'cancel':
-			return 'Cancel selected jobs?';
-		case 'retry':
-			return 'Retry selected jobs?';
-		case 'reschedule':
-			return state.scope === 'single' ? 'Reschedule job' : 'Reschedule selected jobs?';
-		case 'delete':
-			return state.scope === 'single' ? 'Delete job?' : 'Delete selected jobs?';
-	}
-}
-
-function getDialogDescription(state: JobActionDialogState | null): string {
-	if (!state) {
-		return '';
-	}
-
+function getDialogDescription(state: JobActionDialogState): string {
 	const scopeText = state.scope === 'single' ? 'this job' : `${state.jobIds.length} selected jobs`;
 
 	switch (state.action) {
@@ -119,25 +126,6 @@ function getDialogDescription(state: JobActionDialogState | null): string {
 			return `Choose a new run time for ${scopeText}.`;
 		case 'delete':
 			return `Delete is permanent. Confirm deletion for ${scopeText}.`;
-	}
-}
-
-function getDialogConfirmLabel(state: JobActionDialogState | null): string {
-	if (!state) {
-		return '';
-	}
-
-	switch (state.action) {
-		case 'cancel':
-			return 'Confirm cancel selected jobs';
-		case 'retry':
-			return 'Confirm retry selected jobs';
-		case 'reschedule':
-			return state.scope === 'single'
-				? 'Confirm reschedule job'
-				: 'Confirm reschedule selected jobs';
-		case 'delete':
-			return state.scope === 'single' ? 'Confirm delete job' : 'Confirm delete selected jobs';
 	}
 }
 

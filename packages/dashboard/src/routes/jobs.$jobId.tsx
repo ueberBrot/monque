@@ -11,17 +11,19 @@ import { Button } from '@/components/ui/button';
 import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
 import { JobActionHelp } from '@/features/jobs/job-action-help';
+import { jobActionMutationOptions } from '@/features/jobs/job-action-mutation';
 import {
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	getJobActionAvailability,
+	JOB_ACTION_DEFINITIONS,
+	JOB_ACTION_ORDER,
 	type JobActionRequest,
-	runJobAction,
 } from '@/features/jobs/job-actions';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { toDateTimeLocalValue } from '@/lib/dates';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
-import { mapJobDetailError, serializePayloadForClipboard } from '@/lib/job-detail';
+import { mapJobDetailError } from '@/lib/job-detail';
 
 export const Route = createFileRoute('/jobs/$jobId')({
 	component: JobDetailRoute,
@@ -33,8 +35,12 @@ export const Route = createFileRoute('/jobs/$jobId')({
 });
 
 function JobDetailRoute() {
-	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const { jobId } = Route.useParams();
+	return <JobDetail key={jobId} jobId={jobId} />;
+}
+
+function JobDetail({ jobId }: { readonly jobId: string }) {
+	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const router = useRouter();
@@ -43,25 +49,19 @@ function JobDetailRoute() {
 		...managementApi.orpc.job.queryOptions({ input: { params: { id: jobId } } }),
 		refetchInterval,
 	});
-	const capabilitiesQuery = useQuery(managementApi.orpc.capabilities.queryOptions());
-	async function copy(value: string): Promise<void> {
-		try {
-			await navigator.clipboard.writeText(value);
-			toast.success('Copied to clipboard');
-		} catch {
-			toast.error('Copy failed', {
-				description: 'Select and copy the value manually.',
-				duration: Number.POSITIVE_INFINITY,
-			});
-		}
-	}
+	const capabilitiesInterval = useDocumentVisiblePollingInterval(
+		runtimeConfig.pollingIntervalMs,
+		6,
+	);
+	const capabilitiesQuery = useQuery({
+		...managementApi.orpc.capabilities.queryOptions(),
+		refetchInterval: capabilitiesInterval,
+	});
 
 	const mutation = useMutation({
+		...jobActionMutationOptions(managementApi, queryClient),
 		onMutate: () => router.state.location,
-		mutationFn: async (input: JobActionRequest) => {
-			return runJobAction(managementApi, { ...input, jobId });
-		},
-		onSuccess: async (action, _input, origin) => {
+		onSuccess: async ({ action }, _input, origin) => {
 			const success = getActionSuccessFeedback(action);
 			toast.success(success.title, { description: success.description });
 			if (action !== 'delete' || router.state.location !== origin) return;
@@ -75,9 +75,6 @@ function JobDetailRoute() {
 			} else {
 				await navigate({ to: '/jobs', search: parseJobsRouteSearch(search), replace: true });
 			}
-		},
-		onSettled: async () => {
-			await queryClient.invalidateQueries();
 		},
 	});
 
@@ -131,21 +128,12 @@ function JobDetailRoute() {
 					<JobDetailActions
 						job={job}
 						busy={mutation.isPending}
-						capabilities={capabilitiesQuery.data}
+						capabilities={capabilitiesQuery.isError ? undefined : capabilitiesQuery.data}
 						onRunAction={(input) => {
-							mutation.mutate(input);
+							mutation.mutate({ ...input, jobIds: [jobId] });
 						}}
 					/>
 				}
-				onCopyJobId={() => {
-					void copy(job.id);
-				}}
-				onCopyPayload={() => {
-					void copy(serializePayloadForClipboard(job.payload));
-				}}
-				onCopyShareableUrl={() => {
-					void copy(window.location.href);
-				}}
 			/>
 		</section>
 	);
@@ -162,10 +150,11 @@ function JobDetailActions({
 	readonly job: JobDto;
 	readonly onRunAction: (input: JobActionRequest) => void;
 }) {
-	const cancelAvailability = getJobActionAvailability(job, capabilities, 'cancel');
-	const retryAvailability = getJobActionAvailability(job, capabilities, 'retry');
-	const rescheduleAvailability = getJobActionAvailability(job, capabilities, 'reschedule');
-	const deleteAvailability = getJobActionAvailability(job, capabilities, 'delete');
+	const actions = JOB_ACTION_ORDER.map((action) => ({
+		action,
+		label: JOB_ACTION_DEFINITIONS[action].label,
+		...getJobActionAvailability(job, capabilities, action),
+	}));
 
 	const [state, setState] = useState<JobActionDialogState | null>(null);
 	function open(action: 'delete' | 'reschedule'): void {
@@ -179,57 +168,26 @@ function JobDetailActions({
 	}
 	return (
 		<>
-			<Button
-				variant="outline"
-				size="sm"
-				onClick={() => onRunAction({ action: 'cancel' })}
-				disabled={cancelAvailability.disabled || busy}
-				title={cancelAvailability.reason ?? undefined}
-			>
-				Cancel
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				onClick={() => onRunAction({ action: 'retry' })}
-				disabled={retryAvailability.disabled || busy}
-				title={retryAvailability.reason ?? undefined}
-			>
-				Retry
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				onClick={() => open('reschedule')}
-				disabled={rescheduleAvailability.disabled || busy}
-				title={rescheduleAvailability.reason ?? undefined}
-			>
-				Reschedule
-			</Button>
-			<Button
-				variant="destructive"
-				size="sm"
-				onClick={() => open('delete')}
-				disabled={deleteAvailability.disabled || busy}
-				title={deleteAvailability.reason ?? undefined}
-			>
-				Delete job
-			</Button>
-			<JobActionHelp
-				actions={[
-					{ label: 'Cancel', reason: cancelAvailability.reason },
-					{ label: 'Retry', reason: retryAvailability.reason },
-					{ label: 'Reschedule', reason: rescheduleAvailability.reason },
-					{ label: 'Delete', reason: deleteAvailability.reason },
-				]}
-			/>
+			{actions.map(({ action, label, disabled, reason }) => (
+				<Button
+					key={action}
+					variant={action === 'delete' ? 'destructive' : 'outline'}
+					size="sm"
+					onClick={() => {
+						if (action === 'delete' || action === 'reschedule') open(action);
+						else onRunAction({ action });
+					}}
+					disabled={disabled || busy}
+					title={reason ?? undefined}
+				>
+					{action === 'delete' ? `${label} job` : label}
+				</Button>
+			))}
+			<JobActionHelp actions={actions} />
 			<JobActionDialog
 				state={state}
 				busy={busy}
 				onClose={() => setState(null)}
-				onNextRunAtChange={(nextRunAt) =>
-					setState((current) => (current ? { ...current, nextRunAt } : null))
-				}
 				onConfirm={(input) => {
 					onRunAction(input);
 					setState(null);

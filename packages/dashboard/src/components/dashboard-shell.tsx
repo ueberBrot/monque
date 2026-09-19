@@ -1,5 +1,6 @@
+import { Link } from '@tanstack/react-router';
 import { Activity, LaptopMinimal, Layers, ListTodo, Menu, Moon, Sun } from 'lucide-react';
-import { Fragment, type ReactElement, type ReactNode, useEffect, useState } from 'react';
+import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 import monqueLogo from '@/assets/monque.svg';
 import { Button } from '@/components/ui/button';
@@ -27,23 +28,13 @@ const dashboardNavItems = [
 	{ href: '/health', label: 'Health', icon: Activity },
 ] as const;
 
+const themeModes = {
+	light: { label: 'Light', icon: Sun },
+	dark: { label: 'Dark', icon: Moon },
+	system: { label: 'System', icon: LaptopMinimal },
+} as const;
 const dashboardThemeModes = ['light', 'dark', 'system'] as const;
-
-type DashboardNavItem = (typeof dashboardNavItems)[number];
 type DashboardThemeMode = (typeof dashboardThemeModes)[number];
-type DashboardNavLinkRendererOptions = {
-	readonly onNavigate: (() => void) | undefined;
-};
-type DashboardNavLinkRenderer = (
-	item: DashboardNavItem,
-	options: DashboardNavLinkRendererOptions,
-) => ReactNode;
-
-type DashboardShellProps = {
-	readonly children: ReactNode;
-	readonly currentPath: string;
-	readonly renderNavLink?: DashboardNavLinkRenderer;
-};
 
 function getStoredThemeMode(): DashboardThemeMode {
 	if (typeof window === 'undefined') {
@@ -80,11 +71,7 @@ function applyThemeMode(themeMode: DashboardThemeMode): void {
 	rootElement.dataset['theme'] = themeMode;
 }
 
-function DashboardShell({
-	children,
-	currentPath,
-	renderNavLink,
-}: DashboardShellProps): ReactElement {
+function DashboardShell({ children }: { readonly children: ReactNode }): ReactElement {
 	const [themeMode, setThemeMode] = useState<DashboardThemeMode>(() => getStoredThemeMode());
 	const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
 
@@ -117,7 +104,13 @@ function DashboardShell({
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
-			<Toaster theme={themeMode} closeButton duration={5_000} position="bottom-right" />
+			<Toaster
+				className="toaster group z-40!"
+				theme={themeMode}
+				closeButton
+				duration={5_000}
+				position="bottom-right"
+			/>
 			<a
 				href="#main-content"
 				className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-4"
@@ -132,12 +125,7 @@ function DashboardShell({
 						<span className="ml-auto text-xs text-muted-foreground">Dashboard</span>
 					</div>
 					<div className="flex min-h-0 flex-1 flex-col justify-between px-3 py-4">
-						<DashboardNavigation
-							className="min-h-0 overflow-y-auto"
-							ariaLabel="Primary"
-							currentPath={currentPath}
-							renderNavLink={renderNavLink}
-						/>
+						<DashboardNavigation className="min-h-0 overflow-y-auto" ariaLabel="Primary" />
 						<div className="grid shrink-0 gap-3 px-1 py-3">
 							<ThemeModeMenu themeMode={themeMode} onThemeModeChange={setThemeMode} />
 						</div>
@@ -179,9 +167,7 @@ function DashboardShell({
 										<DashboardNavigation
 											ariaLabel="Mobile primary"
 											className="px-3 py-4"
-											currentPath={currentPath}
 											onNavigate={() => setMobileNavigationOpen(false)}
-											renderNavLink={renderNavLink}
 										/>
 										<div className="mt-auto border-t border-border px-5 py-4">
 											<ThemeModeMenu themeMode={themeMode} onThemeModeChange={setThemeMode} />
@@ -216,51 +202,29 @@ function DashboardShell({
 function DashboardNavigation({
 	ariaLabel,
 	className,
-	currentPath,
 	onNavigate,
-	renderNavLink,
 }: {
 	readonly ariaLabel: string;
 	readonly className?: string;
-	readonly currentPath: string;
 	readonly onNavigate?: () => void;
-	readonly renderNavLink: DashboardNavLinkRenderer | undefined;
 }): ReactElement {
 	return (
 		<nav className={cn('grid gap-1', className)} aria-label={ariaLabel}>
 			{dashboardNavItems.map((item) => (
-				<Fragment key={item.href}>
-					{renderDashboardNavLink({ currentPath, item, onNavigate, renderNavLink })}
-				</Fragment>
+				<Link
+					key={item.href}
+					to={item.href}
+					onClick={onNavigate}
+					className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+					activeProps={{
+						className: 'bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary',
+					}}
+				>
+					<item.icon className="size-4" />
+					{item.label}
+				</Link>
 			))}
 		</nav>
-	);
-}
-
-function renderDashboardNavLink({
-	currentPath,
-	item,
-	onNavigate,
-	renderNavLink,
-}: {
-	readonly currentPath: string;
-	readonly item: DashboardNavItem;
-	readonly onNavigate: (() => void) | undefined;
-	readonly renderNavLink: DashboardNavLinkRenderer | undefined;
-}): ReactNode {
-	if (renderNavLink) {
-		return renderNavLink(item, { onNavigate });
-	}
-
-	return (
-		<a
-			href={item.href}
-			className={getNavItemClassName(isActiveNavItem(currentPath, item.href))}
-			onClick={onNavigate}
-		>
-			<item.icon className="size-4" />
-			{item.label}
-		</a>
 	);
 }
 
@@ -271,6 +235,7 @@ function ThemeModeMenu({
 	readonly themeMode: DashboardThemeMode;
 	readonly onThemeModeChange: (themeMode: DashboardThemeMode) => void;
 }): ReactElement {
+	const Icon = themeModes[themeMode].icon;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
@@ -281,80 +246,28 @@ function ThemeModeMenu({
 						className="w-full justify-start"
 						aria-label="Change theme"
 					>
-						{getThemeModeIcon(themeMode)}
-						<span>{getThemeModeLabel(themeMode)}</span>
+						<Icon />
+						<span>{themeModes[themeMode].label} mode</span>
 					</Button>
 				}
 			/>
 			<DropdownMenuContent className="w-44">
-				{dashboardThemeModes.map((mode) => (
-					<DropdownMenuItem key={mode} onClick={() => onThemeModeChange(mode)}>
-						{getThemeModeIcon(mode)}
-						<span>{getThemeModeMenuLabel(mode)}</span>
-					</DropdownMenuItem>
-				))}
+				{dashboardThemeModes.map((mode) => {
+					const { icon: ModeIcon, label } = themeModes[mode];
+					return (
+						<DropdownMenuItem key={mode} onClick={() => onThemeModeChange(mode)}>
+							<ModeIcon />
+							<span>{label} theme</span>
+						</DropdownMenuItem>
+					);
+				})}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
 }
 
-function isDashboardThemeMode(themeMode: string | null): themeMode is DashboardThemeMode {
-	switch (themeMode) {
-		case 'light':
-		case 'dark':
-		case 'system':
-			return true;
-		default:
-			return false;
-	}
+function isDashboardThemeMode(value: string | null): value is DashboardThemeMode {
+	return dashboardThemeModes.some((mode) => mode === value);
 }
 
-function getThemeModeIcon(themeMode: DashboardThemeMode): ReactElement {
-	switch (themeMode) {
-		case 'light':
-			return <Sun />;
-		case 'dark':
-			return <Moon />;
-		case 'system':
-			return <LaptopMinimal />;
-	}
-}
-
-function getThemeModeLabel(themeMode: DashboardThemeMode): string {
-	switch (themeMode) {
-		case 'light':
-			return 'Light mode';
-		case 'dark':
-			return 'Dark mode';
-		case 'system':
-			return 'System mode';
-	}
-}
-
-function getThemeModeMenuLabel(themeMode: DashboardThemeMode): string {
-	switch (themeMode) {
-		case 'light':
-			return 'Light theme';
-		case 'dark':
-			return 'Dark theme';
-		case 'system':
-			return 'System theme';
-	}
-}
-
-function getNavItemClassName(active: boolean): string {
-	const baseClassName =
-		'flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium transition-colors';
-
-	if (active) {
-		return cn(baseClassName, 'bg-primary/12 text-primary');
-	}
-
-	return cn(baseClassName, 'text-muted-foreground hover:bg-background hover:text-foreground');
-}
-
-function isActiveNavItem(currentPath: string, itemHref: string): boolean {
-	return currentPath === itemHref || currentPath.startsWith(`${itemHref}/`);
-}
-
-export { type DashboardNavItem, DashboardShell, type DashboardThemeMode };
+export { DashboardShell, type DashboardThemeMode };

@@ -5,9 +5,11 @@ import { expect, test } from './fixture.js';
 
 async function chooseDate(page: Page, label: string, date: string, time: string): Promise<void> {
 	await page.getByRole('button', { name: label, exact: true }).click();
-	await page.getByRole('textbox', { name: 'Date', exact: true }).fill(date);
-	await page.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill(time);
-	await page.getByRole('button', { name: 'Apply', exact: true }).click();
+	const picker = page.getByRole('dialog', { name: label, exact: true });
+	await picker.getByRole('textbox', { name: 'Date', exact: true }).fill(date);
+	await picker.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill(time);
+	await picker.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(picker).not.toBeVisible();
 }
 
 test('empty database, no matches, malformed and missing identifiers', async ({ page, app }) => {
@@ -142,7 +144,7 @@ test('cursor pagination with tied dates neither skips nor repeats jobs', async (
 		.getByRole('checkbox', { name: /^Select job row / })
 		.first()
 		.check();
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect(page.locator('tbody tr')).toHaveCount(50);
 	const second = await page
 		.locator('tbody a')
@@ -153,26 +155,58 @@ test('cursor pagination with tied dates neither skips nor repeats jobs', async (
 	await expect(page.getByRole('button', { name: 'Delete selected jobs' })).toHaveCount(0);
 	await page.reload();
 	await expect(page.locator('tbody tr')).toHaveCount(50);
-	await page.getByRole('button', { name: 'First page', exact: true }).click();
+	await page.getByRole('link', { name: 'First page', exact: true }).click();
 	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
+});
+
+test('pagination links preserve URLs and support opening another tab', async ({
+	page,
+	app,
+	isMobile,
+}) => {
+	await app.seedScenario('pagination');
+	await page.goto(`${app.base}/dashboard/jobs?limit=10`);
+	const previous = page.getByRole('link', { name: 'Previous page', exact: true });
+	await expect(previous).toHaveAttribute('aria-disabled', 'true');
+	await expect(previous).not.toHaveAttribute('href');
+	const next = page.getByRole('link', { name: 'Next page', exact: true });
+	await expect(next).toHaveAttribute('href', /cursor=/);
+	const href = await next.getAttribute('href');
+	expect(href).toBeTruthy();
+	const target = new URL(href ?? '', page.url()).href;
+	let otherTab: Page;
+	if (isMobile) {
+		otherTab = await page.context().newPage();
+		await otherTab.goto(target);
+	} else {
+		[otherTab] = await Promise.all([
+			page.context().waitForEvent('page'),
+			next.click({ button: 'middle' }),
+		]);
+	}
+	await expect(otherTab).toHaveURL(target);
+	await expect(otherTab.locator('tbody tr')).toHaveCount(10);
+	expect(new URL(page.url()).searchParams.get('cursor')).toBeNull();
+	expect(new URL(otherTab.url()).searchParams.get('limit')).toBe('10');
+	await otherTab.close();
 });
 
 test('Jobs pagination follows browser Back and returns from job details', async ({ page, app }) => {
 	await app.seedScenario('pagination');
 	await page.goto(`${app.base}/dashboard/jobs?limit=10`);
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).not.toBeNull();
 	const secondCursor = new URL(page.url()).searchParams.get('cursor');
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).not.toBe(secondCursor);
 	await page.goBack();
 	await expect(page).toHaveURL(
 		(url) =>
 			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
 	);
-	await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+	await page.getByRole('link', { name: 'Previous page', exact: true }).click();
 	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect(page).toHaveURL(
 		(url) =>
 			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
@@ -183,7 +217,7 @@ test('Jobs pagination follows browser Back and returns from job details', async 
 		(url) =>
 			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
 	);
-	await page.getByRole('button', { name: 'First page', exact: true }).click();
+	await page.getByRole('link', { name: 'First page', exact: true }).click();
 	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
 });
 

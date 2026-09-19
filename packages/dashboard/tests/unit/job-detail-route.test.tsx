@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import type { JobDto } from '@monque/management/contract';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { createDashboardManagementApi } from '@/management-client';
 import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
@@ -75,6 +76,36 @@ describe('Job detail route', () => {
 		expect(screen.getByText('This job has no payload.')).toBeTruthy();
 	});
 
+	it.each(['Delete job', 'Reschedule'])(
+		'clears an open %s confirmation when returning to a cached job',
+		async (action) => {
+			const first = createJobDetail({ id: 'first-job', name: 'first-job' });
+			const second = createJobDetail({ id: 'second-job', name: 'second-job' });
+			const router = await renderJobDetailRoute({
+				jobId: first.id,
+				fetch: async (input, init) => {
+					const request = new Request(input, init);
+					const job = new URL(request.url).pathname.endsWith(second.id) ? second : first;
+					return createJobDetailFetch(job)(request);
+				},
+			});
+			expect(await screen.findByRole('heading', { name: first.name })).toBeTruthy();
+			await act(async () => {
+				await router.navigate({
+					to: '/jobs/$jobId',
+					params: { jobId: second.id },
+					search: parseJobsRouteSearch({}),
+				});
+			});
+			expect(await screen.findByRole('heading', { name: second.name })).toBeTruthy();
+			fireEvent.click(screen.getByRole('button', { name: action }));
+			expect(await screen.findByRole('dialog')).toBeTruthy();
+			await act(async () => router.history.back());
+			expect(await screen.findByRole('heading', { name: first.name, hidden: true })).toBeTruthy();
+			await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		},
+	);
+
 	it.each([
 		[
 			'unauthorized',
@@ -138,7 +169,7 @@ describe('Job detail route', () => {
 async function renderJobDetailRoute(options: {
 	readonly fetch: typeof fetch;
 	readonly jobId: string;
-}): Promise<void> {
+}): Promise<ReturnType<typeof getRouter>> {
 	Object.defineProperty(window, 'scrollTo', {
 		configurable: true,
 		value: vi.fn(),
@@ -160,6 +191,7 @@ async function renderJobDetailRoute(options: {
 
 	await router.load();
 	render(<DashboardProviders queryClient={queryClient} router={router} />);
+	return router;
 }
 
 function installClipboardSpy(): ReturnType<typeof vi.fn> {

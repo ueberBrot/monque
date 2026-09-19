@@ -2,16 +2,9 @@ import { useHotkey } from '@tanstack/react-hotkeys';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Search } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-	Command,
-	CommandEmpty,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from '@/components/ui/command';
 import {
 	Dialog,
 	DialogContent,
@@ -20,11 +13,14 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
+import { copyToClipboard } from '@/lib/clipboard';
+
+const CommandSearch = lazy(() =>
+	import('./command-search.js').then((module) => ({ default: module.CommandSearch })),
+);
 
 function CommandMenu() {
 	const [open, setOpen] = useState(false);
-	const [search, setSearch] = useState('');
-	const [feedback, setFeedback] = useState('');
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const refresh = () => {
@@ -33,7 +29,6 @@ function CommandMenu() {
 	useHotkey('Mod+K', () => setOpen((current) => !current));
 	useHotkey('Mod+Shift+R', refresh);
 	useHotkey({ key: '/', shift: true }, () => {
-		setSearch('');
 		setOpen(true);
 	});
 	const commands = [
@@ -66,25 +61,13 @@ function CommandMenu() {
 		{
 			label: 'Copy page URL',
 			run: () => {
-				void navigator.clipboard.writeText(window.location.href).then(
-					() => setFeedback('Page URL copied'),
-					() => setFeedback('Copy failed. Copy the URL from your address bar.'),
-				);
+				void copyToClipboard(window.location.href, 'Page URL copied');
 			},
 		},
 	];
 	return (
 		<div className="mb-5 flex min-h-8 items-center justify-end gap-3">
-			<span role="status" className="text-xs text-muted-foreground">
-				{feedback}
-			</span>
-			<Dialog
-				open={open}
-				onOpenChange={(value) => {
-					setOpen(value);
-					if (!value) setSearch('');
-				}}
-			>
+			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogTrigger
 					render={
 						<Button variant="ghost" size="sm" className="text-muted-foreground">
@@ -101,29 +84,11 @@ function CommandMenu() {
 					<DialogDescription>
 						Navigate or update your view. Ctrl / ⌘ Shift R refreshes; ? opens this menu.
 					</DialogDescription>
-					<Command>
-						<CommandInput
-							aria-label="Search commands"
-							placeholder="Search commands…"
-							value={search}
-							onValueChange={setSearch}
-						/>
-						<CommandList>
-							<CommandEmpty>No commands found.</CommandEmpty>
-							{commands.map((command) => (
-								<CommandItem
-									key={command.label}
-									onSelect={() => {
-										command.run();
-										setOpen(false);
-										setSearch('');
-									}}
-								>
-									{command.label}
-								</CommandItem>
-							))}
-						</CommandList>
-					</Command>
+					{open ? (
+						<Suspense fallback={<p role="status">Loading commands…</p>}>
+							<CommandSearch commands={commands} onClose={() => setOpen(false)} />
+						</Suspense>
+					) : null}
 					<Button variant="outline" onClick={() => setOpen(false)}>
 						Close commands
 					</Button>

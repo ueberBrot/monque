@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { z } from 'zod';
@@ -32,25 +32,16 @@ function QueueViewDetailRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
 	const { name } = Route.useParams();
 	const search = Route.useSearch();
-	const navigate = Route.useNavigate();
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
-	const [queueViewsQuery, statsQuery] = useQueries({
-		queries: [
-			{
-				...managementApi.orpc.queueViews.queryOptions(),
-				refetchInterval,
-			},
-			{
-				...managementApi.orpc.jobStats.queryOptions({
-					input: { name },
-				}),
-				refetchInterval,
-			},
-		],
+	const statsInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
+	const queueViewsQuery = useQuery({
+		...managementApi.orpc.queueViews.queryOptions(),
+		refetchInterval: statsInterval,
 	});
 	const jobsQuery = useQuery({
 		...managementApi.orpc.jobs.queryOptions({
 			input: {
+				view: 'summary',
 				cursor: search.cursor,
 				limit: String(search.limit ?? DEFAULT_QUEUE_VIEW_JOBS_LIMIT),
 				name,
@@ -59,23 +50,14 @@ function QueueViewDetailRoute() {
 		refetchInterval,
 	});
 	const refetchQueueViewDetail = useCallback((): void => {
-		void Promise.all([queueViewsQuery.refetch(), statsQuery.refetch(), jobsQuery.refetch()]);
-	}, [jobsQuery.refetch, queueViewsQuery.refetch, statsQuery.refetch]);
-	const resetQueueViewPagination = useCallback((): void => {
-		void navigate({
-			to: '/queue-views/$name',
-			params: { name },
-			search: {
-				limit: search.limit,
-			},
-		});
-	}, [navigate, name, search.limit]);
+		void Promise.all([queueViewsQuery.refetch(), jobsQuery.refetch()]);
+	}, [jobsQuery.refetch, queueViewsQuery.refetch]);
 
-	if (queueViewsQuery.isPending || statsQuery.isPending || jobsQuery.isPending) {
+	if (queueViewsQuery.isPending || jobsQuery.isPending) {
 		return <QueueViewsLoadingState />;
 	}
 
-	const firstError = queueViewsQuery.error ?? statsQuery.error ?? jobsQuery.error;
+	const firstError = queueViewsQuery.error ?? jobsQuery.error;
 
 	if (firstError) {
 		if (isUnauthorizedQueryError(firstError)) {
@@ -100,14 +82,21 @@ function QueueViewDetailRoute() {
 	}
 
 	const queueViews = queueViewsQuery.data?.queueViews;
-	const stats = statsQuery.data;
 	const jobsPage = jobsQuery.data;
 
-	if (!queueViews || !stats || !jobsPage) {
+	if (!queueViews || !jobsPage) {
 		return <QueueViewsLoadingState />;
 	}
 
 	const queueView = queueViews.find((candidate) => candidate.name === name);
+	const stats = queueView?.stats ?? {
+		pending: 0,
+		processing: 0,
+		completed: 0,
+		failed: 0,
+		cancelled: 0,
+		total: 0,
+	};
 
 	return (
 		<div className="grid gap-4">
@@ -123,26 +112,15 @@ function QueueViewDetailRoute() {
 				search={search}
 				freshness={
 					<QueryFreshness
-						updatedAt={Math.min(jobsQuery.dataUpdatedAt, statsQuery.dataUpdatedAt)}
-						fetching={jobsQuery.isFetching || statsQuery.isFetching}
-						paused={jobsQuery.fetchStatus === 'paused' || statsQuery.fetchStatus === 'paused'}
+						updatedAt={Math.min(jobsQuery.dataUpdatedAt, queueViewsQuery.dataUpdatedAt)}
+						fetching={jobsQuery.isFetching || queueViewsQuery.isFetching}
+						paused={jobsQuery.fetchStatus === 'paused' || queueViewsQuery.fetchStatus === 'paused'}
 						pollingIntervalMs={runtimeConfig.pollingIntervalMs}
 					/>
 				}
 				name={name}
 				jobsPage={jobsPage}
 				onRefresh={refetchQueueViewDetail}
-				onResetCursor={resetQueueViewPagination}
-				onNextPage={(cursor) => {
-					void navigate({
-						to: '/queue-views/$name',
-						params: { name },
-						search: {
-							cursor,
-							limit: search.limit,
-						},
-					});
-				}}
 			/>
 		</div>
 	);

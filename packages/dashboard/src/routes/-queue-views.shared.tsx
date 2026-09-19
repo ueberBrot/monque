@@ -8,7 +8,10 @@ import { Link } from '@tanstack/react-router';
 import { Activity, CircleAlert, CircleCheckBig, Clock3, RefreshCw, ServerCog } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { ButtonLink } from '@/components/button-link';
+import { JobStatusBadge } from '@/components/job-status-badge';
 import { JobTimestamp } from '@/components/job-timestamp';
+import { RefreshButton } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -23,8 +26,14 @@ import {
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { getOperatorTimeZoneLabel } from '@/lib/dates';
 import { getJobRunLabel } from '@/lib/job-detail';
-import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
+
+const OVERVIEW_STATS = [
+	{ key: 'pending', label: 'Pending' },
+	{ key: 'processing', label: 'Processing' },
+	{ key: 'failed', label: 'Failed' },
+	{ key: 'total', label: 'Total' },
+] as const;
 
 const queueViewSkeletonKeys = ['skeleton-1', 'skeleton-2', 'skeleton-3', 'skeleton-4'] as const;
 
@@ -155,10 +164,11 @@ function QueueViewsOverview({
 			<div className="overflow-hidden rounded-lg border border-border bg-card">
 				<div className="hidden grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(4rem,1fr))] gap-4 border-b border-border bg-muted/40 px-5 py-3 text-xs font-medium text-muted-foreground md:grid">
 					<span>Job name</span>
-					<span className="text-right">Pending</span>
-					<span className="text-right">Processing</span>
-					<span className="text-right">Failed</span>
-					<span className="text-right">Total</span>
+					{OVERVIEW_STATS.map(({ key, label }) => (
+						<span key={key} className="text-right">
+							{label}
+						</span>
+					))}
 				</div>
 				{queueViews.map((view) => (
 					<Link
@@ -177,16 +187,10 @@ function QueueViewsOverview({
 							</p>
 						</div>
 						<div className="grid grid-cols-4 gap-3 md:contents">
-							{(['pending', 'processing', 'failed', 'total'] as const).map((key) => (
+							{OVERVIEW_STATS.map(({ key, label }) => (
 								<div key={key} className="md:text-right">
 									<span className="mb-1 block text-xs text-muted-foreground md:sr-only">
-										{key === 'pending'
-											? 'Pending'
-											: key === 'processing'
-												? 'Processing'
-												: key === 'failed'
-													? 'Failed'
-													: 'Total'}
+										{label}
 									</span>
 									<span
 										className={cn(
@@ -254,20 +258,15 @@ function QueueViewJobsTable({
 	freshness,
 	jobsPage,
 	name,
-	onNextPage,
-	onResetCursor,
 	onRefresh,
 }: {
 	readonly jobsPage: JobCursorPageDto;
 	readonly freshness?: ReactNode;
 	readonly search?: { readonly cursor?: string | undefined; readonly limit?: number | undefined };
 	readonly name: string;
-	readonly onNextPage: (cursor: string) => void;
 	readonly onRefresh: () => void;
-	readonly onResetCursor: () => void;
 }): ReactElement {
 	const nextPageCursor = jobsPage.cursor;
-	const now = useNow();
 
 	return (
 		<section className="grid min-w-0 gap-4">
@@ -281,14 +280,16 @@ function QueueViewJobsTable({
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
 					{freshness}
-					<Button type="button" variant="outline" onClick={onRefresh}>
-						<RefreshCw className="size-4" />
-						Refresh
-					</Button>
+					<RefreshButton onRefresh={onRefresh} />
 					{jobsPage.hasPreviousPage ? (
-						<Button type="button" variant="outline" onClick={onResetCursor}>
+						<ButtonLink
+							to="/queue-views/$name"
+							params={{ name }}
+							search={{ limit: search?.limit }}
+							variant="outline"
+						>
 							Back to first page
-						</Button>
+						</ButtonLink>
 					) : null}
 				</div>
 			</div>
@@ -312,7 +313,6 @@ function QueueViewJobsTable({
 								<QueueViewJobRow
 									key={job.id}
 									job={job}
-									now={now}
 									queueCursor={search?.cursor}
 									queueLimit={search?.limit}
 								/>
@@ -327,9 +327,14 @@ function QueueViewJobsTable({
 				</p>
 				<div className="flex gap-2">
 					{nextPageCursor ? (
-						<Button type="button" variant="outline" onClick={() => onNextPage(nextPageCursor)}>
+						<ButtonLink
+							to="/queue-views/$name"
+							params={{ name }}
+							search={{ limit: search?.limit, cursor: nextPageCursor }}
+							variant="outline"
+						>
 							Next page
-						</Button>
+						</ButtonLink>
 					) : null}
 				</div>
 			</div>
@@ -339,12 +344,10 @@ function QueueViewJobsTable({
 
 function QueueViewJobRow({
 	job,
-	now,
 	queueCursor,
 	queueLimit,
 }: {
 	readonly job: JobDto;
-	readonly now: Date;
 	readonly queueCursor: string | undefined;
 	readonly queueLimit: number | undefined;
 }): ReactElement {
@@ -370,10 +373,10 @@ function QueueViewJobRow({
 			</TableCell>
 			<TableCell className="text-sm text-muted-foreground">
 				<span className="text-xs">{getJobRunLabel(job)}</span>
-				<JobTimestamp value={job.nextRunAt} now={now} />
+				<JobTimestamp value={job.nextRunAt} />
 			</TableCell>
 			<TableCell className="text-sm text-muted-foreground">
-				<JobTimestamp value={job.updatedAt} now={now} />
+				<JobTimestamp value={job.updatedAt} />
 			</TableCell>
 		</TableRow>
 	);
@@ -425,21 +428,6 @@ function QueueStatCard({
 			<p className={cn('mt-1 text-lg font-semibold', highlight && 'text-destructive')}>{value}</p>
 		</div>
 	);
-}
-
-function JobStatusBadge({ status }: { readonly status: JobDto['status'] }): ReactElement {
-	switch (status) {
-		case 'pending':
-			return <Badge variant="outline">Pending</Badge>;
-		case 'processing':
-			return <Badge variant="info">Processing</Badge>;
-		case 'completed':
-			return <Badge variant="success">Completed</Badge>;
-		case 'failed':
-			return <Badge variant="danger">Failed</Badge>;
-		case 'cancelled':
-			return <Badge variant="outline">Cancelled</Badge>;
-	}
 }
 
 export {

@@ -53,6 +53,44 @@ describe('Relative timestamp clock', () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it('updates older timestamps at minute cadence while recent timestamps tick each second', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-06-03T12:00:00Z'));
+		const { result, unmount } = renderHook(() => useNow(Date.parse('2026-06-03T11:00:00Z')));
+		const initial = result.current;
+		act(() => vi.advanceTimersByTime(1_000));
+		expect(result.current).toBe(initial);
+		act(() => vi.advanceTimersByTime(59_000));
+		expect(result.current.toISOString()).toBe('2026-06-03T12:01:00.000Z');
+		unmount();
+	});
+
+	it('keeps elapsed labels correct when a timestamp crosses minute cadence', () => {
+		vi.useFakeTimers();
+		const reference = Date.parse('2026-06-03T12:00:40Z');
+		vi.setSystemTime(reference + 59_000);
+		const { result, unmount } = renderHook(() =>
+			formatRelativeDate(new Date(reference).toISOString(), useNow(reference)),
+		);
+		expect(result.current).toBe('59 seconds ago');
+		act(() => vi.advanceTimersByTime(2_000));
+		expect(result.current).toBe('1 minute ago');
+		act(() => vi.advanceTimersByTime(30_000));
+		expect(result.current).toBe('2 minutes ago');
+		unmount();
+	});
+
+	it('shares one timer across mounted clocks', () => {
+		vi.useFakeTimers();
+		const first = renderHook(() => useNow());
+		const second = renderHook(() => useNow());
+		expect(vi.getTimerCount()).toBe(1);
+		first.unmount();
+		expect(vi.getTimerCount()).toBe(1);
+		second.unmount();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
 	it('pauses updates while hidden and catches up when visible', () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date('2026-06-03T12:00:00Z'));

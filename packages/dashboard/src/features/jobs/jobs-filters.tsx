@@ -44,25 +44,14 @@ type JobDateFilterField = keyof Pick<
 	| 'nextRunAtFrom'
 	| 'nextRunAtTo'
 >;
+
 function JobsFilters({
 	search,
 	updateSearch,
-	dateFiltersOpen,
-	setDateFiltersOpen,
 }: {
 	readonly search: JobsRouteSearch;
 	readonly updateSearch: (updater: (search: JobsRouteSearch) => JobsRouteSearch) => void;
-	readonly dateFiltersOpen: boolean;
-	readonly setDateFiltersOpen: (open: boolean) => void;
 }) {
-	function handleNameChange(value: string): void {
-		updateSearch((currentSearch) => ({
-			...currentSearch,
-			name: value.trim().length > 0 ? value : undefined,
-			cursor: undefined,
-		}));
-	}
-
 	function handleStatusToggle(status: JobDto['status']): void {
 		updateSearch((currentSearch) => ({
 			...currentSearch,
@@ -101,7 +90,10 @@ function JobsFilters({
 					<Input
 						id="jobs-name-filter"
 						value={search.name ?? ''}
-						onChange={(event) => handleNameChange(event.target.value)}
+						onChange={(event) => {
+							const name = event.target.value;
+							updateSearch((current) => ({ ...current, name, cursor: undefined }));
+						}}
 						placeholder="send-email"
 					/>
 				</Field>
@@ -127,11 +119,7 @@ function JobsFilters({
 						</SelectContent>
 					</Select>
 				</Field>
-				<Collapsible
-					className="col-span-2 min-w-0 sm:col-span-3"
-					open={dateFiltersOpen}
-					onOpenChange={setDateFiltersOpen}
-				>
+				<Collapsible className="col-span-2 min-w-0 sm:col-span-3">
 					<CollapsibleTrigger
 						render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}
 					>

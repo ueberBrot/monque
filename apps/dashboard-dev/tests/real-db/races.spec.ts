@@ -1,5 +1,28 @@
 import { expect, test } from './fixture.js';
 
+for (const action of ['Delete job', 'Reschedule'] as const) {
+	test(`an open ${action} confirmation belongs only to its original job`, async ({ page, app }) => {
+		const first = await app.seed({ name: 'first-job' });
+		const second = await app.seed({ name: 'second-job' });
+		await page.goto(`${app.base}/dashboard/jobs/${first._id}`);
+		await expect(page.getByRole('heading', { name: 'first-job', exact: true })).toBeVisible();
+		await page.getByRole('link', { name: '← Back to jobs', exact: true }).click();
+		await page.getByRole('link', { name: 'second-job', exact: true }).click();
+		await page.getByRole('button', { name: action, exact: true }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+		await page.evaluate(() => window.history.go(-2));
+		await expect(page.getByRole('heading', { name: 'first-job', exact: true })).toBeVisible();
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		expect(await app.jobs.findOne({ _id: first._id })).not.toBeNull();
+		expect(await app.jobs.findOne({ _id: second._id })).not.toBeNull();
+		await page.getByRole('button', { name: 'Delete job', exact: true }).click();
+		await page.getByRole('button', { name: 'Confirm delete job', exact: true }).click();
+		await expect(page.getByText('Job deleted', { exact: true })).toBeVisible();
+		expect(await app.jobs.findOne({ _id: first._id })).toBeNull();
+		expect(await app.jobs.findOne({ _id: second._id })).not.toBeNull();
+	});
+}
+
 test('a delayed deletion does not pull the operator away from another job', async ({
 	page,
 	app,

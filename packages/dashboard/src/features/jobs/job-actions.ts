@@ -3,8 +3,8 @@ import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 import type { DashboardManagementApi } from '@/management-client';
 import { readManagementError } from '@/management-errors';
 
-type JobActionKey = 'cancel' | 'delete' | 'reschedule' | 'retry';
-type BulkJobActionKey = JobActionKey;
+const JOB_ACTION_ORDER = ['cancel', 'retry', 'reschedule', 'delete'] as const;
+type JobActionKey = (typeof JOB_ACTION_ORDER)[number];
 type JobActionAvailability = {
 	readonly disabled: boolean;
 	readonly reason: string | null;
@@ -23,104 +23,123 @@ type RunJobActionsInput = JobActionRequest & { readonly jobIds: readonly string[
 type JobActionsResult = {
 	readonly action: JobActionKey;
 	readonly count: number;
+	readonly jobs: readonly JobDto[];
 	readonly failed: string[];
 	readonly firstError: unknown;
+	readonly authorizationChanged: boolean;
 };
-
-const MAX_CONCURRENT_JOB_ACTIONS = 5;
 
 async function runJobActions(
 	managementApi: DashboardManagementApi,
 	input: RunJobActionsInput,
 ): Promise<JobActionsResult> {
-	async function runBatch(offset: number): Promise<PromiseSettledResult<JobActionKey>[]> {
-		const batch = input.jobIds.slice(offset, offset + MAX_CONCURRENT_JOB_ACTIONS);
-		if (batch.length === 0) return [];
-
-		const results = await Promise.allSettled(
-			batch.map((jobId) => runJobAction(managementApi, { ...input, jobId })),
-		);
-		return [...results, ...(await runBatch(offset + MAX_CONCURRENT_JOB_ACTIONS))];
+	if (input.jobIds.length === 0)
+		return {
+			action: input.action,
+			count: 0,
+			jobs: [],
+			failed: [],
+			firstError: undefined,
+			authorizationChanged: false,
+		};
+	if (input.jobIds.length === 1) {
+		const jobId = input.jobIds[0];
+		if (jobId === undefined) throw new Error('Missing selected job');
+		const job = await runJobAction(managementApi, { ...input, jobId });
+		return {
+			action: input.action,
+			count: 1,
+			jobs: job ? [job] : [],
+			failed: [],
+			firstError: undefined,
+			authorizationChanged: false,
+		};
 	}
-
-	const results = await runBatch(0);
-	const failed = input.jobIds.filter((_, index) => results[index]?.status === 'rejected');
-	const firstFailure = results.find((result) => result.status === 'rejected');
+	const result = await managementApi.client.selectedJobActions(
+		input.action === 'reschedule'
+			? { action: input.action, ids: [...input.jobIds], nextRunAt: input.nextRunAt }
+			: { action: input.action, ids: [...input.jobIds] },
+	);
+	const errors = new Map(result.errors.map((error) => [error.jobId, error]));
+	const failed = input.jobIds.filter((id) => errors.has(id));
+	const first = failed[0] ? errors.get(failed[0]) : undefined;
 	return {
 		action: input.action,
-		count: results.length - failed.length,
+		count: result.count,
+		jobs: [],
 		failed,
-		firstError: firstFailure?.reason,
+		firstError: first ? { status: first.status, message: first.error } : undefined,
+		authorizationChanged: result.errors.some((error) => error.status === 403),
 	};
 }
 
-const BULK_CAPABILITY_BY_ACTION = {
-	cancel: 'cancelBulk',
-	delete: 'deleteBulk',
-	reschedule: 'reschedule',
-	retry: 'retryBulk',
-} as const;
-
-const SINGLE_CAPABILITY_BY_ACTION = {
-	cancel: 'cancel',
-	delete: 'delete',
-	reschedule: 'reschedule',
-	retry: 'retry',
-} as const;
+const JOB_ACTION_DEFINITIONS = {
+	cancel: {
+		label: 'Cancel',
+		bulkCapability: 'cancelBulk',
+		statuses: new Set<JobDto['status']>(['pending']),
+		reason: 'Only pending jobs can be cancelled.',
+		bulkReason: 'Bulk cancel requires every selected job to be pending.',
+	},
+	retry: {
+		label: 'Retry',
+		bulkCapability: 'retryBulk',
+		statuses: new Set<JobDto['status']>(['failed', 'cancelled']),
+		reason: 'Only failed or cancelled jobs can be retried.',
+		bulkReason: 'Bulk retry requires every selected job to be failed or cancelled.',
+	},
+	reschedule: {
+		label: 'Reschedule',
+		bulkCapability: 'reschedule',
+		statuses: new Set<JobDto['status']>(['pending']),
+		reason: 'Only pending jobs can be rescheduled.',
+		bulkReason: 'Bulk reschedule requires every selected job to be pending.',
+	},
+	delete: {
+		label: 'Delete',
+		bulkCapability: 'deleteBulk',
+		statuses: new Set<JobDto['status']>(),
+		reason: '',
+		bulkReason: '',
+	},
+} as const satisfies Record<
+	JobActionKey,
+	{
+		label: string;
+		bulkCapability: keyof CapabilitiesDto['actions'];
+		statuses: ReadonlySet<JobDto['status']>;
+		reason: string;
+		bulkReason: string;
+	}
+>;
 
 function getJobActionAvailability(
 	job: JobDto,
 	capabilities: CapabilitiesDto | undefined,
 	action: JobActionKey,
 ): JobActionAvailability {
-	if (!capabilities?.actions[SINGLE_CAPABILITY_BY_ACTION[action]]) {
-		return {
-			disabled: true,
-			reason: capabilities?.readOnly
-				? 'This dashboard is read-only.'
-				: 'Your host application has not enabled this action for you.',
-		};
-	}
-
-	switch (action) {
-		case 'cancel':
-			return getAvailabilityForPredicate(
-				job.status === 'pending',
-				'Only pending jobs can be cancelled.',
-			);
-		case 'retry':
-			return getAvailabilityForPredicate(
-				job.status === 'failed' || job.status === 'cancelled',
-				'Only failed or cancelled jobs can be retried.',
-			);
-		case 'reschedule':
-			return getAvailabilityForPredicate(
-				job.status === 'pending',
-				'Only pending jobs can be rescheduled.',
-			);
-		case 'delete':
-			return {
-				disabled: false,
-				reason: null,
-			};
-	}
+	return getActionAvailability([job], capabilities, action, false);
 }
 
 function getBulkJobActionAvailability(
 	jobs: readonly JobDto[],
 	capabilities: CapabilitiesDto | undefined,
-	action: BulkJobActionKey,
+	action: JobActionKey,
 ): JobActionAvailability {
-	if (jobs.length === 0) {
-		return {
-			disabled: true,
-			reason: 'Select at least one job on this page.',
-		};
-	}
+	return getActionAvailability(jobs, capabilities, action, true);
+}
 
+function getActionAvailability(
+	jobs: readonly JobDto[],
+	capabilities: CapabilitiesDto | undefined,
+	action: JobActionKey,
+	bulk: boolean,
+): JobActionAvailability {
+	if (!jobs.length) return { disabled: true, reason: 'Select at least one job on this page.' };
+	const definition = JOB_ACTION_DEFINITIONS[action];
 	if (
-		!capabilities?.actions[BULK_CAPABILITY_BY_ACTION[action]] ||
-		!capabilities.actions[SINGLE_CAPABILITY_BY_ACTION[action]]
+		!capabilities?.actions[action] ||
+		(bulk && !capabilities.actions[definition.bulkCapability])
 	) {
 		return {
 			disabled: true,
@@ -129,29 +148,12 @@ function getBulkJobActionAvailability(
 				: 'Your host application has not enabled this action for you.',
 		};
 	}
-
-	switch (action) {
-		case 'cancel':
-			return getAvailabilityForPredicate(
-				jobs.every((job) => job.status === 'pending'),
-				'Bulk cancel requires every selected job to be pending.',
-			);
-		case 'retry':
-			return getAvailabilityForPredicate(
-				jobs.every((job) => job.status === 'failed' || job.status === 'cancelled'),
-				'Bulk retry requires every selected job to be failed or cancelled.',
-			);
-		case 'reschedule':
-			return getAvailabilityForPredicate(
-				jobs.every((job) => job.status === 'pending'),
-				'Bulk reschedule requires every selected job to be pending.',
-			);
-		case 'delete':
-			return {
-				disabled: false,
-				reason: null,
-			};
-	}
+	const statuses = definition.statuses;
+	const enabled = action === 'delete' || jobs.every((job) => statuses.has(job.status));
+	return {
+		disabled: !enabled,
+		reason: enabled ? null : bulk ? definition.bulkReason : definition.reason,
+	};
 }
 
 function getActionSuccessFeedback(action: JobActionKey, count = 1): JobActionFeedback {
@@ -222,53 +224,32 @@ function getActionErrorFeedback(error: unknown): JobActionFeedback {
 async function runJobAction(
 	managementApi: DashboardManagementApi,
 	input: RunJobActionInput,
-): Promise<JobActionKey> {
+): Promise<JobDto | undefined> {
+	const params = { id: input.jobId };
 	switch (input.action) {
 		case 'cancel':
-			await managementApi.client.cancelJob({
-				params: { id: input.jobId },
-			});
-			return input.action;
+			return managementApi.client.cancelJob({ params });
 		case 'retry':
-			await managementApi.client.retryJob({
-				params: { id: input.jobId },
-			});
-			return input.action;
+			return managementApi.client.retryJob({ params });
 		case 'reschedule':
-			await managementApi.client.rescheduleJob({
-				params: { id: input.jobId },
-				body: {
-					nextRunAt: input.nextRunAt,
-				},
-			});
-			return input.action;
+			return managementApi.client.rescheduleJob({ params, body: { nextRunAt: input.nextRunAt } });
 		case 'delete':
-			await managementApi.client.deleteJob({
-				params: { id: input.jobId },
-			});
-			return input.action;
+			await managementApi.client.deleteJob({ params });
+			return undefined;
 	}
 }
 
-function getAvailabilityForPredicate(enabled: boolean, reason: string): JobActionAvailability {
-	return {
-		disabled: !enabled,
-		reason: enabled ? null : reason,
-	};
-}
-
 export {
-	type BulkJobActionKey,
 	getActionErrorFeedback,
 	getActionSuccessFeedback,
 	getBulkJobActionAvailability,
 	getJobActionAvailability,
+	JOB_ACTION_DEFINITIONS,
+	JOB_ACTION_ORDER,
 	type JobActionFeedback,
 	type JobActionFeedbackTone,
 	type JobActionKey,
 	type JobActionRequest,
-	type RunJobActionInput,
 	type RunJobActionsInput,
-	runJobAction,
 	runJobActions,
 };

@@ -62,9 +62,11 @@ for (const field of ['Created', 'Updated', 'Next run']) {
 			['to', '12:03'],
 		]) {
 			await page.getByRole('button', { name: `${field} ${suffix}`, exact: true }).click();
-			await page.getByRole('textbox', { name: 'Date', exact: true }).fill('2026-06-01');
-			await page.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill(time ?? '');
-			await page.getByRole('button', { name: 'Apply', exact: true }).click();
+			const picker = page.getByRole('dialog', { name: `${field} ${suffix}`, exact: true });
+			await picker.getByRole('textbox', { name: 'Date', exact: true }).fill('2026-06-01');
+			await picker.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill(time ?? '');
+			await picker.getByRole('button', { name: 'Apply', exact: true }).click();
+			await expect(picker).not.toBeVisible();
 		}
 		await expect(page.locator('tbody tr')).toHaveCount(3);
 		await page.reload();
@@ -117,9 +119,9 @@ test('page sizes, previous page, and changing filters clear stale selection', as
 		.getByRole('checkbox', { name: /^Select job row / })
 		.first()
 		.check();
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Delete selected jobs' })).toHaveCount(0);
-	await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+	await page.getByRole('link', { name: 'Previous page', exact: true }).click();
 	await expect(page.locator('tbody a').first()).toHaveAttribute('href', first ?? '');
 	await page
 		.getByRole('checkbox', { name: /^Select job row / })
@@ -226,6 +228,42 @@ test('clipboard controls copy persisted payload, ID, and mounted share URL', asy
 	}
 });
 
+for (const clipboardState of ['unavailable', 'denied'] as const) {
+	test(`copy controls handle ${clipboardState} clipboard access without breaking commands`, async ({
+		page,
+		app,
+	}) => {
+		const errors: string[] = [];
+		page.on('pageerror', (error) => errors.push(error.message));
+		await page.addInitScript((state) => {
+			Object.defineProperty(navigator, 'clipboard', {
+				configurable: true,
+				value:
+					state === 'unavailable'
+						? undefined
+						: {
+								writeText: () => Promise.reject(new Error('Clipboard permission denied')),
+							},
+			});
+		}, clipboardState);
+		const job = await app.seed();
+		await page.goto(`${app.base}/dashboard/jobs/${job._id}`);
+		await page.getByRole('button', { name: 'Copy job ID', exact: true }).click();
+		await expect(page.getByText('Copy failed', { exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Close toast', exact: true }).click();
+		await page.keyboard.press('Control+k');
+		await page.getByRole('combobox', { name: 'Search commands' }).fill('Copy page URL');
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('dialog', { name: 'Commands', exact: true })).toHaveCount(0);
+		await expect(page.getByText('Copy failed', { exact: true })).toBeVisible();
+		expect(errors).toEqual([]);
+		await page.keyboard.press('Control+k');
+		await page.getByRole('combobox', { name: 'Search commands' }).fill('Health');
+		await page.keyboard.press('Enter');
+		await expect(page.getByRole('heading', { name: 'Health', exact: true })).toBeVisible();
+	});
+}
+
 test('commands, shortcuts, navigation and themes persist on the real server', async ({
 	page,
 	app,
@@ -249,7 +287,15 @@ test('commands, shortcuts, navigation and themes persist on the real server', as
 	await expect(page.getByRole('heading', { name: 'Queue Views', exact: true })).toBeVisible();
 	await expect(page.locator('html')).toHaveClass(/dark/);
 	await page.keyboard.press('Control+k');
-	await page.getByRole('combobox', { name: 'Search commands' }).fill('Toggle theme');
+	const commandSearch = page.getByRole('combobox', { name: 'Search commands' });
+	await expect(commandSearch).toHaveValue('');
+	await commandSearch.fill('no matching command');
+	await expect(page.getByText('No commands found.')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('dialog', { name: 'Commands', exact: true })).toHaveCount(0);
+	await page.keyboard.press('Control+k');
+	await expect(commandSearch).toHaveValue('');
+	await commandSearch.fill('Toggle theme');
 	await page.keyboard.press('Enter');
 	await expect(page.locator('html')).not.toHaveClass(/dark/);
 	await app.seed({ name: 'new-queue' });
@@ -421,14 +467,16 @@ test('copied filter and cursor URL opens the same results in a fresh browser ses
 	]) {
 		for (const suffix of ['from', 'to']) {
 			await page.getByRole('button', { name: `${field} ${suffix}`, exact: true }).click();
-			await page.getByRole('textbox', { name: 'Date', exact: true }).fill(date ?? '');
-			await page.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill('12:00');
-			await page.getByRole('button', { name: 'Apply', exact: true }).click();
+			const picker = page.getByRole('dialog', { name: `${field} ${suffix}`, exact: true });
+			await picker.getByRole('textbox', { name: 'Date', exact: true }).fill(date ?? '');
+			await picker.getByRole('textbox', { name: 'Time (24h)', exact: true }).fill('12:00');
+			await picker.getByRole('button', { name: 'Apply', exact: true }).click();
+			await expect(picker).not.toBeVisible();
 		}
 	}
 	await expect(page.locator('tbody tr')).toHaveCount(25);
 	const first = await page.locator('tbody a').first().getAttribute('href');
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	await expect(page.locator('tbody a').first()).not.toHaveAttribute('href', first ?? '');
 	const links = await page
 		.locator('tbody a')
@@ -494,7 +542,7 @@ test('preserves the investigation filters and cursor through job detail and relo
 	await page.goto(
 		`${app.base}/dashboard/jobs?name=email&limit=10&status=%5B%22pending%22%5D&sortBy=createdAt&sortDirection=asc`,
 	);
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	const listUrl = page.url();
 	const query = Object.fromEntries(new URL(listUrl).searchParams);
 	await page.locator('tbody a').first().click();
@@ -510,7 +558,7 @@ test('preserves the investigation filters and cursor through job detail and relo
 test('queue job inspection returns to the originating queue page', async ({ page, app }) => {
 	await app.seedScenario('pagination');
 	await page.goto(`${app.base}/dashboard/queue-views/email?limit=10`);
-	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await page.getByRole('link', { name: 'Next page', exact: true }).click();
 	const query = Object.fromEntries(new URL(page.url()).searchParams);
 	await page.locator('tbody a').first().click();
 	await page.reload();
@@ -576,7 +624,7 @@ test('workspace keeps navigation and theme visible while the job list scrolls', 
 	await page.locator('#main-content').evaluate((element) => {
 		element.scrollTop = element.scrollHeight;
 	});
-	await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeInViewport();
+	await expect(page.getByRole('link', { name: 'Next page', exact: true })).toBeInViewport();
 	await expect(theme).toBeInViewport();
 	expect(await theme.boundingBox()).toEqual(before);
 	expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(

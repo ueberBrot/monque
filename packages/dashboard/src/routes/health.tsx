@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, Lock, RefreshCw, ShieldX } from 'lucide-re
 import type { ReactNode } from 'react';
 
 import { listDashboardCapabilityStates } from '@/capabilities';
-import { QueryFreshness } from '@/components/query-freshness';
+import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -33,11 +33,15 @@ type HealthSummaryCardProps = {
 
 function HealthRoute() {
 	const { managementApi, runtimeConfig } = Route.useRouteContext();
-	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
+	const capabilitiesInterval = useDocumentVisiblePollingInterval(
+		runtimeConfig.pollingIntervalMs,
+		6,
+	);
 	const [healthQuery, capabilitiesQuery] = useQueries({
 		queries: [
 			{ ...managementApi.orpc.health.queryOptions(), refetchInterval },
-			{ ...managementApi.orpc.capabilities.queryOptions(), refetchInterval },
+			{ ...managementApi.orpc.capabilities.queryOptions(), refetchInterval: capabilitiesInterval },
 		],
 	});
 	const error = healthQuery.error ?? capabilitiesQuery.error;
@@ -105,10 +109,7 @@ function HealthRouteContent({
 					<h1 className="text-2xl font-semibold">Health</h1>
 					<div className="flex flex-wrap items-center gap-3">
 						{freshness}
-						<Button variant="outline" onClick={onRefresh} aria-label="Refresh" aria-busy={fetching}>
-							<RefreshCw className="size-4" />
-							Refresh
-						</Button>
+						<RefreshButton onRefresh={onRefresh} fetching={fetching} />
 					</div>
 				</div>
 				<p className="max-w-prose text-sm text-muted-foreground">
@@ -134,12 +135,12 @@ function HealthRouteContent({
 					>
 						Connection details{' '}
 						<span className="text-xs text-muted-foreground">
-							Auto-refresh: {formatPollingInterval(pollingIntervalMs)}
+							Base refresh: {formatPollingInterval(pollingIntervalMs)}
 						</span>
 					</CollapsibleTrigger>
 					<CollapsibleContent>
 						<dl className="grid gap-3 py-3 text-sm sm:grid-cols-2">
-							<HealthDefinition term="Auto-refresh">
+							<HealthDefinition term="Job refresh interval">
 								{formatPollingInterval(pollingIntervalMs)}
 							</HealthDefinition>
 							<HealthDefinition term="Access">

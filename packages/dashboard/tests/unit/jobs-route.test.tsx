@@ -56,6 +56,181 @@ describe('Jobs route', () => {
 		).toBe(true);
 	});
 
+	it.each(['/jobs', '/jobs/job-123'])(
+		'refreshes granted permissions without leaving %s',
+		async (initialEntry) => {
+			const job = createListJob();
+			const state = createJobsActionFetch({ jobs: [job] });
+			let capabilitiesRequests = 0;
+			const fetch: typeof globalThis.fetch = async (input, init) => {
+				const request = new Request(input, init);
+				const path = new URL(request.url).pathname;
+				if (path === '/api/v1/capabilities') {
+					capabilitiesRequests++;
+					const capabilities = createCapabilities();
+					return Response.json({
+						...capabilities,
+						actions: { ...capabilities.actions, cancel: capabilitiesRequests > 1 },
+					});
+				}
+				if (path === `/api/v1/jobs/${job.id}`) return Response.json(job);
+				return state.fetch(request);
+			};
+			await renderJobsRoute({ fetch, initialEntry, pollingIntervalMs: 100 });
+			const isList = initialEntry === '/jobs';
+			if (isList) {
+				fireEvent.click(await screen.findByRole('button', { name: `Actions for ${job.id}` }));
+			}
+			const action = await screen.findByRole(isList ? 'menuitem' : 'button', {
+				name: isList ? 'Cancel job' : 'Cancel',
+			});
+			expect(
+				action.hasAttribute('disabled') || action.getAttribute('aria-disabled') === 'true',
+			).toBe(true);
+			await waitFor(
+				() => {
+					expect(capabilitiesRequests).toBeGreaterThan(1);
+					expect(
+						action.hasAttribute('disabled') || action.getAttribute('aria-disabled') === 'true',
+					).toBe(false);
+				},
+				{ timeout: 2_000 },
+			);
+		},
+	);
+
+	it('disables cached detail actions when the permission refresh is denied', async () => {
+		const job = createListJob();
+		let capabilitiesRequests = 0;
+		const fetch: typeof globalThis.fetch = async (input, init) => {
+			const request = new Request(input, init);
+			if (new URL(request.url).pathname === '/api/v1/capabilities') {
+				capabilitiesRequests++;
+				return capabilitiesRequests === 1
+					? Response.json(createCapabilities())
+					: Response.json({ error: 'Access revoked' }, { status: 403 });
+			}
+			return Response.json(job);
+		};
+		await renderJobsRoute({ fetch, initialEntry: `/jobs/${job.id}`, pollingIntervalMs: 100 });
+		const action = await screen.findByRole('button', { name: 'Cancel' });
+		await waitFor(() => expect(action.hasAttribute('disabled')).toBe(false));
+		await waitFor(
+			() => {
+				expect(capabilitiesRequests).toBe(2);
+				expect(action.hasAttribute('disabled')).toBe(true);
+			},
+			{ timeout: 2_000 },
+		);
+	});
+
+	it('refreshes permissions manually when automatic polling is disabled', async () => {
+		const capabilities = createCapabilities();
+		capabilities.actions.cancel = false;
+		const job = createListJob();
+		const state = createJobsActionFetch({ jobs: [job], capabilities });
+		await renderJobsRoute({ fetch: state.fetch, initialEntry: '/jobs' });
+		await screen.findByRole('button', { name: `Actions for ${job.id}` });
+		capabilities.actions.cancel = true;
+		fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+		await waitFor(() => expect(state.listRequestCount).toBe(2));
+		fireEvent.click(screen.getByRole('button', { name: `Actions for ${job.id}` }));
+		await waitFor(() =>
+			expect(
+				screen.getByRole('menuitem', { name: 'Cancel job' }).getAttribute('aria-disabled'),
+			).not.toBe('true'),
+		);
+	});
+
+	it('debounces name requests while immediately showing the typed value', async () => {
+		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
+		await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs' });
+		const input = await screen.findByLabelText('Job name');
+		fetchSpy.mockClear();
+		for (const value of ['s', 'send', 'send-email']) {
+			await act(async () => {
+				fireEvent.change(input, { target: { value } });
+				await new Promise((resolve) => setTimeout(resolve, 40));
+			});
+		}
+		expect((input as HTMLInputElement).value).toBe('send-email');
+		await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+		const names = fetchSpy.mock.calls.map(([request]) =>
+			new URL(request instanceof Request ? request.url : String(request)).searchParams.get('name'),
+		);
+		expect(names).toEqual(['send-email']);
+	});
+
+	it('keeps the pending name when another filter triggers a loading state', async () => {
+		const { router } = await renderJobsRoute({
+			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+			initialEntry: '/jobs',
+		});
+		const input = await screen.findByLabelText('Job name');
+		fireEvent.change(input, { target: { value: 'send-email' } });
+		fireEvent.click(screen.getByRole('checkbox', { name: 'Pending' }));
+		await waitFor(() => expect(router.state.location.search.name).toBe('send-email'));
+		expect(router.state.location.search.status).toEqual(['pending']);
+	});
+
+	it('preserves spaces while typing a name into the URL-backed input', async () => {
+		const { router } = await renderJobsRoute({
+			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+			initialEntry: '/jobs',
+		});
+		const input = (await screen.findByLabelText('Job name')) as HTMLInputElement;
+		for (const character of 'send email') {
+			const value = input.value + character;
+			fireEvent.change(input, { target: { value } });
+			await waitFor(() => expect(router.state.location.search.name).toBe(value));
+		}
+		expect(input.value).toBe('send email');
+	});
+
+	it.each(['toolbar', 'navigation'])('clears a pending name through %s', async (source) => {
+		const { router } = await renderJobsRoute({
+			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+			initialEntry: '/jobs',
+		});
+		fireEvent.change(await screen.findByLabelText('Job name'), {
+			target: { value: 'send-email' },
+		});
+		await waitFor(() => expect(router.state.location.search.name).toBe('send-email'));
+		if (source === 'toolbar') {
+			fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+		} else {
+			await act(() => router.navigate({ to: '/jobs', search: parseJobsRouteSearch({}) }));
+		}
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 350));
+		});
+		expect(router.state.location.search.name).toBeUndefined();
+		expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('');
+	});
+
+	it('does not restore a stale draft after navigating away and back to the original filter', async () => {
+		const { router } = await renderJobsRoute({
+			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+			initialEntry: '/jobs',
+		});
+		const input = await screen.findByLabelText('Job name');
+		fireEvent.change(input, { target: { value: 'unfinished' } });
+		await act(() =>
+			router.navigate({ to: '/jobs', search: parseJobsRouteSearch({ name: 'send-email' }) }),
+		);
+		await waitFor(() =>
+			expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('send-email'),
+		);
+		await act(() => router.navigate({ to: '/jobs', search: parseJobsRouteSearch({}) }));
+		await waitFor(() =>
+			expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe(''),
+		);
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 350));
+		});
+		expect(router.state.location.search.name).toBeUndefined();
+	});
+
 	it('navigates with cursor pagination and keeps selection out of URL state', async () => {
 		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
@@ -68,8 +243,10 @@ describe('Jobs route', () => {
 		fireEvent.click(getFirstElement(screen.getAllByRole('checkbox', { name: /^Select job row / })));
 		expect(router.state.location.search).not.toHaveProperty('selected');
 
-		const nextPageButtons = screen.getAllByRole('button', { name: 'Next page' });
-		const nextPageButton = nextPageButtons.find((button) => !button.hasAttribute('disabled'));
+		const nextPageButtons = screen.getAllByRole('link', { name: 'Next page' });
+		const nextPageButton = nextPageButtons.find(
+			(link) => link.getAttribute('aria-disabled') !== 'true',
+		);
 
 		if (!nextPageButton) {
 			throw new Error('Expected an enabled next page button.');
@@ -114,13 +291,14 @@ describe('Jobs route', () => {
 		});
 		await screen.findAllByRole('checkbox', { name: /^Select job row / });
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+			fireEvent.click(screen.getByRole('link', { name: 'Next page' }));
 		});
 		await waitFor(() => {
 			expect(router.state.location.search.cursor).toEqual(expect.any(String));
-			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
-				false,
-			);
+			expect(
+				screen.getByRole('link', { name: 'Previous page' }).getAttribute('aria-disabled') ===
+					'true',
+			).toBe(false);
 		});
 		fireEvent.click(
 			getFirstElement(await screen.findAllByRole('checkbox', { name: /^Select job row / })),
@@ -131,21 +309,23 @@ describe('Jobs route', () => {
 			search: parseJobsRouteSearch({ name: 'send-email', limit: 10 }),
 		});
 		await waitFor(() => {
-			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
-				true,
-			);
+			expect(
+				screen.getByRole('link', { name: 'Previous page' }).getAttribute('aria-disabled') ===
+					'true',
+			).toBe(true);
 			expect(screen.getByText('No rows selected')).toBeTruthy();
 		});
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+			fireEvent.click(screen.getByRole('link', { name: 'Next page' }));
 		});
 		await waitFor(() => {
-			expect(screen.getByRole('button', { name: 'Previous page' }).hasAttribute('disabled')).toBe(
-				false,
-			);
+			expect(
+				screen.getByRole('link', { name: 'Previous page' }).getAttribute('aria-disabled') ===
+					'true',
+			).toBe(false);
 		});
 		await act(async () => {
-			fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+			fireEvent.click(screen.getByRole('link', { name: 'Previous page' }));
 		});
 		await waitFor(() => {
 			expect(router.state.location.search.cursor).toBeUndefined();
@@ -166,17 +346,16 @@ describe('Jobs route', () => {
 		const fetch = createMockManagementFetch({ scenarioId: 'large-dataset' });
 		const { router } = await renderJobsRoute({ fetch, initialEntry: '/jobs?limit=10' });
 		await screen.findAllByRole('checkbox', { name: /^Select job row / });
-		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next page' })));
+		await act(async () => fireEvent.click(screen.getByRole('link', { name: 'Next page' })));
 		await waitFor(() => expect(router.state.location.search.cursor).toEqual(expect.any(String)));
 		const secondPageCursor = router.state.location.search.cursor;
 		await screen.findAllByRole('checkbox', { name: /^Select job row / });
-		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next page' })));
+		await act(async () => fireEvent.click(screen.getByRole('link', { name: 'Next page' })));
 		await waitFor(() => expect(router.state.location.search.cursor).not.toBe(secondPageCursor));
 		await act(async () => router.history.back());
 		await waitFor(() => expect(router.state.location.search.cursor).toBe(secondPageCursor));
-		await act(async () =>
-			fireEvent.click(await screen.findByRole('button', { name: 'Previous page' })),
-		);
+		const previousPage = await screen.findByRole('link', { name: 'Previous page' });
+		await act(async () => fireEvent.click(previousPage));
 		await waitFor(() => expect(router.state.location.search.cursor).toBeUndefined());
 
 		cleanup();
@@ -184,9 +363,8 @@ describe('Jobs route', () => {
 			fetch,
 			initialEntry: `/jobs?limit=10&cursor=${encodeURIComponent(String(secondPageCursor))}`,
 		});
-		await act(async () =>
-			fireEvent.click(await screen.findByRole('button', { name: 'First page' })),
-		);
+		const firstPage = await screen.findByRole('link', { name: 'First page' });
+		await act(async () => fireEvent.click(firstPage));
 		await waitFor(() => expect(reloaded.router.state.location.search.cursor).toBeUndefined());
 	});
 
@@ -308,13 +486,16 @@ describe('Jobs route', () => {
 async function renderJobsRoute({
 	fetch: fetchImplementation,
 	initialEntry,
+	pollingIntervalMs,
 }: {
 	readonly fetch: typeof globalThis.fetch;
 	readonly initialEntry: string;
+	readonly pollingIntervalMs?: number;
 }) {
 	const runtimeConfig = {
 		apiBaseUrl: '/',
 		basePath: '/',
+		...(pollingIntervalMs === undefined ? {} : { pollingIntervalMs }),
 	} as const;
 	const managementApi = createDashboardManagementApi({
 		apiBaseUrl: runtimeConfig.apiBaseUrl,

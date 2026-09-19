@@ -1,9 +1,13 @@
 import { format } from 'date-fns';
 import { CalendarIcon } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
+
+const Calendar = lazy(() =>
+	import('@/components/ui/calendar').then((module) => ({ default: module.Calendar })),
+);
+
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -72,17 +76,27 @@ function DateTimePicker({
 					<PopoverTitle>{label}</PopoverTitle>
 					<PopoverDescription>Local time · {getOperatorTimeZoneLabel()}</PopoverDescription>
 				</div>
-				<Calendar
-					mode="single"
-					timeZone={getOperatorTimeZoneLabel()}
-					selected={selected}
-					month={month}
-					onMonthChange={setMonth}
-					onSelect={(day) => {
-						if (day) setDate(format(day, 'yyyy-MM-dd'));
-					}}
-					className="mx-auto p-0 [--cell-size:--spacing(9)]"
-				/>
+				{open ? (
+					<Suspense
+						fallback={
+							<div className="h-72" role="status">
+								Loading calendar…
+							</div>
+						}
+					>
+						<Calendar
+							mode="single"
+							timeZone={getOperatorTimeZoneLabel()}
+							selected={selected}
+							month={month}
+							onMonthChange={setMonth}
+							onSelect={(day) => {
+								if (day) setDate(format(day, 'yyyy-MM-dd'));
+							}}
+							className="mx-auto p-0 [--cell-size:--spacing(9)]"
+						/>
+					</Suspense>
+				) : null}
 				<div className="grid grid-cols-[1.5fr_1fr] gap-3">
 					<Field>
 						<FieldLabel htmlFor={`${id}-date`}>Date</FieldLabel>

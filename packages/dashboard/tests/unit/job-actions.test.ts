@@ -1,41 +1,83 @@
+import type { JobDto } from '@monque/management/contract';
 import { describe, expect, it, vi } from 'vitest';
 
+import { jobActionMutationOptions } from '@/features/jobs/job-action-mutation';
 import { runJobActions } from '@/features/jobs/job-actions';
 import { createDashboardManagementApi } from '@/management-client';
+import { createDashboardQueryClient } from '@/query-client';
 
 describe('runJobActions', () => {
-	it('limits concurrent requests and keeps failures in selection order across batches', async () => {
-		const pending: { id: string; resolve: (response: Response) => void }[] = [];
-		const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+	it('stores the returned job after a single selected job is retried', async () => {
+		const job: JobDto = {
+			id: '000000000000000000000001',
+			name: 'email',
+			status: 'pending',
+			payload: { recipient: 'person@example.test' },
+			nextRunAt: '2026-09-19T12:00:00.000Z',
+			createdAt: '2026-09-19T11:00:00.000Z',
+			updatedAt: '2026-09-19T12:00:00.000Z',
+			lockedAt: null,
+			claimedBy: null,
+			lastHeartbeat: null,
+			failCount: 0,
+			failureReason: null,
+		};
+		const api = createDashboardManagementApi({
+			apiBaseUrl: '/',
+			origin: 'https://dashboard.test',
+			fetch: async () => Response.json(job),
+		});
+		const client = createDashboardQueryClient();
+		const mutation = client.getMutationCache().build(client, jobActionMutationOptions(api, client));
+		expect(await mutation.execute({ action: 'retry', jobIds: [job.id] })).toMatchObject({
+			count: 1,
+			jobs: [job],
+		});
+		expect(
+			client.getQueryData(api.orpc.job.queryKey({ input: { params: { id: job.id } } })),
+		).toEqual(job);
+		client.clear();
+	});
+
+	it('sends selected ids in one request and preserves failure selection order', async () => {
+		const ids = [
+			'000000000000000000000001',
+			'000000000000000000000002',
+			'000000000000000000000003',
+		];
+		const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
 			const request = input instanceof Request ? input : new Request(input);
-			const id = new URL(request.url).pathname.split('/').at(-3) ?? '';
-			return new Promise((resolve) => pending.push({ id, resolve }));
+			expect(new URL(request.url).pathname).toBe('/api/v1/jobs/actions/selected');
+			expect(await request.json()).toEqual({ action: 'retry', ids });
+			return Response.json({
+				count: 1,
+				errors: [
+					{ jobId: ids[2], error: 'Denied', status: 403 },
+					{ jobId: ids[1], error: 'Changed', status: 409 },
+				],
+			});
 		});
 		const api = createDashboardManagementApi({
 			apiBaseUrl: '/',
 			origin: 'https://dashboard.test',
 			fetch,
 		});
-		const jobIds = Array.from({ length: 7 }, (_, index) => `job-${index}`);
-		const result = runJobActions(api, { action: 'retry', jobIds });
-
-		await vi.waitFor(() => expect(pending).toHaveLength(5));
-		expect(fetch).toHaveBeenCalledTimes(5);
-		for (const request of pending.splice(0).reverse()) {
-			request.resolve(actionResponse(request.id === 'job-1' || request.id === 'job-3'));
-		}
-		await vi.waitFor(() => expect(pending).toHaveLength(2));
-		for (const request of pending.splice(0)) {
-			request.resolve(actionResponse(request.id === 'job-6'));
-		}
-
-		expect(await result).toMatchObject({
-			action: 'retry',
-			count: 4,
-			failed: ['job-1', 'job-3', 'job-6'],
+		const client = createDashboardQueryClient();
+		const capabilities = api.orpc.capabilities.queryOptions();
+		const health = api.orpc.health.queryOptions();
+		client.getQueryCache().build(client, capabilities);
+		client.getQueryCache().build(client, health);
+		const mutation = client.getMutationCache().build(client, jobActionMutationOptions(api, client));
+		expect(await mutation.execute({ action: 'retry', jobIds: ids })).toMatchObject({
+			count: 1,
+			failed: [ids[1], ids[2]],
 			firstError: { status: 409 },
+			authorizationChanged: true,
 		});
-		expect(fetch).toHaveBeenCalledTimes(7);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		expect(client.getQueryState(capabilities.queryKey)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(health.queryKey)?.isInvalidated).toBe(false);
+		client.clear();
 	});
 
 	it('returns an empty result without issuing requests when nothing is selected', async () => {
@@ -48,29 +90,11 @@ describe('runJobActions', () => {
 		expect(await runJobActions(api, { action: 'delete', jobIds: [] })).toEqual({
 			action: 'delete',
 			count: 0,
+			jobs: [],
 			failed: [],
 			firstError: undefined,
+			authorizationChanged: false,
 		});
 		expect(fetch).not.toHaveBeenCalled();
 	});
 });
-
-function actionResponse(conflict: boolean): Response {
-	return new Response(
-		JSON.stringify(
-			conflict
-				? {
-						code: 'CONFLICT',
-						status: 409,
-						message: 'Job changed',
-						defined: false,
-						data: { error: 'Job changed' },
-					}
-				: { retried: true },
-		),
-		{
-			status: conflict ? 409 : 200,
-			headers: { 'content-type': 'application/json' },
-		},
-	);
-}

@@ -35,7 +35,10 @@ app.use(
 
 Open `/ops/dashboard` on your application's origin. `apiBaseUrl` is the Management router's
 mount path, **without `/api/v1`**. The dashboard's base path comes from its Express mount.
-Omit `pollingIntervalMs` to disable automatic polling.
+Omit `pollingIntervalMs` to disable automatic polling. Job lists use this base interval; queue
+statistics and health refresh every three intervals, and Health permissions every six. Polling
+adds up to 10% jitter, backs off after errors, and pauses in hidden tabs. Relative timestamps
+update locally without API requests.
 
 All configuration is passed through the router options in your server code. The Express adapter
 handles browser configuration, assets, and direct links automatically.
@@ -66,6 +69,7 @@ authentication, and configuration options.
 ## Other integrations
 
 This package provides built browser assets and server-side helpers, rather than an embeddable
-React component. For another server framework, see the [custom server adapter reference](docs/custom-server.md).
+React component. `getDashboardAssetMetadata()` exposes the asset locations for custom server
+adapters. The Express adapter provides the complete serving integration.
 
 To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).
