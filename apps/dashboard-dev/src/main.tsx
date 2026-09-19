@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import monqueLogo from '@/assets/monque.svg';
 
 import { DashboardDevShellApp } from './dev-shell-app.js';
-import { readDashboardDevEnvironment } from './runtime-config.js';
+import { DashboardDevEnvironmentSchema } from './environment.js';
 
 const rootElement = document.getElementById('app');
 
@@ -17,4 +17,10 @@ favicon.rel = 'icon';
 favicon.type = 'image/svg+xml';
 favicon.href = monqueLogo;
 document.head.append(favicon);
-root.render(<DashboardDevShellApp environment={readDashboardDevEnvironment()} />);
+root.render(
+	<DashboardDevShellApp
+		environment={DashboardDevEnvironmentSchema.parse(
+			import.meta.env['MONQUE_DASHBOARD_DEV_CONFIG'],
+		)}
+	/>,
+);

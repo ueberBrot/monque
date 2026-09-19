@@ -3,11 +3,14 @@ import {
 	type JobCursorPageDto,
 	type JobDto,
 	type JobListQueryDto,
+	JobListSortByDtoSchema,
+	JobListSortDirectionDtoSchema,
 	type JobSelectorDto,
 	managementContract,
 } from '@monque/management/contract';
 import { OpenAPIHandler } from '@orpc/openapi/fetch';
 import { implement, ORPCError } from '@orpc/server';
+import { z } from 'zod';
 
 import {
 	createQueueStats,
@@ -23,7 +26,27 @@ type MockManagementContext = {
 const managementImplementer = implement(managementContract).$context<MockManagementContext>();
 const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = 'pending-jobs';
 
+type JobMutation =
+	| { readonly action: 'cancel' | 'retry' }
+	| { readonly action: 'reschedule'; readonly nextRunAt: string };
+
+type MutationCapability = Exclude<keyof DashboardDevScenario['capabilities']['actions'], 'read'>;
+
 type MutableScenario = Omit<DashboardDevScenario, 'jobs'> & { jobs: JobDto[] };
+
+const MockCursorSchema = z
+	.strictObject({
+		id: z.string().min(1),
+		value: z.string().min(1),
+		sortBy: JobListSortByDtoSchema,
+		sortDirection: JobListSortDirectionDtoSchema,
+	})
+	.refine((cursor) =>
+		cursor.sortBy === 'identifier'
+			? cursor.value === cursor.id
+			: z.iso.datetime().safeParse(cursor.value).success,
+	);
+type MockCursor = z.infer<typeof MockCursorSchema>;
 
 function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementContext> {
 	const scenarios = new Map<DashboardDevScenarioId, MutableScenario>();
@@ -38,6 +61,33 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 		return scenario;
 	}
 	const mockManagementRouter = managementImplementer.router({
+		selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) => {
+			const scenario = getReadableScenario(context);
+			const capability =
+				input.action === 'reschedule' ? 'reschedule' : (`${input.action}Bulk` as const);
+			assertMutationAllowed(scenario, capability);
+			const result: BulkActionResultDto = { count: 0, errors: [] };
+			for (const id of new Set(input.ids)) {
+				try {
+					if (input.action === 'delete') deleteSingleJob(id, scenario);
+					else {
+						mutateSingleJob(
+							id,
+							scenario,
+							input.action === 'reschedule' ? input : { action: input.action },
+						);
+					}
+					result.count++;
+				} catch (error) {
+					result.errors.push({
+						jobId: id,
+						error: error instanceof Error ? error.message : 'Job action failed',
+						status: error instanceof ORPCError ? error.status : 500,
+					});
+				}
+			}
+			return result;
+		}),
 		health: managementImplementer.health.handler(
 			({ context }) => getReadableScenario(context).health,
 		),
@@ -70,38 +120,20 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 			getJobById(input.params.id, getReadableScenario(context)),
 		),
 		cancelJob: managementImplementer.cancelJob.handler(({ input, context }) =>
-			mutateSingleJob(input.params.id, getReadableScenario(context), 'cancel', (job, now) => ({
-				...job,
-				status: 'cancelled',
-				claimedBy: null,
-				lockedAt: null,
-				lastHeartbeat: null,
-				updatedAt: now,
-			})),
+			mutateSingleJob(input.params.id, getReadableScenario(context), { action: 'cancel' }),
 		),
 		retryJob: managementImplementer.retryJob.handler(({ input, context }) =>
-			mutateSingleJob(input.params.id, getReadableScenario(context), 'retry', retryJob),
+			mutateSingleJob(input.params.id, getReadableScenario(context), { action: 'retry' }),
 		),
 		rescheduleJob: managementImplementer.rescheduleJob.handler(({ input, context }) =>
-			mutateSingleJob(input.params.id, getReadableScenario(context), 'reschedule', (job, now) => ({
-				...job,
-				status: 'pending',
+			mutateSingleJob(input.params.id, getReadableScenario(context), {
+				action: 'reschedule',
 				nextRunAt: input.body.nextRunAt,
-				claimedBy: null,
-				lockedAt: null,
-				lastHeartbeat: null,
-				updatedAt: now,
-			})),
+			}),
 		),
-		deleteJob: managementImplementer.deleteJob.handler(({ input, context }) => {
-			const scenario = getReadableScenario(context);
-
-			assertMutationAllowed(scenario);
-			assertJobExists(input.params.id, scenario);
-			scenario.jobs = scenario.jobs.filter((job) => job.id !== input.params.id);
-
-			return { deleted: true };
-		}),
+		deleteJob: managementImplementer.deleteJob.handler(({ input, context }) =>
+			deleteSingleJob(input.params.id, getReadableScenario(context)),
+		),
 		cancelJobs: managementImplementer.cancelJobs.handler(({ input, context }) =>
 			mutateBulkJobs(input, getReadableScenario(context), 'cancel'),
 		),
@@ -179,18 +211,27 @@ function assertScenarioResponseAllowed(scenario: DashboardDevScenario): void {
 }
 
 function listJobs(input: JobListQueryDto, scenario: DashboardDevScenario): JobCursorPageDto {
-	const filteredJobs = applyJobFilters(scenario.jobs, input);
-	const sortedJobs = sortJobs(filteredJobs, input.sortBy, input.sortDirection);
+	const sortBy = input.sortBy ?? 'createdAt';
+	const sortDirection = input.sortDirection ?? 'desc';
+	const anchor = decodeCursor(input.cursor, sortBy, sortDirection);
+	const accessor = getSortAccessor(sortBy);
+	const compare = (
+		left: Pick<MockCursor, 'id' | 'value'>,
+		right: Pick<MockCursor, 'id' | 'value'>,
+	) => comparePositions(left, right) * (sortDirection === 'asc' ? 1 : -1);
+	const position = (job: JobDto) => ({ id: job.id, value: accessor(job) });
+	const jobs = applyJobFilters(scenario.jobs, input)
+		.filter((job) => !anchor || compare(position(job), anchor) > 0)
+		.sort((left, right) => compare(position(left), position(right)));
 	const pageSize = normalizeLimit(input.limit);
-	const startIndex = decodeCursor(input.cursor);
-	const pageJobs = sortedJobs.slice(startIndex, startIndex + pageSize);
-	const nextIndex = startIndex + pageSize;
+	const pageJobs = jobs.slice(0, pageSize);
+	const lastJob = pageJobs.at(-1);
 
 	return {
-		jobs: pageJobs,
-		cursor: nextIndex < sortedJobs.length ? encodeCursor(nextIndex) : null,
-		hasNextPage: nextIndex < sortedJobs.length,
-		hasPreviousPage: startIndex > 0,
+		jobs: input.view === 'summary' ? pageJobs.map((job) => ({ ...job, payload: null })) : pageJobs,
+		cursor: lastJob ? encodeCursor({ ...position(lastJob), sortBy, sortDirection }) : null,
+		hasNextPage: jobs.length > pageSize,
+		hasPreviousPage: anchor !== undefined,
 	};
 }
 
@@ -207,16 +248,10 @@ function getJobById(id: string, scenario: DashboardDevScenario): JobDto {
 	return { ...job };
 }
 
-function mutateSingleJob(
-	id: string,
-	scenario: MutableScenario,
-	action: 'cancel' | 'retry' | 'reschedule',
-	transform: (job: JobDto, now: string) => JobDto,
-): JobDto {
-	assertMutationAllowed(scenario);
+function mutateSingleJob(id: string, scenario: MutableScenario, mutation: JobMutation): JobDto {
+	const { action } = mutation;
+	assertMutationAllowed(scenario, action);
 	const job = getJobById(id, scenario);
-
-	if (!scenario.capabilities.actions[action]) throw new ORPCError('FORBIDDEN');
 	if (action === 'cancel' && job.status === 'cancelled') return job;
 	if (
 		(action === 'retry' && job.status !== 'failed' && job.status !== 'cancelled') ||
@@ -225,7 +260,7 @@ function mutateSingleJob(
 		throw new ORPCError('CONFLICT', {
 			message: 'Job state changed before the mutation completed.',
 		});
-	const updated = transform(job, new Date().toISOString());
+	const updated = applyJobMutation(job, mutation, new Date().toISOString());
 	scenario.jobs = scenario.jobs.map((candidate) => (candidate.id === id ? updated : candidate));
 	return updated;
 }
@@ -235,7 +270,7 @@ function mutateBulkJobs(
 	scenario: MutableScenario,
 	action: 'cancel' | 'retry' | 'delete',
 ): BulkActionResultDto {
-	assertMutationAllowed(scenario);
+	assertMutationAllowed(scenario, `${action}Bulk`);
 
 	const jobs = scenario.jobs.filter((job) => matchesJobSelector(job, input));
 
@@ -252,11 +287,7 @@ function mutateBulkJobs(
 		action === 'delete'
 			? scenario.jobs.filter((job) => !ids.has(job.id))
 			: scenario.jobs.map((job) =>
-					ids.has(job.id)
-						? action === 'retry'
-							? retryJob(job, now)
-							: { ...job, status: 'cancelled', updatedAt: now }
-						: job,
+					ids.has(job.id) ? applyJobMutation(job, { action }, now) : job,
 				);
 
 	return {
@@ -265,18 +296,30 @@ function mutateBulkJobs(
 	};
 }
 
-function retryJob(job: JobDto, now: string): JobDto {
-	return {
+function deleteSingleJob(id: string, scenario: MutableScenario): { deleted: true } {
+	assertMutationAllowed(scenario, 'delete');
+	assertJobExists(id, scenario);
+	scenario.jobs = scenario.jobs.filter((job) => job.id !== id);
+	return { deleted: true };
+}
+
+function applyJobMutation(job: JobDto, mutation: JobMutation, now: string): JobDto {
+	const updated: JobDto = {
 		...job,
-		status: 'pending',
-		failCount: 0,
-		failureReason: null,
+		status: mutation.action === 'cancel' ? 'cancelled' : 'pending',
 		claimedBy: null,
 		lockedAt: null,
 		lastHeartbeat: null,
-		nextRunAt: now,
 		updatedAt: now,
 	};
+	if (mutation.action === 'retry') {
+		updated.failCount = 0;
+		updated.failureReason = null;
+		updated.nextRunAt = now;
+	} else if (mutation.action === 'reschedule') {
+		updated.nextRunAt = new Date(mutation.nextRunAt).toISOString();
+	}
+	return updated;
 }
 
 function applyJobFilters(jobs: readonly JobDto[], input: JobListQueryDto): readonly JobDto[] {
@@ -351,28 +394,13 @@ function matchesExclusiveLowerDateBound(value: string, lowerBound?: string): boo
 	return Date.parse(value) > Date.parse(lowerBound);
 }
 
-function sortJobs(
-	jobs: readonly JobDto[],
-	sortBy: JobListQueryDto['sortBy'],
-	sortDirection: JobListQueryDto['sortDirection'],
-): readonly JobDto[] {
-	const direction = sortDirection === 'asc' ? 1 : -1;
-	const accessor = getSortAccessor(sortBy);
-
-	return [...jobs].sort((left, right) => {
-		const leftValue = accessor(left);
-		const rightValue = accessor(right);
-
-		if (leftValue < rightValue) {
-			return -1 * direction;
-		}
-
-		if (leftValue > rightValue) {
-			return 1 * direction;
-		}
-
-		return left.id.localeCompare(right.id) * direction;
-	});
+function comparePositions(
+	left: Pick<MockCursor, 'id' | 'value'>,
+	right: Pick<MockCursor, 'id' | 'value'>,
+): number {
+	if (left.value < right.value) return -1;
+	if (left.value > right.value) return 1;
+	return left.id.localeCompare(right.id);
 }
 
 function getSortAccessor(sortBy: JobListQueryDto['sortBy']): (job: JobDto) => string {
@@ -398,37 +426,33 @@ function normalizeLimit(limit?: string): number {
 	return Math.min(parsed, 100);
 }
 
-function encodeCursor(offset: number): string {
-	return Buffer.from(JSON.stringify({ offset }), 'utf8').toString('base64url');
+function encodeCursor(cursor: MockCursor): string {
+	return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
 }
 
-function decodeCursor(cursor?: string): number {
-	if (!cursor) {
-		return 0;
-	}
+function decodeCursor(
+	cursor: string | undefined,
+	sortBy: MockCursor['sortBy'],
+	sortDirection: MockCursor['sortDirection'],
+): MockCursor | undefined {
+	if (!cursor) return undefined;
 
+	let parsed: MockCursor;
 	try {
-		const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-		const offset = getCursorOffset(parsed);
-
-		return offset ?? 0;
+		parsed = MockCursorSchema.parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
 	} catch {
-		return 0;
+		throw new ORPCError('BAD_REQUEST', { message: 'Invalid cursor' });
 	}
+	if (parsed.sortBy !== sortBy || parsed.sortDirection !== sortDirection) {
+		throw new ORPCError('BAD_REQUEST', { message: 'Cursor does not match requested sort' });
+	}
+	return parsed;
 }
 
-function getCursorOffset(value: unknown): number | undefined {
-	if (typeof value !== 'object' || value === null || !Object.hasOwn(value, 'offset')) {
-		return undefined;
-	}
-
-	const offset = Reflect.get(value, 'offset');
-	return typeof offset === 'number' && offset >= 0 ? offset : undefined;
-}
-
-function assertMutationAllowed(scenario: DashboardDevScenario): void {
+function assertMutationAllowed(scenario: DashboardDevScenario, action: MutationCapability): void {
 	if (scenario.capabilities.readOnly)
 		throw new ORPCError('FORBIDDEN', { message: 'This Management API is read-only.' });
+	if (!scenario.capabilities.actions[action]) throw new ORPCError('FORBIDDEN');
 	if (scenario.mutationConflict) {
 		throw new ORPCError('CONFLICT', {
 			data: { error: 'Job state changed before the mutation completed.' },

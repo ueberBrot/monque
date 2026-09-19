@@ -4,25 +4,21 @@ import { createManagementSurface } from '@monque/management';
 import { type Collection, type Document, MongoClient, type WithId } from 'mongodb';
 import type { Connect } from 'vite';
 
+import { DEFAULT_DATABASE_NAME, DEFAULT_MONGO_URI } from '../environment.js';
 import { createManagementMiddleware } from '../management-middleware.js';
 import { startDemoWorkload } from './demo-workload.js';
 import { createScenario, registerScenarioWorkers } from './scenarios.js';
 
-const DEFAULT_MONGO_URI = 'mongodb://127.0.0.1:27018/?directConnection=true';
-const DEFAULT_DATABASE_NAME = 'monque_dashboard_dev';
 const COLLECTION_NAME = 'monque_dashboard_jobs';
 const SEED_MARKER_COLLECTION = 'monque_dashboard_seed';
 const SEED_VERSION = '2026-06-04-atlas-local-v1';
 const MONGO_CONNECT_TIMEOUT_MS = 3_000;
 
 class LocalDbConnectionError extends Error {
-	constructor(
-		readonly mongoUri: string,
-		options: { readonly cause: unknown },
-	) {
+	constructor(options: { readonly cause: unknown }) {
 		super(
 			[
-				`Could not connect to dashboard dev MongoDB at ${mongoUri}.`,
+				'Could not connect to dashboard dev MongoDB. Check MONQUE_DASHBOARD_DEV_MONGO_URI.',
 				'Start it with: docker compose -f apps/dashboard-dev/compose.yml up -d',
 			].join(' '),
 			{ cause: options.cause },
@@ -82,7 +78,6 @@ function createLocalDbManagementServer(options?: {
 						{
 							error: 'dashboard_dev_db_unavailable',
 							message: error.message,
-							mongoUri: error.mongoUri,
 						},
 						{ status: 503 },
 					);
@@ -127,7 +122,7 @@ async function createLocalDbRuntime(options: {
 		await client.connect();
 	} catch (error) {
 		await client.close();
-		throw new LocalDbConnectionError(options.mongoUri, { cause: error });
+		throw new LocalDbConnectionError({ cause: error });
 	}
 
 	const db = client.db(options.databaseName);

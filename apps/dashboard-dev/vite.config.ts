@@ -4,31 +4,23 @@ import tailwindcss from '@tailwindcss/vite';
 import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
+import { readDashboardDevServerEnvironment } from './src/environment.js';
 import { createLocalDbManagementServer } from './src/local-db/management-server.js';
 import { createManagementMiddleware, MANAGEMENT_MOUNT_PATH } from './src/management-middleware.js';
 import { createMockManagementOpenApiHandler } from './src/mock/management-server.js';
 import { isDashboardDevScenarioId } from './src/mock/scenario-catalog.js';
 
-const DEFAULT_SCENARIO_ID = 'pending-jobs';
-
 const config = defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
-	const devMode = env['MONQUE_DASHBOARD_DEV_MODE'] ?? 'mock';
-	const liveApiBaseUrl = env['MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL'];
-	const localDbMongoUri = env['MONQUE_DASHBOARD_DEV_MONGO_URI'];
-	const localDbDatabaseName = env['MONQUE_DASHBOARD_DEV_DATABASE_NAME'];
+	const { environment, liveApiBaseUrl, mongoUri, databaseName } =
+		readDashboardDevServerEnvironment(env);
+	const devMode = environment.mode;
 	const mockHandler = createMockManagementOpenApiHandler();
 	let localDbServer: ReturnType<typeof createLocalDbManagementServer> | undefined;
 
 	return {
 		define: {
-			'import.meta.env.MONQUE_DASHBOARD_DEV_MODE': JSON.stringify(devMode),
-			'import.meta.env.MONQUE_DASHBOARD_DEV_SCENARIO': JSON.stringify(
-				env['MONQUE_DASHBOARD_DEV_SCENARIO'] ?? DEFAULT_SCENARIO_ID,
-			),
-			'import.meta.env.MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL': JSON.stringify(
-				liveApiBaseUrl ?? '',
-			),
+			'import.meta.env.MONQUE_DASHBOARD_DEV_CONFIG': JSON.stringify(environment),
 		},
 		resolve: {
 			alias: {
@@ -72,7 +64,7 @@ const config = defineConfig(({ mode }) => {
 							const scenarioHeader = request.headers.get('x-monque-dev-scenario');
 							const scenarioId = isDashboardDevScenarioId(scenarioHeader)
 								? scenarioHeader
-								: DEFAULT_SCENARIO_ID;
+								: environment.scenarioId;
 							const result = await mockHandler.handle(request, { context: { scenarioId } });
 							return result.matched ? result.response : undefined;
 						}),
@@ -87,8 +79,8 @@ const config = defineConfig(({ mode }) => {
 					}
 
 					localDbServer = createLocalDbManagementServer({
-						...(localDbMongoUri ? { mongoUri: localDbMongoUri } : {}),
-						...(localDbDatabaseName ? { databaseName: localDbDatabaseName } : {}),
+						mongoUri,
+						databaseName,
 					});
 
 					server.middlewares.use(MANAGEMENT_MOUNT_PATH, localDbServer.middleware);

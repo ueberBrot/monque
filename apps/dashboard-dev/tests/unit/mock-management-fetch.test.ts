@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDashboardManagementApi } from '@/management-client';
 
 import { createMockManagementFetch } from '../../src/mock/management-server.js';
+import * as scenarioCatalog from '../../src/mock/scenario-catalog.js';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+	vi.useRealTimers();
+	vi.restoreAllMocks();
+});
 
 describe('createMockManagementFetch', () => {
 	it('returns seeded pending-job scenario data through the dashboard oRPC client path', async () => {
@@ -76,7 +80,7 @@ it('rejects writes to a read-only mock API', async () => {
 	});
 });
 
-it.each(['single', 'bulk'] as const)(
+it.each(['single', 'bulk', 'selected'] as const)(
 	'resets retry metadata and schedules %s retries from the current time',
 	async (mode) => {
 		vi.useFakeTimers({ toFake: ['Date'] });
@@ -89,7 +93,8 @@ it.each(['single', 'bulk'] as const)(
 		const job = (await api.client.jobs({ status: 'failed', limit: '1' })).jobs[0];
 		if (!job) throw new Error('Expected a failed scenario job');
 		if (mode === 'single') await api.client.retryJob({ params: { id: job.id } });
-		else await api.client.retryJobs({ name: job.name, status: 'failed' });
+		else if (mode === 'bulk') await api.client.retryJobs({ name: job.name, status: 'failed' });
+		else await api.client.selectedJobActions({ action: 'retry', ids: [job.id] });
 		const retried = await api.client.job({ params: { id: job.id } });
 		expect(retried).toMatchObject({
 			status: 'pending',
@@ -131,3 +136,118 @@ it('applies RequestInit overrides when a Request is passed to the mock fetch ada
 	);
 	expect(response.status).toBe(200);
 });
+
+it.each(['delete', 'cancelBulk', 'retryBulk', 'deleteBulk'] as const)(
+	'rejects disabled %s capabilities through the mock HTTP interface',
+	async (action) => {
+		const scenario = scenarioCatalog.getDashboardDevScenario('failed-jobs');
+		if (!scenario) throw new Error('Expected scenario');
+		vi.spyOn(scenarioCatalog, 'getDashboardDevScenario').mockReturnValue({
+			...scenario,
+			capabilities: {
+				...scenario.capabilities,
+				actions: { ...scenario.capabilities.actions, [action]: false },
+			},
+		});
+		const api = createDashboardManagementApi({
+			apiBaseUrl: '/',
+			origin: 'https://dashboard.test',
+			fetch: createMockManagementFetch(),
+		}).client;
+		const before = await api.jobs({ limit: '100' });
+		const job = before.jobs[0];
+		if (!job) throw new Error('Expected job');
+		const request =
+			action === 'delete'
+				? api.deleteJob({ params: { id: job.id } })
+				: action === 'cancelBulk'
+					? api.cancelJobs({})
+					: action === 'retryBulk'
+						? api.retryJobs({})
+						: api.deleteJobs({});
+		await expect(request).rejects.toMatchObject({ status: 403 });
+		expect(await api.jobs({ limit: '100' })).toEqual(before);
+	},
+);
+
+it.each(['single', 'bulk', 'selected'] as const)(
+	'clears claim metadata for %s cancellations',
+	async (mode) => {
+		const scenario = scenarioCatalog.getDashboardDevScenario('pending-jobs');
+		if (!scenario) throw new Error('Expected scenario');
+		vi.spyOn(scenarioCatalog, 'getDashboardDevScenario').mockReturnValue({
+			...scenario,
+			jobs: scenario.jobs.map((job) => ({
+				...job,
+				claimedBy: 'former-worker',
+				lockedAt: job.updatedAt,
+				lastHeartbeat: job.updatedAt,
+			})),
+		});
+		const api = createDashboardManagementApi({
+			apiBaseUrl: '/',
+			origin: 'https://dashboard.test',
+			fetch: createMockManagementFetch(),
+		}).client;
+		const job = (await api.jobs({ status: 'pending', limit: '1' })).jobs[0];
+		if (!job) throw new Error('Expected pending job');
+		if (mode === 'single') await api.cancelJob({ params: { id: job.id } });
+		else if (mode === 'bulk') await api.cancelJobs({ name: job.name });
+		else await api.selectedJobActions({ action: 'cancel', ids: [job.id] });
+		expect(await api.job({ params: { id: job.id } })).toMatchObject({
+			status: 'cancelled',
+			claimedBy: null,
+			lockedAt: null,
+			lastHeartbeat: null,
+		});
+	},
+);
+
+it('reports selected failures individually and mutates each existing Job only once', async () => {
+	const api = createDashboardManagementApi({
+		apiBaseUrl: '/',
+		origin: 'https://dashboard.test',
+		fetch: createMockManagementFetch(),
+	}).client;
+	const job = (await api.jobs({ status: 'pending', limit: '1' })).jobs[0];
+	if (!job) throw new Error('Expected pending job');
+	const result = await api.selectedJobActions({
+		action: 'delete',
+		ids: [job.id, 'missing-job', job.id],
+	});
+	expect(result.count).toBe(1);
+	expect(result.errors).toEqual([expect.objectContaining({ jobId: 'missing-job', status: 404 })]);
+	await expect(api.job({ params: { id: job.id } })).rejects.toMatchObject({ status: 404 });
+});
+
+it.each(['delete', 'deleteBulk'] as const)(
+	'checks %s permission for selected actions',
+	async (deniedAction) => {
+		const scenario = scenarioCatalog.getDashboardDevScenario('pending-jobs');
+		if (!scenario) throw new Error('Expected scenario');
+		vi.spyOn(scenarioCatalog, 'getDashboardDevScenario').mockReturnValue({
+			...scenario,
+			capabilities: {
+				...scenario.capabilities,
+				actions: { ...scenario.capabilities.actions, [deniedAction]: false },
+			},
+		});
+		const api = createDashboardManagementApi({
+			apiBaseUrl: '/',
+			origin: 'https://dashboard.test',
+			fetch: createMockManagementFetch(),
+		}).client;
+		const job = (await api.jobs({ limit: '1' })).jobs[0];
+		if (!job) throw new Error('Expected job');
+		const request = api.selectedJobActions({ action: 'delete', ids: [job.id] });
+		if (deniedAction === 'deleteBulk') {
+			await expect(request).rejects.toMatchObject({ status: 403 });
+		} else {
+			await expect(request).resolves.toEqual({
+				count: 0,
+				errors: [expect.objectContaining({ jobId: job.id, status: 403 })],
+			});
+		}
+		expect(await api.job({ params: { id: job.id } })).toEqual(job);
+	},
+);

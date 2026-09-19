@@ -1,3 +1,5 @@
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { Socket } from 'node:net';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => ({
@@ -37,6 +39,39 @@ beforeEach(() => {
 });
 
 describe('local MongoDB development lifecycle', () => {
+	it('keeps connection credentials out of startup messages and HTTP failures', async () => {
+		const mongoUri = 'mongodb://operator:private-password@localhost:27018';
+		const cause = new Error(`Authentication failed for ${mongoUri}`);
+		runtime.connect.mockRejectedValue(cause);
+		const server = createLocalDbManagementServer({ mongoUri });
+		await expect(server.start()).rejects.toMatchObject({
+			message: expect.stringContaining('Check MONQUE_DASHBOARD_DEV_MONGO_URI'),
+			cause,
+		});
+		await expect(server.start()).rejects.toMatchObject({
+			message: expect.not.stringContaining(mongoUri),
+		});
+
+		const request = new IncomingMessage(new Socket());
+		request.method = 'GET';
+		request.url = '/v1/health';
+		const response = new ServerResponse(request);
+		const ended = vi.spyOn(response, 'end').mockImplementation(() => response);
+		const next = vi.fn();
+		await server.middleware(request, response, next);
+		expect(next).not.toHaveBeenCalled();
+		expect(response.statusCode).toBe(503);
+		const body = String(ended.mock.calls[0]?.[0]);
+		expect(JSON.parse(body)).toEqual({
+			error: 'dashboard_dev_db_unavailable',
+			message: expect.stringContaining('Check MONQUE_DASHBOARD_DEV_MONGO_URI'),
+		});
+		expect(body).not.toContain('operator');
+		expect(body).not.toContain('private-password');
+		expect(body).not.toContain(mongoUri);
+		await server.close();
+	});
+
 	it('waits for an immediately interrupted startup and releases its scheduler and connection', async () => {
 		const connection = Promise.withResolvers<void>();
 		runtime.connect.mockReturnValue(connection.promise);

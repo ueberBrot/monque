@@ -15,13 +15,9 @@ import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
 import { getRouter } from '@/router';
 
+import type { DashboardDevEnvironment } from './environment.js';
 import { type DashboardDevScenarioId, isDashboardDevScenarioId } from './mock/scenario-catalog.js';
-import {
-	createDashboardRuntimeConfig,
-	type DashboardDevEnvironment,
-	dashboardDevScenarioOptions,
-	getDefaultScenarioId,
-} from './runtime-config.js';
+import { createDashboardRuntimeConfig, dashboardDevScenarioOptions } from './runtime-config.js';
 import { createScenarioHeaderFetch } from './scenario-header-fetch.js';
 
 const LOCAL_STORAGE_SCENARIO_KEY = 'monque-dashboard-dev-scenario';
@@ -33,7 +29,9 @@ function DashboardDevShellApp({
 }: {
 	readonly environment: DashboardDevEnvironment;
 }): ReactElement {
-	const [scenarioId, setScenarioId] = useState<DashboardDevScenarioId>(() => getStoredScenarioId());
+	const [scenarioId, setScenarioId] = useState<DashboardDevScenarioId>(() =>
+		getStoredScenarioId(environment.scenarioId),
+	);
 
 	useEffect(() => {
 		window.localStorage.setItem(LOCAL_STORAGE_SCENARIO_KEY, scenarioId);
@@ -165,14 +163,14 @@ function createDashboardDevManagementApiOptions(
 	return baseOptions;
 }
 
-function getStoredScenarioId(): DashboardDevScenarioId {
+function getStoredScenarioId(defaultScenarioId: DashboardDevScenarioId): DashboardDevScenarioId {
 	if (typeof window === 'undefined') {
-		return getDefaultScenarioId();
+		return defaultScenarioId;
 	}
 
 	const storedScenarioId = window.localStorage.getItem(LOCAL_STORAGE_SCENARIO_KEY);
 
-	return isDashboardDevScenarioId(storedScenarioId) ? storedScenarioId : getDefaultScenarioId();
+	return isDashboardDevScenarioId(storedScenarioId) ? storedScenarioId : defaultScenarioId;
 }
 
 export { DashboardDevShellApp };
