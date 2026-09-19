@@ -2,71 +2,14 @@ import { fileURLToPath } from 'node:url';
 import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
-import type { Connect } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 
 import { createLocalDbManagementServer } from './src/local-db/management-server.js';
+import { createManagementMiddleware, MANAGEMENT_MOUNT_PATH } from './src/management-middleware.js';
 import { createMockManagementOpenApiHandler } from './src/mock/management-server.js';
-import {
-	type DashboardDevScenarioId,
-	isDashboardDevScenarioId,
-} from './src/mock/scenario-catalog.js';
+import { isDashboardDevScenarioId } from './src/mock/scenario-catalog.js';
 
 const DEFAULT_SCENARIO_ID = 'pending-jobs';
-const MOCK_API_ORIGIN = 'http://dashboard-dev.local';
-const MOCK_API_MOUNT_PATH = '/api';
-
-async function readNodeRequestBody(request: Connect.IncomingMessage): Promise<Buffer | undefined> {
-	if (request.method === 'GET' || request.method === 'HEAD') {
-		return undefined;
-	}
-
-	const chunks: Uint8Array[] = [];
-
-	for await (const chunk of request) {
-		chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-	}
-
-	if (chunks.length === 0) {
-		return undefined;
-	}
-
-	return Buffer.concat(chunks);
-}
-
-function createHeadersFromNodeRequest(request: Connect.IncomingMessage): Headers {
-	const headers = new Headers();
-
-	for (const [name, value] of Object.entries(request.headers)) {
-		if (typeof value === 'undefined') {
-			continue;
-		}
-
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				headers.append(name, item);
-			}
-			continue;
-		}
-
-		headers.set(name, value);
-	}
-
-	return headers;
-}
-
-function getScenarioIdFromRequest(request: Connect.IncomingMessage): DashboardDevScenarioId {
-	const headerValue = request.headers['x-monque-dev-scenario'];
-	const scenarioId = Array.isArray(headerValue) ? headerValue[0] : headerValue;
-
-	return isDashboardDevScenarioId(scenarioId) ? scenarioId : DEFAULT_SCENARIO_ID;
-}
-
-function createMockManagementRequestUrl(requestUrl: string): string {
-	const path = requestUrl.startsWith('/') ? requestUrl : `/${requestUrl}`;
-
-	return `${MOCK_API_ORIGIN}${MOCK_API_MOUNT_PATH}${path}`;
-}
 
 const config = defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
@@ -123,43 +66,17 @@ const config = defineConfig(({ mode }) => {
 						return;
 					}
 
-					server.middlewares.use(MOCK_API_MOUNT_PATH, async (request, response, next) => {
-						if (!request.url) {
-							next();
-							return;
-						}
-
-						const body = await readNodeRequestBody(request);
-						const requestInit: RequestInit = {
-							method: request.method ?? 'GET',
-							headers: createHeadersFromNodeRequest(request),
-						};
-
-						if (body) {
-							requestInit.body = new Blob([new Uint8Array(body)]);
-						}
-
-						const handlerResult = await mockHandler.handle(
-							new Request(createMockManagementRequestUrl(request.url), requestInit),
-							{
-								context: {
-									scenarioId: getScenarioIdFromRequest(request),
-								},
-							},
-						);
-
-						if (!handlerResult.matched) {
-							next();
-							return;
-						}
-
-						response.statusCode = handlerResult.response.status;
-						handlerResult.response.headers.forEach((value: string, key: string) => {
-							response.setHeader(key, value);
-						});
-						const responseBody = Buffer.from(await handlerResult.response.arrayBuffer());
-						response.end(responseBody);
-					});
+					server.middlewares.use(
+						MANAGEMENT_MOUNT_PATH,
+						createManagementMiddleware(async (request) => {
+							const scenarioHeader = request.headers.get('x-monque-dev-scenario');
+							const scenarioId = isDashboardDevScenarioId(scenarioHeader)
+								? scenarioHeader
+								: DEFAULT_SCENARIO_ID;
+							const result = await mockHandler.handle(request, { context: { scenarioId } });
+							return result.matched ? result.response : undefined;
+						}),
+					);
 				},
 			},
 			{
@@ -174,7 +91,7 @@ const config = defineConfig(({ mode }) => {
 						...(localDbDatabaseName ? { databaseName: localDbDatabaseName } : {}),
 					});
 
-					server.middlewares.use(MOCK_API_MOUNT_PATH, localDbServer.middleware);
+					server.middlewares.use(MANAGEMENT_MOUNT_PATH, localDbServer.middleware);
 					void localDbServer.start().catch((error: unknown) => {
 						server.config.logger.error(error instanceof Error ? error.message : String(error));
 					});

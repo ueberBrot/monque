@@ -1,7 +1,7 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
-import { toORPCError } from '@orpc/client';
 
 import type { DashboardManagementApi } from '@/management-client';
+import { readManagementError } from '@/management-errors';
 
 type JobActionKey = 'cancel' | 'delete' | 'reschedule' | 'retry';
 type BulkJobActionKey = JobActionKey;
@@ -189,40 +189,35 @@ function getActionSuccessFeedback(action: JobActionKey, count = 1): JobActionFee
 }
 
 function getActionErrorFeedback(error: unknown): JobActionFeedback {
-	const orpcError = toORPCError(error);
+	const { status, message } = readManagementError(error);
 
-	switch (orpcError.code) {
-		case 'CONFLICT':
+	switch (status) {
+		case 409:
 			return {
 				tone: 'warning',
 				title: 'State conflict',
 				description:
-					readActionErrorMessage(orpcError) ??
-					'The job changed before this action completed. The view has been refreshed.',
+					message ?? 'The job changed before this action completed. The view has been refreshed.',
 			};
-		case 'NOT_FOUND':
+		case 404:
 			return {
 				tone: 'warning',
 				title: 'Job not found',
 				description:
-					readActionErrorMessage(orpcError) ??
-					'The selected job is no longer available. The view has been refreshed.',
+					message ?? 'The selected job is no longer available. The view has been refreshed.',
 			};
-		case 'FORBIDDEN':
+		case 403:
 			return {
 				tone: 'warning',
 				title: 'Action unavailable',
-				description:
-					readActionErrorMessage(orpcError) ??
-					'Your current Management session cannot run this action.',
+				description: message ?? 'Your current Management session cannot run this action.',
 			};
 		default:
 			return {
 				tone: 'danger',
 				title: 'Action failed',
 				description:
-					readActionErrorMessage(orpcError) ??
-					'The Management API could not complete this action. Refresh and try again.',
+					message ?? 'The Management API could not complete this action. Refresh and try again.',
 			};
 	}
 }
@@ -256,20 +251,6 @@ async function runJobAction(
 			});
 			return input.action;
 	}
-}
-
-function readActionErrorMessage(error: ReturnType<typeof toORPCError>): string | null {
-	const data = error.data;
-
-	if (typeof data === 'object' && data !== null && 'error' in data) {
-		const message = data.error;
-
-		if (typeof message === 'string' && message.length > 0) {
-			return message;
-		}
-	}
-
-	return error.message.length > 0 ? error.message : null;
 }
 
 function getAvailabilityForPredicate(enabled: boolean, reason: string): JobActionAvailability {

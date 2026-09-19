@@ -113,6 +113,32 @@ describe('Dashboard Express Adapter', () => {
 		await request(app).get('/dashboard/api/v1/health').expect(404);
 	});
 
+	test.each([
+		'/queue-views/email.send',
+		'/queue-views/email%2Esend',
+		'/index.html',
+		'/index%2Ehtml',
+	])('injects runtime configuration for %s', async (path) => {
+		const app = await createDashboardApp();
+		const response = await request(app).get(`/dashboard${path}`).expect(200);
+		expect(response.text).toContain('"basePath":"/dashboard"');
+		expect(response.text).toContain('src="/dashboard/assets/index-abc12345.js"');
+		expect(response.headers['cache-control']).toBe('no-store');
+	});
+
+	test.each(['/assets/missing.js', '/favicon.ico', '/%69ndex.html', '/api', '/api/v1/jobs'])(
+		'does not turn missing assets or Management routes into HTML: %s',
+		async (path) => {
+			const app = await createDashboardApp();
+			await request(app).get(`/dashboard${path}`).expect(404);
+		},
+	);
+
+	test('validates resolved runtime configuration before serving HTML', async () => {
+		const app = await createDashboardApp({ apiBaseUrl: () => '', pollingIntervalMs: 0 });
+		await request(app).get('/dashboard/jobs').expect(500);
+	});
+
 	test('derives root base path and supports api base URL resolvers', async () => {
 		const app = await createDashboardApp({
 			apiBaseUrl: ({ req }) => req.get('x-api-base-url') ?? '/api/v1',
@@ -145,7 +171,8 @@ describe('Dashboard Express Adapter', () => {
 	});
 
 	async function createDashboardApp(options: DashboardAppOptions = {}): Promise<Express> {
-		vi.doMock('@/dashboard-assets', () => ({
+		vi.doMock('@monque/dashboard', async (importOriginal) => ({
+			...(await importOriginal<typeof import('@monque/dashboard')>()),
 			getDashboardAssetDirectory: () => assetDirectory,
 			getDashboardAssetMetadata: () => dashboardAssetMetadata,
 			getDashboardHtmlEntrypointPath: () => htmlEntrypointPath,

@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	type DashboardRuntimeConfig,
+	getDashboardAssetDirectory,
+	getDashboardAssetMetadata,
+	getDashboardHtmlEntrypointPath,
+	parseDashboardRuntimeConfig,
+} from '@monque/dashboard';
+import {
 	type NextFunction,
 	type Request,
 	type Response,
@@ -8,18 +15,7 @@ import {
 	static as serveStatic,
 } from 'express';
 
-import {
-	getDashboardAssetDirectory,
-	getDashboardAssetMetadata,
-	getDashboardHtmlEntrypointPath,
-} from './dashboard-assets.js';
 import type { DashboardExpressApiBaseUrlValue, DashboardExpressRouterOptions } from './types.js';
-
-type DashboardRuntimeConfig = {
-	readonly apiBaseUrl: string;
-	readonly basePath: string;
-	readonly pollingIntervalMs?: number;
-};
 
 type RuntimeConfigInjectionOptions = {
 	readonly runtimeConfig: DashboardRuntimeConfig;
@@ -41,12 +37,6 @@ export function createDashboardExpressRouter(options: DashboardExpressRouterOpti
 			maxAge: '1y',
 		}),
 	);
-	router.use(
-		serveStatic(assetDirectory, {
-			index: false,
-		}),
-	);
-
 	router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
 		if (!shouldServeDashboardHtml(req)) {
 			next();
@@ -77,19 +67,11 @@ async function createRuntimeConfig(
 	req: Request,
 	res: Response,
 ): Promise<DashboardRuntimeConfig> {
-	const runtimeConfig = {
+	return parseDashboardRuntimeConfig({
 		apiBaseUrl: await resolveApiBaseUrl(options.apiBaseUrl, req, res),
-		basePath: normalizeBasePath(req.baseUrl),
-	};
-
-	if (options.pollingIntervalMs === undefined) {
-		return runtimeConfig;
-	}
-
-	return {
-		...runtimeConfig,
+		basePath: req.baseUrl || '/',
 		pollingIntervalMs: options.pollingIntervalMs,
-	};
+	});
 }
 
 function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjectionOptions): string {
@@ -119,21 +101,26 @@ function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjecti
 	);
 }
 
-function normalizeBasePath(basePath: string): string {
-	if (!basePath || basePath === '/') {
-		return '/';
-	}
-
-	return basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
-}
-
 function shouldServeDashboardHtml(req: Request): boolean {
 	if (req.method !== 'GET' && req.method !== 'HEAD') {
 		return false;
 	}
 
-	if (req.path.startsWith('/api/')) {
+	if (
+		req.path === '/api' ||
+		req.path.startsWith('/api/') ||
+		req.path === '/assets' ||
+		req.path.startsWith('/assets/')
+	) {
 		return false;
+	}
+
+	if (
+		req.path === '/index.html' ||
+		req.path.startsWith('/queue-views/') ||
+		req.path.startsWith('/jobs/')
+	) {
+		return true;
 	}
 
 	return !req.path.includes('.');

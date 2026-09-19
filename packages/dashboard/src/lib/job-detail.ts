@@ -1,5 +1,6 @@
 import type { JobDto } from '@monque/management/contract';
-import { type ORPCError, toORPCError } from '@orpc/client';
+
+import { readManagementError } from '@/management-errors';
 
 type JobDetailStateCode = 'unauthorized' | 'forbidden' | 'not-found' | 'error';
 
@@ -7,10 +8,6 @@ type JobDetailState = {
 	readonly code: JobDetailStateCode;
 	readonly description: string;
 	readonly title: string;
-};
-
-type ManagementErrorData = {
-	readonly error: unknown;
 };
 
 function getJobAttemptCount(failCount: number): number {
@@ -53,62 +50,34 @@ function serializePayloadForClipboard(payload: unknown): string {
 }
 
 function mapJobDetailError(error: unknown): JobDetailState {
-	const orpcError = toORPCError(error);
+	const { status, message } = readManagementError(error);
 
-	switch (orpcError.code) {
-		case 'UNAUTHORIZED':
+	switch (status) {
+		case 401:
 			return {
 				code: 'unauthorized',
 				title: 'Sign in required',
-				description: readManagementErrorMessage(orpcError, 'Sign in to inspect this Job detail.'),
+				description: message ?? 'Sign in to inspect this Job detail.',
 			};
-		case 'FORBIDDEN':
+		case 403:
 			return {
 				code: 'forbidden',
 				title: 'Job detail is forbidden',
-				description: readManagementErrorMessage(
-					orpcError,
-					'Your current Management session cannot read this Job detail.',
-				),
+				description: message ?? 'Your current Management session cannot read this Job detail.',
 			};
-		case 'NOT_FOUND':
+		case 404:
 			return {
 				code: 'not-found',
 				title: 'Job not found',
-				description: readManagementErrorMessage(
-					orpcError,
-					'The Job may have been deleted or the copied URL is stale.',
-				),
+				description: message ?? 'The Job may have been deleted or the copied URL is stale.',
 			};
 		default:
 			return {
 				code: 'error',
 				title: 'Job detail could not be loaded',
-				description: readManagementErrorMessage(
-					orpcError,
-					'Refresh the page or confirm the Management API is reachable.',
-				),
+				description: message ?? 'Refresh the page or confirm the Management API is reachable.',
 			};
 	}
-}
-
-function readManagementErrorMessage(
-	error: ORPCError<string, unknown>,
-	fallbackMessage: string,
-): string {
-	if (hasManagementErrorData(error.data)) {
-		const message = error.data.error;
-
-		if (typeof message === 'string' && message.length > 0) {
-			return message;
-		}
-	}
-
-	return error.message.length > 0 ? error.message : fallbackMessage;
-}
-
-function hasManagementErrorData(data: unknown): data is ManagementErrorData {
-	return typeof data === 'object' && data !== null && Object.hasOwn(data, 'error');
 }
 
 function getJobRunLabel(job: Pick<JobDto, 'status'>): string {

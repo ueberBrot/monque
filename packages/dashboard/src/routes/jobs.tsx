@@ -73,6 +73,7 @@ import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { getJobRunLabel } from '@/lib/job-detail';
 import { useNow } from '@/lib/use-now';
 import { cn } from '@/lib/utils';
+import { readManagementError } from '@/management-errors';
 
 export const Route = createFileRoute('/jobs')({
 	validateSearch: parseJobsRouteSearch,
@@ -136,10 +137,8 @@ function JobsListRoute() {
 	);
 	const capabilitiesQuery = useQuery(managementApi.orpc.capabilities.queryOptions());
 	const jobsPage = jobsQuery.data;
-	const { cursorHistory, handleNextPage, handlePreviousPage } = useJobsPagination(
-		search,
-		jobsPage?.cursor,
-	);
+	const { hasPreviousPage, previousPageLabel, handleNextPage, handlePreviousPage } =
+		useJobsPagination(search, jobsPage?.cursor);
 	const jobs = jobsPage?.jobs ?? EMPTY_JOBS;
 	const [previousJobs, setPreviousJobs] = useState(jobs);
 	if (jobs !== previousJobs) {
@@ -380,7 +379,8 @@ function JobsListRoute() {
 
 				<JobsPagination
 					selectedRowCount={selectedRowCount}
-					hasPreviousPage={cursorHistory.length > 0}
+					hasPreviousPage={hasPreviousPage}
+					previousPageLabel={previousPageLabel}
 					hasNextPage={Boolean(jobsPage?.hasNextPage && jobsPage.cursor)}
 					onPreviousPage={handlePreviousPage}
 					onNextPage={handleNextPage}
@@ -404,46 +404,37 @@ function JobsListRoute() {
 
 function useJobsPagination(search: JobsRouteSearch, nextPageCursor: string | null | undefined) {
 	const navigate = Route.useNavigate();
-	const [cursorHistory, setCursorHistory] = useState<readonly string[]>([]);
 	const searchIdentity = getJobsSearchIdentity(search);
-	const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
-	if (searchIdentity !== previousSearchIdentity) {
-		setPreviousSearchIdentity(searchIdentity);
-		setCursorHistory([]);
+	const cursor = search.cursor ?? '';
+	const [history, setHistory] = useState({ identity: searchIdentity, cursors: [cursor] });
+	const currentIndex = history.cursors.indexOf(cursor);
+	if (searchIdentity !== history.identity) {
+		setHistory({ identity: searchIdentity, cursors: [cursor] });
 	}
+
 	function handleNextPage(): void {
-		const nextCursor = nextPageCursor;
-
-		if (!nextCursor) {
-			return;
-		}
-
-		setCursorHistory((currentHistory) => [...currentHistory, search.cursor ?? '']);
+		if (!nextPageCursor) return;
+		const trail = currentIndex < 0 ? [cursor] : history.cursors.slice(0, currentIndex + 1);
+		setHistory({ identity: searchIdentity, cursors: [...trail, nextPageCursor] });
 		void navigate({
-			search: (currentSearch) => ({
-				...currentSearch,
-				cursor: nextCursor,
-			}),
+			search: (currentSearch) => ({ ...currentSearch, cursor: nextPageCursor }),
 		});
 	}
 
 	function handlePreviousPage(): void {
-		const previousCursor = cursorHistory[cursorHistory.length - 1];
-
-		if (previousCursor === undefined) {
-			return;
-		}
-
-		setCursorHistory((currentHistory) => currentHistory.slice(0, -1));
+		if (!cursor) return;
+		const previousCursor = currentIndex > 0 ? history.cursors[currentIndex - 1] : undefined;
 		void navigate({
-			search: (currentSearch) => ({
-				...currentSearch,
-				cursor: previousCursor || undefined,
-			}),
+			search: (currentSearch) => ({ ...currentSearch, cursor: previousCursor || undefined }),
 		});
 	}
 
-	return { cursorHistory, handleNextPage, handlePreviousPage };
+	return {
+		hasPreviousPage: Boolean(cursor),
+		previousPageLabel: cursor && currentIndex <= 0 ? 'First page' : 'Previous page',
+		handleNextPage,
+		handlePreviousPage,
+	};
 }
 
 function JobsPageHeader({
@@ -503,12 +494,14 @@ function JobsResultsToolbar({
 }
 
 function JobsPagination({
+	previousPageLabel,
 	selectedRowCount,
 	hasPreviousPage,
 	hasNextPage,
 	onPreviousPage,
 	onNextPage,
 }: {
+	readonly previousPageLabel: string;
 	readonly selectedRowCount: number;
 	readonly hasPreviousPage: boolean;
 	readonly hasNextPage: boolean;
@@ -529,7 +522,7 @@ function JobsPagination({
 					onClick={onPreviousPage}
 					disabled={!hasPreviousPage}
 				>
-					Previous page
+					{previousPageLabel}
 				</Button>
 				<Button type="button" variant="outline" onClick={onNextPage} disabled={!hasNextPage}>
 					Next page
@@ -802,8 +795,7 @@ function JobsErrorPanel({
 	readonly onRetry: () => void;
 	readonly onClearFilters: () => void;
 }) {
-	const status = getErrorStatus(error);
-	const message = getErrorMessage(error);
+	const { status, message } = readManagementError(error);
 
 	switch (status) {
 		case 401:
@@ -875,40 +867,6 @@ function JobsStatePanel({
 
 function JobStatusBadge({ status }: { readonly status: JobDto['status'] }) {
 	return <Badge variant={getJobStatusBadgeVariant(status)}>{getStatusLabel(status)}</Badge>;
-}
-
-function getErrorStatus(error: unknown): number | undefined {
-	return isRecord(error) ? getOptionalNumber(error['status']) : undefined;
-}
-
-function getErrorMessage(error: unknown): string | undefined {
-	const fallbackMessage = error instanceof Error ? error.message : undefined;
-
-	if (!isRecord(error)) {
-		return fallbackMessage;
-	}
-
-	const data = error['data'];
-
-	if (!isRecord(data)) {
-		return fallbackMessage;
-	}
-
-	const body = data['body'];
-
-	if (!isRecord(body) || !('error' in body)) {
-		return fallbackMessage;
-	}
-
-	return getOptionalString(body['error']);
-}
-
-function getOptionalNumber(value: unknown): number | undefined {
-	return typeof value === 'number' ? value : undefined;
-}
-
-function getOptionalString(value: unknown): string | undefined {
-	return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function getSelectionForVisibleJobs(
@@ -983,10 +941,6 @@ function getJobStatusBadgeVariant(status: JobDto['status']): JobStatusBadgeVaria
 		case 'pending':
 			return 'outline';
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
 }
 
 function getColumnVisibilityClass(id: string): string {

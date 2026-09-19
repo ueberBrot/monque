@@ -162,6 +162,34 @@ describe('Jobs route', () => {
 		expect(await screen.findByText('No jobs found')).toBeTruthy();
 	});
 
+	it('keeps Previous page aligned with browser Back and offers First page after a reload', async () => {
+		const fetch = createMockManagementFetch({ scenarioId: 'large-dataset' });
+		const { router } = await renderJobsRoute({ fetch, initialEntry: '/jobs?limit=10' });
+		await screen.findAllByRole('checkbox', { name: /^Select job row / });
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next page' })));
+		await waitFor(() => expect(router.state.location.search.cursor).toEqual(expect.any(String)));
+		const secondPageCursor = router.state.location.search.cursor;
+		await screen.findAllByRole('checkbox', { name: /^Select job row / });
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Next page' })));
+		await waitFor(() => expect(router.state.location.search.cursor).not.toBe(secondPageCursor));
+		await act(async () => router.history.back());
+		await waitFor(() => expect(router.state.location.search.cursor).toBe(secondPageCursor));
+		await act(async () =>
+			fireEvent.click(await screen.findByRole('button', { name: 'Previous page' })),
+		);
+		await waitFor(() => expect(router.state.location.search.cursor).toBeUndefined());
+
+		cleanup();
+		const reloaded = await renderJobsRoute({
+			fetch,
+			initialEntry: `/jobs?limit=10&cursor=${encodeURIComponent(String(secondPageCursor))}`,
+		});
+		await act(async () =>
+			fireEvent.click(await screen.findByRole('button', { name: 'First page' })),
+		);
+		await waitFor(() => expect(reloaded.router.state.location.search.cursor).toBeUndefined());
+	});
+
 	it('renders an unauthorized state when the API returns 401', async () => {
 		await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'unauthorized' }),

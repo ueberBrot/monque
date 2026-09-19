@@ -76,6 +76,15 @@ test('cancel is persisted and idempotent; retry resets failure state', async ({ 
 	await expect(page.getByText('Pending', { exact: true })).toBeVisible();
 });
 
+test('dotted Queue View names support direct links and reloads', async ({ page, app }) => {
+	await app.seed({ name: 'email.send' });
+	await page.goto(`${app.base}/dashboard/queue-views/email.send`);
+	await expect(page.getByRole('heading', { name: 'email.send', exact: true })).toBeVisible();
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'email.send', exact: true })).toBeVisible();
+	await expect(page.locator('tbody tr')).toHaveCount(1);
+});
+
 test('rescheduling validates DST and persists local time as UTC', async ({ page, app }) => {
 	const job = await app.seed();
 	await page.goto(`${app.base}/dashboard/jobs/${job._id}`);
@@ -144,6 +153,38 @@ test('cursor pagination with tied dates neither skips nor repeats jobs', async (
 	await expect(page.getByRole('button', { name: 'Delete selected jobs' })).toHaveCount(0);
 	await page.reload();
 	await expect(page.locator('tbody tr')).toHaveCount(50);
+	await page.getByRole('button', { name: 'First page', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
+});
+
+test('Jobs pagination follows browser Back and returns from job details', async ({ page, app }) => {
+	await app.seedScenario('pagination');
+	await page.goto(`${app.base}/dashboard/jobs?limit=10`);
+	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).not.toBeNull();
+	const secondCursor = new URL(page.url()).searchParams.get('cursor');
+	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).not.toBe(secondCursor);
+	await page.goBack();
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
+	);
+	await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
+	await page.getByRole('button', { name: 'Next page', exact: true }).click();
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
+	);
+	await page.locator('tbody a').first().click();
+	await page.getByRole('link', { name: 'Back to jobs' }).click();
+	await expect(page).toHaveURL(
+		(url) =>
+			url.pathname.endsWith('/dashboard/jobs') && url.searchParams.get('cursor') === secondCursor,
+	);
+	await page.getByRole('button', { name: 'First page', exact: true }).click();
+	await expect.poll(() => new URL(page.url()).searchParams.get('cursor')).toBeNull();
 });
 
 test('date boundaries, combined statuses, URL restoration, and clearing filters', async ({

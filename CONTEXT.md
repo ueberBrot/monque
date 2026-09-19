@@ -86,10 +86,6 @@ processing jobs block duplicates; completed and failed jobs do not.
   asset/UI package.
 - Dashboard development mock mode uses oRPC mock Management handlers backed by seeded,
   deterministic scenario factories.
-- Dashboard tests use mock Management handlers for UI integration; real MongoDB/Testcontainers
-  remain in core and Management integration tests.
-- Dashboard releases require Playwright smoke coverage for routing, core workflows, and
-  responsive layout sanity.
 - Framework-specific middleware belongs in Management Adapters, not in the Management Surface.
 - Standalone Dashboard and Docker distribution come after the Management Surface and at least
   one Management Adapter.

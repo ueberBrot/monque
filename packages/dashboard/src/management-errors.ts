@@ -1,3 +1,28 @@
+import { z } from 'zod';
+
+const ErrorMessageSchema = z.string().min(1).optional().catch(undefined);
+const ManagementErrorSchema = z.object({
+	status: z.number().int().optional().catch(undefined),
+	message: ErrorMessageSchema,
+	data: z
+		.object({
+			error: ErrorMessageSchema,
+			body: z.object({ error: ErrorMessageSchema }).optional().catch(undefined),
+		})
+		.optional()
+		.catch(undefined),
+});
+
+function readManagementError(error: unknown): {
+	status: number | undefined;
+	message: string | undefined;
+} {
+	const parsed = ManagementErrorSchema.safeParse(error);
+	if (!parsed.success) return { status: undefined, message: undefined };
+	const { status, message, data } = parsed.data;
+	return { status, message: data?.error ?? data?.body?.error ?? message };
+}
+
 type DashboardApiErrorState = {
 	readonly title: string;
 	readonly description: string;
@@ -5,8 +30,7 @@ type DashboardApiErrorState = {
 };
 
 function resolveDashboardApiErrorState(error: unknown): DashboardApiErrorState {
-	const status = getErrorStatus(error);
-	const message = getErrorMessage(error);
+	const { status, message } = readManagementError(error);
 
 	switch (status) {
 		case 401:
@@ -36,91 +60,18 @@ function resolveDashboardApiErrorState(error: unknown): DashboardApiErrorState {
 	}
 }
 
-function getErrorStatus(error: unknown): number | undefined {
-	if (typeof error !== 'object' || error === null) {
-		return undefined;
-	}
-
-	const status = Reflect.get(error, 'status');
-	return typeof status === 'number' ? status : undefined;
-}
-
-function getErrorMessage(error: unknown): string | undefined {
-	if (typeof error !== 'object' || error === null) {
-		return undefined;
-	}
-
-	return getNestedErrorMessage(error) ?? getNonEmptyString(Reflect.get(error, 'message'));
-}
-
-function getNestedErrorMessage(error: object): string | undefined {
-	const data = Reflect.get(error, 'data');
-	if (typeof data === 'object' && data !== null) {
-		const body = Reflect.get(data, 'body');
-
-		if (typeof body === 'object' && body !== null) {
-			const nestedError = Reflect.get(body, 'error');
-
-			return getNonEmptyString(nestedError);
-		}
-	}
-
-	return undefined;
-}
-
-function getNonEmptyString(value: unknown): string | undefined {
-	return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
 function getQueryErrorMessage(error: unknown, fallback: string): string {
-	const unauthorizedMessage = getUnauthorizedQueryErrorMessage(error);
-
-	if (unauthorizedMessage) {
-		return unauthorizedMessage;
-	}
-
-	if (error instanceof Error && error.message.length > 0) {
-		return error.message;
-	}
-
-	return fallback;
+	return readManagementError(error).message ?? fallback;
 }
 
 function isUnauthorizedQueryError(error: unknown): boolean {
-	return getRecordValue(error, 'status') === 401;
-}
-
-function getUnauthorizedQueryErrorMessage(error: unknown): string | undefined {
-	if (!isUnauthorizedQueryError(error)) {
-		return undefined;
-	}
-
-	const data = getRecordValue(error, 'data');
-	const body = getRecordValue(data, 'body');
-	const message = getRecordValue(body, 'error');
-
-	if (typeof message === 'string' && message.length > 0) {
-		return message;
-	}
-
-	return undefined;
-}
-
-function getRecordValue(value: unknown, key: string): unknown {
-	if (!isRecord(value)) {
-		return undefined;
-	}
-
-	return value[key];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
+	return readManagementError(error).status === 401;
 }
 
 export {
 	type DashboardApiErrorState,
 	getQueryErrorMessage,
 	isUnauthorizedQueryError,
+	readManagementError,
 	resolveDashboardApiErrorState,
 };

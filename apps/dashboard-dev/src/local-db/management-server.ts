@@ -4,6 +4,7 @@ import { createManagementSurface } from '@monque/management';
 import { type Collection, type Document, MongoClient, type WithId } from 'mongodb';
 import type { Connect } from 'vite';
 
+import { createManagementMiddleware } from '../management-middleware.js';
 import { startDemoWorkload } from './demo-workload.js';
 import { createScenario, registerScenarioWorkers } from './scenarios.js';
 
@@ -12,7 +13,6 @@ const DEFAULT_DATABASE_NAME = 'monque_dashboard_dev';
 const COLLECTION_NAME = 'monque_dashboard_jobs';
 const SEED_MARKER_COLLECTION = 'monque_dashboard_seed';
 const SEED_VERSION = '2026-06-04-atlas-local-v1';
-const API_MOUNT_PATH = '/api';
 const MONGO_CONNECT_TIMEOUT_MS = 3_000;
 
 class LocalDbConnectionError extends Error {
@@ -69,52 +69,27 @@ function createLocalDbManagementServer(options?: {
 		start: async () => {
 			await getRuntime();
 		},
-		middleware: async (request, response, next) => {
-			if (!request.url) {
-				next();
-				return;
-			}
-
+		middleware: createManagementMiddleware(async (request) => {
 			try {
 				const runtime = await getRuntime();
-				const result = await runtime.management.openApiHandler.handle(
-					await createFetchRequest(request),
-					{
-						context: {
-							managementContext: {
-								source: 'dashboard-dev-db',
-							},
-						},
-					},
-				);
-
-				if (!result.matched) {
-					next();
-					return;
-				}
-
-				response.statusCode = result.response.status;
-				result.response.headers.forEach((value: string, key: string) => {
-					response.setHeader(key, value);
+				const result = await runtime.management.openApiHandler.handle(request, {
+					context: { managementContext: { source: 'dashboard-dev-db' } },
 				});
-				response.end(Buffer.from(await result.response.arrayBuffer()));
+				return result.matched ? result.response : undefined;
 			} catch (error) {
 				if (error instanceof LocalDbConnectionError) {
-					response.statusCode = 503;
-					response.setHeader('content-type', 'application/json; charset=utf-8');
-					response.end(
-						JSON.stringify({
+					return Response.json(
+						{
 							error: 'dashboard_dev_db_unavailable',
 							message: error.message,
 							mongoUri: error.mongoUri,
-						}),
+						},
+						{ status: 503 },
 					);
-					return;
 				}
-
-				next(error);
+				throw error;
 			}
-		},
+		}),
 		close: async () => {
 			closing ??= (async () => {
 				try {
@@ -228,58 +203,4 @@ function createSeedJobs(): DashboardSeedJob[] {
 	}));
 }
 
-async function createFetchRequest(request: Connect.IncomingMessage): Promise<Request> {
-	const body = await readNodeRequestBody(request);
-	const requestInit: RequestInit = {
-		method: request.method ?? 'GET',
-		headers: createHeadersFromNodeRequest(request),
-	};
-
-	if (body) {
-		requestInit.body = new Blob([new Uint8Array(body)]);
-	}
-
-	return new Request(createLocalDbManagementRequestUrl(request.url ?? '/'), requestInit);
-}
-
-async function readNodeRequestBody(request: Connect.IncomingMessage): Promise<Buffer | undefined> {
-	if (request.method === 'GET' || request.method === 'HEAD') {
-		return undefined;
-	}
-
-	const chunks: Uint8Array[] = [];
-
-	for await (const chunk of request) {
-		chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-	}
-
-	return chunks.length > 0 ? Buffer.concat(chunks) : undefined;
-}
-
-function createHeadersFromNodeRequest(request: Connect.IncomingMessage): Headers {
-	const headers = new Headers();
-
-	for (const [name, value] of Object.entries(request.headers)) {
-		if (typeof value === 'undefined') {
-			continue;
-		}
-
-		if (Array.isArray(value)) {
-			for (const item of value) {
-				headers.append(name, item);
-			}
-			continue;
-		}
-
-		headers.set(name, value);
-	}
-
-	return headers;
-}
-
-function createLocalDbManagementRequestUrl(requestUrl: string): string {
-	const path = requestUrl.startsWith('/') ? requestUrl : `/${requestUrl}`;
-	return `http://dashboard-dev.local${API_MOUNT_PATH}${path}`;
-}
-
-export { createLocalDbManagementRequestUrl, createLocalDbManagementServer, createSeedJobs };
+export { createLocalDbManagementServer, createSeedJobs };
