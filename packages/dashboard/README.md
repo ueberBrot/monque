@@ -1,8 +1,10 @@
 # @monque/dashboard
 
-A dashboard for Monque jobs, queues, and scheduler health. Inspect payloads and failures,
-filter and share job lists, and retry, cancel, reschedule, or delete jobs with API-enforced permissions.
-Supports light and dark themes and mobile layouts.
+Inspect Monque jobs and scheduler health in your browser. Filter a job list, share its URL,
+or open a job to view its payload and failures. You can retry, cancel, reschedule, or delete
+jobs when your API permissions allow it.
+
+The dashboard supports light and dark themes and mobile layouts.
 
 ## Installation
 
@@ -13,7 +15,7 @@ bun add @monque/dashboard-express @monque/management-express @monque/management 
 ```
 
 Requires Node.js 22.12 or newer and Express 5.2.1 or newer within version 5.
-The dashboard is included in the Express adapter. No frontend build or React installation is required.
+The Express adapter includes the built dashboard, so you do not need a frontend build or React installation.
 
 ## Usage
 
@@ -68,8 +70,8 @@ authentication, and configuration options.
 
 ## Other integrations
 
-This package provides built browser assets and server-side helpers, rather than an embeddable
-React component. `getDashboardAssetMetadata()` exposes the asset locations for custom server
-adapters. The Express adapter provides the complete serving integration.
+For a custom server adapter, use `getDashboardAssetMetadata()` to locate the built browser
+assets. The package does not export an embeddable React component. Use the Express adapter
+if you want a ready-made router.
 
 To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).

@@ -5,8 +5,9 @@ description: High-level direction for Monque core and ecosystem.
 
 import Roadmap from '../../components/Roadmap.astro';
 
-Monque development is usage-driven. The directions below are intentionally unversioned and
-do not commit to a delivery timeline.
+These are the current features and planned additions. Planned work has no release date.
+
+See [Dashboard setup](/monque/dashboard/express/) for the available integration.
 
 ## Direction
 
@@ -14,42 +15,42 @@ do not commit to a delivery timeline.
   {
     title: 'Management Ecosystem',
     status: 'current',
-    description: 'Keep management APIs framework-neutral while adapters handle host-framework mounting.',
+    description: 'Use the Management API with your HTTP framework through an adapter.',
     features: [
-      'Maintain OpenAPI as the stable third-party contract',
-      'Keep host-owned authentication and action-grained authorization',
+      'Describe the HTTP API with OpenAPI',
+      'Use application authentication and permissions for each action',
       'Add framework adapters only when there is clear demand'
     ]
   },
   {
     title: 'Dashboard',
-    status: 'planned',
-    description: 'A bundled operator UI for inspecting Queue Views and operating existing Jobs through the Management Surface.',
+    status: 'current',
+    description: 'Inspect and manage jobs through a dashboard served from your application.',
     features: [
-      'Ship as an asset/UI package that can be served by framework-specific adapters',
-      'Use the same REST-shaped Management routes as HTTP clients with first-party oRPC typing',
-      'Start with polling and existing Job actions',
-      'Defer realtime updates, Job creation, and visibility filtering until core APIs support them'
+      'Serve prebuilt assets with the Express dashboard adapter',
+      'Inspect Queue Views, jobs, payloads, and scheduler health',
+      'Share filtered job lists and run individual or bulk actions',
+      'Use application authentication and API-enforced permissions'
     ]
   },
   {
     title: 'Orchestration And Pipelines',
     status: 'planned',
-    description: 'Higher-level primitives for coordinating multi-step work when the core model is ready.',
+    description: 'Define how related jobs run in sequence or depend on each other.',
     features: [
-      'Code-first orchestration for related Jobs',
-      'Declarative pipeline definitions where configuration is a better fit',
-      'Lifecycle visibility through core events and Management surfaces'
+      'Coordinate related jobs in application code',
+      'Define pipelines through configuration',
+      'Track progress through job events and the Management API'
     ]
   },
   {
     title: 'Operational Scale',
     status: 'planned',
-    description: 'Large-deployment controls that need careful core, API, and operator-design work.',
+    description: 'Add controls for applications with larger queues or multiple tenants.',
     features: [
-      'Namespace-aware or multi-tenant operations',
-      'Rate limits, priority controls, and operational policy hooks',
-      'Standalone Dashboard server or Docker packaging after the bundled Dashboard and serving adapters exist'
+      'Group jobs by namespace or tenant',
+      'Set rate limits, job priorities, and processing policies',
+      'Standalone dashboard deployment and Docker packaging'
     ]
   }
 ]} />

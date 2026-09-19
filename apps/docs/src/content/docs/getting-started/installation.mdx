@@ -1,27 +1,27 @@
 ---
 title: Installation
-description: How to install Monque and set up your development environment.
+description: Install the Monque packages and connect to MongoDB.
 ---
 
 import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 ## Prerequisites
 
-Before installing Monque, ensure you have:
-
-- **Node.js 22+** or **Bun 1.3+**
-- **MongoDB 4.0+**
+- **Node.js 22.12 or newer**
+- **MongoDB 4.4 or newer**, compatible with the MongoDB Node.js driver 7.6
   - Monque works with regular polling on standalone MongoDB
   - Change Streams require a replica set or sharded cluster (MongoDB Atlas provides this by default)
 
 <Aside type="tip">
-  For local development, you can use Docker to quickly spin up a MongoDB replica set:
+  Start a local MongoDB replica set with Docker:
   ```bash
-  docker run -d --name mongodb -p 27017:27017 mongo --replSet rs0
+  docker run -d --name mongodb -p 27017:27017 mongo:8 --replSet rs0
   docker exec -it mongodb mongosh --eval "rs.initiate()"
   ```
 
-  Alternatively, MongoDB publishes an **Atlas Local** Docker image (`mongodb/mongodb-atlas-local`) if you want an Atlas-like local deployment.
+  Run the second command after MongoDB is accepting connections.
+
+  For a local deployment with Atlas features, MongoDB also provides the Atlas Local image (`mongodb/mongodb-atlas-local`).
 </Aside>
 
 ## Install the Package
@@ -51,12 +51,35 @@ Before installing Monque, ensure you have:
 
 ## Peer Dependencies
 
-Monque requires the MongoDB Node.js driver (`mongodb` ^7.6.0) as a peer dependency. This allows you to:
+Install the MongoDB Node.js driver (`mongodb` ^7.6.0) alongside Monque. Pass a database
+from your existing client to share its connections. You choose the driver version within
+that supported range.
 
-- Use your existing MongoDB client instance
-- Control driver version independently
-- Share connections with your application
+## Choose packages
 
-## Next Steps
+| Package | Use it for |
+| --- | --- |
+| `@monque/core` | Register workers, enqueue jobs, schedule recurring work, and query MongoDB jobs. |
+| `@monque/tsed` | Integrate workers and scheduler lifecycle with a Ts.ED application. |
+| `@monque/management` | Expose job queries and actions through an HTTP contract. |
+| `@monque/management-express` | Serve the Management API from Express. |
+| `@monque/dashboard-express` | Serve the bundled dashboard from Express. Includes `@monque/dashboard`. |
+| `@monque/dashboard` | Access built dashboard assets and configuration types for custom server adapters. |
 
-Now that you have Monque installed, head to the [Quick Start](/monque/getting-started/quick-start/) guide to build your first job queue!
+For an Express application with the dashboard:
+
+```bash
+bun add @monque/dashboard-express @monque/management-express @monque/management @monque/core express mongodb
+```
+
+Follow [Dashboard setup](/monque/dashboard/express/) for the server configuration. You do not need to
+install React or build the frontend in your application.
+
+The MongoDB driver 7.6 no longer supports MongoDB 4.2 and earlier. See
+[MongoDB's driver upgrade notes](https://www.mongodb.com/docs/drivers/node/current/reference/upgrade/)
+when upgrading an existing deployment.
+
+## Start processing
+
+Follow the [Quick Start](/monque/getting-started/quick-start/) to register a worker and enqueue
+its first job, or use the [Ts.ED integration](/monque/integrations/tsed/) in a Ts.ED application.

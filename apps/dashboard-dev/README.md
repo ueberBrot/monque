@@ -30,7 +30,7 @@ docker compose -f apps/dashboard-dev/compose.yml up -d --wait
 bun run dev:dashboard-db
 ```
 
-Starts a real scheduler and workers with persisted jobs. A recurring demo creates work every
+This starts a scheduler and workers using MongoDB. A recurring demo creates work every
 15 seconds, including successful jobs, a job that retries once, and a job that exhausts its retries.
 External service calls are simulated. Fresh databases also receive 170 sample jobs.
 Existing data is retained, and due jobs with registered workers can execute.
@@ -40,14 +40,14 @@ The scheduler stops with the dev server.
 
 ## Configuration
 
-No environment file is required for the default mock or local MongoDB setup.
-To override the defaults, copy the [example file](.env.example) from the repository root:
+The commands above work without an environment file. To change their settings, copy the
+[example file](.env.example) from the repository root:
 
 ```bash
 cp apps/dashboard-dev/.env.example apps/dashboard-dev/.env.local
 ```
 
-Edit **`apps/dashboard-dev/.env.local`** and restart the dev server. This local file is
+Edit `apps/dashboard-dev/.env.local` and restart the dev server. This local file is
 ignored by Git and loaded automatically by the development app. You can also set variables
 in your shell. These settings apply only to this development app; applications using
 `@monque/dashboard-express` configure the router in their own server code.
@@ -88,7 +88,7 @@ docker compose -f apps/dashboard-dev/compose.yml up -d --wait
 
 ## Tests
 
-Run from **`apps/dashboard-dev`**:
+Run from `apps/dashboard-dev`:
 
 ```bash
 bun run test:unit

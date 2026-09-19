@@ -1,342 +1,101 @@
 ---
 title: Change Streams
-description: Real-time job notifications using MongoDB Change Streams.
+description: Configure job discovery, fallback polling, and Change Stream monitoring.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
-MongoDB Change Streams provide real-time notifications when jobs are created or updated, eliminating polling latency for instant job processing.
-
-## What Are Change Streams?
-
-Change Streams allow applications to subscribe to real-time data changes in MongoDB collections. Instead of polling ("Are there new jobs?"), Monque receives push notifications ("A new job was just added!").
-
-## How Monque Uses Change Streams
-
-### Default Behavior
-
-When you call `start()`, Monque:
-
-1. **Opens a Change Stream** on the jobs collection
-2. **Listens for events**: new job insertions and status changes
-3. **Triggers immediate processing** when relevant changes occur
-4. **Maintains polling as backup** in case Change Streams fail
-
-```typescript
-const monque = new Monque(db);
-await monque.initialize();
-monque.start();
-
-// Behind the scenes:
-// - Change stream opened with full document lookup
-// - Safety polling runs at `safetyPollInterval` (default 30s) as a backup
-// - Change stream events trigger targeted, debounced polls for low-latency processing
-```
-
-### Event Types Monitored
-
-```typescript
-// Monque watches for:
-{
-  $or: [
-    { operationType: 'insert' },  // New jobs
-    {
-      operationType: 'update',
-      'updateDescription.updatedFields.status': { $exists: true }
-    }  // Status changes (e.g., retry → pending)
-  ]
-}
-```
-
-## Benefits of Change Streams
-
-| Without Change Streams       | With Change Streams      |
-| ---------------------------- | ------------------------ |
-| Reacts on poll cycle         | Reacts on change events  |
-| Latency: up to `pollInterval` | Latency: typically within the debounce window + processing time |
-| Poll queries run while idle  | Polling still runs, but change events reduce time-to-start |
-| More idle work at scale      | Fewer “wait for poll” delays at scale |
-
-<Aside type="note">
-  Change Streams reduce the *time-to-start* for newly enqueued jobs because Monque can react to inserts/updates instead of waiting for the next poll cycle. Monque still polls as a safety net.
-</Aside>
+Monque uses MongoDB Change Streams to discover pending jobs without waiting for the next
+regular poll. Polling continues as a safety net. A job still needs a registered worker,
+an available concurrency slot, and a due `nextRunAt` before it can run.
 
 ## Requirements
 
-Change Streams require:
+Use a replica set or sharded cluster with a MongoDB version compatible with the installed
+driver. See [Installation](/monque/getting-started/installation/) for requirements and a
+local Docker setup.
 
-- **MongoDB 4.0+**
-- **Replica Set or Sharded Cluster** (not standalone)
+Standalone MongoDB does not support Change Streams. Monque can still process jobs there
+using regular polling.
 
-<Aside type="tip">
-  MongoDB Atlas always runs as a replica set, so Change Streams work out of the box.
+## Configuration
 
-  For local development setup (Docker), see the [Installation prerequisites](/monque/getting-started/installation/).
-</Aside>
+```typescript
+const monque = new Monque(db, {
+  pollInterval: 1_000,
+  safetyPollInterval: 30_000,
+});
 
-## Event Lifecycle
+await monque.initialize();
+monque.start();
+```
 
-### 1. Change Stream Connected
+| State | Periodic poll interval | Additional job discovery |
+| --- | --- | --- |
+| Change Streams active | `safetyPollInterval`, default 30 seconds | Notifications for pending jobs and scheduled wakeups |
+| Change Streams unavailable | `pollInterval`, default 1 second | Regular polling |
 
-When Monque successfully opens a Change Stream:
+Notifications for a job name trigger checks for its registered worker. Several notifications
+arriving together are debounced for 100 milliseconds. Future jobs schedule a wakeup for their
+run time. Dates more than approximately 25 days away are handled without timer overflow
+warnings or repeated immediate wakeups.
+
+These intervals control scheduler job discovery. They are independent of
+[dashboard refresh intervals](/monque/dashboard/configuration/#automatic-refresh).
+The dashboard reads the Management API; it does not open a MongoDB Change Stream.
+
+## Monitor connection state
+
+Register event listeners before starting the scheduler:
 
 ```typescript
 monque.on('changestream:connected', () => {
-  console.log('✅ Change Stream connected - instant job notifications active');
+  console.log('Change Stream connected');
 });
-```
-
-### 2. Processing Events
-
-When a job is inserted, becomes ready, or a concurrency slot is freed:
-
-```typescript
-// Internal flow:
-// 1. Change Stream receives notification with full document
-// 2. Event is classified: immediate job, future job, or slot freed
-// 3. Immediate: debounce (100ms), then targeted poll for specific worker(s)
-//    Future: precise wakeup timer scheduled at nextRunAt + grace period
-//    Slot freed: targeted re-poll for that worker to pick up waiting jobs
-// 4. Worker attempts to claim job via atomic findOneAndUpdate
-```
-
-### 3. Error Handling
-
-If the Change Stream encounters an error:
-
-```typescript
 monque.on('changestream:error', ({ error }) => {
   console.error('Change Stream error:', error.message);
-  // Monque will attempt to reconnect
 });
-```
-
-### 4. Fallback to Polling
-
-After 3 failed reconnection attempts:
-
-```typescript
 monque.on('changestream:fallback', ({ reason }) => {
-  console.warn('Falling back to polling:', reason);
-  // System continues working, just with higher latency
+  console.warn('Using regular polling:', reason);
 });
-```
-
-### 5. Change Stream Closed
-
-On graceful shutdown:
-
-```typescript
 monque.on('changestream:closed', () => {
   console.log('Change Stream closed');
 });
 ```
 
-## Configuration
+Monque attempts to reconnect after a stream error. After the retry limit is reached, it
+falls back to regular polling. Continue monitoring job failures and processing latency
+while the stream is unavailable.
 
-### Adaptive Poll Scheduling
+`isHealthy()` reports whether the scheduler is initialized and started. It does not require
+an active Change Stream and is not a live database connectivity probe.
 
-Monque uses **adaptive polling** that adjusts based on whether Change Streams are active:
+## Measure pickup latency
 
-| Scenario | Poll interval used | Purpose |
-| --- | --- | --- |
-| Change Streams **active** | `safetyPollInterval` (default 30 s) | Safety net — catches anything Change Streams missed |
-| Change Streams **inactive** | `pollInterval` (default 1 s) | Primary job discovery mechanism |
-
-```typescript
-const monque = new Monque(db, {
-  pollInterval: 1000,          // Used when Change Streams are unavailable
-  safetyPollInterval: 30000,   // Safety net when Change Streams are active (default)
-});
-```
-
-<Aside type="note">
-  When Change Streams are active, most jobs are picked up in near real-time via change events. The safety poll at `safetyPollInterval` only exists to catch edge cases (e.g., events missed during brief reconnections). If Change Streams fail permanently, Monque falls back to polling at the faster `pollInterval`.
-</Aside>
-
-### Targeted Polling
-
-Change Stream events include the full document (via `fullDocument: 'updateLookup'`), which Monque uses for smart routing:
-
-- **Job name** — only the worker(s) for the relevant job type are polled, skipping unrelated workers
-- **`nextRunAt`** — future-dated jobs get a precise wakeup timer instead of waiting for the next poll cycle
-- **Slot freed** — when a job completes or permanently fails, a targeted re-poll picks up the next waiting job for that worker immediately
-
-## Reconnection Strategy
-
-Monque implements exponential backoff for reconnection:
+Use a payload timestamp to measure how long a ready job waits before its handler starts:
 
 ```typescript
-// Reconnection attempts:
-// Attempt 1: Wait 1 second
-// Attempt 2: Wait 2 seconds
-// Attempt 3: Wait 4 seconds
-// After 3 failures: Fall back to polling-only mode
-```
-
-## Monitoring Change Streams
-
-### Health Check Integration
-
-```typescript
-// isHealthy() indicates the scheduler is started and initialized.
-// Change Streams are optional and do not affect this.
-if (monque.isHealthy()) {
-  // Scheduler is running
-}
-```
-
-### Detailed Monitoring
-
-```typescript
-// Track Change Stream state
-let changeStreamActive = false;
-
-monque.on('changestream:connected', () => {
-  changeStreamActive = true;
-  metrics.gauge('monque.changestream_active', 1);
+monque.register<{ enqueuedAt: number }>('measure-latency', async (job) => {
+  console.log('Pickup latency in ms:', Date.now() - job.data.enqueuedAt);
 });
 
-monque.on('changestream:fallback', () => {
-  changeStreamActive = false;
-  metrics.gauge('monque.changestream_active', 0);
-  alerting.warn('Monque Change Stream fell back to polling');
-});
-
-monque.on('changestream:closed', () => {
-  changeStreamActive = false;
-  metrics.gauge('monque.changestream_active', 0);
-});
+await monque.enqueue('measure-latency', { enqueuedAt: Date.now() });
 ```
 
-## Debouncing
-
-To prevent "claim storms" when many jobs arrive simultaneously:
-
-```typescript
-// Internal behavior:
-// - Multiple change events within 100ms are batched
-// - Job names are collected and passed as a targeted set
-// - Single poll attempt processes available jobs for those workers only
-// - Prevents overwhelming the database with concurrent claims
-```
+Compare a standalone deployment using polling with a replica set using Change Streams.
+Available worker slots, handler duration, network latency, and database load all affect the
+result. Neither polling interval nor Change Stream notification time guarantees a maximum
+wait when workers are busy.
 
 ## Troubleshooting
 
-### Change Stream Not Working
+| Symptom | Check |
+| --- | --- |
+| Stream never connects | Verify the deployment is a replica set or sharded cluster and the connection has the required MongoDB permissions. |
+| Frequent reconnects | Inspect `changestream:error` events, network interruptions, and database availability. |
+| Jobs wait despite an active stream | Check worker registration, concurrency limits, `nextRunAt`, and handler duration. |
+| Jobs process but Health shows unavailable | Check that Management uses the started scheduler instance rather than a separate read-only instance. |
 
-1. **Check MongoDB version**: Must be 4.0+
-   ```bash
-   mongosh --eval "db.version()"
-   ```
+Call `await monque.stop()` before closing the MongoDB client. This closes the stream and
+stops scheduler polling as part of shutdown.
 
-2. **Verify replica set**: Change Streams require replica set
-   ```bash
-   mongosh --eval "rs.status()"
-   ```
-
-3. **Check events**: Listen for error events
-   ```typescript
-   monque.on('changestream:error', ({ error }) => {
-     console.error('Change Stream error:', error);
-   });
-   ```
-
-### High Latency Despite Change Streams
-
-1. **Check if fallback occurred**: Listen for `changestream:fallback`
-2. **Verify network latency**: High latency to MongoDB affects notifications
-3. **Monitor debounce timing**: Very high job volume may show 100ms debounce delay
-
-### Reconnection Loops
-
-If you see repeated connection/disconnection:
-
-```typescript
-let reconnectCount = 0;
-
-monque.on('changestream:connected', () => {
-  reconnectCount = 0;
-});
-
-monque.on('changestream:error', () => {
-  reconnectCount++;
-  if (reconnectCount > 10) {
-    console.error('Frequent Change Stream disconnections - check MongoDB stability');
-  }
-});
-```
-
-## Performance Comparison
-
-Monque does not publish benchmark numbers for Change Streams.
-
-In general:
-
-- **Polling-only** pickup latency is bounded by `pollInterval`.
-- **With Change Streams** enabled, pickup latency is typically bounded by the Change Stream notification delay plus Monque's **100ms debounce window** and processing time. Future-dated jobs are picked up at their `nextRunAt` plus a small grace period, without waiting for a poll cycle.
-
-### Measure In Your Environment
-
-The exact numbers depend on MongoDB deployment (local vs Atlas), network latency, job volume, and worker load. If you want hard data, measure pickup latency in your application:
-
-```typescript
-const enqueueTime = Date.now();
-
-await monque.enqueue('measured-job', { enqueueTime });
-
-monque.register('measured-job', async (job) => {
-  const pickupLatency = Date.now() - job.data.enqueueTime;
-  // Replace `yourMetrics` with your metrics client (Prometheus, StatsD, OpenTelemetry, ...)
-  yourMetrics.histogram('monque.pickup_latency_ms', pickupLatency);
-});
-```
-
-To compare **polling-only** vs **Change Streams**:
-
-- Run against a **standalone** MongoDB (no replica set) to force polling-only mode.
-- Run against a **replica set/sharded cluster** (e.g., Atlas) to enable Change Streams.
-
-### Resource Impact
-
-Enabling Change Streams maintains an open cursor to the MongoDB server. While typically lightweight, the actual memory footprint depends on your specific workload:
-
-- **Driver Buffering:** The MongoDB Node.js driver buffers events internally.
-- **Event Volume:** High update rates will increase memory pressure if consumers lag.
-- **Document Size:** Large `updateDescription` fields in change events increase payload size.
-
-If memory usage is a critical concern, we recommend profiling your application under load, as the overhead is generally negligible for most use cases but can vary.
-
-## Best Practices
-
-### 1. Always Listen for Events
-
-```typescript
-monque.on('changestream:connected', () => {
-  logger.info('Change Stream connected');
-});
-
-monque.on('changestream:fallback', ({ reason }) => {
-  logger.warn('Change Stream fallback', { reason });
-});
-
-monque.on('changestream:error', ({ error }) => {
-  logger.error('Change Stream error', { error: error.message });
-});
-```
-
-### 2. Handle Graceful Degradation
-
-```typescript
-// Your application works whether Change Streams are active or not
-// Just with different latency characteristics
-```
-
-### 3. Monitor Latency
-
-The snippet above shows one simple way to capture pickup latency.
-
-## Next Steps
-
-- [Atomic Claim Pattern](/monque/advanced/atomic-claim/) - How job claiming works
-- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Detect stale jobs
+See [Workers](/monque/core-concepts/workers/) for concurrency settings and
+[Heartbeat Mechanism](/monque/advanced/heartbeat/) for crash recovery.

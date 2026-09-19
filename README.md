@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <b>A MongoDB-backed job scheduler with atomic locking, exponential backoff, cron scheduling, and event-driven observability.</b>
+  <b>A TypeScript job scheduler backed by MongoDB, with retries and recurring jobs.</b>
 </p>
 
 <p align="center">
@@ -44,14 +44,13 @@
 
 ## Features
 
-- **Atomic Locking** - Prevents duplicate job processing across multiple schedulers using MongoDB atomic operations
-- **Heartbeat Monitoring** - Automatic stale job detection and recovery
-- **Type-Safe** - Full TypeScript support with generics for job payloads
-- **Framework Agnostic** - Works with any Node.js framework
-- **Event-Driven** - Subscribe to job lifecycle events for observability and integrations
-- **Change Streams** - Real-time job notifications via MongoDB Change Streams (polling remains as a safety net)
-- **Cron Scheduling** - Schedule recurring jobs with standard 5-field cron expressions
-- **Exponential Backoff** - Automatic retries with configurable exponential backoff
+- Atomic claims let multiple schedulers share a jobs collection. Jobs can run again after retries or recovery, so handlers must be idempotent.
+- Heartbeats record worker activity. Startup recovery returns jobs with expired locks to pending.
+- TypeScript generics describe the payload each worker receives.
+- Use Monque with any Node.js framework and subscribe to job events for logging.
+- MongoDB Change Streams notify workers of new jobs, with polling as a fallback.
+- Schedule recurring work with 5-field cron expressions.
+- Failed jobs retry with configurable exponential backoff.
 
 ## Quick Start
 
@@ -148,13 +147,13 @@ bun run dev:docs
 
 ## Requirements
 
-- Node.js 22+
-- MongoDB 4.0+ (Replica Set required for Change Streams)
+- Node.js 22.12 or newer
+- MongoDB 4.4 or newer (a replica set or sharded cluster is required for Change Streams)
 - Bun 1.3.5+ (development only; required to work on this repo)
 
 ## Documentation
 
-Visit the documentation site for comprehensive guides:
+See the documentation for setup and usage:
 
 - [Installation Guide](https://ueberBrot.github.io/monque/getting-started/installation/)
 - [Quick Start Tutorial](https://ueberBrot.github.io/monque/getting-started/quick-start/)
@@ -162,13 +161,13 @@ Visit the documentation site for comprehensive guides:
 
 ## Inspired by
 
-Monque draws inspiration from several excellent job scheduling libraries:
+Monque takes inspiration from these job scheduling libraries:
 
 - [Agenda](https://github.com/agenda/agenda) - The original MongoDB job scheduler
 - [Pulse](https://github.com/pulsecron/pulse) - A maintained fork of Agenda
-- [BullMQ](https://github.com/taskforcesh/bullmq) - Robust Redis-based queue system
+- [BullMQ](https://github.com/taskforcesh/bullmq) - Redis-based job queue
 - [pg-boss](https://github.com/timgit/pg-boss) - Postgres-backed job queue
-- [graphile-worker](https://github.com/graphile/worker) - High-performance Postgres worker
+- [graphile-worker](https://github.com/graphile/worker) - Postgres job worker
 
 ## License
 

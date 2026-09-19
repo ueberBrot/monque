@@ -22,16 +22,16 @@
   </a>
 </p>
 
-A **Ts.ED** integration for **Monque**, a robust, type-safe MongoDB job queue for TypeScript.
+Run Monque workers in a Ts.ED application using decorators and dependency injection.
 
 ## Features
 
-- **Decorator-based API**: `@JobController`, `@Job`, and `@Cron` for declarative job handling.
-- **Dependency Injection**: Full support for Ts.ED DI (inject Services/Providers into your jobs).
-- **Job Isolation**: Each job execution runs in a dedicated `DIContext` with Request Scope support.
-- **Type Safety**: Leverage TypeScript generics for fully typed job payloads.
-- **Full Monque Power**: Complete access to all `@monque/core` features (backoff, heartbeats, atomic locking).
-- **Seamless Integration**: Native lifecycle hooks support (`$onInit`, `$onDestroy`) for graceful scheduler management.
+`@JobController`, `@Job`, and `@Cron` register workers and recurring jobs. Handlers can use
+injected services and typed payloads. Each execution gets a separate `DIContext` for
+request-scoped dependencies.
+
+The module starts and stops Monque with your application through `$onInit` and `$onDestroy`.
+It uses the core scheduler's atomic claims, heartbeats, and retry policy.
 
 ## Installation
 
@@ -132,7 +132,7 @@ export class ReportJobs {
 
 ### 3. Enqueue Jobs
 
-Inject `MonqueService` to dispatch jobs from anywhere in your app.
+Inject `MonqueService` into a service or controller to enqueue jobs.
 
 ```typescript
 import { Service, Inject } from "@tsed/di";
@@ -176,7 +176,7 @@ Method decorator to register a scheduled job.
 ### Services
 
 #### `MonqueService`
-Injectable wrapper for the main `Monque` instance. It exposes the full Monque public API through dependency injection.
+Inject `MonqueService` to call the scheduler's public methods:
 
 **Job Scheduling:**
 - `enqueue(name, data, opts)` - Enqueue a job
@@ -196,7 +196,7 @@ Injectable wrapper for the main `Monque` instance. It exposes the full Monque pu
 - `getJobsWithCursor(opts)` - Paginated job list
 
 > [!TIP]
-> All methods on `MonqueService` delegate to the underlying `Monque` instance. For a complete list of methods and options, see the [@monque/core documentation](../../packages/core/README.md).
+> See the [@monque/core documentation](../../packages/core/README.md) for method options and behavior.
 
 ## Testing
 

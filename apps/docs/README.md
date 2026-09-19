@@ -2,21 +2,19 @@
 
 Documentation site for the [Monque](https://github.com/ueberbrot/monque) job scheduler, built with [Astro Starlight](https://starlight.astro.build/).
 
-## Tech Stack
-
-- **Framework**: [Astro](https://astro.build/)
-- **Documentation Theme**: [Starlight](https://starlight.astro.build/)
-- **API Documentation**: [TypeDoc](https://typedoc.org/) with [Starlight TypeDoc Plugin](https://starlight-typedoc.vercel.app/)
+The site uses [Astro](https://astro.build/) and [Starlight](https://starlight.astro.build/).
+[TypeDoc](https://typedoc.org/) generates the API reference through the
+[Starlight TypeDoc plugin](https://starlight-typedoc.vercel.app/).
 
 ## Getting Started
 
-1. **Install dependencies**:
+1. Install dependencies:
 
    ```bash
    bun install
    ```
 
-2. **Start the development server**:
+2. Start the development server:
 
    ```bash
    # From the repo root
@@ -30,7 +28,7 @@ Documentation site for the [Monque](https://github.com/ueberbrot/monque) job sch
 
 ## Building
 
-To build the static documentation site:
+Build the static site:
 
 ```bash
 # From the repo root

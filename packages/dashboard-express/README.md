@@ -1,7 +1,7 @@
 # @monque/dashboard-express
 
-Serve the Monque dashboard from your Express application, alongside its Management API.
-Includes the built dashboard, nested mount paths, and direct links to jobs.
+Serve the Monque dashboard from your Express application alongside its Management API.
+The router includes the built dashboard and supports nested mount paths and direct job links.
 
 [View screenshots](../dashboard/README.md#screenshots).
 
@@ -53,8 +53,8 @@ See the [core README](../core/README.md) for workers and scheduling.
 
 ## Configuration
 
-Configure the dashboard in `createDashboardExpressRouter()` in your server code.
-There is no browser script or `window` object to configure manually.
+Pass your settings to `createDashboardExpressRouter()` in server code. The router supplies
+the browser configuration automatically.
 
 | Setting | Example | Meaning |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ Pass `openApi: false` to `createManagementExpressRouter()` to disable it.
 
 ## Authentication and permissions
 
-The example allows unauthenticated access. To require your application's existing login/session,
+The example allows unauthenticated access. To require your application's login or session,
 mount its middleware **before both routers**:
 
 ```typescript

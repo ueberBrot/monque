@@ -5,7 +5,7 @@ description: Learn how to register and configure workers to process jobs.
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Workers are the execution engines of Monque. They pick up jobs and execute your business logic.
+A worker is a handler registered for a job name. Monque calls it when a matching job is due and a concurrency slot is available.
 
 ## Quick Reference
 
@@ -20,7 +20,7 @@ Workers are the execution engines of Monque. They pick up jobs and execute your 
 
 ## Registering a Worker
 
-Use the [`register()`](/monque/api/classes/monque/#register) method to register a handler for a specific job type:
+Register a handler for a job name with [`register()`](/monque/api/classes/monque/#register):
 
 ```typescript
 monque.register('job-name', async (job) => {
@@ -49,7 +49,7 @@ monque.register<ImageProcessJob>('process-image', async (job) => {
 
 ### With Worker Options
 
-Configure worker-specific settings via [`WorkerOptions`](/monque/api/interfaces/workeroptions/):
+Pass [`WorkerOptions`](/monque/api/interfaces/workeroptions/) to set concurrency or replace a handler:
 
 ```typescript
 monque.register('heavy-computation', async (job) => {
@@ -76,37 +76,15 @@ monque.register('heavy-computation', async (job) => {
 
 When [`start()`](/monque/api/classes/monque/#start) is called, Monque begins looking for jobs:
 
-1. **[Change Streams](/monque/advanced/change-streams/)** (if available) provide near real-time notifications — triggering targeted, debounced polls for specific workers
+1. **[Change Streams](/monque/advanced/change-streams/)** (if available) provide near real-time notifications: triggering targeted, debounced polls for specific workers
 2. **Safety polling** runs every [`safetyPollInterval`](/monque/api/interfaces/monqueoptions/#safetypollinterval) (default 30 s) as a backup when Change Streams are active
 3. If Change Streams are unavailable, **regular polling** runs every [`pollInterval`](/monque/api/interfaces/monqueoptions/#pollinterval) (default 1 s)
 
 ### 2. Atomic Claim
 
-Jobs are claimed atomically using `findOneAndUpdate`:
-
-```typescript
-// Simplified internal logic
-const job = await collection.findOneAndUpdate(
-  {
-    name: workerName,
-    status: 'pending',
-    nextRunAt: { $lte: new Date() },
-    $or: [{ claimedBy: null }, { claimedBy: { $exists: false } }]
-  },
-  {
-    $set: {
-      status: 'processing',
-      claimedBy: schedulerInstanceId,
-      lockedAt: new Date(),
-      lastHeartbeat: new Date(),
-      heartbeatInterval: 30000,
-      updatedAt: new Date()
-    }
-  }
-);
-```
-
-This prevents two scheduler instances from claiming the same pending job at the same time.
+Monque claims a due pending job before calling its handler. This prevents two scheduler
+instances from claiming the same pending job at the same time. See
+[Atomic Claim Pattern](/monque/advanced/atomic-claim/) for multi-instance deployment.
 
 ### 3. Execution
 
@@ -123,7 +101,7 @@ monque.register('example', async (job) => {
 
 ### 4. Completion or Failure
 
-- **Success**: Job status set to `completed`
+- **Success**: One-time jobs become `completed`; recurring jobs return to `pending` for their next cron time.
 - **Error thrown**: Job retried or set to `failed` (see [Retry & Backoff](/monque/core-concepts/retry/))
 
 ## Error Handling
@@ -144,7 +122,8 @@ monque.register('flaky-api', async (job) => {
 
 ### Manual Failure
 
-To control retry behavior for expected failures, you can check `job.failCount` or throw `MonqueError`. Note that throwing any error inside a `monque.register` handler will trigger the retry policy by default.
+Check `job.failCount` when a handler needs to treat a retry differently. All thrown errors,
+including `MonqueError`, follow the scheduler's retry policy.
 
 ```typescript
 monque.register('check-external-resource', async (job) => {
@@ -162,7 +141,8 @@ monque.register('check-external-resource', async (job) => {
 ```
 
 <Aside type="tip">
-  To prevent retries for errors that won't be resolved by trying again, avoid throwing an error. You can use `job.failCount` to check if this is a retry and perform additional validation before re-attempting expensive operations.
+  If you catch an error and return normally, Monque records a successful run. Check
+  `job.failCount` before repeating expensive work that needs extra validation on a retry.
 </Aside>
 
 ## Concurrency Control
@@ -186,7 +166,7 @@ monque.register('log-analytics', handler, { concurrency: 20 });
 // Resource-intensive tasks: lower concurrency
 monque.register('video-transcode', handler, { concurrency: 2 });
 
-// External API calls: match rate limits
+// External API calls: limit simultaneous requests
 monque.register('api-sync', handler, { concurrency: 5 });
 ```
 
@@ -209,7 +189,8 @@ monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
 ```
 
 <Aside type="tip">
-  Use `instanceConcurrency` to prevent a single instance from overwhelming system resources (CPU, memory, database connections) when running multiple high-concurrency workers.
+  Set `instanceConcurrency` to fit the CPU, memory, and database connections available to
+  one scheduler process.
 </Aside>
 
 ### Concurrency Strategy
@@ -219,7 +200,7 @@ monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
 | CPU-bound tasks                 | 1-2 per core             |
 | I/O-bound tasks (database, API) | 5-20                     |
 | Memory-intensive tasks          | Limited by available RAM |
-| External API with rate limits   | Match API limits         |
+| External API calls | Limit simultaneous requests; enforce time-based rate limits separately |
 
 ## Multiple Workers
 
@@ -269,14 +250,15 @@ Workers can be registered before or after `start()`:
 </Tabs>
 
 <Aside type="caution">
-  Attempting to register a worker with the same name twice will throw a `WorkerRegistrationError` by default. If you intentionally want to replace a worker (e.g., hot reload in development), pass `{ replace: true }`.
+  Registering a second worker with the same name throws `WorkerRegistrationError`.
+  Pass `{ replace: true }` to replace the handler, for example during a development reload.
 </Aside>
 
 ## Best Practices
 
 ### 1. Keep Handlers Focused
 
-Each worker should do one thing well:
+Keep unrelated tasks in separate handlers so they can be retried independently:
 
 ```typescript
 // ✅ Good - Single responsibility
@@ -343,7 +325,7 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
 
 - [Scheduling](/monque/core-concepts/scheduling/) - Configure recurring jobs
 - [Retry & Backoff](/monque/core-concepts/retry/) - Understand failure handling
-- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Learn about liveness tracking
+- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Monitor heartbeats and recovery
 
 ## API Reference
 

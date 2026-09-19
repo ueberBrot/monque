@@ -1,228 +1,171 @@
 ---
 title: Job Management
-description: Learn how to manage, monitor, and control jobs in Monque.
+description: Read, filter, retry, cancel, reschedule, and delete Monque jobs in application code.
 ---
 
-Monque serves a comprehensive set of APIs for managing jobs throughout their lifecycle.
+Use these methods on an initialized `Monque` instance. To expose them over HTTP, see the
+[Management API](/monque/management/surface/). For a browser interface, see
+[Dashboard setup](/monque/dashboard/express/).
 
-## Quick Reference
+## Read a job
 
-| Method | Description |
-|--------|-------------|
-| [`cancelJob()`](/monque/api/classes/monque/#canceljob) | Cancel a single job |
-| [`retryJob()`](/monque/api/classes/monque/#retryjob) | Retry a job |
-| [`rescheduleJob()`](/monque/api/classes/monque/#reschedulejob) | Reschedule a job |
-| [`deleteJob()`](/monque/api/classes/monque/#deletejob) | Delete a job |
-| [`cancelJobs()`](/monque/api/classes/monque/#canceljobs) | Bulk cancel |
-| [`retryJobs()`](/monque/api/classes/monque/#retryjobs) | Bulk retry |
-| [`deleteJobs()`](/monque/api/classes/monque/#deletejobs) | Bulk delete |
-| [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor) | Paginated list |
-| [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats) | Queue statistics |
-| [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) | Queue View summaries |
-
-## Metadata-only listings
-
-Use [`getJobSummariesWithCursor()`](/monque/api/classes/monque/#getjobsummarieswithcursor) for
-list views that do not need job payloads:
+[`getJob()`](/monque/api/classes/monque/#getjob) accepts a MongoDB `ObjectId` or its
+hexadecimal string, including IDs returned by the Management API:
 
 ```typescript
-const page = await monque.getJobSummariesWithCursor({ name: 'send-email', limit: 50 });
-```
-
-It accepts the same filters and cursors as `getJobsWithCursor()` and omits `data` from both the
-MongoDB projection and returned jobs. Use `getJob()` to load a payload when needed.
-Cursor listings have a 30-second server-side query deadline. Created-time pagination with a
-name or status filter uses dedicated compound indexes, created during initialization.
-
-`statsCacheTtlMs` controls cached counts for both `getQueueStats()` and
-`getQueueViewSummaries()` (default: 5 seconds). Concurrent reads share one aggregation.
-Management mutations invalidate both caches; worker registration and activity are read fresh.
-Changes from other processes become visible after the TTL. Set the option to `0` to disable
-cached snapshots while retaining concurrent request coalescing.
-
-## Single Job Operations
-
-Manage individual jobs using their unique ID.
-
-### Cancel a Job
-
-Use [`cancelJob()`](/monque/api/classes/monque/#canceljob) to prevent a pending or scheduled job from running.
-
-```typescript
-const job = await monque.cancelJob('job-id');
-```
-
-- **Effect**: Status becomes `cancelled`.
-- **Event**: Emits `job:cancelled` only when the job transitions from `pending` to `cancelled`.
-- **Constraint**: Cannot cancel `processing`, `completed`, or `failed` jobs (unless they return to pending).
-
-### Retry a Job
-
-Use [`retryJob()`](/monque/api/classes/monque/#retryjob) to retry a failed or cancelled job immediately.
-
-```typescript
-const job = await monque.retryJob('job-id');
-```
-
-- **Effect**: Status becomes `pending`, `nextRunAt` set to now, failure count reset.
-- **Event**: Emits `job:retried`.
-
-### Reschedule a Job
-
-Use [`rescheduleJob()`](/monque/api/classes/monque/#reschedulejob) to change the execution time of a pending job.
-
-```typescript
-const nextHour = new Date(Date.now() + 3600000);
-const job = await monque.rescheduleJob('job-id', nextHour);
-```
-
-### Delete a Job
-
-Use [`deleteJob()`](/monque/api/classes/monque/#deletejob) to permanently remove a job from the queue.
-
-```typescript
-const success = await monque.deleteJob('job-id');
-```
-
-- **Effect**: Document is removed from MongoDB.
-- **Event**: Emits `job:deleted`.
-
----
-
-## Bulk Operations
-
-Perform operations on multiple jobs matching a filter.
-
-### Bulk Cancel
-
-Use [`cancelJobs()`](/monque/api/classes/monque/#canceljobs) to cancel all pending jobs matching a criteria.
-
-```typescript
-const result = await monque.cancelJobs({
-  name: 'email-sender',
-  status: 'pending'
-});
-
-console.log(`Cancelled ${result.count} jobs`);
-```
-
-### Bulk Retry
-
-Use [`retryJobs()`](/monque/api/classes/monque/#retryjobs) to retry all failed jobs.
-
-```typescript
-const result = await monque.retryJobs({
-  status: 'failed'
-});
-```
-
-### Bulk Delete
-
-Use [`deleteJobs()`](/monque/api/classes/monque/#deletejobs) to clean up old jobs.
-
-```typescript
-const result = await monque.deleteJobs({
-  status: ['completed', 'cancelled'],
-  olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
-});
-```
-
-- **Effect**: Removing matching documents from MongoDB.
-- **Event**: Emits `jobs:deleted` with count.
-
----
-
-## Pagination
-
-Efficiently iterate through large sets of jobs using [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor).
-
-```typescript
-// First page
-const page1 = await monque.getJobsWithCursor({ limit: 50 });
-
-// Next page
-if (page1.hasNextPage && page1.cursor) {
-  const page2 = await monque.getJobsWithCursor({
-    cursor: page1.cursor,
-    limit: 50
-  });
+const job = await monque.getJob('507f1f77bcf86cd799439011');
+if (job) {
+  console.log(job.name, job.status, job.data);
 }
 ```
 
-Supports filtering:
+Missing jobs and invalid ID strings return `null`.
+
+## Pagination
+
+Use [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor) to read jobs in pages:
 
 ```typescript
-const failedEmails = await monque.getJobsWithCursor({
-  filter: { name: 'email', status: 'failed' },
-  limit: 20
-});
+const filter = { name: 'send-email', status: 'failed' } as const;
+const sort = { by: 'createdAt', direction: 'desc' } as const;
+const firstPage = await monque.getJobsWithCursor({ filter, sort, limit: 20 });
+
+if (firstPage.hasNextPage && firstPage.cursor) {
+  const nextPage = await monque.getJobsWithCursor({
+    filter,
+    sort,
+    limit: 20,
+    cursor: firstPage.cursor,
+  });
+  console.log(nextPage.jobs);
+}
 ```
 
----
+Keep the same filters and sort when following a cursor. To change either, start without a
+cursor. Job names match exactly. Filters also accept multiple statuses and inclusive date
+ranges for `createdAt`, `updatedAt`, and `nextRunAt`.
+
+Sort by `identifier`, `createdAt`, `updatedAt`, or `nextRunAt`, in ascending or descending
+order. A job ID breaks ties between equal timestamps. See
+[`CursorOptions`](/monque/api/interfaces/cursoroptions/) for all options.
+
+Cursor queries have a 30-second server execution limit. A cursor does not freeze the
+collection: jobs may change or be deleted between requests.
+
+## Metadata-only listings
+
+Use [`getJobSummariesWithCursor()`](/monque/api/classes/monque/#getjobsummarieswithcursor) when
+you do not need payloads:
+
+```typescript
+const page = await monque.getJobSummariesWithCursor({
+  filter: { name: 'send-email' },
+  limit: 50,
+});
+
+for (const job of page.jobs) {
+  console.log(job._id, job.status, job.nextRunAt);
+}
+```
+
+It accepts the same options and cursors as full listings, but excludes `data` from the
+query and returned jobs. Load a job's payload with `getJob()` when needed.
+
+## Single Job Operations
+
+Pass a hexadecimal job ID to change or delete a job:
+
+```typescript
+const id = '507f1f77bcf86cd799439011';
+const cancelled = await monque.cancelJob(id);
+```
+
+| Method | Eligible jobs | Result |
+| --- | --- | --- |
+| [`cancelJob(id)`](/monque/api/classes/monque/#canceljob) | Pending jobs | Sets status to `cancelled`. |
+| [`retryJob(id)`](/monque/api/classes/monque/#retryjob) | Failed or cancelled jobs | Sets status to `pending`, clears failure state, and makes the job due immediately. |
+| [`rescheduleJob(id, date)`](/monque/api/classes/monque/#reschedulejob) | Pending jobs | Changes `nextRunAt`. |
+| [`deleteJob(id)`](/monque/api/classes/monque/#deletejob) | Any status | Permanently removes the document. |
+
+Cancel, retry, and reschedule return the updated job or `null` if it is missing. An
+incompatible state raises `JobStateError`. Repeated cancellation does not emit a second
+`job:cancelled` event. Deletion returns `true` when a document was removed, otherwise `false`.
+Deleting a processing job does not interrupt a handler that is already running.
+
+```typescript
+const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+await monque.rescheduleJob(id, nextHour);
+```
+
+## Bulk Operations
+
+Bulk methods act on all jobs matching the selector, including jobs outside the current page:
+
+```typescript
+const cancelled = await monque.cancelJobs({ name: 'send-email' });
+const retried = await monque.retryJobs({ name: 'send-email', status: 'failed' });
+const deleted = await monque.deleteJobs({
+  status: ['completed', 'cancelled'],
+  olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+});
+
+console.log(cancelled.count, retried.count, deleted.count);
+```
+
+`cancelJobs()` only changes pending jobs. `retryJobs()` only changes failed or cancelled
+jobs. `deleteJobs()` deletes every match. The selector's `olderThan` and `newerThan` bounds
+apply to `createdAt`. An empty selector matches all eligible jobs.
+
+Each method returns `{ count, errors }` and emits its corresponding bulk event. See
+[`JobSelector`](/monque/api/interfaces/jobselector/) for selector fields.
 
 ## Queue Statistics
 
-Get real-time insights into your queue health using [`getQueueStats()`](/monque/api/classes/monque/#getqueuestats).
+[`getQueueStats()`](/monque/api/classes/monque/#getqueuestats) returns counts for each status:
 
 ```typescript
 const stats = await monque.getQueueStats();
+console.log(stats.pending, stats.processing, stats.completed, stats.failed, stats.cancelled);
 
-console.log('Pending:', stats.pending);
-console.log('Processing:', stats.processing);
-console.log('Failed:', stats.failed);
-```
-
-You can also scope statistics to a specific job name:
-
-```typescript
-const emailStats = await monque.getQueueStats({ name: 'email' });
+const emailStats = await monque.getQueueStats({ name: 'send-email' });
+console.log(emailStats.total);
 ```
 
 ### Stats Caching
 
-`getQueueStats()` runs a MongoDB aggregation pipeline. To avoid re-running that pipeline on every call (e.g. in a metrics endpoint), Monque caches results with a TTL+LRU strategy.
-
-By default the TTL is **5 seconds**. Configure it via `statsCacheTtlMs`:
-
-```typescript
-const monque = new Monque(db, {
-  statsCacheTtlMs: 10_000  // Cache stats for 10 seconds
-});
-```
-
-Behaviour details:
-- Each unique filter (global vs. name-scoped) has its own cache entry.
-- The cache is size-capped at **100 entries**. When full, it uses an **LRU eviction policy**—the least-recently-used filter entry is evicted to make room for new entries.
-- Each per-filter entry adheres to the configured TTL (default 5s).
-- Cached results are returned without hitting MongoDB until the TTL expires.
-- The cache is cleared entirely when `stop()` is called.
-- Set `statsCacheTtlMs: 0` to disable cached snapshots. Concurrent reads still share one live aggregation.
+`statsCacheTtlMs` controls cached counts for both `getQueueStats()` and
+`getQueueViewSummaries()`. The default is 5 seconds:
 
 ```typescript
-const monque = new Monque(db, {
-  statsCacheTtlMs: 0  // Disable cached snapshots
-});
+const monque = new Monque(db, { statsCacheTtlMs: 10_000 });
 ```
 
----
+Repeated reads can return cached counts until the TTL expires. Concurrent reads with the
+same scope share a query, reducing database work when several clients request statistics.
+Job management actions on this instance invalidate cached counts. Worker registration and
+activity are read fresh, while changes from job processing or other instances may take up
+to the TTL to appear in counts.
+
+Set `statsCacheTtlMs: 0` to disable the cache. Concurrent reads still share a query.
+Stopping Monque clears cached statistics.
 
 ## Queue View Summaries
 
-Use [`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) to list operator-facing Job Name groups so callers don't need to run their own MongoDB queries.
+[`getQueueViewSummaries()`](/monque/api/classes/monque/#getqueueviewsummaries) groups persisted
+jobs and registered workers by job name:
 
 ```typescript
-const queueViews = await monque.getQueueViewSummaries();
+const views = await monque.getQueueViewSummaries();
 
-for (const view of queueViews) {
+for (const view of views) {
   console.log(view.name, view.stats.total, view.worker?.activeCount ?? 0);
 }
 ```
 
-Each summary includes:
+Each summary includes counts, `hasPersistedJobs`, `hasRegisteredWorker`, and the local
+worker's `concurrency` and `activeCount` when registered. Names are sorted alphabetically.
+A name can appear with historical jobs but no worker, or with a registered worker and no
+persisted jobs.
 
-- persisted Job statistics for that Job Name
-- whether persisted Jobs exist
-- whether this scheduler has a local Worker registered
-- local Worker `concurrency` and `activeCount` when registered
-
-The summaries include historical-only Job Names, registered-worker-only Job Names, and Job Names that have both persisted Jobs and Workers. Output is sorted by Job Name. Worker internals such as handler functions, Worker maps, and active Job ids are not exposed.
+Counts cover the MongoDB collection. Worker activity describes only the instance on which
+you called the method, not all schedulers connected to that collection.

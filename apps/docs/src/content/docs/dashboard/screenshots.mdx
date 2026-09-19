@@ -1,0 +1,54 @@
+---
+title: Dashboard screenshots
+description: Queue Views, Jobs, and Health in light and dark themes.
+---
+
+import { Image } from 'astro:assets';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+import queue_views_light from '../../../../../../assets/dashboard/queue-views-light.png';
+import queue_views_dark from '../../../../../../assets/dashboard/queue-views-dark.png';
+import jobs_light from '../../../../../../assets/dashboard/jobs-light.png';
+import jobs_dark from '../../../../../../assets/dashboard/jobs-dark.png';
+import health_light from '../../../../../../assets/dashboard/health-light.png';
+import health_dark from '../../../../../../assets/dashboard/health-dark.png';
+
+[Add the dashboard to your application](/monque/dashboard/express/).
+
+## Queue Views
+
+Job counts grouped by name, with registered worker activity.
+
+<Tabs>
+  <TabItem label="Light">
+    <Image src={queue_views_light} alt="Queue Views in light mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+  <TabItem label="Dark">
+    <Image src={queue_views_dark} alt="Queue Views in dark mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+</Tabs>
+
+## Jobs
+
+Filter and share job lists, inspect payloads and failures, and run job actions.
+
+<Tabs>
+  <TabItem label="Light">
+    <Image src={jobs_light} alt="Jobs in light mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+  <TabItem label="Dark">
+    <Image src={jobs_dark} alt="Jobs in dark mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+</Tabs>
+
+## Health
+
+Scheduler status, Management API connectivity, and available actions.
+
+<Tabs>
+  <TabItem label="Light">
+    <Image src={health_light} alt="Health in light mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+  <TabItem label="Dark">
+    <Image src={health_dark} alt="Health in dark mode" widths={[640, 1280, 1920]} sizes="(max-width: 800px) 100vw, 800px" />
+  </TabItem>
+</Tabs>
