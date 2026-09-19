@@ -264,11 +264,14 @@ describe('JobQueryService', () => {
 				},
 			});
 
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
-				updatedAt: {
-					$gte: new Date('2026-01-01T00:00:00.000Z'),
+			expect(ctx.mockCollection.find).toHaveBeenCalledWith(
+				{
+					updatedAt: {
+						$gte: new Date('2026-01-01T00:00:00.000Z'),
+					},
 				},
-			});
+				{ maxTimeMS: 30_000 },
+			);
 			expect(mockCursor.sort).toHaveBeenCalledWith({
 				updatedAt: -1,
 				_id: -1,
@@ -502,6 +505,49 @@ describe('JobQueryService', () => {
 					mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
 				);
 			}
+
+			it('shares concurrent statistics reads without sharing mutable results', async () => {
+				mockAggregateResult({ pending: 5, total: 5 });
+				const results = await Promise.all(
+					Array.from({ length: 10 }, () => queryService.getQueueStats()),
+				);
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+				expect(results.every((result) => result.pending === 5)).toBe(true);
+				expect(results[0]).not.toBe(results[1]);
+			});
+
+			it('does not let an in-flight read repopulate an invalidated snapshot', async () => {
+				const pending = Promise.withResolvers<unknown[]>();
+				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce({
+					toArray: () => pending.promise,
+				} as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+				const oldRead = queryService.getQueueStats();
+				queryService.clearStatsCache();
+				mockAggregateResult({ pending: 2, total: 2 });
+				expect((await queryService.getQueueStats()).pending).toBe(2);
+				pending.resolve([
+					{ statusCounts: [{ _id: 'pending', count: 1 }], total: [{ count: 1 }], avgDuration: [] },
+				]);
+				expect((await oldRead).pending).toBe(1);
+				expect((await queryService.getQueueStats()).pending).toBe(2);
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+			});
+
+			it('shares a failed read but retries the next request', async () => {
+				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce({
+					toArray: async () => {
+						throw new Error('Unavailable');
+					},
+				} as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+				const results = await Promise.allSettled([
+					queryService.getQueueStats(),
+					queryService.getQueueStats(),
+				]);
+				expect(results.every((result) => result.status === 'rejected')).toBe(true);
+				mockAggregateResult({ pending: 3, total: 3 });
+				expect((await queryService.getQueueStats()).pending).toBe(3);
+				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+			});
 
 			it('should return cached result on second call within TTL', async () => {
 				mockAggregateResult({ pending: 5, total: 5 });

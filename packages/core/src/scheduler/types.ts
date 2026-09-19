@@ -186,13 +186,13 @@ export interface MonqueOptions {
 	maxPayloadSize?: number | undefined;
 
 	/**
-	 * TTL in milliseconds for getQueueStats() result caching.
+	 * TTL in milliseconds for getQueueStats() and getQueueViewSummaries() counts.
 	 *
 	 * When set to a positive value, repeated getQueueStats() calls with the same
 	 * filter return cached results instead of re-executing the aggregation pipeline.
 	 * Each unique filter (job name) maintains its own cache entry.
 	 *
-	 * Set to 0 to disable caching entirely.
+	 * Set to 0 to disable cached snapshots. Concurrent reads still share one query.
 	 * @default 5000
 	 */
 	statsCacheTtlMs?: number;

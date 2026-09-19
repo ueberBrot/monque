@@ -208,6 +208,11 @@ describe('Monque', () => {
 	describe('delegation', () => {
 		beforeEach(async () => {
 			await monque.initialize();
+			Object.defineProperty(monque, '_query', {
+				value: { clearStatsCache: vi.fn() },
+				configurable: true,
+				writable: true,
+			});
 		});
 
 		it('should delegate enqueue to intake', async () => {

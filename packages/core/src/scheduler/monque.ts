@@ -14,6 +14,7 @@ import {
 	type JobHandler,
 	type JobSelector,
 	JobStatus,
+	type JobSummaryPage,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -389,6 +390,8 @@ export class Monque extends EventEmitter {
 			{ key: { name: 1, status: 1 }, background: true },
 			// Dashboard-grade listing indexes with a stable identifier tie-breaker.
 			{ key: { createdAt: -1, _id: -1 }, background: true },
+			{ key: { name: 1, createdAt: -1, _id: -1 }, background: true },
+			{ key: { status: 1, createdAt: -1, _id: -1 }, background: true },
 			{ key: { updatedAt: -1, _id: -1 }, background: true },
 			{ key: { nextRunAt: -1, _id: -1 }, background: true },
 			// Compound index for finding jobs claimed by a specific scheduler instance.
@@ -600,7 +603,11 @@ export class Monque extends EventEmitter {
 	 */
 	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
-		return this.manager.cancelJob(jobId);
+		try {
+			return await this.manager.cancelJob(jobId);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -625,7 +632,11 @@ export class Monque extends EventEmitter {
 	 */
 	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
-		return this.manager.retryJob(jobId);
+		try {
+			return await this.manager.retryJob(jobId);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -648,7 +659,11 @@ export class Monque extends EventEmitter {
 	 */
 	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
 		this.ensureInitialized();
-		return this.manager.rescheduleJob(jobId, runAt);
+		try {
+			return await this.manager.rescheduleJob(jobId, runAt);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -672,7 +687,11 @@ export class Monque extends EventEmitter {
 	 */
 	async deleteJob(jobId: string): Promise<boolean> {
 		this.ensureInitialized();
-		return this.manager.deleteJob(jobId);
+		try {
+			return await this.manager.deleteJob(jobId);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -699,7 +718,11 @@ export class Monque extends EventEmitter {
 	 */
 	async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
-		return this.manager.cancelJobs(filter);
+		try {
+			return await this.manager.cancelJobs(filter);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -725,7 +748,11 @@ export class Monque extends EventEmitter {
 	 */
 	async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
-		return this.manager.retryJobs(filter);
+		try {
+			return await this.manager.retryJobs(filter);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	/**
@@ -752,7 +779,11 @@ export class Monque extends EventEmitter {
 	 */
 	async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
 		this.ensureInitialized();
-		return this.manager.deleteJobs(filter);
+		try {
+			return await this.manager.deleteJobs(filter);
+		} finally {
+			this.query.clearStatsCache();
+		}
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
@@ -878,9 +909,16 @@ export class Monque extends EventEmitter {
 	 *
 	 * @see {@link JobQueryService.getJobsWithCursor}
 	 */
+
 	async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
 		this.ensureInitialized();
 		return this.query.getJobsWithCursor<T>(options);
+	}
+
+	/** List job metadata without reading payloads; shares the full listing cursor format. */
+	async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
+		this.ensureInitialized();
+		return this.query.getJobSummariesWithCursor(options);
 	}
 
 	/**
