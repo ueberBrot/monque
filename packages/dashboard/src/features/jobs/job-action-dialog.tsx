@@ -7,17 +7,9 @@ import { fromDateTimeLocalValue } from '@/lib/dates';
 
 import {
 	JOB_ACTION_DEFINITIONS,
-	type JobActionKey,
+	type JobActionDialogState,
 	type RunJobActionsInput,
 } from './job-actions.js';
-
-type JobActionDialogState = {
-	readonly action: JobActionKey;
-	readonly jobIds: readonly string[];
-	readonly jobName?: string;
-	readonly nextRunAt: string;
-	readonly scope: 'bulk' | 'single';
-};
 
 type JobActionDialogProps = {
 	readonly busy: boolean;

@@ -19,7 +19,6 @@ type SelectFieldProps = {
 	id?: string;
 	bare?: boolean;
 	className?: string;
-	displayLabel?: string;
 	options: ReadonlyArray<{ label: string; value: string }>;
 };
 
@@ -31,7 +30,6 @@ export function SelectField({
 	id,
 	bare = false,
 	className,
-	displayLabel,
 }: SelectFieldProps) {
 	const field = useFieldContext<string>();
 	const generatedId = useId();
@@ -41,6 +39,7 @@ export function SelectField({
 	const control = (
 		<Select
 			name={field.name}
+			items={options}
 			value={field.state.value}
 			onValueChange={(value) => field.handleChange(value ?? '')}
 		>
@@ -51,7 +50,7 @@ export function SelectField({
 				aria-invalid={Boolean(error)}
 				onBlur={field.handleBlur}
 			>
-				<SelectValue placeholder={placeholder}>{displayLabel}</SelectValue>
+				<SelectValue placeholder={placeholder} />
 			</SelectTrigger>
 			<SelectContent>
 				{options.map((option) => (

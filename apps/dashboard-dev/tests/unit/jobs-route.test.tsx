@@ -1,18 +1,16 @@
 // @vitest-environment jsdom
 
+import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
+import { createMemoryHistory } from '@tanstack/react-router';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { createDashboardManagementApi } from '@/management-client';
+import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
 import { getRouter } from '@/router';
-
-import { createMockManagementFetch } from '../../../../apps/dashboard-dev/src/mock/management-server.js';
 
 describe('Jobs route', () => {
 	afterEach(() => {
@@ -38,6 +36,13 @@ describe('Jobs route', () => {
 			const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
 			const { router } = await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs' });
 			await screen.findAllByRole('link', { name: /dispatch-webhook/ });
+			expect(screen.getByRole('combobox', { name: 'Sort by' }).textContent).toContain(
+				'Created time',
+			);
+			expect(screen.getByRole('combobox', { name: 'Sort direction' }).textContent).toContain(
+				'Descending',
+			);
+			expect(screen.getByRole('combobox', { name: 'Page size' }).textContent).toContain('50 rows');
 			expect(
 				screen.queryByRole('columnheader', {
 					name: /Created time|Updated time|Next run|Identifier/,
@@ -49,6 +54,9 @@ describe('Jobs route', () => {
 			fireEvent.pointerDown(sortOption, { pointerType: 'mouse' });
 			fireEvent.click(sortOption);
 			await waitFor(() => expect(router.state.location.search.sortBy).toBe('updatedAt'));
+			expect(screen.getByRole('combobox', { name: 'Sort by' }).textContent).toContain(
+				'Updated time',
+			);
 			fireEvent.click(screen.getByRole('combobox', { name: 'Sort direction' }));
 			const directionOption = await screen.findByRole('option', { name: 'Ascending' });
 			fireEvent.pointerDown(directionOption, { pointerType: 'mouse' });
@@ -58,6 +66,9 @@ describe('Jobs route', () => {
 					sortBy: 'updatedAt',
 					sortDirection: 'asc',
 				}),
+			);
+			expect(screen.getByRole('combobox', { name: 'Sort direction' }).textContent).toContain(
+				'Ascending',
 			);
 			await waitFor(() =>
 				expect(
@@ -648,13 +659,7 @@ async function renderJobsRoute({
 	);
 
 	await router.load();
-	render(
-		<QueryClientProvider client={queryClient}>
-			<TooltipProvider>
-				<RouterProvider router={router} />
-			</TooltipProvider>
-		</QueryClientProvider>,
-	);
+	render(<DashboardProviders queryClient={queryClient} router={router} />);
 
 	return { router };
 }

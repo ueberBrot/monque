@@ -299,7 +299,7 @@ function mutateBulkJobs(
 
 function deleteSingleJob(id: string, scenario: MutableScenario): { deleted: true } {
 	assertMutationAllowed(scenario, 'delete');
-	assertJobExists(id, scenario);
+	getJobById(id, scenario);
 	scenario.jobs = scenario.jobs.filter((job) => job.id !== id);
 	return { deleted: true };
 }
@@ -458,17 +458,6 @@ function assertMutationAllowed(scenario: DashboardDevScenario, action: MutationC
 		throw new ORPCError('CONFLICT', {
 			data: { error: 'Job state changed before the mutation completed.' },
 			message: 'Job state changed before the mutation completed.',
-		});
-	}
-}
-
-function assertJobExists(id: string, scenario: DashboardDevScenario): void {
-	const job = scenario.jobs.find((candidate) => candidate.id === id);
-
-	if (!job) {
-		throw new ORPCError('NOT_FOUND', {
-			data: { error: 'Job not found' },
-			message: 'Job not found',
 		});
 	}
 }

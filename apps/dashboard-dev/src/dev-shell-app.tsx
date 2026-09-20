@@ -120,10 +120,6 @@ function DashboardDevOverlay({
 											id="dev-scenario"
 											label="Scenario"
 											className="w-48"
-											displayLabel={
-												dashboardDevScenarioOptions.find((scenario) => scenario.id === scenarioId)
-													?.label ?? ''
-											}
 											options={dashboardDevScenarioOptions.map((scenario) => ({
 												value: scenario.id,
 												label: scenario.label,

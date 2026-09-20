@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -11,8 +12,11 @@ export default defineConfig({
 			),
 		},
 	},
+	plugins: [react()],
 	test: {
 		environment: 'node',
-		include: ['tests/unit/**/*.test.ts'],
+		fileParallelism: false,
+		include: ['tests/unit/**/*.test.{ts,tsx}'],
+		setupFiles: ['../../packages/dashboard/tests/setup/browser.ts'],
 	},
 });

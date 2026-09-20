@@ -94,14 +94,6 @@ function JobsFilters({
 								{(field) => (
 									<field.SelectField
 										label="Sort by"
-										displayLabel={
-											{
-												createdAt: 'Created time',
-												updatedAt: 'Updated time',
-												nextRunAt: 'Next run',
-												identifier: 'Identifier',
-											}[field.state.value]
-										}
 										options={[
 											{ value: 'createdAt', label: 'Created time' },
 											{ value: 'updatedAt', label: 'Updated time' },
@@ -125,7 +117,6 @@ function JobsFilters({
 								{(field) => (
 									<field.SelectField
 										label="Sort direction"
-										displayLabel={field.state.value === 'asc' ? 'Ascending' : 'Descending'}
 										options={[
 											{ value: 'asc', label: 'Ascending' },
 											{ value: 'desc', label: 'Descending' },

@@ -10,10 +10,11 @@ import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { Button } from '@/components/ui/button';
 import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
-import type {
-	JobActionFeedback,
-	JobActionKey,
-	RunJobActionsInput,
+import {
+	type JobActionFeedback,
+	type JobActionKey,
+	prepareSingleJobAction,
+	type RunJobActionsInput,
 } from '@/features/jobs/job-actions';
 import {
 	getJobsSearchIdentity,
@@ -98,17 +99,12 @@ function JobsListRoute() {
 		capabilities: capabilitiesQuery.data,
 		direction: search.sortDirection,
 		onAction: (action, job) => {
-			if (action === 'delete' || action === 'reschedule') {
-				setDialogState({
-					action,
-					jobIds: [job.id],
-					jobName: job.name,
-					nextRunAt: action === 'reschedule' ? toDateTimeLocalValue(job.nextRunAt) : '',
-					scope: 'single',
-				});
+			const prepared = prepareSingleJobAction(action, job);
+			if (prepared.type === 'confirm') {
+				setDialogState(prepared.state);
 			} else {
 				setFeedback(null);
-				actionMutation.mutate({ action, jobIds: [job.id] });
+				actionMutation.mutate(prepared.input);
 			}
 		},
 		onSortChange: handleSortChange,

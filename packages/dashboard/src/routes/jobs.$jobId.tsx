@@ -19,9 +19,9 @@ import {
 	JOB_ACTION_DEFINITIONS,
 	JOB_ACTION_ORDER,
 	type JobActionRequest,
+	prepareSingleJobAction,
 } from '@/features/jobs/job-actions';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
-import { toDateTimeLocalValue } from '@/lib/dates';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { mapJobDetailError } from '@/lib/job-detail';
 
@@ -42,6 +42,13 @@ function JobDetailRoute() {
 function JobDetail({ jobId }: { readonly jobId: string }) {
 	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const search = Route.useSearch();
+	const backLink = search.queueView
+		? {
+				to: '/queue-views/$name' as const,
+				params: { name: search.queueView },
+				search: { cursor: search.queueCursor, limit: search.queueLimit },
+			}
+		: { to: '/jobs' as const, search: parseJobsRouteSearch(search) };
 	const navigate = Route.useNavigate();
 	const router = useRouter();
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
@@ -65,16 +72,7 @@ function JobDetail({ jobId }: { readonly jobId: string }) {
 			const success = getActionSuccessFeedback(action);
 			toast.success(success.title, { description: success.description });
 			if (action !== 'delete' || router.state.location !== origin) return;
-			if (search.queueView) {
-				await navigate({
-					to: '/queue-views/$name',
-					params: { name: search.queueView },
-					search: { cursor: search.queueCursor, limit: search.queueLimit },
-					replace: true,
-				});
-			} else {
-				await navigate({ to: '/jobs', search: parseJobsRouteSearch(search), replace: true });
-			}
+			await navigate({ ...backLink, replace: true });
 		},
 	});
 
@@ -91,24 +89,9 @@ function JobDetail({ jobId }: { readonly jobId: string }) {
 
 	return (
 		<section className="grid min-w-0 gap-4">
-			{search.queueView ? (
-				<Link
-					to="/queue-views/$name"
-					params={{ name: search.queueView }}
-					search={{ cursor: search.queueCursor, limit: search.queueLimit }}
-					className="w-fit text-sm text-muted-foreground hover:text-primary"
-				>
-					← Back to {search.queueView}
-				</Link>
-			) : (
-				<Link
-					to="/jobs"
-					search={parseJobsRouteSearch(search)}
-					className="w-fit text-sm text-muted-foreground hover:text-primary"
-				>
-					← Back to jobs
-				</Link>
-			)}
+			<Link {...backLink} className="w-fit text-sm text-muted-foreground hover:text-primary">
+				← Back to {search.queueView || 'jobs'}
+			</Link>
 			{feedback ? (
 				<JobActionFeedbackPanel
 					feedback={feedback}
@@ -157,15 +140,6 @@ function JobDetailActions({
 	}));
 
 	const [state, setState] = useState<JobActionDialogState | null>(null);
-	function open(action: 'delete' | 'reschedule'): void {
-		setState({
-			action,
-			scope: 'single',
-			jobIds: [job.id],
-			jobName: job.name,
-			nextRunAt: toDateTimeLocalValue(job.nextRunAt),
-		});
-	}
 	return (
 		<>
 			{actions.map(({ action, label, disabled, reason }) => (
@@ -174,8 +148,9 @@ function JobDetailActions({
 					variant={action === 'delete' ? 'destructive' : 'outline'}
 					size="sm"
 					onClick={() => {
-						if (action === 'delete' || action === 'reschedule') open(action);
-						else onRunAction({ action });
+						const prepared = prepareSingleJobAction(action, job);
+						if (prepared.type === 'confirm') setState(prepared.state);
+						else onRunAction(prepared.input);
 					}}
 					disabled={disabled || busy}
 					title={reason ?? undefined}

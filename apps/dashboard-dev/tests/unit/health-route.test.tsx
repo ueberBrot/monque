@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
+import type { DashboardDevScenarioId } from '@dashboard-dev/mock/scenario-catalog';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -8,9 +10,6 @@ import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
 import { getRouter } from '@/router';
 import type { DashboardRuntimeConfig } from '@/runtime-config';
-
-import { createMockManagementFetch } from '../../../../apps/dashboard-dev/src/mock/management-server.js';
-import type { DashboardDevScenarioId } from '../../../../apps/dashboard-dev/src/mock/scenario-catalog.js';
 
 const runtimeConfig: DashboardRuntimeConfig = {
 	apiBaseUrl: '/',

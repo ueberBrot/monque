@@ -1,16 +1,13 @@
 // @vitest-environment jsdom
 
-import { QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider } from '@tanstack/react-router';
+import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { createDashboardManagementApi } from '@/management-client';
+import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
 import { getRouter } from '@/router';
-
-import { createMockManagementFetch } from '../../../../apps/dashboard-dev/src/mock/management-server.js';
 
 describe('Queue Views routes', () => {
 	it('renders Queue Views from the Management API on the overview route', async () => {
@@ -144,13 +141,7 @@ function renderDashboardAt(
 		},
 	});
 
-	render(
-		<QueryClientProvider client={queryClient}>
-			<TooltipProvider>
-				<RouterProvider router={router} />
-			</TooltipProvider>
-		</QueryClientProvider>,
-	);
+	render(<DashboardProviders queryClient={queryClient} router={router} />);
 }
 
 function setDocumentVisibilityState(state: 'hidden' | 'visible'): void {

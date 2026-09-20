@@ -1,5 +1,6 @@
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
 
+import { toDateTimeLocalValue } from '@/lib/dates';
 import type { DashboardManagementApi } from '@/management-client';
 import { readManagementError } from '@/management-errors';
 
@@ -28,6 +29,35 @@ type JobActionsResult = {
 	readonly firstError: unknown;
 	readonly authorizationChanged: boolean;
 };
+
+type JobActionDialogState = {
+	readonly action: JobActionKey;
+	readonly jobIds: readonly string[];
+	readonly jobName?: string;
+	readonly nextRunAt: string;
+	readonly scope: 'bulk' | 'single';
+};
+
+function prepareSingleJobAction(
+	action: JobActionKey,
+	job: Pick<JobDto, 'id' | 'name' | 'nextRunAt'>,
+):
+	| { readonly type: 'confirm'; readonly state: JobActionDialogState }
+	| { readonly type: 'run'; readonly input: RunJobActionsInput } {
+	if (action === 'delete' || action === 'reschedule') {
+		return {
+			type: 'confirm',
+			state: {
+				action,
+				jobIds: [job.id],
+				jobName: job.name,
+				nextRunAt: action === 'reschedule' ? toDateTimeLocalValue(job.nextRunAt) : '',
+				scope: 'single',
+			},
+		};
+	}
+	return { type: 'run', input: { action, jobIds: [job.id] } };
+}
 
 async function runJobActions(
 	managementApi: DashboardManagementApi,
@@ -246,10 +276,12 @@ export {
 	getJobActionAvailability,
 	JOB_ACTION_DEFINITIONS,
 	JOB_ACTION_ORDER,
+	type JobActionDialogState,
 	type JobActionFeedback,
 	type JobActionFeedbackTone,
 	type JobActionKey,
 	type JobActionRequest,
+	prepareSingleJobAction,
 	type RunJobActionsInput,
 	runJobActions,
 };
