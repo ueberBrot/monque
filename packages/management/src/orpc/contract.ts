@@ -12,6 +12,7 @@ import {
 	JobStatsQueryDtoSchema,
 	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
+	QueueViewQueryDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	RescheduleJobInputDtoSchema,
 	SchedulerHealthDtoSchema,
@@ -90,6 +91,7 @@ export const managementContract = {
 			successStatus: 200,
 			successDescription: 'Successful response',
 		})
+		.input(QueueViewQueryDtoSchema.optional())
 		.output(QueueViewSummaryListDtoSchema),
 	jobs: oc
 		.route({

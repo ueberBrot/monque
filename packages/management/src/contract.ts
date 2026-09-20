@@ -37,6 +37,8 @@ export {
 	ManagementErrorDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
+	type QueueViewQueryDto,
+	QueueViewQueryDtoSchema,
 	type QueueViewSummaryDto,
 	QueueViewSummaryDtoSchema,
 	type QueueViewSummaryListDto,

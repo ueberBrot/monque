@@ -959,8 +959,9 @@ export class Monque extends EventEmitter {
 	 *
 	 * Includes every Job Name with persisted Jobs, every locally registered Worker,
 	 * per-name Job statistics, and local Worker capacity snapshots. Results are
-	 * sorted by Job Name.
+	 * sorted by Job Name. An optional name filter limits aggregation to that Job Name.
 	 *
+	 * @param filter - Optional exact Job Name filter
 	 * @returns Promise resolving to immutable Queue View summaries
 	 *
 	 * @example Inspect Queue Views
@@ -974,9 +975,11 @@ export class Monque extends EventEmitter {
 	 *
 	 * @see {@link JobQueryService.getQueueViewSummaries}
 	 */
-	async getQueueViewSummaries(): Promise<readonly QueueViewSummary[]> {
+	async getQueueViewSummaries(
+		filter?: Pick<JobSelector, 'name'>,
+	): Promise<readonly QueueViewSummary[]> {
 		this.ensureInitialized();
-		return this.query.getQueueViewSummaries();
+		return this.query.getQueueViewSummaries(filter);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────

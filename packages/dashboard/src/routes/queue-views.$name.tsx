@@ -35,7 +35,7 @@ function QueueViewDetailRoute() {
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const statsInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
 	const queueViewsQuery = useQuery({
-		...managementApi.orpc.queueViews.queryOptions(),
+		...managementApi.orpc.queueViews.queryOptions({ input: { name } }),
 		refetchInterval: statsInterval,
 	});
 	const jobsQuery = useQuery({

@@ -11,6 +11,37 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management bulk action routes', () => {
+	test('starts waiting selected jobs as soon as a worker finishes while another job is slow', async () => {
+		const jobs = Array.from({ length: 8 }, () => createManagementJob({ status: 'failed' }));
+		const ids = jobs.map((job) => job._id.toHexString());
+		const slow = Promise.withResolvers<void>();
+		const started: string[] = [];
+		const surface = createManagementSurface({
+			monque: createManagementMonque(
+				{
+					getJob: async (id) => jobs.find((job) => job._id.toHexString() === id) ?? null,
+					retryJob: async (id) => {
+						started.push(id);
+						if (id === ids[0]) await slow.promise;
+						return createManagementJob({ status: 'pending' });
+					},
+				},
+				{ mutations: true },
+			),
+		});
+		const request = handleManagementPost(surface, '/api/v1/jobs/actions/selected', {
+			action: 'retry',
+			ids,
+		});
+		try {
+			await expect.poll(() => started.length, { timeout: 200 }).toBe(8);
+		} finally {
+			slow.resolve();
+			await request;
+		}
+		expect(await (await request).json()).toMatchObject({ count: 8, errors: [] });
+	});
+
 	test('selected actions authorize each job and report partial failures without touching other jobs', async () => {
 		const allowed = createManagementJob({ status: 'failed' });
 		const denied = createManagementJob({ status: 'failed' });

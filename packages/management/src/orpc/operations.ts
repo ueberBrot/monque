@@ -27,6 +27,7 @@ import type {
 	JobListQueryDto,
 	JobSelectorDto,
 	QueueStatsDto,
+	QueueViewQueryDto,
 	QueueViewSummaryListDto,
 	RescheduleJobInputDto,
 	SchedulerHealthDto,
@@ -58,7 +59,7 @@ export interface ManagementOperations<TContext = unknown> {
 	getHealth(): SchedulerHealthDto;
 	selectedJobActions(input: SelectedJobActionsDto, context: TContext): Promise<BulkActionResultDto>;
 	getCapabilities(context: TContext): Promise<CapabilitiesDto>;
-	listQueueViews(context: TContext): Promise<QueueViewSummaryListDto>;
+	listQueueViews(context: TContext, filter?: QueueViewQueryDto): Promise<QueueViewSummaryListDto>;
 	listJobs(input: JobListQueryDto, context: TContext): Promise<JobCursorPageDto>;
 	getJobStats(input: { name?: string | undefined }, context: TContext): Promise<QueueStatsDto>;
 	getJob(input: JobDetailInputDto, context: TContext): Promise<JobDto>;
@@ -78,10 +79,14 @@ export function createManagementOperations<TContext = unknown>(
 		selectedJobActions: (input, context) => handleSelectedJobActions(options, input, context),
 		getHealth: () => toSchedulerHealthDto(options.monque.isHealthy()),
 		getCapabilities: (context: TContext) => getManagementCapabilities(options, context),
-		listQueueViews: async (context: TContext) => {
+		listQueueViews: async (context: TContext, filter?: QueueViewQueryDto) => {
 			await requireReadAuthorization(options, context);
-
-			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
+			const scope = filter?.name === undefined ? undefined : { name: filter.name };
+			const summaries = await options.monque.getQueueViewSummaries(scope);
+			// Older compatible scheduler facades may ignore the additive filter argument.
+			return toQueueViewSummaryListDto(
+				scope ? summaries.filter((view) => view.name === scope.name) : summaries,
+			);
 		},
 		listJobs: async (input: JobListQueryDto, context: TContext) => {
 			await requireReadAuthorization(options, context);
@@ -347,9 +352,10 @@ async function handleSelectedJobActions<TContext>(
 	];
 	await requireManagementAction(options, capability, context, { ids });
 	const result: BulkActionResultDto = { count: 0, errors: [] };
-	for (let offset = 0; offset < ids.length; offset += 5) {
-		await Promise.all(
-			ids.slice(offset, offset + 5).map(async (id) => {
+	const remainingIds = ids.values();
+	await Promise.all(
+		Array.from({ length: Math.min(5, ids.length) }, async () => {
+			for (const id of remainingIds) {
 				try {
 					if (input.action === 'delete') {
 						await executeJobDeletion(options, id, context);
@@ -369,8 +375,8 @@ async function handleSelectedJobActions<TContext>(
 						error: error instanceof ORPCError ? error.message : 'Job action failed',
 					});
 				}
-			}),
-		);
-	}
+			}
+		}),
+	);
 	return result;
 }

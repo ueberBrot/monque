@@ -51,6 +51,12 @@ function JobsListRoute() {
 	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const [feedback, setFeedback] = useState<JobActionFeedback | null>(null);
 	const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
+	const searchIdentity = JSON.stringify(search);
+	const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
+	if (searchIdentity !== previousSearchIdentity) {
+		setPreviousSearchIdentity(searchIdentity);
+		setDialogState(null);
+	}
 
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const debouncedName = useDebouncedJobName(search.name);

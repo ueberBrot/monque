@@ -41,10 +41,11 @@ function getStoredThemeMode(): DashboardThemeMode {
 		return 'system';
 	}
 
-	const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY);
-
-	if (isDashboardThemeMode(storedThemeMode)) {
-		return storedThemeMode;
+	try {
+		const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY);
+		if (isDashboardThemeMode(storedThemeMode)) return storedThemeMode;
+	} catch {
+		// Storage can be unavailable in embedded dashboards or restricted browser sessions.
 	}
 
 	return 'system';
@@ -82,7 +83,11 @@ function DashboardShell({ children }: { readonly children: ReactNode }): ReactEl
 			return;
 		}
 
-		window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+		try {
+			window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+		} catch {
+			// Theme changes still apply for this session when persistence is unavailable.
+		}
 
 		if (themeMode !== 'system' || typeof window.matchMedia !== 'function') {
 			return;

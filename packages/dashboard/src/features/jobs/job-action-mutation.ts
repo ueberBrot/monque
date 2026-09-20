@@ -1,4 +1,4 @@
-import { mutationOptions, type QueryClient } from '@tanstack/react-query';
+import { mutationOptions, type QueryClient, type QueryKey } from '@tanstack/react-query';
 
 import type { DashboardManagementApi } from '@/management-client';
 import { readManagementError } from '@/management-errors';
@@ -29,7 +29,7 @@ async function invalidateJobQueries(
 	ids: readonly string[],
 	authorizationChanged = false,
 ): Promise<void> {
-	const keys = [
+	const keys: QueryKey[] = [
 		api.orpc.jobs.key(),
 		api.orpc.jobStats.key(),
 		api.orpc.queueViews.key(),

@@ -46,6 +46,7 @@ Use the configured `base-nova` registry. Keep generated Base UI behavior, named 
 Biome formatting. Status badge variants are a project extension. Command uses the registry's
 cmdk implementation inside a Base UI dialog. Use shadcn controls for forms, menus, dialogs,
 tables, and collapsibles. Avoid native confirm/prompt dialogs.
+Use `class-variance-authority` (CVA) for component variants, matching the installed shadcn components.
 
 ## Interaction and accessibility
 

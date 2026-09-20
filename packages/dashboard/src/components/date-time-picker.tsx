@@ -4,12 +4,12 @@ import { lazy, Suspense, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 
-const Calendar = lazy(() =>
-	import('@/components/ui/calendar').then((module) => ({ default: module.Calendar })),
+// The draft editor is loaded only when opened; this also keeps the shared form hook
+// independent of the picker trigger and its registered field component.
+const DateTimeEditor = lazy(() =>
+	import('@/forms/date-time-editor').then((module) => ({ default: module.DateTimeEditor })),
 );
 
-import { Field, FieldLabel } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import {
 	Popover,
 	PopoverContent,
@@ -34,26 +34,10 @@ function DateTimePicker({
 	readonly allowClear?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
-	const [date, setDate] = useState('');
-	const [time, setTime] = useState('00:00');
-	const [month, setMonth] = useState(new Date());
-	const selected = parseDateTime(date, '12:00');
-	const draft = parseDateTime(date, time);
 	const current = parseDateTime(value.slice(0, 10), value.slice(11, 16));
-	const invalid = date.length > 0 && !draft;
 
 	return (
-		<Popover
-			open={open}
-			onOpenChange={(nextOpen) => {
-				if (nextOpen) {
-					setDate(value.slice(0, 10));
-					setTime(value.slice(11, 16) || '00:00');
-					setMonth(current ?? new Date());
-				}
-				setOpen(nextOpen);
-			}}
-		>
+		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger
 				render={
 					<Button
@@ -84,75 +68,17 @@ function DateTimePicker({
 							</div>
 						}
 					>
-						<Calendar
-							mode="single"
-							timeZone={getOperatorTimeZoneLabel()}
-							selected={selected}
-							month={month}
-							onMonthChange={setMonth}
-							onSelect={(day) => {
-								if (day) setDate(format(day, 'yyyy-MM-dd'));
+						<DateTimeEditor
+							id={id}
+							value={value}
+							allowClear={allowClear}
+							onApply={(nextValue) => {
+								onChange(nextValue);
+								setOpen(false);
 							}}
-							className="mx-auto p-0 [--cell-size:--spacing(9)]"
 						/>
 					</Suspense>
 				) : null}
-				<div className="grid grid-cols-[1.5fr_1fr] gap-3">
-					<Field>
-						<FieldLabel htmlFor={`${id}-date`}>Date</FieldLabel>
-						<Input
-							id={`${id}-date`}
-							placeholder="YYYY-MM-DD"
-							value={date}
-							aria-invalid={date.length > 0 && !selected}
-							onChange={(event) => {
-								const nextDate = event.target.value;
-								setDate(nextDate);
-								const parsed = parseDateTime(nextDate, '12:00');
-								if (parsed) setMonth(parsed);
-							}}
-						/>
-					</Field>
-					<Field>
-						<FieldLabel htmlFor={`${id}-time`}>Time (24h)</FieldLabel>
-						<Input
-							id={`${id}-time`}
-							placeholder="HH:mm"
-							value={time}
-							aria-invalid={invalid}
-							onChange={(event) => setTime(event.target.value)}
-						/>
-					</Field>
-				</div>
-				{invalid ? (
-					<p role="status" className="text-xs text-destructive">
-						Enter a valid local date (YYYY-MM-DD) and time (HH:mm).
-					</p>
-				) : null}
-				<div className="flex justify-between gap-2">
-					{allowClear ? (
-						<Button
-							variant="ghost"
-							onClick={() => {
-								onChange('');
-								setOpen(false);
-							}}
-						>
-							Clear
-						</Button>
-					) : null}
-					<Button
-						className="ml-auto"
-						disabled={!draft}
-						onClick={() => {
-							if (!draft) return;
-							onChange(format(draft, "yyyy-MM-dd'T'HH:mm"));
-							setOpen(false);
-						}}
-					>
-						Apply
-					</Button>
-				</div>
 			</PopoverContent>
 		</Popover>
 	);

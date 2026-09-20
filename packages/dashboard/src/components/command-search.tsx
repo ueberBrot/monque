@@ -1,12 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { Suspense } from 'react';
 
-import {
-	Command,
-	CommandEmpty,
-	CommandInput,
-	CommandItem,
-	CommandList,
-} from '@/components/ui/command';
+import { Command, CommandEmpty, CommandItem, CommandList } from '@/components/ui/command';
+import { useAppForm } from '@/forms/form';
 
 function CommandSearch({
 	commands,
@@ -15,13 +10,16 @@ function CommandSearch({
 	readonly commands: readonly { label: string; run: () => void }[];
 	readonly onClose: () => void;
 }) {
-	const input = useRef<HTMLInputElement>(null);
-	useEffect(() => {
-		input.current?.focus();
-	}, []);
+	const form = useAppForm({ defaultValues: { query: '' } });
 	return (
 		<Command>
-			<CommandInput ref={input} aria-label="Search commands" placeholder="Search commands…" />
+			<Suspense fallback={null}>
+				<form.AppField name="query">
+					{(field) => (
+						<field.CommandSearchField label="Search commands" placeholder="Search commands…" />
+					)}
+				</form.AppField>
+			</Suspense>
 			<CommandList>
 				<CommandEmpty>No commands found.</CommandEmpty>
 				{commands.map((command) => (

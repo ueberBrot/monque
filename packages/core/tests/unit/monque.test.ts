@@ -316,7 +316,7 @@ describe('Monque', () => {
 			(monque as unknown as Record<string, unknown>)['_query'] = { getQueueViewSummaries: spy };
 
 			await monque.getQueueViewSummaries();
-			expect(spy).toHaveBeenCalledWith();
+			expect(spy).toHaveBeenCalledWith(undefined);
 		});
 
 		it('should delegate cancelJob to manager', async () => {

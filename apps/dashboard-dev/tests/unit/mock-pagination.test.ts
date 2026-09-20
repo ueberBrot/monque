@@ -16,6 +16,15 @@ function createApi() {
 const sorts = ['identifier', 'createdAt', 'updatedAt', 'nextRunAt'] as const;
 const directions = ['asc', 'desc'] as const;
 
+it('returns only the requested Queue View and preserves unfiltered listings', async () => {
+	const api = createApi();
+	const all = await api.queueViews();
+	expect(all.queueViews.length).toBeGreaterThan(1);
+	const filtered = await api.queueViews({ name: 'send-email' });
+	expect(filtered.queueViews).toEqual(all.queueViews.filter((view) => view.name === 'send-email'));
+	expect((await api.queueViews({ name: 'missing' })).queueViews).toEqual([]);
+});
+
 it.each(sorts.flatMap((sortBy) => directions.map((sortDirection) => ({ sortBy, sortDirection }))))(
 	'preserves pagination after preceding Jobs and the anchor are deleted ($sortBy $sortDirection)',
 	async (sort) => {

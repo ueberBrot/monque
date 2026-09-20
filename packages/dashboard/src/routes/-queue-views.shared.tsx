@@ -326,7 +326,7 @@ function QueueViewJobsTable({
 					{jobsPage.jobs.length} job{jobsPage.jobs.length === 1 ? '' : 's'} on this page
 				</p>
 				<div className="flex gap-2">
-					{nextPageCursor ? (
+					{jobsPage.hasNextPage && nextPageCursor ? (
 						<ButtonLink
 							to="/queue-views/$name"
 							params={{ name }}

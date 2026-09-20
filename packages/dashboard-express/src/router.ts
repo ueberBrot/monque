@@ -97,7 +97,7 @@ function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjecti
 		new RegExp(
 			`<script\\s+id=["']${escapeRegularExpression(options.runtimeConfigScriptId)}["'][^>]*>[\\s\\S]*?<\\/script>`,
 		),
-		runtimeConfigScript,
+		() => runtimeConfigScript,
 	);
 }
 

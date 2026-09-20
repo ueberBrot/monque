@@ -18,7 +18,6 @@ import { createContext, useContext } from 'react';
 import { JobStatusBadge } from '@/components/job-status-badge';
 import { JobTimestamp, RelativeTimestamp } from '@/components/job-timestamp';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -33,7 +32,10 @@ import {
 	TableHeader,
 	TableRow,
 } from '@/components/ui/table';
+import { SelectionCheckbox } from '@/forms/selection-checkbox';
+import { SelectionFormContext, useSelectionForm } from '@/forms/selection-form';
 import { getJobRunLabel } from '@/lib/job-detail';
+import { useMediaQuery } from '@/lib/use-media-query';
 
 import {
 	getJobActionAvailability,
@@ -80,6 +82,13 @@ function JobsTable({
 	readonly onRowSelectionChange: (updater: Updater<RowSelectionState>) => void;
 	readonly options: JobsColumnsOptions;
 }) {
+	const selected = Object.fromEntries(jobs.map((job) => [job.id, Boolean(rowSelection[job.id])]));
+	const selectionForm = useSelectionForm(
+		selected,
+		jobs.length > 0 && jobs.every((job) => rowSelection[job.id]),
+	);
+	const compact = useMediaQuery('(max-width: 767px)');
+	const narrow = useMediaQuery('(max-width: 639px)');
 	const table = useTable({
 		features,
 		data: jobs,
@@ -90,50 +99,61 @@ function JobsTable({
 		onRowSelectionChange,
 		state: {
 			rowSelection,
+			columnVisibility: {
+				createdAt: !compact,
+				updatedAt: !compact,
+				identifier: !compact,
+				nextRunAt: !narrow,
+			},
 		},
 	});
 
 	return (
 		<div className="overflow-x-auto">
-			<JobsColumnsContext value={options}>
-				<Table className="table-fixed md:min-w-[74rem]">
-					<TableHeader>
-						{table.getHeaderGroups().map((headerGroup) => (
-							<TableRow key={headerGroup.id}>
-								{headerGroup.headers.map((header) => (
-									<TableHead
-										key={header.id}
-										aria-sort={getSortAriaValue(
-											options.activeSortBy === header.column.id,
-											options.direction,
-										)}
-										className={getColumnVisibilityClass(header.column.id)}
-									>
-										{header.isPlaceholder
-											? null
-											: flexRender(header.column.columnDef.header, header.getContext())}
-									</TableHead>
+			<SelectionFormContext value={selectionForm}>
+				<CompactTableContext value={compact}>
+					<JobsColumnsContext value={options}>
+						<Table className="table-fixed md:min-w-[74rem]">
+							<TableHeader>
+								{table.getHeaderGroups().map((headerGroup) => (
+									<TableRow key={headerGroup.id}>
+										{headerGroup.headers.map((header) => (
+											<TableHead
+												key={header.id}
+												aria-sort={getSortAriaValue(
+													options.activeSortBy === header.column.id,
+													options.direction,
+												)}
+												className={getColumnVisibilityClass(header.column.id)}
+											>
+												{header.isPlaceholder
+													? null
+													: flexRender(header.column.columnDef.header, header.getContext())}
+											</TableHead>
+										))}
+									</TableRow>
 								))}
-							</TableRow>
-						))}
-					</TableHeader>
-					<TableBody>
-						{table.getRowModel().rows.map((row) => (
-							<TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
-								{row.getVisibleCells().map((cell) => (
-									<TableCell key={cell.id} className={getColumnVisibilityClass(cell.column.id)}>
-										{flexRender(cell.column.columnDef.cell, cell.getContext())}
-									</TableCell>
+							</TableHeader>
+							<TableBody>
+								{table.getRowModel().rows.map((row) => (
+									<TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
+										{row.getVisibleCells().map((cell) => (
+											<TableCell key={cell.id} className={getColumnVisibilityClass(cell.column.id)}>
+												{flexRender(cell.column.columnDef.cell, cell.getContext())}
+											</TableCell>
+										))}
+									</TableRow>
 								))}
-							</TableRow>
-						))}
-					</TableBody>
-				</Table>
-			</JobsColumnsContext>
+							</TableBody>
+						</Table>
+					</JobsColumnsContext>
+				</CompactTableContext>
+			</SelectionFormContext>
 		</div>
 	);
 }
 
+const CompactTableContext = createContext(false);
 const JobsColumnsContext = createContext<JobsColumnsOptions | null>(null);
 const JOB_COLUMNS = createJobsColumns();
 type JobCellProps = CellContext<typeof features, JobDto>;
@@ -149,18 +169,18 @@ function createJobsColumns(): ColumnDef<typeof features, JobDto>[] {
 		{
 			id: 'select',
 			header: ({ table }) => (
-				<Checkbox
-					aria-label="Select all jobs on this page"
-					checked={table.getIsAllPageRowsSelected()}
+				<SelectionCheckbox
+					label="Select all jobs on this page"
+					name="all"
 					indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
-					onCheckedChange={(checked) => table.toggleAllPageRowsSelected(checked)}
+					onChange={(checked) => table.toggleAllPageRowsSelected(checked)}
 				/>
 			),
 			cell: ({ row }) => (
-				<Checkbox
-					aria-label={`Select job row ${row.original.name} ${row.original.id}`}
-					checked={row.getIsSelected()}
-					onCheckedChange={() => row.toggleSelected()}
+				<SelectionCheckbox
+					label={`Select job row ${row.original.name} ${row.original.id}`}
+					name={`selected.${row.id}`}
+					onChange={() => row.toggleSelected()}
 				/>
 			),
 		},
@@ -187,6 +207,7 @@ function createJobsColumns(): ColumnDef<typeof features, JobDto>[] {
 }
 
 function JobNameCell({ row }: JobCellProps) {
+	const compact = useContext(CompactTableContext);
 	return (
 		<div className="min-w-0 whitespace-normal">
 			<Link
@@ -197,14 +218,16 @@ function JobNameCell({ row }: JobCellProps) {
 			>
 				{row.original.name}
 			</Link>
-			<p className="mt-1 flex flex-wrap gap-x-1 text-xs text-muted-foreground md:hidden">
-				<span className="font-mono" title={row.original.id}>
-					…{row.original.id.slice(-8)}
-				</span>
-				<span title="Created">
-					· <RelativeTimestamp value={row.original.createdAt} />
-				</span>
-			</p>
+			{compact ? (
+				<p className="mt-1 flex flex-wrap gap-x-1 text-xs text-muted-foreground">
+					<span className="font-mono" title={row.original.id}>
+						…{row.original.id.slice(-8)}
+					</span>
+					<span title="Created">
+						· <RelativeTimestamp value={row.original.createdAt} />
+					</span>
+				</p>
+			) : null}
 		</div>
 	);
 }
@@ -261,7 +284,7 @@ function JobActionsCell({ row }: JobCellProps) {
 					</Button>
 				}
 			/>
-			<DropdownMenuContent className="w-44" align="end">
+			<DropdownMenuContent className="w-64" align="end">
 				{JOB_ACTION_ORDER.map((action) => {
 					const { disabled, reason } = getJobActionAvailability(job, capabilities, action);
 					const label = `${JOB_ACTION_DEFINITIONS[action].label} job`;
@@ -278,7 +301,7 @@ function JobActionsCell({ row }: JobCellProps) {
 							<div>
 								<span>{label}</span>
 								{reason ? (
-									<p id={reasonId} className="sr-only">
+									<p id={reasonId} className="mt-1 whitespace-normal text-xs text-muted-foreground">
 										{reason}
 									</p>
 								) : null}
@@ -319,9 +342,9 @@ function getColumnVisibilityClass(id: string): string {
 	if (id === 'select') return 'w-10';
 	if (id === 'status') return 'w-28';
 	if (id === 'actions') return 'w-18';
-	if (id === 'createdAt' || id === 'updatedAt') return 'hidden w-48 md:table-cell';
-	if (id === 'identifier') return 'hidden w-52 md:table-cell';
-	if (id === 'nextRunAt') return 'hidden w-48 sm:table-cell';
+	if (id === 'createdAt' || id === 'updatedAt') return 'w-48';
+	if (id === 'identifier') return 'w-52';
+	if (id === 'nextRunAt') return 'w-48';
 	return '';
 }
 

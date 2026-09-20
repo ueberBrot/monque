@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useSelector } from '@tanstack/react-store';
 
-import { DateTimePicker } from '@/components/date-time-picker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Field, FieldLabel } from '@/components/ui/field';
+import { useAppForm } from '@/forms/form';
 import { fromDateTimeLocalValue } from '@/lib/dates';
 
 import {
@@ -54,24 +53,27 @@ function JobActionDialogForm({
 	onClose,
 	onConfirm,
 }: Omit<JobActionDialogProps, 'state'> & { readonly state: JobActionDialogState }) {
-	const [date, setDate] = useState(state.nextRunAt);
+	const form = useAppForm({
+		defaultValues: { nextRunAt: state.nextRunAt },
+		onSubmit: ({ value }) => {
+			if (busy) return;
+			if (state.action === 'reschedule') {
+				const nextRunAt = fromDateTimeLocalValue(value.nextRunAt);
+				if (!nextRunAt) return;
+				onConfirm({ action: 'reschedule', jobIds: state.jobIds, nextRunAt });
+			} else {
+				onConfirm({ action: state.action, jobIds: state.jobIds });
+			}
+		},
+	});
+	const date = useSelector(form.store, (state) => state.values.nextRunAt);
 	const requiresDate = state.action === 'reschedule';
 	const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
 	const noun = state.scope === 'single' ? 'job' : 'selected jobs';
 	const label = JOB_ACTION_DEFINITIONS[state.action].label;
 
-	function confirm(): void {
-		if (busy) return;
-		if (state.action === 'reschedule') {
-			if (!nextRunAt) return;
-			onConfirm({ action: 'reschedule', jobIds: state.jobIds, nextRunAt });
-		} else {
-			onConfirm({ action: state.action, jobIds: state.jobIds });
-		}
-	}
-
 	return (
-		<>
+		<form.AppForm>
 			<DialogTitle>
 				{label} {noun}
 				{state.scope === 'single' && requiresDate ? '' : '?'}
@@ -86,16 +88,15 @@ function JobActionDialogForm({
 				</div>
 			) : null}
 			{requiresDate ? (
-				<Field>
-					<FieldLabel htmlFor="job-action-next-run-at">Next run at</FieldLabel>
-					<DateTimePicker
-						id="job-action-next-run-at"
-						label="Next run at"
-						allowClear={false}
-						value={date}
-						onChange={setDate}
-					/>
-				</Field>
+				<form.AppField name="nextRunAt">
+					{(field) => (
+						<field.DateTimeField
+							id="job-action-next-run-at"
+							label="Next run at"
+							allowClear={false}
+						/>
+					)}
+				</form.AppField>
 			) : null}
 			<div className="flex flex-wrap justify-end gap-2">
 				<Button type="button" variant="outline" onClick={onClose}>
@@ -104,13 +105,15 @@ function JobActionDialogForm({
 				<Button
 					type="button"
 					variant={state.action === 'delete' ? 'destructive' : 'default'}
-					onClick={confirm}
+					onClick={() => {
+						void form.handleSubmit();
+					}}
 					disabled={busy || (requiresDate && !nextRunAt)}
 				>
 					Confirm {state.action} {noun}
 				</Button>
 			</div>
-		</>
+		</form.AppForm>
 	);
 }
 

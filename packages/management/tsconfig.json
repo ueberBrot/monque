@@ -24,6 +24,7 @@
 		"isolatedModules": true,
 		"types": ["node", "vitest/globals"],
 		"paths": {
+			"@monque/management/contract": ["./src/contract.ts"],
 			"@/*": ["./src/*"],
 			"@tests/*": ["./tests/*"]
 		}

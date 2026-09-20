@@ -62,7 +62,7 @@ The API uses the `/api/v1` prefix:
 | ------ | ---- | --------- |
 | `GET` | `/health` | `getSchedulerHealth` |
 | `GET` | `/capabilities` | `getCapabilities` |
-| `GET` | `/queue-views` | `listQueueViews` |
+| `GET` | `/queue-views?name=...` (optional exact name filter) | `listQueueViews` |
 | `GET` | `/jobs` | `listJobs` |
 | `GET` | `/jobs/stats` | `getJobStats` |
 | `GET` | `/jobs/{id}` | `getJob` |

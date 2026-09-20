@@ -19,6 +19,80 @@ describe('Jobs route', () => {
 		cleanup();
 	});
 
+	it('sorts on mobile and unmounts columns hidden by responsive breakpoints', async () => {
+		const mediaDefaults = window.matchMedia('');
+		const listeners = new Set<() => void>();
+		let compact = true;
+		const media = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+			...mediaDefaults,
+			media: query,
+			matches: compact,
+			addEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+				if (typeof listener === 'function') listeners.add(() => listener(new Event('change')));
+			},
+			removeEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
+				void listener;
+			},
+		}));
+		try {
+			const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
+			const { router } = await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs' });
+			await screen.findAllByRole('link', { name: /dispatch-webhook/ });
+			expect(
+				screen.queryByRole('columnheader', {
+					name: /Created time|Updated time|Next run|Identifier/,
+				}),
+			).toBeNull();
+			expect(document.querySelectorAll('tbody time')).toHaveLength(0);
+			fireEvent.click(screen.getByRole('combobox', { name: 'Sort by' }));
+			const sortOption = await screen.findByRole('option', { name: 'Updated time' });
+			fireEvent.pointerDown(sortOption, { pointerType: 'mouse' });
+			fireEvent.click(sortOption);
+			await waitFor(() => expect(router.state.location.search.sortBy).toBe('updatedAt'));
+			fireEvent.click(screen.getByRole('combobox', { name: 'Sort direction' }));
+			const directionOption = await screen.findByRole('option', { name: 'Ascending' });
+			fireEvent.pointerDown(directionOption, { pointerType: 'mouse' });
+			fireEvent.click(directionOption);
+			await waitFor(() =>
+				expect(router.state.location.search).toMatchObject({
+					sortBy: 'updatedAt',
+					sortDirection: 'asc',
+				}),
+			);
+			await waitFor(() =>
+				expect(
+					fetchSpy.mock.calls.some(([input]) => {
+						const url = new URL(input instanceof Request ? input.url : String(input));
+						return (
+							url.searchParams.get('sortBy') === 'updatedAt' &&
+							url.searchParams.get('sortDirection') === 'asc'
+						);
+					}),
+				).toBe(true),
+			);
+			await act(async () => {
+				await router.navigate({
+					to: '/jobs',
+					search: (current) => ({ ...parseJobsRouteSearch(current), sortDirection: 'desc' }),
+				});
+			});
+			await act(async () => router.history.back());
+			await waitFor(() =>
+				expect(screen.getByRole('combobox', { name: 'Sort direction' }).textContent).toContain(
+					'Ascending',
+				),
+			);
+			act(() => {
+				compact = false;
+				for (const listener of listeners) listener();
+			});
+			expect(screen.getByRole('columnheader', { name: 'Created time' })).toBeTruthy();
+			expect(document.querySelectorAll('tbody time').length).toBeGreaterThan(0);
+		} finally {
+			media.mockRestore();
+		}
+	});
+
 	it('restores URL-backed filters and sorting into the Jobs table query', async () => {
 		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
 
@@ -442,6 +516,67 @@ describe('Jobs route', () => {
 		expect(
 			(await screen.findByRole('menuitem', { name: 'Cancel job' })).getAttribute('aria-disabled'),
 		).toBe('true');
+	});
+
+	it.each(['filters', 'cursor'] as const)(
+		'dismisses bulk confirmation when browser Back changes %s',
+		async (change) => {
+			const { router } = await renderJobsRoute({
+				fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
+				initialEntry: '/jobs?limit=10',
+			});
+			await screen.findByRole('heading', { name: 'Jobs' });
+			if (change === 'cursor') {
+				const firstRow = getFirstElement(
+					await screen.findAllByRole('checkbox', { name: /^Select job row / }),
+				).getAttribute('aria-label');
+				fireEvent.click(await screen.findByRole('link', { name: 'Next page' }));
+				await waitFor(() =>
+					expect(router.state.location.search.cursor).toEqual(expect.any(String)),
+				);
+				await waitFor(() =>
+					expect(
+						getFirstElement(
+							screen.getAllByRole('checkbox', { name: /^Select job row / }),
+						).getAttribute('aria-label'),
+					).not.toBe(firstRow),
+				);
+			} else {
+				await act(async () =>
+					router.navigate({
+						to: '/jobs',
+						search: parseJobsRouteSearch({ limit: 10, status: ['pending'] }),
+					}),
+				);
+			}
+			fireEvent.click(
+				getFirstElement(await screen.findAllByRole('checkbox', { name: /^Select job row / })),
+			);
+			const deleteButton = screen.getByRole('button', { name: 'Delete selected jobs' });
+			await waitFor(() => expect(deleteButton.hasAttribute('disabled')).toBe(false));
+			fireEvent.click(deleteButton);
+			expect(await screen.findByRole('dialog')).toBeTruthy();
+			await act(async () => router.history.back());
+			await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		},
+	);
+
+	it('preserves an open action confirmation when the Jobs list polls', async () => {
+		const job = createListJob();
+		const fetchState = createJobsActionFetch({ jobs: [job] });
+		await renderJobsRoute({
+			fetch: fetchState.fetch,
+			initialEntry: '/jobs',
+			pollingIntervalMs: 100,
+		});
+		fireEvent.click(
+			getFirstElement(await screen.findAllByRole('checkbox', { name: /^Select job row / })),
+		);
+		fireEvent.click(screen.getByRole('button', { name: 'Delete selected jobs' }));
+		expect(await screen.findByRole('dialog')).toBeTruthy();
+		const reads = fetchState.listRequestCount;
+		await waitFor(() => expect(fetchState.listRequestCount).toBeGreaterThan(reads));
+		expect(screen.getByRole('button', { name: 'Confirm delete selected jobs' })).toBeTruthy();
 	});
 
 	it('deletes only explicitly selected jobs after bulk confirmation and refetches the list', async () => {

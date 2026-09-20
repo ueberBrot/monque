@@ -35,6 +35,8 @@ export {
 	managementContract,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
+	type QueueViewQueryDto,
+	QueueViewQueryDtoSchema,
 	type QueueViewSummaryDto,
 	QueueViewSummaryDtoSchema,
 	type QueueViewSummaryListDto,

@@ -1,7 +1,7 @@
 import type { JobDto } from '@monque/management/contract';
 import JsonView from '@uiw/react-json-view';
-import { AlertTriangle, Copy } from 'lucide-react';
-import type { CSSProperties, ReactElement, ReactNode } from 'react';
+import { AlertTriangle, ChevronDown, Copy } from 'lucide-react';
+import type { ComponentProps, CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { JobStatusBadge } from '@/components/job-status-badge';
 import { JobTimestamp } from '@/components/job-timestamp';
@@ -25,6 +25,7 @@ type JobDetailViewProps = {
 };
 
 type MetadataItem = readonly [label: string, value: ReactNode];
+const MAX_INITIAL_PAYLOAD_ENTRIES = 100;
 
 function JobDetailView({ actions, job }: JobDetailViewProps): ReactElement {
 	const operatorTimeZone = getOperatorTimeZoneLabel();
@@ -56,7 +57,7 @@ function JobDetailView({ actions, job }: JobDetailViewProps): ReactElement {
 			</header>
 
 			<section className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border py-4 xl:grid-cols-4">
-				<SummaryTile label="Attempts" value={String(getJobAttemptCount(job.failCount))} />
+				<SummaryTile label="Attempts since reset" value={String(getJobAttemptCount(job))} />
 				<SummaryTile label="Failed attempts" value={String(job.failCount)} />
 				<SummaryTile label={getJobRunLabel(job)} value={<JobTimestamp value={job.nextRunAt} />} />
 				<SummaryTile
@@ -154,6 +155,8 @@ function renderPayload(payload: unknown): ReactElement {
 			<div className="max-w-full overflow-x-auto rounded-lg border border-border bg-background/70 p-3">
 				<JsonView
 					value={payload}
+					collapsed={Object.keys(payload).length > MAX_INITIAL_PAYLOAD_ENTRIES ? 0 : 1}
+					components={jsonViewComponents}
 					displayDataTypes={false}
 					enableClipboard={false}
 					style={jsonViewTheme}
@@ -168,6 +171,26 @@ function renderPayload(payload: unknown): ReactElement {
 		</pre>
 	);
 }
+
+function JsonExpandButton({
+	'data-expand': expanded = false,
+	className,
+	...props
+}: ComponentProps<'button'> & { readonly 'data-expand'?: boolean }) {
+	return (
+		<button
+			{...props}
+			type="button"
+			aria-expanded={expanded}
+			aria-label={expanded ? 'Collapse JSON value' : 'Expand JSON value'}
+			className={cn('mr-1 rounded focus-visible:outline-2 focus-visible:outline-ring', className)}
+		>
+			<ChevronDown className="size-3" />
+		</button>
+	);
+}
+
+const jsonViewComponents = { arrow: <JsonExpandButton /> };
 
 function SummaryTile({
 	label,

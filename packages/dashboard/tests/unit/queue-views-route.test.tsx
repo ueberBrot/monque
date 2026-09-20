@@ -46,6 +46,19 @@ describe('Queue Views routes', () => {
 		expect(await screen.findByRole('heading', { name: 'Filtered jobs' })).toBeTruthy();
 		expect(calls.some((url) => url.includes('/jobs/stats'))).toBe(false);
 		expect(calls.some((url) => new URL(url).searchParams.get('view') === 'summary')).toBe(true);
+		expect(calls.filter((url) => new URL(url).pathname === '/api/v1/queue-views')).toEqual([
+			'https://dashboard.test/api/v1/queue-views?name=send-email',
+		]);
+	});
+
+	it('offers another queue page only while more jobs exist', async () => {
+		renderDashboardAt('/queue-views/send-email?limit=4');
+
+		fireEvent.click(await screen.findByRole('link', { name: 'Next page' }));
+
+		expect(await screen.findByRole('link', { name: 'Back to first page' })).toBeTruthy();
+		expect(screen.getByText('4 jobs on this page')).toBeTruthy();
+		expect(screen.queryByRole('link', { name: 'Next page' })).toBeNull();
 	});
 
 	it('stops automatic requests after authorization is denied', async () => {

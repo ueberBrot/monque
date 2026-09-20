@@ -76,6 +76,77 @@ describe('Job detail route', () => {
 		expect(screen.getByText('This job has no payload.')).toBeTruthy();
 	});
 
+	it.each(['nested', 'array', 'object'])(
+		'opens %s payloads on demand while copying their complete contents',
+		async (shape) => {
+			const records = Array.from({ length: 200 }, (_, id) => ({ name: `payload-record-${id}` }));
+			const payload =
+				shape === 'nested'
+					? { records }
+					: shape === 'array'
+						? records
+						: Object.fromEntries(records.map((record, index) => [String(index), record]));
+			const job = createJobDetail({ payload });
+			const clipboardWriteText = installClipboardSpy();
+			await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
+			await screen.findByRole('heading', { name: job.name });
+			expect(screen.queryByText(/payload-record-199/)).toBeNull();
+			fireEvent.click(screen.getByRole('button', { name: 'Copy payload' }));
+			await waitFor(() =>
+				expect(clipboardWriteText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2)),
+			);
+			fireEvent.click(screen.getByRole('button', { name: 'Expand JSON value' }));
+			const expansionButtons = screen.getAllByRole('button', { name: 'Expand JSON value' });
+			const lastRecord = expansionButtons.at(-1);
+			if (!lastRecord) throw new Error('Expected the final payload record to be expandable');
+			fireEvent.click(lastRecord);
+			expect(screen.getByText(/payload-record-199/)).toBeTruthy();
+		},
+	);
+
+	it.each([
+		['new pending job', 'pending', 0, undefined, 0],
+		['pending retry after backoff', 'pending', 2, undefined, 2],
+		['failed job', 'failed', 2, undefined, 2],
+		['processing retry', 'processing', 2, undefined, 3],
+		['completed retry', 'completed', 2, undefined, 3],
+		['cancelled retry', 'cancelled', 2, undefined, 2],
+		['recurring job after its successful run', 'pending', 0, '*/15 * * * *', 0],
+	] satisfies ReadonlyArray<
+		readonly [string, JobDto['status'], number, string | undefined, number]
+	>)(
+		'shows attempts since reset for a %s',
+		async (_description, status, failCount, repeatInterval, attempts) => {
+			const job = createJobDetail({ status, failCount, repeatInterval });
+			await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
+			const label = await screen.findByText('Attempts since reset');
+			expect(label.parentElement?.textContent).toBe(`Attempts since reset${attempts}`);
+		},
+	);
+
+	it('resets displayed attempts after manually retrying a failed job', async () => {
+		let job = createJobDetail({ status: 'failed', failCount: 2 });
+		await renderJobDetailRoute({
+			jobId: job.id,
+			fetch: async (input, init) => {
+				const request = new Request(input, init);
+				if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/actions/retry')) {
+					job = { ...job, status: 'pending', failCount: 0 };
+					return createJsonResponse(job);
+				}
+				return createJobDetailFetch(job)(request);
+			},
+		});
+		const label = await screen.findByText('Attempts since reset');
+		expect(label.parentElement?.textContent).toBe('Attempts since reset2');
+		fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+		await waitFor(() => {
+			expect(screen.getByText('Attempts since reset').parentElement?.textContent).toBe(
+				'Attempts since reset0',
+			);
+		});
+	});
+
 	it.each(['Delete job', 'Reschedule'])(
 		'clears an open %s confirmation when returning to a cached job',
 		async (action) => {

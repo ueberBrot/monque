@@ -433,6 +433,7 @@ describe('oRPC Management read routes', () => {
 	});
 
 	test('lists Queue Views through the public scheduler summary API', async () => {
+		const scopes: Array<{ name?: string } | undefined> = [];
 		const queueViews = [
 			{
 				name: 'send-email',
@@ -469,11 +470,15 @@ describe('oRPC Management read routes', () => {
 		] satisfies QueueViewSummary[];
 		const surface = createManagementSurface({
 			monque: createManagementMonque({
-				getQueueViewSummaries: async () => queueViews,
+				getQueueViewSummaries: async (filter?: { name?: string }) => {
+					scopes.push(filter);
+					return queueViews;
+				},
 			}),
 		});
 
 		const response = await handleManagementGet(surface, '/api/v1/queue-views');
+		expect(scopes).toEqual([undefined]);
 
 		await expectJsonResponse(response, 200, {
 			queueViews: [
@@ -511,6 +516,30 @@ describe('oRPC Management read routes', () => {
 				},
 			],
 		});
+	});
+
+	test('passes the Queue View name filter to core and filters legacy scheduler summaries', async () => {
+		const scopes: Array<{ name?: string } | undefined> = [];
+		const summary = (name: string): QueueViewSummary => ({
+			name,
+			hasPersistedJobs: false,
+			hasRegisteredWorker: true,
+			stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+			worker: { concurrency: 1, activeCount: 0 },
+		});
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async (filter?: { name?: string }) => {
+					scopes.push(filter);
+					return [summary('alpha'), summary('beta')];
+				},
+			}),
+		});
+		const response = await handleManagementGet(surface, '/api/v1/queue-views?name=beta');
+		await expectJsonResponse(response, 200, { queueViews: [summary('beta')] });
+		expect(scopes).toEqual([{ name: 'beta' }]);
+		const missing = await handleManagementGet(surface, '/api/v1/queue-views?name=missing');
+		await expectJsonResponse(missing, 200, { queueViews: [] });
 	});
 
 	test('returns Job statistics through the public scheduler stats API', async () => {

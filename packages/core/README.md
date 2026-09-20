@@ -121,7 +121,7 @@ Pass a connected MongoDB database and any scheduler options you want to override
 - `getJobs(filter)` - List jobs
 - `getJobsWithCursor(options)` - Paginated list
 - `getQueueStats(filter?)` - Queue statistics
-- `getQueueViewSummaries()` - Job counts and worker activity grouped by name
+- `getQueueViewSummaries({ name }?)` - Job counts and worker activity, optionally scoped to one name
 - `cancelJob(id)` - Cancel a job
 - `retryJob(id)` - Retry a job
 - `rescheduleJob(id, date)` - Reschedule a job

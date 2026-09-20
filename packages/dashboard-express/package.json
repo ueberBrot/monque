@@ -55,7 +55,6 @@
 		"pretest": "bun run type-check",
 		"test": "vitest run --config vitest.config.ts",
 		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
-		"test:integration": "bun run type-check && vitest run integration/ --coverage.enabled=false",
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"lint": "biome check ."

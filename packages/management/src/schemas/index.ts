@@ -45,6 +45,8 @@ export {
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
+	type QueueViewQueryDto,
+	QueueViewQueryDtoSchema,
 	type QueueViewSummaryDto,
 	QueueViewSummaryDtoSchema,
 	type QueueViewSummaryListDto,

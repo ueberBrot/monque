@@ -52,6 +52,44 @@ describe('Management APIs: Queue View Summaries', () => {
 	}
 
 	describe('getQueueViewSummaries', () => {
+		test('filters persisted and worker-only names with isolated caches and mutation invalidation', async () => {
+			const monque = new Monque(db, {
+				collectionName: uniqueCollectionName('filtered_views'),
+				statsCacheTtlMs: 60_000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+			const job = await monque.enqueue('alpha', {});
+			await monque.enqueue('beta', {});
+			monque.register('worker-only', async () => undefined);
+			expect(await monque.getQueueViewSummaries()).toHaveLength(3);
+			expect(await monque.getQueueViewSummaries({ name: 'alpha' })).toMatchObject([
+				{
+					name: 'alpha',
+					hasPersistedJobs: true,
+					hasRegisteredWorker: false,
+					stats: { pending: 1 },
+				},
+			]);
+			expect(await monque.getQueueViewSummaries({ name: 'beta' })).toMatchObject([
+				{ name: 'beta' },
+			]);
+			expect(await monque.getQueueViewSummaries({ name: 'worker-only' })).toMatchObject([
+				{
+					name: 'worker-only',
+					hasPersistedJobs: false,
+					hasRegisteredWorker: true,
+					stats: { total: 0 },
+				},
+			]);
+			expect(await monque.getQueueViewSummaries({ name: 'missing' })).toEqual([]);
+			await monque.cancelJob(job._id.toHexString());
+			expect(await monque.getQueueViewSummaries({ name: 'alpha' })).toMatchObject([
+				{ name: 'alpha', stats: { pending: 0, cancelled: 1 } },
+			]);
+			expect(await monque.getQueueViewSummaries()).toHaveLength(3);
+		});
+
 		test('cached counts remain isolated, workers stay fresh, and mutations invalidate snapshots', async () => {
 			const monque = new Monque(db, {
 				collectionName: uniqueCollectionName('cached_views'),

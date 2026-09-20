@@ -612,14 +612,23 @@ export class JobQueryService {
 	 * Summaries are sorted by Job Name and contain immutable statistics and Worker
 	 * observability snapshots.
 	 */
-	async getQueueViewSummaries(): Promise<readonly QueueViewSummary[]> {
+	async getQueueViewSummaries(
+		filter?: Pick<JobSelector, 'name'>,
+	): Promise<readonly QueueViewSummary[]> {
+		const nameFilter = filter?.name;
 		const persistedStats = await this.queueViewCache.get(
-			'all',
+			JSON.stringify(nameFilter ?? null),
 			this.ctx.options.statsCacheTtlMs,
-			() => this.loadQueueViewStats(),
+			() => this.loadQueueViewStats(nameFilter),
 		);
 
-		const names = new Set([...persistedStats.keys(), ...this.ctx.workers.keys()]);
+		const workerNames =
+			nameFilter === undefined
+				? this.ctx.workers.keys()
+				: this.ctx.workers.has(nameFilter)
+					? [nameFilter]
+					: [];
+		const names = new Set([...persistedStats.keys(), ...workerNames]);
 		const summaries = [...names]
 			.sort((a, b) => a.localeCompare(b))
 			.map((name): QueueViewSummary => {
@@ -642,13 +651,14 @@ export class JobQueryService {
 
 		return Object.freeze(summaries);
 	}
-	private async loadQueueViewStats(): Promise<ReadonlyMap<string, QueueStats>> {
+	private async loadQueueViewStats(name?: string): Promise<ReadonlyMap<string, QueueStats>> {
 		const persistedStats = new Map<string, QueueStats>();
 
 		try {
 			const results = await this.ctx.collection
 				.aggregate<QueueViewStatsDocument>(
 					[
+						...(name === undefined ? [] : [{ $match: { name } }]),
 						{
 							$group: {
 								_id: '$name',

@@ -167,5 +167,9 @@ worker's `concurrency` and `activeCount` when registered. Names are sorted alpha
 A name can appear with historical jobs but no worker, or with a registered worker and no
 persisted jobs.
 
+Pass `{ name: 'send-email' }` to scope the database aggregation and result to one exact
+Job Name. Unknown names return an empty list; registered-worker-only names remain visible.
+Filtered statistics use separate cache entries from the unfiltered overview.
+
 Counts cover the MongoDB collection. Worker activity describes only the instance on which
 you called the method, not all schedulers connected to that collection.

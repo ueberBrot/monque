@@ -392,13 +392,19 @@ test.describe('Operator timezone', () => {
 	test('queue views, jobs, details and rescheduling use the same local timestamp', async ({
 		page,
 		app,
+		isMobile,
 	}) => {
 		const job = await app.seed({ nextRunAt: new Date('2035-06-01T10:00:00Z') });
 		await page.goto(`${app.base}/dashboard/queue-views/email`);
 		await expect(page.getByText(/Times in America\/New_York/)).toBeVisible();
 		await expect(page.locator('tbody tr').first()).toContainText('Jun 1, 2035 at 06:00:00');
 		await page.goto(`${app.base}/dashboard/jobs`);
-		await expect(page.locator('tbody tr').first()).toContainText('Jun 1, 2035 at 06:00:00');
+		if (isMobile) {
+			// Compact rows show only the relative created time; date columns are unmounted.
+			await expect(page.locator('tbody time')).toHaveCount(0);
+		} else {
+			await expect(page.locator('tbody tr').first()).toContainText('Jun 1, 2035 at 06:00:00');
+		}
 		await page.goto(`${app.base}/dashboard/jobs/${job._id}`);
 		await expect(page.getByText('Jun 1, 2035 at 06:00:00', { exact: true }).first()).toBeVisible();
 		await page.getByRole('button', { name: 'Reschedule', exact: true }).click();

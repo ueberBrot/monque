@@ -10,8 +10,10 @@ type JobDetailState = {
 	readonly title: string;
 };
 
-function getJobAttemptCount(failCount: number): number {
-	return failCount + 1;
+/** Manual retry and successful recurring runs reset the failure counter. */
+function getJobAttemptCount(job: Pick<JobDto, 'failCount' | 'status'>): number {
+	const hasCurrentOrSuccessfulAttempt = job.status === 'processing' || job.status === 'completed';
+	return job.failCount + (hasCurrentOrSuccessfulAttempt ? 1 : 0);
 }
 
 function isStructuredPayload(

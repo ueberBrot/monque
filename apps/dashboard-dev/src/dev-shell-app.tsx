@@ -3,13 +3,7 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select';
+import { useAppForm } from '@/forms/form';
 import { createDashboardManagementApi } from '@/management-client';
 import { DashboardProviders } from '@/providers';
 import { createDashboardQueryClient } from '@/query-client';
@@ -34,7 +28,11 @@ function DashboardDevShellApp({
 	);
 
 	useEffect(() => {
-		window.localStorage.setItem(LOCAL_STORAGE_SCENARIO_KEY, scenarioId);
+		try {
+			window.localStorage.setItem(LOCAL_STORAGE_SCENARIO_KEY, scenarioId);
+		} catch {
+			/* Keep the current scenario when storage is unavailable. */
+		}
 	}, [scenarioId]);
 
 	return (
@@ -82,6 +80,11 @@ function DashboardDevOverlay({
 	readonly scenarioId: DashboardDevScenarioId;
 	readonly onScenarioChange: (scenarioId: DashboardDevScenarioId) => void;
 }): ReactElement {
+	const form = useAppForm({ defaultValues: { scenario: scenarioId } });
+	useEffect(() => {
+		form.reset({ scenario: scenarioId });
+	}, [form, scenarioId]);
+
 	return (
 		<Collapsible
 			data-testid="dashboard-dev-shell"
@@ -103,28 +106,31 @@ function DashboardDevOverlay({
 						<>
 							<label htmlFor="dev-scenario" className="flex items-center gap-2">
 								Scenario
-								<Select
-									value={scenarioId}
-									onValueChange={(value) => {
-										if (isDashboardDevScenarioId(value)) onScenarioChange(value);
+								<form.AppField
+									name="scenario"
+									listeners={{
+										onChange: ({ value }) => {
+											if (isDashboardDevScenarioId(value)) onScenarioChange(value);
+										},
 									}}
 								>
-									<SelectTrigger id="dev-scenario" aria-label="Scenario" className="w-48">
-										<SelectValue>
-											{
+									{(field) => (
+										<field.SelectField
+											bare
+											id="dev-scenario"
+											label="Scenario"
+											className="w-48"
+											displayLabel={
 												dashboardDevScenarioOptions.find((scenario) => scenario.id === scenarioId)
-													?.label
+													?.label ?? ''
 											}
-										</SelectValue>
-									</SelectTrigger>
-									<SelectContent>
-										{dashboardDevScenarioOptions.map((scenario) => (
-											<SelectItem key={scenario.id} value={scenario.id}>
-												{scenario.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+											options={dashboardDevScenarioOptions.map((scenario) => ({
+												value: scenario.id,
+												label: scenario.label,
+											}))}
+										/>
+									)}
+								</form.AppField>
 							</label>
 							<span className="text-muted-foreground">
 								Changes last until the development server restarts.
@@ -168,7 +174,12 @@ function getStoredScenarioId(defaultScenarioId: DashboardDevScenarioId): Dashboa
 		return defaultScenarioId;
 	}
 
-	const storedScenarioId = window.localStorage.getItem(LOCAL_STORAGE_SCENARIO_KEY);
+	let storedScenarioId: string | null;
+	try {
+		storedScenarioId = window.localStorage.getItem(LOCAL_STORAGE_SCENARIO_KEY);
+	} catch {
+		return defaultScenarioId;
+	}
 
 	return isDashboardDevScenarioId(storedScenarioId) ? storedScenarioId : defaultScenarioId;
 }

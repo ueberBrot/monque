@@ -42,8 +42,8 @@ export function createManagementRouter<TContext = unknown>(
 		capabilities: managementImplementer.capabilities.handler(({ context }) =>
 			operations.getCapabilities(getOpenApiManagementContext(context, requireContext)),
 		),
-		queueViews: managementImplementer.queueViews.handler(({ context }) =>
-			operations.listQueueViews(getOpenApiManagementContext(context, requireContext)),
+		queueViews: managementImplementer.queueViews.handler(({ input, context }) =>
+			operations.listQueueViews(getOpenApiManagementContext(context, requireContext), input),
 		),
 		jobs: managementImplementer.jobs.handler(({ input, context }) =>
 			operations.listJobs(input, getOpenApiManagementContext(context, requireContext)),

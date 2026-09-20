@@ -92,6 +92,20 @@ describe('Dashboard Express Adapter', () => {
 		expect(response.headers['cache-control']).toContain('immutable');
 	});
 
+	test.each(['/ops/$&', '/ops/$$', '/ops/$`', "/ops/$'", '/ops/</script>'])(
+		'preserves literal runtime config values for %s',
+		async (apiBaseUrl) => {
+			const app = await createDashboardApp({ apiBaseUrl });
+			const response = await request(app).get('/dashboard/jobs').expect(200);
+			const script = response.text.match(
+				/<script id="monque-dashboard-runtime-config">([\s\S]*?)<\/script>/,
+			)?.[1];
+			expect(script).toBeDefined();
+			const config = script?.match(/window\.__MONQUE_DASHBOARD_CONFIG__ = ([\s\S]*);/)?.[1];
+			expect(JSON.parse(config ?? '')).toEqual({ basePath: '/dashboard', apiBaseUrl });
+		},
+	);
+
 	test.each(['/', '/ops/queue'])(
 		'resolves assets from a deep link mounted at %s',
 		async (mountPath) => {

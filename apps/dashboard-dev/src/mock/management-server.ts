@@ -94,9 +94,10 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 		capabilities: managementImplementer.capabilities.handler(
 			({ context }) => getReadableScenario(context).capabilities,
 		),
-		queueViews: managementImplementer.queueViews.handler(({ context }) => ({
+		queueViews: managementImplementer.queueViews.handler(({ input, context }) => ({
 			queueViews: getReadableScenario(context)
-				.queueViews.map((view) => ({
+				.queueViews.filter((view) => input?.name === undefined || view.name === input.name)
+				.map((view) => ({
 					...view,
 					stats: createQueueStats(
 						getReadableScenario(context).jobs.filter((job) => job.name === view.name),
@@ -417,10 +418,10 @@ function getSortAccessor(sortBy: JobListQueryDto['sortBy']): (job: JobDto) => st
 }
 
 function normalizeLimit(limit?: string): number {
-	const parsed = Number.parseInt(limit ?? '50', 10);
+	const parsed = Number(limit ?? '50');
 
-	if (Number.isNaN(parsed) || parsed <= 0) {
-		return 50;
+	if (!Number.isInteger(parsed) || parsed <= 0) {
+		throw new ORPCError('BAD_REQUEST', { message: 'Invalid limit' });
 	}
 
 	return Math.min(parsed, 100);

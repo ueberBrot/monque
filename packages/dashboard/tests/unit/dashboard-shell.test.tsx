@@ -8,13 +8,29 @@ import {
 	RouterProvider,
 } from '@tanstack/react-router';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DashboardShell } from '@/components/dashboard-shell';
 
 describe('DashboardShell', () => {
 	afterEach(() => {
 		cleanup();
+		vi.restoreAllMocks();
+	});
+
+	it('keeps navigation and theme changes working when browser storage is blocked', async () => {
+		vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+			throw new DOMException('Storage blocked', 'SecurityError');
+		});
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('Storage blocked', 'SecurityError');
+		});
+		const router = await renderShell('/jobs');
+		fireEvent.click(getThemeButton());
+		fireEvent.click(screen.getByRole('menuitem', { name: 'Dark theme' }));
+		expect(document.documentElement.classList.contains('dark')).toBe(true);
+		fireEvent.click(screen.getByRole('link', { name: 'Health' }));
+		await waitFor(() => expect(router.state.location.pathname).toBe('/health'));
 	});
 
 	it('renders primary navigation and opens the mobile drawer', async () => {
