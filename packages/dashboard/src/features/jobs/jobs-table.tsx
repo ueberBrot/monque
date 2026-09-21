@@ -113,7 +113,7 @@ function JobsTable({
 			<SelectionFormContext value={selectionForm}>
 				<CompactTableContext value={compact}>
 					<JobsColumnsContext value={options}>
-						<Table className="table-fixed md:min-w-[74rem]">
+						<Table className="table-fixed md:min-w-296">
 							<TableHeader>
 								{table.getHeaderGroups().map((headerGroup) => (
 									<TableRow key={headerGroup.id}>

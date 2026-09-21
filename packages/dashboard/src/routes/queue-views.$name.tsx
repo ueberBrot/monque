@@ -6,14 +6,12 @@ import { z } from 'zod';
 import { QueryFreshness } from '@/components/query-freshness';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
-import { getQueryErrorMessage, isUnauthorizedQueryError } from '@/management-errors';
 
 import {
 	QueueViewDetailHeader,
+	QueueViewDetailLoadingState,
 	QueueViewJobsTable,
 	QueueViewsErrorState,
-	QueueViewsLoadingState,
-	QueueViewsUnauthorizedState,
 } from './-queue-views.shared.js';
 
 const DEFAULT_QUEUE_VIEW_JOBS_LIMIT = 50;
@@ -26,6 +24,7 @@ const QueueViewDetailSearchSchema = z.strictObject({
 export const Route = createFileRoute('/queue-views/$name')({
 	validateSearch: (search) => QueueViewDetailSearchSchema.parse(search),
 	component: QueueViewDetailRoute,
+	pendingComponent: QueueViewDetailLoadingState,
 });
 
 function QueueViewDetailRoute() {
@@ -54,28 +53,17 @@ function QueueViewDetailRoute() {
 	}, [jobsQuery.refetch, queueViewsQuery.refetch]);
 
 	if (queueViewsQuery.isPending || jobsQuery.isPending) {
-		return <QueueViewsLoadingState />;
+		return <QueueViewDetailLoadingState />;
 	}
 
 	const firstError = queueViewsQuery.error ?? jobsQuery.error;
 
 	if (firstError) {
-		if (isUnauthorizedQueryError(firstError)) {
-			return (
-				<QueueViewsUnauthorizedState
-					heading={`${name} requires sign-in`}
-					message={getQueryErrorMessage(firstError, 'Sign in to inspect this Queue View.')}
-				/>
-			);
-		}
-
 		return (
 			<QueueViewsErrorState
 				heading={`${name} failed to load`}
-				message={getQueryErrorMessage(
-					firstError,
-					'Refresh the route or confirm the Management API is reachable.',
-				)}
+				error={firstError}
+				fetching={queueViewsQuery.isFetching || jobsQuery.isFetching}
 				onRetry={refetchQueueViewDetail}
 			/>
 		);
@@ -85,7 +73,7 @@ function QueueViewDetailRoute() {
 	const jobsPage = jobsQuery.data;
 
 	if (!queueViews || !jobsPage) {
-		return <QueueViewsLoadingState />;
+		return <QueueViewDetailLoadingState />;
 	}
 
 	const queueView = queueViews.find((candidate) => candidate.name === name);

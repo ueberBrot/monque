@@ -43,7 +43,7 @@ function getJobActionFeedbackToneClassName(tone: JobActionFeedbackTone): string 
 		case 'success':
 			return 'bg-primary/10 text-foreground';
 		case 'warning':
-			return 'bg-amber-500/10 text-amber-900 dark:text-amber-200';
+			return 'bg-warning/10 text-warning-foreground-strong';
 	}
 }
 

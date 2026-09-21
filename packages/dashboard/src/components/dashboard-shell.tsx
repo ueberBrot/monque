@@ -156,7 +156,7 @@ function DashboardShell({ children }: { readonly children: ReactNode }): ReactEl
 									/>
 									<DialogContent
 										showCloseButton={false}
-										className="top-0 right-0 bottom-0 left-auto flex h-dvh w-[20rem] translate-x-0 translate-y-0 flex-col rounded-none border-l border-border p-0"
+										className="top-0 right-0 bottom-0 left-auto flex h-dvh w-80 translate-x-0 translate-y-0 flex-col rounded-none border-l border-border p-0"
 									>
 										<div className="border-b border-border px-5 py-4">
 											<div className="flex items-center justify-between gap-2">
@@ -196,7 +196,7 @@ function DashboardShell({ children }: { readonly children: ReactNode }): ReactEl
 						tabIndex={-1}
 						className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 outline-none sm:px-6 lg:px-8 lg:py-8"
 					>
-						<div className="mx-auto w-full max-w-[96rem]">{children}</div>
+						<div className="mx-auto w-full max-w-384">{children}</div>
 					</main>
 				</div>
 			</div>

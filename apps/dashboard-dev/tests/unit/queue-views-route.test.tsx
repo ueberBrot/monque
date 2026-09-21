@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 
 import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createDashboardManagementApi } from '@/management-client';
-import { DashboardProviders } from '@/providers';
-import { createDashboardQueryClient } from '@/query-client';
-import { getRouter } from '@/router';
+import { createDashboardHarness } from '../setup/dashboard-harness.js';
 
 describe('Queue Views routes', () => {
 	it('renders Queue Views from the Management API on the overview route', async () => {
@@ -67,10 +64,34 @@ describe('Queue Views routes', () => {
 				return Response.json({ error: 'Sign in' }, { status: 401 });
 			},
 		});
-		await screen.findByRole('heading', { name: /sign-in/i });
+		await screen.findByRole('heading', { name: 'Authentication required' });
 		await pause(180);
 		expect(requests).toBe(1);
 	});
+
+	it.each(['/queue-views', '/queue-views/send-email'])(
+		'distinguishes forbidden access and recovers without navigation on %s',
+		async (path) => {
+			let denied = true;
+			const mockFetch = createMockManagementFetch({ scenarioId: 'pending-jobs' });
+			renderDashboardAt(path, {
+				fetch: (input, init) =>
+					denied
+						? Promise.resolve(Response.json({ error: 'Host permission denied.' }, { status: 403 }))
+						: mockFetch(input, init),
+			});
+			expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeTruthy();
+			expect(screen.getByRole('alert').textContent).toContain('Host permission denied.');
+			denied = false;
+			fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+			expect(
+				await screen.findByRole('heading', {
+					name: path === '/queue-views' ? 'Queue Views' : 'Filtered jobs',
+				}),
+			).toBeTruthy();
+			expect(window.location.pathname).toBe(path);
+		},
+	);
 
 	it('polls while visible and pauses polling while the document is hidden', async () => {
 		const calls: string[] = [];
@@ -117,31 +138,10 @@ function renderDashboardAt(
 		readonly scenarioId?: 'pending-jobs' | 'unauthorized';
 	},
 ): void {
-	Object.defineProperty(window, 'scrollTo', {
-		configurable: true,
-		value: () => undefined,
-	});
-	window.history.replaceState({}, '', pathname);
-
-	const managementApi = createDashboardManagementApi({
-		apiBaseUrl: '/',
-		fetch:
-			options?.fetch ??
-			createMockManagementFetch({ scenarioId: options?.scenarioId ?? 'pending-jobs' }),
-		origin: 'https://dashboard.test',
-	});
-	const queryClient = createDashboardQueryClient();
-	const router = getRouter({
-		managementApi,
-		queryClient,
-		runtimeConfig: {
-			apiBaseUrl: '/',
-			basePath: '/',
-			pollingIntervalMs: options?.pollingIntervalMs ?? 15_000,
-		},
-	});
-
-	render(<DashboardProviders queryClient={queryClient} router={router} />);
+	createDashboardHarness(pathname, {
+		...options,
+		pollingIntervalMs: options?.pollingIntervalMs ?? 15_000,
+	}).render();
 }
 
 function setDocumentVisibilityState(state: 'hidden' | 'visible'): void {

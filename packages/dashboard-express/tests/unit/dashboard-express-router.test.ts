@@ -169,6 +169,19 @@ describe('Dashboard Express Adapter', () => {
 		expect(response.text).not.toContain('"pollingIntervalMs"');
 	});
 
+	test.each(['http://[', 'javascript:alert(1)', '   '])(
+		'forwards invalid API base URL %j to the host error handler',
+		async (apiBaseUrl) => {
+			const app = await createDashboardApp({ apiBaseUrl: () => apiBaseUrl });
+			app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+				res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+			});
+			const response = await request(app).get('/dashboard/jobs').expect(500);
+			expect(response.text).toContain('apiBaseUrl');
+			expect(response.text).not.toContain('<div id="app">');
+		},
+	);
+
 	test('forwards resolver errors and skips SPA fallback for non-GET requests', async () => {
 		const app = await createDashboardApp({
 			apiBaseUrl: () => {

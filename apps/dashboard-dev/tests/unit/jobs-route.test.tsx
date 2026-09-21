@@ -2,15 +2,12 @@
 
 import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
 import type { CapabilitiesDto, JobDto } from '@monque/management/contract';
-import { createMemoryHistory } from '@tanstack/react-router';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
-import { createDashboardManagementApi } from '@/management-client';
-import { DashboardProviders } from '@/providers';
-import { createDashboardQueryClient } from '@/query-client';
-import { getRouter } from '@/router';
+
+import { createDashboardHarness } from '../setup/dashboard-harness.js';
 
 describe('Jobs route', () => {
 	afterEach(() => {
@@ -638,30 +635,14 @@ async function renderJobsRoute({
 	readonly initialEntry: string;
 	readonly pollingIntervalMs?: number;
 }) {
-	const runtimeConfig = {
-		apiBaseUrl: '/',
-		basePath: '/',
-		...(pollingIntervalMs === undefined ? {} : { pollingIntervalMs }),
-	} as const;
-	const managementApi = createDashboardManagementApi({
-		apiBaseUrl: runtimeConfig.apiBaseUrl,
+	const dashboard = createDashboardHarness(initialEntry, {
 		fetch: fetchImplementation,
-		origin: 'https://dashboard.test',
+		history: 'memory',
+		...(pollingIntervalMs === undefined ? {} : { pollingIntervalMs }),
 	});
-	const queryClient = createDashboardQueryClient();
-	const router = getRouter(
-		{ managementApi, queryClient, runtimeConfig },
-		{
-			history: createMemoryHistory({
-				initialEntries: [initialEntry],
-			}),
-		},
-	);
-
-	await router.load();
-	render(<DashboardProviders queryClient={queryClient} router={router} />);
-
-	return { router };
+	await dashboard.router.load();
+	dashboard.render();
+	return { router: dashboard.router };
 }
 
 function createForbiddenFetch(): typeof fetch {

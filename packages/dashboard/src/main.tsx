@@ -1,15 +1,7 @@
 import ReactDOM from 'react-dom/client';
 
-import { createDashboardManagementApi } from './management-client.js';
-import { DashboardProviders } from './providers.js';
-import { createDashboardQueryClient } from './query-client.js';
-import { getRouter } from './router.js';
-import { readDashboardRuntimeConfig } from './runtime-config.js';
+import { createDashboardContent } from './bootstrap.js';
 
-const runtimeConfig = readDashboardRuntimeConfig();
-const managementApi = createDashboardManagementApi(runtimeConfig);
-const queryClient = createDashboardQueryClient();
-const router = getRouter({ managementApi, queryClient, runtimeConfig });
 const rootElement = document.getElementById('app');
 
 if (!rootElement) {
@@ -18,5 +10,5 @@ if (!rootElement) {
 
 if (!rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);
-	root.render(<DashboardProviders queryClient={queryClient} router={router} />);
+	root.render(createDashboardContent(window.__MONQUE_DASHBOARD_CONFIG__));
 }

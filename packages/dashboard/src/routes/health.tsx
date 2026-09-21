@@ -1,10 +1,11 @@
 import type { CapabilitiesDto, SchedulerHealthDto } from '@monque/management/contract';
 import { useQueries } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { AlertTriangle, CheckCircle2, Lock, RefreshCw, ShieldX } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { listDashboardCapabilityStates } from '@/capabilities';
+import { DashboardState, RetryButton } from '@/components/dashboard-state';
 import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
 import { cn } from '@/lib/utils';
-import { type DashboardApiErrorState, resolveDashboardApiErrorState } from '@/management-errors';
+import { resolveDashboardApiErrorState } from '@/management-errors';
 
 export const Route = createFileRoute('/health')({
 	component: HealthRoute,
+	pendingComponent: HealthRoutePendingState,
 });
 
 const HEALTH_PANEL_CLASS_NAME = 'rounded-lg border border-border bg-card p-5';
@@ -47,7 +49,18 @@ function HealthRoute() {
 	const error = healthQuery.error ?? capabilitiesQuery.error;
 
 	if (error) {
-		return <HealthRouteErrorState error={error} />;
+		const state = resolveDashboardApiErrorState(error);
+		return (
+			<DashboardState {...state}>
+				<RetryButton
+					fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
+					onRetry={() => {
+						void healthQuery.refetch();
+						void capabilitiesQuery.refetch();
+					}}
+				/>
+			</DashboardState>
+		);
 	}
 
 	if (healthQuery.isPending || capabilitiesQuery.isPending) {
@@ -186,45 +199,36 @@ function HealthRouteContent({
 
 function HealthRoutePendingState() {
 	return (
-		<section className="grid gap-6">
-			<div className="grid gap-2">
+		<section role="status" aria-label="Loading Health…" className="grid min-w-0 gap-6">
+			<div className="grid min-w-0 gap-2">
 				<Skeleton className="h-8 w-24" />
-				<Skeleton className="h-4 w-[24rem] max-w-full" />
+				<Skeleton className="h-4 w-full max-w-96" />
 			</div>
-			<div className="grid gap-4">
-				<div className="grid gap-4 lg:grid-cols-3">
+			<div className="grid min-w-0 gap-4">
+				<div className="grid min-w-0 gap-4 lg:grid-cols-3">
 					{Array.from({ length: SUMMARY_SKELETON_CARD_COUNT }, (_, index) => (
 						<HealthPanel key={String(index)}>
 							<Skeleton className="h-4 w-20" />
 							<Skeleton className="mt-4 h-6 w-40" />
-							<Skeleton className="mt-3 h-4 w-full" />
+							<Skeleton className="mt-3 h-10 w-full" />
 						</HealthPanel>
 					))}
 				</div>
-				<HealthPanel>
-					<Skeleton className="h-4 w-20" />
-					<Skeleton className="mt-4 h-5 w-36" />
-					<Skeleton className="mt-4 h-4 w-full" />
-					<Skeleton className="mt-2 h-4 w-3/4" />
-				</HealthPanel>
-			</div>
-		</section>
-	);
-}
-
-function HealthRouteErrorState({ error }: { readonly error: unknown }) {
-	const state = resolveDashboardApiErrorState(error);
-	const presentation = getErrorTonePresentation(state.tone);
-
-	return (
-		<section className={cn('rounded-lg border p-6', presentation.className)}>
-			<div className="flex items-start gap-3">
-				{presentation.icon}
-				<div className="grid gap-2">
-					<h1 className="text-lg font-semibold">{state.title}</h1>
-					<p className="max-w-prose text-sm">{state.description}</p>
+				<div className="rounded-lg border border-border bg-card px-5 py-3">
+					<Skeleton className="h-9 w-full" />
 				</div>
 			</div>
+			<HealthPanel>
+				<Skeleton className="h-7 w-40" />
+				<Skeleton className="mt-2 h-5 w-72 max-w-full" />
+				<div className="mt-5 grid gap-x-6 sm:grid-cols-2">
+					{[0, 1, 2, 3, 4, 5, 6, 7].map((row) => (
+						<div key={row} className="border-t border-border py-3">
+							<Skeleton className="h-5 w-full" />
+						</div>
+					))}
+				</div>
+			</HealthPanel>
 		</section>
 	);
 }
@@ -283,7 +287,7 @@ function HealthDefinition({
 	readonly children: ReactNode;
 }) {
 	return (
-		<div className="grid gap-1">
+		<div className="grid min-w-0 gap-1">
 			<dt className={HEALTH_SECTION_LABEL_CLASS_NAME}>{term}</dt>
 			<dd className="text-sm">{children}</dd>
 		</div>
@@ -332,24 +336,6 @@ function getManagementModeSummary(capabilities: CapabilitiesDto): HealthSummaryC
 		badgeVariant: 'outline',
 		icon: <Lock className="size-4" />,
 	};
-}
-
-function getErrorTonePresentation(tone: DashboardApiErrorState['tone']): {
-	readonly className: string;
-	readonly icon: ReactNode;
-} {
-	switch (tone) {
-		case 'warning':
-			return {
-				className: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-				icon: <AlertTriangle className="mt-0.5 size-4 shrink-0" />,
-			};
-		case 'danger':
-			return {
-				className: 'border-destructive/30 bg-destructive/10 text-destructive',
-				icon: <ShieldX className="mt-0.5 size-4 shrink-0" />,
-			};
-	}
 }
 
 function formatPollingInterval(pollingIntervalMs: number | undefined): string {

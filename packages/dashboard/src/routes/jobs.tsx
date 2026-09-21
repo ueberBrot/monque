@@ -2,12 +2,13 @@ import type { JobDto } from '@monque/management/contract';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { createFileRoute, Outlet, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import type { RowSelectionState } from '@tanstack/react-table';
-import { AlertCircle } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { ButtonLink } from '@/components/button-link';
+import { DashboardState, RetryButton } from '@/components/dashboard-state';
 import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
 import {
@@ -30,16 +31,15 @@ import { type JobsColumnsOptions, JobsTable } from '@/features/jobs/jobs-table';
 import { useJobsActionMutation } from '@/features/jobs/use-jobs-action-mutation';
 import { getOperatorTimeZoneLabel, toDateTimeLocalValue } from '@/lib/dates';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
-import { cn } from '@/lib/utils';
-import { readManagementError } from '@/management-errors';
+import { resolveDashboardApiErrorState } from '@/management-errors';
 
 export const Route = createFileRoute('/jobs')({
 	validateSearch: parseJobsRouteSearch,
 	component: JobsRoute,
+	pendingComponent: JobsPending,
 });
 
 const EMPTY_JOBS: JobDto[] = [];
-type JobsStateVariant = 'danger' | 'default' | 'warning';
 
 function JobsRoute() {
 	const matchRoute = useMatchRoute();
@@ -51,13 +51,7 @@ function JobsListRoute() {
 	const navigate = useNavigate({ from: Route.fullPath });
 	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
 	const [feedback, setFeedback] = useState<JobActionFeedback | null>(null);
-	const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
-	const searchIdentity = JSON.stringify(search);
-	const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
-	if (searchIdentity !== previousSearchIdentity) {
-		setPreviousSearchIdentity(searchIdentity);
-		setDialogState(null);
-	}
+	const { dialogState, setDialogState } = useJobActionDialog(search);
 
 	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
 	const debouncedName = useDebouncedJobName(search.name);
@@ -149,13 +143,20 @@ function JobsListRoute() {
 	}
 
 	if (jobsQuery.isPending || capabilitiesQuery.isPending) {
-		return <JobsStatePanel description="Loading jobs from the Management API." title="Jobs" />;
+		return <JobsPending />;
 	}
 
 	const error = jobsQuery.error ?? capabilitiesQuery.error;
 
 	if (error) {
-		return <JobsErrorPanel error={error} onRetry={handleRefresh} onClearFilters={clearFilters} />;
+		return (
+			<JobsErrorPanel
+				error={error}
+				fetching={jobsQuery.isFetching || capabilitiesQuery.isFetching}
+				onRetry={handleRefresh}
+				onClearFilters={clearFilters}
+			/>
+		);
 	}
 
 	return (
@@ -189,7 +190,7 @@ function JobsListRoute() {
 				/>
 
 				{jobs.length === 0 ? (
-					<JobsStatePanel
+					<DashboardState
 						description="No jobs matched the current cursor and filters. Clear the filters or refresh the view."
 						title="No jobs found"
 					/>
@@ -222,6 +223,18 @@ function JobsListRoute() {
 			/>
 		</section>
 	);
+}
+
+function useJobActionDialog(search: JobsRouteSearch) {
+	const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
+	const searchIdentity = JSON.stringify(search);
+	const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
+	if (searchIdentity !== previousSearchIdentity) {
+		setPreviousSearchIdentity(searchIdentity);
+		setDialogState(null);
+	}
+
+	return { dialogState, setDialogState };
 }
 
 function useJobsSelection(jobs: readonly JobDto[]) {
@@ -376,80 +389,25 @@ function JobsPagination({
 
 function JobsErrorPanel({
 	error,
+	fetching,
 	onRetry,
 	onClearFilters,
 }: {
 	readonly error: unknown;
+	readonly fetching: boolean;
 	readonly onRetry: () => void;
 	readonly onClearFilters: () => void;
 }) {
-	const { status, message } = readManagementError(error);
-
-	switch (status) {
-		case 401:
-			return (
-				<JobsStatePanel
-					title="Sign in required"
-					description={message ?? 'Your session is missing or expired for the Management API.'}
-					variant="warning"
-				/>
-			);
-		case 403:
-			return (
-				<JobsStatePanel
-					title="Access denied"
-					description={
-						message ?? 'Your account can reach the dashboard shell, but not the Jobs view.'
-					}
-					variant="warning"
-				/>
-			);
-		default:
-			return (
-				<JobsStatePanel
-					title="Jobs failed to load"
-					description={message ?? 'Refresh the view or confirm the Management API is reachable.'}
-					variant="danger"
-				>
-					<div className="flex flex-wrap gap-2">
-						<Button variant="outline" onClick={onRetry}>
-							Retry
-						</Button>
-						<Button variant="outline" onClick={onClearFilters}>
-							Clear filters
-						</Button>
-					</div>
-				</JobsStatePanel>
-			);
-	}
-}
-
-function JobsStatePanel({
-	children,
-	description,
-	title,
-	variant = 'default',
-}: {
-	readonly children?: ReactNode;
-	readonly description: string;
-	readonly title: string;
-	readonly variant?: JobsStateVariant;
-}) {
+	const state = resolveDashboardApiErrorState(error, 'jobs');
 	return (
-		<section
-			className={cn('grid gap-2 rounded-xl border p-6', getJobsStatePanelClassName(variant))}
-		>
-			<div className="flex items-start gap-3">
-				<AlertCircle className="mt-0.5 size-4 shrink-0" />
-				<div className="grid gap-1">
-					<h1 className="text-lg font-semibold">{title}</h1>
-					<p className={cn('text-sm', variant === 'default' && 'text-muted-foreground')}>
-						{description}
-					</p>
-				</div>
-			</div>
-			{children}
-		</section>
+		<DashboardState {...state}>
+			<RetryButton onRetry={onRetry} fetching={fetching} />
+			{state.code === 'error' ? (
+				<Button variant="outline" onClick={onClearFilters}>
+					Clear filters
+				</Button>
+			) : null}
+		</DashboardState>
 	);
 }
 
@@ -473,13 +431,45 @@ function tableSelectionToJobs(
 	return jobs.filter((job) => currentSelection[job.id]);
 }
 
-function getJobsStatePanelClassName(variant: JobsStateVariant): string {
-	switch (variant) {
-		case 'danger':
-			return 'border-destructive/30 bg-destructive/10 text-destructive';
-		case 'warning':
-			return 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200';
-		case 'default':
-			return 'border-border bg-card text-foreground';
-	}
+function JobsPending() {
+	return (
+		<section role="status" aria-label="Loading jobs…" className="grid min-w-0 gap-5">
+			<div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+				<div className="grid min-w-0 gap-1">
+					<Skeleton className="h-8 w-20" />
+					<Skeleton className="h-5 w-80 max-w-full" />
+				</div>
+				<Skeleton className="h-9 w-56 max-w-full" />
+			</div>
+			<div className="overflow-hidden rounded-xl border border-border bg-card">
+				<div className="grid min-w-0 gap-4 border-b border-border p-4">
+					<div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] gap-4 sm:grid-cols-[minmax(10rem,24rem)_8rem_auto]">
+						<Skeleton className="h-16 w-full" />
+						<Skeleton className="h-16 w-full" />
+						<div className="col-span-2 grid grid-cols-2 gap-3 sm:hidden">
+							<Skeleton className="h-16 w-full" />
+							<Skeleton className="h-16 w-full" />
+						</div>
+					</div>
+					<Skeleton className="h-6 w-24" />
+					<Skeleton className="h-24 w-full sm:h-5 sm:max-w-96" />
+				</div>
+				<div className="border-b border-border px-4 py-3">
+					<Skeleton className="h-5 w-56 max-w-full" />
+				</div>
+				<div className="border-b border-border px-4 py-3">
+					<Skeleton className="h-4 w-full" />
+				</div>
+				{[0, 1, 2, 3, 4].map((row) => (
+					<div key={row} className="flex items-center gap-5 border-b border-border px-4 py-5">
+						<Skeleton className="size-4 shrink-0" />
+						<Skeleton className="h-7 flex-1" />
+						<Skeleton className="h-5 w-16" />
+						<Skeleton className="hidden h-7 flex-1 md:block" />
+						<Skeleton className="hidden h-7 flex-1 lg:block" />
+					</div>
+				))}
+			</div>
+		</section>
+	);
 }

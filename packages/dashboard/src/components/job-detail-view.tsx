@@ -14,7 +14,6 @@ import {
 	getJobRunLabel,
 	isEmptyPayload,
 	isStructuredPayload,
-	type JobDetailState,
 	serializePayloadForClipboard,
 } from '@/lib/job-detail';
 import { cn } from '@/lib/utils';
@@ -50,7 +49,7 @@ function JobDetailView({ actions, job }: JobDetailViewProps): ReactElement {
 							<AlertTriangle className="size-4" />
 							{job.status === 'failed' ? 'Failure reason' : 'Last failure'}
 						</h2>
-						<p className="break-words text-sm">{job.failureReason}</p>
+						<p className="wrap-break-word text-sm">{job.failureReason}</p>
 					</section>
 				) : null}
 				<div className="flex flex-wrap items-center gap-2">{actions}</div>
@@ -128,19 +127,6 @@ function CopyButton({
 	);
 }
 
-function JobDetailStateView({ state }: { readonly state: JobDetailState }): ReactElement {
-	const toneClassName = getJobDetailStateToneClassName(state.code);
-
-	return (
-		<section className={cn('grid gap-3 rounded-xl border p-6', toneClassName)}>
-			<div className="grid gap-2">
-				<h1 className="text-xl font-semibold">{state.title}</h1>
-			</div>
-			<p className="max-w-prose text-sm text-muted-foreground">{state.description}</p>
-		</section>
-	);
-}
-
 function renderPayload(payload: unknown): ReactElement {
 	if (isEmptyPayload(payload)) {
 		return (
@@ -204,7 +190,7 @@ function SummaryTile({
 	return (
 		<div className="min-w-0">
 			<p className="text-xs font-medium text-muted-foreground">{label}</p>
-			<div className={cn('mt-1 break-words text-sm font-semibold text-foreground', className)}>
+			<div className={cn('mt-1 wrap-break-word text-sm font-semibold text-foreground', className)}>
 				{value}
 			</div>
 		</div>
@@ -217,7 +203,7 @@ function MetadataList({ items }: { readonly items: readonly MetadataItem[] }): R
 			{items.map(([label, value]) => (
 				<div key={label} className="grid min-w-0 gap-1 py-3 first:pt-0 last:pb-0">
 					<dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-					<dd className="break-words font-mono text-xs text-foreground">{value}</dd>
+					<dd className="wrap-break-word font-mono text-xs text-foreground">{value}</dd>
 				</div>
 			))}
 		</dl>
@@ -242,14 +228,6 @@ function getSchedulingMetadataItems(job: JobDto): readonly MetadataItem[] {
 	];
 }
 
-function getJobDetailStateToneClassName(code: JobDetailState['code']): string {
-	if (code === 'error') {
-		return 'border-destructive/25 bg-destructive/8 text-foreground';
-	}
-
-	return 'border-border bg-card text-foreground';
-}
-
 const jsonViewTheme = {
 	'--w-rjv-add-color': 'var(--foreground)',
 	'--w-rjv-arrow-color': 'var(--muted-foreground)',
@@ -269,4 +247,4 @@ const jsonViewTheme = {
 	'--w-rjv-update-color': 'var(--foreground)',
 } as CSSProperties;
 
-export { JobDetailStateView, JobDetailView };
+export { JobDetailView };

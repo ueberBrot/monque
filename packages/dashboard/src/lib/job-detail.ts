@@ -1,15 +1,5 @@
 import type { JobDto } from '@monque/management/contract';
 
-import { readManagementError } from '@/management-errors';
-
-type JobDetailStateCode = 'unauthorized' | 'forbidden' | 'not-found' | 'error';
-
-type JobDetailState = {
-	readonly code: JobDetailStateCode;
-	readonly description: string;
-	readonly title: string;
-};
-
 /** Manual retry and successful recurring runs reset the failure counter. */
 function getJobAttemptCount(job: Pick<JobDto, 'failCount' | 'status'>): number {
 	const hasCurrentOrSuccessfulAttempt = job.status === 'processing' || job.status === 'completed';
@@ -51,37 +41,6 @@ function serializePayloadForClipboard(payload: unknown): string {
 	return serializedPayload ?? 'null';
 }
 
-function mapJobDetailError(error: unknown): JobDetailState {
-	const { status, message } = readManagementError(error);
-
-	switch (status) {
-		case 401:
-			return {
-				code: 'unauthorized',
-				title: 'Sign in required',
-				description: message ?? 'Sign in to inspect this Job detail.',
-			};
-		case 403:
-			return {
-				code: 'forbidden',
-				title: 'Job detail is forbidden',
-				description: message ?? 'Your current Management session cannot read this Job detail.',
-			};
-		case 404:
-			return {
-				code: 'not-found',
-				title: 'Job not found',
-				description: message ?? 'The Job may have been deleted or the copied URL is stale.',
-			};
-		default:
-			return {
-				code: 'error',
-				title: 'Job detail could not be loaded',
-				description: message ?? 'Refresh the page or confirm the Management API is reachable.',
-			};
-	}
-}
-
 function getJobRunLabel(job: Pick<JobDto, 'status'>): string {
 	return job.status === 'pending' ? 'Next run' : 'Scheduled for';
 }
@@ -92,7 +51,5 @@ export {
 	getJobRunLabel,
 	isEmptyPayload,
 	isStructuredPayload,
-	type JobDetailState,
-	mapJobDetailError,
 	serializePayloadForClipboard,
 };

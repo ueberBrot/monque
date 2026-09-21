@@ -1,5 +1,10 @@
 import { createRouter as createTanStackRouter, type RouterHistory } from '@tanstack/react-router';
 
+import {
+	DashboardRouteError,
+	DashboardRouteNotFound,
+	DashboardRoutePending,
+} from './components/route-feedback.js';
 import type { DashboardRouterContext } from './router-context.js';
 import { routeTree } from './routeTree.gen';
 
@@ -11,6 +16,9 @@ function getRouter(
 ) {
 	const router = createTanStackRouter({
 		routeTree,
+		defaultErrorComponent: DashboardRouteError,
+		defaultPendingComponent: DashboardRoutePending,
+		defaultNotFoundComponent: DashboardRouteNotFound,
 		basepath: context.runtimeConfig.basePath,
 		context,
 		...(options?.history ? { history: options.history } : {}),

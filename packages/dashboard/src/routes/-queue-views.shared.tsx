@@ -5,15 +5,15 @@ import type {
 	QueueViewSummaryDto,
 } from '@monque/management/contract';
 import { Link } from '@tanstack/react-router';
-import { Activity, CircleAlert, CircleCheckBig, Clock3, RefreshCw, ServerCog } from 'lucide-react';
+import { Activity, CircleAlert, CircleCheckBig, Clock3, ServerCog } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { ButtonLink } from '@/components/button-link';
+import { DashboardState, RetryButton } from '@/components/dashboard-state';
 import { JobStatusBadge } from '@/components/job-status-badge';
 import { JobTimestamp } from '@/components/job-timestamp';
 import { RefreshButton } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
 	Table,
@@ -27,6 +27,7 @@ import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { getOperatorTimeZoneLabel } from '@/lib/dates';
 import { getJobRunLabel } from '@/lib/job-detail';
 import { cn } from '@/lib/utils';
+import { resolveDashboardApiErrorState } from '@/management-errors';
 
 const OVERVIEW_STATS = [
 	{ key: 'pending', label: 'Pending' },
@@ -59,25 +60,69 @@ function QueueViewsStatePanel({
 
 function QueueViewsLoadingState(): ReactElement {
 	return (
-		<QueueViewsStatePanel
-			title="Queue Views"
-			description="Loading Queue Views from the Management API."
-		>
-			<div className="grid gap-3">
+		<section role="status" aria-label="Loading Queue Views…" className="grid gap-6">
+			<div className="grid gap-2">
+				<Skeleton className="h-8 w-40" />
+				<Skeleton className="h-5 w-80 max-w-full" />
+			</div>
+			<div className="overflow-hidden rounded-lg border border-border bg-card">
+				<div className="hidden border-b border-border bg-muted/40 px-5 py-3 md:block">
+					<Skeleton className="h-4 w-full" />
+				</div>
 				{queueViewSkeletonKeys.map((key) => (
-					<div key={key} className="grid gap-3 min-w-0">
-						<Skeleton className="h-5 w-40" />
-						<Skeleton className="h-4 w-full max-w-2xl" />
-						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-							<Skeleton className="h-14" />
-							<Skeleton className="h-14" />
-							<Skeleton className="h-14" />
-							<Skeleton className="h-14" />
+					<div
+						key={key}
+						className="grid gap-4 border-b border-border px-5 py-3 last:border-0 md:grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(4rem,1fr))] md:items-center"
+					>
+						<div className="grid gap-2">
+							<Skeleton className="h-4 w-32" />
+							<Skeleton className="h-3 w-48 max-w-full" />
+						</div>
+						<div className="grid grid-cols-4 gap-3 md:contents">
+							{[0, 1, 2, 3].map((column) => (
+								<Skeleton key={column} className="h-5 w-8 md:ml-auto" />
+							))}
 						</div>
 					</div>
 				))}
 			</div>
-		</QueueViewsStatePanel>
+		</section>
+	);
+}
+
+function QueueViewDetailLoadingState(): ReactElement {
+	return (
+		<section role="status" aria-label="Loading Queue View…" className="grid gap-4">
+			<div className="grid gap-2">
+				<Skeleton className="h-8 w-48" />
+				<Skeleton className="h-5 w-80 max-w-full" />
+			</div>
+			<div className="grid grid-cols-3 gap-4 border-y border-border py-4 sm:grid-cols-6">
+				{[0, 1, 2, 3, 4, 5].map((column) => (
+					<div key={column} className="grid gap-2">
+						<Skeleton className="h-4 w-20 max-w-full" />
+						<Skeleton className="h-6 w-8" />
+					</div>
+				))}
+			</div>
+			<Skeleton className="h-5 w-40" />
+			<div className="grid gap-2">
+				<Skeleton className="h-7 w-32" />
+				<Skeleton className="h-5 w-80 max-w-full" />
+			</div>
+			<div className="overflow-hidden">
+				<div className="border-b border-border py-4">
+					<Skeleton className="h-4 w-full" />
+				</div>
+				{queueViewSkeletonKeys.map((key) => (
+					<div key={key} className="grid grid-cols-4 gap-6 border-b border-border py-5">
+						{[0, 1, 2, 3].map((column) => (
+							<Skeleton key={column} className="h-7 w-full" />
+						))}
+					</div>
+				))}
+			</div>
+		</section>
 	);
 }
 
@@ -90,53 +135,22 @@ function QueueViewsEmptyState(): ReactElement {
 	);
 }
 
-function QueueViewsUnauthorizedState({
-	heading = 'Queue Views requires sign-in',
-	message,
-}: {
-	readonly heading?: string;
-	readonly message: string;
-}): ReactElement {
-	return (
-		<section className="grid gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-6">
-			<Badge variant="warning" className="w-fit">
-				<CircleAlert className="size-3.5" />
-				Unauthorized
-			</Badge>
-			<div className="grid gap-1">
-				<h1 className="text-2xl font-semibold">{heading}</h1>
-				<p className="max-w-2xl text-sm text-muted-foreground">{message}</p>
-			</div>
-		</section>
-	);
-}
-
 function QueueViewsErrorState({
+	error,
 	heading,
-	message,
 	onRetry,
+	fetching,
 }: {
+	readonly error: unknown;
 	readonly heading: string;
-	readonly message: string;
 	readonly onRetry: () => void;
+	readonly fetching: boolean;
 }): ReactElement {
+	const state = resolveDashboardApiErrorState(error, 'queue-views', heading);
 	return (
-		<section className="grid gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-6">
-			<Badge variant="danger" className="w-fit">
-				<CircleAlert className="size-3.5" />
-				Request failed
-			</Badge>
-			<div className="grid gap-1">
-				<h1 className="text-2xl font-semibold">{heading}</h1>
-				<p className="max-w-2xl text-sm text-muted-foreground">{message}</p>
-			</div>
-			<div>
-				<Button type="button" variant="outline" onClick={onRetry}>
-					<RefreshCw className="size-4" />
-					Retry
-				</Button>
-			</div>
-		</section>
+		<DashboardState {...state}>
+			<RetryButton onRetry={onRetry} fetching={fetching} />
+		</DashboardState>
 	);
 }
 
@@ -299,7 +313,7 @@ function QueueViewJobsTable({
 				</div>
 			) : (
 				<div className="min-w-0 overflow-x-auto">
-					<Table className="min-w-[48rem] table-fixed">
+					<Table className="min-w-3xl table-fixed">
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-28">Status</TableHead>
@@ -432,10 +446,10 @@ function QueueStatCard({
 
 export {
 	QueueViewDetailHeader,
+	QueueViewDetailLoadingState,
 	QueueViewJobsTable,
 	QueueViewsEmptyState,
 	QueueViewsErrorState,
 	QueueViewsLoadingState,
 	QueueViewsOverview,
-	QueueViewsUnauthorizedState,
 };

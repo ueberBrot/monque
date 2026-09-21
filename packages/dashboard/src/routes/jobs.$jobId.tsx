@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { JobDetailStateView, JobDetailView } from '@/components/job-detail-view';
+import { DashboardState, RetryButton } from '@/components/dashboard-state';
+import { JobDetailView } from '@/components/job-detail-view';
 import { QueryFreshness } from '@/components/query-freshness';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
 import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
 import { JobActionHelp } from '@/features/jobs/job-action-help';
@@ -23,10 +25,11 @@ import {
 } from '@/features/jobs/job-actions';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
-import { mapJobDetailError } from '@/lib/job-detail';
+import { resolveDashboardApiErrorState } from '@/management-errors';
 
 export const Route = createFileRoute('/jobs/$jobId')({
 	component: JobDetailRoute,
+	pendingComponent: JobDetailPending,
 	validateSearch: z.object({
 		queueView: z.string().optional(),
 		queueCursor: z.string().optional(),
@@ -81,7 +84,24 @@ function JobDetail({ jobId }: { readonly jobId: string }) {
 	}
 
 	if (jobQuery.isError) {
-		return <JobDetailStateView state={mapJobDetailError(jobQuery.error)} />;
+		const state = resolveDashboardApiErrorState(jobQuery.error, 'job');
+		return (
+			<DashboardState {...state}>
+				<RetryButton
+					fetching={jobQuery.isFetching || capabilitiesQuery.isFetching}
+					onRetry={() => {
+						void jobQuery.refetch();
+						void capabilitiesQuery.refetch();
+					}}
+				/>
+				<Link
+					{...backLink}
+					className="inline-flex items-center px-3 text-sm underline underline-offset-4"
+				>
+					Back to {search.queueView || 'jobs'}
+				</Link>
+			</DashboardState>
+		);
 	}
 
 	const job = jobQuery.data;
@@ -174,10 +194,36 @@ function JobDetailActions({
 
 function JobDetailPending() {
 	return (
-		<section className="grid gap-3 rounded-xl border border-border bg-card p-6">
-			<div className="h-5 w-32 rounded-md bg-muted" />
-			<div className="h-8 w-56 rounded-md bg-muted" />
-			<div className="h-4 w-72 rounded-md bg-muted" />
+		<section role="status" aria-label="Loading job details…" className="grid min-w-0 gap-4">
+			<Skeleton className="h-5 w-28" />
+			<Skeleton className="h-4 w-24" />
+			<div className="grid min-w-0 gap-4 py-1">
+				<Skeleton className="h-8 w-48" />
+				<Skeleton className="h-8 w-full max-w-96" />
+				<Skeleton className="h-8 w-80 max-w-full" />
+				<Skeleton className="h-5 w-48" />
+			</div>
+			<div className="grid grid-cols-2 gap-4 border-y border-border py-4 xl:grid-cols-4">
+				{[0, 1, 2, 3].map((column) => (
+					<div key={column} className="grid min-w-0 gap-2">
+						<Skeleton className="h-4 w-32 max-w-full" />
+						<Skeleton className="h-6 w-24" />
+					</div>
+				))}
+			</div>
+			<div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
+				<div className="grid min-w-0 gap-4 rounded-xl border border-border bg-card p-5">
+					<Skeleton className="h-5 w-24" />
+					<Skeleton className="h-5 w-40" />
+					<Skeleton className="h-24 w-full" />
+				</div>
+				<div className="grid min-w-0 gap-5 rounded-xl border border-border bg-card p-5">
+					<Skeleton className="h-5 w-24" />
+					{[0, 1, 2, 3].map((row) => (
+						<Skeleton key={row} className="h-12 w-full" />
+					))}
+				</div>
+			</div>
 		</section>
 	);
 }

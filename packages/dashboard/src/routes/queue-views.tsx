@@ -3,18 +3,17 @@ import { createFileRoute, Outlet, useMatchRoute } from '@tanstack/react-router';
 
 import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
-import { getQueryErrorMessage, isUnauthorizedQueryError } from '@/management-errors';
 
 import {
 	QueueViewsEmptyState,
 	QueueViewsErrorState,
 	QueueViewsLoadingState,
 	QueueViewsOverview,
-	QueueViewsUnauthorizedState,
 } from './-queue-views.shared.js';
 
 export const Route = createFileRoute('/queue-views')({
 	component: QueueViewsRoute,
+	pendingComponent: QueueViewsLoadingState,
 });
 
 function QueueViewsRoute() {
@@ -35,21 +34,11 @@ function QueueViewsListRoute() {
 	}
 
 	if (queueViewsQuery.isError) {
-		if (isUnauthorizedQueryError(queueViewsQuery.error)) {
-			return (
-				<QueueViewsUnauthorizedState
-					message={getQueryErrorMessage(queueViewsQuery.error, 'Sign in to inspect Queue Views.')}
-				/>
-			);
-		}
-
 		return (
 			<QueueViewsErrorState
 				heading="Queue Views failed to load"
-				message={getQueryErrorMessage(
-					queueViewsQuery.error,
-					'Refresh the route or confirm the Management API is reachable.',
-				)}
+				error={queueViewsQuery.error}
+				fetching={queueViewsQuery.isFetching}
 				onRetry={() => {
 					void queueViewsQuery.refetch();
 				}}

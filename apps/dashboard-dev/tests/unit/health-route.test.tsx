@@ -1,31 +1,12 @@
 // @vitest-environment jsdom
 
-import { createMockManagementFetch } from '@dashboard-dev/mock/management-server';
 import type { DashboardDevScenarioId } from '@dashboard-dev/mock/scenario-catalog';
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 
-import { createDashboardManagementApi } from '@/management-client';
-import { DashboardProviders } from '@/providers';
-import { createDashboardQueryClient } from '@/query-client';
-import { getRouter } from '@/router';
-import type { DashboardRuntimeConfig } from '@/runtime-config';
-
-const runtimeConfig: DashboardRuntimeConfig = {
-	apiBaseUrl: '/',
-	basePath: '/',
-	pollingIntervalMs: 15_000,
-};
+import { createDashboardHarness } from '../setup/dashboard-harness.js';
 
 describe('Health route', () => {
-	beforeEach(() => {
-		window.history.replaceState({}, '', '/health');
-		Object.defineProperty(window, 'scrollTo', {
-			configurable: true,
-			value: () => {},
-		});
-	});
-
 	it('shows scheduler health and Management capabilities', async () => {
 		renderHealthRoute('pending-jobs');
 
@@ -73,17 +54,9 @@ describe('Health route', () => {
 });
 
 function renderHealthRoute(scenarioId: DashboardDevScenarioId) {
-	const managementApi = createDashboardManagementApi({
-		apiBaseUrl: runtimeConfig.apiBaseUrl,
-		fetch: createMockManagementFetch({ scenarioId }),
+	createDashboardHarness('/health', {
+		scenarioId,
+		pollingIntervalMs: 15_000,
 		origin: 'https://dashboard.example',
-	});
-	const queryClient = createDashboardQueryClient();
-	const router = getRouter({
-		managementApi,
-		queryClient,
-		runtimeConfig,
-	});
-
-	render(<DashboardProviders queryClient={queryClient} router={router} />);
+	}).render();
 }

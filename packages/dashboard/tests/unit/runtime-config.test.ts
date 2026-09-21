@@ -27,6 +27,47 @@ describe('parseDashboardRuntimeConfig', () => {
 		});
 	});
 
+	it.each([
+		'/api/management',
+		'management',
+		'/',
+		'https://api.example.test/management',
+		'http://localhost:3000/api',
+	])('accepts supported API base URL %s', (apiBaseUrl) => {
+		expect(parseDashboardRuntimeConfig({ apiBaseUrl, basePath: '/dashboard' }).apiBaseUrl).toBe(
+			apiBaseUrl,
+		);
+	});
+
+	it.each([
+		'',
+		'   ',
+		'http://[',
+		'javascript:alert(1)',
+		'file:///api',
+		'data:text/html,hello',
+		' https://example.test',
+		'/api\\management',
+	])('rejects invalid API base URL %j', (apiBaseUrl) => {
+		expect(() => parseDashboardRuntimeConfig({ apiBaseUrl, basePath: '/dashboard' })).toThrow(
+			'apiBaseUrl',
+		);
+	});
+
+	it.each([
+		'',
+		' ',
+		'//dashboard',
+		'/dashboard?tab=jobs',
+		'/dashboard#jobs',
+		'/ops/../dashboard',
+		'/%2e%2e/dashboard',
+		'https://example.test/dashboard',
+		'/ops\\dashboard',
+	])('rejects invalid mount path %j', (basePath) => {
+		expect(() => parseDashboardRuntimeConfig({ apiBaseUrl: '/api', basePath })).toThrow('basePath');
+	});
+
 	it('rejects unknown runtime config keys', () => {
 		expect(() =>
 			DashboardRuntimeConfigSchema.parse({

@@ -37,8 +37,10 @@ test('host login rejects bad credentials, protects assets, and logout invalidate
 		expect((await context.request.get(`${app.origin}/private/api/v1/jobs`)).status()).toBe(401);
 	}
 	expect((await login('fixture-password')).status()).toBe(204);
-	await page.reload();
+	await page.getByRole('button', { name: 'Retry', exact: true }).click();
 	await expect(page.locator('tbody tr')).toHaveCount(45);
+	await secondTab.getByRole('button', { name: 'Retry', exact: true }).click();
+	await expect(secondTab.getByRole('heading', { name: 'Health', exact: true })).toBeVisible();
 	await secondTab.close();
 });
 
@@ -68,7 +70,7 @@ test('expired sessions stop reads and mutations; fresh login restores access', a
 	).toBe(401);
 	expect((await app.monque.getJob(job._id))?.status).toBe('pending');
 	expect((await login()).status()).toBe(204);
-	await page.reload();
+	await page.getByRole('button', { name: 'Retry', exact: true }).click();
 	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 	await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
 });

@@ -23,55 +23,59 @@ function readManagementError(error: unknown): {
 	return { status, message: data?.error ?? data?.body?.error ?? message };
 }
 
-type DashboardApiErrorState = {
+type DashboardErrorCode = 'unauthorized' | 'forbidden' | 'not-found' | 'error';
+type DashboardErrorResource = 'health' | 'jobs' | 'job' | 'queue-views';
+type ErrorPresentation = {
 	readonly title: string;
 	readonly description: string;
-	readonly tone: 'danger' | 'warning';
+	readonly tone: 'default' | 'danger' | 'warning';
 };
 
-function resolveDashboardApiErrorState(error: unknown): DashboardApiErrorState {
+/** Keep read-error classification and recovery copy together. */
+function resolveDashboardApiErrorState(
+	error: unknown,
+	resource: DashboardErrorResource = 'health',
+	failureTitle?: string,
+): ErrorPresentation & { readonly code: DashboardErrorCode } {
 	const { status, message } = readManagementError(error);
-
-	switch (status) {
-		case 401:
-			return {
-				title: 'Authentication required',
-				description:
-					message ??
-					'Sign in through the host application, then reload this dashboard. Monque does not provide a separate Dashboard login screen.',
-				tone: 'warning',
-			};
-		case 403:
-			return {
-				title: 'Access denied',
-				description:
-					message ??
-					'Your current session is signed in, but it cannot view this Management surface.',
-				tone: 'danger',
-			};
-		default:
-			return {
-				title: 'Dashboard data unavailable',
-				description:
-					message ??
-					'Health and capability data could not be loaded. Confirm the Management API is reachable, then retry.',
-				tone: 'danger',
-			};
+	if (status === 401) {
+		return {
+			code: 'unauthorized',
+			title:
+				resource === 'job' || resource === 'jobs' ? 'Sign in required' : 'Authentication required',
+			description: message ?? 'Sign in through the host application, then retry.',
+			tone: 'warning',
+		};
 	}
+	if (status === 403) {
+		return {
+			code: 'forbidden',
+			title: resource === 'job' ? 'Job detail is forbidden' : 'Access denied',
+			description: message ?? 'Your current session cannot view this Management surface.',
+			tone: resource === 'jobs' ? 'warning' : 'danger',
+		};
+	}
+	if (status === 404 && resource === 'job') {
+		return {
+			code: 'not-found',
+			title: 'Job not found',
+			description: message ?? 'The Job may have been deleted or the copied URL is stale.',
+			tone: 'default',
+		};
+	}
+	const titles = {
+		health: 'Dashboard data unavailable',
+		jobs: 'Jobs failed to load',
+		job: 'Job detail could not be loaded',
+		'queue-views': 'Queue Views failed to load',
+	};
+	return {
+		code: 'error',
+		title: failureTitle ?? titles[resource],
+		description:
+			message ?? 'Dashboard data could not be loaded. Check your connection, then retry.',
+		tone: 'danger',
+	};
 }
 
-function getQueryErrorMessage(error: unknown, fallback: string): string {
-	return readManagementError(error).message ?? fallback;
-}
-
-function isUnauthorizedQueryError(error: unknown): boolean {
-	return readManagementError(error).status === 401;
-}
-
-export {
-	type DashboardApiErrorState,
-	getQueryErrorMessage,
-	isUnauthorizedQueryError,
-	readManagementError,
-	resolveDashboardApiErrorState,
-};
+export { readManagementError, resolveDashboardApiErrorState };
