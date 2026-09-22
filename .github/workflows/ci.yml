@@ -14,8 +14,25 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
+        with:
+          turbo-cache: 'false'
+
+      - name: Lint & Format
+        run: bun run lint
+
   build:
     name: Build
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,6 +44,10 @@ jobs:
 
       - name: Build packages
         run: bun turbo build --filter='./packages/*'
+
+      # Workspace type checks consume the packages' generated declarations.
+      - name: Type check
+        run: bun turbo type-check --only
 
       - name: Check exports
         run: bun turbo check:exports --filter='./packages/*' --only
@@ -40,8 +61,8 @@ jobs:
           compression-level: 1
           retention-days: 1
 
-  lint:
-    name: Lint & Format
+  build-apps:
+    name: Build Apps
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -57,12 +78,6 @@ jobs:
         with:
           name: build-artifacts
           path: packages
-
-      - name: Lint & Format
-        run: bun run lint
-
-      - name: Type check
-        run: bun turbo type-check --only
 
       - name: Build apps
         run: bun turbo build --filter='./apps/*' --only
@@ -156,7 +171,7 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [lint, test, build, dashboard-e2e]
+    needs: [lint, build, build-apps, test, dashboard-e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
