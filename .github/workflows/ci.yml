@@ -31,7 +31,7 @@ jobs:
         run: bun run lint
 
   build:
-    name: Build
+    name: Build Packages & Type Check
     needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
