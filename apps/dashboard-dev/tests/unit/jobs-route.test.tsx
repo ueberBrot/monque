@@ -30,7 +30,10 @@ describe('Jobs route', () => {
 			},
 		}));
 		try {
-			const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
+			// One row exercises responsive columns and sort controls without a large table render.
+			const fetchSpy = vi.fn(
+				createJobsActionFetch({ jobs: [createListJob({ name: 'dispatch-webhook' })] }).fetch,
+			);
 			const { router } = await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs' });
 			await screen.findAllByRole('link', { name: /dispatch-webhook/ });
 			expect(screen.getByRole('combobox', { name: 'Sort by' }).textContent).toContain(

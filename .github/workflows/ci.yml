@@ -14,82 +14,101 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Bun Environment
+        uses: ./.github/actions/setup-bun-env
+
+      - name: Build packages
+        run: bun turbo build --filter='./packages/*'
+
+      - name: Check exports
+        run: bun turbo check:exports --filter='./packages/*' --only
+
+      - name: Upload built packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-artifacts
+          path: packages/*/dist
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 1
+
   lint:
     name: Lint & Format
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
 
       - name: Setup Bun Environment
         uses: ./.github/actions/setup-bun-env
 
-      - name: Lint & Type Check
-        run: bun turbo lint type-check
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-artifacts
+          path: packages
+
+      - name: Lint & Format
+        run: bun run lint
+
+      - name: Type check
+        run: bun turbo type-check --only
+
+      - name: Build apps
+        run: bun turbo build --filter='./apps/*' --only
 
   test:
-    name: Test & Coverage
+    name: Test & Coverage (${{ matrix.group }})
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [backend, frontend]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-
-      - name: Fetch base branch
-        if: github.event_name == 'pull_request'
-        run: git fetch origin ${{ github.base_ref || 'main' }}:${{ github.base_ref || 'main' }}
 
       - name: Setup Bun Environment
         uses: ./.github/actions/setup-bun-env
+        with:
+          turbo-cache-scope: ${{ matrix.group }}
 
-      - name: Run Tests
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            bun turbo test --filter="...[${{ github.base_ref }}]"
-          else
-            bun turbo test
-          fi
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-artifacts
+          path: packages
+
+      - name: Frontend tests
+        if: matrix.group == 'frontend'
+        run: bun turbo test --only --filter=@monque/dashboard --filter=@monque/dashboard-dev --concurrency=1
+
+      - name: Backend tests
+        if: matrix.group == 'backend'
+        run: bun turbo test --only --filter='!@monque/dashboard' --filter='!@monque/dashboard-dev' --concurrency=2
 
       - name: Upload coverage reports to Codecov
+        if: matrix.group == 'backend'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
-  build:
-    name: Build
-    needs: [lint, test]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
-
-      - name: Build
-        run: bun run build
-
-      - name: Check Exports
-        run: bun turbo check:exports
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: build-artifacts
-          path: packages/*/dist
-          retention-days: 1
-
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -112,12 +131,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Bun Environment
         uses: ./.github/actions/setup-bun-env
+        with:
+          turbo-cache: 'false'
+      - name: Download built packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-artifacts
+          path: packages
       - name: Install Chromium
         working-directory: apps/dashboard-dev
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps --only-shell chromium
       - name: Test built dashboard with MongoDB and Express
         working-directory: apps/dashboard-dev
-        run: bun run test:e2e --project=${{ matrix.project }}
+        run: bunx playwright test --project=${{ matrix.project }}
       - name: Upload browser reports and failure traces
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -128,26 +154,19 @@ jobs:
             apps/dashboard-dev/test-results
           retention-days: 7
 
-  check-changeset:
-    name: Check Changeset
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Changeset
-        run: echo "Skipping changeset status check"
-
   ci-gate:
     name: CI Gate
-    needs: [lint, test, build, dashboard-e2e, check-changeset]
+    needs: [lint, test, build, dashboard-e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          results=("${{ needs.lint.result }}" "${{ needs.test.result }}" "${{ needs.build.result }}" "${{ needs.dashboard-e2e.result }}" "${{ needs.check-changeset.result }}")
-          for r in "${results[@]}"; do
-            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
-              echo "Job failed with result: $r"
+          for result in $RESULTS; do
+            if [[ "$result" != "success" ]]; then
+              echo "Job failed with result: $result"
               exit 1
             fi
           done

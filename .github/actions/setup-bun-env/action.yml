@@ -14,6 +14,9 @@ inputs:
   turbo-cache:
     description: 'Persist .turbo cache between CI runs'
     default: 'true'
+  turbo-cache-scope:
+    description: 'Separate Turbo caches for matrix groups within a job'
+    default: 'default'
 
 outputs:
   bun-version:
@@ -49,9 +52,9 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .turbo
-        key: ${{ runner.os }}-turbo-${{ github.sha }}
+        key: ${{ runner.os }}-turbo-${{ github.workflow }}-${{ github.job }}-${{ inputs.turbo-cache-scope }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-turbo-
+          ${{ runner.os }}-turbo-${{ github.workflow }}-${{ github.job }}-${{ inputs.turbo-cache-scope }}-
 
     - name: Install dependencies
       run: bun install --frozen-lockfile
