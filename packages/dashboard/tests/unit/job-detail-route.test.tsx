@@ -96,7 +96,10 @@ describe('Job detail route', () => {
 				expect(clipboardWriteText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2)),
 			);
 			fireEvent.click(screen.getByRole('button', { name: 'Expand JSON value' }));
-			const expansionButtons = screen.getAllByRole('button', { name: 'Expand JSON value' });
+			// Avoid computing visibility and accessible names for every record in the expanded tree.
+			const expansionButtons = screen.getAllByLabelText('Expand JSON value', {
+				selector: 'button',
+			});
 			const lastRecord = expansionButtons.at(-1);
 			if (!lastRecord) throw new Error('Expected the final payload record to be expandable');
 			fireEvent.click(lastRecord);
