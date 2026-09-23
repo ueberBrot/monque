@@ -1,5 +1,12 @@
 # @monque/management
 
+## 0.4.1
+
+### Patch Changes
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Return HTTP 400 for empty Job Name filters in listings, statistics, Queue Views,
+  and bulk actions. Omit the name filter to include all Job Names.
+
 ## 0.4.0
 
 ### Minor Changes

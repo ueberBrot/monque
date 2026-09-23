@@ -1,5 +1,32 @@
 # @monque/core
 
+## 1.12.1
+
+### Patch Changes
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Require listing limits of 1–1,000 and non-negative safe integer offsets, rejecting
+  invalid values with `InvalidJobQueryError`. Defaults are unchanged; paginate instead
+  of requesting unlimited results or more than 1,000 jobs per page.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Fall back to polling after the configured change-stream retry limit when repeated
+  connection attempts fail.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Keep newly queued jobs processing promptly during continuous job arrivals, without
+  waiting for notifications to pause.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Reject empty Job Name filters with `InvalidJobQueryError` to prevent accidentally
+  reading or modifying all jobs. Omit the name filter to intentionally include all Job Names.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Prevent a throwing `job:start` listener from permanently reducing worker capacity
+  and stalling subsequent jobs.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Reject MongoDB operators, invalid statuses, and invalid date bounds in job filters
+  with `InvalidJobQueryError`, preventing unintended reads and bulk actions. Invalid
+  single-job IDs return `null`.
+
+- [#525](https://github.com/ueberBrot/monque/pull/525) [`3fb1233`](https://github.com/ueberBrot/monque/commit/3fb1233231c636680eda4628007432df125934e2) - Keep periodic polling active during continuous notifications so jobs for quieter
+  workers and scheduled jobs are still discovered.
+
 ## 1.12.0
 
 ### Minor Changes
