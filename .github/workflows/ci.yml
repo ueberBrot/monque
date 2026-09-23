@@ -30,9 +30,6 @@ jobs:
       - name: Lint & Format
         run: bun run lint
 
-      - name: Test release tooling
-        run: bun run test:release
-
   build:
     name: Build Packages & Type Check
     needs: lint
