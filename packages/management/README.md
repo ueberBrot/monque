@@ -16,6 +16,9 @@ bun add @monque/management @monque/core
 `@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
 the scheduler you want to expose.
 
+Requires `@monque/core` 1.12.0 or newer within version 1. Upgrade core alongside Management
+so job details and actions can look up jobs by string ID.
+
 ## Usage
 
 ```typescript
