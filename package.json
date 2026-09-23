@@ -22,6 +22,7 @@
 	],
 	"scripts": {
 		"prepare": "lefthook install",
+		"release:version": "bunx changeset version && bun install --lockfile-only --ignore-scripts",
 		"build": "turbo build",
 		"type-check": "turbo type-check",
 		"test": "turbo test",
