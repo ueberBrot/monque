@@ -23,8 +23,6 @@
 	"scripts": {
 		"prepare": "lefthook install",
 		"release:version": "bunx changeset version && bun install --lockfile-only --ignore-scripts",
-		"release:pack": "bun scripts/pack-release.ts",
-		"release:publish": "bun run release:pack && bunx changeset publish --from-pack-dir .release",
 		"build": "turbo build",
 		"type-check": "turbo type-check",
 		"test": "turbo test",

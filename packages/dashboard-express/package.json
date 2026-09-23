@@ -60,7 +60,7 @@
 		"lint": "biome check ."
 	},
 	"dependencies": {
-		"@monque/dashboard": "workspace:*"
+		"@monque/dashboard": "^0.0.0"
 	},
 	"peerDependencies": {
 		"express": "^5.2.1"
