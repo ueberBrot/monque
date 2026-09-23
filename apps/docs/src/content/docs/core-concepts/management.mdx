@@ -52,6 +52,11 @@ order. A job ID breaks ties between equal timestamps. See
 Cursor queries have a 30-second server execution limit. A cursor does not freeze the
 collection: jobs may change or be deleted between requests.
 
+All core listing methods accept a `limit` from 1 to 1,000, inclusive. The default is 100
+for `getJobs()` and 50 for cursor listings. Zero, negative, fractional, non-finite, and
+larger limits throw `InvalidJobQueryError`; zero does not mean unlimited. Use successive
+pages for larger reads. Offset pagination's `skip` must be a non-negative safe integer.
+
 ## Metadata-only listings
 
 Use [`getJobSummariesWithCursor()`](/monque/api/classes/monque/#getjobsummarieswithcursor) when
@@ -115,6 +120,12 @@ console.log(cancelled.count, retried.count, deleted.count);
 `cancelJobs()` only changes pending jobs. `retryJobs()` only changes failed or cancelled
 jobs. `deleteJobs()` deletes every match. The selector's `olderThan` and `newerThan` bounds
 apply to `createdAt`. An empty selector matches all eligible jobs.
+
+Provided names must be non-empty strings. An empty name is rejected, rather than treated
+as an unfiltered selector. Status filters accept only the documented status values, and
+date bounds must be valid `Date` objects. Invalid filters throw `InvalidJobQueryError`
+before database execution. MongoDB operator objects and regular expressions are not
+accepted as filter values. These rules also apply to job listings and name-scoped statistics.
 
 Each method returns `{ count, errors }` and emits its corresponding bulk event. See
 [`JobSelector`](/monque/api/interfaces/jobselector/) for selector fields.

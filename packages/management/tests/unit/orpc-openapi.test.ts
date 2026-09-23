@@ -123,7 +123,7 @@ describe('oRPC Management OpenAPI contract', () => {
 			expect.objectContaining({
 				name: 'name',
 				in: 'query',
-				schema: { type: 'string' },
+				schema: { type: 'string', minLength: 1 },
 			}),
 		]);
 		expect(document.paths?.['/api/v1/jobs/stats']?.get?.responses?.['200']).toMatchObject({
@@ -163,7 +163,7 @@ describe('oRPC Management OpenAPI contract', () => {
 				expect.objectContaining({
 					name: 'name',
 					in: 'query',
-					schema: { type: 'string' },
+					schema: { type: 'string', minLength: 1 },
 				}),
 				expect.objectContaining({
 					name: 'status',

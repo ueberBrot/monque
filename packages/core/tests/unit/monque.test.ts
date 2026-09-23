@@ -273,8 +273,8 @@ describe('Monque', () => {
 			const spy = vi.fn();
 			(monque as unknown as Record<string, unknown>)['_query'] = { getJob: spy };
 
-			const id = new Object();
-			await monque.getJob(id as unknown as ObjectId);
+			const id = new ObjectId();
+			await monque.getJob(id);
 			expect(spy).toHaveBeenCalledWith(id);
 		});
 

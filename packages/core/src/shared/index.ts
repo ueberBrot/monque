@@ -4,6 +4,7 @@ export {
 	InvalidCronError,
 	InvalidCursorError,
 	InvalidJobIdentifierError,
+	InvalidJobQueryError,
 	JobStateError,
 	MonqueError,
 	PayloadTooLargeError,

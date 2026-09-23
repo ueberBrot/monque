@@ -3,6 +3,7 @@ import { type Document, type Filter, ObjectId } from 'mongodb';
 import {
 	CursorDirection,
 	type CursorDirectionType,
+	isValidJobStatus,
 	type JobCursorFilter,
 	type JobCursorSort,
 	JobCursorSortDirection,
@@ -11,7 +12,7 @@ import {
 	type JobCursorSortFieldType,
 	type JobSelector,
 } from '@/jobs';
-import { InvalidCursorError } from '@/shared';
+import { InvalidCursorError, InvalidJobQueryError } from '@/shared';
 
 type CursorQueryFilter = JobSelector | JobCursorFilter;
 type DateRangeField = 'createdAt' | 'updatedAt' | 'nextRunAt';
@@ -58,16 +59,25 @@ const STRUCTURED_CURSOR_PAYLOAD_PREFIX = '{'.charCodeAt(0);
  */
 export function buildSelectorQuery(filter: CursorQueryFilter): Filter<Document> {
 	const query: Filter<Document> = {};
+	const name = parseJobNameFilter(filter);
 
-	if (filter.name) {
-		query['name'] = filter.name;
+	if (name !== undefined) {
+		query['name'] = name;
 	}
 
-	if (filter.status) {
-		if (Array.isArray(filter.status)) {
-			query['status'] = { $in: filter.status };
+	const status = filter.status;
+	if (status !== undefined) {
+		if (Array.isArray(status)) {
+			const statuses = [...status];
+			if (!statuses.every(isValidJobStatus)) {
+				throw new InvalidJobQueryError('Job status filter contains an invalid status');
+			}
+			query['status'] = { $in: statuses };
 		} else {
-			query['status'] = filter.status;
+			if (!isValidJobStatus(status)) {
+				throw new InvalidJobQueryError('Job status filter must be a valid status or status array');
+			}
+			query['status'] = status;
 		}
 	}
 
@@ -77,10 +87,24 @@ export function buildSelectorQuery(filter: CursorQueryFilter): Filter<Document> 
 	return query;
 }
 
+/** Validate an exact Job Name scope before query construction or cache lookup. */
+export function parseJobNameFilter(filter: unknown): string | undefined {
+	if (!isRecord(filter)) {
+		throw new InvalidJobQueryError('Job filter must be an object');
+	}
+	const name = filter['name'];
+	if (name !== undefined && (typeof name !== 'string' || name.length === 0)) {
+		throw new InvalidJobQueryError('Job name filter must be a non-empty string');
+	}
+	return name;
+}
+
 function applySelectorCreatedAtRange(query: Filter<Document>, filter: CursorQueryFilter): void {
 	if (!('olderThan' in filter || 'newerThan' in filter)) {
 		return;
 	}
+	validateQueryDate(filter.olderThan, 'olderThan');
+	validateQueryDate(filter.newerThan, 'newerThan');
 
 	const range = getDateRange(query, 'createdAt');
 
@@ -115,6 +139,8 @@ function applyDateRange(
 	from?: Date,
 	to?: Date,
 ): void {
+	validateQueryDate(from, `${field}From`);
+	validateQueryDate(to, `${field}To`);
 	if (!from && !to) {
 		return;
 	}
@@ -130,6 +156,12 @@ function applyDateRange(
 	}
 
 	query[field] = range;
+}
+
+function validateQueryDate(value: unknown, field: string): void {
+	if (value !== undefined && (!(value instanceof Date) || !Number.isFinite(value.getTime()))) {
+		throw new InvalidJobQueryError(`${field} must be a valid Date`);
+	}
 }
 
 function getDateRange(query: Filter<Document>, field: DateRangeField): DateRangeQuery {

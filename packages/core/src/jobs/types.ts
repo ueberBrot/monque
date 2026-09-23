@@ -195,10 +195,10 @@ export interface GetJobsFilter {
 	/** Filter by status (single or multiple) */
 	status?: JobStatusType | JobStatusType[];
 
-	/** Maximum number of jobs to return (default: 100) */
+	/** Maximum jobs to return: integer from 1 to 1000 (default: 100). */
 	limit?: number;
 
-	/** Number of jobs to skip for pagination */
+	/** Number of jobs to skip for pagination: non-negative safe integer (default: 0). */
 	skip?: number;
 }
 
@@ -299,6 +299,7 @@ export interface JobCursorSort {
  */
 export interface CursorOptions {
 	cursor?: string;
+	/** Maximum jobs to return: integer from 1 to 1000 (default: 50). */
 	limit?: number;
 	direction?: CursorDirectionType;
 	filter?: JobCursorFilter;

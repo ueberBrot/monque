@@ -197,11 +197,11 @@ describe('ChangeStreamHandler', () => {
 				fullDocument: { status: JobStatus.PENDING },
 			};
 
-			// Trigger multiple events rapidly
+			// Trigger multiple events within one bounded batching window.
 			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(50);
+			vi.advanceTimersByTime(25);
 			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
-			vi.advanceTimersByTime(50);
+			vi.advanceTimersByTime(25);
 			handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
 			vi.advanceTimersByTime(150);
 
@@ -211,6 +211,32 @@ describe('ChangeStreamHandler', () => {
 	});
 
 	describe('handleError', () => {
+		it('resets backoff only after a successful server response', async () => {
+			vi.useFakeTimers();
+			const streams: EventEmitter[] = [];
+			vi.spyOn(ctx.collection, 'watch').mockImplementation(() => {
+				const stream = Object.assign(new EventEmitter(), {
+					close: vi.fn().mockResolvedValue(undefined),
+				});
+				streams.push(stream);
+				return stream as unknown as ReturnType<typeof ctx.collection.watch>;
+			});
+			handler.setup();
+			streams.at(-1)?.emit('error', new Error('First failure'));
+			vi.advanceTimersByTime(1000);
+			streams.at(-1)?.emit('error', new Error('Second failure'));
+			vi.advanceTimersByTime(1000);
+			expect(streams).toHaveLength(2);
+			vi.advanceTimersByTime(1000);
+			expect(streams).toHaveLength(3);
+
+			streams.at(-1)?.emit('resumeTokenChanged', { token: 'confirmed' });
+			streams.at(-1)?.emit('error', new Error('Failure after recovery'));
+			vi.advanceTimersByTime(1000);
+			expect(streams).toHaveLength(4);
+			await handler.close();
+		});
+
 		it('should return early if scheduler is not running', () => {
 			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 
@@ -313,21 +339,25 @@ describe('ChangeStreamHandler', () => {
 
 		it('should emit fallback event after exhausting reconnection attempts', () => {
 			vi.useFakeTimers();
-			const mockChangeStream = Object.assign(new EventEmitter(), {
-				close: vi.fn().mockResolvedValue(undefined),
+			const streams: EventEmitter[] = [];
+			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
+				const stream = Object.assign(new EventEmitter(), {
+					close: vi.fn().mockResolvedValue(undefined),
+				});
+				streams.push(stream);
+				return stream as unknown as ReturnType<typeof ctx.mockCollection.watch>;
 			});
-			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
 
 			handler.setup();
 
 			// Emit 4 errors (maxReconnectAttempts is 3)
 			for (let i = 0; i < 4; i++) {
-				mockChangeStream.emit('error', new Error(`Error ${i + 1}`));
+				streams.at(-1)?.emit('error', new Error(`Error ${i + 1}`));
 				// Advance past the exponential backoff
 				vi.advanceTimersByTime(10000);
 			}
+			expect(streams).toHaveLength(4);
+			expect(handler.isActive()).toBe(false);
 
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({

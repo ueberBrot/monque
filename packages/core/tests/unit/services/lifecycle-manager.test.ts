@@ -303,7 +303,7 @@ describe('LifecycleManager', () => {
 
 			// Switch to CS inactive and force re-evaluation
 			isChangeStreamActiveFn.mockReturnValue(false);
-			manager.resetPollTimer();
+			manager.reevaluatePollTimer();
 
 			// Next poll should happen at pollInterval (not safetyPollInterval)
 			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);
@@ -332,8 +332,8 @@ describe('LifecycleManager', () => {
 		});
 	});
 
-	describe('resetPollTimer', () => {
-		it('should cancel current timer and reschedule', async () => {
+	describe('reevaluatePollTimer', () => {
+		it('preserves the full-poll deadline when notifications reset the timer', async () => {
 			manager.startTimers(callbacks());
 			pollFn.mockClear();
 
@@ -341,17 +341,25 @@ describe('LifecycleManager', () => {
 			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
 			expect(pollFn).not.toHaveBeenCalled();
 
-			// Reset the timer — this restarts the countdown
-			manager.resetPollTimer();
+			// A targeted notification must not postpone full discovery.
+			manager.reevaluatePollTimer();
 
-			// Advancing the remaining half should NOT trigger a poll
-			// (timer was reset, so it needs the full interval from now)
-			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
-			expect(pollFn).not.toHaveBeenCalled();
-
-			// But after the full interval from the reset, it should fire
 			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval / 2);
 			expect(pollFn).toHaveBeenCalledOnce();
+		});
+
+		it('keeps full safety polls running during sustained targeted notifications', async () => {
+			ctx.options.safetyPollInterval = 1000;
+			isChangeStreamActiveFn.mockReturnValue(true);
+			manager.startTimers(callbacks());
+			await vi.advanceTimersByTimeAsync(0);
+
+			for (let i = 0; i < 20; i++) {
+				manager.reevaluatePollTimer();
+				await vi.advanceTimersByTimeAsync(500);
+			}
+
+			expect(pollFn).toHaveBeenCalledTimes(11);
 		});
 
 		it('should use safetyPollInterval after reset when CS is active', async () => {
@@ -360,7 +368,7 @@ describe('LifecycleManager', () => {
 			pollFn.mockClear();
 
 			// Reset the timer
-			manager.resetPollTimer();
+			manager.reevaluatePollTimer();
 
 			// Should not fire at pollInterval
 			await vi.advanceTimersByTimeAsync(ctx.options.pollInterval);

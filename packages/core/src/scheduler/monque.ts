@@ -314,15 +314,15 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Handle a Pending Notification poll and reset the safety poll timer.
+	 * Handle a Pending Notification poll and reevaluate the safety poll interval.
 	 *
 	 * Used as the `onPoll` callback for {@link PendingNotificationRouter}. Runs a
-	 * targeted poll for the given Worker names, then resets the adaptive safety
-	 * poll timer so it doesn't fire redundantly.
+	 * targeted poll for the given Worker names while preserving the next full-poll
+	 * deadline for other Workers.
 	 */
 	private async handlePendingNotificationPoll(targetNames?: ReadonlySet<string>): Promise<void> {
 		await this.processor.poll(targetNames);
-		this.lifecycleManager.resetPollTimer();
+		this.lifecycleManager.reevaluatePollTimer();
 	}
 
 	/**
@@ -825,8 +825,8 @@ export class Monque extends EventEmitter {
 	 */
 	async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
 		this.ensureInitialized();
-		if (typeof id === 'string' && !ObjectId.isValid(id)) return null;
-		return this.query.getJob<T>(typeof id === 'string' ? new ObjectId(id) : id);
+		if (!ObjectId.isValid(id)) return null;
+		return this.query.getJob<T>(new ObjectId(id));
 	}
 
 	/**
