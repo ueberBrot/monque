@@ -25,6 +25,35 @@ describe('JobProcessor', () => {
 	});
 
 	describe('poll', () => {
+		it('continues processing after a job:start listener throws with one global slot', async () => {
+			ctx.options.instanceConcurrency = 1;
+			const first = JobFactoryHelpers.processing({ name: 'test-job' });
+			const next = JobFactoryHelpers.processing({ name: 'test-job' });
+			const handler = vi.fn().mockResolvedValue(undefined);
+			const worker = createWorker({ handler });
+			ctx.workers.set('test-job', worker);
+			let throwOnStart = true;
+			vi.mocked(ctx.emit).mockImplementation((event) => {
+				if (event === 'job:start' && throwOnStart) {
+					throwOnStart = false;
+					throw new Error('Metrics listener failed');
+				}
+				return true;
+			});
+			vi.spyOn(ctx.collection, 'findOneAndUpdate')
+				.mockResolvedValueOnce(first)
+				.mockResolvedValueOnce(JobFactoryHelpers.pending({ _id: first._id, failCount: 1 }))
+				.mockResolvedValueOnce(next)
+				.mockResolvedValueOnce(JobFactoryHelpers.completed({ _id: next._id }));
+
+			await processor.poll();
+			await processor.poll();
+
+			expect(handler).toHaveBeenCalledExactlyOnceWith(next);
+			expect(worker.activeJobs.size).toBe(0);
+			expect(ctx.notifyJobFinished).toHaveBeenCalledTimes(2);
+		});
+
 		it('should not poll if scheduler is not running', async () => {
 			vi.spyOn(ctx, 'isRunning').mockReturnValue(false);
 

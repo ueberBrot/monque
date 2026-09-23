@@ -52,6 +52,16 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledWith(new Set(['email']));
 	});
 
+	it('polls within a bounded window while notifications keep arriving', () => {
+		for (let i = 0; i < 20; i++) {
+			router.notifyRunnableJob(i % 2 === 0 ? 'email' : 'sms');
+			vi.advanceTimersByTime(50);
+		}
+
+		expect(onPoll).toHaveBeenCalledTimes(10);
+		expect(onPoll).toHaveBeenLastCalledWith(new Set(['email', 'sms']));
+	});
+
 	it('does not route pending notifications when the scheduler is stopped', () => {
 		vi.mocked(ctx.isRunning).mockReturnValue(false);
 

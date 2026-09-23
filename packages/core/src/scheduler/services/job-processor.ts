@@ -197,9 +197,9 @@ export class JobProcessor {
 	async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id.toString();
 		const startTime = Date.now();
-		this.ctx.emit('job:start', job);
 
 		try {
+			this.ctx.emit('job:start', job);
 			await worker.handler(job);
 
 			// Job completed successfully

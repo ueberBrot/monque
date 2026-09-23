@@ -78,24 +78,34 @@ export class ChangeStreamHandler {
 				},
 			];
 
-			this.changeStream = this.ctx.collection.watch(pipeline, {
+			const changeStream = this.ctx.collection.watch(pipeline, {
 				fullDocument: 'updateLookup',
+			});
+			this.changeStream = changeStream;
+
+			// watch() is lazy: a token or change confirms a successful server response.
+			changeStream.on('resumeTokenChanged', () => {
+				if (this.changeStream === changeStream) {
+					this.reconnectAttempts = 0;
+				}
 			});
 
 			// Handle change events
-			this.changeStream.on('change', (change) => {
+			changeStream.on('change', (change) => {
+				if (this.changeStream !== changeStream) return;
+				this.reconnectAttempts = 0;
 				this.handleEvent(change);
 			});
 
 			// Handle errors with reconnection
-			this.changeStream.on('error', (error: Error) => {
+			changeStream.on('error', (error: Error) => {
+				if (this.changeStream !== changeStream) return;
 				this.ctx.emit('changestream:error', { error });
 				this.handleError(error);
 			});
 
 			// Mark as connected
 			this.usingChangeStreams = true;
-			this.reconnectAttempts = 0;
 			this.ctx.emit('changestream:connected', undefined);
 		} catch (error) {
 			// Change streams not available (e.g., standalone MongoDB)

@@ -9,7 +9,7 @@ import { JobDetailParamsDtoSchema, JobStatusDtoSchema } from './job.js';
  */
 export const JobSelectorDtoSchema = z
 	.object({
-		name: z.string().optional(),
+		name: z.string().min(1).optional(),
 		status: z.union([JobStatusDtoSchema, z.array(JobStatusDtoSchema).min(1)]).optional(),
 		olderThan: z.iso.datetime().optional(),
 		newerThan: z.iso.datetime().optional(),

@@ -46,6 +46,7 @@ export class LifecycleManager {
 	private readonly ctx: SchedulerContext;
 	private callbacks: TimerCallbacks | null = null;
 	private pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private pollDueAt: number | null = null;
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -98,6 +99,7 @@ export class LifecycleManager {
 	 */
 	stopTimers(): void {
 		this.callbacks = null;
+		this.pollDueAt = null;
 
 		if (this.cleanupIntervalId) {
 			clearInterval(this.cleanupIntervalId);
@@ -116,12 +118,12 @@ export class LifecycleManager {
 	}
 
 	/**
-	 * Reset the poll timer to reschedule the next poll.
+	 * Reevaluate the poll interval without postponing an existing full-poll deadline.
 	 *
-	 * Called after change-stream-triggered polls to ensure the safety poll timer
-	 * is recalculated (not fired redundantly from an old schedule).
+	 * Targeted polls do not discover work for other Workers. They may shorten the
+	 * delay when change streams disconnect, but must preserve the safety net.
 	 */
-	resetPollTimer(): void {
+	reevaluatePollTimer(): void {
 		this.scheduleNextPoll();
 	}
 
@@ -150,11 +152,6 @@ export class LifecycleManager {
 	 * When change streams are inactive, uses `pollInterval` (shorter, primary discovery).
 	 */
 	private scheduleNextPoll(): void {
-		if (this.pollTimeoutId) {
-			clearTimeout(this.pollTimeoutId);
-			this.pollTimeoutId = null;
-		}
-
 		if (!this.ctx.isRunning() || !this.callbacks) {
 			return;
 		}
@@ -162,8 +159,18 @@ export class LifecycleManager {
 		const delay = this.callbacks.isChangeStreamActive()
 			? this.ctx.options.safetyPollInterval
 			: this.ctx.options.pollInterval;
+		const dueAt = Date.now() + delay;
+		if (this.pollDueAt !== null && this.pollDueAt <= dueAt) {
+			return;
+		}
+		if (this.pollTimeoutId) {
+			clearTimeout(this.pollTimeoutId);
+		}
+		this.pollDueAt = dueAt;
 
 		this.pollTimeoutId = setTimeout(() => {
+			this.pollTimeoutId = null;
+			this.pollDueAt = null;
 			this.executePollAndScheduleNext();
 		}, delay);
 	}

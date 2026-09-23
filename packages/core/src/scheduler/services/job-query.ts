@@ -17,7 +17,13 @@ import {
 	type QueueViewSummary,
 	type QueueViewWorkerSummary,
 } from '@/jobs';
-import { AggregationTimeoutError, ConnectionError, InvalidCursorError, toError } from '@/shared';
+import {
+	AggregationTimeoutError,
+	ConnectionError,
+	InvalidCursorError,
+	InvalidJobQueryError,
+	toError,
+} from '@/shared';
 
 import {
 	buildSelectorQuery,
@@ -25,11 +31,21 @@ import {
 	decodeCursor,
 	encodeCursor,
 	normalizeCursorSort,
+	parseJobNameFilter,
 } from '../helpers.js';
 import { QueryCache } from './query-cache.js';
 import type { SchedulerContext } from './types.js';
 
 const MONGO_MAX_TIME_MS_EXPIRED_CODE = 50;
+const MAX_QUERY_LIMIT = 1000;
+
+function resolveQueryLimit(limit: number | undefined, defaultLimit: number): number {
+	const value = limit === undefined ? defaultLimit : limit;
+	if (!Number.isSafeInteger(value) || value < 1 || value > MAX_QUERY_LIMIT) {
+		throw new InvalidJobQueryError(`limit must be an integer between 1 and ${MAX_QUERY_LIMIT}`);
+	}
+	return value;
+}
 
 type QueueViewStatsDocument = {
 	_id: string;
@@ -309,22 +325,13 @@ export class JobQueryService {
 	 * ```
 	 */
 	async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-		const query: Document = {};
+		const query = buildSelectorQuery(filter);
 
-		if (filter.name !== undefined) {
-			query['name'] = filter.name;
+		const limit = resolveQueryLimit(filter.limit, 100);
+		const skip = filter.skip === undefined ? 0 : filter.skip;
+		if (!Number.isSafeInteger(skip) || skip < 0) {
+			throw new InvalidJobQueryError('skip must be a non-negative safe integer');
 		}
-
-		if (filter.status !== undefined) {
-			if (Array.isArray(filter.status)) {
-				query['status'] = { $in: filter.status };
-			} else {
-				query['status'] = filter.status;
-			}
-		}
-
-		const limit = filter.limit ?? 100;
-		const skip = filter.skip ?? 0;
 
 		try {
 			const cursor = this.ctx.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
@@ -384,12 +391,12 @@ export class JobQueryService {
 		options: CursorOptions,
 		includePayload: boolean,
 	): Promise<CursorPage<T>> {
-		const limit = options.limit ?? 50;
+		const limit = resolveQueryLimit(options.limit, 50);
 		const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
 		const sort = normalizeCursorSort(options.sort);
 		const anchor = decodeCursorAnchor(options.cursor, sort);
 
-		const query: Filter<Document> = options.filter ? buildSelectorQuery(options.filter) : {};
+		const query = buildSelectorQuery(options.filter === undefined ? {} : options.filter);
 		const mongoSort = buildMongoSort(sort, direction);
 		applyCursorConstraint(query, sort, direction, anchor.id, anchor.sortValue);
 		const fetchLimit = limit + 1;
@@ -480,19 +487,18 @@ export class JobQueryService {
 	 * ```
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
-		const stats = await this.statsCache.get(
-			filter?.name ?? '',
-			this.ctx.options.statsCacheTtlMs,
-			() => this.loadQueueStats(filter),
+		const name = parseJobNameFilter(filter === undefined ? {} : filter);
+		const stats = await this.statsCache.get(name ?? '', this.ctx.options.statsCacheTtlMs, () =>
+			this.loadQueueStats(name),
 		);
 		return { ...stats };
 	}
 
-	private async loadQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
+	private async loadQueueStats(name?: string): Promise<QueueStats> {
 		const matchStage: Document = {};
 
-		if (filter?.name) {
-			matchStage['name'] = filter.name;
+		if (name !== undefined) {
+			matchStage['name'] = name;
 		}
 
 		const pipeline: Document[] = [
@@ -615,7 +621,7 @@ export class JobQueryService {
 	async getQueueViewSummaries(
 		filter?: Pick<JobSelector, 'name'>,
 	): Promise<readonly QueueViewSummary[]> {
-		const nameFilter = filter?.name;
+		const nameFilter = parseJobNameFilter(filter === undefined ? {} : filter);
 		const persistedStats = await this.queueViewCache.get(
 			JSON.stringify(nameFilter ?? null),
 			this.ctx.options.statsCacheTtlMs,

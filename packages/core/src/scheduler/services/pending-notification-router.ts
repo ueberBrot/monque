@@ -18,10 +18,10 @@ const MAX_TIMER_DELAY = 2_147_483_647;
  * local writes. The change stream adapter only decides when a Job became relevant.
  */
 export class PendingNotificationRouter {
-	/** Debounce timer for immediate Pending Notifications */
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Batch timer for immediate Pending Notifications */
+	private batchTimer: ReturnType<typeof setTimeout> | null = null;
 
-	/** Job names collected during the current debounce window for targeted polling */
+	/** Job names collected during the current batch window for targeted polling */
 	private pendingTargetNames: Set<string> = new Set();
 
 	/** Wakeup timer for the earliest known future Job */
@@ -57,13 +57,13 @@ export class PendingNotificationRouter {
 			this.pendingTargetNames.add(jobName);
 		}
 
-		this.debouncedPoll();
+		this.scheduleBatchPoll();
 	}
 
 	close(): void {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-			this.debounceTimer = null;
+		if (this.batchTimer) {
+			clearTimeout(this.batchTimer);
+			this.batchTimer = null;
 		}
 
 		this.pendingTargetNames.clear();
@@ -71,18 +71,18 @@ export class PendingNotificationRouter {
 	}
 
 	/**
-	 * Schedule a debounced poll with collected target names.
+	 * Schedule a poll at the end of a fixed batch window with collected target names.
 	 *
-	 * Collects Job Names from multiple Pending Notifications during the debounce
+	 * Collects Job Names from multiple Pending Notifications during the batch
 	 * window, then triggers a single targeted poll for only those Workers.
 	 */
-	private debouncedPoll(): void {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+	private scheduleBatchPoll(): void {
+		if (this.batchTimer) {
+			return;
 		}
 
-		this.debounceTimer = setTimeout(() => {
-			this.debounceTimer = null;
+		this.batchTimer = setTimeout(() => {
+			this.batchTimer = null;
 			const names = this.pendingTargetNames.size > 0 ? new Set(this.pendingTargetNames) : undefined;
 			this.pendingTargetNames.clear();
 			this.onPoll(names).catch((error: unknown) => {

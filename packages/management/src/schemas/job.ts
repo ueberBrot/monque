@@ -72,7 +72,7 @@ export const JobListQueryDtoSchema = z
 		cursor: z.string().optional(),
 		limit: z.string().optional(),
 		view: z.enum(['full', 'summary']).optional(),
-		name: z.string().optional(),
+		name: z.string().min(1).optional(),
 		status: z.union([JobStatusDtoSchema, z.array(JobStatusDtoSchema).min(1)]).optional(),
 		createdAtFrom: z.iso.datetime().optional(),
 		createdAtTo: z.iso.datetime().optional(),
