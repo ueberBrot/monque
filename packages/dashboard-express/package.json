@@ -1,6 +1,6 @@
 {
 	"name": "@monque/dashboard-express",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Express adapter for serving the Monque dashboard",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {
@@ -60,7 +60,7 @@
 		"lint": "biome check ."
 	},
 	"dependencies": {
-		"@monque/dashboard": "^0.0.0"
+		"@monque/dashboard": "^0.1.0"
 	},
 	"peerDependencies": {
 		"express": "^5.2.1"

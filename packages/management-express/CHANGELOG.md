@@ -1,5 +1,18 @@
 # @monque/management-express
 
+## 0.4.0
+
+### Minor Changes
+
+- [#522](https://github.com/ueberBrot/monque/pull/522) [`75b43f4`](https://github.com/ueberBrot/monque/commit/75b43f4802587c8d32188d712c0750b6b5333571) - Support Management 0.4, including summary job listings, Queue Views filtered by job name, and actions on selected job IDs, through the existing Express router.
+  
+  Require `@monque/core` 1.12.0 or newer within version 1 for string job-ID lookup. Upgrade core alongside the adapter.
+
+### Patch Changes
+
+- Updated dependencies [[`75b43f4`](https://github.com/ueberBrot/monque/commit/75b43f4802587c8d32188d712c0750b6b5333571)]:
+  - @monque/management@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

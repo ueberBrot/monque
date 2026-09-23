@@ -1,5 +1,11 @@
 # @monque/docs
 
+## 1.3.0
+
+### Minor Changes
+
+- [#522](https://github.com/ueberBrot/monque/pull/522) [`75b43f4`](https://github.com/ueberBrot/monque/commit/75b43f4802587c8d32188d712c0750b6b5333571) - Add dashboard setup and configuration guides, API references, and screenshots for Queue Views, Jobs, and Health. Expand Management API documentation and clarify installation, scheduling, retries, and crash recovery. Simplify the guides and package READMEs.
+
 ## 1.2.0
 
 ### Minor Changes

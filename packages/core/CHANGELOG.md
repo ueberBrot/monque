@@ -1,5 +1,15 @@
 # @monque/core
 
+## 1.12.0
+
+### Minor Changes
+
+- [#522](https://github.com/ueberBrot/monque/pull/522) [`75b43f4`](https://github.com/ueberBrot/monque/commit/75b43f4802587c8d32188d712c0750b6b5333571) - - Add `getJobSummariesWithCursor()` to paginate job metadata without loading payloads, and improve pagination filtered by job name or status. Cursor queries now have a 30-second execution limit.
+  - Allow hexadecimal strings in `getJob()`. Invalid or missing IDs return `null`.
+  - Reduce database load from concurrent statistics requests. Queue View counts now also respect `statsCacheTtlMs` (5 seconds by default; `0` disables cached results), while worker activity stays current. Job management actions invalidate cached counts.
+  - Add an optional exact job name filter to `getQueueViewSummaries({ name })`, reducing database work when inspecting a single Queue View. Calling without a filter continues to return all Queue Views.
+  - Prevent timer overflow warnings and unnecessary scheduler wakeups for jobs scheduled more than approximately 25 days ahead.
+
 ## 1.11.0
 
 ### Minor Changes

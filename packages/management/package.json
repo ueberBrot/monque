@@ -1,6 +1,6 @@
 {
 	"name": "@monque/management",
-	"version": "0.3.1",
+	"version": "0.4.0",
 	"description": "Framework-neutral management surface for Monque",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {
