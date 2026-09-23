@@ -12,9 +12,11 @@ import {
 	JobStatsQueryDtoSchema,
 	ManagementErrorDtoSchema,
 	QueueStatsDtoSchema,
+	QueueViewQueryDtoSchema,
 	QueueViewSummaryListDtoSchema,
 	RescheduleJobInputDtoSchema,
 	SchedulerHealthDtoSchema,
+	SelectedJobActionsDtoSchema,
 } from '../schemas/index.js';
 
 const ManagementMutationErrors = {
@@ -52,6 +54,17 @@ const SingleJobActionErrors = {
  * routes still depends on the methods available on `ManagementOptions.monque`.
  */
 export const managementContract = {
+	selectedJobActions: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/jobs/actions/selected',
+			operationId: 'selectedJobActions',
+			successStatus: 200,
+			successDescription: 'Per-job action outcomes',
+		})
+		.input(SelectedJobActionsDtoSchema)
+		.errors(ManagementMutationErrors)
+		.output(BulkActionResultDtoSchema),
 	health: oc
 		.route({
 			method: 'GET',
@@ -78,6 +91,7 @@ export const managementContract = {
 			successStatus: 200,
 			successDescription: 'Successful response',
 		})
+		.input(QueueViewQueryDtoSchema.optional())
 		.output(QueueViewSummaryListDtoSchema),
 	jobs: oc
 		.route({

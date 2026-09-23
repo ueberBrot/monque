@@ -5,7 +5,7 @@ description: Understanding jobs and their lifecycle in Monque.
 
 import { Aside } from '@astrojs/starlight/components';
 
-Jobs are the fundamental unit of work in Monque. This guide explains how jobs work, their lifecycle, and how to work with them effectively.
+A job stores the work you want a worker to perform, along with its payload, status, and scheduled time.
 
 ## Quick Reference
 
@@ -22,7 +22,7 @@ Jobs are the fundamental unit of work in Monque. This guide explains how jobs wo
 
 ## What is a Job?
 
-A job represents a unit of work to be processed asynchronously. Each job has:
+Each job has:
 
 - **Name**: Identifies which worker should process it
 - **Data**: The payload containing information needed to complete the work
@@ -161,17 +161,21 @@ const activeJobs = await monque.getJobs({
 ```typescript
 import { ObjectId } from 'mongodb';
 
-const job = await monque.getJob(new ObjectId('...'));
+const job = await monque.getJob(new ObjectId('507f1f77bcf86cd799439011'));
 if (job) {
   console.log(job.status, job.data);
 }
 ```
 
+You can also pass the hexadecimal ID string directly. Use
+[metadata-only pagination](/monque/core-concepts/management/#metadata-only-listings) for large
+job lists that do not need payloads.
+
 ## Job Data Best Practices
 
 ### Keep Payloads Small
 
-Job data should be reference data, not full documents:
+Store identifiers in the payload and load larger documents in the handler:
 
 ```typescript
 // ✅ Good - Store ID, fetch data in worker
@@ -206,8 +210,8 @@ try {
 ```
 
 `PayloadTooLargeError` exposes two properties:
-- `actualSize` — measured BSON byte size of the payload
-- `maxSize` — the configured limit
+- `actualSize`: measured BSON byte size of the payload
+- `maxSize`: the configured limit
 
 <Aside type="tip">
   A good starting limit is `100_000` (100 KB). MongoDB's absolute document limit is 16 MB, but smaller payloads keep queues fast and memory usage predictable.
@@ -242,12 +246,9 @@ monque.register<ProcessOrderJob>('process-order', async (job) => {
 Design workers to handle duplicate execution safely:
 
 <Aside type="note">
-  **Why jobs might run twice:** Monque ensures a job is only claimed by one worker at a time. However, a job can be re-run in scenarios such as:
-  
-  - **Retries**: If a job fails, the [retry logic](/monque/core-concepts/retry/) will re-queue it.
-  - **Stale Recovery**: If a worker crashes or stops sending heartbeats, the recovery mechanism will re-queue the job.
-  
-  Always design your workers to be idempotent (safe to run multiple times).
+  Atomic claims prevent two workers from claiming the same pending job at once. A job can
+  still run again after a [retry](/monque/core-concepts/retry/) or after startup recovery
+  resets an expired lock. Make handlers safe to repeat, including after a partially completed run.
 </Aside>
 
 ```typescript
@@ -267,9 +268,7 @@ monque.register('charge-payment', async (job) => {
 
 ## Job Retention
 
-Monque provides built-in job retention to automatically clean up completed and failed jobs. This prevents your database from growing indefinitely.
-
-You can configure retention when initializing Monque:
+Set retention periods to delete old completed and failed jobs automatically:
 
 ```typescript
 const monque = new Monque(db, {
@@ -288,21 +287,24 @@ const monque = new Monque(db, {
 
 ## Indexes
 
-Monque creates MongoDB indexes during `initialize()` to keep polling, claiming, deduplication, and recovery queries fast.
+During `initialize()`, Monque creates indexes for job discovery, deduplication, ownership,
+recovery, and pagination.
 
 <Aside type="note">
-  Your MongoDB user must have permission to create indexes. If index creation is restricted in production, create the required indexes ahead of time.
+  The MongoDB user used by Monque must have permission to create indexes during initialization.
 </Aside>
 
-The indexes Monque creates are:
+Listing indexes include:
 
-- `{ status: 1, nextRunAt: 1 }` for efficient polling (ready-to-run jobs)
-- `{ name: 1, uniqueKey: 1 }` as a **partial unique** index for deduplication (only when `uniqueKey` exists and status is `pending`/`processing`)
-- `{ name: 1, status: 1 }` for querying by job type and status
-- `{ claimedBy: 1, status: 1 }` for ownership queries and heartbeat updates
-- `{ lastHeartbeat: 1, status: 1 }` for heartbeat-based monitoring queries
-- `{ status: 1, nextRunAt: 1, claimedBy: 1 }` for the atomic claim query
-- `{ status: 1, lockedAt: 1, lastHeartbeat: 1 }` to support stale recovery queries
+- `{ createdAt: -1, _id: -1 }`
+- `{ name: 1, createdAt: -1, _id: -1 }`
+- `{ status: 1, createdAt: -1, _id: -1 }`
+- `{ updatedAt: -1, _id: -1 }`
+- `{ nextRunAt: -1, _id: -1 }`
+
+The `_id` field breaks ties for stable ordering. Name and status indexes support filtered
+creation-time listings. A cleanup index is also created when `jobRetention` is configured.
+Initialization still requires index permissions even if indexes already exist.
 
 ### Deleting Jobs
 
@@ -351,7 +353,7 @@ monque.register('custom-cleanup', async () => {
 ## Next Steps
 
 - [Workers](/monque/core-concepts/workers/) - Learn how to process jobs
-- [Scheduling](/monque/core-concepts/scheduling/) - Deep dive into cron expressions
+- [Scheduling](/monque/core-concepts/scheduling/) - Use cron expressions
 - [Retry & Backoff](/monque/core-concepts/retry/) - Configure retry behavior
 
 ## API Reference

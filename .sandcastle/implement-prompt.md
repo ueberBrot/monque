@@ -33,6 +33,16 @@ If applicable, use RGR to complete the task.
 3. REPEAT until done
 4. REFACTOR the code
 
+# FRONTEND WORK
+
+If this issue changes dashboard UI, React components, CSS, design tokens, or browser-facing flows:
+
+1. Use the `impeccable` skill before making frontend design decisions.
+2. Follow app/dashboard/product UI guidance, not landing-page or marketing-page patterns.
+3. Preserve existing design conventions unless the issue explicitly asks to change them.
+4. Verify the UI in a browser at desktop and mobile sizes before committing.
+5. Fix visible layout, contrast, overflow, spacing, and interaction defects found during verification.
+
 # FEEDBACK LOOPS
 
 Before committing, run `bun run type-check` and `bun run test` to ensure the tests pass.

@@ -12,6 +12,7 @@ import {
 	toDeleteJobDto,
 	toJobCursorPageDto,
 	toJobDto,
+	toJobSummaryPageDto,
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,
 	toSchedulerHealthDto,
@@ -26,14 +27,17 @@ import type {
 	JobListQueryDto,
 	JobSelectorDto,
 	QueueStatsDto,
+	QueueViewQueryDto,
 	QueueViewSummaryListDto,
 	RescheduleJobInputDto,
 	SchedulerHealthDto,
+	SelectedJobActionsDto,
 } from '../schemas/index.js';
 import {
 	decideManagementAction,
 	decideManagementActionSupport,
 	getManagementCapabilities,
+	isManagementActionSupported,
 	type ManagementActionTarget,
 } from '../surface/action-policy.js';
 import type { ManagementAction, ManagementOptions } from '../surface/index.js';
@@ -46,14 +50,16 @@ import {
 
 type BulkManagementAction = 'cancelBulk' | 'retryBulk' | 'deleteBulk';
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
-type SingleJobMutationAction = 'cancel' | 'retry' | 'reschedule';
+type SingleJobMutationInput =
+	| { action: 'cancel' | 'retry' }
+	| { action: 'reschedule'; nextRunAt: string };
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
-type DeleteJobMutator = (id: string) => Promise<boolean>;
 
 export interface ManagementOperations<TContext = unknown> {
 	getHealth(): SchedulerHealthDto;
+	selectedJobActions(input: SelectedJobActionsDto, context: TContext): Promise<BulkActionResultDto>;
 	getCapabilities(context: TContext): Promise<CapabilitiesDto>;
-	listQueueViews(context: TContext): Promise<QueueViewSummaryListDto>;
+	listQueueViews(context: TContext, filter?: QueueViewQueryDto): Promise<QueueViewSummaryListDto>;
 	listJobs(input: JobListQueryDto, context: TContext): Promise<JobCursorPageDto>;
 	getJobStats(input: { name?: string | undefined }, context: TContext): Promise<QueueStatsDto>;
 	getJob(input: JobDetailInputDto, context: TContext): Promise<JobDto>;
@@ -70,12 +76,17 @@ export function createManagementOperations<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementOperations<TContext> {
 	return {
+		selectedJobActions: (input, context) => handleSelectedJobActions(options, input, context),
 		getHealth: () => toSchedulerHealthDto(options.monque.isHealthy()),
 		getCapabilities: (context: TContext) => getManagementCapabilities(options, context),
-		listQueueViews: async (context: TContext) => {
+		listQueueViews: async (context: TContext, filter?: QueueViewQueryDto) => {
 			await requireReadAuthorization(options, context);
-
-			return toQueueViewSummaryListDto(await options.monque.getQueueViewSummaries());
+			const scope = filter?.name === undefined ? undefined : { name: filter.name };
+			const summaries = await options.monque.getQueueViewSummaries(scope);
+			// Older compatible scheduler facades may ignore the additive filter argument.
+			return toQueueViewSummaryListDto(
+				scope ? summaries.filter((view) => view.name === scope.name) : summaries,
+			);
 		},
 		listJobs: async (input: JobListQueryDto, context: TContext) => {
 			await requireReadAuthorization(options, context);
@@ -87,6 +98,12 @@ export function createManagementOperations<TContext = unknown>(
 			}
 
 			try {
+				if (input.view === 'summary') {
+					const page = options.monque.getJobSummariesWithCursor
+						? await options.monque.getJobSummariesWithCursor(cursorOptions)
+						: await options.monque.getJobsWithCursor(cursorOptions);
+					return toJobSummaryPageDto(page);
+				}
 				return await toJobCursorPageDto(
 					options,
 					await options.monque.getJobsWithCursor(cursorOptions),
@@ -112,38 +129,33 @@ export function createManagementOperations<TContext = unknown>(
 
 			return toJobDto(options, job, context);
 		},
-		cancelJob: (input: JobDetailInputDto, context: TContext) =>
-			handleSingleJobMutation(
+		cancelJob: async (input: JobDetailInputDto, context: TContext) =>
+			toJobDto(
 				options,
-				'cancel',
-				input.params.id,
+				await executeJobMutation(options, { action: 'cancel' }, input.params.id, context),
 				context,
-				options.monque.cancelJob?.bind(options.monque),
 			),
-		retryJob: (input: JobDetailInputDto, context: TContext) =>
-			handleSingleJobMutation(
+		retryJob: async (input: JobDetailInputDto, context: TContext) =>
+			toJobDto(
 				options,
-				'retry',
-				input.params.id,
+				await executeJobMutation(options, { action: 'retry' }, input.params.id, context),
 				context,
-				options.monque.retryJob?.bind(options.monque),
 			),
-		rescheduleJob: (input: RescheduleJobInputDto, context: TContext) => {
-			return handleSingleJobMutation(
+		rescheduleJob: async (input: RescheduleJobInputDto, context: TContext) =>
+			toJobDto(
 				options,
-				'reschedule',
-				input.params.id,
+				await executeJobMutation(
+					options,
+					{ action: 'reschedule', nextRunAt: input.body.nextRunAt },
+					input.params.id,
+					context,
+				),
 				context,
-				toRescheduleJobMutator(options, new Date(input.body.nextRunAt)),
-			);
+			),
+		deleteJob: async (input: JobDetailInputDto, context: TContext) => {
+			await executeJobDeletion(options, input.params.id, context);
+			return toDeleteJobDto();
 		},
-		deleteJob: (input: JobDetailInputDto, context: TContext) =>
-			handleDeleteJob(
-				options,
-				input.params.id,
-				context,
-				options.monque.deleteJob?.bind(options.monque),
-			),
 		cancelJobs: (input: JobSelectorDto, context: TContext) =>
 			handleBulkJobMutation(
 				options,
@@ -171,39 +183,45 @@ export function createManagementOperations<TContext = unknown>(
 	};
 }
 
-async function handleSingleJobMutation<TContext>(
+async function executeJobMutation<TContext>(
 	options: ManagementOptions<TContext>,
-	action: SingleJobMutationAction,
+	input: SingleJobMutationInput,
 	idInput: string,
 	context: TContext,
-	mutate: SingleJobMutator | undefined,
-) {
-	const supportedMutate = requireMutationSupport(options, action, mutate);
-	const id = await resolveSingleJobTarget(options, action, idInput, context);
+): Promise<PersistedJob> {
+	const mutate =
+		input.action === 'reschedule'
+			? toRescheduleJobMutator(options, new Date(input.nextRunAt))
+			: input.action === 'retry'
+				? options.monque.retryJob?.bind(options.monque)
+				: options.monque.cancelJob?.bind(options.monque);
+	const supportedMutate = requireMutationSupport(options, input.action, mutate);
+	const id = await resolveSingleJobTarget(options, input.action, idInput, context);
 	const job = await mapJobStateConflict(() => supportedMutate(id));
 
 	if (!job) {
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
 
-	return toJobDto(options, job, context);
+	return job;
 }
 
-async function handleDeleteJob<TContext>(
+async function executeJobDeletion<TContext>(
 	options: ManagementOptions<TContext>,
 	idInput: string,
 	context: TContext,
-	mutate: DeleteJobMutator | undefined,
-) {
-	const supportedMutate = requireMutationSupport(options, 'delete', mutate);
+): Promise<void> {
+	const supportedMutate = requireMutationSupport(
+		options,
+		'delete',
+		options.monque.deleteJob?.bind(options.monque),
+	);
 	const id = await resolveSingleJobTarget(options, 'delete', idInput, context);
 	const deleted = await supportedMutate(id);
 
 	if (!deleted) {
 		throw new ORPCError('NOT_FOUND', { message: 'Job not found' });
 	}
-
-	return toDeleteJobDto();
 }
 
 function requireMutationSupport<TContext, TMutator>(
@@ -318,4 +336,47 @@ async function mapJobStateConflict<TResult>(operation: () => Promise<TResult>): 
 
 		throw error;
 	}
+}
+
+async function handleSelectedJobActions<TContext>(
+	options: ManagementOptions<TContext>,
+	input: SelectedJobActionsDto,
+	context: TContext,
+): Promise<BulkActionResultDto> {
+	const capability =
+		input.action === 'reschedule' ? 'reschedule' : (`${input.action}Bulk` as const);
+	if (!isManagementActionSupported(options.monque, capability))
+		throwForbidden('Unsupported action');
+	const ids = [
+		...new Set(input.ids.map((id) => (/^[a-fA-F0-9]{24}$/.test(id) ? id.toLowerCase() : id))),
+	];
+	await requireManagementAction(options, capability, context, { ids });
+	const result: BulkActionResultDto = { count: 0, errors: [] };
+	const remainingIds = ids.values();
+	await Promise.all(
+		Array.from({ length: Math.min(5, ids.length) }, async () => {
+			for (const id of remainingIds) {
+				try {
+					if (input.action === 'delete') {
+						await executeJobDeletion(options, id, context);
+					} else {
+						await executeJobMutation(
+							options,
+							input.action === 'reschedule' ? input : { action: input.action },
+							id,
+							context,
+						);
+					}
+					result.count++;
+				} catch (error) {
+					result.errors.push({
+						jobId: id,
+						status: error instanceof ORPCError ? error.status : 500,
+						error: error instanceof ORPCError ? error.message : 'Job action failed',
+					});
+				}
+			}
+		}),
+	);
+	return result;
 }

@@ -1,263 +1,105 @@
 ---
 title: Atomic Claim Pattern
-description: How Monque prevents concurrent duplicate processing across distributed workers.
+description: Run multiple Monque schedulers against the same MongoDB collection.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+Multiple schedulers can process jobs from the same MongoDB collection. Monque claims each
+due pending job with an atomic database operation, so only one scheduler claims that job
+at a time.
 
-The atomic claim pattern is Monque's core mechanism for ensuring a pending job is claimed by only one scheduler instance at a time.
-
-This prevents **concurrent duplicates**, but it does not guarantee that a job can never run more than once. Jobs may be processed again after a crash, a retry, or stale recovery, so workers should be idempotent.
-
-## The Problem
-
-In distributed systems, multiple workers might try to pick up the same job simultaneously. Without proper coordination, this leads to:
-
-- **Duplicate processing**: Same job runs multiple times
-- **Race conditions**: Workers step on each other's work
-- **Lost updates**: Results get overwritten
-- **Wasted resources**: Redundant computation
-
-## The Solution: Atomic Claims
-
-Monque uses MongoDB's `findOneAndUpdate` with atomic guarantees to ensure only one scheduler claims each pending job.
-
-### How It Works
-
-```typescript
-// Simplified internal implementation
-const job = await collection.findOneAndUpdate(
-  {
-    // Only match jobs that are:
-    name: workerName,            // For this worker type
-    status: 'pending',           // Not already claimed
-    nextRunAt: { $lte: now },    // Ready to run
-    $or: [                       // Not owned by another instance
-      { claimedBy: null },
-      { claimedBy: { $exists: false } }
-    ]
-  },
-  {
-    $set: {
-      status: 'processing',
-      claimedBy: schedulerInstanceId,  // Mark ownership
-      lockedAt: new Date(),
-      lastHeartbeat: new Date(),
-      heartbeatInterval: 30000,
-      updatedAt: new Date()
-    }
-  },
-  {
-    returnDocument: 'after'      // Return the claimed job
-  }
-);
-```
-
-### Why This Works
-
-1. **Atomic operation**: MongoDB guarantees the query and update execute as one unit
-2. **First-writer wins**: Only one instance can match and update the same document
-3. **Immediate visibility**: Other instances see the updated document instantly
-4. **No external locks**: No need for Redis, ZooKeeper, or distributed lock managers
+This is at-least-once processing. A job can run again after a failure or crash recovery.
+Use [idempotent handlers](/monque/core-concepts/jobs/#idempotent-operations) to avoid duplicate
+side effects.
 
 ## Scheduler Instance ID
 
-Each Monque instance has a unique identifier:
+By default, each `Monque` instance gets a generated UUID. You can provide a unique ID to
+identify its jobs in logs and the dashboard:
 
 ```typescript
-const monque = new Monque(db, {
-  schedulerInstanceId: 'worker-1'  // Optional: provide your own
-});
+import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
-// Or let Monque generate a UUID
-const monque = new Monque(db); // Uses randomUUID()
+const monque = new Monque(db, {
+  schedulerInstanceId: `${hostname()}-${randomUUID()}`,
+});
 ```
 
-<Aside type="tip">
-  Providing a meaningful `schedulerInstanceId` helps with debugging. Use hostnames, container IDs, or pod names in production.
-</Aside>
-
-### Viewing Instance ID
+A processing job's `claimedBy` field contains its scheduler ID. Read the current job to
+inspect it; an object returned by an earlier enqueue call does not update automatically:
 
 ```typescript
-// Instance ID is visible in job documents
-const job = await monque.enqueue('task', { foo: 'bar' });
-// After being claimed:
-// job.claimedBy === 'worker-1' (or the UUID)
+const current = await monque.getJob(jobId);
+console.log(current?.claimedBy);
 ```
 
 ### Instance Collision Detection
 
-Monque detects when two active instances share the same `schedulerInstanceId`. During `initialize()`, after stale recovery runs, it checks whether any job is currently `processing` with the same ID **and** has a recent heartbeat (within `2 × heartbeatInterval`). If one is found, a `ConnectionError` is thrown immediately.
+Always assign different IDs to active instances. During initialization, Monque checks for
+processing jobs with the same ID and a recent heartbeat. If it finds one, initialization
+fails with `ConnectionError`.
 
-```typescript
-import { ConnectionError } from '@monque/core';
-
-try {
-  await monque.initialize();
-} catch (error) {
-  if (error instanceof ConnectionError) {
-    // Another live instance is using the same ID
-    console.error(error.message);
-  }
-}
-```
-
-**Why stale recovery runs first:** A crashed instance leaves jobs in `processing` with a stale `lockedAt` timestamp. Stale recovery uses the job's `lockedAt` field and the configured `lockTimeout` to determine if a job's lock has expired—this is separate from heartbeat monitoring. Collision detection checks `lastHeartbeat` to detect actively running instances. By running stale recovery first, jobs with expired locks are reset to `pending` before the collision check runs, preventing false positives from crash-recovery scenarios.
-
-<Aside type="caution">
-  Always use a unique `schedulerInstanceId` per running instance. Sharing an ID across active instances causes a `ConnectionError` on startup of the second instance.
-</Aside>
+This check does not reserve an ID for an idle scheduler. Use a unique ID even if the first
+instance has no processing jobs.
 
 ## Multi-Instance Deployment
 
-### Scaling Horizontally
-
-Run multiple scheduler instances for high availability:
-
-```typescript
-// Instance 1 (server-a)
-const monque1 = new Monque(db, {
-  schedulerInstanceId: 'server-a'
-});
-monque1.register('send-email', emailHandler);
-monque1.start();
-
-// Instance 2 (server-b)  
-const monque2 = new Monque(db, {
-  schedulerInstanceId: 'server-b'
-});
-monque2.register('send-email', emailHandler);
-monque2.start();
-
-// Both compete fairly for jobs
-// Each pending job is claimed by exactly one instance at a time
-```
-
-### Load Distribution
-
-Jobs are distributed naturally based on claim timing:
-
-```
-Job Queue: [A, B, C, D, E, F, G, H]
-
-Instance 1 claims: A, C, E, G
-Instance 2 claims: B, D, F, H
-(Actual distribution varies based on timing)
-```
-
-## Indexes for Performance
-
-Monque creates the required MongoDB indexes during `initialize()` to keep claim and polling queries fast.
-
-For the full list of indexes, see [Jobs](/monque/core-concepts/jobs/).
+Use the same database and collection name in each process, and register the job handlers
+that process should run:
 
 ```typescript
-// Compound index for claim queries
-{ status: 1, nextRunAt: 1, claimedBy: 1 }
+const monque = new Monque(db, {
+  collectionName: 'monque_jobs',
+  workerConcurrency: 5,
+  instanceConcurrency: 20,
+});
 
-// Index for finding jobs by owner
-{ claimedBy: 1, status: 1 }
+monque.register('send-email', emailHandler);
+await monque.initialize();
+monque.start();
 ```
 
-These indexes ensure claim operations remain fast even with large queues.
+Run this setup in each worker process. Jobs are assigned according to which instance
+claims them first. Distribution is not guaranteed to be even.
+
+Concurrency limits apply per instance. Two instances with concurrency 5 for the same worker
+can run up to 10 jobs for that name in total. See [Workers](/monque/core-concepts/workers/)
+for per-worker and instance-wide limits.
 
 ## Claim Lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant W1 as Worker 1
+    participant W1 as Scheduler 1
     participant DB as MongoDB
-    participant W2 as Worker 2
-    
-    Note over DB: Job in pending state
-    
-    W1->>DB: findOneAndUpdate (claim attempt)
-    W2->>DB: findOneAndUpdate (claim attempt)
-    
-    DB-->>W1: Job document (claimed!)
-    DB-->>W2: null (already claimed)
-    
-    Note over W1: Processes job
-    
-    W1->>DB: Update status to completed
-    Note over DB: Job complete, claimedBy cleared
+    participant W2 as Scheduler 2
+    W1->>DB: Claim pending job
+    W2->>DB: Claim same pending job
+    DB-->>W1: Claimed job
+    DB-->>W2: No match
+    W1->>W1: Run handler
+    W1->>DB: Complete job and clear claim
 ```
+
+On a successful one-time run, the job becomes completed. A successful recurring job returns
+to pending at its next cron time. A failed run either returns to pending for retry or
+becomes failed when retries are exhausted.
 
 ## Failure Handling
 
-### Worker Crashes
+A crashed worker can leave a job in processing. With `recoverStaleJobs: true`, a subsequent
+initialization recovers jobs whose `lockedAt` is older than `lockTimeout`. Heartbeat updates
+do not extend that timeout. Choose a timeout longer than the longest valid handler run.
+See [Heartbeat Mechanism](/monque/advanced/heartbeat/) for recovery settings.
 
-If a worker crashes while processing:
+Call `await monque.stop()` during shutdown, before closing the MongoDB client. It stops
+claiming more jobs and waits for running handlers up to `shutdownTimeout`.
 
-1. Job remains in `processing` status with `claimedBy` set
-2. `lastHeartbeat` stops updating
-3. After `lockTimeout`, the job can be recovered on startup (see [Heartbeat](/monque/advanced/heartbeat/))
+## Monitoring
 
-### Graceful Shutdown
+Subscribe to `job:start`, `job:complete`, `job:fail`, and `job:error` for processing and
+database errors. A claim lost to another scheduler is normal and does not by itself mean
+that the job failed.
 
-When `stop()` is called:
-
-```typescript
-await monque.stop();
-// 1. Stops accepting new jobs
-// 2. Waits for in-progress jobs to complete
-// 3. If shutdown times out, in-progress jobs may remain in `processing`
-//    and will be recovered later by stale recovery on startup
-```
-
-## Best Practices
-
-### 1. Use Meaningful Instance IDs
-
-```typescript
-// ✅ Good - Identifiable in logs and debugging
-const monque = new Monque(db, {
-  schedulerInstanceId: `${hostname}-${process.pid}`
-});
-
-// ❌ Less useful - Random UUID (default)
-const monque = new Monque(db);
-```
-
-### 2. Monitor Claim Metrics
-
-```typescript
-let claimCount = 0;
-
-monque.on('job:start', () => {
-  claimCount++;
-  metrics.gauge('monque.active_claims', claimCount);
-});
-
-monque.on('job:complete', () => {
-  claimCount--;
-  metrics.gauge('monque.active_claims', claimCount);
-});
-```
-
-### 3. Handle Claim Failures Gracefully
-
-```typescript
-monque.on('job:error', ({ error }) => {
-  if (error.message.includes('claim')) {
-    // Claim contention - normal in multi-instance
-    metrics.increment('monque.claim_contention');
-  }
-});
-```
-
-## Comparison with Other Patterns
-
-| Pattern                   | Pros                                         | Cons                                          |
-| ------------------------- | -------------------------------------------- | --------------------------------------------- |
-| **Atomic Claim (Monque)** | No external dependencies, strong consistency | Requires MongoDB                              |
-| **Redis Locks**           | Fast, widely used                            | Additional infrastructure, lock expiry issues |
-| **Pessimistic Locking**   | Simple concept                               | Blocks other workers, deadlock risk           |
-| **Optimistic Locking**    | No blocking                                  | Retry storms under contention                 |
-
-## Next Steps
-
-- [Change Streams](/monque/advanced/change-streams/) - Real-time job notifications
-- [Heartbeat Mechanism](/monque/advanced/heartbeat/) - Detect stale claims
-- [Workers](/monque/core-concepts/workers/) - Configure worker concurrency
+The [dashboard](/monque/dashboard/express/) shows persisted jobs from the shared collection,
+but worker activity and scheduler health describe the instance connected to its Management API.

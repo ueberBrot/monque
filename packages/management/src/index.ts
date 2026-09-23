@@ -35,6 +35,8 @@ export {
 	managementContract,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
+	type QueueViewQueryDto,
+	QueueViewQueryDtoSchema,
 	type QueueViewSummaryDto,
 	QueueViewSummaryDtoSchema,
 	type QueueViewSummaryListDto,
@@ -47,6 +49,8 @@ export {
 	RescheduleJobRequestDtoSchema,
 	type SchedulerHealthDto,
 	SchedulerHealthDtoSchema,
+	type SelectedJobActionsDto,
+	SelectedJobActionsDtoSchema,
 } from './contract.js';
 export {
 	createManagementRouter,

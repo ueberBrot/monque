@@ -8,6 +8,9 @@ const MIN_POLL_INTERVAL = 100;
 /** Grace period after nextRunAt before scheduling a wakeup poll (ms) */
 const POLL_GRACE_PERIOD = 200;
 
+/** Node turns delays beyond this signed 32-bit limit into a 1 ms timer. */
+const MAX_TIMER_DELAY = 2_147_483_647;
+
 /**
  * Routes Pending Notifications into targeted polls or future wakeups.
  *
@@ -104,13 +107,20 @@ export class PendingNotificationRouter {
 
 		const delay = Math.max(nextRunAt.getTime() - Date.now() + POLL_GRACE_PERIOD, MIN_POLL_INTERVAL);
 
-		this.wakeupTimer = setTimeout(() => {
-			this.wakeupTime = null;
-			this.wakeupTimer = null;
-			this.onPoll().catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			});
-		}, delay);
+		this.wakeupTimer = setTimeout(
+			() => {
+				this.wakeupTime = null;
+				this.wakeupTimer = null;
+				if (delay > MAX_TIMER_DELAY) {
+					this.scheduleWakeup(nextRunAt);
+					return;
+				}
+				this.onPoll().catch((error: unknown) => {
+					this.ctx.emit('job:error', { error: toError(error) });
+				});
+			},
+			Math.min(delay, MAX_TIMER_DELAY),
+		);
 	}
 
 	private clearWakeupTimer(): void {

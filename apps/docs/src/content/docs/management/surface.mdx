@@ -1,115 +1,220 @@
 ---
-title: Management Surface
-description: Use the framework-neutral Management Surface to expose Monque operator APIs.
+title: Management API
+description: Inspect jobs, control job actions, and configure authorization through the Monque Management API.
 ---
 
-`@monque/management` is the framework-neutral, server-only Management Surface for Monque.
-It turns a user-provided [`Monque`](/monque/api/classes/monque/) instance into a versioned
-HTTP contract for inspecting Queue Views, listing Jobs, reading scheduler health, and
-running existing Job actions.
+`@monque/management` provides HTTP endpoints for job listings, queue counts, scheduler
+health, and job actions. Use the same `Monque` instance that processes your application's
+jobs so worker activity and health describe that scheduler.
 
-The package does not export Express, Connect, Ts.ED, NestJS, Fastify, Hono, Fetch, or other
-framework middleware. Framework mounting belongs to adapter packages such as
-`@monque/management-express`.
+For Express, start with [Express API setup](/monque/management/express/). To add a browser
+interface, see [Dashboard setup](/monque/dashboard/express/).
 
-## Package Boundary
-
-Install the Management Surface beside core:
+## Use without Express
 
 ```bash
-bun add @monque/management @monque/core
+bun add @monque/management @monque/core mongodb
 ```
 
-`@monque/core` and `mongodb` are peer dependencies. Pass the same `Monque` instance that
-owns the scheduler you want to expose.
+Create a Management handler from an initialized instance:
 
 ```typescript
-import { Monque } from '@monque/core';
 import { createManagementSurface } from '@monque/management';
-import { MongoClient } from 'mongodb';
 
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
+const management = createManagementSurface<{ canManageJobs: boolean }>({
+  monque,
+  authorize: ({ action, context }) => action === 'read' || context.canManageJobs,
+});
 
-const monque = new Monque(client.db('monque'));
+const result = await management.openApiHandler.handle(request, {
+  context: {
+    managementContext: { canManageJobs: false },
+  },
+});
 
-const management = createManagementSurface({
-	monque,
-	readOnly: true,
-	authorize: ({ action }) => action === 'read',
+if (result.matched) {
+  return result.response;
+}
+```
+
+`request` is a standard `Request` supplied by your HTTP server. Return the response through
+that server and pass unmatched requests to its other routes. Authenticate requests before
+calling the handler and derive `managementContext` from the authenticated session.
+
+## Endpoints
+
+Paths are relative to the Management router's mount URL:
+
+| Method | Path | Operation |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | Scheduler health |
+| `GET` | `/api/v1/capabilities` | Read-only mode and available actions |
+| `GET` | `/api/v1/queue-views` | Job counts grouped by name and local worker activity |
+| `GET` | `/api/v1/jobs` | Cursor-paginated jobs |
+| `GET` | `/api/v1/jobs/stats` | Job counts, optionally filtered by name |
+| `GET` | `/api/v1/jobs/{id}` | Job detail and payload |
+| `POST` | `/api/v1/jobs/{id}/actions/cancel` | Cancel a pending job |
+| `POST` | `/api/v1/jobs/{id}/actions/retry` | Retry a failed or cancelled job |
+| `POST` | `/api/v1/jobs/{id}/actions/reschedule` | Change a pending job's run time |
+| `DELETE` | `/api/v1/jobs/{id}` | Delete a job |
+| `POST` | `/api/v1/jobs/actions/cancel` | Cancel jobs matching a selector |
+| `POST` | `/api/v1/jobs/actions/retry` | Retry jobs matching a selector |
+| `POST` | `/api/v1/jobs/actions/delete` | Delete jobs matching a selector |
+| `POST` | `/api/v1/jobs/actions/selected` | Act on specific job IDs |
+
+Job IDs are MongoDB ObjectId strings. Dates in requests and responses use ISO 8601 UTC
+strings, such as `2026-09-19T12:00:00.000Z`. Job responses use `payload` for the job's data
+and `failureReason` for its latest failure. Absent lock and heartbeat timestamps are `null`;
+absent `heartbeatInterval`, `repeatInterval`, and `uniqueKey` fields are omitted.
+
+## Job listings
+
+`GET /api/v1/jobs` accepts:
+
+| Parameter | Meaning |
+| --- | --- |
+| `name` | Exact job name; substring and payload search are not supported. |
+| `status` | `pending`, `processing`, `completed`, `failed`, or `cancelled`. Repeat the parameter for multiple statuses. |
+| `limit` | Positive page size; defaults to 50 and values above 100 are capped at 100. |
+| `cursor` | Opaque cursor returned by the previous response. |
+| `sortBy` | `identifier`, `createdAt` (default), `updatedAt`, or `nextRunAt`. |
+| `sortDirection` | `asc` or `desc`; defaults to `desc`. |
+| `createdAtFrom`, `createdAtTo` | Inclusive creation-time range. |
+| `updatedAtFrom`, `updatedAtTo` | Inclusive update-time range. |
+| `nextRunAtFrom`, `nextRunAtTo` | Inclusive scheduled-time range. |
+| `view` | `full` (default) or `summary`. |
+
+```text
+/ops/api/v1/jobs?name=send-email&status=failed&limit=20&sortBy=createdAt&sortDirection=desc&view=summary
+```
+
+Responses include `jobs`, `cursor`, `hasNextPage`, and `hasPreviousPage`. Keep the same
+filters and sort when following a cursor. Start a new page sequence when changing them.
+
+`view=summary` returns metadata with `payload: null` and skips payload serialization. With
+a scheduler that supports summary queries, it also avoids loading payloads from MongoDB.
+Use the job detail endpoint when you need the payload. Full listings retain payload
+serialization and redaction.
+
+## Selected job actions
+
+Post a JSON body to `/api/v1/jobs/actions/selected`:
+
+```json
+{
+  "action": "retry",
+  "ids": ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]
+}
+```
+
+Supported actions are `cancel`, `retry`, `delete`, and `reschedule`. Rescheduling also
+requires `nextRunAt`. Requests accept 1 to 100 IDs; duplicate IDs are processed once.
+
+The response reports successful changes and individual failures:
+
+```json
+{
+  "count": 1,
+  "errors": [
+    { "jobId": "507f1f77bcf86cd799439012", "status": 409, "error": "Cannot retry job in status 'processing'" }
+  ]
+}
+```
+
+A response can contain both successes and failures. Successful changes are not rolled back
+when another job fails. Check `errors` even when the request returns HTTP 200.
+
+## Selector-based bulk actions
+
+The `/actions/cancel`, `/actions/retry`, and `/actions/delete` endpoints accept a selector:
+
+```json
+{
+  "name": "send-email",
+  "status": ["failed", "cancelled"],
+  "olderThan": "2026-09-01T00:00:00.000Z"
+}
+```
+
+Selectors support `name`, `status`, `olderThan`, and `newerThan`. Date bounds refer to job
+creation time. These operations affect matching jobs across all pages. An empty selector
+matches all jobs eligible for the action. Use selected job actions when you want to target
+only explicit IDs or require authorization for each job.
+
+## Authorization
+
+Authentication establishes who is making a request. Your HTTP server must handle it before
+Management. `authorize` then decides which operations that user may perform:
+
+```typescript
+const management = createManagementSurface<{ canManageJobs: boolean }>({
+  monque,
+  authorize: ({ action, context }) => action === 'read' || context.canManageJobs,
 });
 ```
 
-Adapters mount `management.openApiHandler` and pass request context into Management hooks.
-The Management Surface itself owns the routes, schemas, DTOs, capabilities, authorization
-checks, payload serialization, and OpenAPI generation. See
-[`createManagementSurface()`](/monque/api-management/functions/createmanagementsurface/)
-and [`ManagementOptions`](/monque/api-management/interfaces/managementoptions/) for the
-full server-side API.
+Available action names are `read`, `cancel`, `cancelBulk`, `retry`, `retryBulk`, `reschedule`,
+`delete`, and `deleteBulk`. The callback receives:
 
-## HTTP Contract
+| Input | Available when |
+| --- | --- |
+| `context` | Every authorization check |
+| `job` | A single job is targeted |
+| `selector` | A selector-based bulk operation is requested |
+| `ids` | The initial check for a selected-job request |
 
-The v1 Management Route Map is REST-shaped under `/api/v1`:
+Capabilities checks do not include a job, selector, or IDs. Handle those inputs as optional.
+Selected cancel, retry, and delete requests first check the corresponding bulk permission,
+then the individual permission for each job. Selected rescheduling checks `reschedule` at
+both stages. Selector-based bulk actions check the selector once, without per-job checks.
 
-| Method | Path | Operation |
-| ------ | ---- | --------- |
-| `GET` | `/api/v1/health` | Scheduler health |
-| `GET` | `/api/v1/capabilities` | Available read and write actions |
-| `GET` | `/api/v1/queue-views` | Queue View summaries |
-| `GET` | `/api/v1/jobs` | Cursor-paginated Job list |
-| `GET` | `/api/v1/jobs/stats` | Job statistics |
-| `GET` | `/api/v1/jobs/{id}` | Job detail |
-| `POST` | `/api/v1/jobs/{id}/actions/cancel` | Cancel one Job |
-| `POST` | `/api/v1/jobs/{id}/actions/retry` | Retry one Job |
-| `POST` | `/api/v1/jobs/{id}/actions/reschedule` | Reschedule one Job |
-| `DELETE` | `/api/v1/jobs/{id}` | Delete one Job |
-| `POST` | `/api/v1/jobs/actions/cancel` | Bulk cancel Jobs |
-| `POST` | `/api/v1/jobs/actions/retry` | Bulk retry Jobs |
-| `POST` | `/api/v1/jobs/actions/delete` | Bulk delete Jobs |
+Set `readOnly: true` to reject all mutations with HTTP 403. It does not bypass read
+authorization. Without `authorize`, supported operations are allowed unless read-only mode
+blocks them. Unsupported actions also return 403.
 
-The implementation uses oRPC server and OpenAPI packages. Management HTTP schemas use Zod
-v4, and DTO TypeScript types are derived from those schemas.
+Read authorization allows or denies the read operation as a whole; it does not filter jobs
+by tenant or hide individual Queue Views. Health reports the scheduler's running state and
+is available without a `read` authorization check, so protect the entire HTTP mount with
+authentication middleware when needed.
 
-OpenAPI is the stable interoperability contract for third-party clients. Adapters can serve
-the generated OpenAPI JSON from the mounted application, and
-[`generateManagementOpenApiDocument()`](/monque/api-management/functions/generatemanagementopenapidocument/)
-can generate it directly when a host needs to serve or inspect the document itself.
-Generated clients do not need to import runtime code from `@monque/management`.
+`parallelCapabilityChecks: true` runs capability authorization checks concurrently. Enable
+it only if your callback can run independent checks without relying on their order.
+The default is sequential.
 
-First-party TypeScript clients, including the future Dashboard, may use oRPC typed clients
-against the same REST-shaped `/api/v1` routes. The Dashboard will not get a separate
-Dashboard-only API shape.
+## Payload redaction
 
-## Operator Controls
+Choose which payload fields API clients can see:
 
-Management v1 is built around host-controlled operations:
+Install Zod with `bun add zod` if your application does not already use it.
 
-- `readOnly: true` keeps read endpoints available and rejects every mutation with `403`.
-- `/api/v1/capabilities` reports actions available for the current surface and request.
-- Authentication belongs to the host application or adapter mounting layer.
-- Authorization is action-grained through
-  [`ManagementAuthorize`](/monque/api-management/type-aliases/managementauthorize/), so
-  hosts can allow reads while denying delete, retry, or reschedule.
-- Authorization hooks receive request context and the relevant Job or bulk selector when
-  the action has a target.
-- Payload serialization can be configured globally or per Job Name through
-  [`ManagementPayloadSerializer`](/monque/api-management/type-aliases/managementpayloadserializer/).
-- Payload serialization receives request context, so hosts can redact payload fields by
-  operator role or tenant.
+```typescript
+import { z } from 'zod';
 
-## V1 Scope
+const EmailPreview = z.object({ subject: z.string() });
+const management = createManagementSurface({
+  monque,
+  serializePayload: async () => null,
+  serializePayloadByJobName: {
+    'send-email': async ({ job }) => EmailPreview.parse(job.data),
+  },
+});
+```
 
-Management v1 exposes existing public Monque read and action APIs. It does not include:
+This returns only the email subject and hides all other payloads. A serializer registered
+for a job name takes precedence over the default serializer. Both receive `job` and request
+`context`, so you can decide which fields a user may see. Redaction affects
+API responses and the dashboard, not the payload stored in MongoDB. Without a serializer,
+Management returns the job data.
 
-- Dashboard UI
-- standalone Management server
-- Docker image
-- realtime updates through SSE or WebSocket
-- Queue View visibility filtering
-- Job creation endpoints such as enqueue, now, or schedule
-- Worker registration endpoints
-- scheduler lifecycle endpoints such as start or stop
-- Ts.ED management support inside `@monque/tsed`
+## Clients and API reference
 
-Ts.ED management support is planned as a future separate Management Adapter package, not as
-part of the existing Ts.ED scheduler integration.
+Use the OpenAPI document served by the [Express adapter](/monque/management/express/#openapi)
+with an OpenAPI client generator. To generate a document yourself, call
+[`generateManagementOpenApiDocument()`](/monque/api-management/functions/generatemanagementopenapidocument/).
+
+TypeScript clients can import `managementContract` and DTO schemas from
+`@monque/management/contract`. See the [Management API reference](/monque/api-management/readme/)
+for exported types and functions.
+
+To enqueue jobs, register workers, or start and stop the scheduler, use the
+[Core API operations](/monque/api/classes/monque/).

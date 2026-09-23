@@ -16,8 +16,7 @@ hero:
       variant: minimal
 ---
 
-import { Aside, Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
-import VersionBadge from '../../components/VersionBadge.astro';
+import { Card, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Quick Example
 
@@ -25,43 +24,20 @@ import VersionBadge from '../../components/VersionBadge.astro';
 import { Monque } from '@monque/core';
 import { MongoClient } from 'mongodb';
 
-// Connect to MongoDB
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
-const db = client.db('myapp');
+const client = await MongoClient.connect('mongodb://localhost:27017');
+const monque = new Monque(client.db('my-app'));
 
-// Create scheduler instance
-const monque = new Monque(db);
+monque.register<{ message: string }>('print-message', async (job) => {
+  console.log(job.data.message);
+});
+
 await monque.initialize();
-
-// Define your job data type
-interface EmailJob {
-  to: string;
-  subject: string;
-  body: string;
-}
-
-// Register a worker with type safety
-monque.register<EmailJob>('send-email', async (job) => {
-  console.log(`Sending email to ${job.data.to}`);
-  await sendEmail(job.data.to, job.data.subject, job.data.body);
-});
-
-// Monitor job lifecycle
-monque.on('job:complete', ({ job, duration }) => {
-  console.log(`Job ${job.name} completed in ${duration}ms`);
-});
-
-// Start processing
 monque.start();
-
-// Enqueue a job - it's that simple!
-await monque.enqueue('send-email', {
-  to: 'user@example.com',
-  subject: 'Welcome!',
-  body: 'Thanks for signing up.'
-});
+await monque.now('print-message', { message: 'Hello from Monque' });
 ```
+
+See the [Quick Start](/monque/getting-started/quick-start/) for events, recurring jobs,
+and graceful shutdown.
 
 ## Installation
 
@@ -83,23 +59,32 @@ await monque.enqueue('send-email', {
   </TabItem>
 </Tabs>
 
+## Dashboard and HTTP API
+
+Add the [dashboard](/monque/dashboard/express/) to inspect jobs, filter and share views,
+and retry, cancel, reschedule, or delete jobs from your Express application. It includes
+Queue Views, Jobs, and Health pages with light and dark themes.
+
+The [Management API](/monque/management/surface/) exposes the same queries and actions to
+HTTP clients, with OpenAPI documentation, authorization, and payload redaction.
+
 ## Why Monque?
 
 <CardGrid stagger>
   <Card title="Atomic Locking" icon="seti:lock">
-      Prevents concurrent duplicate processing across multiple schedulers using MongoDB atomic claims. Jobs can still be retried or re-run after crashes, so workers should be idempotent.
+      Multiple schedulers can share a jobs collection. Atomic claims prevent two workers from claiming the same pending job at once. Handlers must still be safe to retry.
 	</Card>
   <Card title="Heartbeat Monitoring" icon="heart">
-    Detects stale jobs from crashed workers and recovers them automatically to keep processing moving.
+    Heartbeats record worker activity. During startup, Monque recovers processing jobs whose locks have expired.
   </Card>
   <Card title="Type-Safe" icon="seti:typescript">
-		Full TypeScript support with generics for job payloads. Catch errors at compile time, not runtime.
+		Use TypeScript generics to describe the payload each worker receives.
 	</Card>
   <Card title="Framework Agnostic" icon="puzzle">
     Works with any Node.js framework and runs wherever you can connect to MongoDB.
   </Card>
   <Card title="Event-Driven" icon="comment">
-		Subscribe to job lifecycle events for full observability and integration with your logging infrastructure.
+		Record job starts, completions, and failures through event listeners.
 	</Card>
   <Card title="Change Streams" icon="rss">
       Real-time job notifications via MongoDB Change Streams, while polling continues as a safety net.
@@ -108,7 +93,7 @@ await monque.enqueue('send-email', {
 		Schedule recurring jobs with standard 5-field cron expressions. Automatic rescheduling after successful completion.
 	</Card>
   <Card title="Exponential Backoff" icon="seti:clock">
-    Automatic retries with configurable exponential backoff. Failed jobs retry intelligently without overwhelming your system.
+    Automatic retries with configurable exponential backoff. Set retry limits and maximum delays for failed jobs.
 	</Card>
 </CardGrid>
 
@@ -117,26 +102,26 @@ await monque.enqueue('send-email', {
 
 <CardGrid>
 	<Card title="Installation Guide" icon="document">
-		Learn about prerequisites and detailed setup instructions.
-		[Read more →](/monque/getting-started/installation/)
+		Check requirements and install the packages.
+		[Installation](/monque/getting-started/installation/)
 	</Card>
 	<Card title="Quick Start Tutorial" icon="rocket">
-		Build your first job queue in under 5 minutes.
-		[Get started →](/monque/getting-started/quick-start/)
+		Register a worker and process your first job.
+		[Quick start](/monque/getting-started/quick-start/)
 	</Card>
 	<Card title="Core Concepts" icon="open-book">
 		Understand jobs, workers, and the processing lifecycle.
-		[Learn more →](/monque/core-concepts/jobs/)
+		[Jobs](/monque/core-concepts/jobs/)
 	</Card>
 	<Card title="API Reference" icon="list-format">
-		Complete API documentation with TypeScript types.
-		[Explore →](/monque/api/readme/)
+		Look up methods, options, and TypeScript types.
+		[API reference](/monque/api/readme/)
 	</Card>
 </CardGrid>
 
 ## Inspiration
 
-Monque stands on the shoulders of giants. We've drawn inspiration and concepts from these excellent libraries:
+Related job queue libraries:
 
 - [Agenda](https://github.com/agenda/agenda) & [Pulse](https://github.com/pulsecron/pulse) (MongoDB)
 - [BullMQ](https://github.com/taskforcesh/bullmq) (Redis)

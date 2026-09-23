@@ -327,6 +327,12 @@ export interface CursorPage<T = unknown> {
 	hasPreviousPage: boolean;
 }
 
+/** Persisted metadata without the job payload. */
+export type JobSummary = Omit<PersistedJob, 'data'>;
+
+/** Cursor page of job metadata. */
+export type JobSummaryPage = Omit<CursorPage, 'jobs'> & { jobs: JobSummary[] };
+
 /**
  * Aggregated statistics for the job queue.
  *

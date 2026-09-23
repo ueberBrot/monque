@@ -17,6 +17,28 @@ import {
 import { createManagementSurface } from '@/index';
 
 describe('oRPC Management read routes', () => {
+	test('summary listings omit payloads without invoking payload serializers', async () => {
+		const job = createManagementJob();
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getJobsWithCursor: async () => ({
+					jobs: [job],
+					cursor: null,
+					hasNextPage: false,
+					hasPreviousPage: false,
+				}),
+			}),
+			serializePayload: () => {
+				throw new Error('Summary reads must not serialize payloads');
+			},
+		});
+		const response = await handleManagementGet(surface, '/api/v1/jobs?view=summary');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			jobs: [{ id: job._id.toHexString(), payload: null }],
+		});
+	});
+
 	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
 		const jobId = new ObjectId();
 		let capturedOptions: CursorOptions | undefined;
@@ -411,6 +433,7 @@ describe('oRPC Management read routes', () => {
 	});
 
 	test('lists Queue Views through the public scheduler summary API', async () => {
+		const scopes: Array<{ name?: string } | undefined> = [];
 		const queueViews = [
 			{
 				name: 'send-email',
@@ -447,11 +470,15 @@ describe('oRPC Management read routes', () => {
 		] satisfies QueueViewSummary[];
 		const surface = createManagementSurface({
 			monque: createManagementMonque({
-				getQueueViewSummaries: async () => queueViews,
+				getQueueViewSummaries: async (filter?: { name?: string }) => {
+					scopes.push(filter);
+					return queueViews;
+				},
 			}),
 		});
 
 		const response = await handleManagementGet(surface, '/api/v1/queue-views');
+		expect(scopes).toEqual([undefined]);
 
 		await expectJsonResponse(response, 200, {
 			queueViews: [
@@ -489,6 +516,30 @@ describe('oRPC Management read routes', () => {
 				},
 			],
 		});
+	});
+
+	test('passes the Queue View name filter to core and filters legacy scheduler summaries', async () => {
+		const scopes: Array<{ name?: string } | undefined> = [];
+		const summary = (name: string): QueueViewSummary => ({
+			name,
+			hasPersistedJobs: false,
+			hasRegisteredWorker: true,
+			stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+			worker: { concurrency: 1, activeCount: 0 },
+		});
+		const surface = createManagementSurface({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async (filter?: { name?: string }) => {
+					scopes.push(filter);
+					return [summary('alpha'), summary('beta')];
+				},
+			}),
+		});
+		const response = await handleManagementGet(surface, '/api/v1/queue-views?name=beta');
+		await expectJsonResponse(response, 200, { queueViews: [summary('beta')] });
+		expect(scopes).toEqual([{ name: 'beta' }]);
+		const missing = await handleManagementGet(surface, '/api/v1/queue-views?name=missing');
+		await expectJsonResponse(missing, 200, { queueViews: [] });
 	});
 
 	test('returns Job statistics through the public scheduler stats API', async () => {
@@ -615,4 +666,24 @@ describe('oRPC Management read routes', () => {
 		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
 		expect(statsCalls).toEqual([]);
 	});
+});
+
+test('omits null optional fields from persisted jobs at the DTO boundary', async () => {
+	const job = createManagementJob();
+	// BSON stores explicit undefined properties as null by default.
+	Object.defineProperties(job, {
+		heartbeatInterval: { value: null },
+		repeatInterval: { value: null },
+		uniqueKey: { value: null },
+	});
+	const surface = createManagementSurface({
+		monque: createManagementMonque({ getJob: async () => job }),
+	});
+	const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(body).not.toHaveProperty('heartbeatInterval');
+	expect(body).not.toHaveProperty('repeatInterval');
+	expect(body).not.toHaveProperty('uniqueKey');
+	expect(body).toMatchObject({ id: job._id.toHexString(), name: job.name });
 });

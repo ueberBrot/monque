@@ -22,17 +22,17 @@
   </a>
 </p>
 
-A **robust, type-safe MongoDB job queue** for TypeScript with atomic locking, exponential backoff, and cron scheduling.
+A MongoDB job queue for TypeScript. Register workers, enqueue jobs, and schedule recurring work.
 
 ## Features
 
-- **Atomic Locking**: Mandatory `findOneAndUpdate` for safe job acquisition in distributed environments.
-- **Exponential Backoff**: Built-in retry logic with configurable backoff strategies.
-- **Cron Scheduling**: Native support for recurring jobs using standard cron syntax.
-- **Type Safety**: Fully typed job payloads and worker definitions.
-- **Event-Driven**: Comprehensive event system for monitoring and logging.
-- **Native Driver**: Uses the native MongoDB driver for maximum performance and compatibility.
-- **Graceful Shutdown**: Ensures all in-progress jobs finish or are safely released before stopping.
+- Atomic claims let multiple schedulers process jobs from one collection.
+- Failed jobs retry with exponential backoff. You control the failure limit and delays.
+- Cron expressions schedule recurring jobs.
+- TypeScript generics describe job payloads and worker handlers.
+- Job events let you record completion, failure, and processing time.
+- Monque uses the native MongoDB driver and can share your application's connection.
+- Shutdown waits for running jobs up to the configured timeout. Jobs left processing can be recovered on a later startup.
 
 ## Installation
 
@@ -93,7 +93,7 @@ await monque.stop();
 
 ### `new Monque(db, options?)`
 
-Creates a new Monque instance.
+Pass a connected MongoDB database and any scheduler options you want to override.
 
 **Options:**
 - `collectionName` - MongoDB collection name (default: `'monque_jobs'`)
@@ -121,7 +121,7 @@ Creates a new Monque instance.
 - `getJobs(filter)` - List jobs
 - `getJobsWithCursor(options)` - Paginated list
 - `getQueueStats(filter?)` - Queue statistics
-- `getQueueViewSummaries()` - Queue View summaries by Job Name
+- `getQueueViewSummaries({ name }?)` - Job counts and worker activity, optionally scoped to one name
 - `cancelJob(id)` - Cancel a job
 - `retryJob(id)` - Retry a job
 - `rescheduleJob(id, date)` - Reschedule a job
@@ -159,7 +159,7 @@ export TESTCONTAINERS_REUSE_ENABLE=true
 bun run test:watch
 ```
 
-When `TESTCONTAINERS_REUSE_ENABLE=true`, the MongoDB testcontainer persists between test runs, significantly speeding up local development. Ryuk (the testcontainers cleanup daemon) remains enabled as a safety net for orphaned containers.
+With `TESTCONTAINERS_REUSE_ENABLE=true`, tests reuse the MongoDB container across runs. Ryuk, the Testcontainers cleanup daemon, still removes orphaned containers.
 
 To manually clean up reusable containers:
 ```bash

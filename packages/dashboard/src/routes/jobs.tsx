@@ -1,0 +1,475 @@
+import type { JobDto } from '@monque/management/contract';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { createFileRoute, Outlet, useMatchRoute, useNavigate } from '@tanstack/react-router';
+import type { RowSelectionState } from '@tanstack/react-table';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { ButtonLink } from '@/components/button-link';
+import { DashboardState, RetryButton } from '@/components/dashboard-state';
+import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { JobActionDialog, type JobActionDialogState } from '@/features/jobs/job-action-dialog';
+import { JobActionFeedbackPanel } from '@/features/jobs/job-action-feedback-panel';
+import {
+	type JobActionFeedback,
+	type JobActionKey,
+	prepareSingleJobAction,
+	type RunJobActionsInput,
+} from '@/features/jobs/job-actions';
+import {
+	getJobsSearchIdentity,
+	getNextSort,
+	type JobListSortByDto,
+	type JobsRouteSearch,
+	parseJobsRouteSearch,
+	toJobListQueryInput,
+} from '@/features/jobs/job-list-search';
+import { JobsBulkActions } from '@/features/jobs/jobs-bulk-actions';
+import { JobsFilters } from '@/features/jobs/jobs-filters';
+import { type JobsColumnsOptions, JobsTable } from '@/features/jobs/jobs-table';
+import { useJobsActionMutation } from '@/features/jobs/use-jobs-action-mutation';
+import { getOperatorTimeZoneLabel, toDateTimeLocalValue } from '@/lib/dates';
+import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
+import { resolveDashboardApiErrorState } from '@/management-errors';
+
+export const Route = createFileRoute('/jobs')({
+	validateSearch: parseJobsRouteSearch,
+	component: JobsRoute,
+	pendingComponent: JobsPending,
+});
+
+const EMPTY_JOBS: JobDto[] = [];
+
+function JobsRoute() {
+	const matchRoute = useMatchRoute();
+	return matchRoute({ to: '/jobs/$jobId' }) ? <Outlet /> : <JobsListRoute />;
+}
+
+function JobsListRoute() {
+	const search = Route.useSearch();
+	const navigate = useNavigate({ from: Route.fullPath });
+	const { managementApi, queryClient, runtimeConfig } = Route.useRouteContext();
+	const [feedback, setFeedback] = useState<JobActionFeedback | null>(null);
+	const { dialogState, setDialogState } = useJobActionDialog(search);
+
+	const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
+	const debouncedName = useDebouncedJobName(search.name);
+	const namePending = debouncedName !== search.name;
+	const jobsQuery = useQuery(
+		managementApi.orpc.jobs.queryOptions({
+			input: { ...toJobListQueryInput(search), view: 'summary' },
+			enabled: !namePending,
+			placeholderData: keepPreviousData,
+			refetchInterval,
+		}),
+	);
+	const capabilitiesInterval = useDocumentVisiblePollingInterval(
+		runtimeConfig.pollingIntervalMs,
+		6,
+	);
+	const capabilitiesQuery = useQuery({
+		...managementApi.orpc.capabilities.queryOptions(),
+		refetchInterval: capabilitiesInterval,
+	});
+	const resultsPending = namePending || jobsQuery.isPlaceholderData;
+	const jobsPage = jobsQuery.data;
+	const { hasPreviousPage, previousPageLabel, previousCursor, rememberNextPage } =
+		useJobsPagination(search, jobsPage?.cursor);
+	const jobs = jobsPage?.jobs ?? EMPTY_JOBS;
+	const { rowSelection, setRowSelection, selectedJobs } = useJobsSelection(jobs);
+
+	const actionMutation = useJobsActionMutation({
+		managementApi,
+		queryClient,
+		setFeedback,
+		setRowSelection,
+	});
+
+	const actionsBusy = actionMutation.isPending || resultsPending;
+	const columnOptions: JobsColumnsOptions = {
+		busy: actionsBusy,
+		activeSortBy: search.sortBy,
+		capabilities: capabilitiesQuery.data,
+		direction: search.sortDirection,
+		onAction: (action, job) => {
+			const prepared = prepareSingleJobAction(action, job);
+			if (prepared.type === 'confirm') {
+				setDialogState(prepared.state);
+			} else {
+				setFeedback(null);
+				actionMutation.mutate(prepared.input);
+			}
+		},
+		onSortChange: handleSortChange,
+	};
+
+	const updateSearch = useCallback(
+		(updater: (currentSearch: JobsRouteSearch) => JobsRouteSearch): void => {
+			void navigate({ search: updater, replace: true });
+		},
+		[navigate],
+	);
+
+	function clearFilters(): void {
+		updateSearch(() => parseJobsRouteSearch({}));
+	}
+
+	function handleSortChange(nextSortBy: JobListSortByDto): void {
+		updateSearch((currentSearch) => ({
+			...currentSearch,
+			...getNextSort(currentSearch.sortBy, currentSearch.sortDirection, nextSortBy),
+			cursor: undefined,
+		}));
+	}
+
+	const handleRefresh = useCallback((): void => {
+		void Promise.all([jobsQuery.refetch(), capabilitiesQuery.refetch()]);
+	}, [jobsQuery.refetch, capabilitiesQuery.refetch]);
+
+	function openBulkDialog(action: JobActionKey): void {
+		setDialogState({
+			action,
+			jobIds: selectedJobs.map((job) => job.id),
+			nextRunAt: action === 'reschedule' ? toDateTimeLocalValue(selectedJobs[0]?.nextRunAt) : '',
+			scope: 'bulk',
+		});
+	}
+
+	function handleDialogConfirm(input: RunJobActionsInput): void {
+		setFeedback(null);
+		actionMutation.mutate(input);
+		setDialogState(null);
+	}
+
+	if (jobsQuery.isPending || capabilitiesQuery.isPending) {
+		return <JobsPending />;
+	}
+
+	const error = jobsQuery.error ?? capabilitiesQuery.error;
+
+	if (error) {
+		return (
+			<JobsErrorPanel
+				error={error}
+				fetching={jobsQuery.isFetching || capabilitiesQuery.isFetching}
+				onRetry={handleRefresh}
+				onClearFilters={clearFilters}
+			/>
+		);
+	}
+
+	return (
+		<section className="grid min-w-0 gap-5">
+			<JobsPageHeader
+				updatedAt={jobsQuery.dataUpdatedAt}
+				fetching={jobsQuery.isFetching}
+				paused={jobsQuery.fetchStatus === 'paused'}
+				pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+				onRefresh={handleRefresh}
+			/>
+
+			<div className="min-w-0 rounded-xl border border-border bg-card">
+				<JobsFilters search={search} updateSearch={updateSearch} />
+
+				<JobsResultsToolbar count={jobs.length} onClearFilters={clearFilters} />
+
+				{feedback ? (
+					<JobActionFeedbackPanel
+						feedback={feedback}
+						onDismiss={() => setFeedback(null)}
+						className="border-b border-border px-4 py-3"
+					/>
+				) : null}
+
+				<JobsBulkActions
+					selectedJobs={selectedJobs}
+					capabilities={capabilitiesQuery.data}
+					busy={actionsBusy}
+					openBulkDialog={openBulkDialog}
+				/>
+
+				{jobs.length === 0 ? (
+					<DashboardState
+						description="No jobs matched the current cursor and filters. Clear the filters or refresh the view."
+						title="No jobs found"
+					/>
+				) : (
+					<JobsTable
+						jobs={jobs}
+						rowSelection={rowSelection}
+						onRowSelectionChange={setRowSelection}
+						options={columnOptions}
+					/>
+				)}
+
+				<JobsPagination
+					selectedRowCount={selectedJobs.length}
+					hasPreviousPage={hasPreviousPage && !resultsPending}
+					previousPageLabel={previousPageLabel}
+					hasNextPage={Boolean(jobsPage?.hasNextPage && jobsPage.cursor && !resultsPending)}
+					search={search}
+					previousCursor={previousCursor}
+					nextCursor={jobsPage?.cursor ?? undefined}
+					onNextPage={rememberNextPage}
+				/>
+			</div>
+
+			<JobActionDialog
+				state={dialogState}
+				busy={actionMutation.isPending}
+				onClose={() => setDialogState(null)}
+				onConfirm={handleDialogConfirm}
+			/>
+		</section>
+	);
+}
+
+function useJobActionDialog(search: JobsRouteSearch) {
+	const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
+	const searchIdentity = JSON.stringify(search);
+	const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
+	if (searchIdentity !== previousSearchIdentity) {
+		setPreviousSearchIdentity(searchIdentity);
+		setDialogState(null);
+	}
+
+	return { dialogState, setDialogState };
+}
+
+function useJobsSelection(jobs: readonly JobDto[]) {
+	const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+	const [previousJobs, setPreviousJobs] = useState(jobs);
+	if (jobs !== previousJobs) {
+		setPreviousJobs(jobs);
+		setRowSelection((selection) => getSelectionForVisibleJobs(selection, jobs));
+	}
+
+	const selectedJobs = useMemo(
+		() => tableSelectionToJobs(rowSelection, jobs),
+		[jobs, rowSelection],
+	);
+
+	return { rowSelection, setRowSelection, selectedJobs };
+}
+
+function useDebouncedJobName(name: string | undefined): string | undefined {
+	const [debouncedName, setDebouncedName] = useState(name);
+	useEffect(() => {
+		const timer = setTimeout(() => setDebouncedName(name), 300);
+		return () => clearTimeout(timer);
+	}, [name]);
+	return debouncedName;
+}
+
+function useJobsPagination(search: JobsRouteSearch, nextPageCursor: string | null | undefined) {
+	const searchIdentity = getJobsSearchIdentity(search);
+	const cursor = search.cursor ?? '';
+	const [history, setHistory] = useState({ identity: searchIdentity, cursors: [cursor] });
+	const currentIndex = history.cursors.indexOf(cursor);
+	if (searchIdentity !== history.identity) {
+		setHistory({ identity: searchIdentity, cursors: [cursor] });
+	}
+
+	function rememberNextPage(): void {
+		if (!nextPageCursor) return;
+		const trail = currentIndex < 0 ? [cursor] : history.cursors.slice(0, currentIndex + 1);
+		setHistory({ identity: searchIdentity, cursors: [...trail, nextPageCursor] });
+	}
+
+	return {
+		hasPreviousPage: Boolean(cursor),
+		previousPageLabel: cursor && currentIndex <= 0 ? 'First page' : 'Previous page',
+		rememberNextPage,
+		previousCursor: (currentIndex > 0 ? history.cursors[currentIndex - 1] : undefined) || undefined,
+	};
+}
+
+function JobsPageHeader({
+	updatedAt,
+	fetching,
+	paused,
+	pollingIntervalMs,
+	onRefresh,
+}: {
+	readonly updatedAt: number;
+	readonly fetching: boolean;
+	readonly paused: boolean;
+	readonly pollingIntervalMs: number | undefined;
+	readonly onRefresh: () => void;
+}) {
+	return (
+		<div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+			<div className="grid min-w-0 gap-1">
+				<h1 className="text-2xl font-semibold">Jobs</h1>
+				<p className="max-w-[72ch] text-sm text-muted-foreground">
+					Find, inspect, and manage background jobs.
+				</p>
+			</div>
+			<div className="flex items-center gap-2">
+				<QueryFreshness
+					updatedAt={updatedAt}
+					fetching={fetching}
+					paused={paused}
+					pollingIntervalMs={pollingIntervalMs}
+				/>
+				<RefreshButton onRefresh={onRefresh} />
+			</div>
+		</div>
+	);
+}
+
+function JobsResultsToolbar({
+	count,
+	onClearFilters,
+}: {
+	readonly count: number;
+	readonly onClearFilters: () => void;
+}) {
+	return (
+		<div className="flex items-center justify-between border-b border-border px-4 py-2 text-xs text-muted-foreground">
+			<span>
+				{count} jobs on this page · Times in {getOperatorTimeZoneLabel()}
+			</span>
+			<Button variant="ghost" size="sm" onClick={onClearFilters}>
+				Clear filters
+			</Button>
+		</div>
+	);
+}
+
+function JobsPagination({
+	previousPageLabel,
+	selectedRowCount,
+	hasPreviousPage,
+	hasNextPage,
+	search,
+	previousCursor,
+	nextCursor,
+	onNextPage,
+}: {
+	readonly previousPageLabel: string;
+	readonly selectedRowCount: number;
+	readonly hasPreviousPage: boolean;
+	readonly hasNextPage: boolean;
+	readonly search: JobsRouteSearch;
+	readonly previousCursor: string | undefined;
+	readonly nextCursor: string | undefined;
+	readonly onNextPage: () => void;
+}) {
+	return (
+		<div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+			<div className="text-xs text-muted-foreground">
+				{selectedRowCount > 0
+					? `${selectedRowCount} rows selected on this page`
+					: 'No rows selected'}
+			</div>
+			<div className="flex items-center gap-2">
+				<ButtonLink
+					to="/jobs"
+					search={{ ...search, cursor: previousCursor }}
+					variant="outline"
+					disabled={!hasPreviousPage}
+				>
+					{previousPageLabel}
+				</ButtonLink>
+				<ButtonLink
+					to="/jobs"
+					search={{ ...search, cursor: nextCursor }}
+					variant="outline"
+					onClick={onNextPage}
+					disabled={!hasNextPage}
+				>
+					Next page
+				</ButtonLink>
+			</div>
+		</div>
+	);
+}
+
+function JobsErrorPanel({
+	error,
+	fetching,
+	onRetry,
+	onClearFilters,
+}: {
+	readonly error: unknown;
+	readonly fetching: boolean;
+	readonly onRetry: () => void;
+	readonly onClearFilters: () => void;
+}) {
+	const state = resolveDashboardApiErrorState(error, 'jobs');
+	return (
+		<DashboardState {...state}>
+			<RetryButton onRetry={onRetry} fetching={fetching} />
+			{state.code === 'error' ? (
+				<Button variant="outline" onClick={onClearFilters}>
+					Clear filters
+				</Button>
+			) : null}
+		</DashboardState>
+	);
+}
+
+function getSelectionForVisibleJobs(
+	currentSelection: RowSelectionState,
+	jobs: readonly JobDto[],
+): RowSelectionState {
+	const visibleJobIds = new Set(jobs.map((job) => job.id));
+
+	return Object.fromEntries(
+		Object.entries(currentSelection).filter(
+			([rowId, selected]) => selected && visibleJobIds.has(rowId),
+		),
+	);
+}
+
+function tableSelectionToJobs(
+	currentSelection: RowSelectionState,
+	jobs: readonly JobDto[],
+): readonly JobDto[] {
+	return jobs.filter((job) => currentSelection[job.id]);
+}
+
+function JobsPending() {
+	return (
+		<section role="status" aria-label="Loading jobs…" className="grid min-w-0 gap-5">
+			<div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+				<div className="grid min-w-0 gap-1">
+					<Skeleton className="h-8 w-20" />
+					<Skeleton className="h-5 w-80 max-w-full" />
+				</div>
+				<Skeleton className="h-9 w-56 max-w-full" />
+			</div>
+			<div className="overflow-hidden rounded-xl border border-border bg-card">
+				<div className="grid min-w-0 gap-4 border-b border-border p-4">
+					<div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] gap-4 sm:grid-cols-[minmax(10rem,24rem)_8rem_auto]">
+						<Skeleton className="h-16 w-full" />
+						<Skeleton className="h-16 w-full" />
+						<div className="col-span-2 grid grid-cols-2 gap-3 sm:hidden">
+							<Skeleton className="h-16 w-full" />
+							<Skeleton className="h-16 w-full" />
+						</div>
+					</div>
+					<Skeleton className="h-6 w-24" />
+					<Skeleton className="h-24 w-full sm:h-5 sm:max-w-96" />
+				</div>
+				<div className="border-b border-border px-4 py-3">
+					<Skeleton className="h-5 w-56 max-w-full" />
+				</div>
+				<div className="border-b border-border px-4 py-3">
+					<Skeleton className="h-4 w-full" />
+				</div>
+				{[0, 1, 2, 3, 4].map((row) => (
+					<div key={row} className="flex items-center gap-5 border-b border-border px-4 py-5">
+						<Skeleton className="size-4 shrink-0" />
+						<Skeleton className="h-7 flex-1" />
+						<Skeleton className="h-5 w-16" />
+						<Skeleton className="hidden h-7 flex-1 md:block" />
+						<Skeleton className="hidden h-7 flex-1 lg:block" />
+					</div>
+				))}
+			</div>
+		</section>
+	);
+}

@@ -5,13 +5,13 @@ description: Configure automatic retry behavior with exponential backoff.
 
 import { Aside } from '@astrojs/starlight/components';
 
-When jobs fail, Monque automatically retries them using exponential backoff. This prevents overwhelming external services while ensuring jobs eventually complete.
+When jobs fail, Monque automatically retries them using exponential backoff. Retry delays give an unavailable service time to recover. Jobs become failed when they reach the configured failure limit.
 
 ## Quick Reference
 
 | Option / Property | Default | Description |
 |-------------------|---------|-------------|
-| [`maxRetries`](/monque/api/interfaces/monqueoptions/#maxretries) | `10` | Maximum retry attempts |
+| [`maxRetries`](/monque/api/interfaces/monqueoptions/#maxretries) | `10` | Failure count at which a job becomes permanently failed |
 | [`baseRetryInterval`](/monque/api/interfaces/monqueoptions/#baseretryinterval) | `1000ms` | Base delay for backoff calculation |
 | [`maxBackoffDelay`](/monque/api/interfaces/monqueoptions/#maxbackoffdelay) | `86400000ms` | Maximum backoff cap (24h) |
 | [`Job.failCount`](/monque/api/interfaces/job/#failcount) | - | Number of failed attempts |
@@ -68,12 +68,14 @@ const monque = new Monque(db, {
 
 | Option              | Default     | Description                                     |
 | ------------------- | ----------- | ----------------------------------------------- |
-| `maxRetries`        | `10`        | Maximum retry attempts before permanent failure |
+| `maxRetries`        | `10`        | Failure count at which retries stop |
 | `baseRetryInterval` | `1000` (1s) | Base delay multiplied by backoff factor         |
 | `maxBackoffDelay`   | `86400000`  | Maximum delay cap (24 hours)                    |
 
 <Aside type="tip">
-  Monque caps exponential backoff by default to prevent unbounded delays (e.g. `failCount = 20` at a 1s base is > 11 days) and to avoid precision/overflow issues at very large `failCount` values. Override with `maxBackoffDelay` if you want a smaller (or larger) cap.
+  Backoff is capped at 24 hours by default. Without a cap, a failure count of 20 at a
+  one-second base would mean a delay of more than 11 days. Set `maxBackoffDelay` to change
+  the limit; the cap also avoids numeric overflow at very large failure counts.
 </Aside>
 
 ## Monitoring Retries
@@ -114,42 +116,10 @@ monque.register('example', async (job) => {
 
 ### Transient vs Permanent Failures
 
-```typescript
-class PermanentError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'PermanentError';
-  }
-}
-
-monque.register('api-call', async (job) => {
-  try {
-    const response = await fetch(job.data.url);
-    
-    if (response.status === 404) {
-      // Resource doesn't exist - won't succeed on retry
-      throw new PermanentError('Resource not found');
-    }
-    
-    if (response.status === 503) {
-      // Service temporarily unavailable - retry makes sense
-      throw new Error('Service unavailable');
-    }
-    
-    await processResponse(response);
-  } catch (error) {
-    throw error; // Will be retried unless max retries reached
-  }
-});
-
-// Handle permanent failures differently
-monque.on('job:fail', ({ job, error, willRetry }) => {
-  if (error.name === 'PermanentError' && willRetry) {
-    // You might want to manually fail these
-    console.log('Permanent error will still retry per config');
-  }
-});
-```
+All errors thrown by a worker follow the same retry policy. A custom error class named
+`PermanentError` does not disable retries. Set `maxRetries: 0` on a scheduler when its jobs
+must fail on the first error. If a handler catches an error and returns normally, Monque
+records a successful run.
 
 ### Circuit Breaker Pattern
 
@@ -185,11 +155,11 @@ monque.register('external-api', async (job) => {
 
 ## Recurring Job Retries
 
-For recurring jobs (`schedule()`), retry behavior differs:
+Recurring jobs use the same retry delays, then return to their cron schedule:
 
 1. Failed job retries with exponential backoff
 2. After successful completion (including successful retry), job reschedules using original cron
-3. The retry delay is **added** to normal schedule
+3. The next cron occurrence is calculated after the successful run; missed occurrences are not replayed
 
 ### Example
 
@@ -236,7 +206,7 @@ monque.register('important-job', async (job) => {
     await process(job.data);
     logger.info('Job completed');
   } catch (error) {
-    logger.error('Job failed', { error: error.message });
+    logger.error('Job failed', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 });
@@ -267,7 +237,7 @@ monque.on('job:fail', async ({ job, error, willRetry }) => {
 
 ### 4. Implement Backoff Jitter (Manual)
 
-For high-volume systems, add jitter to prevent thundering herd:
+Add a random delay if many workers might retry a service at the same time:
 
 ```typescript
 monque.register('high-volume-job', async (job) => {
@@ -305,7 +275,7 @@ monque.register('fire-and-forget', async (job) => {
 
 - [Jobs](/monque/core-concepts/jobs/) - Understand job lifecycle
 - [Workers](/monque/core-concepts/workers/) - Configure worker behavior
-- [Change Streams](/monque/advanced/change-streams/) - Real-time monitoring
+- [Change Streams](/monque/advanced/change-streams/) - Configure job discovery
 
 ## API Reference
 

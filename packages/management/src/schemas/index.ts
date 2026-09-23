@@ -13,6 +13,8 @@ export {
 	RescheduleJobInputDtoSchema,
 	type RescheduleJobRequestDto,
 	RescheduleJobRequestDtoSchema,
+	type SelectedJobActionsDto,
+	SelectedJobActionsDtoSchema,
 } from './actions.js';
 export {
 	type CapabilitiesDto,
@@ -43,6 +45,8 @@ export {
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,
 	QueueStatsDtoSchema,
+	type QueueViewQueryDto,
+	QueueViewQueryDtoSchema,
 	type QueueViewSummaryDto,
 	QueueViewSummaryDtoSchema,
 	type QueueViewSummaryListDto,
