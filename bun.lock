@@ -89,7 +89,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.12.0",
+      "version": "1.12.1",
       "dependencies": {
         "cron-parser": "^5.10.1",
       },
@@ -120,7 +120,7 @@
         "@date-fns/tz": "^1.5.0",
         "@fontsource-variable/geist": "^5.3.0",
         "@fontsource-variable/geist-mono": "^5.3.0",
-        "@monque/management": "^0.3.1",
+        "@monque/management": "^0.4.0",
         "@orpc/client": "^1.15.1",
         "@orpc/contract": "^1.15.1",
         "@orpc/openapi-client": "^1.15.1",
@@ -192,7 +192,7 @@
     },
     "packages/management": {
       "name": "@monque/management",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "dependencies": {
         "@orpc/contract": "^1.15.1",
         "@orpc/openapi": "^1.15.1",
