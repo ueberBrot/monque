@@ -49,8 +49,8 @@ jobs:
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          publish-script: bunx changeset publish
-          version-script: bunx changeset version
+          publish-script: bun run release:publish
+          version-script: bun run release:version
           commit-message: "chore: update versions"
           pr-title: "chore: update versions"
           github-token: ${{ steps.app-token.outputs.token }}
