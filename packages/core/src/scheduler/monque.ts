@@ -225,7 +225,7 @@ export class Monque extends EventEmitter {
 			this._query = new JobQueryService(ctx);
 			this._processor = new JobProcessor(ctx, jobLifecycle);
 			this._pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
-				this.handlePendingNotificationPoll(targetNames),
+				this.processor.poll(targetNames),
 			);
 			this._changeStreamHandler = new ChangeStreamHandler(ctx, this._pendingNotificationRouter);
 			this._lifecycleManager = new LifecycleManager(ctx);
@@ -311,18 +311,6 @@ export class Monque extends EventEmitter {
 		if (uniqueKey !== undefined) {
 			validateUniqueKey(uniqueKey);
 		}
-	}
-
-	/**
-	 * Handle a Pending Notification poll and reevaluate the safety poll interval.
-	 *
-	 * Used as the `onPoll` callback for {@link PendingNotificationRouter}. Runs a
-	 * targeted poll for the given Worker names while preserving the next full-poll
-	 * deadline for other Workers.
-	 */
-	private async handlePendingNotificationPoll(targetNames?: ReadonlySet<string>): Promise<void> {
-		await this.processor.poll(targetNames);
-		this.lifecycleManager.reevaluatePollTimer();
 	}
 
 	/**
@@ -1131,11 +1119,11 @@ export class Monque extends EventEmitter {
 		// Set up change streams as the primary notification mechanism
 		this.changeStreamHandler.setup();
 
-		// Delegate timer management to LifecycleManager
+		this._pendingNotificationRouter?.start();
+
+		// Start heartbeat and retention timers
 		this.lifecycleManager.startTimers({
-			poll: () => this.processor.poll(),
 			updateHeartbeats: () => this.jobLifecycle.updateOwnedHeartbeats(),
-			isChangeStreamActive: () => this.changeStreamHandler.isActive(),
 		});
 	}
 
@@ -1182,6 +1170,7 @@ export class Monque extends EventEmitter {
 		// This closes the race window where a queued poll tick could
 		// check isRunning before the flag is set to false
 		this.lifecycleManager.stopTimers();
+		this._pendingNotificationRouter?.close();
 
 		this.isRunning = false;
 

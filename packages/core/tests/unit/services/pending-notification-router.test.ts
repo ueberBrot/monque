@@ -178,4 +178,70 @@ describe('PendingNotificationRouter', () => {
 			payload: { error: pollError },
 		});
 	});
+	it('keeps full safety polls running during sustained targeted notifications', async () => {
+		ctx.options.safetyPollInterval = 1000;
+		router.setChangeStreamActive(true);
+		router.start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		for (let i = 0; i < 20; i++) {
+			router.notifyRunnableJob('email');
+			await vi.advanceTimersByTimeAsync(500);
+		}
+
+		const fullPolls = vi.mocked(onPoll).mock.calls.filter(([names]) => names === undefined);
+		expect(fullPolls).toHaveLength(11);
+		expect(onPoll).toHaveBeenCalledWith(new Set(['email']));
+	});
+
+	it('polls immediately on start and uses the fallback interval without streams', async () => {
+		router.start();
+		expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+		await vi.advanceTimersByTimeAsync(999);
+		expect(onPoll).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(onPoll).toHaveBeenCalledTimes(2);
+	});
+
+	it('uses the safety interval while streams are available', async () => {
+		router.setChangeStreamActive(true);
+		router.start();
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(onPoll).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(onPoll).toHaveBeenCalledTimes(2);
+	});
+
+	it('continues full discovery after poll errors', async () => {
+		const error = new Error('Discovery failed');
+		vi.mocked(onPoll).mockRejectedValueOnce(error);
+		router.start();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(ctx.emitHistory).toContainEqual({ event: 'job:error', payload: { error } });
+		expect(onPoll).toHaveBeenCalledTimes(2);
+	});
+
+	it('closes all scheduling timers even while the initial poll is in flight', async () => {
+		const pending = Promise.withResolvers<void>();
+		vi.mocked(onPoll).mockReturnValueOnce(pending.promise);
+		router.start();
+		router.notifyRunnableJob('email');
+		router.notifyPendingJob('future', new Date(Date.now() + 2000));
+		router.close();
+		pending.resolve();
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(onPoll).toHaveBeenCalledTimes(1);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('starts only once and can restart after closing', async () => {
+		router.start();
+		router.start();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(onPoll).toHaveBeenCalledTimes(2);
+		router.close();
+		router.start();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(onPoll).toHaveBeenCalledTimes(4);
+	});
 });

@@ -73,13 +73,3 @@ export interface SchedulerContext {
 export const RETRYABLE_JOB_STATUSES = [JobStatus.FAILED, JobStatus.CANCELLED] as const;
 
 export type RetryableJobStatusType = (typeof RETRYABLE_JOB_STATUSES)[number];
-
-export interface CancelledJob {
-	job: PersistedJob<unknown>;
-	transitioned: boolean;
-}
-
-export interface RetriedJob {
-	job: PersistedJob<unknown>;
-	previousStatus: RetryableJobStatusType;
-}

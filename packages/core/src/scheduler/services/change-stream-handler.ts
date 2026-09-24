@@ -106,10 +106,12 @@ export class ChangeStreamHandler {
 
 			// Mark as connected
 			this.usingChangeStreams = true;
+			this.pendingNotifications.setChangeStreamActive(true);
 			this.ctx.emit('changestream:connected', undefined);
 		} catch (error) {
 			// Change streams not available (e.g., standalone MongoDB)
 			this.usingChangeStreams = false;
+			this.pendingNotifications.setChangeStreamActive(false);
 			const reason = error instanceof Error ? error.message : 'Unknown error';
 			this.ctx.emit('changestream:fallback', { reason });
 		}
@@ -198,9 +200,7 @@ export class ChangeStreamHandler {
 
 		this.reconnectAttempts++;
 
-		// Immediately reset active state: clears stale debounce/wakeup timers,
-		// closes the broken cursor, and sets isActive() to false so the lifecycle
-		// manager switches to fast polling during backoff.
+		// Reset stream state without discarding shared Pending Notifications.
 		this.resetActiveState();
 		this.closeChangeStream();
 
@@ -255,15 +255,14 @@ export class ChangeStreamHandler {
 	}
 
 	/**
-	 * Reset all active change stream state: clear debounce timer, wakeup timer,
-	 * pending target names, and mark as inactive.
+	 * Mark the change stream inactive; scheduling belongs to the notification router.
 	 *
 	 * Does NOT close the cursor (callers handle sync vs async close) or clear
 	 * the reconnect timer/attempts (callers manage reconnection lifecycle).
 	 */
 	private resetActiveState(): void {
-		this.pendingNotifications.close();
 		this.usingChangeStreams = false;
+		this.pendingNotifications.setChangeStreamActive(false);
 	}
 
 	private closeChangeStream(): void {
@@ -281,7 +280,7 @@ export class ChangeStreamHandler {
 	async close(): Promise<void> {
 		const wasActive = this.usingChangeStreams;
 
-		// Clear all active state (debounce, wakeup, pending names, flag)
+		// Stop stream delivery and reconnection.
 		this.resetActiveState();
 		this.clearReconnectTimer();
 

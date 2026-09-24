@@ -12,7 +12,7 @@ const POLL_GRACE_PERIOD = 200;
 const MAX_TIMER_DELAY = 2_147_483_647;
 
 /**
- * Routes Pending Notifications into targeted polls or future wakeups.
+ * Owns Pending Notification scheduling, future wakeups, and full discovery deadlines.
  *
  * This module owns the local routing rules shared by MongoDB change streams and
  * local writes. The change stream adapter only decides when a Job became relevant.
@@ -29,6 +29,25 @@ export class PendingNotificationRouter {
 
 	/** Time of the currently scheduled wakeup */
 	private wakeupTime: Date | null = null;
+
+	private fullPollTimer: ReturnType<typeof setTimeout> | null = null;
+	private fullPollDueAt: number | null = null;
+	private changeStreamActive = false;
+	private started = false;
+	private generation = 0;
+
+	/** Start full discovery, followed by fallback or safety polling. */
+	start(): void {
+		if (this.started || !this.ctx.isRunning()) return;
+		this.started = true;
+		void this.pollAndScheduleNext(this.generation);
+	}
+
+	/** Stream availability can shorten, but never postpone, full discovery. */
+	setChangeStreamActive(active: boolean): void {
+		this.changeStreamActive = active;
+		this.scheduleFullPoll();
+	}
 
 	constructor(
 		private readonly ctx: SchedulerContext,
@@ -61,6 +80,13 @@ export class PendingNotificationRouter {
 	}
 
 	close(): void {
+		this.started = false;
+		this.generation++;
+		this.fullPollDueAt = null;
+		if (this.fullPollTimer) {
+			clearTimeout(this.fullPollTimer);
+			this.fullPollTimer = null;
+		}
 		if (this.batchTimer) {
 			clearTimeout(this.batchTimer);
 			this.batchTimer = null;
@@ -118,6 +144,46 @@ export class PendingNotificationRouter {
 				this.onPoll().catch((error: unknown) => {
 					this.ctx.emit('job:error', { error: toError(error) });
 				});
+			},
+			Math.min(delay, MAX_TIMER_DELAY),
+		);
+	}
+
+	private async pollAndScheduleNext(generation: number): Promise<void> {
+		try {
+			await this.onPoll();
+		} catch (error) {
+			this.ctx.emit('job:error', { error: toError(error) });
+		} finally {
+			if (generation === this.generation) this.scheduleFullPoll();
+		}
+	}
+
+	private scheduleFullPoll(): void {
+		if (!this.started || !this.ctx.isRunning()) return;
+
+		const interval = this.changeStreamActive
+			? this.ctx.options.safetyPollInterval
+			: this.ctx.options.pollInterval;
+		const dueAt = Date.now() + interval;
+		if (this.fullPollDueAt !== null && this.fullPollDueAt <= dueAt) return;
+		if (this.fullPollTimer) clearTimeout(this.fullPollTimer);
+		this.fullPollDueAt = dueAt;
+		this.armFullPoll();
+	}
+
+	private armFullPoll(): void {
+		if (this.fullPollDueAt === null) return;
+		const delay = this.fullPollDueAt - Date.now();
+		this.fullPollTimer = setTimeout(
+			() => {
+				this.fullPollTimer = null;
+				if (this.fullPollDueAt !== null && this.fullPollDueAt > Date.now()) {
+					this.armFullPoll();
+					return;
+				}
+				this.fullPollDueAt = null;
+				void this.pollAndScheduleNext(this.generation);
 			},
 			Math.min(delay, MAX_TIMER_DELAY),
 		);

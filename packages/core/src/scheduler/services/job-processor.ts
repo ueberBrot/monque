@@ -1,4 +1,4 @@
-import { type Job, JobStatus, type PersistedJob } from '@/jobs';
+import { JobStatus, type PersistedJob } from '@/jobs';
 import { toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
@@ -24,8 +24,7 @@ export class JobProcessor {
 	 * O(1) counter tracking the total number of active jobs across all workers.
 	 *
 	 * Incremented when a job is added to `worker.activeJobs` in `_doPoll`,
-	 * decremented in the `processJob` finally block. Replaces the previous
-	 * O(workers) loop in `getTotalActiveJobs()` for instance-level throttling.
+	 * decremented in the `processJob` finally block. Used for instance-level throttling.
 	 */
 	private _totalActiveJobs = 0;
 
@@ -136,7 +135,8 @@ export class JobProcessor {
 			const acquisitionPromises: Promise<void>[] = [];
 			for (let i = 0; i < availableSlots; i++) {
 				acquisitionPromises.push(
-					this.acquireJob(name)
+					this.lifecycle
+						.claimNext(name)
 						.then(async (job) => {
 							if (!job) {
 								return;
@@ -169,23 +169,10 @@ export class JobProcessor {
 	}
 
 	/**
-	 * Atomically acquire a pending job for processing using the claimedBy pattern.
-	 *
-	 * Returns `null` immediately if scheduler is stopping (`isRunning` is false).
-	 *
-	 * @param name - The job type to acquire
-	 * @returns The acquired job with updated status, claimedBy, and heartbeat info, or `null` if no jobs available
-	 */
-	async acquireJob(name: string): Promise<PersistedJob | null> {
-		return this.lifecycle.claimNext(name);
-	}
-
-	/**
 	 * Execute a job using its registered worker handler.
 	 *
 	 * Tracks the job as active during processing, emits lifecycle events, and handles
-	 * both success and failure cases. On success, calls `completeJob()`. On failure,
-	 * calls `failJob()` which implements exponential backoff retry logic.
+	 * both success and failure cases through the Owned Job lifecycle module.
 	 *
 	 * Events are only emitted when the underlying atomic status transition succeeds,
 	 * ensuring event consumers receive reliable, consistent data backed by the actual
@@ -194,7 +181,7 @@ export class JobProcessor {
 	 * @param job - The job to process
 	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
-	async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
+	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
 		const jobId = job._id.toString();
 		const startTime = Date.now();
 
@@ -204,7 +191,7 @@ export class JobProcessor {
 
 			// Job completed successfully
 			const duration = Date.now() - startTime;
-			const updatedJob = await this.completeJob(job);
+			const updatedJob = await this.lifecycle.completeOwned(job);
 
 			if (updatedJob) {
 				this.ctx.emit('job:complete', { job: updatedJob, duration });
@@ -212,7 +199,7 @@ export class JobProcessor {
 		} catch (error) {
 			// Job failed
 			const err = toError(error);
-			const updatedJob = await this.failJob(job, err);
+			const updatedJob = await this.lifecycle.failOwned(job, err);
 
 			if (updatedJob) {
 				const willRetry = updatedJob.status === JobStatus.PENDING;
@@ -223,59 +210,5 @@ export class JobProcessor {
 			this._totalActiveJobs--;
 			this.ctx.notifyJobFinished();
 		}
-	}
-
-	/**
-	 * Mark a job as completed successfully using an atomic status transition.
-	 *
-	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
-	 * preconditions to ensure the transition only occurs if the job is still owned by this
-	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
-	 * by another instance after stale recovery).
-	 *
-	 * For recurring jobs (with `repeatInterval`), schedules the next run based on the cron
-	 * expression and resets `failCount` to 0. For one-time jobs, sets status to `completed`.
-	 * Clears `lockedAt` and `failReason` fields in both cases.
-	 *
-	 * @param job - The job that completed successfully
-	 * @returns The updated job document, or `null` if the transition could not be applied
-	 */
-	async completeJob(job: Job): Promise<PersistedJob | null> {
-		return this.lifecycle.completeOwned(job);
-	}
-
-	/**
-	 * Handle job failure with exponential backoff retry logic using an atomic status transition.
-	 *
-	 * Uses `findOneAndUpdate` with `status: processing` and `claimedBy: instanceId`
-	 * preconditions to ensure the transition only occurs if the job is still owned by this
-	 * scheduler instance. Returns `null` if the job was concurrently modified (e.g., reclaimed
-	 * by another instance after stale recovery).
-	 *
-	 * Increments `failCount` and calculates next retry time using exponential backoff:
-	 * `nextRunAt = 2^failCount * baseRetryInterval` (capped by optional `maxBackoffDelay`).
-	 *
-	 * If `failCount >= maxRetries`, marks job as permanently `failed`. Otherwise, resets
-	 * to `pending` status for retry. Stores error message in `failReason` field.
-	 *
-	 * @param job - The job that failed
-	 * @param error - The error that caused the failure
-	 * @returns The updated job document, or `null` if the transition could not be applied
-	 */
-	async failJob(job: Job, error: Error): Promise<PersistedJob | null> {
-		return this.lifecycle.failOwned(job, error);
-	}
-
-	/**
-	 * Update heartbeats for all jobs claimed by this scheduler instance.
-	 *
-	 * This method runs periodically while the scheduler is running to indicate
-	 * that jobs are still being actively processed.
-	 *
-	 * `lastHeartbeat` is primarily an observability signal (monitoring/debugging).
-	 * Stale recovery is based on `lockedAt` + `lockTimeout`.
-	 */
-	async updateHeartbeats(): Promise<void> {
-		await this.lifecycle.updateOwnedHeartbeats();
 	}
 }
