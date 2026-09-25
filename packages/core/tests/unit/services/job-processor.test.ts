@@ -176,18 +176,38 @@ describe('JobProcessor', () => {
 			expect(acquireCalls).toHaveLength(2);
 		});
 
-		it('should work without instanceConcurrency (unlimited)', async () => {
+		it('should stop claiming after an empty result even with high concurrency', async () => {
 			// instanceConcurrency is undefined by default
 			expect(ctx.options.instanceConcurrency).toBeUndefined();
 
-			ctx.workers.set('test-job', createWorker({ concurrency: 3 }));
+			ctx.workers.set('test-job', createWorker({ concurrency: 100 }));
 
 			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
 
 			await processor.poll();
 
-			// Should try to acquire up to worker concurrency (3 parallel attempts)
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(3);
+			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+		});
+
+		it('fills available slots when jobs are waiting', async () => {
+			const jobs = Array.from({ length: 8 }, () => JobFactoryHelpers.processing());
+			let finishHandlers: (() => void) | undefined;
+			const handlerPromise = new Promise<void>((resolve) => {
+				finishHandlers = resolve;
+			});
+			const handler = vi.fn(() => handlerPromise);
+			const worker = createWorker({ concurrency: 8, handler });
+			ctx.workers.set('test-job', worker);
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockImplementation(
+				async () => jobs.shift() ?? null,
+			);
+
+			await processor.poll();
+
+			expect(handler).toHaveBeenCalledTimes(8);
+			expect(worker.activeJobs.size).toBe(8);
+			finishHandlers?.();
+			await vi.waitFor(() => expect(worker.activeJobs.size).toBe(0));
 		});
 
 		it('should re-poll when a poll request arrives while already polling', async () => {

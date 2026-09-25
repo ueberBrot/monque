@@ -127,44 +127,54 @@ export class JobProcessor {
 				return;
 			}
 
-			// Try to acquire jobs up to available slots in parallel
+			// Probe once, then grow batches while jobs remain available.
 			if (!this.ctx.isRunning()) {
 				return;
 			}
 
-			const acquisitionPromises: Promise<void>[] = [];
-			for (let i = 0; i < availableSlots; i++) {
-				acquisitionPromises.push(
-					this.lifecycle
-						.claimNext(name)
-						.then(async (job) => {
-							if (!job) {
-								return;
-							}
-
-							if (this.ctx.isRunning()) {
-								// Add to activeJobs immediately to correctly track concurrency
-								worker.activeJobs.set(job._id.toString(), job);
-								this._totalActiveJobs++;
-
-								this.processJob(job, worker).catch((error: unknown) => {
-									this.ctx.emit('job:error', { error: toError(error), job });
-								});
-							} else {
-								try {
-									await this.lifecycle.releaseOwnedClaim(job);
-								} catch {
-									// Best-effort shutdown cleanup.
+			let remaining = availableSlots;
+			for (let batchSize = 1; remaining > 0 && this.ctx.isRunning(); batchSize *= 2) {
+				const size = Math.min(batchSize, remaining);
+				let found = 0;
+				const acquisitionPromises: Promise<void>[] = [];
+				for (let i = 0; i < size; i++) {
+					acquisitionPromises.push(
+						this.lifecycle
+							.claimNext(name)
+							.then(async (job) => {
+								if (!job) {
+									return;
 								}
-							}
-						})
-						.catch((error: unknown) => {
-							this.ctx.emit('job:error', { error: toError(error) });
-						}),
-				);
-			}
+								found++;
 
-			await Promise.allSettled(acquisitionPromises);
+								if (this.ctx.isRunning()) {
+									// Add to activeJobs immediately to correctly track concurrency
+									worker.activeJobs.set(job._id.toString(), job);
+									this._totalActiveJobs++;
+
+									this.processJob(job, worker).catch((error: unknown) => {
+										this.ctx.emit('job:error', { error: toError(error), job });
+									});
+								} else {
+									try {
+										await this.lifecycle.releaseOwnedClaim(job);
+									} catch {
+										// Best-effort shutdown cleanup.
+									}
+								}
+							})
+							.catch((error: unknown) => {
+								this.ctx.emit('job:error', { error: toError(error) });
+							}),
+					);
+				}
+
+				await Promise.allSettled(acquisitionPromises);
+				if (found < size) {
+					break;
+				}
+				remaining -= size;
+			}
 		}
 	}
 

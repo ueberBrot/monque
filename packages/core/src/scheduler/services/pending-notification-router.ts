@@ -23,12 +23,14 @@ export class PendingNotificationRouter {
 
 	/** Job names collected during the current batch window for targeted polling */
 	private pendingTargetNames: Set<string> = new Set();
+	private fullBatchPollRequested = false;
 
 	/** Wakeup timer for the earliest known future Job */
 	private wakeupTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Time of the currently scheduled wakeup */
 	private wakeupTime: Date | null = null;
+	private readonly wakeupTimes = new Set<number>();
 
 	private fullPollTimer: ReturnType<typeof setTimeout> | null = null;
 	private fullPollDueAt: number | null = null;
@@ -74,6 +76,8 @@ export class PendingNotificationRouter {
 
 		if (jobName) {
 			this.pendingTargetNames.add(jobName);
+		} else {
+			this.fullBatchPollRequested = true;
 		}
 
 		this.scheduleBatchPoll();
@@ -93,6 +97,8 @@ export class PendingNotificationRouter {
 		}
 
 		this.pendingTargetNames.clear();
+		this.fullBatchPollRequested = false;
+		this.wakeupTimes.clear();
 		this.clearWakeupTimer();
 	}
 
@@ -109,8 +115,9 @@ export class PendingNotificationRouter {
 
 		this.batchTimer = setTimeout(() => {
 			this.batchTimer = null;
-			const names = this.pendingTargetNames.size > 0 ? new Set(this.pendingTargetNames) : undefined;
+			const names = this.fullBatchPollRequested ? undefined : new Set(this.pendingTargetNames);
 			this.pendingTargetNames.clear();
+			this.fullBatchPollRequested = false;
 			this.onPoll(names).catch((error: unknown) => {
 				this.ctx.emit('job:error', { error: toError(error) });
 			});
@@ -124,6 +131,7 @@ export class PendingNotificationRouter {
 	 * When the timer fires, triggers a full poll to pick up all due Jobs.
 	 */
 	private scheduleWakeup(nextRunAt: Date): void {
+		this.wakeupTimes.add(nextRunAt.getTime());
 		if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
 			return;
 		}
@@ -141,6 +149,13 @@ export class PendingNotificationRouter {
 					this.scheduleWakeup(nextRunAt);
 					return;
 				}
+				let nextWakeup = Infinity;
+				const now = Date.now();
+				for (const time of this.wakeupTimes) {
+					if (time <= now) this.wakeupTimes.delete(time);
+					else nextWakeup = Math.min(nextWakeup, time);
+				}
+				if (nextWakeup !== Infinity) this.scheduleWakeup(new Date(nextWakeup));
 				this.onPoll().catch((error: unknown) => {
 					this.ctx.emit('job:error', { error: toError(error) });
 				});

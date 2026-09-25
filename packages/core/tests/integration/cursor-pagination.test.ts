@@ -166,6 +166,14 @@ describe('Management APIs: Cursor Pagination', () => {
 
 			expect(backResult.hasNextPage).toBe(true); // Can go forward
 			expect(backResult.hasPreviousPage).toBe(true); // Can go backward (0, 1 exist)
+			if (!backResult.cursor) throw new Error('Expected backward cursor');
+			const earlier = await monque.getJobsWithCursor({
+				limit: 3,
+				cursor: backResult.cursor,
+				direction: CursorDirection.BACKWARD,
+			});
+			expect(earlier.jobs.map((job) => job.data)).toEqual([{ index: 0 }, { index: 1 }]);
+			expect(earlier.hasPreviousPage).toBe(false);
 		});
 
 		test('filters by status works with pagination', async () => {
@@ -308,6 +316,27 @@ describe('Management APIs: Cursor Pagination', () => {
 			expect(page2.jobs.map((job) => job._id.toHexString())).toEqual([
 				'000000000000000000000002',
 				'000000000000000000000001',
+			]);
+			if (!page2.cursor) throw new Error('Expected cursor');
+			const back = await monque.getJobSummariesWithCursor({
+				limit: 2,
+				cursor: page2.cursor,
+				direction: CursorDirection.BACKWARD,
+				sort: { by: JobCursorSortField.UPDATED_AT, direction: JobCursorSortDirection.DESC },
+			});
+			expect(back.jobs.map((job) => job._id.toHexString())).toEqual([
+				'000000000000000000000003',
+				'000000000000000000000002',
+			]);
+			if (!back.cursor) throw new Error('Expected backward cursor');
+			const earlier = await monque.getJobSummariesWithCursor({
+				limit: 2,
+				cursor: back.cursor,
+				direction: CursorDirection.BACKWARD,
+				sort: { by: JobCursorSortField.UPDATED_AT, direction: JobCursorSortDirection.DESC },
+			});
+			expect(earlier.jobs.map((job) => job._id.toHexString())).toEqual([
+				'000000000000000000000004',
 			]);
 		});
 	});

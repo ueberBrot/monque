@@ -175,7 +175,7 @@ function createPageCursor<T>(
 	direction: CursorDirectionType,
 	sort: JobCursorSort,
 ): string | null {
-	const lastJob = jobs[jobs.length - 1];
+	const lastJob = direction === CursorDirection.BACKWARD ? jobs[0] : jobs[jobs.length - 1];
 
 	if (!lastJob) {
 		return null;
