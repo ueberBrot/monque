@@ -1,5 +1,19 @@
 # @monque/core
 
+## 1.12.3
+
+### Patch Changes
+
+- [#529](https://github.com/ueberBrot/monque/pull/529) [`8478d5b`](https://github.com/ueberBrot/monque/commit/8478d5b52d4f74985bc304b5d96a06da413d1f14) - Fix backward cursor pagination so earlier pages do not repeat jobs from the previous page, including when sorting by date.
+
+- [#529](https://github.com/ueberBrot/monque/pull/529) [`8478d5b`](https://github.com/ueberBrot/monque/commit/8478d5b52d4f74985bc304b5d96a06da413d1f14) - Check all workers when a full-poll notification arrives alongside notifications for specific job names, avoiding delays for other pending jobs.
+
+- [#529](https://github.com/ueberBrot/monque/pull/529) [`8478d5b`](https://github.com/ueberBrot/monque/commit/8478d5b52d4f74985bc304b5d96a06da413d1f14) - Run jobs near their scheduled times when several future jobs are queued together, instead of delaying later jobs until the next safety poll.
+
+- [#529](https://github.com/ueberBrot/monque/pull/529) [`8478d5b`](https://github.com/ueberBrot/monque/commit/8478d5b52d4f74985bc304b5d96a06da413d1f14) - Reduce database queries while polling idle workers with high concurrency, while still filling available slots when jobs are waiting.
+
+- [#529](https://github.com/ueberBrot/monque/pull/529) [`8478d5b`](https://github.com/ueberBrot/monque/commit/8478d5b52d4f74985bc304b5d96a06da413d1f14) - Bulk retries use less memory for large sets of jobs and wake workers as retried jobs become available.
+
 ## 1.12.2
 
 ### Patch Changes
