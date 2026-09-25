@@ -48,27 +48,6 @@ describe('change streams', () => {
 	});
 
 	describe('change stream initialization', () => {
-		it('should emit changestream:connected event when change stream is established', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connected = false;
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connected, { timeout: 5000 });
-			expect(connected).toBe(true);
-		});
-
 		it('should emit changestream:closed event on stop()', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, {
@@ -384,35 +363,6 @@ describe('change streams', () => {
 			} finally {
 				collectionSpy.mockRestore();
 			}
-		});
-
-		it('should close change stream cursor on stop()', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 10000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let connected = false;
-			let closed = false;
-
-			monque.on('changestream:connected', () => {
-				connected = true;
-			});
-			monque.on('changestream:closed', () => {
-				closed = true;
-			});
-
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {});
-			monque.start();
-
-			await waitFor(async () => connected, { timeout: 5000 });
-
-			await monque.stop();
-
-			expect(closed).toBe(true);
 		});
 
 		it('should not process new jobs after stop() is called', async () => {

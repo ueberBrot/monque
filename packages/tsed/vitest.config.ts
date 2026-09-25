@@ -35,7 +35,7 @@ export default defineConfig({
 				statements: 85,
 			},
 		},
-		setupFiles: ['./tests/integration/helpers/testcontainers-setup.ts'],
+		globalSetup: ['./tests/integration/helpers/global-setup.ts'],
 		fileParallelism: false,
 		testTimeout: 30000,
 		hookTimeout: 60000,

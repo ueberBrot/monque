@@ -44,56 +44,59 @@ describe('Instance Collision Detection', () => {
 	});
 
 	it('throws when second instance initializes with same schedulerInstanceId while first is active', async () => {
-		collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-		const sharedId = 'shared-collision-id';
+		const release = Promise.withResolvers<void>();
+		try {
+			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+			const sharedId = 'shared-collision-id';
 
-		const monque1 = new Monque(db, {
-			collectionName,
-			schedulerInstanceId: sharedId,
-			pollInterval: 100,
-			heartbeatInterval: 200,
-			lockTimeout: 60_000,
-		});
-		monqueInstances.push(monque1);
-		await monque1.initialize();
-
-		// Register a long-running worker and start processing
-		let jobStarted = false;
-		monque1.register(TEST_CONSTANTS.JOB_NAME, async () => {
-			jobStarted = true;
-			// Hold the job long enough for the test
-			await new Promise((resolve) => setTimeout(resolve, 5000));
-		});
-
-		await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 'collision-test' });
-		monque1.start();
-
-		// Wait for the job to start processing and heartbeat to be written
-		await waitFor(async () => jobStarted, { timeout: 5000 });
-		// Wait for at least one heartbeat cycle
-		await new Promise((resolve) => setTimeout(resolve, 300));
-
-		// Create second instance with same ID — should fail
-		const monque2 = new Monque(db, {
-			collectionName,
-			schedulerInstanceId: sharedId,
-			pollInterval: 100,
-			heartbeatInterval: 200,
-			lockTimeout: 60_000,
-		});
-		monqueInstances.push(monque2);
-
-		await expect(monque2.initialize()).rejects.toThrow(ConnectionError);
-		await expect(
-			// Need fresh instance since initialize() may have partially set state
-			new Monque(db, {
+			const monque1 = new Monque(db, {
 				collectionName,
 				schedulerInstanceId: sharedId,
 				pollInterval: 100,
 				heartbeatInterval: 200,
 				lockTimeout: 60_000,
-			}).initialize(),
-		).rejects.toThrow(/schedulerInstanceId/);
+			});
+			monqueInstances.push(monque1);
+			await monque1.initialize();
+
+			// Register a long-running worker and start processing
+			let jobStarted = false;
+			monque1.register(TEST_CONSTANTS.JOB_NAME, async () => {
+				jobStarted = true;
+				// Hold the job long enough for the test
+				await release.promise;
+			});
+
+			await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 'collision-test' });
+			monque1.start();
+
+			// Wait for the job to start processing and heartbeat to be written
+			await waitFor(async () => jobStarted, { timeout: 5000 });
+
+			// Create second instance with same ID — should fail
+			const monque2 = new Monque(db, {
+				collectionName,
+				schedulerInstanceId: sharedId,
+				pollInterval: 100,
+				heartbeatInterval: 200,
+				lockTimeout: 60_000,
+			});
+			monqueInstances.push(monque2);
+
+			await expect(monque2.initialize()).rejects.toThrow(ConnectionError);
+			await expect(
+				// Need fresh instance since initialize() may have partially set state
+				new Monque(db, {
+					collectionName,
+					schedulerInstanceId: sharedId,
+					pollInterval: 100,
+					heartbeatInterval: 200,
+					lockTimeout: 60_000,
+				}).initialize(),
+			).rejects.toThrow(/schedulerInstanceId/);
+		} finally {
+			release.resolve();
+		}
 	});
 
 	it('allows second instance after first stops (no false positive)', async () => {

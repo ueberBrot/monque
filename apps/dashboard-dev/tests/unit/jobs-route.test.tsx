@@ -12,6 +12,7 @@ import { createDashboardHarness } from '../setup/dashboard-harness.js';
 describe('Jobs route', () => {
 	afterEach(() => {
 		cleanup();
+		vi.useRealTimers();
 	});
 
 	it('sorts on mobile and unmounts columns hidden by responsive breakpoints', async () => {
@@ -229,17 +230,23 @@ describe('Jobs route', () => {
 
 	it('debounces name requests while immediately showing the typed value', async () => {
 		const fetchSpy = vi.fn(createMockManagementFetch({ scenarioId: 'large-dataset' }));
-		await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs' });
+		await renderJobsRoute({ fetch: fetchSpy, initialEntry: '/jobs?limit=10' });
 		const input = await screen.findByLabelText('Job name');
 		fetchSpy.mockClear();
+		vi.useFakeTimers({ shouldClearNativeTimers: true });
 		for (const value of ['s', 'send', 'send-email']) {
 			await act(async () => {
 				fireEvent.change(input, { target: { value } });
-				await new Promise((resolve) => setTimeout(resolve, 40));
+			});
+			expect((input as HTMLInputElement).value).toBe(value);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(40);
 			});
 		}
-		expect((input as HTMLInputElement).value).toBe('send-email');
-		await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+		expect(fetchSpy).not.toHaveBeenCalled();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(300);
+		});
 		const names = fetchSpy.mock.calls.map(([request]) =>
 			new URL(request instanceof Request ? request.url : String(request)).searchParams.get('name'),
 		);
@@ -249,25 +256,36 @@ describe('Jobs route', () => {
 	it('keeps the pending name when another filter triggers a loading state', async () => {
 		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
-			initialEntry: '/jobs',
+			initialEntry: '/jobs?limit=10',
 		});
 		const input = await screen.findByLabelText('Job name');
-		fireEvent.change(input, { target: { value: 'send-email' } });
-		fireEvent.click(screen.getByRole('checkbox', { name: 'Pending' }));
-		await waitFor(() => expect(router.state.location.search.name).toBe('send-email'));
+		vi.useFakeTimers({ shouldClearNativeTimers: true });
+		await act(async () => {
+			fireEvent.change(input, { target: { value: 'send-email' } });
+			fireEvent.click(screen.getByRole('checkbox', { name: 'Pending' }));
+		});
+		expect(router.state.location.search.name).toBe('send-email');
 		expect(router.state.location.search.status).toEqual(['pending']);
 	});
 
 	it('preserves spaces while typing a name into the URL-backed input', async () => {
 		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
-			initialEntry: '/jobs',
+			initialEntry: '/jobs?limit=10',
 		});
 		const input = (await screen.findByLabelText('Job name')) as HTMLInputElement;
-		for (const character of 'send email') {
-			const value = input.value + character;
-			fireEvent.change(input, { target: { value } });
-			await waitFor(() => expect(router.state.location.search.name).toBe(value));
+		vi.useFakeTimers({ shouldClearNativeTimers: true });
+		// Exercise the significant transitions: text, trailing space, then an internal space.
+		for (const suffix of ['send', ' ', 'email']) {
+			const value = input.value + suffix;
+			await act(async () => {
+				fireEvent.change(input, { target: { value } });
+			});
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(300);
+			});
+			expect(router.state.location.search.name).toBe(value);
+			expect(input.value).toBe(value);
 		}
 		expect(input.value).toBe('send email');
 	});
@@ -275,19 +293,23 @@ describe('Jobs route', () => {
 	it.each(['toolbar', 'navigation'])('clears a pending name through %s', async (source) => {
 		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
-			initialEntry: '/jobs',
+			initialEntry: '/jobs?limit=10',
 		});
-		fireEvent.change(await screen.findByLabelText('Job name'), {
-			target: { value: 'send-email' },
+		const input = await screen.findByLabelText('Job name');
+		vi.useFakeTimers({ shouldClearNativeTimers: true });
+		await act(async () => {
+			fireEvent.change(input, { target: { value: 'send-email' } });
 		});
-		await waitFor(() => expect(router.state.location.search.name).toBe('send-email'));
+		expect(router.state.location.search.name).toBe('send-email');
 		if (source === 'toolbar') {
-			fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+			await act(async () => {
+				fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+			});
 		} else {
 			await act(() => router.navigate({ to: '/jobs', search: parseJobsRouteSearch({}) }));
 		}
 		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 350));
+			await vi.advanceTimersByTimeAsync(350);
 		});
 		expect(router.state.location.search.name).toBeUndefined();
 		expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('');
@@ -296,22 +318,21 @@ describe('Jobs route', () => {
 	it('does not restore a stale draft after navigating away and back to the original filter', async () => {
 		const { router } = await renderJobsRoute({
 			fetch: createMockManagementFetch({ scenarioId: 'large-dataset' }),
-			initialEntry: '/jobs',
+			initialEntry: '/jobs?limit=10',
 		});
 		const input = await screen.findByLabelText('Job name');
-		fireEvent.change(input, { target: { value: 'unfinished' } });
+		vi.useFakeTimers({ shouldClearNativeTimers: true });
+		await act(async () => {
+			fireEvent.change(input, { target: { value: 'unfinished' } });
+		});
 		await act(() =>
 			router.navigate({ to: '/jobs', search: parseJobsRouteSearch({ name: 'send-email' }) }),
 		);
-		await waitFor(() =>
-			expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('send-email'),
-		);
+		expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('send-email');
 		await act(() => router.navigate({ to: '/jobs', search: parseJobsRouteSearch({}) }));
-		await waitFor(() =>
-			expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe(''),
-		);
+		expect((screen.getByLabelText('Job name') as HTMLInputElement).value).toBe('');
 		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 350));
+			await vi.advanceTimersByTimeAsync(350);
 		});
 		expect(router.state.location.search.name).toBeUndefined();
 	});

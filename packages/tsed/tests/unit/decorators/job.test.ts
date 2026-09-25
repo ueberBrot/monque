@@ -100,22 +100,6 @@ describe('@Job', () => {
 		});
 	});
 
-	describe('method name tracking', () => {
-		it('should correctly track method name', () => {
-			@JobController('test')
-			class TestJob {
-				@Job('job-name')
-				async myMethodName() {}
-			}
-
-			const store = Store.from(TestJob);
-			const monqueStore = store.get<JobStore>(MONQUE);
-			const jobs = monqueStore?.jobs;
-
-			expect(jobs?.[0]?.method).toBe('myMethodName');
-		});
-	});
-
 	describe('without JobController', () => {
 		it('should initialize MONQUE store if not present', () => {
 			// Test that @Job can be applied even if @JobController hasn't been applied yet

@@ -1,3 +1,4 @@
+import { setImmediate } from 'node:timers/promises';
 /**
  * Tests for graceful shutdown behavior in the Monque scheduler.
  *
@@ -23,7 +24,7 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { MonqueEventMap } from '@/events';
-import type { Job } from '@/jobs';
+import { type Job, JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
 import { ShutdownTimeoutError } from '@/shared';
 
@@ -145,86 +146,128 @@ describe('stop() - Graceful Shutdown', () => {
 
 	describe('in-progress job waiting', () => {
 		it('should wait for in-progress jobs to complete before resolving', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				shutdownTimeout: 5000,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				monque = new Monque(db, {
+					collectionName,
+					pollInterval: 50,
+					shutdownTimeout: 5000,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			let jobCompleted = false;
-			const jobStarted = vi.fn();
+				let jobCompleted = false;
+				const jobStarted = vi.fn();
 
-			const handler = vi.fn(async () => {
-				jobStarted();
-				// Simulate a job that takes 500ms to complete
-				await new Promise((resolve) => setTimeout(resolve, 500));
-				jobCompleted = true;
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+				const handler = vi.fn(async () => {
+					jobStarted();
+					// Hold work until the test releases it
+					await release.promise;
+					jobCompleted = true;
+				});
+				monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: 'test' });
 
-			monque.start();
+				monque.start();
 
-			// Wait for job to start processing
-			await waitFor(async () => jobStarted.mock.calls.length > 0);
+				// Wait for job to start processing
+				await waitFor(async () => jobStarted.mock.calls.length > 0);
 
-			// Job has started but not yet completed
-			expect(jobCompleted).toBe(false);
+				// Job has started but not yet completed
+				expect(jobCompleted).toBe(false);
 
-			// Call stop() - should wait for job to complete
-			await monque.stop();
+				// Call stop() - should wait for job to complete
+				const streamClosed = Promise.withResolvers<void>();
+				monque.once('changestream:closed', streamClosed.resolve);
+				let stopped = false;
+				const stopping = monque.stop().then(() => {
+					stopped = true;
+				});
+				await streamClosed.promise;
+				await setImmediate();
+				expect(stopped).toBe(false);
+				release.resolve();
+				await stopping;
 
-			// After stop() resolves, job should have completed
-			expect(jobCompleted).toBe(true);
+				// After stop() resolves, job should have completed
+				expect(jobCompleted).toBe(true);
+			} finally {
+				release.resolve();
+			}
 		});
 
 		it('should wait for multiple in-progress jobs to complete', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				shutdownTimeout: 5000,
-				defaultConcurrency: 3,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			const releaseSecond = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				monque = new Monque(db, {
+					collectionName,
+					pollInterval: 50,
+					shutdownTimeout: 5000,
+					defaultConcurrency: 3,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			const completedJobs: number[] = [];
-			const startedJobs = new Set<number>();
+				const completedJobs: number[] = [];
+				const startedJobs = new Set<number>();
 
-			const handler = vi.fn(async (job: Job<{ order: number }>) => {
-				startedJobs.add(job.data.order);
-				// Different jobs take different times
-				await new Promise((resolve) => setTimeout(resolve, 100 + job.data.order * 100));
-				completedJobs.push(job.data.order);
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+				const handler = vi.fn(async (job: Job<{ order: number }>) => {
+					startedJobs.add(job.data.order);
+					// Keep all jobs active until stop is requested
+					await (job.data.order === 3 ? releaseSecond.promise : release.promise);
+					completedJobs.push(job.data.order);
+				});
+				monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+				monque.register('second-worker', handler);
 
-			// Enqueue multiple jobs
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 2 });
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 3 });
+				// Enqueue multiple jobs
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 1 });
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { order: 2 });
+				await monque.enqueue('second-worker', { order: 3 });
 
-			monque.start();
+				monque.start();
 
-			// Wait for all jobs to start
-			await waitFor(async () => startedJobs.size === 3);
+				// Wait for all jobs to start
+				await waitFor(async () => startedJobs.size === 3);
 
-			// Not all jobs completed yet
-			expect(completedJobs.length).toBeLessThan(3);
+				// Not all jobs completed yet
+				expect(completedJobs.length).toBeLessThan(3);
 
-			// Call stop() - should wait for all jobs
-			await monque.stop();
+				// Call stop() - should wait for all jobs
+				const streamClosed = Promise.withResolvers<void>();
+				monque.once('changestream:closed', streamClosed.resolve);
+				let stopped = false;
+				const stopping = monque.stop().then(() => {
+					stopped = true;
+				});
+				await streamClosed.promise;
+				await setImmediate();
+				expect(stopped).toBe(false);
+				release.resolve();
+				await waitFor(async () => {
+					const completed = await db
+						.collection(collectionName)
+						.countDocuments({ status: JobStatus.COMPLETED });
+					return completed === 2;
+				});
+				await setImmediate();
+				expect(stopped).toBe(false);
+				releaseSecond.resolve();
+				await stopping;
 
-			// All jobs should have completed
-			expect(completedJobs).toHaveLength(3);
-			expect(completedJobs).toContain(1);
-			expect(completedJobs).toContain(2);
-			expect(completedJobs).toContain(3);
+				// All jobs should have completed
+				expect(completedJobs).toHaveLength(3);
+				expect(completedJobs).toContain(1);
+				expect(completedJobs).toContain(2);
+				expect(completedJobs).toContain(3);
+			} finally {
+				release.resolve();
+				releaseSecond.resolve();
+			}
 		});
 
 		it('should resolve immediately if no jobs are in progress', async () => {

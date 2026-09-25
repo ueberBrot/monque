@@ -1,16 +1,3 @@
-/**
- * Tests for custom error classes in the Monque scheduler.
- *
- * These tests verify:
- * - MonqueError base class functionality
- * - InvalidCronError with expression storage
- * - ConnectionError for database issues
- * - ShutdownTimeoutError with incomplete jobs tracking
- * - Error inheritance chain (all catchable as Error/MonqueError)
- *
- * @see {@link @/shared/errors.js}
- */
-
 import { describe, expect, it } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories';
@@ -27,348 +14,75 @@ import {
 } from '@/shared';
 
 describe('errors', () => {
-	describe('MonqueError', () => {
-		it('should create an error with the correct message', () => {
-			const error = new MonqueError('Test error message');
-			expect(error.message).toBe('Test error message');
-		});
+	it.each([
+		{ name: 'MonqueError', create: () => new MonqueError('Test message') },
+		{ name: 'InvalidCronError', create: () => new InvalidCronError('bad cron', 'Test message') },
+		{ name: 'ConnectionError', create: () => new ConnectionError('Test message') },
+		{ name: 'ShutdownTimeoutError', create: () => new ShutdownTimeoutError('Test message', []) },
+		{
+			name: 'WorkerRegistrationError',
+			create: () => new WorkerRegistrationError('Test message', 'job'),
+		},
+		{
+			name: 'JobStateError',
+			create: () => new JobStateError('Test message', 'id', 'processing', 'cancel'),
+		},
+		{ name: 'InvalidCursorError', create: () => new InvalidCursorError('Test message') },
+		{
+			name: 'InvalidJobIdentifierError',
+			create: () => new InvalidJobIdentifierError('name', 'bad', 'Test message'),
+		},
+		{ name: 'AggregationTimeoutError', create: () => new AggregationTimeoutError('Test message') },
+	])('$name preserves its message, name, stack and error hierarchy', ({ name, create }) => {
+		const error = create();
+		expect(error.message).toBe('Test message');
+		expect(error.name).toBe(name);
+		expect(error.stack).toContain(`${name}: Test message`);
+		expect(error).toBeInstanceOf(MonqueError);
+		expect(error).toBeInstanceOf(Error);
+	});
 
-		it('should have name "MonqueError"', () => {
-			const error = new MonqueError('Test');
-			expect(error.name).toBe('MonqueError');
-		});
+	it('exposes the invalid cron expression', () => {
+		expect(new InvalidCronError('60 * * * *', 'Invalid').expression).toBe('60 * * * *');
+	});
 
-		it('should be an instance of Error', () => {
-			const error = new MonqueError('Test');
-			expect(error).toBeInstanceOf(Error);
-		});
+	it('chains the original connection error as its cause', () => {
+		const cause = new Error('Original database error');
+		expect(new ConnectionError('Connection failed', { cause }).cause).toBe(cause);
+	});
 
-		it('should be an instance of MonqueError', () => {
-			const error = new MonqueError('Test');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
+	it('preserves incomplete jobs and their payloads on shutdown timeout', () => {
+		const jobs = [
+			JobFactoryHelpers.processing({ name: 'job1' }),
+			JobFactoryHelpers.processing({ name: 'job2' }),
+		];
+		expect(new ShutdownTimeoutError('Timeout', jobs).incompleteJobs).toEqual(jobs);
+		expect(new ShutdownTimeoutError('Timeout', []).incompleteJobs).toEqual([]);
+	});
 
-		it('should have a stack trace', () => {
-			const error = new MonqueError('Test');
-			expect(error.stack).toBeDefined();
-			expect(error.stack).toContain('MonqueError');
+	it('identifies the worker that failed registration', () => {
+		expect(new WorkerRegistrationError('Duplicate worker', 'send-email').jobName).toBe(
+			'send-email',
+		);
+	});
+
+	it('identifies the job, state and attempted action for invalid transitions', () => {
+		const error = new JobStateError('Invalid transition', 'job-123', 'processing', 'cancel');
+		expect(error).toMatchObject({
+			jobId: 'job-123',
+			currentStatus: 'processing',
+			attemptedAction: 'cancel',
 		});
 	});
 
-	describe('InvalidCronError', () => {
-		it('should create an error with expression and message', () => {
-			const error = new InvalidCronError('bad cron', 'Invalid expression');
-			expect(error.message).toBe('Invalid expression');
-			expect(error.expression).toBe('bad cron');
-		});
-
-		it('should have name "InvalidCronError"', () => {
-			const error = new InvalidCronError('* *', 'Too few fields');
-			expect(error.name).toBe('InvalidCronError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new InvalidCronError('x', 'Invalid');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new InvalidCronError('x', 'Invalid');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should expose the invalid expression', () => {
-			const expression = '60 * * * *';
-			const error = new InvalidCronError(expression, 'Minute out of range');
-			expect(error.expression).toBe(expression);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new InvalidCronError('bad', 'Invalid');
-			expect(error.stack).toBeDefined();
+	it('identifies the invalid identifier field and value', () => {
+		expect(new InvalidJobIdentifierError('name', 'bad name', 'Invalid')).toMatchObject({
+			field: 'name',
+			value: 'bad name',
 		});
 	});
 
-	describe('ConnectionError', () => {
-		it('should create an error with the correct message', () => {
-			const error = new ConnectionError('Database connection failed');
-			expect(error.message).toBe('Database connection failed');
-		});
-
-		it('should have name "ConnectionError"', () => {
-			const error = new ConnectionError('Connection lost');
-			expect(error.name).toBe('ConnectionError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new ConnectionError('Timeout');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new ConnectionError('Timeout');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new ConnectionError('Failed');
-			expect(error.stack).toBeDefined();
-		});
-
-		it('should chain the cause error when provided', () => {
-			const cause = new Error('Original database error');
-			const error = new ConnectionError('Connection failed', { cause });
-
-			expect(error.cause).toBe(cause);
-			expect(error.message).toBe('Connection failed');
-		});
-	});
-
-	describe('ShutdownTimeoutError', () => {
-		it('should create an error with message and incomplete jobs', () => {
-			const incompleteJobs = [
-				JobFactoryHelpers.processing({ name: 'job1' }),
-				JobFactoryHelpers.processing({ name: 'job2' }),
-			];
-			const error = new ShutdownTimeoutError('Shutdown timed out', incompleteJobs);
-
-			expect(error.message).toBe('Shutdown timed out');
-			expect(error.incompleteJobs).toEqual(incompleteJobs);
-		});
-
-		it('should have name "ShutdownTimeoutError"', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error.name).toBe('ShutdownTimeoutError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should expose incompleteJobs array', () => {
-			const job = JobFactoryHelpers.processing({ name: 'job1' });
-			const error = new ShutdownTimeoutError('Timeout', [job]);
-			expect(error.incompleteJobs).toHaveLength(1);
-			expect(error.incompleteJobs[0]?.name).toBe(job.name);
-		});
-
-		it('should handle empty incompleteJobs array', () => {
-			const error = new ShutdownTimeoutError('No jobs running', []);
-			expect(error.incompleteJobs).toHaveLength(0);
-		});
-
-		it('should preserve job data in incompleteJobs', () => {
-			const job = JobFactoryHelpers.processing();
-			const error = new ShutdownTimeoutError('Timeout', [job]);
-
-			expect(error.incompleteJobs[0]?.data).toEqual(job.data);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			expect(error.stack).toBeDefined();
-		});
-	});
-
-	describe('WorkerRegistrationError', () => {
-		it('should create an error with message and job name', () => {
-			const error = new WorkerRegistrationError('Worker already registered', 'test-job');
-			expect(error.message).toBe('Worker already registered');
-			expect(error.jobName).toBe('test-job');
-		});
-
-		it('should have name "WorkerRegistrationError"', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error.name).toBe('WorkerRegistrationError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-
-		it('should be an instance of Error', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error).toBeInstanceOf(Error);
-		});
-
-		it('should have a stack trace', () => {
-			const error = new WorkerRegistrationError('Error', 'job');
-			expect(error.stack).toBeDefined();
-		});
-	});
-
-	describe('JobStateError', () => {
-		it('should create an error with correct properties', () => {
-			const error = new JobStateError(
-				'Invalid state transition',
-				'job-123',
-				'processing',
-				'cancel',
-			);
-			expect(error.message).toBe('Invalid state transition');
-			expect(error.jobId).toBe('job-123');
-			expect(error.currentStatus).toBe('processing');
-			expect(error.attemptedAction).toBe('cancel');
-		});
-
-		it('should have name "JobStateError"', () => {
-			const error = new JobStateError('Error', 'id', 'status', 'cancel');
-			expect(error.name).toBe('JobStateError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new JobStateError('Error', 'id', 'status', 'cancel');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-	});
-
-	describe('InvalidCursorError', () => {
-		it('should create an error with message', () => {
-			const error = new InvalidCursorError('Invalid cursor');
-			expect(error.message).toBe('Invalid cursor');
-		});
-
-		it('should have name "InvalidCursorError"', () => {
-			const error = new InvalidCursorError('Error');
-			expect(error.name).toBe('InvalidCursorError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new InvalidCursorError('Error');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-	});
-
-	describe('InvalidJobIdentifierError', () => {
-		it('should create an error with field and value', () => {
-			const error = new InvalidJobIdentifierError('name', 'bad name', 'Invalid job name');
-			expect(error.message).toBe('Invalid job name');
-			expect(error.field).toBe('name');
-			expect(error.value).toBe('bad name');
-		});
-
-		it('should have name "InvalidJobIdentifierError"', () => {
-			const error = new InvalidJobIdentifierError('uniqueKey', 'bad', 'Invalid');
-			expect(error.name).toBe('InvalidJobIdentifierError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new InvalidJobIdentifierError('name', 'bad', 'Invalid');
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-	});
-
-	describe('AggregationTimeoutError', () => {
-		it('should create an error with default message', () => {
-			const error = new AggregationTimeoutError();
-			expect(error.message).toContain('exceeded 30 second timeout');
-		});
-
-		it('should create an error with custom message', () => {
-			const error = new AggregationTimeoutError('Custom timeout');
-			expect(error.message).toBe('Custom timeout');
-		});
-
-		it('should have name "AggregationTimeoutError"', () => {
-			const error = new AggregationTimeoutError();
-			expect(error.name).toBe('AggregationTimeoutError');
-		});
-
-		it('should be an instance of MonqueError', () => {
-			const error = new AggregationTimeoutError();
-			expect(error).toBeInstanceOf(MonqueError);
-		});
-	});
-
-	describe('error inheritance chain', () => {
-		it('InvalidCronError should be catchable as MonqueError', () => {
-			const error = new InvalidCronError('bad', 'Invalid');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('ConnectionError should be catchable as MonqueError', () => {
-			const error = new ConnectionError('Failed');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('ShutdownTimeoutError should be catchable as MonqueError', () => {
-			const error = new ShutdownTimeoutError('Timeout', []);
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('WorkerRegistrationError should be catchable as MonqueError', () => {
-			const error = new WorkerRegistrationError('Failed', 'job');
-			let caught = false;
-
-			try {
-				throw error;
-			} catch (e) {
-				if (e instanceof MonqueError) {
-					caught = true;
-				}
-			}
-
-			expect(caught).toBe(true);
-		});
-
-		it('all errors should be catchable as Error', () => {
-			const errors = [
-				new MonqueError('Base'),
-				new InvalidCronError('x', 'Invalid'),
-				new ConnectionError('Failed'),
-				new ShutdownTimeoutError('Timeout', []),
-				new InvalidJobIdentifierError('name', 'bad', 'Invalid'),
-				new WorkerRegistrationError('Failed', 'job'),
-			];
-
-			for (const error of errors) {
-				let caught = false;
-				try {
-					throw error;
-				} catch (e) {
-					if (e instanceof Error) {
-						caught = true;
-					}
-				}
-				expect(caught).toBe(true);
-			}
-		});
+	it('provides a default aggregation timeout message', () => {
+		expect(new AggregationTimeoutError().message).toContain('exceeded 30 second timeout');
 	});
 });

@@ -45,6 +45,7 @@ describe('ChangeStreamHandler', () => {
 		});
 
 		it('should create change stream and emit connected event', () => {
+			expect(handler.isActive()).toBe(false);
 			const mockChangeStream = new EventEmitter();
 			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
 				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
@@ -52,6 +53,7 @@ describe('ChangeStreamHandler', () => {
 
 			handler.setup();
 
+			expect(handler.isActive()).toBe(true);
 			expect(ctx.mockCollection.watch).toHaveBeenCalled();
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({ event: 'changestream:connected' }),
@@ -118,6 +120,7 @@ describe('ChangeStreamHandler', () => {
 
 			handler.setup();
 
+			expect(handler.isActive()).toBe(false);
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({ event: 'changestream:fallback' }),
 			);
@@ -518,30 +521,11 @@ describe('ChangeStreamHandler', () => {
 			handler.setup();
 			await handler.close();
 
+			expect(handler.isActive()).toBe(false);
 			expect(mockChangeStream.close).toHaveBeenCalled();
 			expect(ctx.emitHistory).toContainEqual(
 				expect.objectContaining({ event: 'changestream:closed' }),
 			);
-		});
-
-		it('should clear reconnect timers', async () => {
-			vi.useFakeTimers();
-
-			const mockChangeStream = {
-				on: vi.fn(),
-				close: vi.fn().mockResolvedValue(undefined),
-			};
-			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-			await handler.close();
-
-			// Verify no pending timers would cause issues
-			vi.advanceTimersByTime(10000);
-
-			expect(onPoll).not.toHaveBeenCalled();
 		});
 
 		it('preserves batched notifications when only the stream closes', async () => {
@@ -949,33 +933,6 @@ describe('ChangeStreamHandler', () => {
 			const watchCallsAfterClose = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
 				.length;
 			expect(watchCallsAfterClose).toBe(1); // Only the initial setup
-		});
-	});
-
-	describe('isActive', () => {
-		it('should return false before setup', () => {
-			expect(handler.isActive()).toBe(false);
-		});
-
-		it('should return true after successful setup', () => {
-			const mockChangeStream = new EventEmitter();
-			vi.spyOn(ctx.mockCollection, 'watch').mockReturnValue(
-				mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-			);
-
-			handler.setup();
-
-			expect(handler.isActive()).toBe(true);
-		});
-
-		it('should return false after falling back to polling', () => {
-			vi.spyOn(ctx.mockCollection, 'watch').mockImplementation(() => {
-				throw new Error('Not available');
-			});
-
-			handler.setup();
-
-			expect(handler.isActive()).toBe(false);
 		});
 	});
 });

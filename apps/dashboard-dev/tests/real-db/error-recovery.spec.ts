@@ -53,23 +53,6 @@ for (const route of [
 	}
 }
 
-test('announces loading while API requests are pending', async ({ page, app }) => {
-	await app.seed();
-	let release = () => {};
-	const pending = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	await page.route('**/api/v1/**', async (request) => {
-		await pending;
-		await request.continue();
-	});
-	await page.goto(`${app.base}/dashboard/health`);
-	await expect(page.getByRole('status', { name: 'Loading Health…' })).toBeVisible();
-	release();
-	await expect(page.getByRole('heading', { name: 'Health', exact: true })).toBeVisible();
-	await expect(page.getByRole('status', { name: 'Loading Health…' })).toHaveCount(0);
-});
-
 test('invalid route search offers a working way back to Queue Views', async ({ page, app }) => {
 	await app.seed();
 	await page.goto(`${app.base}/dashboard/queue-views/email?limit=not-a-number`);

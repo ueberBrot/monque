@@ -13,7 +13,7 @@ export default defineConfig({
 	},
 	plugins: [react()],
 	test: {
-		fileParallelism: false,
+		maxWorkers: 2,
 		include: ['tests/unit/**/*.test.{ts,tsx}'],
 		setupFiles: ['./tests/setup/browser.ts'],
 	},

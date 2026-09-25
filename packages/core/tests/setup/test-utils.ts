@@ -21,6 +21,7 @@
  * ```
  */
 
+import { randomUUID } from 'node:crypto';
 import type { Collection, Db, Document, ObjectId } from 'mongodb';
 
 import { getMongoClient } from '@tests/setup/mongodb.js';
@@ -28,7 +29,7 @@ import type { Job } from '@/jobs';
 
 /**
  * Gets an isolated test database.
- * Each test file should use a unique testName to avoid conflicts.
+ * Every call allocates a fresh database, including repeated or parallel suite runs.
  *
  * @param testName - A unique identifier for the test suite (used as database name suffix)
  * @returns A MongoDB Db instance for isolated testing
@@ -38,7 +39,7 @@ export async function getTestDb(testName: string): Promise<Db> {
 	// Sanitize test name for use as database name
 	const sanitizedName = testName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-	return client.db(`monque_test_${sanitizedName}`);
+	return client.db(`monque_${sanitizedName.slice(0, 20)}_${randomUUID().replaceAll('-', '')}`);
 }
 
 /**

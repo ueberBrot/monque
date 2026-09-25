@@ -15,7 +15,7 @@ export default defineConfig({
 	plugins: [react()],
 	test: {
 		environment: 'node',
-		fileParallelism: false,
+		maxWorkers: 2,
 		include: ['tests/unit/**/*.test.{ts,tsx}'],
 		setupFiles: ['../../packages/dashboard/tests/setup/browser.ts'],
 	},

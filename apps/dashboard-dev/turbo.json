@@ -1,0 +1,11 @@
+{
+	"extends": ["//"],
+	"tasks": {
+		"test": {
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/dashboard/tests/setup/browser.ts"]
+		},
+		"test:unit": {
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/dashboard/tests/setup/browser.ts"]
+		}
+	}
+}

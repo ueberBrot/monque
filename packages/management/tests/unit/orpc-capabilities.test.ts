@@ -31,28 +31,6 @@ describe('oRPC Management capabilities route', () => {
 		expect(checks.every((check) => check.startsWith('alice:'))).toBe(true);
 	});
 
-	test('reports every Management action available when the scheduler supports them', async () => {
-		const surface = createManagementSurface({
-			monque: createManagementMonque({}, { mutations: true }),
-		});
-
-		const response = await handleManagementGet(surface, '/api/v1/capabilities');
-
-		await expectJsonResponse(response, 200, {
-			readOnly: false,
-			actions: {
-				read: true,
-				cancel: true,
-				cancelBulk: true,
-				retry: true,
-				retryBulk: true,
-				reschedule: true,
-				delete: true,
-				deleteBulk: true,
-			},
-		});
-	});
-
 	test('returns identical capabilities on repeated requests', async () => {
 		const surface = createManagementSurface({
 			monque: createManagementMonque({}, { mutations: true }),

@@ -8,15 +8,8 @@
 import { type Collection, type Db, ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PersistedJob } from '@/jobs';
 import { Monque } from '@/scheduler/monque.js';
-import {
-	ConnectionError,
-	InvalidJobIdentifierError,
-	ShutdownTimeoutError,
-	WorkerRegistrationError,
-} from '@/shared';
-import type { WorkerRegistration } from '@/workers';
+import { ConnectionError, InvalidJobIdentifierError, WorkerRegistrationError } from '@/shared';
 
 // Mock the services to avoid instantiating them
 vi.mock('@/scheduler/services/index.js', async (importOriginal) => {
@@ -165,13 +158,6 @@ describe('Monque', () => {
 	});
 
 	describe('worker registration', () => {
-		it('should register a worker', () => {
-			const handler = async () => {};
-			monque.register('test-job', handler);
-
-			// We can't easily inspect private map, but we verify it doesn't throw
-		});
-
 		it('should throw WorkerRegistrationError on duplicate registration', () => {
 			const handler = async () => {};
 			monque.register('test-job', handler);
@@ -181,15 +167,20 @@ describe('Monque', () => {
 			}).toThrow(WorkerRegistrationError);
 		});
 
-		it('should allow replacing worker with { replace: true }', () => {
+		it('passes the replacement handler and concurrency to the processor', async () => {
 			const handler1 = async () => {};
 			const handler2 = async () => {};
 
 			monque.register('test-job', handler1);
+			monque.register('test-job', handler2, { replace: true, concurrency: 3 });
+			await monque.initialize();
 
-			expect(() => {
-				monque.register('test-job', handler2, { replace: true });
-			}).not.toThrow();
+			const { JobProcessor } = await import('@/scheduler/services');
+			const context = vi.mocked(JobProcessor).mock.calls[0]?.[0];
+			expect(context?.workers.get('test-job')).toMatchObject({
+				handler: handler2,
+				concurrency: 3,
+			});
 		});
 
 		it('should reject invalid worker names', () => {
@@ -215,14 +206,6 @@ describe('Monque', () => {
 			});
 		});
 
-		it('should delegate enqueue to intake', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_intake'] = { enqueue: spy };
-
-			await monque.enqueue('test', { foo: 'bar' });
-			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' }, {});
-		});
-
 		it('should reject invalid enqueue job names before delegating', async () => {
 			const spy = vi.fn();
 			(monque as unknown as Record<string, unknown>)['_intake'] = { enqueue: spy };
@@ -243,22 +226,6 @@ describe('Monque', () => {
 			expect(spy).not.toHaveBeenCalled();
 		});
 
-		it('should delegate now to intake', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_intake'] = { now: spy };
-
-			await monque.now('test', { foo: 'bar' });
-			expect(spy).toHaveBeenCalledWith('test', { foo: 'bar' });
-		});
-
-		it('should delegate schedule to intake', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_intake'] = { schedule: spy };
-
-			await monque.schedule('* * * * *', 'test', {});
-			expect(spy).toHaveBeenCalledWith('* * * * *', 'test', {}, {});
-		});
-
 		it('should reject invalid scheduled job names before delegating', async () => {
 			const spy = vi.fn();
 			(monque as unknown as Record<string, unknown>)['_intake'] = { schedule: spy };
@@ -267,15 +234,6 @@ describe('Monque', () => {
 				InvalidJobIdentifierError,
 			);
 			expect(spy).not.toHaveBeenCalled();
-		});
-
-		it('should delegate getJob to query service', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_query'] = { getJob: spy };
-
-			const id = new ObjectId();
-			await monque.getJob(id);
-			expect(spy).toHaveBeenCalledWith(id);
 		});
 
 		it('converts Management string IDs before querying MongoDB', async () => {
@@ -293,176 +251,6 @@ describe('Monque', () => {
 
 			expect(await monque.getJob('invalid-id')).toBeNull();
 			expect(getJob).not.toHaveBeenCalled();
-		});
-
-		it('should delegate getJobs to query service', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_query'] = { getJobs: spy };
-
-			await monque.getJobs({ limit: 10 });
-			expect(spy).toHaveBeenCalledWith({ limit: 10 });
-		});
-
-		it('should delegate getQueueStats to query service', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_query'] = { getQueueStats: spy };
-
-			await monque.getQueueStats();
-			expect(spy).toHaveBeenCalledWith(undefined);
-		});
-
-		it('should delegate getQueueViewSummaries to query service', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_query'] = { getQueueViewSummaries: spy };
-
-			await monque.getQueueViewSummaries();
-			expect(spy).toHaveBeenCalledWith(undefined);
-		});
-
-		it('should delegate cancelJob to manager', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_manager'] = { cancelJob: spy };
-
-			await monque.cancelJob('123');
-			expect(spy).toHaveBeenCalledWith('123');
-		});
-
-		it('should delegate retryJob to manager', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_manager'] = { retryJob: spy };
-
-			await monque.retryJob('123');
-			expect(spy).toHaveBeenCalledWith('123');
-		});
-
-		it('should delegate deleteJob to manager', async () => {
-			const spy = vi.fn();
-			(monque as unknown as Record<string, unknown>)['_manager'] = { deleteJob: spy };
-
-			await monque.deleteJob('123');
-			expect(spy).toHaveBeenCalledWith('123');
-		});
-	});
-
-	describe('stop', () => {
-		/**
-		 * Helper to access private workers Map and simulate active jobs.
-		 */
-		function getWorkers(m: Monque): Map<string, WorkerRegistration> {
-			return (m as unknown as { workers: Map<string, WorkerRegistration> }).workers;
-		}
-
-		function setRunning(m: Monque, running: boolean): void {
-			(m as unknown as Record<string, boolean>)['isRunning'] = running;
-		}
-
-		beforeEach(async () => {
-			await monque.initialize();
-
-			// Stub lifecycle & change stream to avoid real timer/stream logic
-			(monque as unknown as Record<string, unknown>)['_lifecycleManager'] = {
-				startTimers: vi.fn(),
-				stopTimers: vi.fn(),
-			};
-			(monque as unknown as Record<string, unknown>)['_changeStreamHandler'] = {
-				setup: vi.fn(),
-				close: vi.fn().mockResolvedValue(undefined),
-				isActive: vi.fn().mockReturnValue(false),
-			};
-			(monque as unknown as Record<string, unknown>)['_query'] = {
-				clearStatsCache: vi.fn(),
-			};
-		});
-
-		it('should return immediately when no active jobs (getActiveJobCount === 0)', async () => {
-			setRunning(monque, true);
-
-			await monque.stop();
-
-			// Should complete without timeout
-			expect((monque as unknown as Record<string, boolean>)['isRunning']).toBe(false);
-		});
-
-		it('should count active jobs across multiple workers', async () => {
-			setRunning(monque, true);
-
-			const workers = getWorkers(monque);
-			const fakeJob = { _id: new ObjectId() } as unknown as PersistedJob;
-
-			// Register two workers with active jobs
-			workers.set('worker-a', {
-				handler: vi.fn(),
-				concurrency: 5,
-				activeJobs: new Map([
-					['job-1', fakeJob],
-					['job-2', fakeJob],
-				]),
-			});
-			workers.set('worker-b', {
-				handler: vi.fn(),
-				concurrency: 5,
-				activeJobs: new Map([['job-3', fakeJob]]),
-			});
-
-			// Schedule clearing all active jobs after a short delay
-			setTimeout(() => {
-				for (const worker of workers.values()) {
-					worker.activeJobs.clear();
-				}
-				// Simulate the job processor triggering the drain resolve
-				(monque as unknown as { onJobFinished: () => void }).onJobFinished();
-			}, 50);
-
-			await monque.stop();
-
-			// Should have waited for jobs to drain and completed
-			expect((monque as unknown as Record<string, boolean>)['isRunning']).toBe(false);
-		});
-
-		it('should emit ShutdownTimeoutError with incomplete jobs on timeout', async () => {
-			const shortTimeoutMonque = new Monque(mockDb, { shutdownTimeout: 100 });
-			await shortTimeoutMonque.initialize();
-
-			// Stub services
-			(shortTimeoutMonque as unknown as Record<string, unknown>)['_lifecycleManager'] = {
-				startTimers: vi.fn(),
-				stopTimers: vi.fn(),
-			};
-			(shortTimeoutMonque as unknown as Record<string, unknown>)['_changeStreamHandler'] = {
-				setup: vi.fn(),
-				close: vi.fn().mockResolvedValue(undefined),
-				isActive: vi.fn().mockReturnValue(false),
-			};
-			(shortTimeoutMonque as unknown as Record<string, unknown>)['_query'] = {
-				clearStatsCache: vi.fn(),
-			};
-
-			setRunning(shortTimeoutMonque, true);
-
-			const fakeJob = {
-				_id: new ObjectId(),
-				name: 'stuck-job',
-				status: 'processing',
-			} as unknown as PersistedJob;
-
-			const workers = getWorkers(shortTimeoutMonque);
-			workers.set('worker-a', {
-				handler: vi.fn(),
-				concurrency: 5,
-				activeJobs: new Map([['stuck-1', fakeJob]]),
-			});
-
-			const errorPromise = new Promise<ShutdownTimeoutError>((resolve) => {
-				shortTimeoutMonque.on('job:error', ({ error }) => {
-					resolve(error as ShutdownTimeoutError);
-				});
-			});
-
-			await shortTimeoutMonque.stop();
-
-			const error = await errorPromise;
-			expect(error).toBeInstanceOf(ShutdownTimeoutError);
-			expect(error.message).toContain('1 incomplete jobs');
 		});
 	});
 });

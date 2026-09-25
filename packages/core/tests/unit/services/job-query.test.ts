@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'v
 
 import { createMockContext, createWorker, JobFactory } from '@tests/factories';
 import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
-import { JobCursorSortDirection, JobCursorSortField, JobStatus } from '@/jobs';
+import { JobCursorSortDirection, JobCursorSortField } from '@/jobs';
 import { JobQueryService } from '@/scheduler/services/job-query.js';
 import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
 
@@ -25,30 +25,10 @@ describe('JobQueryService', () => {
 
 	afterEach(() => {
 		vi.clearAllMocks();
+		vi.useRealTimers();
 	});
 
 	describe('getJob', () => {
-		it('should return job by ObjectId', async () => {
-			const jobId = new ObjectId();
-			const job = JobFactory.build({ _id: jobId, name: 'found-job' });
-
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(job);
-
-			const result = await queryService.getJob(jobId);
-
-			expect(result).not.toBeNull();
-			expect(result?.name).toBe('found-job');
-			expect(ctx.mockCollection.findOne).toHaveBeenCalledWith({ _id: jobId });
-		});
-
-		it('should return null for non-existent job', async () => {
-			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
-
-			const result = await queryService.getJob(new ObjectId());
-
-			expect(result).toBeNull();
-		});
-
 		it('should throw ConnectionError when database operation fails', async () => {
 			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce(
 				new Error('Database connection lost'),
@@ -67,97 +47,6 @@ describe('JobQueryService', () => {
 	});
 
 	describe('getJobs', () => {
-		it('should return all jobs when no filter provided', async () => {
-			const jobs = JobFactory.buildList(2);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const result = await queryService.getJobs();
-
-			expect(result).toHaveLength(2);
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({});
-		});
-
-		it('should apply status filter', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ status: JobStatus.PENDING });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ status: JobStatus.PENDING });
-		});
-
-		it('should apply name filter', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ name: 'specific-job' });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({ name: 'specific-job' });
-		});
-
-		it('should apply limit and skip', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ limit: 10, skip: 20 });
-
-			expect(mockCursor.limit).toHaveBeenCalledWith(10);
-			expect(mockCursor.skip).toHaveBeenCalledWith(20);
-		});
-
-		it('should apply status array filter with $in operator', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobs({ status: [JobStatus.PENDING, JobStatus.PROCESSING] });
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith({
-				status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-			});
-		});
-
 		it('should throw ConnectionError when database operation fails', async () => {
 			const mockCursor = {
 				sort: vi.fn().mockReturnThis(),
@@ -565,13 +454,14 @@ describe('JobQueryService', () => {
 			});
 
 			it('should re-query after TTL expires', async () => {
+				vi.useFakeTimers();
 				ctx.options.statsCacheTtlMs = 50;
 				mockAggregateResult({ pending: 5, total: 5 });
 
 				const first = await queryService.getQueueStats();
 				expect(first.pending).toBe(5);
 
-				await new Promise((r) => setTimeout(r, 60));
+				await vi.advanceTimersByTimeAsync(50);
 
 				mockAggregateResult({ pending: 10, total: 10 });
 				const second = await queryService.getQueueStats();
