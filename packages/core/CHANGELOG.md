@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.12.2
+
+### Patch Changes
+
+- [#527](https://github.com/ueberBrot/monque/pull/527) [`85c113b`](https://github.com/ueberBrot/monque/commit/85c113bd96597563c350ff723b04f1f7b27db13d) - Preserve pending-job wakeups when change streams disconnect or reconnect.
+
 ## 1.12.1
 
 ### Patch Changes
