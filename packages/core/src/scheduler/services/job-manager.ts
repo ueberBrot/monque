@@ -2,9 +2,8 @@ import { type Document, ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
 import { buildSelectorQuery } from '@/scheduler';
-import { ConnectionError, MonqueError, toError } from '@/shared';
+import { ConnectionError, JobStateError, MonqueError, toError } from '@/shared';
 
-import { JobStateTransitions } from './job-state-transitions.js';
 import {
 	RETRYABLE_JOB_STATUSES,
 	type RetryableJobStatusType,
@@ -25,16 +24,12 @@ type PendingNotificationDocument = Document & {
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobManager {
-	private readonly transitions: JobStateTransitions;
-
-	constructor(private readonly ctx: SchedulerContext) {
-		this.transitions = new JobStateTransitions(ctx);
-	}
+	constructor(private readonly ctx: SchedulerContext) {}
 
 	/**
 	 * Cancel a pending or scheduled job.
 	 *
-	 * Uses `transitions.cancelPending()` to set the job status to 'cancelled'.
+	 * Atomically sets a pending job's status to 'cancelled'.
 	 * Cancellation is idempotent: no-op cancels may return null.
 	 * Emits a 'job:cancelled' event only when a real transition occurs.
 	 * Cannot cancel jobs that are currently 'processing', 'completed', or 'failed'.
@@ -51,14 +46,43 @@ export class JobManager {
 	 */
 	async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		try {
-			const cancelled = await this.transitions.cancelPending(jobId);
-			if (!cancelled) {
+			if (!ObjectId.isValid(jobId)) {
 				return null;
 			}
-			if (cancelled.transitioned) {
-				this.ctx.emit('job:cancelled', { job: cancelled.job });
+
+			const _id = new ObjectId(jobId);
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id, status: JobStatus.PENDING },
+				{
+					$set: {
+						status: JobStatus.CANCELLED,
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: 'after' },
+			);
+
+			if (result) {
+				const job = this.ctx.documentToPersistedJob(result);
+				this.ctx.emit('job:cancelled', { job });
+				return job;
 			}
-			return cancelled.job;
+
+			const jobDoc = await this.ctx.collection.findOne({ _id });
+			if (!jobDoc) {
+				return null;
+			}
+
+			if (jobDoc['status'] === JobStatus.CANCELLED) {
+				return this.ctx.documentToPersistedJob(jobDoc);
+			}
+
+			throw new JobStateError(
+				`Cannot cancel job in status '${jobDoc['status']}'`,
+				jobId,
+				jobDoc['status'],
+				'cancel',
+			);
 		} catch (error) {
 			if (error instanceof MonqueError) {
 				throw error;
@@ -91,12 +115,63 @@ export class JobManager {
 	 */
 	async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
 		try {
-			const retried = await this.transitions.retryTerminal(jobId);
-			if (!retried) {
+			if (!ObjectId.isValid(jobId)) {
 				return null;
 			}
-			this.ctx.emit('job:retried', retried);
-			return retried.job;
+
+			const _id = new ObjectId(jobId);
+			const now = new Date();
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{
+					_id,
+					status: { $in: RETRYABLE_JOB_STATUSES },
+				},
+				{
+					$set: {
+						status: JobStatus.PENDING,
+						failCount: 0,
+						nextRunAt: now,
+						updatedAt: now,
+					},
+					$unset: {
+						failReason: '',
+						lockedAt: '',
+						claimedBy: '',
+						lastHeartbeat: '',
+					},
+				},
+				{ returnDocument: 'before' },
+			);
+
+			if (!result) {
+				const currentJob = await this.ctx.collection.findOne({ _id });
+				if (!currentJob) {
+					return null;
+				}
+
+				throw new JobStateError(
+					`Cannot retry job in status '${currentJob['status']}'`,
+					jobId,
+					currentJob['status'],
+					'retry',
+				);
+			}
+
+			const previousStatus = result['status'] as RetryableJobStatusType;
+			const updatedDoc = { ...result };
+			updatedDoc['status'] = JobStatus.PENDING;
+			updatedDoc['failCount'] = 0;
+			updatedDoc['nextRunAt'] = now;
+			updatedDoc['updatedAt'] = now;
+			delete updatedDoc['failReason'];
+			delete updatedDoc['lockedAt'];
+			delete updatedDoc['claimedBy'];
+			delete updatedDoc['lastHeartbeat'];
+
+			const job = this.ctx.documentToPersistedJob(updatedDoc);
+			this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+			this.ctx.emit('job:retried', { job, previousStatus });
+			return job;
 		} catch (error) {
 			if (error instanceof MonqueError) {
 				throw error;
@@ -127,7 +202,39 @@ export class JobManager {
 	 */
 	async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
 		try {
-			return await this.transitions.reschedulePending(jobId, runAt);
+			if (!ObjectId.isValid(jobId)) {
+				return null;
+			}
+
+			const _id = new ObjectId(jobId);
+			const result = await this.ctx.collection.findOneAndUpdate(
+				{ _id, status: JobStatus.PENDING },
+				{
+					$set: {
+						nextRunAt: runAt,
+						updatedAt: new Date(),
+					},
+				},
+				{ returnDocument: 'after' },
+			);
+
+			if (result) {
+				const job = this.ctx.documentToPersistedJob(result);
+				this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+				return job;
+			}
+
+			const currentJobDoc = await this.ctx.collection.findOne({ _id });
+			if (!currentJobDoc) {
+				return null;
+			}
+
+			throw new JobStateError(
+				`Cannot reschedule job in status '${currentJobDoc['status']}'`,
+				jobId,
+				currentJobDoc['status'],
+				'reschedule',
+			);
 		} catch (error) {
 			if (error instanceof MonqueError) {
 				throw error;

@@ -19,34 +19,23 @@ export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const
  * Callbacks for timer-driven operations.
  *
  * These are provided by the Monque facade to wire LifecycleManager's timers
- * to JobProcessor methods without creating a direct dependency.
+ * to Owned Job heartbeat updates without creating a direct dependency.
  */
 interface TimerCallbacks {
-	/** Poll for pending jobs */
-	poll: () => Promise<void>;
 	/** Update heartbeats for claimed jobs */
 	updateHeartbeats: () => Promise<void>;
-	/** Whether change streams are currently active */
-	isChangeStreamActive: () => boolean;
 }
 
 /**
  * Manages scheduler lifecycle timers and job cleanup.
  *
- * Owns poll scheduling, heartbeat interval, cleanup interval, and the
+ * Owns the heartbeat interval, cleanup interval, and the
  * cleanupJobs logic. Extracted from Monque to keep the facade thin.
- *
- * Uses adaptive poll scheduling: when change streams are active, polls at
- * `safetyPollInterval` (safety net only). When change streams are inactive,
- * polls at `pollInterval` (primary discovery mechanism).
  *
  * @internal Not part of public API.
  */
 export class LifecycleManager {
 	private readonly ctx: SchedulerContext;
-	private callbacks: TimerCallbacks | null = null;
-	private pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
-	private pollDueAt: number | null = null;
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -57,14 +46,11 @@ export class LifecycleManager {
 	/**
 	 * Start all lifecycle timers.
 	 *
-	 * Sets up adaptive poll scheduling, heartbeat interval, and (if configured)
-	 * cleanup interval. Runs an initial poll immediately.
+	 * Sets up the heartbeat interval and optional retention cleanup interval.
 	 *
 	 * @param callbacks - Functions to invoke on each timer tick
 	 */
 	startTimers(callbacks: TimerCallbacks): void {
-		this.callbacks = callbacks;
-
 		// Start heartbeat interval for claimed jobs
 		this.heartbeatIntervalId = setInterval(() => {
 			callbacks.updateHeartbeats().catch((error: unknown) => {
@@ -87,92 +73,23 @@ export class LifecycleManager {
 				});
 			}, interval);
 		}
-
-		// Run initial poll immediately, then schedule the next one adaptively
-		this.executePollAndScheduleNext();
 	}
 
 	/**
 	 * Stop all lifecycle timers.
 	 *
-	 * Clears poll timeout, heartbeat interval, and cleanup interval.
+	 * Clears heartbeat and cleanup intervals.
 	 */
 	stopTimers(): void {
-		this.callbacks = null;
-		this.pollDueAt = null;
-
 		if (this.cleanupIntervalId) {
 			clearInterval(this.cleanupIntervalId);
 			this.cleanupIntervalId = null;
-		}
-
-		if (this.pollTimeoutId) {
-			clearTimeout(this.pollTimeoutId);
-			this.pollTimeoutId = null;
 		}
 
 		if (this.heartbeatIntervalId) {
 			clearInterval(this.heartbeatIntervalId);
 			this.heartbeatIntervalId = null;
 		}
-	}
-
-	/**
-	 * Reevaluate the poll interval without postponing an existing full-poll deadline.
-	 *
-	 * Targeted polls do not discover work for other Workers. They may shorten the
-	 * delay when change streams disconnect, but must preserve the safety net.
-	 */
-	reevaluatePollTimer(): void {
-		this.scheduleNextPoll();
-	}
-
-	/**
-	 * Execute a poll and schedule the next one adaptively.
-	 */
-	private executePollAndScheduleNext(): void {
-		if (!this.callbacks) {
-			return;
-		}
-
-		this.callbacks
-			.poll()
-			.catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			})
-			.finally(() => {
-				this.scheduleNextPoll();
-			});
-	}
-
-	/**
-	 * Schedule the next poll using adaptive timing.
-	 *
-	 * When change streams are active, uses `safetyPollInterval` (longer, safety net only).
-	 * When change streams are inactive, uses `pollInterval` (shorter, primary discovery).
-	 */
-	private scheduleNextPoll(): void {
-		if (!this.ctx.isRunning() || !this.callbacks) {
-			return;
-		}
-
-		const delay = this.callbacks.isChangeStreamActive()
-			? this.ctx.options.safetyPollInterval
-			: this.ctx.options.pollInterval;
-		const dueAt = Date.now() + delay;
-		if (this.pollDueAt !== null && this.pollDueAt <= dueAt) {
-			return;
-		}
-		if (this.pollTimeoutId) {
-			clearTimeout(this.pollTimeoutId);
-		}
-		this.pollDueAt = dueAt;
-
-		this.pollTimeoutId = setTimeout(() => {
-			this.pollTimeoutId = null;
-			this.pollDueAt = null;
-			this.executePollAndScheduleNext();
-		}, delay);
 	}
 
 	/**

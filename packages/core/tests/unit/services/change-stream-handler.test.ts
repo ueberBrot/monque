@@ -211,6 +211,46 @@ describe('ChangeStreamHandler', () => {
 	});
 
 	describe('handleError', () => {
+		it('shortens the full-poll deadline on disconnect without needing a notification', async () => {
+			vi.useFakeTimers();
+			const stream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.collection, 'watch').mockReturnValue(
+				stream as unknown as ReturnType<typeof ctx.collection.watch>,
+			);
+			handler.setup();
+			pendingNotifications.start();
+			await vi.advanceTimersByTimeAsync(200);
+			vi.mocked(onPoll).mockClear();
+			stream.emit('error', new Error('Disconnected'));
+
+			await vi.advanceTimersByTimeAsync(999);
+			expect(onPoll).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(1);
+			expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+			await handler.close();
+		});
+
+		it('preserves local-write wakeups across disconnect and reconnect', async () => {
+			vi.useFakeTimers();
+			const stream = Object.assign(new EventEmitter(), {
+				close: vi.fn().mockResolvedValue(undefined),
+			});
+			vi.spyOn(ctx.collection, 'watch').mockReturnValue(
+				stream as unknown as ReturnType<typeof ctx.collection.watch>,
+			);
+			handler.setup();
+			pendingNotifications.notifyPendingJob('local', new Date(Date.now() + 1500));
+			stream.emit('error', new Error('Disconnected'));
+
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(handler.isActive()).toBe(true);
+			await vi.advanceTimersByTimeAsync(700);
+			expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+			await handler.close();
+		});
+
 		it('resets backoff only after a successful server response', async () => {
 			vi.useFakeTimers();
 			const streams: EventEmitter[] = [];
@@ -405,7 +445,7 @@ describe('ChangeStreamHandler', () => {
 			expect(handler.isActive()).toBe(true);
 		});
 
-		it('should clear stale wakeup timer on error', () => {
+		it('preserves scheduled wakeups on stream error', () => {
 			vi.useFakeTimers();
 			const mockChangeStream = Object.assign(new EventEmitter(), {
 				close: vi.fn().mockResolvedValue(undefined),
@@ -427,17 +467,15 @@ describe('ChangeStreamHandler', () => {
 				},
 			} as unknown as Parameters<typeof handler.handleEvent>[0]);
 
-			// Error should clear the wakeup timer
 			mockChangeStream.emit('error', new Error('Connection lost'));
 
 			// Advance past when the wakeup would have fired
 			vi.advanceTimersByTime(6000);
 
-			// The wakeup poll should NOT have fired (only the reconnect poll may have)
-			expect(onPoll).not.toHaveBeenCalled();
+			expect(onPoll).toHaveBeenCalledOnce();
 		});
 
-		it('should clear stale debounce timer on error', () => {
+		it('preserves batched notifications on stream error', () => {
 			vi.useFakeTimers();
 			const mockChangeStream = Object.assign(new EventEmitter(), {
 				close: vi.fn().mockResolvedValue(undefined),
@@ -458,14 +496,12 @@ describe('ChangeStreamHandler', () => {
 				},
 			} as unknown as Parameters<typeof handler.handleEvent>[0]);
 
-			// Error should clear the debounce timer before it fires
 			mockChangeStream.emit('error', new Error('Connection lost'));
 
 			// Advance past the debounce window (100ms)
 			vi.advanceTimersByTime(150);
 
-			// The debounced poll should NOT have fired
-			expect(onPoll).not.toHaveBeenCalled();
+			expect(onPoll).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -488,7 +524,7 @@ describe('ChangeStreamHandler', () => {
 			);
 		});
 
-		it('should clear debounce and reconnect timers', async () => {
+		it('should clear reconnect timers', async () => {
 			vi.useFakeTimers();
 
 			const mockChangeStream = {
@@ -508,7 +544,7 @@ describe('ChangeStreamHandler', () => {
 			expect(onPoll).not.toHaveBeenCalled();
 		});
 
-		it('should clear an active debounce timer before it fires', async () => {
+		it('preserves batched notifications when only the stream closes', async () => {
 			vi.useFakeTimers();
 
 			handler.handleEvent({
@@ -518,7 +554,7 @@ describe('ChangeStreamHandler', () => {
 			await handler.close();
 			vi.advanceTimersByTime(150);
 
-			expect(onPoll).not.toHaveBeenCalled();
+			expect(onPoll).toHaveBeenCalledOnce();
 		});
 	});
 
@@ -701,7 +737,7 @@ describe('ChangeStreamHandler', () => {
 			expect(onPoll).toHaveBeenCalledWith();
 		});
 
-		it('should clear wakeup timer on close()', async () => {
+		it('preserves scheduled wakeups when only the stream closes', async () => {
 			vi.useFakeTimers();
 			handler.handleEvent({
 				operationType: 'insert',
@@ -716,7 +752,7 @@ describe('ChangeStreamHandler', () => {
 
 			// Advance past the wakeup time
 			vi.advanceTimersByTime(6000);
-			expect(onPoll).not.toHaveBeenCalled();
+			expect(onPoll).toHaveBeenCalledOnce();
 		});
 	});
 
