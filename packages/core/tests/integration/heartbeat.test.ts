@@ -48,31 +48,36 @@ describe('heartbeat mechanism', () => {
 
 	describe('heartbeat updates during processing', () => {
 		it('should set lastHeartbeat when claiming a job', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				heartbeatInterval: 100,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const monque = new Monque(db, {
+					collectionName,
+					pollInterval: 100,
+					heartbeatInterval: 100,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 500));
-			});
+				let jobStarted = false;
+				monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+					jobStarted = true;
+					await release.promise;
+				});
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+				monque.start();
 
-			await waitFor(async () => jobStarted, { timeout: 5000 });
+				await waitFor(async () => jobStarted, { timeout: 5000 });
 
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 
-			expect(doc?.['lastHeartbeat']).toBeInstanceOf(Date);
-			expect(doc?.['heartbeatInterval']).toBe(100);
+				expect(doc?.['lastHeartbeat']).toBeInstanceOf(Date);
+				expect(doc?.['heartbeatInterval']).toBe(100);
+			} finally {
+				release.resolve();
+			}
 		});
 
 		it('should update lastHeartbeat periodically while processing', async () => {
@@ -86,49 +91,39 @@ describe('heartbeat mechanism', () => {
 			monqueInstances.push(monque);
 			await monque.initialize();
 
-			const heartbeatTimestamps: Date[] = [];
-
+			const started = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
 			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				// Hold the job long enough for multiple heartbeats
-				const collection = db.collection(collectionName);
-
-				// Record initial heartbeat
-				const doc1 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc1?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc1['lastHeartbeat'] as Date);
-				}
-
-				// Wait for heartbeat update
-				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
-
-				// Record updated heartbeat
-				const doc2 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc2?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc2['lastHeartbeat'] as Date);
-				}
-
-				// Wait for another heartbeat update
-				await new Promise((resolve) => setTimeout(resolve, heartbeatInterval * 2));
-
-				const doc3 = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
-				if (doc3?.['lastHeartbeat']) {
-					heartbeatTimestamps.push(doc3['lastHeartbeat'] as Date);
-				}
+				started.resolve();
+				await release.promise;
 			});
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
+			try {
+				const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+				monque.start();
+				await started.promise;
 
-			await waitFor(async () => heartbeatTimestamps.length >= 3, { timeout: 5000 });
+				const collection = db.collection(collectionName);
+				const initial = await collection.findOne({ _id: job._id });
+				const heartbeat = initial?.['lastHeartbeat'];
+				expect(heartbeat).toBeInstanceOf(Date);
+				if (!(heartbeat instanceof Date)) throw new Error('Missing initial heartbeat');
 
-			// Verify heartbeats are increasing
-			expect(heartbeatTimestamps.length).toBeGreaterThanOrEqual(3);
-			for (let i = 1; i < heartbeatTimestamps.length; i++) {
-				const prev = heartbeatTimestamps[i - 1];
-				const curr = heartbeatTimestamps[i];
-				if (prev && curr) {
-					expect(curr.getTime()).toBeGreaterThanOrEqual(prev.getTime());
+				let previous = heartbeat.getTime();
+				for (let update = 0; update < 2; update++) {
+					await waitFor(
+						async () => {
+							const doc = await collection.findOne({ _id: job._id });
+							const current = doc?.['lastHeartbeat'];
+							if (!(current instanceof Date) || current.getTime() <= previous) return false;
+							previous = current.getTime();
+							return true;
+						},
+						{ timeout: 5000, interval: 20 },
+					);
 				}
+			} finally {
+				release.resolve();
 			}
 		});
 
@@ -167,58 +162,68 @@ describe('heartbeat mechanism', () => {
 
 	describe('heartbeat interval configuration', () => {
 		it('should use custom heartbeat interval', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const customInterval = 200;
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				heartbeatInterval: customInterval,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const customInterval = 200;
+				const monque = new Monque(db, {
+					collectionName,
+					pollInterval: 50,
+					heartbeatInterval: customInterval,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 500));
-			});
+				let jobStarted = false;
+				monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+					jobStarted = true;
+					await release.promise;
+				});
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+				monque.start();
 
-			await waitFor(async () => jobStarted, { timeout: 5000 });
+				await waitFor(async () => jobStarted, { timeout: 5000 });
 
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 
-			expect(doc?.['heartbeatInterval']).toBe(customInterval);
+				expect(doc?.['heartbeatInterval']).toBe(customInterval);
+			} finally {
+				release.resolve();
+			}
 		});
 
 		it('should use default heartbeat interval of 30000ms', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 50,
-				// No heartbeatInterval specified
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const monque = new Monque(db, {
+					collectionName,
+					pollInterval: 50,
+					// No heartbeatInterval specified
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			let jobStarted = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				jobStarted = true;
-				await new Promise((resolve) => setTimeout(resolve, 200));
-			});
+				let jobStarted = false;
+				monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
+					jobStarted = true;
+					await release.promise;
+				});
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+				monque.start();
 
-			await waitFor(async () => jobStarted, { timeout: 5000 });
+				await waitFor(async () => jobStarted, { timeout: 5000 });
 
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 
-			expect(doc?.['heartbeatInterval']).toBe(30000);
+				expect(doc?.['heartbeatInterval']).toBe(30000);
+			} finally {
+				release.resolve();
+			}
 		});
 	});
 

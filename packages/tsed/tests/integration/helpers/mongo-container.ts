@@ -1,25 +1,13 @@
-import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb';
+import { inject } from 'vitest';
 
-let container: StartedMongoDBContainer | null = null;
-let containerPromise: Promise<StartedMongoDBContainer> | null = null;
-
-export async function getMongoUrl(): Promise<string> {
-	if (!containerPromise) {
-		containerPromise = new MongoDBContainer('mongo:8').start().catch((error: unknown) => {
-			containerPromise = null;
-			throw error;
-		});
+declare module 'vitest' {
+	export interface ProvidedContext {
+		tsedMongoUri: string;
 	}
-
-	container = await containerPromise;
-
-	return container.getConnectionString();
 }
 
-export async function stopMongoContainer(): Promise<void> {
-	if (!container) return;
-
-	await container.stop();
-	container = null;
-	containerPromise = null;
+export function getMongoUrl(): string {
+	const uri = inject('tsedMongoUri');
+	if (!uri) throw new Error('MongoDB global setup has not provided tsedMongoUri');
+	return uri;
 }

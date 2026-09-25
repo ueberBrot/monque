@@ -4,7 +4,7 @@ export default defineConfig<{ authenticated: boolean }>({
 	testDir: './tests/real-db',
 	outputDir: 'test-results',
 	timeout: 30_000,
-	workers: 2,
+	workers: 4,
 	fullyParallel: true,
 	forbidOnly: Boolean(process.env['CI']),
 	reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],

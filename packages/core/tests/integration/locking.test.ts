@@ -47,71 +47,6 @@ describe('atomic job locking', () => {
 		}
 	});
 
-	describe('single job acquisition', () => {
-		it('should set lockedAt when acquiring a job', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processingJob: Job | null = null;
-			const handler = vi.fn(async (job: Job) => {
-				processingJob = job;
-				// Hold the job for a moment to inspect state
-				await new Promise((r) => setTimeout(r, 200));
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
-			monque.start();
-
-			// Wait for job to be picked up
-			await waitFor(async () => processingJob !== null);
-
-			// Check database state while processing
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ _id: job._id });
-
-			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
-			expect(doc?.['lockedAt']).toBeInstanceOf(Date);
-
-			await monque.stop();
-		});
-
-		it('should update status to processing when job is acquired', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let jobAcquired = false;
-			const handler = vi.fn(async () => {
-				jobAcquired = true;
-				await new Promise((r) => setTimeout(r, 200));
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
-
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
-
-			// Verify initial state
-			let collection = db.collection(collectionName);
-			let doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['status']).toBe(JobStatus.PENDING);
-
-			monque.start();
-
-			// Wait for job to be acquired
-			await waitFor(async () => jobAcquired);
-
-			// Verify processing state
-			collection = db.collection(collectionName);
-			doc = await collection.findOne({ _id: job._id });
-			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
-
-			await monque.stop();
-		});
-	});
-
 	describe('concurrent workers - no duplicate processing', () => {
 		it('should not process the same job twice with multiple scheduler instances', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
@@ -316,49 +251,60 @@ describe('atomic job locking', () => {
 
 	describe('lock state transitions', () => {
 		it('should transition pending → processing → completed', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName, pollInterval: 100 });
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const monque = new Monque(db, { collectionName, pollInterval: 100 });
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			const statusHistory: string[] = [];
-			let checkDuringProcessing = false;
+				const statusHistory: string[] = [];
+				let checkDuringProcessing = false;
 
-			const handler = vi.fn(async () => {
-				checkDuringProcessing = true;
-				await new Promise((r) => setTimeout(r, 200));
-			});
-			monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+				const handler = vi.fn(async () => {
+					checkDuringProcessing = true;
+					await release.promise;
+				});
+				monque.register(TEST_CONSTANTS.JOB_NAME, handler);
 
-			const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
-			const collection = db.collection(collectionName);
+				const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
+				const collection = db.collection(collectionName);
 
-			// Check initial status
-			let doc = await collection.findOne({ _id: job._id });
-			statusHistory.push(doc?.['status'] as string);
+				// Check initial status
+				let doc = await collection.findOne({ _id: job._id });
+				statusHistory.push(doc?.['status'] as string);
 
-			monque.start();
+				monque.start();
 
-			// Wait until processing starts
-			await waitFor(async () => checkDuringProcessing);
+				// Wait until processing starts
+				await waitFor(async () => checkDuringProcessing);
 
-			// Check processing status
-			doc = await collection.findOne({ _id: job._id });
-			statusHistory.push(doc?.['status'] as string);
+				// Check processing status
+				doc = await collection.findOne({ _id: job._id });
+				statusHistory.push(doc?.['status'] as string);
 
-			// Wait for completion
-			await waitFor(async () => {
-				const d = await collection.findOne({ _id: job._id });
-				return d?.['status'] === JobStatus.COMPLETED;
-			});
+				release.resolve();
 
-			// Check completed status
-			doc = await collection.findOne({ _id: job._id });
-			statusHistory.push(doc?.['status'] as string);
+				// Wait for completion
+				await waitFor(async () => {
+					const d = await collection.findOne({ _id: job._id });
+					return d?.['status'] === JobStatus.COMPLETED;
+				});
 
-			await monque.stop();
+				// Check completed status
+				doc = await collection.findOne({ _id: job._id });
+				statusHistory.push(doc?.['status'] as string);
 
-			expect(statusHistory).toEqual([JobStatus.PENDING, JobStatus.PROCESSING, JobStatus.COMPLETED]);
+				await monque.stop();
+
+				expect(statusHistory).toEqual([
+					JobStatus.PENDING,
+					JobStatus.PROCESSING,
+					JobStatus.COMPLETED,
+				]);
+			} finally {
+				release.resolve();
+			}
 		});
 
 		it('should clear lockedAt after job completion', async () => {

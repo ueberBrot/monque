@@ -48,11 +48,17 @@ describe('MonqueModule Lifecycle Integration', () => {
 	afterEach(resetMonque);
 
 	describe('Lifecycle (Mongoose Strategy)', () => {
-		beforeEach(() => bootstrapMonque({ connectionStrategy: 'mongoose' }));
+		beforeEach(() =>
+			bootstrapMonque({ connectionStrategy: 'mongoose', imports: [ErrorController] }),
+		);
 
-		it('should initialize and shutdown gracefully', async () => {
+		it('persists and executes jobs through the Mongoose database strategy', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-			expect(monqueService).toBeDefined();
+			const job = await monqueService.now('error.throw', {});
+			await waitFor(async () => (await monqueService.getJob(job._id.toString()))?.failCount === 1);
+			expect((await monqueService.getJob(job._id.toString()))?.failReason).toBe(
+				'Intentional Failure',
+			);
 		});
 	});
 

@@ -170,6 +170,11 @@ test('bulk retry and reschedule operate on several selected records', async ({ p
 	const jobs = await app.seedScenario('mutations');
 	const failed = jobs.filter((job) => job.status === 'failed');
 	const selected = failed.slice(0, 3);
+	const selectedIds = selected.map((job) => job._id);
+	const untouched = await app.jobs
+		.find({ _id: { $nin: selectedIds } })
+		.sort({ _id: 1 })
+		.toArray();
 	await page.goto(`${app.base}/dashboard/jobs?status=failed`);
 	for (const job of selected)
 		await page
@@ -181,7 +186,7 @@ test('bulk retry and reschedule operate on several selected records', async ({ p
 	await page.getByRole('button', { name: 'Confirm retry selected jobs' }).click();
 	await expect
 		.poll(() =>
-			app.jobs.countDocuments({ _id: { $in: selected.map((job) => job._id) }, status: 'pending' }),
+			app.jobs.countDocuments({ _id: { $in: selectedIds }, status: 'pending', failCount: 0 }),
 		)
 		.toBe(3);
 	await page.goto(`${app.base}/dashboard/jobs?status=pending`);
@@ -198,9 +203,19 @@ test('bulk retry and reschedule operate on several selected records', async ({ p
 	await page.getByRole('button', { name: 'Apply', exact: true }).click();
 	await page.getByRole('button', { name: 'Confirm reschedule selected jobs' }).click();
 	await expect
-		.poll(() => app.jobs.countDocuments({ nextRunAt: new Date('2035-01-02T11:00:00Z') }))
+		.poll(() =>
+			app.jobs.countDocuments({
+				_id: { $in: selectedIds },
+				nextRunAt: new Date('2035-01-02T11:00:00Z'),
+			}),
+		)
 		.toBe(3);
-	expect(await app.jobs.countDocuments({ status: 'failed' })).toBe(3);
+	expect(
+		await app.jobs
+			.find({ _id: { $nin: selectedIds } })
+			.sort({ _id: 1 })
+			.toArray(),
+	).toEqual(untouched);
 });
 
 test('clipboard controls copy persisted payload, ID, and mounted share URL', async ({

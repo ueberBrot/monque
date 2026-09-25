@@ -48,37 +48,42 @@ describe('atomic job claiming', () => {
 
 	describe('claimedBy field behavior', () => {
 		it('should set claimedBy to scheduler instance ID when acquiring a job', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'test-instance-123';
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
+			const release = Promise.withResolvers<void>();
+			try {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const instanceId = 'test-instance-123';
+				const monque = new Monque(db, {
+					collectionName,
+					pollInterval: 100,
+					schedulerInstanceId: instanceId,
+				});
+				monqueInstances.push(monque);
+				await monque.initialize();
 
-			let processedJob: Job | null = null;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
-				processedJob = job;
-				// Hold the job to verify claimedBy while processing
-				await new Promise((resolve) => setTimeout(resolve, 200));
-			});
+				let processedJob: Job | null = null;
+				monque.register(TEST_CONSTANTS.JOB_NAME, async (job) => {
+					processedJob = job;
+					// Hold the job to verify claimedBy while processing
+					await release.promise;
+				});
 
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
+				await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
 
-			monque.start();
+				monque.start();
 
-			// Wait for job to start processing
-			await waitFor(async () => processedJob !== null, { timeout: 5000 });
+				// Wait for job to start processing
+				await waitFor(async () => processedJob !== null, { timeout: 5000 });
 
-			// Check claimedBy in database while job is processing
-			const collection = db.collection(collectionName);
-			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
+				// Check claimedBy in database while job is processing
+				const collection = db.collection(collectionName);
+				const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 
-			expect(doc?.['status']).toBe(JobStatus.PROCESSING);
-			expect(doc?.['claimedBy']).toBe(instanceId);
-			expect(doc?.['lockedAt']).toBeInstanceOf(Date);
+				expect(doc?.['status']).toBe(JobStatus.PROCESSING);
+				expect(doc?.['claimedBy']).toBe(instanceId);
+				expect(doc?.['lockedAt']).toBeInstanceOf(Date);
+			} finally {
+				release.resolve();
+			}
 		});
 
 		it('should clear claimedBy when job completes successfully', async () => {
@@ -386,32 +391,6 @@ describe('atomic job claiming', () => {
 			// Verify job is still claimed by other instance
 			const doc = await collection.findOne({ name: TEST_CONSTANTS.JOB_NAME });
 			expect(doc?.['claimedBy']).toBe('other-instance');
-		});
-
-		it('should claim unclaimed pending jobs', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const instanceId = 'claiming-instance';
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-				schedulerInstanceId: instanceId,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let processed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processed = true;
-			});
-
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			monque.start();
-
-			await waitFor(async () => processed, { timeout: 5000 });
-
-			// Job should have been processed
-			expect(processed).toBe(true);
 		});
 	});
 });

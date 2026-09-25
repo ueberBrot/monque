@@ -26,7 +26,7 @@ function uniqueDbName(): string {
 }
 
 export async function bootstrapMonque(options: MonqueTestOptions = {}): Promise<void> {
-	const url = await getMongoUrl();
+	const url = getMongoUrl();
 
 	const { imports = [], monqueConfig = {}, connectionStrategy = 'dbFactory' } = options;
 

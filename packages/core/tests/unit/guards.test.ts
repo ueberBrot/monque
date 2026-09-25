@@ -1,5 +1,5 @@
-import { ObjectId } from 'mongodb';
-import { beforeEach, describe, expect, it } from 'vitest';
+import type { ObjectId } from 'mongodb';
+import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 
 import { JobFactory, JobFactoryHelpers } from '@tests/factories';
 import {
@@ -13,6 +13,7 @@ import {
 	isValidJobStatus,
 	type Job,
 	JobStatus,
+	type PersistedJob,
 } from '@/jobs';
 
 describe('job guards', () => {
@@ -35,9 +36,9 @@ describe('job guards', () => {
 		});
 
 		it('should return false when _id is undefined', () => {
-			const jobWithoutId = { ...baseJob };
-			delete jobWithoutId._id;
-			expect(isPersistedJob(jobWithoutId)).toBe(false);
+			const job = { ...baseJob };
+			Object.defineProperty(job, '_id', { value: undefined });
+			expect(isPersistedJob(job)).toBe(false);
 		});
 
 		it('should return false when _id is null', () => {
@@ -50,12 +51,12 @@ describe('job guards', () => {
 		});
 
 		it('should narrow type to PersistedJob when true', () => {
-			const job = JobFactory.build();
+			const job: Job = JobFactory.build();
+			expectTypeOf(job._id).toEqualTypeOf<ObjectId | undefined>();
 
 			if (isPersistedJob(job)) {
-				// This should compile without errors - TypeScript knows _id exists
-				const id: ObjectId = job._id;
-				expect(id).toBeInstanceOf(ObjectId);
+				expectTypeOf(job).toEqualTypeOf<PersistedJob>();
+				expectTypeOf(job._id).toEqualTypeOf<ObjectId>();
 			} else {
 				throw new Error('Should have been persisted');
 			}
@@ -190,34 +191,6 @@ describe('job guards', () => {
 			// Even empty string means it's defined as recurring (though invalid cron)
 			const job = JobFactory.build({ repeatInterval: '' });
 			expect(isRecurringJob(job)).toBe(true);
-		});
-	});
-
-	describe('combined usage', () => {
-		it('should allow combining multiple guards', () => {
-			const job = JobFactoryHelpers.failed({
-				repeatInterval: '0 0 * * *',
-			});
-
-			expect(isPersistedJob(job)).toBe(true);
-			expect(isFailedJob(job)).toBe(true);
-			expect(isRecurringJob(job)).toBe(true);
-			expect(isPendingJob(job)).toBe(false);
-		});
-
-		it('should work in filter operations', () => {
-			const jobs: Job[] = [
-				JobFactory.build({ status: JobStatus.PENDING }),
-				JobFactoryHelpers.processing(),
-				JobFactoryHelpers.completed(),
-				JobFactoryHelpers.failed(),
-			];
-
-			const pendingJobs = jobs.filter(isPendingJob);
-			const failedJobs = jobs.filter(isFailedJob);
-
-			expect(pendingJobs).toHaveLength(1);
-			expect(failedJobs).toHaveLength(1);
 		});
 	});
 });

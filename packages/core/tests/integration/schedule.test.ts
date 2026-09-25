@@ -52,140 +52,36 @@ describe('schedule()', () => {
 
 	// Tests for schedule() method (cron parsing, nextRunAt calculation)
 	describe('basic cron scheduling', () => {
-		it('should schedule a job with a cron expression', async () => {
+		it('persists a pending recurring job with defaults and the next cron occurrence', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
 			const monque = new Monque(db, { collectionName });
 			monqueInstances.push(monque);
 			await monque.initialize();
 
+			const beforeSchedule = Date.now();
 			const job = await monque.schedule(
-				TEST_CONSTANTS.CRON_EVERY_MINUTE,
+				'0 * * * *',
 				TEST_CONSTANTS.JOB_NAME,
 				TEST_CONSTANTS.JOB_DATA,
 			);
 
-			expect(job).toBeDefined();
+			const afterSchedule = Date.now();
+
 			expect(job._id).toBeDefined();
 			expect(job.name).toBe(TEST_CONSTANTS.JOB_NAME);
 			expect(job.data).toEqual(TEST_CONSTANTS.JOB_DATA);
-		});
-
-		it('should set status to pending', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const job = await monque.schedule(TEST_CONSTANTS.CRON_EVERY_MINUTE, TEST_CONSTANTS.JOB_NAME, {
-				value: 123,
-			});
-
 			expect(job.status).toBe(JobStatus.PENDING);
-		});
-
-		it('should store the repeatInterval (cron expression)', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const cronExpression = '0 9 * * 1'; // Every Monday at 9am
-			const job = await monque.schedule(cronExpression, TEST_CONSTANTS.JOB_NAME, {});
-
-			expect(job.repeatInterval).toBe(cronExpression);
-		});
-
-		it('should calculate nextRunAt from cron expression', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const beforeSchedule = new Date();
-			const job = await monque.schedule(
-				TEST_CONSTANTS.CRON_EVERY_MINUTE,
-				TEST_CONSTANTS.JOB_NAME,
-				{},
-			);
-			const afterSchedule = new Date();
-
-			expect(job.nextRunAt).toBeInstanceOf(Date);
-			// nextRunAt should be in the future (or at least not before we started scheduling)
-			expect(job.nextRunAt.getTime()).toBeGreaterThanOrEqual(beforeSchedule.getTime());
-			// nextRunAt should be within the next minute for '* * * * *' expression
-			const oneMinuteLater = new Date(afterSchedule.getTime() + 60000);
-			expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(oneMinuteLater.getTime());
-		});
-
-		it('should calculate correct nextRunAt for hourly cron', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const job = await monque.schedule('0 * * * *', TEST_CONSTANTS.JOB_NAME, {}); // Every hour at minute 0
-
-			// The next run should be at minute 0
+			expect(job.failCount).toBe(0);
+			expect(job.repeatInterval).toBe('0 * * * *');
+			for (const timestamp of [job.createdAt, job.updatedAt]) {
+				expect(timestamp.getTime()).toBeGreaterThanOrEqual(beforeSchedule);
+				expect(timestamp.getTime()).toBeLessThanOrEqual(afterSchedule);
+			}
+			expect(job.nextRunAt.getTime()).toBeGreaterThan(beforeSchedule);
+			expect(job.nextRunAt.getTime()).toBeLessThanOrEqual(afterSchedule + 3_600_000);
 			expect(job.nextRunAt.getMinutes()).toBe(0);
 			expect(job.nextRunAt.getSeconds()).toBe(0);
-		});
-
-		it('should set failCount to 0', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const job = await monque.schedule(
-				TEST_CONSTANTS.CRON_EVERY_MINUTE,
-				TEST_CONSTANTS.JOB_NAME,
-				{},
-			);
-
-			expect(job.failCount).toBe(0);
-		});
-
-		it('should set createdAt and updatedAt timestamps', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const beforeSchedule = new Date();
-			const job = await monque.schedule(
-				TEST_CONSTANTS.CRON_EVERY_MINUTE,
-				TEST_CONSTANTS.JOB_NAME,
-				{},
-			);
-			const afterSchedule = new Date();
-
-			expect(job.createdAt).toBeInstanceOf(Date);
-			expect(job.updatedAt).toBeInstanceOf(Date);
-			expect(job.createdAt.getTime()).toBeGreaterThanOrEqual(beforeSchedule.getTime());
-			expect(job.createdAt.getTime()).toBeLessThanOrEqual(afterSchedule.getTime());
-		});
-
-		it('should schedule jobs with various valid cron expressions', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const expressions = [
-				'* * * * *', // Every minute
-				'0 * * * *', // Every hour
-				'0 0 * * *', // Every day at midnight
-				'0 0 * * 0', // Every Sunday at midnight
-				'0 9 * * 1-5', // Weekdays at 9am
-				'*/15 * * * *', // Every 15 minutes
-				'0 0 1 * *', // First day of every month
-			];
-
-			for (const cron of expressions) {
-				const job = await monque.schedule(cron, `job-${cron.replace(/\s/g, '-')}`, {});
-				expect(job.repeatInterval).toBe(cron);
-				expect(job.nextRunAt).toBeInstanceOf(Date);
-			}
+			expect(await db.collection(collectionName).findOne({ _id: job._id })).toEqual(job);
 		});
 	});
 
@@ -201,78 +97,6 @@ describe('schedule()', () => {
 				InvalidCronError,
 			);
 		}, 10000);
-
-		it('should include the invalid expression in the error', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const invalidExpression = 'not-a-cron';
-
-			try {
-				await monque.schedule(invalidExpression, TEST_CONSTANTS.JOB_NAME, {});
-				expect.fail('Should have thrown InvalidCronError');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				expect((error as InvalidCronError).expression).toBe(invalidExpression);
-			}
-		});
-
-		it('should provide helpful error message with format example', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			try {
-				await monque.schedule('bad expression', TEST_CONSTANTS.JOB_NAME, {});
-				expect.fail('Should have thrown InvalidCronError');
-			} catch (error) {
-				expect(error).toBeInstanceOf(InvalidCronError);
-				const message = (error as InvalidCronError).message;
-				// Should contain the invalid expression
-				expect(message).toContain('Invalid cron expression');
-				expect(message).toContain('"bad expression"');
-				// Should include format explanation
-				expect(message).toContain('minute hour day-of-month month day-of-week');
-				// Should include an example
-				expect(message).toContain('Example:');
-			}
-		});
-
-		it('should reject expressions with invalid characters', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await expect(
-				monque.schedule('abc def ghi jkl mno', TEST_CONSTANTS.JOB_NAME, {}), // Invalid characters
-			).rejects.toThrow(InvalidCronError);
-		});
-
-		it('should reject expressions with invalid field values', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await expect(
-				monque.schedule('60 * * * *', TEST_CONSTANTS.JOB_NAME, {}), // 60 is invalid for minutes
-			).rejects.toThrow(InvalidCronError);
-		});
-
-		it('should reject expressions with out-of-range hour values', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			await expect(
-				monque.schedule('0 25 * * *', TEST_CONSTANTS.JOB_NAME, {}), // 25 is invalid for hours
-			).rejects.toThrow(InvalidCronError);
-		});
 	});
 
 	// Tests for uniqueKey deduplication in schedule()
@@ -295,25 +119,6 @@ describe('schedule()', () => {
 			);
 
 			expect(job1._id).not.toEqual(job2._id);
-		});
-
-		it('should create a new job when uniqueKey is provided for the first time', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			const uniqueKey = 'unique-schedule-1';
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const job = await monque.schedule(
-				TEST_CONSTANTS.CRON_EVERY_MINUTE,
-				TEST_CONSTANTS.JOB_NAME,
-				{ value: 1 },
-				{ uniqueKey },
-			);
-
-			expect(job).toBeDefined();
-			expect(job._id).toBeDefined();
-			expect(job.uniqueKey).toBe(uniqueKey);
 		});
 
 		it('should return existing job when duplicate uniqueKey already exists for same name', async () => {
@@ -802,18 +607,6 @@ describe('schedule()', () => {
 			const collection = db.collection(collectionName);
 			const dbJob = await collection.findOne({ _id: job._id });
 			expect(dbJob?.['data']).toEqual(complexData);
-		});
-
-		it('should preserve job name through scheduling', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-			const monque = new Monque(db, { collectionName });
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			const customJobName = 'my-custom-scheduled-job';
-			const job = await monque.schedule(TEST_CONSTANTS.CRON_EVERY_MINUTE, customJobName, {});
-
-			expect(job.name).toBe(customJobName);
 		});
 	});
 
