@@ -455,15 +455,44 @@ describe('JobManager', () => {
 	describe('retryJobs', () => {
 		function mockRetryNotificationDocs(docs = JobFactory.buildList(1)) {
 			const mockCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(docs),
+				async *[Symbol.asyncIterator]() {
+					yield* docs;
+				},
 			};
 
 			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
 				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
 			);
-
-			return mockCursor;
 		}
+
+		it('notifies each retried job as the cursor yields it', async () => {
+			const firstRunAt = new Date('2026-01-01T00:00:01.000Z');
+			const secondRunAt = new Date('2026-01-01T00:00:02.000Z');
+			let notificationsBeforeSecondJob = -1;
+			const mockCursor = {
+				async *[Symbol.asyncIterator]() {
+					yield { name: 'first', nextRunAt: firstRunAt };
+					notificationsBeforeSecondJob = vi.mocked(ctx.notifyPendingJob).mock.calls.length;
+					yield { name: 'second', nextRunAt: secondRunAt };
+				},
+			};
+			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
+				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+			);
+			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValueOnce({
+				modifiedCount: 2,
+				matchedCount: 2,
+				acknowledged: true,
+				upsertedCount: 0,
+				upsertedId: null,
+			});
+
+			await manager.retryJobs({});
+
+			expect(notificationsBeforeSecondJob).toBe(1);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('first', firstRunAt);
+			expect(ctx.notifyPendingJob).toHaveBeenCalledWith('second', secondRunAt);
+		});
 
 		it('should retry all failed/cancelled jobs via updateMany with pipeline', async () => {
 			const bulkEmail = JobFactory.build({
@@ -556,7 +585,9 @@ describe('JobManager', () => {
 		it('should keep bulk retry successful when notification lookup fails', async () => {
 			const notificationError = new Error('Notification lookup failed');
 			const mockCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(notificationError),
+				async *[Symbol.asyncIterator]() {
+					yield await Promise.reject(notificationError);
+				},
 			};
 
 			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(

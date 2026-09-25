@@ -91,6 +91,20 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledWith(undefined);
 	});
 
+	it.each([false, true])(
+		'preserves a full poll in a mixed batch, unnamed first: %s',
+		(unnamedFirst) => {
+			const names = unnamedFirst ? [undefined, 'email'] : ['email', undefined];
+			for (const name of names) router.notifyRunnableJob(name);
+			vi.advanceTimersByTime(100);
+			expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
+
+			router.notifyRunnableJob('sms');
+			vi.advanceTimersByTime(100);
+			expect(onPoll).toHaveBeenLastCalledWith(new Set(['sms']));
+		},
+	);
+
 	it('routes immediate pending notifications without a Job Name as a full poll', () => {
 		router.notifyPendingJob(undefined, new Date(Date.now() - 1000));
 
@@ -103,6 +117,7 @@ describe('PendingNotificationRouter', () => {
 	it('allows close to be called repeatedly without polling', () => {
 		router.notifyPendingJob('email', new Date(Date.now() - 1000));
 		router.notifyPendingJob('late', new Date(Date.now() + 1000));
+		router.notifyPendingJob('later', new Date(Date.now() + 2000));
 
 		expect(() => {
 			router.close();
@@ -110,9 +125,13 @@ describe('PendingNotificationRouter', () => {
 			router.close();
 		}).not.toThrow();
 
-		vi.advanceTimersByTime(1500);
+		vi.advanceTimersByTime(2500);
 
 		expect(onPoll).not.toHaveBeenCalled();
+		router.notifyPendingJob('new', new Date(Date.now() + 1000));
+		vi.advanceTimersByTime(1250);
+		expect(onPoll).toHaveBeenCalledOnce();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 
 	it('emits job:error when polling rejects and continues routing later notifications', async () => {
@@ -151,6 +170,27 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledWith();
 	});
 
+	it.each([false, true])(
+		'wakes for every future deadline, notified latest first: %s',
+		(latestFirst) => {
+			const deadlines = [1000, 5000, 9000];
+			if (latestFirst) deadlines.reverse();
+			for (const delay of deadlines) {
+				const runAt = new Date(Date.now() + delay);
+				router.notifyPendingJob('email', runAt);
+				router.notifyPendingJob('email', runAt);
+			}
+
+			vi.advanceTimersByTime(1200);
+			expect(onPoll).toHaveBeenCalledTimes(1);
+			vi.advanceTimersByTime(4000);
+			expect(onPoll).toHaveBeenCalledTimes(2);
+			vi.advanceTimersByTime(4000);
+			expect(onPoll).toHaveBeenCalledTimes(3);
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
+
 	it('waits for a distant job without overflowing the timer or polling early', () => {
 		const ninetyDays = 90 * 24 * 60 * 60 * 1000;
 		router.notifyPendingJob('annual-report', new Date(Date.now() + ninetyDays));
@@ -162,21 +202,22 @@ describe('PendingNotificationRouter', () => {
 		expect(onPoll).toHaveBeenCalledOnce();
 	});
 
-	it('emits job:error when a future wakeup poll rejects', async () => {
+	it('emits job:error when a future wakeup poll rejects and preserves later wakeups', async () => {
 		const pollError = new Error('Wakeup poll failed');
-		onPoll = vi.fn().mockRejectedValueOnce(pollError) as unknown as (
-			targetNames?: ReadonlySet<string>,
-		) => Promise<void>;
+		onPoll = vi.fn().mockResolvedValue(undefined).mockRejectedValueOnce(pollError);
 		router.close();
 		router = new PendingNotificationRouter(ctx, onPoll);
 
 		router.notifyPendingJob('email', new Date(Date.now() + 1000));
+		router.notifyPendingJob('sms', new Date(Date.now() + 2000));
 		await vi.advanceTimersByTimeAsync(1250);
 
 		expect(ctx.emitHistory).toContainEqual({
 			event: 'job:error',
 			payload: { error: pollError },
 		});
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(onPoll).toHaveBeenCalledTimes(2);
 	});
 	it('keeps full safety polls running during sustained targeted notifications', async () => {
 		ctx.options.safetyPollInterval = 1000;

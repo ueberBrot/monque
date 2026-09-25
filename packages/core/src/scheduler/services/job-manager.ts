@@ -444,18 +444,16 @@ export class JobManager {
 		const cursor = this.ctx.collection.find<PendingNotificationDocument>(query, {
 			projection: { name: 1, nextRunAt: 1 },
 		});
-		const jobs = await cursor.toArray();
-
-		if (jobs.length === 0) {
-			this.ctx.notifyPendingJob(filter.name, updatedAt);
-			return;
-		}
-
-		for (const job of jobs) {
+		let notified = false;
+		for await (const job of cursor) {
+			notified = true;
 			const name = typeof job.name === 'string' ? job.name : undefined;
 			const nextRunAt = job.nextRunAt instanceof Date ? job.nextRunAt : updatedAt;
 
 			this.ctx.notifyPendingJob(name, nextRunAt);
+		}
+		if (!notified) {
+			this.ctx.notifyPendingJob(filter.name, updatedAt);
 		}
 	}
 
