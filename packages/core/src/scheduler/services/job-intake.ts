@@ -117,7 +117,7 @@ export class JobIntake {
 		this.validateJobIdentifiers(name, options.uniqueKey);
 		this.validatePayloadSize(data);
 
-		const nextRunAt = getNextCronDate(cron);
+		const nextRunAt = getNextCronDate(cron, undefined, options.timezone);
 		const now = new Date();
 		const job: Omit<Job<T>, '_id'> = {
 			name,
@@ -129,6 +129,10 @@ export class JobIntake {
 			createdAt: now,
 			updatedAt: now,
 		};
+
+		if (options.timezone !== undefined) {
+			job.timezone = options.timezone;
+		}
 
 		if (options.uniqueKey !== undefined) {
 			job.uniqueKey = options.uniqueKey;

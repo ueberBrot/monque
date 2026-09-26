@@ -514,6 +514,8 @@ export class Monque extends EventEmitter {
 	 * Also supports predefined expressions like `@daily`, `@weekly`, `@monthly`, etc.
 	 * After successful completion, the job is reset to `pending` status and scheduled
 	 * for its next run based on the cron expression.
+	 * An optional IANA `timezone` is used for every occurrence, including daylight saving
+	 * transitions. When omitted, the server's local timezone is used.
 	 *
 	 * When a `uniqueKey` is provided, only one pending or processing job with that key
 	 * can exist. This prevents duplicate scheduled jobs on application restart.
@@ -522,10 +524,10 @@ export class Monque extends EventEmitter {
 	 * @param cron - Cron expression (5 fields or predefined expression)
 	 * @param name - Job type identifier, must match a registered worker
 	 * @param data - Job payload, will be passed to the worker handler on each run
-	 * @param options - Scheduling options (uniqueKey for deduplication)
+	 * @param options - Scheduling options (uniqueKey for deduplication, timezone for cron evaluation)
 	 * @returns Promise resolving to the created job document with `repeatInterval` set
 	 * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
-	 * @throws {InvalidCronError} If cron expression is invalid
+	 * @throws {InvalidCronError} If the cron expression or timezone is invalid
 	 * @throws {ConnectionError} If database operation fails or scheduler not initialized
 	 * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
 	 *

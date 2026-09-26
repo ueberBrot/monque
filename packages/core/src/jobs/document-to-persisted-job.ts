@@ -44,6 +44,9 @@ export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): Pers
 	if (doc['repeatInterval'] !== undefined) {
 		job.repeatInterval = doc['repeatInterval'];
 	}
+	if (doc['timezone'] !== undefined) {
+		job.timezone = doc['timezone'];
+	}
 	if (doc['uniqueKey'] !== undefined) {
 		job.uniqueKey = doc['uniqueKey'];
 	}
