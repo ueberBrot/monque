@@ -5,7 +5,7 @@ description: Configure automatic retry behavior with exponential backoff.
 
 import { Aside } from '@astrojs/starlight/components';
 
-When jobs fail, Monque automatically retries them using exponential backoff. Retry delays give an unavailable service time to recover. Jobs become failed when they reach the configured failure limit.
+When jobs fail with ordinary errors, Monque automatically retries them using exponential backoff. Retry delays give an unavailable service time to recover. Jobs become failed when they reach the configured failure limit.
 
 ## Quick Reference
 
@@ -22,8 +22,8 @@ When jobs fail, Monque automatically retries them using exponential backoff. Ret
 1. Worker handler throws an error or returns rejected promise
 2. `failCount` is incremented
 3. `failReason` is set to the error message
-4. If `failCount < maxRetries`: schedule retry with backoff
-5. If `failCount >= maxRetries`: mark as permanently `failed`
+4. If the error is `NonRetryableError` or `failCount >= maxRetries`: mark as `failed`
+5. Otherwise: schedule retry with backoff
 
 ## Backoff Formula
 
@@ -93,7 +93,7 @@ monque.on('job:fail', ({ job, error, willRetry }) => {
   if (willRetry) {
     console.log(`Next attempt at: ${job.nextRunAt}`);
   } else {
-    console.log('Job permanently failed after max retries');
+    console.log('Job failed without further automatic retries');
     // Alert, log to error tracker, etc.
   }
 });
@@ -116,10 +116,39 @@ monque.register('example', async (job) => {
 
 ### Transient vs Permanent Failures
 
-All errors thrown by a worker follow the same retry policy. A custom error class named
-`PermanentError` does not disable retries. Set `maxRetries: 0` on a scheduler when its jobs
-must fail on the first error. If a handler catches an error and returns normally, Monque
-records a successful run.
+Throw `NonRetryableError` when retrying cannot resolve the problem:
+
+```typescript
+import { NonRetryableError } from '@monque/core';
+
+monque.register<{ accountId: string }>('send-report', async (job) => {
+  const account = await findAccount(job.data.accountId);
+  if (!account) {
+    throw new NonRetryableError('Account no longer exists');
+  }
+  await sendReport(account);
+});
+```
+
+Requires `@monque/core` 1.14.0 or later on every worker using this error. Import the
+class from the same installed core package used by your scheduler; matching an error's
+`name` alone does not disable retries. Subclasses of `NonRetryableError` also stop retries.
+
+The job becomes `failed` immediately. `failCount` increases by one, `failReason` stores
+the message, and `job:fail` reports `willRetry: false`. Ordinary errors keep the configured
+backoff policy. Catching an error and returning normally still records a successful run.
+
+For recurring jobs, this stops the recurring job as well: no next occurrence is scheduled,
+matching exhausted-retry behavior. The cron expression and timezone remain available.
+
+After fixing the cause, you can use `retryJob()`, bulk retry, the Management API, or
+Dashboard's Retry action. Manual retry resets the failure count and runs the job again;
+a successful recurring job then resumes its schedule. The error does not permanently
+prohibit operator retries.
+
+Management and Dashboard use the existing `failed` status, failure reason, and attempt
+count. No migration or new status is needed; persisted jobs do not record a separate
+non-retryable flag.
 
 ### Circuit Breaker Pattern
 

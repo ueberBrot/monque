@@ -76,49 +76,53 @@ describe('oRPC Management single Job action routes', () => {
 		]);
 	});
 
-	test('retries one Job through public core API', async () => {
-		const jobId = new ObjectId();
-		const target = createManagementJob({
-			_id: jobId,
-			status: 'failed',
-			failCount: 2,
-			updatedAt: new Date('2026-01-01T00:02:00.000Z'),
-		});
-		const retried = createManagementJob({
-			_id: jobId,
-			status: 'pending',
-			failCount: 2,
-			updatedAt: new Date('2026-01-01T00:03:00.000Z'),
-		});
-		const coreCalls: string[] = [];
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJob: getManagementJobById(target),
-				retryJob: async (id) => {
-					coreCalls.push(id);
-
-					return retried;
-				},
-			}),
-		});
-
-		const response = await handleManagementPost(
-			surface,
-			`/api/v1/jobs/${jobId.toHexString()}/actions/retry`,
-		);
-
-		await expectJsonResponse(
-			response,
-			200,
-			expect.objectContaining({
-				id: jobId.toHexString(),
+	test.each([1, 2])(
+		'manually retries a failed Job with %i failures through public core API',
+		async (failCount) => {
+			const jobId = new ObjectId();
+			const target = createManagementJob({
+				_id: jobId,
+				status: 'failed',
+				failCount,
+				failReason: 'Account no longer exists',
+				updatedAt: new Date('2026-01-01T00:02:00.000Z'),
+			});
+			const retried = createManagementJob({
+				_id: jobId,
 				status: 'pending',
-				failCount: 2,
-				updatedAt: '2026-01-01T00:03:00.000Z',
-			}),
-		);
-		expect(coreCalls).toEqual([jobId.toHexString()]);
-	});
+				failCount: 0,
+				updatedAt: new Date('2026-01-01T00:03:00.000Z'),
+			});
+			const coreCalls: string[] = [];
+			const surface = createManagementSurface({
+				monque: createManagementMonque({
+					getJob: getManagementJobById(target),
+					retryJob: async (id) => {
+						coreCalls.push(id);
+
+						return retried;
+					},
+				}),
+			});
+
+			const response = await handleManagementPost(
+				surface,
+				`/api/v1/jobs/${jobId.toHexString()}/actions/retry`,
+			);
+
+			await expectJsonResponse(
+				response,
+				200,
+				expect.objectContaining({
+					id: jobId.toHexString(),
+					status: 'pending',
+					failCount: 0,
+					updatedAt: '2026-01-01T00:03:00.000Z',
+				}),
+			);
+			expect(coreCalls).toEqual([jobId.toHexString()]);
+		},
+	);
 
 	test('maps a single Job mutation miss after target resolution to 404', async () => {
 		const jobId = new ObjectId();

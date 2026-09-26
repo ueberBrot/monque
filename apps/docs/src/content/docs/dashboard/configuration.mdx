@@ -66,6 +66,13 @@ The dashboard's polling is separate from Monque's scheduler. The scheduler uses
 [Change Streams and polling](/monque/advanced/change-streams/) to discover jobs. Changing
 the dashboard refresh interval does not change when workers process jobs.
 
+## Non-retryable failures
+
+When a worker throws core's `NonRetryableError`, the job appears as Failed with its reason
+and actual attempt count. Retry remains available when permitted by the Management API;
+fix the cause before retrying. This also applies to recurring jobs, which stop until
+manually retried. Existing Dashboard and serving adapters support these failed jobs.
+
 ## Statistics freshness
 
 Core caches queue counts for `statsCacheTtlMs`, which defaults to 5 seconds. Dashboard

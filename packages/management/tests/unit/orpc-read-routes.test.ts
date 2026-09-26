@@ -18,6 +18,24 @@ import { createManagementSurface } from '@/index';
 import { JobCursorPageDtoSchema, JobDtoSchema } from '@/schemas';
 
 describe('oRPC Management read routes', () => {
+	test('exposes a terminal failure after one attempt', async () => {
+		const job = createManagementJob({
+			status: 'failed',
+			failCount: 1,
+			failReason: 'Account no longer exists',
+		});
+		const surface = createManagementSurface({
+			monque: createManagementMonque({ getJob: getManagementJobById(job) }),
+		});
+		const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+		expect(response.status).toBe(200);
+		expect(JobDtoSchema.parse(await response.json())).toMatchObject({
+			status: 'failed',
+			failCount: 1,
+			failureReason: 'Account no longer exists',
+		});
+	});
+
 	test.each(['Europe/Berlin', undefined])(
 		'preserves schedule timezone %s in detail and list responses',
 		async (timezone) => {

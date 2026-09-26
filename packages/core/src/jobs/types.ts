@@ -7,7 +7,7 @@ import type { ObjectId } from 'mongodb';
  * - PENDING → PROCESSING (when picked up by a worker)
  * - PROCESSING → COMPLETED (on success)
  * - PROCESSING → PENDING (on failure, if retries remain)
- * - PROCESSING → FAILED (on failure, after max retries exhausted)
+ * - PROCESSING → FAILED (on non-retryable failure or after max retries exhausted)
  * - PENDING → CANCELLED (on manual cancellation)
  *
  * @example
@@ -24,7 +24,7 @@ export const JobStatus = {
 	PROCESSING: 'processing',
 	/** Job completed successfully */
 	COMPLETED: 'completed',
-	/** Job permanently failed after exhausting all retry attempts */
+	/** Job failed without automatic retries, either explicitly or after exhausting retry attempts */
 	FAILED: 'failed',
 	/** Job was manually cancelled */
 	CANCELLED: 'cancelled',
