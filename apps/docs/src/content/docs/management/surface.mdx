@@ -65,7 +65,12 @@ Paths are relative to the Management router's mount URL:
 Job IDs are MongoDB ObjectId strings. Dates in requests and responses use ISO 8601 UTC
 strings, such as `2026-09-19T12:00:00.000Z`. Job responses use `payload` for the job's data
 and `failureReason` for its latest failure. Absent lock and heartbeat timestamps are `null`;
-absent `heartbeatInterval`, `repeatInterval`, and `uniqueKey` fields are omitted.
+absent `heartbeatInterval`, `repeatInterval`, `timezone`, and `uniqueKey` fields are omitted.
+
+Recurring jobs expose their configured IANA `timezone` in detail, full and summary listings,
+and job action responses. When omitted, the schedule uses the worker server's local timezone.
+This metadata does not change UTC timestamp serialization. Rescheduling changes only the next
+run time; it preserves the recurring cron expression and timezone.
 
 ## Job listings
 

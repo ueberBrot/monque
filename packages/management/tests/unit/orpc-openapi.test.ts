@@ -32,6 +32,13 @@ describe('oRPC Management OpenAPI contract', () => {
 		expect(document.info.version).toMatch(/^\d+\.\d+\.\d+(?:[-+].+)?$/);
 	});
 
+	test('publishes schedule timezone as optional Job metadata', () => {
+		const job = document.components?.schemas?.['Job'];
+		expect(job).toMatchObject({ properties: { timezone: { type: 'string' } } });
+		if (!job || !('required' in job)) throw new Error('Expected the Job object schema');
+		expect(job.required).not.toContain('timezone');
+	});
+
 	test('derives the health path and response schema from the oRPC contract', () => {
 		expect(document.openapi).toBe('3.1.1');
 		expect(document.paths?.['/api/v1/health']?.get?.operationId).toBe('getSchedulerHealth');

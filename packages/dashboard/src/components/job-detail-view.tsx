@@ -224,6 +224,9 @@ function getSchedulingMetadataItems(job: JobDto): readonly MetadataItem[] {
 	return [
 		['Claimed by', job.claimedBy ?? 'Unclaimed'],
 		['Repeat interval', job.repeatInterval ?? 'One-time job'],
+		...(job.repeatInterval
+			? [['Schedule timezone', job.timezone ?? 'Server local timezone'] satisfies MetadataItem]
+			: []),
 		['Unique key', job.uniqueKey ?? 'Not set'],
 	];
 }

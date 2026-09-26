@@ -1,6 +1,7 @@
-import type { JobSelector } from '@monque/core';
+import type { JobSelector, PersistedJob } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import { ObjectId } from 'mongodb';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -71,6 +72,31 @@ function mountErrorJson(app: Express): void {
 }
 
 describe('Express Management Adapter', () => {
+	test('serves recurring schedule timezone metadata through the mounted API', async () => {
+		const job: PersistedJob = {
+			_id: new ObjectId(),
+			name: 'daily-report',
+			data: {},
+			status: 'pending',
+			failCount: 0,
+			repeatInterval: '0 9 * * *',
+			timezone: 'Europe/Berlin',
+			nextRunAt: new Date('2026-01-15T08:00:00Z'),
+			createdAt: new Date('2026-01-15T00:00:00Z'),
+			updatedAt: new Date('2026-01-15T00:00:00Z'),
+		};
+		const app = createManagementApp({
+			monque: createManagementMonque({ getJob: async () => job }),
+		});
+		const response = await request(app)
+			.get(`/monque/api/v1/jobs/${job._id.toHexString()}`)
+			.expect(200);
+		expect(response.body).toMatchObject({
+			timezone: 'Europe/Berlin',
+			nextRunAt: '2026-01-15T08:00:00.000Z',
+		});
+	});
+
 	test('omits management context when no context factory is configured', async () => {
 		const context = await createOpenApiContext({} as Request, {} as Response, undefined);
 
