@@ -44,6 +44,7 @@ schedule<T>(
 
 ```typescript
 interface ScheduleOptions {
+  timezone?: string; // IANA timezone; defaults to the server's local timezone
   uniqueKey?: string;  // Prevent duplicate scheduled jobs
 }
 ```
@@ -248,18 +249,36 @@ await monque.schedule('60 * * * *', 'job', {});
 
 ## Timezone Considerations
 
-<Aside type="caution">
-  Monque evaluates cron expressions in the server's local timezone. Set the server or
-  container timezone to UTC if schedules should run at the same UTC time across deployments.
-</Aside>
+Pass an IANA timezone to evaluate every occurrence in that zone, independently of the
+server's timezone. Monque saves the timezone on the job and uses it again after each
+successful run. Execution timestamps such as `nextRunAt` remain JavaScript `Date` values.
 
 ```typescript
-// If your server is in UTC, this runs at 9 AM UTC
-// If your server is in EST, this runs at 9 AM EST
-await monque.schedule('0 9 * * *', 'daily-task', {
-  note: 'Check your server timezone for consistent scheduling'
+// 09:00 Berlin: 08:00 UTC in winter, 07:00 UTC in summer
+await monque.schedule('0 9 * * *', 'daily-task', {}, {
+  timezone: 'Europe/Berlin',
+  uniqueKey: 'daily-task-berlin',
 });
 ```
+
+Use `timezone: 'UTC'` for a fixed UTC schedule. An invalid or empty timezone rejects
+with `InvalidCronError` before a job is created.
+
+Omitting `timezone` preserves the existing behavior: cron expressions use the server's
+local timezone, including for previously stored jobs. Keep server timezones consistent
+across workers that process those jobs.
+
+Timezone rules include daylight saving changes. For Berlin's daily `30 2 * * *`
+schedule, `cron-parser` moves the missing spring 02:30 occurrence to 03:30 and selects
+the first 02:30 occurrence during the autumn repeated hour. Missed occurrences are not
+backfilled; the next occurrence is calculated after successful completion.
+
+<Aside type="caution" title="Upgrade workers before enabling timezone schedules">
+  Upgrade all scheduler instances sharing a jobs collection before creating schedules
+  with `timezone`. Older workers ignore the field when calculating subsequent runs.
+  Reusing an existing active `uniqueKey` returns the original job unchanged, including
+  its timezone; it does not update an existing schedule.
+</Aside>
 
 ## Managing Scheduled Jobs
 

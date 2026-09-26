@@ -107,6 +107,9 @@ export interface Job<T = unknown> {
 	/** Cron expression for recurring jobs */
 	repeatInterval?: string;
 
+	/** IANA timezone for recurring cron evaluation; omitted uses the server's local timezone. */
+	timezone?: string;
+
 	/** Deduplication key to prevent duplicate jobs */
 	uniqueKey?: string;
 
@@ -160,6 +163,12 @@ export interface EnqueueOptions {
  * ```
  */
 export interface ScheduleOptions {
+	/**
+	 * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
+	 * When omitted, cron evaluation uses the server's local timezone.
+	 */
+	timezone?: string;
+
 	/**
 	 * Deduplication key. If a job with this key is already pending or processing,
 	 * the schedule operation will not create a duplicate.

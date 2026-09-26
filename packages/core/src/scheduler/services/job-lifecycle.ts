@@ -72,7 +72,7 @@ export class JobLifecycle {
 		const now = new Date();
 
 		if (job.repeatInterval) {
-			const nextRunAt = getNextCronDate(job.repeatInterval);
+			const nextRunAt = getNextCronDate(job.repeatInterval, undefined, job.timezone);
 			const result = await this.ctx.collection.findOneAndUpdate(
 				this.ownedJobFilter(job),
 				{

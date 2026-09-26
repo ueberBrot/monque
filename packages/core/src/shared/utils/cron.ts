@@ -7,8 +7,9 @@ import { InvalidCronError } from '../errors.js';
  *
  * @param expression - A 5-field cron expression (minute hour day-of-month month day-of-week) or a predefined expression
  * @param currentDate - The reference date for calculating next run (default: now)
+ * @param timezone - IANA timezone (default: server's local timezone)
  * @returns The next scheduled run date
- * @throws {InvalidCronError} If the cron expression is invalid
+ * @throws {InvalidCronError} If the cron expression or timezone is invalid
  *
  * @example
  * ```typescript
@@ -25,10 +26,26 @@ import { InvalidCronError } from '../errors.js';
  * const nextRun = getNextCronDate('0 9 * * 1');
  * ```
  */
-export function getNextCronDate(expression: string, currentDate?: Date): Date {
+export function getNextCronDate(expression: string, currentDate?: Date, timezone?: string): Date {
+	if (timezone !== undefined) {
+		try {
+			if (timezone.startsWith('+') || timezone.startsWith('-')) {
+				throw new RangeError('Fixed offsets are not IANA timezone identifiers');
+			}
+			// Intl rejects host-relative aliases such as Luxon's "local" and "system".
+			new Intl.DateTimeFormat('en', { timeZone: timezone });
+		} catch {
+			throw new InvalidCronError(
+				expression,
+				`Invalid timezone "${timezone}". Expected an IANA timezone such as "Europe/Berlin" or "UTC".`,
+			);
+		}
+	}
+
 	try {
 		const interval = CronExpressionParser.parse(expression, {
 			currentDate: currentDate ?? new Date(),
+			...(timezone === undefined ? {} : { tz: timezone }),
 		});
 		return interval.next().toDate();
 	} catch (error) {
