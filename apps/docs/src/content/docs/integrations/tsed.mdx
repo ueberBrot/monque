@@ -219,6 +219,29 @@ export class AuthService {
 }
 ```
 
+## Non-retryable failures
+
+Import `NonRetryableError` from `@monque/core` and throw it from an `@Job` or `@Cron`
+handler when another attempt cannot help:
+
+```typescript
+import { NonRetryableError } from '@monque/core';
+import { Job, JobController } from '@monque/tsed';
+
+@JobController('reports')
+export class ReportJobs {
+  @Job('deliver')
+  async deliver() {
+    throw new NonRetryableError('Destination account no longer exists');
+  }
+}
+```
+
+Ts.ED preserves the error when passing it to the scheduler. Requires `@monque/core`
+1.14.0 or later in the application; upgrading Ts.ED alone does not upgrade its core peer.
+A recurring job stops too. Manual retry through `MonqueService`, Management, or Dashboard
+remains available after fixing the cause. See [Retry & Backoff](/monque/core-concepts/retry/).
+
 ## Job Isolation
 
 Each execution gets its own `DIContext`, so services with `ProviderScope.REQUEST` are

@@ -1,5 +1,5 @@
 import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
-import { ConnectionError, calculateBackoff, getNextCronDate } from '@/shared';
+import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from '@/shared';
 
 import type { SchedulerContext } from './types.js';
 
@@ -128,7 +128,7 @@ export class JobLifecycle {
 		const now = new Date();
 		const newFailCount = job.failCount + 1;
 
-		if (newFailCount >= this.ctx.options.maxRetries) {
+		if (error instanceof NonRetryableError || newFailCount >= this.ctx.options.maxRetries) {
 			const result = await this.ctx.collection.findOneAndUpdate(
 				this.ownedJobFilter(job),
 				{

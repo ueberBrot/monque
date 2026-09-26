@@ -72,6 +72,34 @@ function mountErrorJson(app: Express): void {
 }
 
 describe('Express Management Adapter', () => {
+	test('exposes an immediate failure and permits manual retry through the mounted API', async () => {
+		const job: PersistedJob = {
+			_id: new ObjectId(),
+			name: 'deliver',
+			data: {},
+			status: 'failed',
+			failCount: 1,
+			failReason: 'Account no longer exists',
+			nextRunAt: new Date('2026-01-15T08:00:00Z'),
+			createdAt: new Date('2026-01-15T00:00:00Z'),
+			updatedAt: new Date('2026-01-15T08:00:00Z'),
+		};
+		const retryJob = vi.fn(async () => ({ ...job, status: 'pending' as const, failCount: 0 }));
+		const app = createManagementApp({
+			monque: createManagementMonque({ getJob: async () => job, retryJob }),
+		});
+		const path = `/monque/api/v1/jobs/${job._id.toHexString()}`;
+		const failed = await request(app).get(path).expect(200);
+		expect(failed.body).toMatchObject({
+			status: 'failed',
+			failCount: 1,
+			failureReason: 'Account no longer exists',
+		});
+		const retried = await request(app).post(`${path}/actions/retry`).expect(200);
+		expect(retried.body).toMatchObject({ status: 'pending', failCount: 0 });
+		expect(retryJob).toHaveBeenCalledWith(job._id.toHexString());
+	});
+
 	test('serves recurring schedule timezone metadata through the mounted API', async () => {
 		const job: PersistedJob = {
 			_id: new ObjectId(),

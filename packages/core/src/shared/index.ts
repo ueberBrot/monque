@@ -7,6 +7,7 @@ export {
 	InvalidJobQueryError,
 	JobStateError,
 	MonqueError,
+	NonRetryableError,
 	PayloadTooLargeError,
 	ShutdownTimeoutError,
 	WorkerRegistrationError,

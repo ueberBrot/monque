@@ -1,4 +1,4 @@
-import { type Job, JobStatus } from '@monque/core';
+import { type Job, JobStatus, NonRetryableError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -12,6 +12,11 @@ import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 class ExecutionController {
 	static processed: string[] = [];
 	static failCount = 0;
+
+	@MonqueJob('permanent-failure')
+	async permanentFailure() {
+		throw new NonRetryableError('Account no longer exists');
+	}
 
 	@MonqueJob('success')
 	async success(job: Job) {
@@ -92,5 +97,23 @@ describe('Job Execution Flow', () => {
 		expect(completedJob?.status).toBe(JobStatus.COMPLETED);
 		// failedCount might be 1 (failed once)
 		expect(completedJob?.failCount).toBe(1);
+	});
+
+	it('preserves non-retryable errors thrown by decorated handlers', async () => {
+		await bootstrapMonque({
+			imports: [ExecutionController],
+			connectionStrategy: 'dbFactory',
+			monqueConfig: { maxRetries: 10 },
+		});
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		const job = await service.enqueue('execution.permanent-failure', {});
+		await waitFor(
+			async () => (await service.getJob(job._id.toHexString()))?.status === JobStatus.FAILED,
+		);
+		expect(await service.getJob(job._id.toHexString())).toMatchObject({
+			status: JobStatus.FAILED,
+			failCount: 1,
+			failReason: 'Account no longer exists',
+		});
 	});
 });

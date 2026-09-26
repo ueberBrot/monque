@@ -147,28 +147,39 @@ describe('Job detail route', () => {
 		},
 	);
 
-	it('resets displayed attempts after manually retrying a failed job', async () => {
-		let job = createJobDetail({ status: 'failed', failCount: 2 });
-		await renderJobDetailRoute({
-			jobId: job.id,
-			fetch: async (input, init) => {
-				const request = new Request(input, init);
-				if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/actions/retry')) {
-					job = { ...job, status: 'pending', failCount: 0 };
-					return createJsonResponse(job);
-				}
-				return createJobDetailFetch(job)(request);
-			},
-		});
-		const label = await screen.findByText('Attempts since reset');
-		expect(label.parentElement?.textContent).toBe('Attempts since reset2');
-		fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
-		await waitFor(() => {
-			expect(screen.getByText('Attempts since reset').parentElement?.textContent).toBe(
-				'Attempts since reset0',
-			);
-		});
-	});
+	it.each([1, 2])(
+		'allows manual retry after %i failed attempts, including a non-retryable failure',
+		async (failCount) => {
+			let job = createJobDetail({
+				status: 'failed',
+				failCount,
+				failureReason: 'Account no longer exists',
+			});
+			await renderJobDetailRoute({
+				jobId: job.id,
+				fetch: async (input, init) => {
+					const request = new Request(input, init);
+					if (
+						request.method === 'POST' &&
+						new URL(request.url).pathname.endsWith('/actions/retry')
+					) {
+						job = { ...job, status: 'pending', failCount: 0 };
+						return createJsonResponse(job);
+					}
+					return createJobDetailFetch(job)(request);
+				},
+			});
+			const label = await screen.findByText('Attempts since reset');
+			expect(label.parentElement?.textContent).toBe(`Attempts since reset${failCount}`);
+			expect(screen.getByText('Account no longer exists')).toBeTruthy();
+			fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+			await waitFor(() => {
+				expect(screen.getByText('Attempts since reset').parentElement?.textContent).toBe(
+					'Attempts since reset0',
+				);
+			});
+		},
+	);
 
 	it.each(['Delete job', 'Reschedule'])(
 		'clears an open %s confirmation when returning to a cached job',

@@ -72,6 +72,11 @@ and job action responses. When omitted, the schedule uses the worker server's lo
 This metadata does not change UTC timestamp serialization. Rescheduling changes only the next
 run time; it preserves the recurring cron expression and timezone.
 
+Jobs stopped by a worker's `NonRetryableError` use the existing `failed` status and expose
+`failureReason` and the actual `failCount`, which may be only one. Existing single and bulk
+retry endpoints remain available. No Management or Express adapter upgrade is required
+for this behavior; the worker must use core 1.14.0 or later.
+
 ## Job listings
 
 `GET /api/v1/jobs` accepts:
