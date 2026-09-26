@@ -32,6 +32,12 @@ export const JobDtoSchema = z
 		failCount: z.number().int().nonnegative(),
 		failureReason: z.string().nullable(),
 		repeatInterval: z.string().optional(),
+		timezone: z
+			.string()
+			.optional()
+			.describe(
+				'IANA timezone for the recurring schedule; omitted uses the server local timezone.',
+			),
 		uniqueKey: z.string().optional(),
 		createdAt: z.iso.datetime(),
 		updatedAt: z.iso.datetime(),

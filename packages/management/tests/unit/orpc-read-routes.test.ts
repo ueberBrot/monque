@@ -15,8 +15,44 @@ import {
 	handleManagementGet,
 } from '@tests/unit/management-test-utils';
 import { createManagementSurface } from '@/index';
+import { JobCursorPageDtoSchema, JobDtoSchema } from '@/schemas';
 
 describe('oRPC Management read routes', () => {
+	test.each(['Europe/Berlin', undefined])(
+		'preserves schedule timezone %s in detail and list responses',
+		async (timezone) => {
+			const job = createManagementJob({
+				repeatInterval: '0 9 * * *',
+				...(timezone === undefined ? {} : { timezone }),
+			});
+			const surface = createManagementSurface({
+				monque: createManagementMonque({
+					getJob: getManagementJobById(job),
+					getJobsWithCursor: async () => ({
+						jobs: [job],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					}),
+				}),
+			});
+			for (const path of [
+				`/api/v1/jobs/${job._id.toHexString()}`,
+				'/api/v1/jobs',
+				'/api/v1/jobs?view=summary',
+			]) {
+				const response = await handleManagementGet(surface, path);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				const dto = path.includes(job._id.toHexString())
+					? JobDtoSchema.parse(body)
+					: JobCursorPageDtoSchema.parse(body).jobs[0];
+				if (timezone === undefined) expect(dto).not.toHaveProperty('timezone');
+				else expect(dto).toMatchObject({ timezone, repeatInterval: '0 9 * * *' });
+			}
+		},
+	);
+
 	test('summary listings omit payloads without invoking payload serializers', async () => {
 		const job = createManagementJob();
 		const surface = createManagementSurface({

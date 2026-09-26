@@ -54,7 +54,11 @@ function createScenario(name: ScenarioName): WithId<Job>[] {
 							}
 						: {}),
 					...(index === 2
-						? { repeatInterval: '*/5 * * * *', uniqueKey: `${queue}-${status}-recurring` }
+						? {
+								repeatInterval: '*/5 * * * *',
+								timezone: 'Europe/Berlin',
+								uniqueKey: `${queue}-${status}-recurring`,
+							}
 						: {}),
 					data:
 						index === 0

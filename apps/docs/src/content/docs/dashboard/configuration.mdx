@@ -54,6 +54,14 @@ Relative timestamps such as "6 minutes ago" update using the browser clock, with
 or MongoDB requests. Dates are displayed in the browser's timezone, shown
 beside job lists; API timestamps use ISO 8601 UTC strings.
 
+For recurring jobs, Job detail shows **Schedule timezone** beside the repeat interval.
+This is the job's configured IANA timezone, or **Server local timezone** when none is
+specified. It is separate from the browser timezone used to display timestamps and edit
+the next run time. One-time jobs have no schedule timezone.
+
+Upgrade the Management package together with the Dashboard to expose this metadata.
+An older Management API omits the field even when core has stored an explicit timezone.
+
 The dashboard's polling is separate from Monque's scheduler. The scheduler uses
 [Change Streams and polling](/monque/advanced/change-streams/) to discover jobs. Changing
 the dashboard refresh interval does not change when workers process jobs.

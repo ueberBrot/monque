@@ -15,8 +15,13 @@ import { createManagementSurface } from '@/index';
 describe('oRPC Management single Job action routes', () => {
 	test('cancels one Job through public core API with target authorization', async () => {
 		const jobId = new ObjectId();
-		const target = createManagementJob({ _id: jobId });
+		const target = createManagementJob({
+			_id: jobId,
+			repeatInterval: '0 9 * * *',
+			timezone: 'Europe/Berlin',
+		});
 		const cancelled = createManagementJob({
+			...target,
 			_id: jobId,
 			status: 'cancelled',
 			updatedAt: new Date('2026-01-01T00:02:00.000Z'),
@@ -56,6 +61,8 @@ describe('oRPC Management single Job action routes', () => {
 			lastHeartbeat: null,
 			failCount: 0,
 			failureReason: null,
+			repeatInterval: '0 9 * * *',
+			timezone: 'Europe/Berlin',
 			createdAt: '2025-12-31T23:00:00.000Z',
 			updatedAt: '2026-01-01T00:02:00.000Z',
 		});

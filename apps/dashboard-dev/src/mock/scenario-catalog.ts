@@ -254,6 +254,7 @@ function createGeneratedJobs(options: {
 			failCount,
 			failureReason: status === 'failed' ? `Scenario failure ${index + 1}` : null,
 			repeatInterval: index % 5 === 0 ? '*/15 * * * *' : undefined,
+			timezone: index % 10 === 0 ? 'Europe/Berlin' : undefined,
 			uniqueKey: index % 4 === 0 ? `${name}:${index + 1}` : undefined,
 			createdAt: createdAt.toISOString(),
 			updatedAt: updatedAt.toISOString(),

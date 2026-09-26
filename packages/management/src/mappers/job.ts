@@ -55,6 +55,10 @@ export function toJobSummaryDto(job: Omit<PersistedJob, 'data'>): JobDto {
 		dto.repeatInterval = job.repeatInterval;
 	}
 
+	if (job.timezone != null) {
+		dto.timezone = job.timezone;
+	}
+
 	if (job.uniqueKey != null) {
 		dto.uniqueKey = job.uniqueKey;
 	}

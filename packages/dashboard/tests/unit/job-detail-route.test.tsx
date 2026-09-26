@@ -16,6 +16,26 @@ describe('Job detail route', () => {
 		cleanup();
 	});
 
+	it.each(['Europe/Berlin', undefined])(
+		'shows the recurring schedule timezone %s separately from display time',
+		async (timezone) => {
+			const job = createJobDetail({ repeatInterval: '0 9 * * *', timezone });
+			await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
+			const label = await screen.findByText('Schedule timezone');
+			expect(label.parentElement?.textContent).toBe(
+				`Schedule timezone${timezone ?? 'Server local timezone'}`,
+			);
+			expect(screen.getByText(/^Local time:/)).toBeTruthy();
+		},
+	);
+
+	it('does not show a schedule timezone for a one-time job', async () => {
+		const job = createJobDetail();
+		await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
+		await screen.findByRole('heading', { name: job.name });
+		expect(screen.queryByText('Schedule timezone')).toBeNull();
+	});
+
 	it('shows job detail metadata, payload, and copy controls', async () => {
 		const payload = {
 			attempt: 3,

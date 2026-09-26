@@ -173,12 +173,27 @@ import { JobController, Cron } from "@monque/tsed";
 
 @JobController()
 export class ReportJobs {
-  @Cron("0 0 * * *", { name: "daily-report" })
+  @Cron("0 9 * * *", { name: "daily-report", timezone: "Europe/Berlin" })
   async generateDailyReport() {
     console.log("Generating report...");
   }
 }
 ```
+
+Both `@Cron` and `MonqueService.schedule()` forward the core `timezone` option:
+
+```typescript
+await monqueService.schedule('0 9 * * *', 'daily-report', {}, {
+  timezone: 'Europe/Berlin',
+  uniqueKey: 'daily-report',
+});
+```
+
+Use a version of `@monque/core` with timezone support on every worker before enabling
+the option. Ts.ED uses the application's installed core peer dependency; upgrading Ts.ED
+alone does not upgrade core. Without `timezone`, existing server-local scheduling remains
+unchanged. See [timezone scheduling](/monque/core-concepts/scheduling/#timezone-considerations)
+for daylight saving behavior and rollout guidance.
 
 ### 3. Enqueue Jobs
 
