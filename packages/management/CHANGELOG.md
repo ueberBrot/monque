@@ -1,5 +1,13 @@
 # @monque/management
 
+## 0.5.0
+
+### Minor Changes
+
+- [#534](https://github.com/ueberBrot/monque/pull/534) [`eb8f455`](https://github.com/ueberBrot/monque/commit/eb8f455ef4c62c5a13613604a7b44b391d458c2b) - Include a recurring job's configured `timezone` in job detail, list, summary, and action
+  responses, and describe the optional field in OpenAPI. Jobs without an explicit timezone
+  continue to omit the field.
+
 ## 0.4.1
 
 ### Patch Changes

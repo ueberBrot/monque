@@ -1,5 +1,13 @@
 # @monque/core
 
+## 1.13.0
+
+### Minor Changes
+
+- [#532](https://github.com/ueberBrot/monque/pull/532) [`44126e3`](https://github.com/ueberBrot/monque/commit/44126e35f5b55627ad898d789956dbfee580b26b) - Support an optional IANA `timezone` on recurring schedules, persisted with the job and
+  used for initial and subsequent cron occurrences. Omitted timezones preserve server-local
+  behavior. Upgrade all workers sharing a collection before enabling timezone schedules.
+
 ## 1.12.3
 
 ### Patch Changes

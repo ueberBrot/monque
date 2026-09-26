@@ -1,5 +1,13 @@
 # @monque/tsed
 
+## 1.12.0
+
+### Minor Changes
+
+- [#534](https://github.com/ueberBrot/monque/pull/534) [`eb8f455`](https://github.com/ueberBrot/monque/commit/eb8f455ef4c62c5a13613604a7b44b391d458c2b) - Use `timezone` with `@Cron` and `MonqueService.schedule()` to schedule recurring jobs in
+  an IANA timezone. Requires `@monque/core` 1.13.0 or later on every worker; upgrading Ts.ED
+  alone does not upgrade the application's core peer dependency.
+
 ## 1.11.0
 
 ### Minor Changes

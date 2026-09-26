@@ -1,5 +1,12 @@
 # @monque/management-express
 
+## 0.4.1
+
+### Patch Changes
+
+- Updated dependencies [[`eb8f455`](https://github.com/ueberBrot/monque/commit/eb8f455ef4c62c5a13613604a7b44b391d458c2b)]:
+  - @monque/management@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
