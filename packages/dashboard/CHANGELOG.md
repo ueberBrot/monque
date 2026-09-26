@@ -1,5 +1,13 @@
 # @monque/dashboard
 
+## 0.2.0
+
+### Minor Changes
+
+- [#534](https://github.com/ueberBrot/monque/pull/534) [`eb8f455`](https://github.com/ueberBrot/monque/commit/eb8f455ef4c62c5a13613604a7b44b391d458c2b) - Show the schedule timezone beside a recurring job's cron expression in Job detail,
+  separately from the browser timezone used to display timestamps. Upgrade Management
+  alongside Dashboard so configured timezones are available in API responses.
+
 ## 0.1.0
 
 ### Minor Changes
