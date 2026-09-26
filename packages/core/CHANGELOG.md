@@ -1,5 +1,13 @@
 # @monque/core
 
+## 1.14.0
+
+### Minor Changes
+
+- [#535](https://github.com/ueberBrot/monque/pull/535) [`b55958e`](https://github.com/ueberBrot/monque/commit/b55958ebeb500c29bb3b2ec79680a4691e954fd9) - Throw `NonRetryableError` from a worker to mark a job failed immediately without automatic
+  retries. Recurring jobs stop too. Failure events report `willRetry: false`, while manual
+  retry remains available after fixing the cause. Ordinary errors keep their existing retry policy.
+
 ## 1.13.0
 
 ### Minor Changes

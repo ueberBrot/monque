@@ -1,5 +1,13 @@
 # @monque/tsed
 
+## 1.13.0
+
+### Minor Changes
+
+- [#535](https://github.com/ueberBrot/monque/pull/535) [`b55958e`](https://github.com/ueberBrot/monque/commit/b55958ebeb500c29bb3b2ec79680a4691e954fd9) - Stop automatic retries by throwing `NonRetryableError` from `@Job` or `@Cron` handlers.
+  Import the error from `@monque/core` 1.14.0 or later in your application. Failed jobs remain
+  available for inspection and manual retry through `MonqueService`, Management, and Dashboard.
+
 ## 1.12.0
 
 ### Minor Changes
