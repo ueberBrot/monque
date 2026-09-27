@@ -7,6 +7,8 @@ import {
 	JobListSortDirectionDtoSchema,
 	type JobSelectorDto,
 	managementContract,
+	type ProcessingActionDto,
+	type ProcessingStateDto,
 } from '@monque/management/contract';
 import { OpenAPIHandler } from '@orpc/openapi/fetch';
 import { implement, ORPCError } from '@orpc/server';
@@ -32,7 +34,11 @@ type JobMutation =
 
 type MutationCapability = Exclude<keyof DashboardDevScenario['capabilities']['actions'], 'read'>;
 
-type MutableScenario = Omit<DashboardDevScenario, 'jobs'> & { jobs: JobDto[] };
+type MutableScenario = Omit<DashboardDevScenario, 'jobs'> & {
+	jobs: JobDto[];
+	globallyPaused: boolean;
+	pausedWorkers: Set<string>;
+};
 
 const MockCursorSchema = z
 	.strictObject({
@@ -54,13 +60,52 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 		let scenario = scenarios.get(context.scenarioId);
 		if (!scenario) {
 			const source = getScenarioOrThrow(context);
-			scenario = { ...source, jobs: source.jobs.map((job) => ({ ...job })) };
+			scenario = {
+				...source,
+				jobs: source.jobs.map((job) => ({ ...job })),
+				globallyPaused: false,
+				pausedWorkers: new Set(),
+			};
 			scenarios.set(context.scenarioId, scenario);
 		}
 		assertScenarioResponseAllowed(scenario);
 		return scenario;
 	}
+	function getProcessingState(context: MockManagementContext, name?: string): ProcessingStateDto {
+		const scenario = getReadableScenario(context);
+		return {
+			instanceId: `mock-${context.scenarioId}`,
+			...(name === undefined ? {} : { name }),
+			paused: scenario.globallyPaused || (name !== undefined && scenario.pausedWorkers.has(name)),
+			globallyPaused: scenario.globallyPaused,
+		};
+	}
+	function controlProcessing(
+		context: MockManagementContext,
+		input: ProcessingActionDto,
+		action: 'pause' | 'resume',
+	): ProcessingStateDto {
+		const scenario = getReadableScenario(context);
+		assertMutationAllowed(scenario, action);
+		if (input.instanceId !== getProcessingState(context).instanceId)
+			throw new ORPCError('CONFLICT', {
+				message: 'Scheduler instance changed; refresh before retrying',
+			});
+		if (input.name === undefined) scenario.globallyPaused = action === 'pause';
+		else if (action === 'pause') scenario.pausedWorkers.add(input.name);
+		else scenario.pausedWorkers.delete(input.name);
+		return getProcessingState(context, input.name);
+	}
 	const mockManagementRouter = managementImplementer.router({
+		processingState: managementImplementer.processingState.handler(({ input, context }) =>
+			getProcessingState(context, input?.name),
+		),
+		pauseProcessing: managementImplementer.pauseProcessing.handler(({ input, context }) =>
+			controlProcessing(context, input, 'pause'),
+		),
+		resumeProcessing: managementImplementer.resumeProcessing.handler(({ input, context }) =>
+			controlProcessing(context, input, 'resume'),
+		),
 		selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) => {
 			const scenario = getReadableScenario(context);
 			const capability =
@@ -99,6 +144,9 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 				.queueViews.filter((view) => input?.name === undefined || view.name === input.name)
 				.map((view) => ({
 					...view,
+					worker: view.worker
+						? { ...view.worker, paused: getProcessingState(context, view.name).paused }
+						: null,
 					stats: createQueueStats(
 						getReadableScenario(context).jobs.filter((job) => job.name === view.name),
 					),

@@ -39,16 +39,18 @@ _Avoid_: dashboard server, management adapter
 It claims jobs, sends heartbeats, and releases ownership when work completes.
 
 **Claim** — atomic transition from pending to processing. A claim writes `claimedBy`,
-`lockedAt`, `lastHeartbeat`, and `heartbeatInterval`.
+a unique `claimId`, `lockedAt`, `lastHeartbeat`, and `heartbeatInterval`.
 
-**Owned Job** — processing job whose `claimedBy` matches current scheduler instance.
-Completion and failure transitions require ownership.
+**Owned Job** — processing job whose `claimedBy` matches the current scheduler instance
+and whose `claimId` matches the execution's claim. Completion and failure require that claim.
 
-**Stale Job** — processing job whose `lockedAt` is older than `lockTimeout`. Stale recovery
-resets it to pending and clears claim fields.
+**Stale Job** — processing job whose claim deadline has expired: `leaseExpiresAt` for a
+renewable claim, or `lockedAt + lockTimeout` for an absolute lock. Recovery resets it to
+pending and clears claim fields.
 
 **Heartbeat** — liveness signal written to `lastHeartbeat` while a job is processing.
-It supports monitoring and instance collision checks; stale recovery uses `lockedAt`.
+It supports monitoring and instance collision checks. With renewable leases enabled it also
+extends the claim deadline; it does not extend an absolute lock.
 
 **Pending Notification** — local signal that a pending job exists at `nextRunAt`.
 Change streams, retries, reschedules, recurring completion, and intake use this to reduce
@@ -107,8 +109,9 @@ processing jobs block duplicates; completed and failed jobs do not.
   `ManagementOptions`, not through singleton routers with baked-in scheduler state.
 - The Management Surface exposes existing public Monque management operations before adding
   new operator behavior.
-- The first Management Surface excludes job creation, worker registration, and scheduler
-  lifecycle operations.
+- The Management Surface excludes job creation, worker registration, and scheduler startup
+  or shutdown. Local pause/resume controls target the attached scheduler identity and leave
+  running handlers uninterrupted.
 - Management read-only mode allows reads and rejects all mutations with `403`.
 - The Management Route Map exposes capabilities so clients can reflect disabled actions.
 - Unsupported Management actions keep their route in the v1 contract and return `403`;
@@ -271,7 +274,8 @@ processing jobs block duplicates; completed and failed jobs do not.
 - Queue View summaries include job statistics by default.
 - Queue View summaries include historical-only job names and registered-worker-only job names.
 - Queue View summaries are sorted by job name by default.
-- Stale recovery uses `lockedAt + lockTimeout`, not `lastHeartbeat`.
+- Stale recovery uses `leaseExpiresAt` for renewable claims and `lockedAt + lockTimeout`
+  for absolute locks, not `lastHeartbeat`.
 - `lastHeartbeat` is still load-bearing for instance collision checks and observability.
 - Public scheduler methods remain on `Monque`; internal modules hide persistence detail.
 - Change streams are an optimization. Polling remains required as safety net and fallback.

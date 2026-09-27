@@ -127,10 +127,10 @@ describe('Monque Shutdown Race Condition', () => {
 
 		// Ensure the claim was reverted correctly
 		expect(collection.updateOne).toHaveBeenCalledWith(
-			{ _id: 'job-1', status: JobStatus.PROCESSING, claimedBy: expect.any(String) },
+			{ _id: 'job-1', status: JobStatus.PROCESSING, claimedBy: expect.any(String), claimId: null },
 			{
 				$set: expect.objectContaining({ status: JobStatus.PENDING }),
-				$unset: { lockedAt: '', claimedBy: '', lastHeartbeat: '' },
+				$unset: { lockedAt: '', claimedBy: '', claimId: '', leaseExpiresAt: '', lastHeartbeat: '' },
 			},
 		);
 

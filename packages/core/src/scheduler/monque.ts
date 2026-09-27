@@ -8,6 +8,8 @@ import {
 	type CursorOptions,
 	type CursorPage,
 	documentToPersistedJob,
+	type EnqueueJob,
+	type EnqueueManyResult,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	type Job,
@@ -15,6 +17,7 @@ import {
 	type JobSelector,
 	JobStatus,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -42,8 +45,12 @@ import {
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
-import type { MonqueOptions } from './types.js';
-import { validateIntegerOption, validateOptions } from './validate-options.js';
+import type { MonqueOptions, ProcessingState } from './types.js';
+import {
+	validateIntegerOption,
+	validateOptions,
+	validateRetryOptions,
+} from './validate-options.js';
 
 /**
  * Default configuration values
@@ -131,6 +138,8 @@ export class Monque extends EventEmitter {
 	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
+	private paused = false;
+	private readonly pausedWorkers = new Set<string>();
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -167,6 +176,7 @@ export class Monque extends EventEmitter {
 			workerConcurrency:
 				options.workerConcurrency ?? options.defaultConcurrency ?? DEFAULTS.workerConcurrency,
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
+			...(options.leaseDuration !== undefined ? { leaseDuration: options.leaseDuration } : {}),
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 			maxBackoffDelay: options.maxBackoffDelay,
 			instanceConcurrency: options.instanceConcurrency ?? options.maxConcurrency,
@@ -330,6 +340,7 @@ export class Monque extends EventEmitter {
 			instanceId: this.options.schedulerInstanceId,
 			workers: this.workers,
 			isRunning: () => this.isRunning,
+			isPaused: (name?: string) => this.isPaused(name),
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
 			notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
@@ -339,7 +350,7 @@ export class Monque extends EventEmitter {
 
 				this._pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
 			},
-			notifyJobFinished: () => this.onJobFinished(),
+			notifyJobFinished: (name) => this.onJobFinished(name),
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}
@@ -480,6 +491,20 @@ export class Monque extends EventEmitter {
 		this.ensureInitialized();
 		this.validateSchedulingIdentifiers(name, options.uniqueKey);
 		return this.intake.enqueue(name, data, options);
+	}
+
+	/**
+	 * Enqueue jobs using unordered MongoDB bulk writes. Validates all inputs before writing.
+	 * A database failure can leave some jobs persisted; ConnectionError.cause retains
+	 * the driver's error and partial result. Use unique keys when retrying a batch.
+	 * Pass a session to join a caller-owned transaction; transaction errors remain native.
+	 */
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options: JobWriteOptions = {},
+	): Promise<EnqueueManyResult> {
+		this.ensureInitialized();
+		return this.intake.enqueueMany(jobs, options);
 	}
 
 	/**
@@ -1054,10 +1079,16 @@ export class Monque extends EventEmitter {
 	 * });
 	 * ```
 	 */
-	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
+	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions<T> = {}): void {
 		validateJobName(name);
 		const concurrency = options.concurrency ?? this.options.workerConcurrency;
 		validateIntegerOption('concurrency', concurrency);
+		const retryOptions = {
+			maxRetries: options.maxRetries ?? this.options.maxRetries,
+			baseRetryInterval: options.baseRetryInterval ?? this.options.baseRetryInterval,
+			maxBackoffDelay: options.maxBackoffDelay ?? this.options.maxBackoffDelay,
+		};
+		validateRetryOptions(retryOptions);
 
 		// Check for existing worker and throw unless replace is explicitly true
 		if (this.workers.has(name) && options.replace !== true) {
@@ -1070,6 +1101,8 @@ export class Monque extends EventEmitter {
 		this.workers.set(name, {
 			handler: handler as JobHandler,
 			concurrency,
+			retryOptions,
+			...(options.schema === undefined ? {} : { schema: options.schema }),
 			activeJobs: this.workers.get(name)?.activeJobs ?? new Map(),
 		});
 	}
@@ -1077,6 +1110,41 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Public API - Lifecycle
 	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** Pause new executions locally, optionally for one job name. Running jobs continue. */
+	pause(name?: string): void {
+		if (name === undefined) this.paused = true;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.add(name);
+		}
+	}
+
+	/** Resume local executions. Resuming the instance preserves individually paused workers. */
+	resume(name?: string): void {
+		if (name === undefined) this.paused = false;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.delete(name);
+		}
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
+	}
+
+	/** Whether the local instance, or the named worker, is effectively paused. */
+	isPaused(name?: string): boolean {
+		if (name !== undefined) validateJobName(name);
+		return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+	}
+
+	/** Identify the local scheduler and inspect global or named-worker processing state. */
+	getProcessingState(name?: string): ProcessingState {
+		return {
+			instanceId: this.options.schedulerInstanceId,
+			...(name === undefined ? {} : { name }),
+			paused: this.isPaused(name),
+			globallyPaused: this.paused,
+		};
+	}
 
 	/**
 	 * Start polling for and processing jobs.
@@ -1139,7 +1207,16 @@ export class Monque extends EventEmitter {
 
 		// Start heartbeat and retention timers
 		this.lifecycleManager.startTimers({
-			updateHeartbeats: () => this.jobLifecycle.updateOwnedHeartbeats(),
+			updateHeartbeats: async () => {
+				await this.jobLifecycle.updateOwnedHeartbeats();
+				if (
+					this.isRunning &&
+					this.options.leaseDuration !== undefined &&
+					this.options.recoverStaleJobs
+				) {
+					await this.jobLifecycle.recoverStaleJobs();
+				}
+			},
 		});
 	}
 
@@ -1182,10 +1259,8 @@ export class Monque extends EventEmitter {
 			return;
 		}
 
-		// Stop all lifecycle timers FIRST to prevent new poll callbacks
-		// This closes the race window where a queued poll tick could
-		// check isRunning before the flag is set to false
-		this.lifecycleManager.stopTimers();
+		// Renewable claims stay alive while handlers drain; recovery stops with polling.
+		this.lifecycleManager.stopTimers(this.options.leaseDuration !== undefined);
 		this._pendingNotificationRouter?.close();
 
 		this.isRunning = false;
@@ -1202,6 +1277,7 @@ export class Monque extends EventEmitter {
 
 		// Wait for all active jobs to complete (with timeout)
 		if (this.getActiveJobCount() === 0) {
+			this.lifecycleManager.stopTimers();
 			return;
 		}
 
@@ -1217,6 +1293,7 @@ export class Monque extends EventEmitter {
 
 		const result = await Promise.race([waitForJobs, timeout.promise]);
 		clearTimeout(timeoutId);
+		this.lifecycleManager.stopTimers();
 
 		this._drainResolve = null;
 
@@ -1286,12 +1363,13 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Called when a job finishes processing. If a shutdown drain is pending
-	 * and no active jobs remain, resolves the drain promise.
+	 * Wake polling when local capacity is freed, and resolve a pending shutdown
+	 * drain when no active jobs remain.
 	 *
 	 * @private
 	 */
-	private onJobFinished(): void {
+	private onJobFinished(name: string): void {
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
 		if (this._drainResolve && this.getActiveJobCount() === 0) {
 			this._drainResolve();
 		}

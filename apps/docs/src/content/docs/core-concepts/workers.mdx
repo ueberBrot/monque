@@ -12,9 +12,10 @@ A worker is a handler registered for a job name. Monque calls it when a matching
 | Method / Type | Description |
 |---------------|-------------|
 | [`register()`](/monque/api/classes/monque/#register) | Register a job handler |
-| [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker configuration (concurrency, replace) |
+| [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker concurrency, retries, payload validation, and replacement |
 | [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
 | [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
+| [`pause()`](/monque/api/classes/monque/#pause) / [`resume()`](/monque/api/classes/monque/#resume) | Pause or resume local execution |
 | [`now()`](/monque/api/classes/monque/#now) | Enqueue for immediate execution |
 | [`MonqueOptions.workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency) | Global concurrency default |
 
@@ -47,6 +48,35 @@ monque.register<ImageProcessJob>('process-image', async (job) => {
 });
 ```
 
+### With Payload Validation
+
+Pass a [Standard Schema](https://standardschema.dev/schema) compatible schema to
+validate persisted input before your handler runs. For example, using Zod:
+
+```typescript
+import { z } from 'zod';
+
+const schema = z.object({ email: z.email() });
+monque.register('send-email', async (job) => {
+  await sendEmail(job.data.email);
+}, { schema });
+```
+
+Monque accepts the standard interface from `@standard-schema/spec`; install your
+preferred compatible validator separately. Both synchronous and asynchronous
+schemas are supported. The handler's payload type is inferred from the schema's
+output, including transformations.
+
+Validation happens on every claimed attempt, including jobs enqueued by another
+producer. Enqueueing does not validate against a local worker's schema. The stored
+payload and lifecycle events retain the original input; only the handler receives
+transformed output. Retries validate that original input again.
+
+If the schema returns validation issues, the job fails once with
+`PayloadValidationError`, without invoking the handler or automatically retrying.
+The `job:fail` error includes the schema's `issues`, including their paths. Unexpected
+exceptions thrown by a validator follow the worker's normal retry policy.
+
 ### With Worker Options
 
 Pass [`WorkerOptions`](/monque/api/interfaces/workeroptions/) to set concurrency or replace a handler:
@@ -65,12 +95,46 @@ monque.register('heavy-computation', async (job) => {
 | ------------- | -------- | ------------------------------- | --------------------------------------- |
 | `concurrency` | `number` | `5` (from `workerConcurrency`)  | Maximum concurrent jobs for this worker |
 | `replace`     | `boolean` | `false`                         | Replace an existing worker with the same name instead of throwing |
+| `schema` | `StandardSchemaV1` | None | Validate input and pass the schema output to the handler |
+
+Workers also accept [retry overrides](/monque/core-concepts/retry/#per-worker-settings).
 
 <Aside type="note">
   Each worker type maintains its own concurrency limit. A scheduler with 3 workers at concurrency 5 each could process up to 15 jobs simultaneously.
 </Aside>
 
 ## Worker Lifecycle
+
+### Pausing Local Processing
+
+Pause one worker or all execution in this scheduler instance:
+
+```typescript
+monque.pause('send-email');
+monque.isPaused('send-email'); // true
+monque.resume('send-email');
+
+monque.pause();
+monque.isPaused(); // true
+monque.resume();
+```
+
+Running executions continue, including their heartbeats. Enqueueing, stale recovery,
+and other scheduler instances remain active. A claim that finishes arriving after a
+pause is released without starting its handler. Resuming wakes local polling promptly;
+it does not restart the scheduler.
+
+Pauses are local memory state and are lost when the process exits. You can pause
+before initialization or worker registration, and repeated calls are safe. A stop/start
+cycle on the same instance preserves pauses. Resuming the whole instance preserves
+individually paused workers; resuming a worker does not override a whole-instance pause.
+`isPaused(name)` reports the effective state, while `isPaused()` reports the instance pause.
+`getProcessingState(name?)` also returns the scheduler's `instanceId` and `globallyPaused`,
+so management clients can distinguish a worker pause from an instance-wide pause.
+The same method is available on Ts.ED's `MonqueService`.
+
+Use `stop()` when you need to drain and shut down. A paused, connected scheduler stays
+healthy. To stop execution across a fleet, pause each consumer instance.
 
 ### Replacing a Handler
 
@@ -203,6 +267,12 @@ monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
 // But total across all three never exceeds 10
 ```
 
+When workers share an `instanceConcurrency` limit, polling resumes after the worker
+that last acquired a job. A busy worker cannot keep taking every new slot ahead of
+later-registered workers. Notifications for one job name also check other workers
+waiting for shared capacity. Running jobs are not interrupted, and jobs within each
+worker are still acquired in their scheduled order.
+
 <Aside type="tip">
   Set `instanceConcurrency` to fit the CPU, memory, and database connections available to
   one scheduler process.
@@ -216,6 +286,12 @@ monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
 | I/O-bound tasks (database, API) | 5-20                     |
 | Memory-intensive tasks          | Limited by available RAM |
 | External API calls | Limit simultaneous requests; enforce time-based rate limits separately |
+
+When an execution finishes, Monque notifies the local scheduler to claim waiting
+jobs for the available slot. This shares the normal notification batching window
+and works even when change streams are unavailable. Change streams remain the
+primary way to discover database changes; without them, the polling interval
+controls discovery of work written by other producers.
 
 ## Multiple Workers
 

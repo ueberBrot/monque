@@ -38,6 +38,7 @@ export class LifecycleManager {
 	private readonly ctx: SchedulerContext;
 	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+	private heartbeatRunning = false;
 
 	constructor(ctx: SchedulerContext) {
 		this.ctx = ctx;
@@ -52,10 +53,16 @@ export class LifecycleManager {
 	 */
 	startTimers(callbacks: TimerCallbacks): void {
 		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(() => {
-			callbacks.updateHeartbeats().catch((error: unknown) => {
+		this.heartbeatIntervalId = setInterval(async () => {
+			if (this.heartbeatRunning) return;
+			this.heartbeatRunning = true;
+			try {
+				await callbacks.updateHeartbeats();
+			} catch (error) {
 				this.ctx.emit('job:error', { error: toError(error) });
-			});
+			} finally {
+				this.heartbeatRunning = false;
+			}
 		}, this.ctx.options.heartbeatInterval);
 
 		// Start cleanup interval if retention is configured
@@ -80,13 +87,13 @@ export class LifecycleManager {
 	 *
 	 * Clears heartbeat and cleanup intervals.
 	 */
-	stopTimers(): void {
+	stopTimers(keepHeartbeat = false): void {
 		if (this.cleanupIntervalId) {
 			clearInterval(this.cleanupIntervalId);
 			this.cleanupIntervalId = null;
 		}
 
-		if (this.heartbeatIntervalId) {
+		if (this.heartbeatIntervalId && !keepHeartbeat) {
 			clearInterval(this.heartbeatIntervalId);
 			this.heartbeatIntervalId = null;
 		}

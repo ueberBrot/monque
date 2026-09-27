@@ -12,6 +12,11 @@ import { getRouter } from '@/router';
 import { parseDashboardRuntimeConfig } from '@/runtime-config';
 
 describe('Job detail route', () => {
+	it('shows the lease deadline only when the job uses renewable leases', async () => {
+		const job = createJobDetail({ leaseExpiresAt: '2026-09-27T16:00:00.000Z' });
+		await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
+		expect(await screen.findByText('Lease expires')).toBeTruthy();
+	});
 	afterEach(() => {
 		cleanup();
 	});
@@ -34,6 +39,7 @@ describe('Job detail route', () => {
 		await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
 		await screen.findByRole('heading', { name: job.name });
 		expect(screen.queryByText('Schedule timezone')).toBeNull();
+		expect(screen.queryByText('Lease expires')).toBeNull();
 	});
 
 	it('shows job detail metadata, payload, and copy controls', async () => {

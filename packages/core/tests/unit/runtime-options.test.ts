@@ -78,6 +78,15 @@ describe('runtime options', () => {
 		).not.toThrow();
 	});
 
+	it('requires enough lease time for a heartbeat and a valid deadline', () => {
+		for (const leaseDuration of [0, -1, Number.NaN, Infinity, 20, 2_147_483_648]) {
+			expect(() => new Monque(db, { heartbeatInterval: 20, leaseDuration })).toThrow(
+				'leaseDuration',
+			);
+		}
+		expect(() => new Monque(db, { heartbeatInterval: 20, leaseDuration: 1000 })).not.toThrow();
+	});
+
 	it('validates registration before changing the registered worker', () => {
 		const monque = new Monque(db);
 		const handler = async () => {};
@@ -89,5 +98,20 @@ describe('runtime options', () => {
 			'concurrency',
 		);
 		expect(() => monque.register('email', handler)).toThrow('already registered');
+	});
+
+	it.each([
+		{ maxRetries: Number.NaN },
+		{ maxRetries: 0.5 },
+		{ baseRetryInterval: -1 },
+		{ maxBackoffDelay: Infinity },
+	])('rejects invalid worker retry options before replacing its handler: %s', (options) => {
+		const monque = new Monque(db);
+		const handler = async () => {};
+		expect(() => monque.register('email', handler, options)).toThrow(MonqueError);
+		expect(() => monque.register('email', handler)).not.toThrow();
+		expect(() => monque.register('email', handler, { ...options, replace: true })).toThrow(
+			MonqueError,
+		);
 	});
 });

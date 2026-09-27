@@ -43,6 +43,7 @@ function createMockCollection(): Collection<Document> {
 	return {
 		insertOne: vi.fn(),
 		insertMany: vi.fn(),
+		bulkWrite: vi.fn(),
 		findOne: vi.fn(),
 		find: vi.fn(),
 		findOneAndUpdate: vi.fn(),
@@ -86,6 +87,7 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
 		instanceId: 'test-instance-id',
 		workers,
 		isRunning: vi.fn(() => true),
+		isPaused: vi.fn(() => false),
 		emit: vi.fn(<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
 			emitHistory.push({ event, payload });
 			return true;

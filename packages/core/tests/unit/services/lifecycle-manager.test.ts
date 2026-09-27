@@ -43,6 +43,17 @@ describe('LifecycleManager', () => {
 			expect(heartbeatFn).toHaveBeenCalledOnce();
 		});
 
+		it('waits for in-flight heartbeat maintenance before starting another call', async () => {
+			const pending = Promise.withResolvers<void>();
+			heartbeatFn.mockReturnValueOnce(pending.promise);
+			manager.startTimers(callbacks());
+			await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
+			expect(heartbeatFn).toHaveBeenCalledOnce();
+			pending.resolve();
+			await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+			expect(heartbeatFn).toHaveBeenCalledTimes(2);
+		});
+
 		it('should set up cleanup interval when jobRetention is configured', async () => {
 			ctx.options.jobRetention = { completed: 60000, failed: 120000 };
 			manager = new LifecycleManager(ctx);
@@ -115,6 +126,8 @@ describe('LifecycleManager', () => {
 					payload: expect.objectContaining({ error: heartbeatError }),
 				}),
 			);
+			await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+			expect(failingHeartbeat).toHaveBeenCalledTimes(2);
 		});
 
 		it('should emit job:error when initial cleanupJobs rejects', async () => {

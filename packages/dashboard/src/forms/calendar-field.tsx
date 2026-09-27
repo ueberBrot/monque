@@ -17,14 +17,33 @@ export function CalendarField({
 	onMonthChange: (month: Date) => void;
 }) {
 	const field = useFieldContext<string>();
-	const selected = useMemo(() => parseDateTime(field.state.value, '12:00'), [field.state.value]);
-	// Keep calendar props stable when text-field blur updates only form metadata.
-	const { handleChange } = field;
+	return (
+		<CalendarInput
+			value={field.state.value}
+			onChange={field.handleChange}
+			month={month}
+			onMonthChange={onMonthChange}
+		/>
+	);
+}
+
+export function CalendarInput({
+	value,
+	onChange,
+	month,
+	onMonthChange,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	month: Date;
+	onMonthChange: (month: Date) => void;
+}) {
+	const selected = useMemo(() => parseDateTime(value, '12:00'), [value]);
 	const selectDate = useCallback(
 		(day: Date | undefined) => {
-			if (day) handleChange(format(day, 'yyyy-MM-dd'));
+			if (day) onChange(format(day, 'yyyy-MM-dd'));
 		},
-		[handleChange],
+		[onChange],
 	);
 	return (
 		<Suspense
