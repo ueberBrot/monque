@@ -107,6 +107,10 @@ Resuming the instance preserves individual worker pauses; resuming a worker cann
 an instance-wide pause. Responses include the effective `paused` state and `globallyPaused`.
 Pauses do not survive process restarts.
 
+`GET /api/v1/capabilities?name=send-email` checks processing permissions for that worker
+using the attached scheduler's identity. Without `name`, it checks instance-wide controls.
+The other job-action capability checks remain unscoped.
+
 The `pause` and `resume` authorization actions receive `name` and `instanceId`. Read-only
 mode denies both. Capabilities report them unavailable when the scheduler facade omits
 the corresponding methods or `getProcessingState()`. State reads require `read` access.

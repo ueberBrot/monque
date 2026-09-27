@@ -101,6 +101,10 @@ describe('local processing controls', () => {
 			authorize: ({ action, name, instanceId: target }) =>
 				action === 'read' || (name === 'email' && target === instanceId),
 		});
+		const scoped = await handleManagementGet(surface, '/api/v1/capabilities?name=email');
+		expect(await scoped.json()).toMatchObject({ actions: { pause: true, resume: true } });
+		const global = await handleManagementGet(surface, '/api/v1/capabilities');
+		expect(await global.json()).toMatchObject({ actions: { pause: false, resume: false } });
 		expect(
 			(
 				await handleManagementPost(surface, '/api/v1/processing/actions/pause', {

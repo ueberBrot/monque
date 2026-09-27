@@ -47,12 +47,14 @@ export type ManagementActionDecision = { allowed: true } | { allowed: false; mes
 export async function getManagementCapabilities<TContext>(
 	options: ManagementOptions<TContext>,
 	context: TContext,
+	processingTarget: ManagementActionTarget = {},
 ): Promise<CapabilitiesDto> {
 	const readOnly = options.readOnly ?? false;
 	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
 	const check = async (action: ManagementAction): Promise<void> => {
 		const decision = await decideManagementAction(options, action, context, {
+			...(action === 'pause' || action === 'resume' ? processingTarget : {}),
 			supported: isManagementActionSupported(options.monque, action),
 		});
 
