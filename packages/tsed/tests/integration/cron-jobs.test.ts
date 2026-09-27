@@ -10,11 +10,11 @@ import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 @JobController('cron-test')
 class CronTestJobs {
-	public static callCount = 0;
+	public static handledIds: string[] = [];
 
 	@Cron('* * * * *', { name: 'minutely-job' })
-	async runEveryMinute() {
-		CronTestJobs.callCount++;
+	async runEveryMinute(job: PersistedJob) {
+		CronTestJobs.handledIds.push(job._id.toString());
 	}
 }
 
@@ -70,7 +70,7 @@ describe('Cron Job Integration', () => {
 
 	describe('Cron Scheduling', () => {
 		beforeEach(async () => {
-			CronTestJobs.callCount = 0;
+			CronTestJobs.handledIds = [];
 			await bootstrapMonque({
 				imports: [CronTestJobs],
 				connectionStrategy: 'dbFactory',
@@ -92,14 +92,15 @@ describe('Cron Job Integration', () => {
 		it('should execute cron job handler when triggered', async () => {
 			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
 
-			// Manually trigger the job to avoid waiting for cron
-			// The job should be registered for 'minutely-job'
+			// Another run of the same handler must not count as execution of this job.
 			await monqueService.now('cron-test.minutely-job', {});
+			const job = await monqueService.now('cron-test.minutely-job', {});
+			const id = job._id.toString();
 
 			// Wait for processing
-			await waitFor(() => CronTestJobs.callCount >= 1);
+			await waitFor(() => CronTestJobs.handledIds.includes(id));
 
-			expect(CronTestJobs.callCount).toBe(1);
+			expect(CronTestJobs.handledIds.filter((handledId) => handledId === id)).toHaveLength(1);
 		});
 	});
 });
