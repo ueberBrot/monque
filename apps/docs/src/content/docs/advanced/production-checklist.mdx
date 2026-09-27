@@ -340,6 +340,7 @@ const monque = new Monque(db, {
   jobRetention: {
     completed: 24 * 60 * 60 * 1000,    // 24 hours
     failed: 7 * 24 * 60 * 60 * 1000,   // 7 days
+    cancelled: 24 * 60 * 60 * 1000,    // 24 hours
     interval: 60 * 60 * 1000           // Cleanup every hour
   }
 });

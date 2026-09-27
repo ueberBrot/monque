@@ -11,7 +11,7 @@ import type { SchedulerContext } from './types.js';
 const DEFAULT_RETENTION_INTERVAL = 3600_000;
 
 /**
- * Statuses that are eligible for cleanup by the retention policy.
+ * Statuses covered by the completed/failed retention index.
  */
 export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const;
 
@@ -93,12 +93,7 @@ export class LifecycleManager {
 	}
 
 	/**
-	 * Clean up old completed and failed jobs based on retention policy.
-	 *
-	 * - Removes completed jobs older than `jobRetention.completed`
-	 * - Removes failed jobs older than `jobRetention.failed`
-	 *
-	 * The cleanup runs concurrently for both statuses if configured.
+	 * Clean up terminal jobs based on each status's configured retention period.
 	 *
 	 * @returns Promise resolving when all deletion operations complete
 	 */
@@ -107,26 +102,16 @@ export class LifecycleManager {
 			return;
 		}
 
-		const { completed, failed } = this.ctx.options.jobRetention;
 		const now = Date.now();
 		const deletions: Promise<DeleteResult>[] = [];
 
-		if (completed != null) {
-			const cutoff = new Date(now - completed);
+		for (const status of [...CLEANUP_STATUSES, JobStatus.CANCELLED]) {
+			const age = this.ctx.options.jobRetention[status];
+			if (age == null) continue;
 			deletions.push(
 				this.ctx.collection.deleteMany({
-					status: JobStatus.COMPLETED,
-					updatedAt: { $lt: cutoff },
-				}),
-			);
-		}
-
-		if (failed != null) {
-			const cutoff = new Date(now - failed);
-			deletions.push(
-				this.ctx.collection.deleteMany({
-					status: JobStatus.FAILED,
-					updatedAt: { $lt: cutoff },
+					status,
+					updatedAt: { $lt: new Date(now - age) },
 				}),
 			);
 		}

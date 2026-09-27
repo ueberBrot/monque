@@ -72,6 +72,19 @@ monque.register('heavy-computation', async (job) => {
 
 ## Worker Lifecycle
 
+### Replacing a Handler
+
+Pass `{ replace: true }` to register a new handler for an existing job name:
+
+```typescript
+monque.register('send-email', updatedEmailHandler, { replace: true, concurrency: 3 });
+```
+
+Running jobs finish with their original handler and remain visible in Queue Views.
+Subsequent polls count them against the replacement's concurrency limit. A poll already
+in progress may finish acquiring work with the previous registration. Graceful shutdown
+also waits for jobs started by the previous handler.
+
 ### 1. Job Acquisition
 
 When [`start()`](/monque/api/classes/monque/#start) is called, Monque begins looking for jobs:

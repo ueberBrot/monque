@@ -408,6 +408,16 @@ export class Monque extends EventEmitter {
 						},
 					]
 				: []),
+			...(this.options.jobRetention?.cancelled != null
+				? [
+						{
+							key: { updatedAt: 1 } as const,
+							name: 'monque_cancelled_retention',
+							background: true,
+							partialFilterExpression: { status: JobStatus.CANCELLED },
+						},
+					]
+				: []),
 		]);
 	}
 
@@ -1056,7 +1066,7 @@ export class Monque extends EventEmitter {
 		this.workers.set(name, {
 			handler: handler as JobHandler,
 			concurrency,
-			activeJobs: new Map(),
+			activeJobs: this.workers.get(name)?.activeJobs ?? new Map(),
 		});
 	}
 
@@ -1198,11 +1208,11 @@ export class Monque extends EventEmitter {
 		});
 
 		// Race between job completion and timeout
-		const timeout = new Promise<'timeout'>((resolve) => {
-			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
-		});
+		const timeout = Promise.withResolvers<'timeout'>();
+		const timeoutId = setTimeout(() => timeout.resolve('timeout'), this.options.shutdownTimeout);
 
-		const result = await Promise.race([waitForJobs, timeout]);
+		const result = await Promise.race([waitForJobs, timeout.promise]);
+		clearTimeout(timeoutId);
 
 		this._drainResolve = null;
 
