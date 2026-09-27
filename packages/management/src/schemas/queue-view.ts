@@ -35,6 +35,11 @@ export const QueueViewWorkerDtoSchema = z
 	.object({
 		concurrency: z.number().int().nonnegative(),
 		activeCount: z.number().int().nonnegative(),
+		paused: z.boolean().optional(),
+		hasSchema: z.boolean().optional(),
+		maxRetries: z.number().int().nonnegative().optional(),
+		baseRetryInterval: z.number().nonnegative().optional(),
+		maxBackoffDelay: z.number().nonnegative().optional(),
 	})
 	.strict();
 

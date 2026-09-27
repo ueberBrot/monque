@@ -6,6 +6,7 @@ import {
 } from '@test-utils/test-utils';
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
+import { z } from 'zod';
 
 import type { QueueStats } from '@/jobs';
 import { Monque } from '@/scheduler';
@@ -52,6 +53,62 @@ describe('Management APIs: Queue View Summaries', () => {
 	}
 
 	describe('getQueueViewSummaries', () => {
+		test('refreshes effective worker policies and pause state even while counts are cached', async () => {
+			const monque = new Monque(db, {
+				collectionName: uniqueCollectionName('worker_policies'),
+				statsCacheTtlMs: 60_000,
+				maxRetries: 2,
+				baseRetryInterval: 25,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+			monque.register('default', async () => {});
+			monque.register('custom', async () => {}, {
+				maxRetries: 4,
+				baseRetryInterval: 0,
+				maxBackoffDelay: 100,
+				schema: z.object({}),
+			});
+			const before = await monque.getQueueViewSummaries();
+			expect(before).toMatchObject([
+				{
+					name: 'custom',
+					worker: {
+						paused: false,
+						hasSchema: true,
+						maxRetries: 4,
+						baseRetryInterval: 0,
+						maxBackoffDelay: 100,
+					},
+				},
+				{
+					name: 'default',
+					worker: {
+						paused: false,
+						hasSchema: false,
+						maxRetries: 2,
+						baseRetryInterval: 25,
+						maxBackoffDelay: 86_400_000,
+					},
+				},
+			]);
+			monque.pause();
+			expect((await monque.getQueueViewSummaries()).every((view) => view.worker?.paused)).toBe(
+				true,
+			);
+			monque.resume();
+			monque.pause('custom');
+			monque.register('custom', async () => {}, { replace: true, maxRetries: 1 });
+			expect(await monque.getQueueViewSummaries()).toMatchObject([
+				{
+					name: 'custom',
+					worker: { paused: true, hasSchema: false, maxRetries: 1, baseRetryInterval: 25 },
+				},
+				{ name: 'default', worker: { paused: false } },
+			]);
+			expect(before[0]?.worker).toMatchObject({ paused: false, hasSchema: true, maxRetries: 4 });
+		});
+
 		test('filters persisted and worker-only names with isolated caches and mutation invalidation', async () => {
 			const monque = new Monque(db, {
 				collectionName: uniqueCollectionName('filtered_views'),

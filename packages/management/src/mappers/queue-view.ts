@@ -41,6 +41,11 @@ function toQueueViewSummaryDto(queueView: QueueViewSummary): QueueViewSummaryDto
 			? {
 					concurrency: queueView.worker.concurrency,
 					activeCount: queueView.worker.activeCount,
+					paused: queueView.worker.paused,
+					hasSchema: queueView.worker.hasSchema,
+					maxRetries: queueView.worker.maxRetries,
+					baseRetryInterval: queueView.worker.baseRetryInterval,
+					maxBackoffDelay: queueView.worker.maxBackoffDelay,
 				}
 			: null,
 	};

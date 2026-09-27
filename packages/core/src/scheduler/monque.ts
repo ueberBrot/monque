@@ -8,6 +8,8 @@ import {
 	type CursorOptions,
 	type CursorPage,
 	documentToPersistedJob,
+	type EnqueueJob,
+	type EnqueueManyResult,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	type Job,
@@ -15,6 +17,7 @@ import {
 	type JobSelector,
 	JobStatus,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -42,7 +45,7 @@ import {
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
-import type { MonqueOptions } from './types.js';
+import type { MonqueOptions, ProcessingState } from './types.js';
 import {
 	validateIntegerOption,
 	validateOptions,
@@ -488,6 +491,20 @@ export class Monque extends EventEmitter {
 		this.ensureInitialized();
 		this.validateSchedulingIdentifiers(name, options.uniqueKey);
 		return this.intake.enqueue(name, data, options);
+	}
+
+	/**
+	 * Enqueue jobs using unordered MongoDB bulk writes. Validates all inputs before writing.
+	 * A database failure can leave some jobs persisted; ConnectionError.cause retains
+	 * the driver's error and partial result. Use unique keys when retrying a batch.
+	 * Pass a session to join a caller-owned transaction; transaction errors remain native.
+	 */
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options: JobWriteOptions = {},
+	): Promise<EnqueueManyResult> {
+		this.ensureInitialized();
+		return this.intake.enqueueMany(jobs, options);
 	}
 
 	/**
@@ -1117,6 +1134,16 @@ export class Monque extends EventEmitter {
 	isPaused(name?: string): boolean {
 		if (name !== undefined) validateJobName(name);
 		return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+	}
+
+	/** Identify the local scheduler and inspect global or named-worker processing state. */
+	getProcessingState(name?: string): ProcessingState {
+		return {
+			instanceId: this.options.schedulerInstanceId,
+			...(name === undefined ? {} : { name }),
+			paused: this.isPaused(name),
+			globallyPaused: this.paused,
+		};
 	}
 
 	/**

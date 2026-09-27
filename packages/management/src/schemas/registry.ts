@@ -7,10 +7,12 @@ import {
 } from './actions.js';
 import { CapabilitiesDtoSchema } from './capabilities.js';
 import { JobCursorPageDtoSchema, JobDtoSchema } from './job.js';
+import { ProcessingStateDtoSchema } from './processing.js';
 import { QueueStatsDtoSchema, QueueViewSummaryListDtoSchema } from './queue-view.js';
 import { SchedulerHealthDtoSchema } from './scheduler-health.js';
 
-export const ManagementOpenApiSchemas = {
+const ManagementOpenApiSchemas = {
+	PROCESSING_STATE: { schema: ProcessingStateDtoSchema },
 	CAPABILITIES: {
 		schema: CapabilitiesDtoSchema,
 	},
@@ -47,6 +49,7 @@ export const ManagementOpenApiSchemas = {
 } as const;
 
 export const ManagementOpenApiComponentSchemas = {
+	ProcessingState: ManagementOpenApiSchemas.PROCESSING_STATE,
 	Capabilities: ManagementOpenApiSchemas.CAPABILITIES,
 	Job: ManagementOpenApiSchemas.JOB,
 	JobCursorPage: ManagementOpenApiSchemas.JOB_CURSOR_PAGE,
