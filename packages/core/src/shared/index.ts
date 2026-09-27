@@ -9,6 +9,7 @@ export {
 	MonqueError,
 	NonRetryableError,
 	PayloadTooLargeError,
+	PayloadValidationError,
 	ShutdownTimeoutError,
 	WorkerRegistrationError,
 } from './errors.js';

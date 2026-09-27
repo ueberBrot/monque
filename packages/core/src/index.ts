@@ -6,6 +6,8 @@ export {
 	CursorDirection,
 	type CursorOptions,
 	type CursorPage,
+	type EnqueueJob,
+	type EnqueueManyResult,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	isCancelledJob,
@@ -29,6 +31,7 @@ export {
 	type JobStatusType,
 	type JobSummary,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -36,7 +39,7 @@ export {
 	type ScheduleOptions,
 } from '@/jobs';
 // Types - Scheduler
-export type { MonqueOptions } from '@/scheduler';
+export type { MonqueOptions, ProcessingState } from '@/scheduler';
 // Main class
 export { Monque } from '@/scheduler';
 // Errors
@@ -59,6 +62,7 @@ export {
 	MonqueError,
 	NonRetryableError,
 	PayloadTooLargeError,
+	PayloadValidationError,
 	ShutdownTimeoutError,
 	validateCronExpression,
 	validateJobName,

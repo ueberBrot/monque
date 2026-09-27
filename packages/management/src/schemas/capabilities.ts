@@ -11,6 +11,8 @@ export const CapabilityActionsDtoSchema = z
 		reschedule: z.boolean(),
 		delete: z.boolean(),
 		deleteBulk: z.boolean(),
+		pause: z.boolean().optional(),
+		resume: z.boolean().optional(),
 	})
 	.strict();
 

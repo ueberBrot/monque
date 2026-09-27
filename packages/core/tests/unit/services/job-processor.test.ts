@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, createWorker, JobFactory, JobFactoryHelpers } from '@tests/factories';
 import { JobStatus, type PersistedJob } from '@/jobs';
+import { JobLifecycle } from '@/scheduler/services/job-lifecycle.js';
 import { JobProcessor } from '@/scheduler/services/job-processor.js';
 
 describe('JobProcessor', () => {
@@ -25,6 +26,33 @@ describe('JobProcessor', () => {
 	});
 
 	describe('poll', () => {
+		it.each([false, true])(
+			'does not invoke a handler if paused during acquisition (release fails: %s)',
+			async (releaseFails) => {
+				const lifecycle = new JobLifecycle(ctx);
+				processor = new JobProcessor(ctx, lifecycle);
+				const acquisition = Promise.withResolvers<PersistedJob | null>();
+				const claimed = JobFactoryHelpers.processing({ name: 'work' });
+				const handler = vi.fn(async () => {});
+				ctx.workers.set('work', createWorker({ handler }));
+				vi.spyOn(lifecycle, 'claimNext').mockReturnValueOnce(acquisition.promise);
+				const release = vi.spyOn(lifecycle, 'releaseOwnedClaim').mockResolvedValue();
+				if (releaseFails) release.mockRejectedValue(new Error('Release failed'));
+				const polling = processor.poll();
+				vi.mocked(ctx.isPaused).mockReturnValue(true);
+				acquisition.resolve(claimed);
+				await polling;
+				expect(handler).not.toHaveBeenCalled();
+				expect(release).toHaveBeenCalledExactlyOnceWith(claimed);
+				if (releaseFails) {
+					expect(ctx.emit).toHaveBeenCalledWith('job:error', {
+						error: expect.objectContaining({ message: 'Release failed' }),
+						job: claimed,
+					});
+				}
+			},
+		);
+
 		it('continues processing after a job:start listener throws with one global slot', async () => {
 			ctx.options.instanceConcurrency = 1;
 			const first = JobFactoryHelpers.processing({ name: 'test-job' });

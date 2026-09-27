@@ -87,6 +87,7 @@ describe('JobManager', () => {
 				lockedAt: '',
 				claimedBy: '',
 				claimId: '',
+				leaseExpiresAt: '',
 				lastHeartbeat: '',
 			};
 

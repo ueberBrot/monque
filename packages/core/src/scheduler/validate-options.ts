@@ -1,4 +1,5 @@
 import { MonqueError } from '@/shared';
+import type { RetryOptions } from '@/workers';
 
 import type { ResolvedMonqueOptions } from './services/index.js';
 
@@ -21,6 +22,12 @@ function validateNumberOption(
 	}
 }
 
+export function validateRetryOptions(options: RetryOptions): void {
+	validateIntegerOption('maxRetries', options.maxRetries);
+	validateNumberOption('baseRetryInterval', options.baseRetryInterval);
+	validateNumberOption('maxBackoffDelay', options.maxBackoffDelay);
+}
+
 export function validateOptions(options: ResolvedMonqueOptions): void {
 	validateNumberOption('pollInterval', options.pollInterval, 1, MAX_TIMER_DELAY);
 	validateNumberOption('safetyPollInterval', options.safetyPollInterval, 1, MAX_TIMER_DELAY);
@@ -28,11 +35,13 @@ export function validateOptions(options: ResolvedMonqueOptions): void {
 	validateNumberOption('shutdownTimeout', options.shutdownTimeout, 0, MAX_TIMER_DELAY);
 	validateIntegerOption('workerConcurrency', options.workerConcurrency);
 	validateIntegerOption('instanceConcurrency', options.instanceConcurrency);
-	validateIntegerOption('maxRetries', options.maxRetries);
+	validateRetryOptions(options);
 	validateIntegerOption('maxPayloadSize', options.maxPayloadSize);
-	validateNumberOption('baseRetryInterval', options.baseRetryInterval);
-	validateNumberOption('maxBackoffDelay', options.maxBackoffDelay);
 	validateNumberOption('lockTimeout', options.lockTimeout);
+	validateNumberOption('leaseDuration', options.leaseDuration, 1, MAX_TIMER_DELAY);
+	if (options.leaseDuration !== undefined && options.leaseDuration <= options.heartbeatInterval) {
+		throw new MonqueError('leaseDuration must exceed heartbeatInterval');
+	}
 	validateNumberOption('statsCacheTtlMs', options.statsCacheTtlMs);
 	validateNumberOption('jobRetention.completed', options.jobRetention?.completed);
 	validateNumberOption('jobRetention.failed', options.jobRetention?.failed);

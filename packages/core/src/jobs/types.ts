@@ -1,4 +1,4 @@
-import type { ObjectId } from 'mongodb';
+import type { ClientSession, ObjectId } from 'mongodb';
 
 /**
  * Represents the lifecycle states of a job in the queue.
@@ -88,6 +88,9 @@ export interface Job<T = unknown> {
 	/** Identifier of this execution's claim; changes whenever the job is claimed again. */
 	claimId?: string;
 
+	/** Renewable claim deadline, measured by MongoDB's clock. Absent for absolute locks. */
+	leaseExpiresAt?: Date;
+
 	/**
 	 * Timestamp of the last heartbeat update for this job.
 	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
@@ -142,7 +145,7 @@ export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
  * });
  * ```
  */
-export interface EnqueueOptions {
+export interface EnqueueOptions extends JobWriteOptions {
 	/**
 	 * Deduplication key. If a job with this key is already pending or processing,
 	 * the enqueue operation will not create a duplicate.
@@ -155,6 +158,27 @@ export interface EnqueueOptions {
 	runAt?: Date;
 }
 
+/** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
+export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, 'session'> {
+	name: string;
+	data: T;
+}
+
+/** Counts acknowledged by a successful enqueueMany() call. */
+export interface EnqueueManyResult {
+	insertedCount: number;
+	deduplicatedCount: number;
+}
+
+/** Options shared by job writes. */
+export interface JobWriteOptions {
+	/**
+	 * Session from the MongoClient used by Monque. The caller owns its lifetime,
+	 * transaction, and commit. Jobs become visible to workers after commit.
+	 */
+	session?: ClientSession;
+}
+
 /**
  * Options for scheduling a recurring job.
  *
@@ -165,7 +189,7 @@ export interface EnqueueOptions {
  * });
  * ```
  */
-export interface ScheduleOptions {
+export interface ScheduleOptions extends JobWriteOptions {
 	/**
 	 * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
 	 * When omitted, cron evaluation uses the server's local timezone.
@@ -381,6 +405,15 @@ export interface QueueViewWorkerSummary {
 
 	/** Number of jobs currently active in this local Worker */
 	readonly activeCount: number;
+
+	/** Effective local pause state, including a scheduler-wide pause. */
+	readonly paused?: boolean;
+	/** Whether this local worker validates payloads with Standard Schema. */
+	readonly hasSchema?: boolean;
+	/** Effective retry limit and delays captured for new executions. */
+	readonly maxRetries?: number;
+	readonly baseRetryInterval?: number;
+	readonly maxBackoffDelay?: number;
 }
 
 /**

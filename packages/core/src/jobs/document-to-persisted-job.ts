@@ -35,6 +35,9 @@ export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): Pers
 	if (doc['claimId'] !== undefined) {
 		job.claimId = doc['claimId'];
 	}
+	if (doc['leaseExpiresAt'] !== undefined) {
+		job.leaseExpiresAt = doc['leaseExpiresAt'];
+	}
 	if (doc['lastHeartbeat'] !== undefined) {
 		job.lastHeartbeat = doc['lastHeartbeat'];
 	}

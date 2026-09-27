@@ -13,6 +13,7 @@ A job stores the work you want a worker to perform, along with its payload, stat
 |---------------|-------------|
 | [`Job`](/monque/api/interfaces/job/) | Job document interface |
 | [`enqueue()`](/monque/api/classes/monque/#enqueue) | Create a job with optional scheduling |
+| [`enqueueMany()`](/monque/api/classes/monque/#enqueuemany) | Submit a batch with per-job scheduling and deduplication |
 | [`now()`](/monque/api/classes/monque/#now) | Create a job for immediate execution |
 | [`schedule()`](/monque/api/classes/monque/#schedule) | Create a recurring cron-based job |
 | [`getJob()`](/monque/api/classes/monque/#getjob) | Retrieve a single job by ID |
@@ -83,6 +84,75 @@ const job = await monque.now('send-email', {
 console.log(job._id); // ObjectId
 console.log(job.status); // 'pending'
 ```
+
+### Enqueue a Batch
+
+Use `enqueueMany()` when submitting several jobs together:
+
+```typescript
+const result = await monque.enqueueMany([
+  { name: 'send-email', data: { userId: '123' }, uniqueKey: 'welcome-123' },
+  {
+    name: 'send-reminder',
+    data: { userId: '123' },
+    runAt: new Date(Date.now() + 3600000),
+  },
+]);
+
+console.log(result.insertedCount, result.deduplicatedCount);
+```
+
+Each item accepts `name`, `data`, `runAt`, and `uniqueKey`. An empty batch returns
+zero counts. Names, unique keys, and configured payload size limits are validated
+for every item before any writes. Standard Schema validation still runs when a
+worker claims each job.
+
+Deduplication uses the same rules as `enqueue()`: an existing pending or processing
+job with the same name and unique key keeps its payload and schedule. Writes are
+unordered; when new items share a key, do not rely on which payload wins. Completed,
+failed, and cancelled jobs do not block a new job with that key.
+
+The result contains counts rather than job documents, avoiding a read-back query.
+MongoDB may split large batches into multiple requests. Without a transaction,
+a database error can leave some jobs persisted while other jobs fail. `ConnectionError.cause` retains the MongoDB error, including
+partial results when available. Use stable unique keys when retrying, and remember
+that deduplication lasts only while a job is pending or processing.
+
+### Enqueue in a Transaction
+
+Pass a MongoDB `ClientSession` to `enqueue()`, `enqueueMany()`, or `schedule()` to
+commit business data and jobs together. Use the same `MongoClient` that created
+Monque's database, and initialize Monque before starting the transaction.
+
+```typescript
+await client.withSession(async (session) => {
+  await session.withTransaction(async () => {
+    await db.collection('orders').insertOne(order, { session });
+    await monque.enqueue('send-receipt', { orderId: order._id }, {
+      session,
+      uniqueKey: order._id.toString(),
+    });
+    await monque.enqueueMany([
+      { name: 'update-stock', data: { orderId: order._id } },
+    ], { session });
+  });
+});
+```
+
+Workers see the jobs only after commit. Aborting rolls back the jobs along with
+the business writes. Monque never starts, commits, aborts, or ends your session.
+Passing a session alone does not start a transaction; use `withTransaction()` or
+the driver's explicit transaction methods. MongoDB transactions require a replica
+set or sharded cluster.
+
+Await operations sequentially inside the transaction. Native database errors are
+propagated unchanged during a transaction, preserving the driver's retry labels.
+Let `withTransaction()` retry eligible failures, and keep external side effects
+outside its callback. Do not catch a failed write and continue using an aborted
+transaction. A returned job or batch count is provisional until commit succeeds.
+
+Change streams wake workers after commit. If streams are unavailable, the existing
+fallback poll discovers committed jobs; no additional polling is introduced.
 
 ### Scheduled Execution
 

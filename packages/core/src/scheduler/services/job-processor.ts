@@ -1,5 +1,5 @@
 import { JobStatus, type PersistedJob } from '@/jobs';
-import { toError } from '@/shared';
+import { PayloadValidationError, toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
 import { JobLifecycle } from './job-lifecycle.js';
@@ -27,6 +27,7 @@ export class JobProcessor {
 	 * decremented in the `processJob` finally block. Used for instance-level throttling.
 	 */
 	private _totalActiveJobs = 0;
+	private lastServedWorker: string | undefined;
 
 	private readonly lifecycle: JobLifecycle;
 
@@ -68,10 +69,11 @@ export class JobProcessor {
 	 * change-stream-triggered polls from being silently dropped.
 	 *
 	 * @param targetNames - Optional set of worker names to poll. When provided, only the
-	 * specified workers are checked. Used by change stream handler for targeted polling.
+	 * specified workers are checked unless they share an instance concurrency limit.
+	 * Used by change stream handler for targeted polling.
 	 */
 	async poll(targetNames?: ReadonlySet<string>): Promise<void> {
-		if (!this.ctx.isRunning()) {
+		if (!this.ctx.isRunning() || this.ctx.isPaused()) {
 			return;
 		}
 
@@ -89,7 +91,7 @@ export class JobProcessor {
 				await this._doPoll(targetNames);
 				// Re-polls are always full polls to catch all pending work
 				targetNames = undefined;
-			} while (this._repollRequested && this.ctx.isRunning());
+			} while (this._repollRequested && this.ctx.isRunning() && !this.ctx.isPaused());
 		} finally {
 			this._isPolling = false;
 		}
@@ -106,7 +108,18 @@ export class JobProcessor {
 			return;
 		}
 
-		for (const [name, worker] of this.ctx.workers) {
+		let names: Iterable<string> = this.ctx.workers.keys();
+		if (instanceConcurrency !== undefined) {
+			const entries = [...names];
+			const next = entries.findIndex((name) => name === this.lastServedWorker) + 1;
+			names = entries.slice(next).concat(entries.slice(0, next));
+			// A targeted notification must not bypass workers waiting for a shared slot.
+			targetNames = undefined;
+		}
+
+		for (const name of names) {
+			const worker = this.ctx.workers.get(name);
+			if (!worker || this.ctx.isPaused(name)) continue;
 			// Skip workers not in the target set (if provided)
 			if (targetNames && !targetNames.has(name)) {
 				continue;
@@ -142,26 +155,10 @@ export class JobProcessor {
 						this.lifecycle
 							.claimNext(name)
 							.then(async (job) => {
-								if (!job) {
-									return;
-								}
+								if (!job) return;
 								found++;
-
-								if (this.ctx.isRunning()) {
-									// Add to activeJobs immediately to correctly track concurrency
-									worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
-									this._totalActiveJobs++;
-
-									this.processJob(job, worker).catch((error: unknown) => {
-										this.ctx.emit('job:error', { error: toError(error), job });
-									});
-								} else {
-									try {
-										await this.lifecycle.releaseOwnedClaim(job);
-									} catch {
-										// Best-effort shutdown cleanup.
-									}
-								}
+								this.lastServedWorker = name;
+								await this.dispatchClaim(job, worker, name);
 							})
 							.catch((error: unknown) => {
 								this.ctx.emit('job:error', { error: toError(error) });
@@ -176,6 +173,27 @@ export class JobProcessor {
 				remaining -= size;
 			}
 		}
+	}
+
+	private async dispatchClaim(
+		job: PersistedJob,
+		worker: WorkerRegistration,
+		name: string,
+	): Promise<void> {
+		if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
+			try {
+				await this.lifecycle.releaseOwnedClaim(job);
+			} catch (error) {
+				if (this.ctx.isRunning()) this.ctx.emit('job:error', { error: toError(error), job });
+			}
+			return;
+		}
+
+		worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
+		this._totalActiveJobs++;
+		this.processJob(job, worker).catch((error: unknown) => {
+			this.ctx.emit('job:error', { error: toError(error), job });
+		});
 	}
 
 	/**
@@ -197,7 +215,13 @@ export class JobProcessor {
 
 		try {
 			this.ctx.emit('job:start', job);
-			await worker.handler(job);
+			let handlerJob = job;
+			if (worker.schema) {
+				const result = await worker.schema['~standard'].validate(job.data);
+				if (result.issues) throw new PayloadValidationError(job.name, result.issues);
+				handlerJob = { ...job, data: result.value };
+			}
+			await worker.handler(handlerJob);
 
 			// Job completed successfully
 			const duration = Date.now() - startTime;
@@ -209,7 +233,7 @@ export class JobProcessor {
 		} catch (error) {
 			// Job failed
 			const err = toError(error);
-			const updatedJob = await this.lifecycle.failOwned(job, err);
+			const updatedJob = await this.lifecycle.failOwned(job, err, worker.retryOptions);
 
 			if (updatedJob) {
 				const willRetry = updatedJob.status === JobStatus.PENDING;
@@ -218,7 +242,7 @@ export class JobProcessor {
 		} finally {
 			worker.activeJobs.delete(claimId);
 			this._totalActiveJobs--;
-			this.ctx.notifyJobFinished();
+			this.ctx.notifyJobFinished(job.name);
 		}
 	}
 }
