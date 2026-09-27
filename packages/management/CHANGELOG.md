@@ -1,5 +1,27 @@
 # @monque/management
 
+## 0.6.0
+
+### Minor Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Require `@monque/core` 1.15 or later for worker policies and renewable lease metadata.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose renewable claim deadlines as `leaseExpiresAt` in job details, listings, and action responses. The field is omitted for jobs without a renewable claim.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add authorized pause controls for the attached scheduler or a job name. Requests identify the intended scheduler, honor read-only mode, and leave running jobs uninterrupted.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add an authorized processing-state endpoint that reports the attached scheduler identity and local pause state.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add authorized resume controls for the attached scheduler or a job name. Resuming the whole instance preserves individually paused workers.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Allow capability queries to specify a job name and authorize processing controls against the attached scheduler identity, so clients can show permissions for an individual worker.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Include effective local worker pause state in queue view responses. Custom scheduler facades may omit unavailable state.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Include effective local worker retry limits and backoff settings in queue view responses and their OpenAPI contract.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Include Standard Schema validator presence in queue view responses without serializing validator functions.
+
 ## 0.5.0
 
 ### Minor Changes

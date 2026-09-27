@@ -1,5 +1,62 @@
 # @monque/core
 
+## 1.15.0
+
+### Minor Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add `enqueueMany()` to submit jobs in a batch with per-job scheduling and deduplication. The result reports inserted and deduplicated counts. Job identifiers and configured payload limits are checked before writing; database failures preserve the driver's partial-result details in `ConnectionError.cause`.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Schedulers with `leaseDuration` enabled periodically recover abandoned jobs without requiring a restart. Recovery runs after each heartbeat and can be disabled with `recoverStaleJobs: false`.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add `getProcessingState(name?)` to inspect the scheduler identity and distinguish local worker pauses from an instance-wide pause.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add `pause()`, `resume()`, and `isPaused()` for local execution control, optionally scoped to one job name. Running jobs and heartbeats continue while new work waits; resuming wakes polling without a restart. Other scheduler instances are unaffected.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Override `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` when registering a worker. Omitted values inherit scheduler defaults. Active executions retain their retry policy when their worker is replaced.
+
+- [#538](https://github.com/ueberBrot/monque/pull/538) [`caa3a67`](https://github.com/ueberBrot/monque/commit/caa3a67f68d91aa3d75576d276f0b70fd788c50c) - Add optional `jobRetention.cancelled` to automatically delete cancelled jobs after a
+  configured age. Cleanup uses the cancellation timestamp and the existing retention
+  interval. Cancelled jobs remain indefinitely when the option is omitted.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add optional `leaseDuration` for long-running jobs. Heartbeats renew the claim using MongoDB's clock, including while handlers drain during graceful shutdown. Expired claims cannot renew or record a late result. Omit the option to retain absolute `lockTimeout` behavior, and upgrade every scheduler sharing the collection before enabling leases.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Include the official `@standard-schema/spec` package so schema interfaces resolve in installed applications without requiring a specific validation library.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Accept a Standard Schema compatible `schema` when registering a worker. Validate each claimed payload before invoking the handler, support asynchronous validators and transformed output, and fail invalid input once with structured `PayloadValidationError` issues. Stored input remains unchanged for retries and inspection.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Accept caller-owned MongoDB sessions in `enqueue()`, `enqueueMany()`, and `schedule()`, so job writes can commit or roll back with application data. Workers see transactional jobs only after commit, and native transaction errors retain the labels used by MongoDB's retry handling.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose effective local worker pause state in queue view summaries, including scheduler-wide pauses. State stays current when queue counts are cached.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose each local worker’s effective retry limit and backoff settings in queue view summaries, including inherited scheduler defaults.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Report whether each local worker has a Standard Schema payload validator in queue view summaries without exposing the validator itself.
+
+### Patch Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Return the existing active job when concurrent `enqueue()` or `schedule()` calls collide on the job-name and unique-key index. Unrelated database errors and collisions without an active matching job still reject.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Prevent a busy worker from starving later-registered workers when `instanceConcurrency` limits shared capacity. Polling resumes after the last worker served, including when a notification targets only the busy worker.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Prevent late handlers and heartbeats from changing a recovered job's newer execution when a scheduler ID is reused. Each execution now has its own claim ID. Upgrade all schedulers sharing the collection to apply the protection consistently; handlers still need to tolerate duplicate side effects.
+
+- [#539](https://github.com/ueberBrot/monque/pull/539) [`3eeb414`](https://github.com/ueberBrot/monque/commit/3eeb4146fabbb2eaf4065ae0162993a979b4bd9f) - Clear the shutdown deadline after running jobs finish so Node.js can exit promptly,
+  without waiting for the rest of `shutdownTimeout` (30 seconds by default).
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Wake local workers when an execution finishes, so queued jobs can use freed capacity without waiting for the polling interval when MongoDB change streams are unavailable.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Avoid overlapping heartbeat maintenance calls when MongoDB responds more slowly than the heartbeat interval. Later heartbeats continue after a failed call.
+
+- [#537](https://github.com/ueberBrot/monque/pull/537) [`40fd4be`](https://github.com/ueberBrot/monque/commit/40fd4bedeacfd114315eb045809ff8eda1307983) - Preserve running jobs when replacing a worker with `register(..., { replace: true })`.
+  Existing jobs continue to count toward concurrency limits, appear in Queue Views, and
+  finish before graceful shutdown returns.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Track overlapping executions of a recovered job separately. If the same scheduler claims the job again before its old handler finishes, worker concurrency, active counts, heartbeats, and graceful shutdown continue to account for both handlers.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Reject invalid numeric scheduler options at construction. Timer intervals outside the supported range now fail clearly instead of causing rapid polling. Existing zero limits, fractional durations, disabled statistics caching, and immediate retention remain supported.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Reject non-finite, negative, and fractional worker concurrency during registration, before changing an existing worker. Zero concurrency remains supported.
+
 ## 1.14.0
 
 ### Minor Changes

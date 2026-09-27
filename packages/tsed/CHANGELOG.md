@@ -1,5 +1,25 @@
 # @monque/tsed
 
+## 1.14.0
+
+### Minor Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose `enqueueMany()` through the injected `MonqueService`, including producer-only applications, with per-job scheduling, deduplication, and batch result counts.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose local `pause()`, `resume()`, and `isPaused()` controls through `MonqueService`, including individual workers addressed by their fully qualified job names.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Accept Standard Schema compatible validators in `@Job()` options. Decorated handlers receive validated, transformed payloads, and invalid input fails before handler invocation.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Expose `getProcessingState(name?)` on `MonqueService` for inspecting local worker and instance pause state.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Add `MonqueService.getQueueViewSummaries()` for queue counts and local worker activity, pause state, retry settings, and schema presence.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Require a core version that supports `leaseDuration`, so renewable claims and continuous crash recovery can be configured through Ts.ED's `monque` settings.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Support caller-owned MongoDB sessions through `MonqueService.enqueue()`, `enqueueMany()`, and `schedule()` for transactional job submission, including producer-only applications.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Configure retry limits and backoff per job through `@Job()` options. Unspecified values inherit the application's Monque settings.
+
 ## 1.13.0
 
 ### Minor Changes

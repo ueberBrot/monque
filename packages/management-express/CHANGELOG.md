@@ -1,5 +1,13 @@
 # @monque/management-express
 
+## 0.5.0
+
+### Minor Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Require `@monque/core` 1.15 or later to match the Management API’s scheduler requirements.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Require `@monque/management` 0.6 or later within the 0.6 series so mounted APIs expose worker policies and renewable lease deadlines.
+
 ## 0.4.1
 
 ### Patch Changes
