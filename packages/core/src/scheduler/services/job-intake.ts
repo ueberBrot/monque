@@ -1,4 +1,4 @@
-import { BSON, type Document } from 'mongodb';
+import { BSON, type Document, MongoServerError } from 'mongodb';
 
 import {
 	type EnqueueOptions,
@@ -72,20 +72,39 @@ export class JobIntake {
 		uniqueKey?: string,
 	): Promise<PersistedJob<T>> {
 		if (uniqueKey !== undefined) {
-			const result = await this.ctx.collection.findOneAndUpdate(
-				{
-					name: job.name,
-					uniqueKey,
-					status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-				},
-				{
-					$setOnInsert: job,
-				},
-				{
-					upsert: true,
-					returnDocument: 'after',
-				},
-			);
+			const filter = {
+				name: job.name,
+				uniqueKey,
+				status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+			};
+			const result = await this.ctx.collection
+				.findOneAndUpdate(
+					filter,
+					{
+						$setOnInsert: job,
+					},
+					{
+						upsert: true,
+						returnDocument: 'after',
+					},
+				)
+				.catch(async (error: unknown) => {
+					if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
+					const pattern: unknown = error['keyPattern'];
+					if (
+						typeof pattern !== 'object' ||
+						pattern === null ||
+						!('name' in pattern) ||
+						pattern.name !== 1 ||
+						!('uniqueKey' in pattern) ||
+						pattern.uniqueKey !== 1 ||
+						Object.keys(pattern).length !== 2
+					)
+						throw error;
+					const existing = await this.ctx.collection.findOne(filter, { readPreference: 'primary' });
+					if (!existing) throw error;
+					return existing;
+				});
 
 			if (!result) {
 				throw new ConnectionError(
