@@ -1,6 +1,7 @@
 import type { Collection, Db, Document, WithId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, type Mocked, vi } from 'vitest';
 
+import { JobFactoryHelpers } from '@tests/factories';
 import { JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
 
@@ -38,6 +39,32 @@ describe('Monque Shutdown Race Condition', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 	});
+
+	it.each([false, true])(
+		'clears the shutdown deadline when a handler drains (failure: %s)',
+		async (fail) => {
+			monque = new Monque(db, { recoverStaleJobs: false, workerConcurrency: 1 });
+			await monque.initialize();
+			const started = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			collection.findOneAndUpdate
+				.mockResolvedValueOnce(JobFactoryHelpers.processing({ name: 'work' }))
+				.mockResolvedValue(null);
+			monque.register('work', async () => {
+				started.resolve();
+				await release.promise;
+				if (fail) throw new Error('Handler failed during shutdown');
+			});
+			monque.start();
+			await started.promise;
+			const stopping = monque.stop();
+			await vi.advanceTimersByTimeAsync(0);
+			release.resolve();
+			await stopping;
+			await monque.stop();
+			expect(vi.getTimerCount()).toBe(0);
+		},
+	);
 
 	it('should abort polling loop immediately when stop() is called mid-loop', async () => {
 		// Mock updateMany to simulate successful stale job recovery during initialization
