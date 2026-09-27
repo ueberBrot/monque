@@ -59,11 +59,11 @@
 		"build": "tsdown",
 		"build:client": "vite build",
 		"check:exports": "publint && attw --pack .",
-		"clean": "rimraf dist coverage .turbo",
+		"clean": "rimraf dist .turbo",
 		"preview": "vite preview",
 		"type-check": "tsc --noEmit",
 		"test": "vitest run",
-		"test:unit": "bun run type-check && vitest run --coverage.enabled=false",
+		"test:unit": "bun run type-check && vitest run",
 		"lint": "biome check ."
 	},
 	"dependencies": {

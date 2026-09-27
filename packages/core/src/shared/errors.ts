@@ -21,7 +21,6 @@ export class MonqueError extends Error {
 		super(message);
 		this.name = 'MonqueError';
 		// Maintains proper stack trace for where our error was thrown (only available on V8)
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, MonqueError);
 		}
@@ -49,7 +48,6 @@ export class InvalidCronError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'InvalidCronError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, InvalidCronError);
 		}
@@ -77,7 +75,6 @@ export class ConnectionError extends MonqueError {
 		if (options?.cause) {
 			this.cause = options.cause;
 		}
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, ConnectionError);
 		}
@@ -106,7 +103,6 @@ export class ShutdownTimeoutError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'ShutdownTimeoutError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, ShutdownTimeoutError);
 		}
@@ -139,7 +135,6 @@ export class WorkerRegistrationError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'WorkerRegistrationError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, WorkerRegistrationError);
 		}
@@ -169,7 +164,6 @@ export class JobStateError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'JobStateError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, JobStateError);
 		}
@@ -194,7 +188,6 @@ export class InvalidCursorError extends MonqueError {
 	constructor(message: string) {
 		super(message);
 		this.name = 'InvalidCursorError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, InvalidCursorError);
 		}
@@ -231,7 +224,6 @@ export class InvalidJobIdentifierError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'InvalidJobIdentifierError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, InvalidJobIdentifierError);
 		}
@@ -256,7 +248,6 @@ export class AggregationTimeoutError extends MonqueError {
 	constructor(message: string = 'Statistics aggregation exceeded 30 second timeout') {
 		super(message);
 		this.name = 'AggregationTimeoutError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, AggregationTimeoutError);
 		}
@@ -287,7 +278,6 @@ export class PayloadTooLargeError extends MonqueError {
 	) {
 		super(message);
 		this.name = 'PayloadTooLargeError';
-		/* istanbul ignore next -- @preserve captureStackTrace is always available in Node.js */
 		if (Error.captureStackTrace) {
 			Error.captureStackTrace(this, PayloadTooLargeError);
 		}

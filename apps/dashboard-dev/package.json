@@ -10,7 +10,7 @@
 		"preview": "vite preview",
 		"type-check": "tsc --noEmit",
 		"test": "vitest run",
-		"test:unit": "bun run type-check && vitest run --coverage.enabled=false",
+		"test:unit": "bun run type-check && vitest run",
 		"test:e2e": "bun run --cwd ../.. build --filter=@monque/dashboard-express --filter=@monque/management-express && playwright test"
 	},
 	"dependencies": {

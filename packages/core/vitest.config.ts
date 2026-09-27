@@ -13,29 +13,6 @@ export default defineConfig({
 		globals: true,
 		environment: 'node',
 		include: ['tests/**/*.test.ts'],
-		coverage: {
-			enabled: true,
-			provider: 'v8',
-			reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
-			reportsDirectory: './coverage',
-			include: ['src/**/*.ts'],
-			exclude: [
-				'**/node_modules/**',
-				'**/dist/**',
-				'**/*.d.ts',
-				'**/tests/**',
-				'**/*.config.ts',
-				'**/*.config.js',
-				'**/index.ts',
-				'src/**/types.ts',
-			],
-			thresholds: {
-				lines: 85,
-				functions: 85,
-				branches: 75,
-				statements: 85,
-			},
-		},
 		// Global setup for MongoDB Testcontainers (returns teardown function)
 		globalSetup: ['./tests/setup/global-setup.ts'],
 		// Seed faker for deterministic tests

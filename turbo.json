@@ -18,12 +18,12 @@
 		},
 		"test": {
 			"dependsOn": ["^build"],
-			"outputs": ["coverage/**"],
+			"outputs": [],
 			"inputs": ["$TURBO_DEFAULT$"]
 		},
 		"test:unit": {
 			"dependsOn": ["^build"],
-			"outputs": ["coverage/**"],
+			"outputs": [],
 			"inputs": ["$TURBO_DEFAULT$"]
 		},
 		"test:integration": {
