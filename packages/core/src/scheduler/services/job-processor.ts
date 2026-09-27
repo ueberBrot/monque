@@ -27,6 +27,7 @@ export class JobProcessor {
 	 * decremented in the `processJob` finally block. Used for instance-level throttling.
 	 */
 	private _totalActiveJobs = 0;
+	private lastServedWorker: string | undefined;
 
 	private readonly lifecycle: JobLifecycle;
 
@@ -68,7 +69,8 @@ export class JobProcessor {
 	 * change-stream-triggered polls from being silently dropped.
 	 *
 	 * @param targetNames - Optional set of worker names to poll. When provided, only the
-	 * specified workers are checked. Used by change stream handler for targeted polling.
+	 * specified workers are checked unless they share an instance concurrency limit.
+	 * Used by change stream handler for targeted polling.
 	 */
 	async poll(targetNames?: ReadonlySet<string>): Promise<void> {
 		if (!this.ctx.isRunning()) {
@@ -106,7 +108,18 @@ export class JobProcessor {
 			return;
 		}
 
-		for (const [name, worker] of this.ctx.workers) {
+		let names: Iterable<string> = this.ctx.workers.keys();
+		if (instanceConcurrency !== undefined) {
+			const entries = [...names];
+			const next = entries.findIndex((name) => name === this.lastServedWorker) + 1;
+			names = entries.slice(next).concat(entries.slice(0, next));
+			// A targeted notification must not bypass workers waiting for a shared slot.
+			targetNames = undefined;
+		}
+
+		for (const name of names) {
+			const worker = this.ctx.workers.get(name);
+			if (!worker) continue;
 			// Skip workers not in the target set (if provided)
 			if (targetNames && !targetNames.has(name)) {
 				continue;
@@ -146,6 +159,7 @@ export class JobProcessor {
 									return;
 								}
 								found++;
+								this.lastServedWorker = name;
 
 								if (this.ctx.isRunning()) {
 									// Add to activeJobs immediately to correctly track concurrency

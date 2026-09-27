@@ -203,6 +203,12 @@ monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
 // But total across all three never exceeds 10
 ```
 
+When workers share an `instanceConcurrency` limit, polling resumes after the worker
+that last acquired a job. A busy worker cannot keep taking every new slot ahead of
+later-registered workers. Notifications for one job name also check other workers
+waiting for shared capacity. Running jobs are not interrupted, and jobs within each
+worker are still acquired in their scheduled order.
+
 <Aside type="tip">
   Set `instanceConcurrency` to fit the CPU, memory, and database connections available to
   one scheduler process.
