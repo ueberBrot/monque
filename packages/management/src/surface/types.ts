@@ -9,28 +9,7 @@ import type {
 } from '@monque/core';
 import type { OpenAPIHandler } from '@orpc/openapi/fetch';
 
-export type {
-	BulkActionErrorDto,
-	BulkActionResultDto,
-	CapabilitiesDto,
-	CapabilityActionsDto,
-	DeleteJobDto,
-	JobCursorPageDto,
-	JobDetailInputDto,
-	JobDetailParamsDto,
-	JobDto,
-	JobListQueryDto,
-	JobSelectorDto,
-	JobStatusDto,
-	ManagementErrorDto,
-	QueueStatsDto,
-	QueueViewSummaryDto,
-	QueueViewSummaryListDto,
-	QueueViewWorkerDto,
-	RescheduleJobInputDto,
-	RescheduleJobRequestDto,
-	SchedulerHealthDto,
-} from '../schemas/index.js';
+export type { CapabilitiesDto, CapabilityActionsDto } from '../schemas/index.js';
 
 /**
  * Authorization action names used by the management surface.
