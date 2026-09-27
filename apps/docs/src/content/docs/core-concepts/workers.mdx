@@ -129,6 +129,9 @@ before initialization or worker registration, and repeated calls are safe. A sto
 cycle on the same instance preserves pauses. Resuming the whole instance preserves
 individually paused workers; resuming a worker does not override a whole-instance pause.
 `isPaused(name)` reports the effective state, while `isPaused()` reports the instance pause.
+`getProcessingState(name?)` also returns the scheduler's `instanceId` and `globallyPaused`,
+so management clients can distinguish a worker pause from an instance-wide pause.
+The same method is available on Ts.ED's `MonqueService`.
 
 Use `stop()` when you need to drain and shut down. A paused, connected scheduler stays
 healthy. To stop execution across a fleet, pause each consumer instance.
@@ -283,6 +286,12 @@ worker are still acquired in their scheduled order.
 | I/O-bound tasks (database, API) | 5-20                     |
 | Memory-intensive tasks          | Limited by available RAM |
 | External API calls | Limit simultaneous requests; enforce time-based rate limits separately |
+
+When an execution finishes, Monque notifies the local scheduler to claim waiting
+jobs for the available slot. This shares the normal notification batching window
+and works even when change streams are unavailable. Change streams remain the
+primary way to discover database changes; without them, the polling interval
+controls discovery of work written by other producers.
 
 ## Multiple Workers
 

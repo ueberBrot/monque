@@ -155,29 +155,10 @@ export class JobProcessor {
 						this.lifecycle
 							.claimNext(name)
 							.then(async (job) => {
-								if (!job) {
-									return;
-								}
+								if (!job) return;
 								found++;
 								this.lastServedWorker = name;
-
-								if (this.ctx.isRunning() && !this.ctx.isPaused(name)) {
-									// Add to activeJobs immediately to correctly track concurrency
-									worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
-									this._totalActiveJobs++;
-
-									this.processJob(job, worker).catch((error: unknown) => {
-										this.ctx.emit('job:error', { error: toError(error), job });
-									});
-								} else {
-									try {
-										await this.lifecycle.releaseOwnedClaim(job);
-									} catch (error) {
-										if (this.ctx.isRunning())
-											this.ctx.emit('job:error', { error: toError(error), job });
-										// Shutdown cleanup remains best effort.
-									}
-								}
+								await this.dispatchClaim(job, worker, name);
 							})
 							.catch((error: unknown) => {
 								this.ctx.emit('job:error', { error: toError(error) });
@@ -192,6 +173,27 @@ export class JobProcessor {
 				remaining -= size;
 			}
 		}
+	}
+
+	private async dispatchClaim(
+		job: PersistedJob,
+		worker: WorkerRegistration,
+		name: string,
+	): Promise<void> {
+		if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
+			try {
+				await this.lifecycle.releaseOwnedClaim(job);
+			} catch (error) {
+				if (this.ctx.isRunning()) this.ctx.emit('job:error', { error: toError(error), job });
+			}
+			return;
+		}
+
+		worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
+		this._totalActiveJobs++;
+		this.processJob(job, worker).catch((error: unknown) => {
+			this.ctx.emit('job:error', { error: toError(error), job });
+		});
 	}
 
 	/**
@@ -240,7 +242,7 @@ export class JobProcessor {
 		} finally {
 			worker.activeJobs.delete(claimId);
 			this._totalActiveJobs--;
-			this.ctx.notifyJobFinished();
+			this.ctx.notifyJobFinished(job.name);
 		}
 	}
 }
