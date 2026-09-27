@@ -59,6 +59,11 @@
 		"check": "biome check --write . && bun run type-check",
 		"check:exports": "turbo check:exports",
 		"check:unused": "knip",
+		"analyze": "fallow",
+		"analyze:unused": "fallow dead-code",
+		"analyze:dupes": "fallow dupes",
+		"analyze:health": "fallow health --hotspots --targets",
+		"analyze:changes": "fallow audit",
 		"sandcastle": "bun .sandcastle/main.ts"
 	},
 	"devDependencies": {
@@ -68,6 +73,7 @@
 		"@changesets/changelog-github": "^1.0.1",
 		"@changesets/cli": "^3.0.3",
 		"@types/node": "^22.20.3",
+		"fallow": "3.30.0",
 		"knip": "^6.36.0",
 		"lefthook": "^2.1.14",
 		"publint": "^0.3.24",

@@ -99,4 +99,19 @@ describe('runtime options', () => {
 		);
 		expect(() => monque.register('email', handler)).toThrow('already registered');
 	});
+
+	it.each([
+		{ maxRetries: Number.NaN },
+		{ maxRetries: 0.5 },
+		{ baseRetryInterval: -1 },
+		{ maxBackoffDelay: Infinity },
+	])('rejects invalid worker retry options before replacing its handler: %s', (options) => {
+		const monque = new Monque(db);
+		const handler = async () => {};
+		expect(() => monque.register('email', handler, options)).toThrow(MonqueError);
+		expect(() => monque.register('email', handler)).not.toThrow();
+		expect(() => monque.register('email', handler, { ...options, replace: true })).toThrow(
+			MonqueError,
+		);
+	});
 });

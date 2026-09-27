@@ -808,7 +808,15 @@ describe('JobQueryService', () => {
 			expect(Object.isFrozen(summary)).toBe(true);
 			expect(Object.isFrozen(summary.stats)).toBe(true);
 			expect(Object.isFrozen(summary.worker)).toBe(true);
-			expect(Object.keys(summary.worker ?? {})).toEqual(['concurrency', 'activeCount']);
+			expect(Object.keys(summary.worker ?? {})).toEqual([
+				'concurrency',
+				'activeCount',
+				'paused',
+				'hasSchema',
+				'maxRetries',
+				'baseRetryInterval',
+				'maxBackoffDelay',
+			]);
 			expect(summary.worker).not.toHaveProperty('activeJobs');
 			expect(summary.worker).not.toHaveProperty('activeJobIds');
 		});

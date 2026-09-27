@@ -18,6 +18,42 @@ import { createManagementSurface } from '@/index';
 import { JobCursorPageDtoSchema, JobDtoSchema } from '@/schemas';
 
 describe('oRPC Management read routes', () => {
+	test.each([new Date('2026-09-27T12:00:00Z'), undefined])(
+		'serializes renewable lease deadlines in detail and both listing views: %s',
+		async (leaseExpiresAt) => {
+			const job = createManagementJob({
+				status: 'processing',
+				...(leaseExpiresAt ? { leaseExpiresAt } : {}),
+			});
+			const surface = createManagementSurface({
+				monque: createManagementMonque({
+					getJob: getManagementJobById(job),
+					getJobsWithCursor: async () => ({
+						jobs: [job],
+						cursor: null,
+						hasNextPage: false,
+						hasPreviousPage: false,
+					}),
+				}),
+			});
+			for (const path of [
+				`/api/v1/jobs/${job._id.toHexString()}`,
+				'/api/v1/jobs',
+				'/api/v1/jobs?view=summary',
+			]) {
+				const response = await handleManagementGet(surface, path);
+				expect(response.status).toBe(200);
+				const body = await response.json();
+				const dto = path.includes(job._id.toHexString())
+					? JobDtoSchema.parse(body)
+					: JobCursorPageDtoSchema.parse(body).jobs[0];
+				if (leaseExpiresAt)
+					expect(dto).toMatchObject({ leaseExpiresAt: leaseExpiresAt.toISOString() });
+				else expect(dto).not.toHaveProperty('leaseExpiresAt');
+			}
+		},
+	);
+
 	test('exposes a terminal failure after one attempt', async () => {
 		const job = createManagementJob({
 			status: 'failed',
@@ -505,6 +541,11 @@ describe('oRPC Management read routes', () => {
 				worker: {
 					concurrency: 10,
 					activeCount: 2,
+					paused: true,
+					hasSchema: true,
+					maxRetries: 0,
+					baseRetryInterval: 0.5,
+					maxBackoffDelay: 100,
 				},
 			},
 			{
@@ -552,6 +593,11 @@ describe('oRPC Management read routes', () => {
 					worker: {
 						concurrency: 10,
 						activeCount: 2,
+						paused: true,
+						hasSchema: true,
+						maxRetries: 0,
+						baseRetryInterval: 0.5,
+						maxBackoffDelay: 100,
 					},
 				},
 				{
