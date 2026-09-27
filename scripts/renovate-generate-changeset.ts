@@ -1,34 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { glob, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 function sh(cmd: string, args: string[]): string {
 	return execFileSync(cmd, args, { encoding: 'utf8' }).trim();
-}
-
-function extractFirstSemver(
-	value: unknown,
-): { major: number; minor: number; patch: number } | null {
-	if (typeof value !== 'string') return null;
-	const match = value.match(/(\d+)\.(\d+)\.(\d+)/);
-	if (!match) return null;
-	return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
-}
-
-type BumpType = 'patch' | 'minor' | 'major';
-
-function semverDiffType(from: unknown, to: unknown): BumpType {
-	const a = extractFirstSemver(from);
-	const b = extractFirstSemver(to);
-	if (!a || !b) return 'patch';
-	if (b.major !== a.major) return 'major';
-	if (b.minor !== a.minor) return 'minor';
-	if (b.patch !== a.patch) return 'patch';
-	return 'patch';
-}
-
-function maxBump(current: BumpType, next: BumpType): BumpType {
-	const order: Record<BumpType, number> = { patch: 0, minor: 1, major: 2 };
-	return order[next] > order[current] ? next : current;
 }
 
 interface PackageJson {
@@ -116,99 +91,53 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const depKeys = ['dependencies', 'optionalDependencies', 'peerDependencies'] as const;
-	const packageBumps = new Map<string, BumpType>();
-	const packageSummaries = new Map<string, Array<{ depName: string; from: string; to: string }>>();
-
 	for (const pkgPath of packagesToScan) {
 		const before = readJsonAt(baseSha, pkgPath);
 		const after = await readJsonFile(pkgPath);
+		if (!isRecord(before) || !isRecord(after) || after.private === true) continue;
+		if (typeof after.name !== 'string') continue;
 
-		if (!isRecord(before) || !isRecord(after)) continue;
-		if (after.private === true) continue;
-
-		const pkgName = after.name;
-		if (typeof pkgName !== 'string') continue;
-
-		let bump: BumpType = 'patch';
-		const updatesMap = new Map<string, { from: string; to: string; type: BumpType }>();
-
-		for (const key of depKeys) {
-			const prev = isRecord(before[key]) ? (before[key] as Record<string, string>) : {};
-			const next = isRecord(after[key]) ? (after[key] as Record<string, string>) : {};
-
-			const allDepNames = new Set([...Object.keys(prev), ...Object.keys(next)]);
-
-			for (const depName of allDepNames) {
-				const rawFrom = prev[depName];
-				const rawTo = next[depName];
-
-				if (rawFrom === undefined || rawTo === undefined) continue;
-
-				const from = resolveVersion(depName, rawFrom, rootPkgBefore);
-				const to = resolveVersion(depName, rawTo, rootPkgAfter);
-
-				if (from === to) continue;
-
-				const type = semverDiffType(from, to);
-				bump = maxBump(bump, type);
-
-				const existing = updatesMap.get(depName);
-				const order: Record<BumpType, number> = { patch: 0, minor: 1, major: 2 };
-
-				if (!existing || order[type] > order[existing.type]) {
-					updatesMap.set(depName, { from, to, type });
-				}
-			}
-		}
-
-		const updates = Array.from(updatesMap.entries()).map(([depName, data]) => ({
-			depName,
-			from: data.from,
-			to: data.to,
-		}));
-
-		if (updates.length === 0) continue;
-
-		packageBumps.set(pkgName, bump);
-		packageSummaries.set(pkgName, updates);
-	}
-
-	if (packageBumps.size === 0) {
-		console.log('No publishable dependency changes detected; nothing to do.');
-		return;
-	}
-
-	await mkdir('.changeset', { recursive: true });
-
-	const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-	const rand = Math.random().toString(16).slice(2, 10);
-	const changesetPath = `.changeset/renovate-deps-${stamp}-${rand}.md`;
-
-	const frontMatterLines: string[] = ['---'];
-	for (const [pkgName, bump] of packageBumps.entries()) {
-		frontMatterLines.push(`${JSON.stringify(pkgName)}: ${bump}`);
-	}
-	frontMatterLines.push('---');
-
-	const summaryLines: string[] = [];
-	for (const [pkgName, updates] of packageSummaries.entries()) {
-		for (const u of updates) {
-			summaryLines.push(`- ${pkgName}: ${u.depName} (${u.from} → ${u.to})`);
+		for (const { name, from, to } of dependencyUpdates(
+			before,
+			after,
+			rootPkgBefore,
+			rootPkgAfter,
+		)) {
+			const id = createHash('sha256')
+				.update(JSON.stringify([after.name, name, from, to]))
+				.digest('hex')
+				.slice(0, 16);
+			const changesetPath = `.changeset/renovate-deps-${id}.md`;
+			await mkdir('.changeset', { recursive: true });
+			await writeFile(
+				changesetPath,
+				`---\n${JSON.stringify(after.name)}: minor\n---\n\nUpdate ${name} from ${from} to ${to}.\n`,
+			);
+			console.log(`Created ${changesetPath}`);
 		}
 	}
+}
 
-	const body = [
-		...frontMatterLines,
-		'',
-		'chore(deps): update dependencies',
-		'',
-		...summaryLines,
-		'',
-	].join('\n');
-	await writeFile(changesetPath, body, 'utf8');
-
-	console.log(`Created ${changesetPath}`);
+function dependencyUpdates(
+	before: Record<string, unknown>,
+	after: Record<string, unknown>,
+	rootBefore: unknown,
+	rootAfter: unknown,
+): Array<{ name: string; from: string; to: string }> {
+	const updates = new Map<string, { name: string; from: string; to: string }>();
+	for (const key of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+		const prev = before[key];
+		const next = after[key];
+		if (!isRecord(prev) || !isRecord(next)) continue;
+		for (const [name, rawTo] of Object.entries(next)) {
+			const rawFrom = prev[name];
+			if (typeof rawFrom !== 'string' || typeof rawTo !== 'string') continue;
+			const from = resolveVersion(name, rawFrom, rootBefore);
+			const to = resolveVersion(name, rawTo, rootAfter);
+			if (from !== to) updates.set(name, { name, from, to });
+		}
+	}
+	return [...updates.values()];
 }
 
 await main();

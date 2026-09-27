@@ -2,7 +2,7 @@ import { useSelector } from '@tanstack/react-store';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { useAppForm } from '@/forms/form';
+import { useAppForm } from '@/forms';
 import { fromDateTimeLocalValue } from '@/lib/dates';
 
 import {

@@ -11,7 +11,7 @@ import { ProcessingStateDtoSchema } from './processing.js';
 import { QueueStatsDtoSchema, QueueViewSummaryListDtoSchema } from './queue-view.js';
 import { SchedulerHealthDtoSchema } from './scheduler-health.js';
 
-export const ManagementOpenApiSchemas = {
+const ManagementOpenApiSchemas = {
 	PROCESSING_STATE: { schema: ProcessingStateDtoSchema },
 	CAPABILITIES: {
 		schema: CapabilitiesDtoSchema,

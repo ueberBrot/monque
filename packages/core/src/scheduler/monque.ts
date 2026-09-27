@@ -17,6 +17,7 @@ import {
 	type JobSelector,
 	JobStatus,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -496,10 +497,14 @@ export class Monque extends EventEmitter {
 	 * Enqueue jobs using unordered MongoDB bulk writes. Validates all inputs before writing.
 	 * A database failure can leave some jobs persisted; ConnectionError.cause retains
 	 * the driver's error and partial result. Use unique keys when retrying a batch.
+	 * Pass a session to join a caller-owned transaction; transaction errors remain native.
 	 */
-	async enqueueMany(jobs: readonly EnqueueJob[]): Promise<EnqueueManyResult> {
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options: JobWriteOptions = {},
+	): Promise<EnqueueManyResult> {
 		this.ensureInitialized();
-		return this.intake.enqueueMany(jobs);
+		return this.intake.enqueueMany(jobs, options);
 	}
 
 	/**
