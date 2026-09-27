@@ -18,11 +18,8 @@
  * }
  * ```
  */
-import { Store } from '@tsed/core';
-
-import { MONQUE } from '@/constants';
-
-import type { JobDecoratorOptions, JobMetadata, JobStore } from './types.js';
+import { appendJobMetadata } from './append-job-metadata.js';
+import type { JobDecoratorOptions, JobMetadata } from './types.js';
 
 /**
  * Method decorator that registers a method as a job handler.
@@ -44,23 +41,6 @@ export function Job(name: string, options?: JobDecoratorOptions): MethodDecorato
 			opts: options || {},
 		};
 
-		// Get the class constructor (target is the prototype for instance methods)
-		const targetConstructor = target.constructor;
-		const store = Store.from(targetConstructor);
-
-		// Get or initialize the MONQUE store
-		const existing = store.get<Partial<JobStore>>(MONQUE) || {
-			type: 'controller',
-			jobs: [],
-			cronJobs: [],
-		};
-
-		// Add this job to the list
-		const jobs = [...(existing.jobs || []), jobMetadata];
-
-		store.set(MONQUE, {
-			...existing,
-			jobs,
-		});
+		appendJobMetadata(target, jobMetadata);
 	};
 }

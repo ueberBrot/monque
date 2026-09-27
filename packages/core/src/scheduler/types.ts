@@ -77,11 +77,18 @@ export interface MonqueOptions {
 	 * Maximum time in milliseconds a job can be in 'processing' status before
 	 * being considered stale and eligible for recovery.
 	 *
-	 * Stale recovery uses `lockedAt` as the source of truth; this is an absolute
-	 * “time locked” limit, not a heartbeat timeout.
+	 * Applies to claims without a renewable lease. This is an absolute time locked
+	 * limit based on `lockedAt`, not a heartbeat timeout.
 	 * @default 1800000 (30 minutes)
 	 */
 	lockTimeout?: number;
+
+	/**
+	 * Opt into renewable claims and periodic stale recovery, in milliseconds.
+	 * Must exceed heartbeatInterval. Upgrade all schedulers sharing the collection
+	 * before enabling this option. Omit to keep absolute lockTimeout behavior.
+	 */
+	leaseDuration?: number;
 
 	/**
 	 * Unique identifier for this scheduler instance.
@@ -96,14 +103,16 @@ export interface MonqueOptions {
 	 * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
 	 * to indicate liveness for monitoring/debugging.
 	 *
-	 * Note: stale recovery is based on `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
+	 * With `leaseDuration`, each heartbeat also extends the claim's lease.
+	 * Otherwise, recovery uses `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
 	 * @default 30000 (30 seconds)
 	 */
 	heartbeatInterval?: number;
 
 	/**
-	 * Whether to recover stale processing jobs on scheduler startup.
-	 * When true, jobs with lockedAt older than lockTimeout will be reset to pending.
+	 * Whether to recover stale processing jobs on startup and, with `leaseDuration`,
+	 * after each heartbeat. Expired leases and unleased claims older than
+	 * `lockTimeout` are reset to pending.
 	 * @default true
 	 */
 	recoverStaleJobs?: boolean;
@@ -183,7 +192,7 @@ export interface MonqueOptions {
 	/**
 	 * Maximum allowed BSON byte size for job data payloads.
 	 *
-	 * When set, `enqueue()`, `now()`, and `schedule()` validate the payload size
+	 * When set, `enqueue()`, `enqueueMany()`, `now()`, and `schedule()` validate the payload size
 	 * using `BSON.calculateObjectSize()` before insertion. Jobs exceeding this limit
 	 * throw `PayloadTooLargeError`.
 	 *
@@ -216,4 +225,14 @@ export interface MonqueOptions {
 	 * @default 30000 (30 seconds)
 	 */
 	safetyPollInterval?: number;
+}
+
+/** Processing state on one scheduler instance, optionally scoped to one job name. */
+export interface ProcessingState {
+	readonly instanceId: string;
+	readonly name?: string;
+	/** Effective pause state for the requested scope. */
+	readonly paused: boolean;
+	/** A scheduler-wide pause also prevents every named worker from claiming jobs. */
+	readonly globallyPaused: boolean;
 }

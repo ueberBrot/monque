@@ -146,7 +146,6 @@ function toJobListStatusQuery(status: readonly JobStatusDto[]): JobListQueryDto[
 }
 
 export {
-	DEFAULT_LIMIT,
 	getJobsSearchIdentity,
 	getNextSort,
 	getStatusLabel,
@@ -155,7 +154,6 @@ export {
 	type JobListSortDirectionDto,
 	type JobStatusDto,
 	type JobsRouteSearch,
-	MAX_LIMIT,
 	parseJobsRouteSearch,
 	toJobListQueryInput,
 };

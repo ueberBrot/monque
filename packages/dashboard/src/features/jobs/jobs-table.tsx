@@ -12,6 +12,7 @@ import {
 	type Updater,
 	useTable,
 } from '@tanstack/react-table';
+import { useTanStackTableDevtools } from '@tanstack/react-table-devtools';
 import { ArrowDown, ArrowUp, ArrowUpDown, MoreHorizontal } from 'lucide-react';
 import { createContext, useContext } from 'react';
 
@@ -90,6 +91,7 @@ function JobsTable({
 	const compact = useMediaQuery('(max-width: 767px)');
 	const narrow = useMediaQuery('(max-width: 639px)');
 	const table = useTable({
+		key: 'jobs',
 		features,
 		data: jobs,
 		columns: JOB_COLUMNS,
@@ -107,6 +109,8 @@ function JobsTable({
 			},
 		},
 	});
+
+	useTanStackTableDevtools(table, { enabled: import.meta.env.DEV });
 
 	return (
 		<div className="overflow-x-auto">

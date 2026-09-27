@@ -23,8 +23,9 @@ import {
 import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { Job } from '@/jobs';
+import { type Job, JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
+import { NonRetryableError } from '@/shared';
 
 describe('change streams', () => {
 	let db: Db;
@@ -250,52 +251,55 @@ describe('change streams', () => {
 	});
 
 	describe('fallback to polling', () => {
-		it('should emit changestream:fallback event when change streams unavailable', async () => {
-			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
-
-			// Spy on db.collection to return a collection with a failing watch method
-			const originalCollectionFn = db.collection.bind(db);
-			const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
-				const collection = originalCollectionFn(name, options);
-				// Mock watch to throw immediately
-				vi.spyOn(collection, 'watch').mockImplementation(() => {
-					throw new Error('Change streams unavailable');
+		it.each([false, true])(
+			'refills capacity without streams or waiting for the fallback interval (failure: %s)',
+			async (fail) => {
+				collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+				const originalCollection = db.collection.bind(db);
+				const collectionSpy = vi.spyOn(db, 'collection').mockImplementation((name, options) => {
+					const collection = originalCollection(name, options);
+					vi.spyOn(collection, 'watch').mockImplementation(() => {
+						throw new Error('Change streams unavailable');
+					});
+					return collection;
 				});
-				return collection;
-			});
-
-			const monque = new Monque(db, {
-				collectionName,
-				pollInterval: 100,
-			});
-			monqueInstances.push(monque);
-			await monque.initialize();
-
-			let fallbackEmitted = false;
-			monque.on('changestream:fallback', () => {
-				fallbackEmitted = true;
-			});
-
-			let processed = false;
-			monque.register(TEST_CONSTANTS.JOB_NAME, async () => {
-				processed = true;
-			});
-
-			monque.start();
-
-			// Wait for fallback event
-			await waitFor(async () => fallbackEmitted, { timeout: 2000 });
-			expect(fallbackEmitted).toBe(true);
-
-			// Enqueue and verify processing still works via polling
-			await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
-			await waitFor(async () => processed, { timeout: 5000 });
-
-			expect(processed).toBe(true);
-
-			// Cleanup spy
-			collectionSpy.mockRestore();
-		});
+				const monque = new Monque(db, {
+					collectionName,
+					workerConcurrency: 1,
+					pollInterval: 60_000,
+					safetyPollInterval: 60_000,
+				});
+				monqueInstances.push(monque);
+				const started = Promise.withResolvers<void>();
+				const unavailable = Promise.withResolvers<void>();
+				const release = Promise.withResolvers<void>();
+				try {
+					await monque.initialize();
+					monque.once('changestream:fallback', () => unavailable.resolve());
+					monque.register<{ first: boolean }>('work', async (job) => {
+						if (job.data.first) {
+							started.resolve();
+							await release.promise;
+							if (fail) throw new NonRetryableError('Terminal failure');
+						}
+					});
+					await monque.enqueue('work', { first: true });
+					const next = await monque.enqueue('work', { first: false });
+					monque.start();
+					await Promise.all([started.promise, unavailable.promise]);
+					release.resolve();
+					await waitFor(
+						async () => (await monque.getJob(next._id))?.status === JobStatus.COMPLETED,
+						{ timeout: 5000 },
+					);
+					expect((await monque.getJob(next._id))?.failCount).toBe(0);
+				} finally {
+					release.resolve();
+					await monque.stop();
+					collectionSpy.mockRestore();
+				}
+			},
+		);
 
 		it('should use polling as backup even with active change streams', async () => {
 			collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);

@@ -17,12 +17,14 @@ import {
 	getTestDb,
 	stopMonqueInstances,
 	uniqueCollectionName,
+	waitFor,
 } from '@test-utils/test-utils.js';
-import type { Db } from 'mongodb';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { Collection, type Db, MongoBulkWriteError } from 'mongodb';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
+import { ConnectionError } from '@/shared';
 
 describe('enqueue()', () => {
 	let db: Db;
@@ -43,6 +45,141 @@ describe('enqueue()', () => {
 		if (collectionName) {
 			await clearCollection(db, collectionName);
 		}
+	});
+
+	describe('enqueueMany()', () => {
+		let monque: Monque;
+		beforeEach(async () => {
+			collectionName = uniqueCollectionName('bulk-enqueue');
+			monque = new Monque(db, {
+				collectionName,
+				maxPayloadSize: 128,
+				pollInterval: 60_000,
+				safetyPollInterval: 60_000,
+			});
+			monqueInstances.push(monque);
+			await monque.initialize();
+		});
+
+		it('preserves active payloads, deduplication, and per-job scheduling in a mixed batch', async () => {
+			const existing = await monque.enqueue('work', { original: true }, { uniqueKey: 'existing' });
+			await db
+				.collection(collectionName)
+				.updateOne({ _id: existing._id }, { $set: { status: JobStatus.PROCESSING } });
+			const completed = await monque.enqueue('work', {}, { uniqueKey: 'completed' });
+			await db
+				.collection(collectionName)
+				.updateOne({ _id: completed._id }, { $set: { status: JobStatus.COMPLETED } });
+			const runAt = new Date(Date.now() + 60_000);
+			expect(
+				await monque.enqueueMany([
+					{ name: 'work', data: { replacement: true }, uniqueKey: 'existing' },
+					{ name: 'work', data: { first: true }, uniqueKey: 'new' },
+					{ name: 'work', data: { first: true }, uniqueKey: 'new' },
+					{ name: 'plain', data: {} },
+					{ name: 'plain', data: { delayed: true }, runAt },
+					{ name: 'work', data: {}, uniqueKey: 'completed' },
+				]),
+			).toEqual({ insertedCount: 4, deduplicatedCount: 2 });
+			expect((await monque.getJob(existing._id))?.data).toEqual({ original: true });
+			expect(await db.collection(collectionName).findOne({ uniqueKey: 'new' })).toMatchObject({
+				data: { first: true },
+				status: JobStatus.PENDING,
+			});
+			expect(await db.collection(collectionName).findOne({ 'data.delayed': true })).toMatchObject({
+				nextRunAt: runAt,
+			});
+			expect(await db.collection(collectionName).countDocuments({ uniqueKey: 'completed' })).toBe(
+				2,
+			);
+			expect(await db.collection(collectionName).countDocuments()).toBe(6);
+		});
+
+		it.each([
+			{ name: '', data: {} },
+			{ name: 'work', data: {}, uniqueKey: '' },
+			{ name: 'work', data: { text: 'x'.repeat(256) } },
+		])('validates the entire batch before writing: %j', async (invalid) => {
+			await expect(monque.enqueueMany([{ name: 'valid', data: {} }, invalid])).rejects.toThrow();
+			expect(await db.collection(collectionName).countDocuments()).toBe(0);
+		});
+
+		it('deduplicates concurrent batches against the same active job', async () => {
+			const results = await Promise.all(
+				Array.from({ length: 16 }, (_, attempt) =>
+					monque.enqueueMany([
+						{ name: 'work', data: { attempt }, uniqueKey: 'shared' },
+						{ name: 'work', data: { attempt }, uniqueKey: 'shared' },
+					]),
+				),
+			);
+			expect(results.reduce((sum, result) => sum + result.insertedCount, 0)).toBe(1);
+			expect(results.reduce((sum, result) => sum + result.deduplicatedCount, 0)).toBe(31);
+			expect(await db.collection(collectionName).countDocuments()).toBe(1);
+		});
+
+		it('notifies local workers for immediate and delayed inserts without change streams', async () => {
+			const watch = vi.spyOn(Collection.prototype, 'watch').mockImplementation(() => {
+				throw new Error('Change streams unavailable');
+			});
+			const received: number[] = [];
+			const runAt = new Date(Date.now() + 1000);
+			monque.register<{ id: number }>('work', async (job) => {
+				if (job.data.id === 2) expect(Date.now()).toBeGreaterThanOrEqual(runAt.getTime());
+				received.push(job.data.id);
+			});
+			try {
+				monque.start();
+				await monque.enqueueMany([
+					{ name: 'work', data: { id: 1 } },
+					{ name: 'work', data: { id: 2 }, runAt },
+				]);
+				await waitFor(async () => received.length === 2, { timeout: 5000 });
+				expect(received).toEqual([1, 2]);
+			} finally {
+				await monque.stop();
+				watch.mockRestore();
+			}
+		});
+
+		it('does not swallow an unrelated unique-index rejection', async () => {
+			await db
+				.collection(collectionName)
+				.createIndex({ 'data.email': 1 }, { unique: true, sparse: true });
+			await monque.enqueue('existing', { email: 'same@example.test' });
+			await expect(
+				monque.enqueueMany([
+					{ name: 'work', data: { email: 'same@example.test' }, uniqueKey: 'new' },
+				]),
+			).rejects.toThrow(ConnectionError);
+			expect(await db.collection(collectionName).countDocuments({ name: 'work' })).toBe(0);
+		});
+
+		it('preserves successful writes and native error details when another job is rejected', async () => {
+			await db.command({ collMod: collectionName, validator: { 'data.reject': { $ne: true } } });
+			let failure: unknown;
+			try {
+				await monque.enqueueMany([
+					{ name: 'work', data: { id: 1 } },
+					{ name: 'work', data: { id: 2, reject: true } },
+					{ name: 'work', data: { id: 3 } },
+				]);
+			} catch (error) {
+				failure = error;
+			}
+			expect(failure).toBeInstanceOf(ConnectionError);
+			if (
+				!(failure instanceof ConnectionError) ||
+				!(failure.cause instanceof MongoBulkWriteError)
+			) {
+				throw new Error('Expected a ConnectionError caused by MongoBulkWriteError');
+			}
+			expect(failure.cause.result.upsertedCount).toBe(2);
+			expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);
+			expect(
+				await db.collection(collectionName).find().sort({ 'data.id': 1 }).toArray(),
+			).toMatchObject([{ data: { id: 1 } }, { data: { id: 3 } }]);
+		});
 	});
 
 	describe('basic enqueueing', () => {

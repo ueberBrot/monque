@@ -17,6 +17,8 @@ const MANAGEMENT_ACTIONS = [
 	'reschedule',
 	'delete',
 	'deleteBulk',
+	'pause',
+	'resume',
 ] as const;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
@@ -28,9 +30,13 @@ const DEFAULT_CAPABILITY_ACTIONS = {
 	reschedule: false,
 	delete: false,
 	deleteBulk: false,
+	pause: false,
+	resume: false,
 } satisfies CapabilityActionsDto & Record<(typeof MANAGEMENT_ACTIONS)[number], boolean>;
 
 export interface ManagementActionTarget {
+	name?: string | undefined;
+	instanceId?: string | undefined;
 	job?: PersistedJob | undefined;
 	selector?: JobSelector | undefined;
 	ids?: readonly string[] | undefined;
@@ -41,12 +47,14 @@ export type ManagementActionDecision = { allowed: true } | { allowed: false; mes
 export async function getManagementCapabilities<TContext>(
 	options: ManagementOptions<TContext>,
 	context: TContext,
+	processingTarget: ManagementActionTarget = {},
 ): Promise<CapabilitiesDto> {
 	const readOnly = options.readOnly ?? false;
 	const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 
 	const check = async (action: ManagementAction): Promise<void> => {
 		const decision = await decideManagementAction(options, action, context, {
+			...(action === 'pause' || action === 'resume' ? processingTarget : {}),
 			supported: isManagementActionSupported(options.monque, action),
 		});
 
@@ -109,6 +117,9 @@ export function isManagementActionSupported(
 	switch (action) {
 		case 'read':
 			return true;
+		case 'pause':
+		case 'resume':
+			return Boolean(monque.getProcessingState && monque[action]);
 		case 'cancel':
 			return Boolean(monque.cancelJob);
 		case 'cancelBulk':
@@ -142,5 +153,7 @@ async function isAllowedByAuthorization<TContext>(
 		job: target.job,
 		selector: target.selector,
 		ids: target.ids,
+		...(target.name === undefined ? {} : { name: target.name }),
+		...(target.instanceId === undefined ? {} : { instanceId: target.instanceId }),
 	});
 }

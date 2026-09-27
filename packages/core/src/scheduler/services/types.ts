@@ -20,13 +20,18 @@ export interface ResolvedMonqueOptions
 				| 'jobRetention'
 				| 'instanceConcurrency'
 				| 'maxPayloadSize'
+				| 'leaseDuration'
 				| 'defaultConcurrency'
 				| 'maxConcurrency'
 			>
 		>,
 		Pick<
 			MonqueOptions,
-			'maxBackoffDelay' | 'jobRetention' | 'instanceConcurrency' | 'maxPayloadSize'
+			| 'maxBackoffDelay'
+			| 'jobRetention'
+			| 'instanceConcurrency'
+			| 'maxPayloadSize'
+			| 'leaseDuration'
 		> {
 	// Ensure resolved options use the new naming convention
 	workerConcurrency: number;
@@ -56,6 +61,8 @@ export interface SchedulerContext {
 
 	/** Whether the scheduler is currently running */
 	isRunning: () => boolean;
+	/** Whether new executions are paused locally for the instance or job name */
+	isPaused: (name?: string) => boolean;
 
 	/** Type-safe event emitter */
 	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
@@ -63,8 +70,8 @@ export interface SchedulerContext {
 	/** Notify the local scheduler about a pending job transition */
 	notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
 
-	/** Notify that a job has finished processing (for reactive shutdown drain) */
-	notifyJobFinished: () => void;
+	/** Notify that local worker capacity is available and update shutdown draining */
+	notifyJobFinished: (name: string) => void;
 
 	/** Convert MongoDB document to typed PersistedJob */
 	documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;

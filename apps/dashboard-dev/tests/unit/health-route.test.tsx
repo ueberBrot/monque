@@ -39,7 +39,7 @@ describe('Health route', () => {
 
 		expect(await screen.findByText('Read-only access')).toBeTruthy();
 		expect(await screen.findByText('1 of 8 available')).toBeTruthy();
-		expect((await screen.findAllByText('This dashboard is read-only.')).length).toBe(7);
+		expect((await screen.findAllByText('This dashboard is read-only.')).length).toBe(8);
 		expect((await screen.findAllByText('Retry selected jobs')).length).toBeGreaterThan(0);
 	});
 
