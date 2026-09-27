@@ -61,13 +61,13 @@ const monque = new Monque(client.db('myapp'), {
   collectionName: 'jobs',
   pollInterval: 1000,
   maxRetries: 10,
-  defaultConcurrency: 5,
+  workerConcurrency: 5,
 });
 
 await monque.initialize();
 
 // Register workers
-monque.register('send-email', async (job) => {
+monque.register<{ to: string; subject: string }>('send-email', async (job) => {
   await sendEmail(job.data.to, job.data.subject);
 });
 
@@ -98,10 +98,10 @@ Pass a connected MongoDB database and any scheduler options you want to override
 **Options:**
 - `collectionName` - MongoDB collection name (default: `'monque_jobs'`)
 - `pollInterval` - Polling interval in ms (default: `1000`)
-- `maxRetries` - Max retry attempts (default: `10`)
+- `maxRetries` - Failed attempts before terminal failure, including the initial attempt (default: `10`)
 - `baseRetryInterval` - Base backoff interval in ms (default: `1000`)
 - `shutdownTimeout` - Graceful shutdown timeout in ms (default: `30000`)
-- `defaultConcurrency` - Jobs per worker (default: `5`)
+- `workerConcurrency` - Jobs per worker (default: `5`; `defaultConcurrency` is a deprecated alias)
 - `lockTimeout` - Stale job threshold in ms (default: `1800000`)
 - `recoverStaleJobs` - Recover stale jobs on startup (default: `true`)
 
@@ -136,7 +136,7 @@ Pass a connected MongoDB database and any scheduler options you want to override
 monque.on('job:start', (job) => { /* job started */ });
 monque.on('job:complete', ({ job, duration }) => { /* job completed */ });
 monque.on('job:fail', ({ job, error, willRetry }) => { /* job failed */ });
-monque.on('job:error', ({ error, job? }) => { /* unexpected error */ });
+monque.on('job:error', ({ error, job }) => { /* unexpected error; job may be undefined */ });
 monque.on('job:cancelled', ({ job }) => { /* job cancelled */ });
 monque.on('job:retried', ({ job, previousStatus }) => { /* job retried */ });
 monque.on('job:deleted', ({ jobId }) => { /* job deleted */ });

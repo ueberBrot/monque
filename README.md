@@ -40,7 +40,17 @@
 | ------------------------------- | ------------------------------------------- |
 | [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
 | [@monque/tsed](./packages/tsed) | Native Ts.ED integration with decorators    |
+| [@monque/management](./packages/management) | Framework-neutral job queries and actions over HTTP |
+| [@monque/management-express](./packages/management-express) | Express adapter for the Management API |
+| [@monque/dashboard](./packages/dashboard) | Prebuilt dashboard assets and configuration types |
+| [@monque/dashboard-express](./packages/dashboard-express) | Express adapter that serves the dashboard |
 | [@monque/docs](./apps/docs)     | Documentation site                          |
+
+Start with `@monque/core`. Ts.ED applications can use `@monque/tsed` to register workers
+and manage scheduler startup and shutdown. To add an operator UI to Express, use the
+[dashboard setup guide](https://ueberBrot.github.io/monque/dashboard/express/): the
+Management adapter exposes your initialized scheduler, and the Dashboard adapter serves
+the UI that calls it. Both routers use your application's authentication middleware.
 
 ## Features
 
@@ -117,7 +127,7 @@ const monque = new Monque(db, {
   maxRetries: 10,                  // Default: 10
   baseRetryInterval: 1000,         // Default: 1000ms
   shutdownTimeout: 30000,          // Default: 30s
-  defaultConcurrency: 5,           // Default: 5 jobs per worker
+  workerConcurrency: 5,           // Default: 5 jobs per worker
   lockTimeout: 1800000,            // Default: 30 minutes
   heartbeatInterval: 30000,        // Default: 30s
   recoverStaleJobs: true,          // Default: true
@@ -164,7 +174,7 @@ See the documentation for setup and usage:
 Monque takes inspiration from these job scheduling libraries:
 
 - [Agenda](https://github.com/agenda/agenda) - The original MongoDB job scheduler
-- [Pulse](https://github.com/pulsecron/pulse) - A maintained fork of Agenda
+- [Pulse](https://github.com/pulsecron/pulse) - An Agenda fork, now archived
 - [BullMQ](https://github.com/taskforcesh/bullmq) - Redis-based job queue
 - [pg-boss](https://github.com/timgit/pg-boss) - Postgres-backed job queue
 - [graphile-worker](https://github.com/graphile/worker) - Postgres job worker

@@ -133,20 +133,20 @@ monque.register('flaky-api', async (job) => {
 });
 ```
 
-### Manual Failure
+### Permanent Failure
 
-Check `job.failCount` when a handler needs to treat a retry differently. All thrown errors,
-including `MonqueError`, follow the scheduler's retry policy.
+Throw `NonRetryableError` when retrying cannot help, such as when a resource has been
+permanently deleted. The job becomes `failed` immediately and emits `job:fail` with
+`willRetry: false`. Ordinary errors, including other `MonqueError` instances, follow the
+configured retry policy.
 
 ```typescript
-monque.register('check-external-resource', async (job) => {
-  // Check if resource exists before retrying expensive operations
-  if (job.failCount > 0) {
-    const exists = await checkResourceExists(job.data.resourceId);
-    if (!exists) {
-      console.error('Resource deleted, skipping retry');
-      return; // Skip retry for deleted resources
-    }
+import { NonRetryableError } from '@monque/core';
+
+monque.register<{ resourceId: string }>('check-external-resource', async (job) => {
+  const exists = await checkResourceExists(job.data.resourceId);
+  if (!exists) {
+    throw new NonRetryableError('Resource permanently deleted');
   }
 
   await processResource(job.data.resourceId);
@@ -154,8 +154,10 @@ monque.register('check-external-resource', async (job) => {
 ```
 
 <Aside type="tip">
-  If you catch an error and return normally, Monque records a successful run. Check
-  `job.failCount` before repeating expensive work that needs extra validation on a retry.
+  Returning normally records a successful run. Throw `NonRetryableError` when you need
+  to preserve a failure for inspection. After correcting the cause, you can use
+  `retryJob()` to retry it manually. For recurring jobs, permanent failure stops the
+  schedule until you retry it.
 </Aside>
 
 ## Concurrency Control
