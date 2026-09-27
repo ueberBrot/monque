@@ -3,6 +3,7 @@ import type { Document, Filter } from 'mongodb';
 
 import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
 import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from '@/shared';
+import type { RetryOptions } from '@/workers';
 
 import type { SchedulerContext } from './types.js';
 
@@ -137,7 +138,11 @@ export class JobLifecycle {
 	/**
 	 * Fail an Owned Job, either scheduling a retry or marking it terminal.
 	 */
-	async failOwned(job: Job, error: Error): Promise<PersistedJob | null> {
+	async failOwned(
+		job: Job,
+		error: Error,
+		options: RetryOptions = this.ctx.options,
+	): Promise<PersistedJob | null> {
 		if (!isPersistedJob(job)) {
 			return null;
 		}
@@ -145,7 +150,10 @@ export class JobLifecycle {
 		const now = new Date();
 		const newFailCount = job.failCount + 1;
 
-		if (error instanceof NonRetryableError || newFailCount >= this.ctx.options.maxRetries) {
+		if (
+			error instanceof NonRetryableError ||
+			newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries)
+		) {
 			const result = await this.ctx.collection.findOneAndUpdate(
 				this.ownedJobFilter(job),
 				{
@@ -165,8 +173,8 @@ export class JobLifecycle {
 
 		const nextRunAt = calculateBackoff(
 			newFailCount,
-			this.ctx.options.baseRetryInterval,
-			this.ctx.options.maxBackoffDelay,
+			options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+			options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
 		);
 
 		const result = await this.ctx.collection.findOneAndUpdate(

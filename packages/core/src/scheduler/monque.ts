@@ -43,7 +43,11 @@ import {
 	type SchedulerContext,
 } from './services/index.js';
 import type { MonqueOptions } from './types.js';
-import { validateIntegerOption, validateOptions } from './validate-options.js';
+import {
+	validateIntegerOption,
+	validateOptions,
+	validateRetryOptions,
+} from './validate-options.js';
 
 /**
  * Default configuration values
@@ -1059,6 +1063,12 @@ export class Monque extends EventEmitter {
 		validateJobName(name);
 		const concurrency = options.concurrency ?? this.options.workerConcurrency;
 		validateIntegerOption('concurrency', concurrency);
+		const retryOptions = {
+			maxRetries: options.maxRetries ?? this.options.maxRetries,
+			baseRetryInterval: options.baseRetryInterval ?? this.options.baseRetryInterval,
+			maxBackoffDelay: options.maxBackoffDelay ?? this.options.maxBackoffDelay,
+		};
+		validateRetryOptions(retryOptions);
 
 		// Check for existing worker and throw unless replace is explicitly true
 		if (this.workers.has(name) && options.replace !== true) {
@@ -1071,6 +1081,7 @@ export class Monque extends EventEmitter {
 		this.workers.set(name, {
 			handler: handler as JobHandler,
 			concurrency,
+			retryOptions,
 			activeJobs: this.workers.get(name)?.activeJobs ?? new Map(),
 		});
 	}

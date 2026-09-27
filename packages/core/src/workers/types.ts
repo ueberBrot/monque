@@ -1,7 +1,14 @@
 import type { JobHandler, PersistedJob } from '@/jobs';
+import type { MonqueOptions } from '@/scheduler/types';
+
+export type RetryOptions = Pick<
+	MonqueOptions,
+	'maxRetries' | 'baseRetryInterval' | 'maxBackoffDelay'
+>;
 
 /**
- * Options for registering a worker.
+ * Options for registering a worker. Retry options override scheduler defaults
+ * for this job name; omitted values inherit those defaults.
  *
  * @example
  * ```typescript
@@ -10,7 +17,7 @@ import type { JobHandler, PersistedJob } from '@/jobs';
  * });
  * ```
  */
-export interface WorkerOptions {
+export interface WorkerOptions extends RetryOptions {
 	/**
 	 * Number of concurrent jobs this worker can process.
 	 * @default 5 (uses defaultConcurrency from MonqueOptions)
@@ -34,6 +41,8 @@ export interface WorkerRegistration<T = unknown> {
 	handler: JobHandler<T>;
 	/** Maximum concurrent jobs for this worker */
 	concurrency: number;
+	/** Retry settings captured when this worker was registered */
+	retryOptions?: RetryOptions;
 	/** Map of active claim IDs to their job data */
 	activeJobs: Map<string, PersistedJob<T>>;
 }

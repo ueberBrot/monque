@@ -1,4 +1,4 @@
-import { type Job, MonqueError } from '@monque/core';
+import { type Job, JobStatus, MonqueError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -10,6 +10,36 @@ import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 describe('runtime options', () => {
 	afterEach(resetMonque);
+
+	it('uses retry overrides supplied through a Job decorator', async () => {
+		@JobController('retry')
+		class EphemeralRetryController {
+			@MonqueJob('custom', { maxRetries: 2, baseRetryInterval: 0 })
+			async custom() {
+				throw new Error('Unavailable');
+			}
+
+			@MonqueJob('default')
+			async inherited() {
+				throw new Error('Unavailable');
+			}
+		}
+		await bootstrapMonque({
+			imports: [EphemeralRetryController],
+			connectionStrategy: 'db',
+			monqueConfig: { maxRetries: 1 },
+		});
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		const custom = await service.enqueue('retry.custom', {});
+		const inherited = await service.enqueue('retry.default', {});
+		await waitFor(
+			async () =>
+				(await service.getJob(custom._id.toString()))?.status === JobStatus.FAILED &&
+				(await service.getJob(inherited._id.toString()))?.status === JobStatus.FAILED,
+		);
+		expect((await service.getJob(custom._id.toString()))?.failCount).toBe(2);
+		expect((await service.getJob(inherited._id.toString()))?.failCount).toBe(1);
+	});
 
 	it('renews claims configured through Ts.ED', async () => {
 		const started = Promise.withResolvers<void>();

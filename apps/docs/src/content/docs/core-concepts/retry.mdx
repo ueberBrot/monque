@@ -70,6 +70,29 @@ const monque = new Monque(db, {
 });
 ```
 
+### Per-Worker Settings
+
+Override the same options when registering a worker:
+
+```typescript
+monque.register('send-email', emailHandler, {
+  maxRetries: 5,
+  baseRetryInterval: 2000,
+  maxBackoffDelay: 60000,
+});
+```
+
+Each omitted value inherits the scheduler setting. `maxRetries: 0` or `1` makes the
+first failure terminal; `NonRetryableError` always skips retries. The existing
+failure-count and jitter rules apply to worker overrides too.
+
+Settings belong to the local worker, not the stored job. Configure workers for the
+same job name consistently across scheduler instances. Replacing a worker affects
+future executions; an active execution keeps the retry settings it started with.
+
+Ts.ED forwards these settings from `@Job('send', { maxRetries: 5 })`; see
+[Ts.ED integration](/monque/integrations/tsed/).
+
 ### Configuration Options
 
 | Option              | Default     | Description                                     |

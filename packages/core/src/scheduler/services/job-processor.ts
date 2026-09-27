@@ -223,7 +223,7 @@ export class JobProcessor {
 		} catch (error) {
 			// Job failed
 			const err = toError(error);
-			const updatedJob = await this.lifecycle.failOwned(job, err);
+			const updatedJob = await this.lifecycle.failOwned(job, err, worker.retryOptions);
 
 			if (updatedJob) {
 				const willRetry = updatedJob.status === JobStatus.PENDING;

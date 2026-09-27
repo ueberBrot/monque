@@ -155,7 +155,7 @@ interface SendEmailPayload {
 
 @JobController("email") // Optional namespace prefix: "email."
 export class EmailJobs {
-  @Job("send", { concurrency: 5 }) // Full job name: "email.send"
+  @Job("send", { concurrency: 5, maxRetries: 5 }) // Full job name: "email.send"
   async sendEmail(job: MonqueJob<SendEmailPayload>) {
     // job.data is fully typed
     const { to, subject } = job.data;
@@ -163,6 +163,10 @@ export class EmailJobs {
   }
 }
 ```
+
+`@Job()` also accepts `baseRetryInterval` and `maxBackoffDelay`. Omitted retry
+settings inherit your application's `monque` configuration. See
+[per-worker retry settings](/monque/core-concepts/retry/#per-worker-settings).
 
 ### 2. Schedule Jobs (Cron)
 
