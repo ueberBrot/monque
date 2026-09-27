@@ -115,6 +115,7 @@ export const managementContract = {
 			successStatus: 200,
 			successDescription: 'Successful response',
 		})
+		.input(ProcessingQueryDtoSchema.optional())
 		.output(CapabilitiesDtoSchema),
 	queueViews: oc
 		.route({

@@ -8,9 +8,4 @@ export { JobQueryService } from './job-query.js';
 export { CLEANUP_STATUSES, LifecycleManager } from './lifecycle-manager.js';
 export { PendingNotificationRouter } from './pending-notification-router.js';
 // Types
-export {
-	RETRYABLE_JOB_STATUSES,
-	type ResolvedMonqueOptions,
-	type RetryableJobStatusType,
-	type SchedulerContext,
-} from './types.js';
+export type { ResolvedMonqueOptions, SchedulerContext } from './types.js';

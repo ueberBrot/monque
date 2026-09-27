@@ -68,7 +68,7 @@ export interface ManagementOperations<TContext = unknown> {
 	resumeProcessing(input: ProcessingActionDto, context: TContext): Promise<ProcessingStateDto>;
 	getHealth(): SchedulerHealthDto;
 	selectedJobActions(input: SelectedJobActionsDto, context: TContext): Promise<BulkActionResultDto>;
-	getCapabilities(context: TContext): Promise<CapabilitiesDto>;
+	getCapabilities(context: TContext, input?: ProcessingQueryDto): Promise<CapabilitiesDto>;
 	listQueueViews(context: TContext, filter?: QueueViewQueryDto): Promise<QueueViewSummaryListDto>;
 	listJobs(input: JobListQueryDto, context: TContext): Promise<JobCursorPageDto>;
 	getJobStats(input: { name?: string | undefined }, context: TContext): Promise<QueueStatsDto>;
@@ -95,7 +95,16 @@ export function createManagementOperations<TContext = unknown>(
 			executeProcessingAction(options, 'resume', input, context),
 		selectedJobActions: (input, context) => handleSelectedJobActions(options, input, context),
 		getHealth: () => toSchedulerHealthDto(options.monque.isHealthy()),
-		getCapabilities: (context: TContext) => getManagementCapabilities(options, context),
+		getCapabilities: (context, input) => {
+			const state = options.monque.getProcessingState
+				? readProcessingState(options, input?.name)
+				: undefined;
+			return getManagementCapabilities(
+				options,
+				context,
+				state ? { name: state.name, instanceId: state.instanceId } : {},
+			);
+		},
 		listQueueViews: async (context: TContext, filter?: QueueViewQueryDto) => {
 			await requireReadAuthorization(options, context);
 			const scope = filter?.name === undefined ? undefined : { name: filter.name };

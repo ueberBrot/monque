@@ -1,4 +1,4 @@
-import { MongoServerError, ObjectId } from 'mongodb';
+import { type BulkWriteResult, MongoBulkWriteError, MongoServerError, ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, JobFactory } from '@tests/factories';
@@ -17,6 +17,33 @@ describe('JobIntake', () => {
 
 	afterEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it.each([
+		{ code: 11000, count: 3 },
+		{ code: 91, count: 2 },
+	])('preserves partial bulk failures after an earlier duplicate: %j', async ({ code, count }) => {
+		const insertedId = new ObjectId();
+		const result = {
+			upsertedCount: 1,
+			matchedCount: 0,
+			upsertedIds: { 1: insertedId },
+			getWriteErrors: () => [{ code: 11000, index: 0 }],
+			getWriteConcernError: () => undefined,
+		} as unknown as BulkWriteResult;
+		const error = new MongoBulkWriteError({ message: 'Later batch failed', code }, result);
+		vi.spyOn(ctx.mockCollection, 'bulkWrite').mockRejectedValueOnce(error);
+		await expect(
+			intake.enqueueMany(
+				Array.from({ length: count }, (_, index) => ({
+					name: 'work',
+					data: { index },
+					uniqueKey: String(index),
+				})),
+			),
+		).rejects.toMatchObject({ cause: error });
+		expect(ctx.mockCollection.find).not.toHaveBeenCalled();
+		expect(ctx.notifyPendingJob).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([JobStatus.PENDING, JobStatus.PROCESSING])(

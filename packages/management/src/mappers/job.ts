@@ -31,7 +31,7 @@ export async function toJobDto<TContext>(
 	return { ...toJobSummaryDto(job), payload: await serializeJobPayload(options, job, context) };
 }
 
-export function toJobSummaryDto(job: Omit<PersistedJob, 'data'>): JobDto {
+function toJobSummaryDto(job: Omit<PersistedJob, 'data'>): JobDto {
 	const dto: JobDto = {
 		id: job._id.toHexString(),
 		name: job.name,

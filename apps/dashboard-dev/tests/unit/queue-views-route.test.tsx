@@ -26,6 +26,11 @@ describe('Queue Views routes', () => {
 		expect(await screen.findByRole('heading', { name: 'Filtered jobs' })).toBeTruthy();
 		expect(screen.getByRole('heading', { level: 1, name: 'send-email' })).toBeTruthy();
 		expect(screen.queryByLabelText(/job name/i)).toBeNull();
+		expect(screen.getByText('Failure limit').nextElementSibling?.textContent).toBe('3');
+		expect(screen.getByText('Base retry delay').nextElementSibling?.textContent).toBe('1000 ms');
+		expect(screen.getByText('Payload validation').nextElementSibling?.textContent).toBeTruthy();
+		fireEvent.click(await screen.findByRole('button', { name: 'Pause worker' }));
+		expect(await screen.findByRole('button', { name: 'Resume worker' })).toBeTruthy();
 	});
 
 	it('loads queue detail with summary jobs and a single statistics source', async () => {
