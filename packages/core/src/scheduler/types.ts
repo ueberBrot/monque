@@ -226,3 +226,13 @@ export interface MonqueOptions {
 	 */
 	safetyPollInterval?: number;
 }
+
+/** Processing state on one scheduler instance, optionally scoped to one job name. */
+export interface ProcessingState {
+	readonly instanceId: string;
+	readonly name?: string;
+	/** Effective pause state for the requested scope. */
+	readonly paused: boolean;
+	/** A scheduler-wide pause also prevents every named worker from claiming jobs. */
+	readonly globallyPaused: boolean;
+}

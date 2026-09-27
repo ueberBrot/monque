@@ -40,6 +40,8 @@ export type {
  */
 export type ManagementAction =
 	| 'read'
+	| 'pause'
+	| 'resume'
 	| 'cancel'
 	| 'cancelBulk'
 	| 'retry'
@@ -56,6 +58,9 @@ export type ManagementAction =
  * return `403 Unsupported action`.
  */
 export interface ManagementMonque {
+	getProcessingState?: Monque['getProcessingState'];
+	pause?: Monque['pause'];
+	resume?: Monque['resume'];
 	isHealthy: Pick<Monque, 'isHealthy'>['isHealthy'];
 	getQueueViewSummaries: Pick<Monque, 'getQueueViewSummaries'>['getQueueViewSummaries'];
 	getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
@@ -87,6 +92,10 @@ export interface ManagementAuthorizationInput<TContext = unknown> {
 	job?: PersistedJob | undefined;
 	selector?: JobSelector | undefined;
 	ids?: readonly string[] | undefined;
+	/** Processing controls use name for a local worker, or omit it for all local workers. */
+	name?: string | undefined;
+	/** Scheduler targeted by a processing control request. */
+	instanceId?: string | undefined;
 }
 
 /**

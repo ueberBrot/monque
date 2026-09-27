@@ -42,7 +42,7 @@ import {
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
-import type { MonqueOptions } from './types.js';
+import type { MonqueOptions, ProcessingState } from './types.js';
 import {
 	validateIntegerOption,
 	validateOptions,
@@ -1117,6 +1117,16 @@ export class Monque extends EventEmitter {
 	isPaused(name?: string): boolean {
 		if (name !== undefined) validateJobName(name);
 		return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+	}
+
+	/** Identify the local scheduler and inspect global or named-worker processing state. */
+	getProcessingState(name?: string): ProcessingState {
+		return {
+			instanceId: this.options.schedulerInstanceId,
+			...(name === undefined ? {} : { name }),
+			paused: this.isPaused(name),
+			globallyPaused: this.paused,
+		};
 	}
 
 	/**

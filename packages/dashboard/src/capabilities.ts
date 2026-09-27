@@ -9,6 +9,8 @@ const dashboardCapabilityActionLabels = {
 	reschedule: 'Reschedule job',
 	delete: 'Delete job',
 	deleteBulk: 'Delete selected jobs',
+	pause: 'Pause processing',
+	resume: 'Resume processing',
 } as const satisfies Record<keyof CapabilityActionsDto, string>;
 
 const dashboardCapabilityActions = [

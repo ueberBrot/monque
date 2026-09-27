@@ -61,6 +61,15 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
 		return scenario;
 	}
 	const mockManagementRouter = managementImplementer.router({
+		processingState: managementImplementer.processingState.handler(() => {
+			throw new ORPCError('FORBIDDEN', { message: 'Processing state is unsupported' });
+		}),
+		pauseProcessing: managementImplementer.pauseProcessing.handler(() => {
+			throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+		}),
+		resumeProcessing: managementImplementer.resumeProcessing.handler(() => {
+			throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+		}),
 		selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) => {
 			const scenario = getReadableScenario(context);
 			const capability =

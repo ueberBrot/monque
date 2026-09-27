@@ -36,7 +36,7 @@ export {
 	type ScheduleOptions,
 } from '@/jobs';
 // Types - Scheduler
-export type { MonqueOptions } from '@/scheduler';
+export type { MonqueOptions, ProcessingState } from '@/scheduler';
 // Main class
 export { Monque } from '@/scheduler';
 // Errors

@@ -29,6 +29,7 @@ import type {
 	JobSelector,
 	Monque,
 	PersistedJob,
+	ProcessingState,
 	QueueStats,
 	QueueViewSummary,
 	ScheduleOptions,
@@ -277,6 +278,11 @@ export class MonqueService {
 	/** Whether the local scheduler, or named worker, is effectively paused. */
 	isPaused(name?: string): boolean {
 		return this.monque.isPaused(name);
+	}
+
+	/** Identify and inspect the local scheduler's global or named-worker pause state. */
+	getProcessingState(name?: string): ProcessingState {
+		return this.monque.getProcessingState(name);
 	}
 
 	/**
