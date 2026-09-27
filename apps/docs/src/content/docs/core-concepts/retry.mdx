@@ -28,25 +28,31 @@ When jobs fail with ordinary errors, Monque automatically retries them using exp
 ## Backoff Formula
 
 ```
-nextRunAt = now + min(2^failCount × baseRetryInterval, maxBackoffDelay)
+baseDelay = min(2^failCount × baseRetryInterval, maxBackoffDelay)
+nextRunAt = now + min(jitter(baseDelay), maxBackoffDelay)
 ```
+
+The delay varies randomly by ±25% around `baseDelay`, then is capped at
+`maxBackoffDelay`. This spreads retries when many jobs fail together.
 
 ### Example Timeline
 
-With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`):
+With default settings (`baseRetryInterval: 1000ms`, `maxRetries: 10`), a job can run
+once initially and retry up to nine times. The tenth failure is terminal. Delays below
+are before jitter:
 
-| Attempt    | failCount | Delay | Total Wait             |
-| ---------- | --------- | ----- | ---------------------- |
-| 1st retry  | 1         | 2s    | 2s                     |
-| 2nd retry  | 2         | 4s    | 6s                     |
-| 3rd retry  | 3         | 8s    | 14s                    |
-| 4th retry  | 4         | 16s   | 30s                    |
-| 5th retry  | 5         | 32s   | ~1 min                 |
-| 6th retry  | 6         | 64s   | ~2 min                 |
-| 7th retry  | 7         | 128s  | ~4 min                 |
-| 8th retry  | 8         | 256s  | ~8.5 min               |
-| 9th retry  | 9         | 512s  | ~17 min                |
-| 10th retry | 10        | -     | **Failed permanently** |
+| Failed attempt | failCount | Delay before next attempt |
+| --- | --- | --- |
+| Initial run | 1 | 2s |
+| 1st retry | 2 | 4s |
+| 2nd retry | 3 | 8s |
+| 3rd retry | 4 | 16s |
+| 4th retry | 5 | 32s |
+| 5th retry | 6 | 64s |
+| 6th retry | 7 | 128s |
+| 7th retry | 8 | 256s |
+| 8th retry | 9 | 512s |
+| 9th retry | 10 | No retry; failed permanently |
 
 ## Configuration
 

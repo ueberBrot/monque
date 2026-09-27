@@ -10,7 +10,7 @@ The package runs on the server; it does not include an oRPC client runtime.
 ## Installation
 
 ```bash
-bun add @monque/management @monque/core
+bun add @monque/management @monque/core mongodb
 ```
 
 `@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
@@ -30,6 +30,7 @@ const client = new MongoClient('mongodb://localhost:27017');
 await client.connect();
 
 const monque = new Monque(client.db('monque'));
+await monque.initialize();
 
 const management = createManagementSurface({
 	monque,

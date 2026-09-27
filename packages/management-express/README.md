@@ -9,7 +9,7 @@ install `@monque/dashboard-express`.
 ## Installation
 
 ```bash
-bun add @monque/management-express @monque/management @monque/core express
+bun add @monque/management-express @monque/management @monque/core express mongodb
 ```
 
 `@monque/core`, `@monque/management`, `express`, and `mongodb` are peer dependencies.
@@ -30,6 +30,7 @@ const client = new MongoClient('mongodb://localhost:27017');
 await client.connect();
 
 const monque = new Monque(client.db('monque'));
+await monque.initialize();
 
 app.use(
 	'/monque',
