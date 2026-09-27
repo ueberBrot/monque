@@ -1,9 +1,9 @@
 import { type Document, ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
-import { buildSelectorQuery } from '@/scheduler';
 import { ConnectionError, JobStateError, MonqueError, toError } from '@/shared';
 
+import { buildSelectorQuery } from '../helpers.js';
 import {
 	RETRYABLE_JOB_STATUSES,
 	type RetryableJobStatusType,
