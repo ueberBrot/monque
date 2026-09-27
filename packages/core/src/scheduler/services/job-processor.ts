@@ -240,7 +240,7 @@ export class JobProcessor {
 		} finally {
 			worker.activeJobs.delete(claimId);
 			this._totalActiveJobs--;
-			this.ctx.notifyJobFinished();
+			this.ctx.notifyJobFinished(job.name);
 		}
 	}
 }

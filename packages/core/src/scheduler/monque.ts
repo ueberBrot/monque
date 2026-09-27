@@ -347,7 +347,7 @@ export class Monque extends EventEmitter {
 
 				this._pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
 			},
-			notifyJobFinished: () => this.onJobFinished(),
+			notifyJobFinished: (name) => this.onJobFinished(name),
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}
@@ -1336,12 +1336,13 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Called when a job finishes processing. If a shutdown drain is pending
-	 * and no active jobs remain, resolves the drain promise.
+	 * Wake polling when local capacity is freed, and resolve a pending shutdown
+	 * drain when no active jobs remain.
 	 *
 	 * @private
 	 */
-	private onJobFinished(): void {
+	private onJobFinished(name: string): void {
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
 		if (this._drainResolve && this.getActiveJobCount() === 0) {
 			this._drainResolve();
 		}
