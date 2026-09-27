@@ -33,6 +33,12 @@
 			"toolingDependencies": ["@ai-hero/sandcastle", "unplugin-unused"]
 		},
 		{
+			// Ts.ED FakeResponse imports this compatible cookie version in integration tests.
+			"name": "monque-tsed-tests",
+			"enablers": ["@tsed/platform-http"],
+			"toolingDependencies": ["cookie"]
+		},
+		{
 			"name": "monque-api-docs",
 			"enablers": ["starlight-typedoc"],
 			"toolingDependencies": [
@@ -52,8 +58,11 @@
 		{ "implements": "OnInit", "members": ["$onInit"] },
 		{ "implements": "OnDestroy", "members": ["$onDestroy"] }
 	],
-	// Keep generated routing imports in the graph, but do not suggest editing generated code.
-	"ignoreFindings": ["packages/dashboard/src/routeTree.gen.ts"],
+	// Keep generated imports in the graph; shadcn controls are maintained through its registry.
+	"ignoreFindings": [
+		"packages/dashboard/src/routeTree.gen.ts",
+		"packages/dashboard/src/components/ui/**"
+	],
 	"overrides": [
 		{
 			"files": ["**/tests/**"],
@@ -68,8 +77,22 @@
 			"rules": { "unused-class-members": "off" }
 		}
 	],
-	"duplicates": { "ignore": ["**/tests/**", "**/*.config.*", "**/*.gen.ts"] },
-	"health": { "ignore": ["**/tests/**", "**/*.config.*", "**/*.gen.ts"] },
+	"duplicates": {
+		"ignore": [
+			"**/tests/**",
+			"**/*.config.*",
+			"**/*.gen.ts",
+			"packages/dashboard/src/components/ui/**"
+		]
+	},
+	"health": {
+		"ignore": [
+			"**/tests/**",
+			"**/*.config.*",
+			"**/*.gen.ts",
+			"packages/dashboard/src/components/ui/**"
+		]
+	},
 	// Enforce the existing package direction, including the browser-safe Management contract.
 	"boundaries": {
 		"zones": [
