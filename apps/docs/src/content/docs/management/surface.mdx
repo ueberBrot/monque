@@ -49,6 +49,9 @@ Paths are relative to the Management router's mount URL:
 | --- | --- | --- |
 | `GET` | `/api/v1/health` | Scheduler health |
 | `GET` | `/api/v1/capabilities` | Read-only mode and available actions |
+| `GET` | `/api/v1/processing` | Local pause state and scheduler identity; optional `name` |
+| `POST` | `/api/v1/processing/actions/pause` | Pause all local workers or one job name |
+| `POST` | `/api/v1/processing/actions/resume` | Resume all local workers or one job name |
 | `GET` | `/api/v1/queue-views` | Job counts grouped by name and local worker activity |
 | `GET` | `/api/v1/jobs` | Cursor-paginated jobs |
 | `GET` | `/api/v1/jobs/stats` | Job counts, optionally filtered by name |
@@ -67,6 +70,19 @@ strings, such as `2026-09-19T12:00:00.000Z`. Job responses use `payload` for the
 and `failureReason` for its latest failure. Absent lock and heartbeat timestamps are `null`;
 absent `heartbeatInterval`, `repeatInterval`, `timezone`, and `uniqueKey` fields are omitted.
 
+Jobs using renewable leases also include `leaseExpiresAt`, an ISO UTC deadline measured
+by MongoDB. Heartbeats extend it while the claim remains valid. Jobs using absolute
+`lockTimeout` have no lease deadline field. Details, full and summary listings, and
+job action responses use the same representation.
+
+Queue views include the local worker's effective `paused` state, `hasSchema` flag, and
+retry settings (`maxRetries`, `baseRetryInterval`, `maxBackoffDelay`). Delays are in
+milliseconds. These settings describe new executions on the attached scheduler;
+already-running jobs retain the policies captured when they started. A global pause
+also makes each local worker appear paused. Other scheduler instances may still run jobs.
+Custom scheduler facades can omit these fields when the information is unavailable.
+Validator functions and schemas are never serialized.
+
 Recurring jobs expose their configured IANA `timezone` in detail, full and summary listings,
 and job action responses. When omitted, the schedule uses the worker server's local timezone.
 This metadata does not change UTC timestamp serialization. Rescheduling changes only the next
@@ -76,6 +92,33 @@ Jobs stopped by a worker's `NonRetryableError` use the existing `failed` status 
 `failureReason` and the actual `failCount`, which may be only one. Existing single and bulk
 retry endpoints remain available. No Management or Express adapter upgrade is required
 for this behavior; the worker must use core 1.14.0 or later.
+
+## Pause and resume processing
+
+Read `/api/v1/processing` first, then send its `instanceId` to either control endpoint:
+
+```json
+{ "instanceId": "scheduler-id-from-the-state-response", "name": "send-email" }
+```
+
+Omit `name` to control the whole attached scheduler. These controls are process-local:
+other instances continue processing. Running handlers finish and their leases keep renewing.
+Resuming the instance preserves individual worker pauses; resuming a worker cannot override
+an instance-wide pause. Responses include the effective `paused` state and `globallyPaused`.
+Pauses do not survive process restarts.
+
+`GET /api/v1/capabilities?name=send-email` checks processing permissions for that worker
+using the attached scheduler's identity. Without `name`, it checks instance-wide controls.
+The other job-action capability checks remain unscoped.
+
+The `pause` and `resume` authorization actions receive `name` and `instanceId`. Read-only
+mode denies both. Capabilities report them unavailable when the scheduler facade omits
+the corresponding methods or `getProcessingState()`. State reads require `read` access.
+
+A different scheduler identity returns `409` without changing processing. Behind a load
+balancer, use instance-specific or sticky routing. Refresh state after a conflict and
+confirm the intended instance before retrying. Give each scheduler a unique
+`schedulerInstanceId` if overriding the generated identifier.
 
 ## Job listings
 

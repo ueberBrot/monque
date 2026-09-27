@@ -8,6 +8,8 @@ import {
 	type CursorOptions,
 	type CursorPage,
 	documentToPersistedJob,
+	type EnqueueJob,
+	type EnqueueManyResult,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	type Job,
@@ -15,6 +17,7 @@ import {
 	type JobSelector,
 	JobStatus,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,
@@ -42,7 +45,7 @@ import {
 	type ResolvedMonqueOptions,
 	type SchedulerContext,
 } from './services/index.js';
-import type { MonqueOptions } from './types.js';
+import type { MonqueOptions, ProcessingState } from './types.js';
 import {
 	validateIntegerOption,
 	validateOptions,
@@ -135,6 +138,8 @@ export class Monque extends EventEmitter {
 	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
+	private paused = false;
+	private readonly pausedWorkers = new Set<string>();
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -335,6 +340,7 @@ export class Monque extends EventEmitter {
 			instanceId: this.options.schedulerInstanceId,
 			workers: this.workers,
 			isRunning: () => this.isRunning,
+			isPaused: (name?: string) => this.isPaused(name),
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
 			notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
@@ -344,7 +350,7 @@ export class Monque extends EventEmitter {
 
 				this._pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
 			},
-			notifyJobFinished: () => this.onJobFinished(),
+			notifyJobFinished: (name) => this.onJobFinished(name),
 			documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
 		};
 	}
@@ -485,6 +491,20 @@ export class Monque extends EventEmitter {
 		this.ensureInitialized();
 		this.validateSchedulingIdentifiers(name, options.uniqueKey);
 		return this.intake.enqueue(name, data, options);
+	}
+
+	/**
+	 * Enqueue jobs using unordered MongoDB bulk writes. Validates all inputs before writing.
+	 * A database failure can leave some jobs persisted; ConnectionError.cause retains
+	 * the driver's error and partial result. Use unique keys when retrying a batch.
+	 * Pass a session to join a caller-owned transaction; transaction errors remain native.
+	 */
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options: JobWriteOptions = {},
+	): Promise<EnqueueManyResult> {
+		this.ensureInitialized();
+		return this.intake.enqueueMany(jobs, options);
 	}
 
 	/**
@@ -1091,6 +1111,41 @@ export class Monque extends EventEmitter {
 	// Public API - Lifecycle
 	// ─────────────────────────────────────────────────────────────────────────────
 
+	/** Pause new executions locally, optionally for one job name. Running jobs continue. */
+	pause(name?: string): void {
+		if (name === undefined) this.paused = true;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.add(name);
+		}
+	}
+
+	/** Resume local executions. Resuming the instance preserves individually paused workers. */
+	resume(name?: string): void {
+		if (name === undefined) this.paused = false;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.delete(name);
+		}
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
+	}
+
+	/** Whether the local instance, or the named worker, is effectively paused. */
+	isPaused(name?: string): boolean {
+		if (name !== undefined) validateJobName(name);
+		return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+	}
+
+	/** Identify the local scheduler and inspect global or named-worker processing state. */
+	getProcessingState(name?: string): ProcessingState {
+		return {
+			instanceId: this.options.schedulerInstanceId,
+			...(name === undefined ? {} : { name }),
+			paused: this.isPaused(name),
+			globallyPaused: this.paused,
+		};
+	}
+
 	/**
 	 * Start polling for and processing jobs.
 	 *
@@ -1308,12 +1363,13 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Called when a job finishes processing. If a shutdown drain is pending
-	 * and no active jobs remain, resolves the drain promise.
+	 * Wake polling when local capacity is freed, and resolve a pending shutdown
+	 * drain when no active jobs remain.
 	 *
 	 * @private
 	 */
-	private onJobFinished(): void {
+	private onJobFinished(name: string): void {
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
 		if (this._drainResolve && this.getActiveJobCount() === 0) {
 			this._drainResolve();
 		}

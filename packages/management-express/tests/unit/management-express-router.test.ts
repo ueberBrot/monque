@@ -1,7 +1,7 @@
-import type { JobSelector, PersistedJob } from '@monque/core';
+import { type JobSelector, Monque, type PersistedJob } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { ObjectId } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -72,6 +72,49 @@ function mountErrorJson(app: Express): void {
 }
 
 describe('Express Management Adapter', () => {
+	test('controls the addressed scheduler through the mounted HTTP routes', async () => {
+		const monque = new Monque(new MongoClient('mongodb://localhost:27017').db('controls'));
+		const app = createManagementApp({ monque });
+		const state = await request(app).get('/monque/api/v1/processing').expect(200);
+		const body = { instanceId: state.body.instanceId, name: 'email' };
+		await request(app).post('/monque/api/v1/processing/actions/pause').send(body).expect(200);
+		expect(monque.isPaused('email')).toBe(true);
+		await request(app)
+			.post('/monque/api/v1/processing/actions/resume')
+			.send({ ...body, instanceId: 'other' })
+			.expect(409);
+		expect(monque.isPaused('email')).toBe(true);
+		await request(app).post('/monque/api/v1/processing/actions/resume').send(body).expect(200);
+		expect(monque.isPaused('email')).toBe(false);
+	});
+
+	test('serves local worker policies through the mounted queue-view endpoint', async () => {
+		const worker = {
+			concurrency: 2,
+			activeCount: 1,
+			paused: true,
+			hasSchema: true,
+			maxRetries: 3,
+			baseRetryInterval: 0,
+			maxBackoffDelay: 100,
+		};
+		const app = createManagementApp({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async () => [
+					{
+						name: 'work',
+						hasPersistedJobs: false,
+						hasRegisteredWorker: true,
+						stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+						worker,
+					},
+				],
+			}),
+		});
+		const response = await request(app).get('/monque/api/v1/queue-views').expect(200);
+		expect(response.body).toMatchObject({ queueViews: [{ name: 'work', worker }] });
+	});
+
 	test('exposes an immediate failure and permits manual retry through the mounted API', async () => {
 		const job: PersistedJob = {
 			_id: new ObjectId(),
@@ -215,6 +258,8 @@ describe('Express Management Adapter', () => {
 					reschedule: false,
 					delete: false,
 					deleteBulk: false,
+					pause: false,
+					resume: false,
 				},
 			});
 

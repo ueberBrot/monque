@@ -46,6 +46,8 @@ describe('oRPC Management capabilities route', () => {
 				reschedule: true,
 				delete: true,
 				deleteBulk: true,
+				pause: false,
+				resume: false,
 			},
 		};
 
@@ -81,6 +83,8 @@ describe('oRPC Management capabilities route', () => {
 				reschedule: false,
 				delete: false,
 				deleteBulk: false,
+				pause: false,
+				resume: false,
 			},
 		});
 	});
@@ -110,6 +114,8 @@ describe('oRPC Management capabilities route', () => {
 				reschedule: true,
 				delete: true,
 				deleteBulk: true,
+				pause: false,
+				resume: false,
 			},
 		});
 	});
@@ -154,6 +160,8 @@ describe('oRPC Management capabilities route', () => {
 				reschedule: false,
 				delete: false,
 				deleteBulk: false,
+				pause: false,
+				resume: false,
 			},
 		});
 	});
@@ -179,6 +187,8 @@ describe('oRPC Management capabilities route', () => {
 				reschedule: false,
 				delete: false,
 				deleteBulk: false,
+				pause: false,
+				resume: false,
 			},
 		});
 	});
