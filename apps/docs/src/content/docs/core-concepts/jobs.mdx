@@ -268,7 +268,7 @@ monque.register('charge-payment', async (job) => {
 
 ## Job Retention
 
-Set retention periods to delete old completed and failed jobs automatically:
+Set retention periods to delete old completed, failed, and cancelled jobs automatically:
 
 ```typescript
 const monque = new Monque(db, {
@@ -276,14 +276,21 @@ const monque = new Monque(db, {
   jobRetention: {
     completed: 24 * 60 * 60 * 1000,    // Keep completed jobs for 24 hours
     failed: 7 * 24 * 60 * 60 * 1000,   // Keep failed jobs for 7 days
+    cancelled: 24 * 60 * 60 * 1000,    // Keep cancelled jobs for 24 hours
     interval: 60 * 60 * 1000           // Run cleanup every hour (default)
   }
 });
 ```
 
 <Aside type="note">
+  Each status is opt-in: omitting its retention period keeps those jobs indefinitely.
   If `jobRetention` is not configured, no automatic cleanup is performed.
 </Aside>
+
+Retention uses `updatedAt`, so cancelled jobs age from their cancellation time, not their
+creation time. A period of `0` makes that status eligible on the next cleanup pass.
+Cleanup runs when the scheduler starts and at `interval`; you do not need a cron job.
+Pending and processing jobs are never removed by retention.
 
 ## Indexes
 
@@ -304,6 +311,8 @@ Listing indexes include:
 
 The `_id` field breaks ties for stable ordering. Name and status indexes support filtered
 creation-time listings. A cleanup index is also created when `jobRetention` is configured.
+Enabling `jobRetention.cancelled` adds a partial `updatedAt` index for cancelled jobs;
+existing retention indexes remain valid when upgrading.
 Initialization still requires index permissions even if indexes already exist.
 
 ### Deleting Jobs
