@@ -106,7 +106,15 @@ describe('local pause and resume', () => {
 		});
 		local.pause('work');
 		local.pause();
+		expect(local.getProcessingState('work')).toMatchObject({ paused: true, globallyPaused: true });
 		local.resume();
+		expect(local.getProcessingState('work')).toEqual({
+			instanceId: local.getProcessingState().instanceId,
+			name: 'work',
+			paused: true,
+			globallyPaused: false,
+		});
+		expect(other.getProcessingState().instanceId).not.toBe(local.getProcessingState().instanceId);
 		expect(local.isPaused()).toBe(false);
 		expect(local.isPaused('work')).toBe(true);
 		const job = await local.enqueue('work', {});

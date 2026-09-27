@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 
 import { listDashboardCapabilityStates } from '@/capabilities';
 import { DashboardState, RetryButton } from '@/components/dashboard-state';
+import { ProcessingControls } from '@/components/processing-controls';
 import { QueryFreshness, RefreshButton } from '@/components/query-freshness';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,26 +73,32 @@ function HealthRoute() {
 	}
 
 	return (
-		<HealthRouteContent
-			freshness={
-				<QueryFreshness
-					updatedAt={Math.min(healthQuery.dataUpdatedAt, capabilitiesQuery.dataUpdatedAt)}
-					fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
-					paused={
-						healthQuery.fetchStatus === 'paused' || capabilitiesQuery.fetchStatus === 'paused'
-					}
-					pollingIntervalMs={runtimeConfig.pollingIntervalMs}
-				/>
-			}
-			fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
-			onRefresh={() => {
-				void healthQuery.refetch();
-				void capabilitiesQuery.refetch();
-			}}
-			health={healthQuery.data}
-			capabilities={capabilitiesQuery.data}
-			pollingIntervalMs={runtimeConfig.pollingIntervalMs}
-		/>
+		<div className="grid gap-6">
+			<HealthRouteContent
+				freshness={
+					<QueryFreshness
+						updatedAt={Math.min(healthQuery.dataUpdatedAt, capabilitiesQuery.dataUpdatedAt)}
+						fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
+						paused={
+							healthQuery.fetchStatus === 'paused' || capabilitiesQuery.fetchStatus === 'paused'
+						}
+						pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+					/>
+				}
+				fetching={healthQuery.isFetching || capabilitiesQuery.isFetching}
+				onRefresh={() => {
+					void healthQuery.refetch();
+					void capabilitiesQuery.refetch();
+				}}
+				health={healthQuery.data}
+				capabilities={capabilitiesQuery.data}
+				pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+			/>
+			<ProcessingControls
+				managementApi={managementApi}
+				pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+			/>
+		</div>
 	);
 }
 

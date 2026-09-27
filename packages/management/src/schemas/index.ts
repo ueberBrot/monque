@@ -41,6 +41,14 @@ export {
 	JobStatusDtoSchema,
 } from './job.js';
 export {
+	type ProcessingActionDto,
+	ProcessingActionDtoSchema,
+	type ProcessingQueryDto,
+	ProcessingQueryDtoSchema,
+	type ProcessingStateDto,
+	ProcessingStateDtoSchema,
+} from './processing.js';
+export {
 	type JobStatsQueryDto,
 	JobStatsQueryDtoSchema,
 	type QueueStatsDto,

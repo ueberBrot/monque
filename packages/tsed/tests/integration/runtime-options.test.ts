@@ -23,6 +23,14 @@ describe('runtime options', () => {
 		await bootstrapMonque({ imports: [EphemeralPausedController], connectionStrategy: 'db' });
 		const service = PlatformTest.get<MonqueService>(MonqueService);
 		service.pause('pause.work');
+		expect(service.getProcessingState('pause.work')).toMatchObject({
+			name: 'pause.work',
+			paused: true,
+			globallyPaused: false,
+		});
+		expect(await service.getQueueViewSummaries({ name: 'pause.work' })).toMatchObject([
+			{ name: 'pause.work', worker: { paused: true, hasSchema: false } },
+		]);
 		const paused = await service.enqueue('pause.work', {});
 		const other = await service.enqueue('pause.other', {});
 		await waitFor(
@@ -30,6 +38,10 @@ describe('runtime options', () => {
 		);
 		expect((await service.getJob(paused._id.toString()))?.status).toBe(JobStatus.PENDING);
 		service.resume('pause.work');
+		expect(service.getProcessingState('pause.work').paused).toBe(false);
+		expect(await service.getQueueViewSummaries({ name: 'pause.work' })).toMatchObject([
+			{ name: 'pause.work', worker: { paused: false } },
+		]);
 		await waitFor(
 			async () => (await service.getJob(paused._id.toString()))?.status === JobStatus.COMPLETED,
 		);
