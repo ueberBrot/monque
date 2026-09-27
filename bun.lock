@@ -90,7 +90,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.14.0",
+      "version": "1.15.0",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
         "cron-parser": "^5.10.1",
@@ -112,7 +112,7 @@
     },
     "packages/dashboard": {
       "name": "@monque/dashboard",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "zod": "^4.6.5",
       },
@@ -173,7 +173,7 @@
     },
     "packages/dashboard-express": {
       "name": "@monque/dashboard-express",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@monque/dashboard": "^0.2.0",
       },
@@ -193,7 +193,7 @@
     },
     "packages/management": {
       "name": "@monque/management",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "dependencies": {
         "@orpc/contract": "^1.15.1",
         "@orpc/openapi": "^1.15.1",
@@ -216,7 +216,7 @@
     },
     "packages/management-express": {
       "name": "@monque/management-express",
-      "version": "0.4.1",
+      "version": "0.5.0",
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@monque/management": "workspace:*",
@@ -239,7 +239,7 @@
     },
     "packages/tsed": {
       "name": "@monque/tsed",
-      "version": "1.13.0",
+      "version": "1.14.0",
       "devDependencies": {
         "@monque/core": "workspace:*",
         "@testcontainers/mongodb": "^12.1.0",

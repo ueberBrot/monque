@@ -1,6 +1,6 @@
 {
 	"name": "@monque/management-express",
-	"version": "0.4.1",
+	"version": "0.5.0",
 	"description": "Express adapter for the Monque management surface",
 	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
 	"repository": {

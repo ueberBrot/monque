@@ -1,5 +1,23 @@
 # @monque/dashboard
 
+## 0.3.0
+
+### Minor Changes
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Show renewable lease deadlines in job lifecycle details.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Pause processing on the attached scheduler from Health, or pause a local worker from its Queue View. Controls show the target instance and respect permissions and read-only mode.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Resume local processing from Health and Queue Views, with explanations when an instance-wide pause prevents a worker from resuming.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Update the Management contract dependency to the 0.6 series for compatibility with worker policy and renewable lease metadata.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Show local worker pause state in Queue Views and distinguish an instance-wide pause from a worker pause.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Show worker concurrency and effective retry settings in Queue View details.
+
+- [#543](https://github.com/ueberBrot/monque/pull/543) [`7c53658`](https://github.com/ueberBrot/monque/commit/7c5365873451968e15d14627efd8140dc656c15f) - Show whether a local worker uses Standard Schema payload validation in its Queue View.
+
 ## 0.2.0
 
 ### Minor Changes
