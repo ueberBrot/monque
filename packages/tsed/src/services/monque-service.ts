@@ -30,6 +30,7 @@ import type {
 	Monque,
 	PersistedJob,
 	QueueStats,
+	QueueViewSummary,
 	ScheduleOptions,
 } from '@monque/core';
 import { MonqueError } from '@monque/core';
@@ -250,6 +251,13 @@ export class MonqueService {
 	 */
 	async getQueueStats(filter?: Pick<JobSelector, 'name'>): Promise<QueueStats> {
 		return this.monque.getQueueStats(filter);
+	}
+
+	/** Read persisted queue counts and fresh local worker policies. */
+	async getQueueViewSummaries(
+		filter?: Pick<JobSelector, 'name'>,
+	): Promise<readonly QueueViewSummary[]> {
+		return this.monque.getQueueViewSummaries(filter);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────

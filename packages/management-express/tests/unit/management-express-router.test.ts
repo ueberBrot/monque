@@ -72,6 +72,33 @@ function mountErrorJson(app: Express): void {
 }
 
 describe('Express Management Adapter', () => {
+	test('serves local worker policies through the mounted queue-view endpoint', async () => {
+		const worker = {
+			concurrency: 2,
+			activeCount: 1,
+			paused: true,
+			hasSchema: true,
+			maxRetries: 3,
+			baseRetryInterval: 0,
+			maxBackoffDelay: 100,
+		};
+		const app = createManagementApp({
+			monque: createManagementMonque({
+				getQueueViewSummaries: async () => [
+					{
+						name: 'work',
+						hasPersistedJobs: false,
+						hasRegisteredWorker: true,
+						stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+						worker,
+					},
+				],
+			}),
+		});
+		const response = await request(app).get('/monque/api/v1/queue-views').expect(200);
+		expect(response.body).toMatchObject({ queueViews: [{ name: 'work', worker }] });
+	});
+
 	test('exposes an immediate failure and permits manual retry through the mounted API', async () => {
 		const job: PersistedJob = {
 			_id: new ObjectId(),

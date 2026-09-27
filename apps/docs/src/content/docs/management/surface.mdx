@@ -67,6 +67,19 @@ strings, such as `2026-09-19T12:00:00.000Z`. Job responses use `payload` for the
 and `failureReason` for its latest failure. Absent lock and heartbeat timestamps are `null`;
 absent `heartbeatInterval`, `repeatInterval`, `timezone`, and `uniqueKey` fields are omitted.
 
+Jobs using renewable leases also include `leaseExpiresAt`, an ISO UTC deadline measured
+by MongoDB. Heartbeats extend it while the claim remains valid. Jobs using absolute
+`lockTimeout` have no lease deadline field. Details, full and summary listings, and
+job action responses use the same representation.
+
+Queue views include the local worker's effective `paused` state, `hasSchema` flag, and
+retry settings (`maxRetries`, `baseRetryInterval`, `maxBackoffDelay`). Delays are in
+milliseconds. These settings describe new executions on the attached scheduler;
+already-running jobs retain the policies captured when they started. A global pause
+also makes each local worker appear paused. Other scheduler instances may still run jobs.
+Custom scheduler facades can omit these fields when the information is unavailable.
+Validator functions and schemas are never serialized.
+
 Recurring jobs expose their configured IANA `timezone` in detail, full and summary listings,
 and job action responses. When omitted, the schedule uses the worker server's local timezone.
 This metadata does not change UTC timestamp serialization. Rescheduling changes only the next

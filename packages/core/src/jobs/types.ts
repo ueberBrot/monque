@@ -384,6 +384,15 @@ export interface QueueViewWorkerSummary {
 
 	/** Number of jobs currently active in this local Worker */
 	readonly activeCount: number;
+
+	/** Effective local pause state, including a scheduler-wide pause. */
+	readonly paused?: boolean;
+	/** Whether this local worker validates payloads with Standard Schema. */
+	readonly hasSchema?: boolean;
+	/** Effective retry limit and delays captured for new executions. */
+	readonly maxRetries?: number;
+	readonly baseRetryInterval?: number;
+	readonly maxBackoffDelay?: number;
 }
 
 /**

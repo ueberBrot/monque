@@ -20,6 +20,7 @@ import {
 import {
 	AggregationTimeoutError,
 	ConnectionError,
+	DEFAULT_MAX_BACKOFF_DELAY,
 	InvalidCursorError,
 	InvalidJobQueryError,
 	toError,
@@ -643,6 +644,15 @@ export class JobQueryService {
 					? {
 							concurrency: worker.concurrency,
 							activeCount: worker.activeJobs.size,
+							paused: this.ctx.isPaused(name),
+							hasSchema: worker.schema !== undefined,
+							maxRetries: worker.retryOptions?.maxRetries ?? this.ctx.options.maxRetries,
+							baseRetryInterval:
+								worker.retryOptions?.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+							maxBackoffDelay:
+								worker.retryOptions?.maxBackoffDelay ??
+								this.ctx.options.maxBackoffDelay ??
+								DEFAULT_MAX_BACKOFF_DELAY,
 						}
 					: null;
 

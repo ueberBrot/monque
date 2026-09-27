@@ -323,6 +323,11 @@ export class WorkerServer {}
 
 Inject `MonqueService` to call methods on the application's [`Monque`](/monque/api/classes/monque/) instance.
 
+`MonqueService.getQueueViewSummaries()` returns queue counts and current local worker
+activity, pause state, retry settings, and schema presence. You can pass the injected
+service directly as the Management API's `monque` option, keeping its reads and actions
+attached to the same scheduler.
+
 Commonly used methods:
 - [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.

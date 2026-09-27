@@ -51,6 +51,10 @@ export function toJobSummaryDto(job: Omit<PersistedJob, 'data'>): JobDto {
 		dto.heartbeatInterval = job.heartbeatInterval;
 	}
 
+	if (job.leaseExpiresAt !== undefined) {
+		dto.leaseExpiresAt = job.leaseExpiresAt.toISOString();
+	}
+
 	if (job.repeatInterval != null) {
 		dto.repeatInterval = job.repeatInterval;
 	}
