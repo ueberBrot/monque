@@ -168,6 +168,27 @@ export class EmailJobs {
 settings inherit your application's `monque` configuration. See
 [per-worker retry settings](/monque/core-concepts/retry/#per-worker-settings).
 
+For runtime payload validation, pass any Standard Schema compatible validator:
+
+```typescript
+import { z } from 'zod';
+
+const emailSchema = z.object({ email: z.email() });
+
+@JobController('email')
+export class ValidatedEmailJobs {
+  @Job('deliver', { schema: emailSchema })
+  async deliver(job: MonqueJob<z.output<typeof emailSchema>>) {
+    await sendEmail(job.data.email);
+  }
+}
+```
+
+The handler receives validated output; invalid payloads fail before the method or
+its request-scoped dependencies are invoked. See
+[payload validation](/monque/core-concepts/workers/#with-payload-validation) for
+transformation, retry, and stored-input behavior.
+
 ### 2. Schedule Jobs (Cron)
 
 Use the [`@Cron`](/monque/api-tsed/functions/cron/) decorator to schedule recurring tasks. Cron jobs are automatically registered and scheduled with Monque during the application's `$onInit` lifecycle phase.

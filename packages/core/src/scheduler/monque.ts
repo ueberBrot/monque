@@ -1059,7 +1059,7 @@ export class Monque extends EventEmitter {
 	 * });
 	 * ```
 	 */
-	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
+	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions<T> = {}): void {
 		validateJobName(name);
 		const concurrency = options.concurrency ?? this.options.workerConcurrency;
 		validateIntegerOption('concurrency', concurrency);
@@ -1082,6 +1082,7 @@ export class Monque extends EventEmitter {
 			handler: handler as JobHandler,
 			concurrency,
 			retryOptions,
+			...(options.schema === undefined ? {} : { schema: options.schema }),
 			activeJobs: this.workers.get(name)?.activeJobs ?? new Map(),
 		});
 	}

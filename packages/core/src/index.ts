@@ -59,6 +59,7 @@ export {
 	MonqueError,
 	NonRetryableError,
 	PayloadTooLargeError,
+	PayloadValidationError,
 	ShutdownTimeoutError,
 	validateCronExpression,
 	validateJobName,

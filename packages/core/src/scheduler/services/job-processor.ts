@@ -1,5 +1,5 @@
 import { JobStatus, type PersistedJob } from '@/jobs';
-import { toError } from '@/shared';
+import { PayloadValidationError, toError } from '@/shared';
 import type { WorkerRegistration } from '@/workers';
 
 import { JobLifecycle } from './job-lifecycle.js';
@@ -211,7 +211,13 @@ export class JobProcessor {
 
 		try {
 			this.ctx.emit('job:start', job);
-			await worker.handler(job);
+			let handlerJob = job;
+			if (worker.schema) {
+				const result = await worker.schema['~standard'].validate(job.data);
+				if (result.issues) throw new PayloadValidationError(job.name, result.issues);
+				handlerJob = { ...job, data: result.value };
+			}
+			await worker.handler(handlerJob);
 
 			// Job completed successfully
 			const duration = Date.now() - startTime;

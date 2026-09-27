@@ -1,6 +1,7 @@
 import { type Job, JobStatus, MonqueError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
@@ -10,6 +11,30 @@ import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 describe('runtime options', () => {
 	afterEach(resetMonque);
+
+	it('validates and transforms payloads supplied to a decorated handler', async () => {
+		const received: number[] = [];
+		const schema = z.object({ count: z.string().transform(async (value) => Number(value) + 1) });
+		@JobController('schema')
+		class EphemeralSchemaController {
+			@MonqueJob('work', { schema })
+			async handler(job: Job<z.output<typeof schema>>) {
+				received.push(job.data.count);
+			}
+		}
+		await bootstrapMonque({ imports: [EphemeralSchemaController], connectionStrategy: 'db' });
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		const valid = await service.enqueue('schema.work', { count: '2' });
+		const invalid = await service.enqueue('schema.work', { count: false });
+		await waitFor(
+			async () =>
+				(await service.getJob(valid._id.toString()))?.status === JobStatus.COMPLETED &&
+				(await service.getJob(invalid._id.toString()))?.status === JobStatus.FAILED,
+		);
+		expect(received).toEqual([3]);
+		expect((await service.getJob(invalid._id.toString()))?.failCount).toBe(1);
+		expect((await service.getJob(valid._id.toString()))?.data).toEqual({ count: '2' });
+	});
 
 	it('uses retry overrides supplied through a Job decorator', async () => {
 		@JobController('retry')
