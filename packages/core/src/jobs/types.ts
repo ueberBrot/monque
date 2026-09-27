@@ -158,6 +158,18 @@ export interface EnqueueOptions {
 	runAt?: Date;
 }
 
+/** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
+export interface EnqueueJob<T = unknown> extends EnqueueOptions {
+	name: string;
+	data: T;
+}
+
+/** Counts acknowledged by a successful enqueueMany() call. */
+export interface EnqueueManyResult {
+	insertedCount: number;
+	deduplicatedCount: number;
+}
+
 /**
  * Options for scheduling a recurring job.
  *

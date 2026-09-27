@@ -43,6 +43,7 @@ function createMockCollection(): Collection<Document> {
 	return {
 		insertOne: vi.fn(),
 		insertMany: vi.fn(),
+		bulkWrite: vi.fn(),
 		findOne: vi.fn(),
 		find: vi.fn(),
 		findOneAndUpdate: vi.fn(),

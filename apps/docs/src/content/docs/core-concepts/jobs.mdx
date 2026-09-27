@@ -13,6 +13,7 @@ A job stores the work you want a worker to perform, along with its payload, stat
 |---------------|-------------|
 | [`Job`](/monque/api/interfaces/job/) | Job document interface |
 | [`enqueue()`](/monque/api/classes/monque/#enqueue) | Create a job with optional scheduling |
+| [`enqueueMany()`](/monque/api/classes/monque/#enqueuemany) | Submit a batch with per-job scheduling and deduplication |
 | [`now()`](/monque/api/classes/monque/#now) | Create a job for immediate execution |
 | [`schedule()`](/monque/api/classes/monque/#schedule) | Create a recurring cron-based job |
 | [`getJob()`](/monque/api/classes/monque/#getjob) | Retrieve a single job by ID |
@@ -83,6 +84,39 @@ const job = await monque.now('send-email', {
 console.log(job._id); // ObjectId
 console.log(job.status); // 'pending'
 ```
+
+### Enqueue a Batch
+
+Use `enqueueMany()` when submitting several jobs together:
+
+```typescript
+const result = await monque.enqueueMany([
+  { name: 'send-email', data: { userId: '123' }, uniqueKey: 'welcome-123' },
+  {
+    name: 'send-reminder',
+    data: { userId: '123' },
+    runAt: new Date(Date.now() + 3600000),
+  },
+]);
+
+console.log(result.insertedCount, result.deduplicatedCount);
+```
+
+Each item accepts `name`, `data`, `runAt`, and `uniqueKey`. An empty batch returns
+zero counts. Names, unique keys, and configured payload size limits are validated
+for every item before any writes. Standard Schema validation still runs when a
+worker claims each job.
+
+Deduplication uses the same rules as `enqueue()`: an existing pending or processing
+job with the same name and unique key keeps its payload and schedule. Writes are
+unordered; when new items share a key, do not rely on which payload wins. Completed,
+failed, and cancelled jobs do not block a new job with that key.
+
+The result contains counts rather than job documents, avoiding a read-back query.
+MongoDB may split large batches into multiple requests. A batch is **not a
+transaction**: a database error can leave some jobs persisted while other jobs fail. `ConnectionError.cause` retains the MongoDB error, including
+partial results when available. Use stable unique keys when retrying, and remember
+that deduplication lasts only while a job is pending or processing.
 
 ### Scheduled Execution
 

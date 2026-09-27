@@ -6,6 +6,8 @@ export {
 	CursorDirection,
 	type CursorOptions,
 	type CursorPage,
+	type EnqueueJob,
+	type EnqueueManyResult,
 	type EnqueueOptions,
 	type GetJobsFilter,
 	isCancelledJob,

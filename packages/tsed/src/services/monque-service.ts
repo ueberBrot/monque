@@ -24,6 +24,8 @@ import type {
 	BulkOperationResult,
 	CursorOptions,
 	CursorPage,
+	EnqueueJob,
+	EnqueueManyResult,
 	EnqueueOptions,
 	GetJobsFilter,
 	JobSelector,
@@ -88,6 +90,11 @@ export class MonqueService {
 	 */
 	async enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>> {
 		return this.monque.enqueue(name, data, options);
+	}
+
+	/** Enqueue a batch using full namespaced job names and per-job scheduling options. */
+	async enqueueMany(jobs: readonly EnqueueJob[]): Promise<EnqueueManyResult> {
+		return this.monque.enqueueMany(jobs);
 	}
 
 	/**

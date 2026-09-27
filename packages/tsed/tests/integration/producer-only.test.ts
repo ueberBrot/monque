@@ -45,14 +45,19 @@ describe('Producer-only Mode (disableJobProcessing)', () => {
 			});
 		});
 
-		it('should allow enqueuing jobs', async () => {
+		it('enqueues a deduplicated batch through the injected service', async () => {
 			const service = PlatformTest.get<MonqueService>(MonqueService);
-
-			const job = await service.enqueue('producer-test.job', { test: true });
-
-			expect(job).toBeDefined();
-			expect(job._id).toBeDefined();
-			expect(job.name).toBe('producer-test.job');
+			const runAt = new Date(Date.now() + 60_000);
+			expect(
+				await service.enqueueMany([
+					{ name: 'producer-test.job', data: { first: true }, uniqueKey: 'shared', runAt },
+					{ name: 'producer-test.job', data: { first: true }, uniqueKey: 'shared', runAt },
+				]),
+			).toEqual({ insertedCount: 1, deduplicatedCount: 1 });
+			const jobs = await service.getJobs({ name: 'producer-test.job' });
+			expect(jobs).toMatchObject([
+				{ data: { first: true }, nextRunAt: runAt, status: JobStatus.PENDING },
+			]);
 		});
 
 		it('should not process jobs even with jobs defined', async () => {

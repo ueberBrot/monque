@@ -330,6 +330,7 @@ attached to the same scheduler.
 
 Commonly used methods:
 - [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
+- [`enqueueMany()`](/monque/api-tsed/classes/monqueservice/#enqueuemany) - Submit a batch with per-job scheduling and unique keys, including in producer-only applications. Returns inserted and deduplicated counts; see [batch submission](/monque/core-concepts/jobs/#enqueue-a-batch) for partial-failure behavior.
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
 - [`now()`](/monque/api-tsed/classes/monqueservice/#now) - Run a job immediately.
 
