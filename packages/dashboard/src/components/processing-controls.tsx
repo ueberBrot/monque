@@ -1,4 +1,8 @@
-import type { ProcessingActionDto } from '@monque/management/contract';
+import type {
+	CapabilitiesDto,
+	ProcessingActionDto,
+	ProcessingStateDto,
+} from '@monque/management/contract';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import { Pause, Play } from 'lucide-react';
 import { useId } from 'react';
@@ -76,16 +80,7 @@ export function ProcessingControls({
 	const capabilities = capabilitiesQuery.data;
 	if (!state || !capabilities)
 		return <Skeleton className="h-28 w-full" aria-label="Loading processing state" />;
-	const action = state.paused ? 'resume' : 'pause';
-	const globalPause = name !== undefined && state.globallyPaused;
-	const allowed = capabilities.actions[action] ?? false;
-	const reason = capabilities.readOnly
-		? 'This dashboard is read-only.'
-		: globalPause
-			? 'Instance paused. Resume it from Health.'
-			: !allowed
-				? `${state.paused ? 'Resuming' : 'Pausing'} is not allowed.`
-				: undefined;
+	const { action, disabled, reason } = processingControlState(state, capabilities, name);
 	const scope = name === undefined ? 'instance' : 'worker';
 	return (
 		<section className="grid min-w-0 gap-3 rounded-lg border border-border bg-card p-4">
@@ -98,7 +93,7 @@ export function ProcessingControls({
 				</div>
 				<Button
 					variant="outline"
-					disabled={!allowed || globalPause || mutation.isPending}
+					disabled={disabled || mutation.isPending}
 					aria-describedby={descriptionId}
 					onClick={() =>
 						mutation.mutate({ action, input: { ...input, instanceId: state.instanceId } })
@@ -122,4 +117,19 @@ export function ProcessingControls({
 			) : null}
 		</section>
 	);
+}
+
+function processingControlState(
+	state: ProcessingStateDto,
+	capabilities: CapabilitiesDto,
+	name: string | undefined,
+) {
+	const action = state.paused ? 'resume' : 'pause';
+	const globalPause = name !== undefined && state.globallyPaused;
+	const allowed = capabilities.actions[action] ?? false;
+	let reason: string | undefined;
+	if (capabilities.readOnly) reason = 'This dashboard is read-only.';
+	else if (globalPause) reason = 'Instance paused. Resume it from Health.';
+	else if (!allowed) reason = `${state.paused ? 'Resuming' : 'Pausing'} is not allowed.`;
+	return { action, disabled: !allowed || globalPause, reason } as const;
 }

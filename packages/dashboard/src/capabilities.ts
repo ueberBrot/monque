@@ -81,7 +81,5 @@ function listDashboardCapabilityStates(
 export {
 	type DashboardCapabilityAction,
 	type DashboardCapabilityState,
-	dashboardCapabilityActions,
-	getDashboardCapabilityState,
 	listDashboardCapabilityStates,
 };
