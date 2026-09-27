@@ -408,6 +408,16 @@ export class Monque extends EventEmitter {
 						},
 					]
 				: []),
+			...(this.options.jobRetention?.cancelled != null
+				? [
+						{
+							key: { updatedAt: 1 } as const,
+							name: 'monque_cancelled_retention',
+							background: true,
+							partialFilterExpression: { status: JobStatus.CANCELLED },
+						},
+					]
+				: []),
 		]);
 	}
 

@@ -10,6 +10,7 @@ import type { Db } from 'mongodb';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { JobFactoryHelpers } from '@tests/factories/job.factory.js';
+import { JobStatus } from '@/jobs';
 import { Monque } from '@/scheduler';
 
 describe('job retention', () => {
@@ -247,5 +248,76 @@ describe('job retention', () => {
 
 		const job = await collection.findOne({ name: 'should-keep-job' });
 		expect(job).not.toBeNull();
+	});
+
+	it('cleans up only expired cancelled jobs across concurrent schedulers', async () => {
+		collectionName = uniqueCollectionName('cancelled-retention');
+		const collection = db.collection(collectionName);
+		const oldDate = new Date(Date.now() - 60_000);
+		const expired = JobFactoryHelpers.cancelled({ updatedAt: oldDate });
+		const retained = [
+			JobFactoryHelpers.cancelled({ createdAt: oldDate }),
+			JobFactoryHelpers.completed({ updatedAt: oldDate }),
+			JobFactoryHelpers.failed({ updatedAt: oldDate }),
+			JobFactoryHelpers.pending({ updatedAt: oldDate }),
+			JobFactoryHelpers.processing({ updatedAt: oldDate }),
+		];
+		await collection.insertMany([expired, ...retained]);
+		const options = {
+			collectionName,
+			jobRetention: { cancelled: 30_000, interval: 50 },
+		};
+		const first = new Monque(db, options);
+		const second = new Monque(db, options);
+		monqueInstances.push(first, second);
+		await first.initialize();
+		await second.initialize();
+		first.start();
+		second.start();
+		await waitFor(async () => (await first.getJob(expired._id)) === null);
+		await collection.insertOne(JobFactoryHelpers.cancelled({ updatedAt: oldDate }));
+		await waitFor(async () => (await first.getJobs({ status: JobStatus.CANCELLED })).length === 1);
+		for (const job of retained) {
+			expect((await first.getJob(job._id))?.status).toBe(job.status);
+		}
+	});
+
+	it('keeps cancelled jobs when only completed retention is configured', async () => {
+		collectionName = uniqueCollectionName('cancelled-default');
+		const oldDate = new Date(Date.now() - 60_000);
+		const cancelled = JobFactoryHelpers.cancelled({ updatedAt: oldDate });
+		const completed = JobFactoryHelpers.completed({ updatedAt: oldDate });
+		await db.collection(collectionName).insertMany([cancelled, completed]);
+		const monque = new Monque(db, { collectionName, jobRetention: { completed: 0 } });
+		monqueInstances.push(monque);
+		await monque.initialize();
+		monque.start();
+		await waitFor(async () => (await monque.getJob(completed._id)) === null);
+		expect((await monque.getJob(cancelled._id))?.status).toBe(JobStatus.CANCELLED);
+	});
+
+	it('accepts zero cancelled retention and preserves existing retention indexes', async () => {
+		collectionName = uniqueCollectionName('cancelled-upgrade');
+		const collection = db.collection(collectionName);
+		await collection.createIndex(
+			{ status: 1, updatedAt: 1 },
+			{
+				background: true,
+				partialFilterExpression: {
+					status: { $in: [JobStatus.COMPLETED, JobStatus.FAILED] },
+					updatedAt: { $exists: true },
+				},
+			},
+		);
+		const monque = new Monque(db, { collectionName, jobRetention: { cancelled: 0 } });
+		monqueInstances.push(monque);
+		await monque.initialize();
+		const job = await monque.enqueue('cancel-me', {});
+		await monque.cancelJob(job._id.toHexString());
+		monque.start();
+		await waitFor(async () => (await monque.getJob(job._id)) === null);
+		expect(
+			(await collection.indexes()).some((index) => index.name === 'status_1_updatedAt_1'),
+		).toBe(true);
 	});
 });
