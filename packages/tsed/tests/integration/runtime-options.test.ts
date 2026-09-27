@@ -1,6 +1,7 @@
-import { type Job, MonqueError } from '@monque/core';
+import { type Job, JobStatus, MonqueError } from '@monque/core';
 import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { JobController, Job as MonqueJob } from '@/decorators';
 import { MonqueService } from '@/services';
@@ -10,6 +11,96 @@ import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 describe('runtime options', () => {
 	afterEach(resetMonque);
+
+	it('pauses and resumes a decorated worker through MonqueService', async () => {
+		@JobController('pause')
+		class EphemeralPausedController {
+			@MonqueJob('work')
+			async work() {}
+			@MonqueJob('other')
+			async other() {}
+		}
+		await bootstrapMonque({ imports: [EphemeralPausedController], connectionStrategy: 'db' });
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		service.pause('pause.work');
+		expect(service.getProcessingState('pause.work')).toMatchObject({
+			name: 'pause.work',
+			paused: true,
+			globallyPaused: false,
+		});
+		expect(await service.getQueueViewSummaries({ name: 'pause.work' })).toMatchObject([
+			{ name: 'pause.work', worker: { paused: true, hasSchema: false } },
+		]);
+		const paused = await service.enqueue('pause.work', {});
+		const other = await service.enqueue('pause.other', {});
+		await waitFor(
+			async () => (await service.getJob(other._id.toString()))?.status === JobStatus.COMPLETED,
+		);
+		expect((await service.getJob(paused._id.toString()))?.status).toBe(JobStatus.PENDING);
+		service.resume('pause.work');
+		expect(service.getProcessingState('pause.work').paused).toBe(false);
+		expect(await service.getQueueViewSummaries({ name: 'pause.work' })).toMatchObject([
+			{ name: 'pause.work', worker: { paused: false } },
+		]);
+		await waitFor(
+			async () => (await service.getJob(paused._id.toString()))?.status === JobStatus.COMPLETED,
+		);
+		expect(service.isPaused('pause.work')).toBe(false);
+	});
+
+	it('validates and transforms payloads supplied to a decorated handler', async () => {
+		const received: number[] = [];
+		const schema = z.object({ count: z.string().transform(async (value) => Number(value) + 1) });
+		@JobController('schema')
+		class EphemeralSchemaController {
+			@MonqueJob('work', { schema })
+			async handler(job: Job<z.output<typeof schema>>) {
+				received.push(job.data.count);
+			}
+		}
+		await bootstrapMonque({ imports: [EphemeralSchemaController], connectionStrategy: 'db' });
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		const valid = await service.enqueue('schema.work', { count: '2' });
+		const invalid = await service.enqueue('schema.work', { count: false });
+		await waitFor(
+			async () =>
+				(await service.getJob(valid._id.toString()))?.status === JobStatus.COMPLETED &&
+				(await service.getJob(invalid._id.toString()))?.status === JobStatus.FAILED,
+		);
+		expect(received).toEqual([3]);
+		expect((await service.getJob(invalid._id.toString()))?.failCount).toBe(1);
+		expect((await service.getJob(valid._id.toString()))?.data).toEqual({ count: '2' });
+	});
+
+	it('uses retry overrides supplied through a Job decorator', async () => {
+		@JobController('retry')
+		class EphemeralRetryController {
+			@MonqueJob('custom', { maxRetries: 2, baseRetryInterval: 0 })
+			async custom() {
+				throw new Error('Unavailable');
+			}
+
+			@MonqueJob('default')
+			async inherited() {
+				throw new Error('Unavailable');
+			}
+		}
+		await bootstrapMonque({
+			imports: [EphemeralRetryController],
+			connectionStrategy: 'db',
+			monqueConfig: { maxRetries: 1 },
+		});
+		const service = PlatformTest.get<MonqueService>(MonqueService);
+		const custom = await service.enqueue('retry.custom', {});
+		const inherited = await service.enqueue('retry.default', {});
+		await waitFor(
+			async () =>
+				(await service.getJob(custom._id.toString()))?.status === JobStatus.FAILED &&
+				(await service.getJob(inherited._id.toString()))?.status === JobStatus.FAILED,
+		);
+		expect((await service.getJob(custom._id.toString()))?.failCount).toBe(2);
+		expect((await service.getJob(inherited._id.toString()))?.failCount).toBe(1);
+	});
 
 	it('renews claims configured through Ts.ED', async () => {
 		const started = Promise.withResolvers<void>();

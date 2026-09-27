@@ -192,7 +192,7 @@ export interface MonqueOptions {
 	/**
 	 * Maximum allowed BSON byte size for job data payloads.
 	 *
-	 * When set, `enqueue()`, `now()`, and `schedule()` validate the payload size
+	 * When set, `enqueue()`, `enqueueMany()`, `now()`, and `schedule()` validate the payload size
 	 * using `BSON.calculateObjectSize()` before insertion. Jobs exceeding this limit
 	 * throw `PayloadTooLargeError`.
 	 *
@@ -225,4 +225,14 @@ export interface MonqueOptions {
 	 * @default 30000 (30 seconds)
 	 */
 	safetyPollInterval?: number;
+}
+
+/** Processing state on one scheduler instance, optionally scoped to one job name. */
+export interface ProcessingState {
+	readonly instanceId: string;
+	readonly name?: string;
+	/** Effective pause state for the requested scope. */
+	readonly paused: boolean;
+	/** A scheduler-wide pause also prevents every named worker from claiming jobs. */
+	readonly globallyPaused: boolean;
 }

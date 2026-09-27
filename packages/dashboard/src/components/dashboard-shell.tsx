@@ -275,4 +275,4 @@ function isDashboardThemeMode(value: string | null): value is DashboardThemeMode
 	return dashboardThemeModes.some((mode) => mode === value);
 }
 
-export { DashboardShell, type DashboardThemeMode };
+export { DashboardShell };

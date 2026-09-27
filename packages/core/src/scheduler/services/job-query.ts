@@ -6,6 +6,7 @@ import {
 	type CursorOptions,
 	type CursorPage,
 	type GetJobsFilter,
+	isValidJobStatus,
 	type JobCursorSort,
 	JobCursorSortDirection,
 	JobCursorSortField,
@@ -20,6 +21,7 @@ import {
 import {
 	AggregationTimeoutError,
 	ConnectionError,
+	DEFAULT_MAX_BACKOFF_DELAY,
 	InvalidCursorError,
 	InvalidJobQueryError,
 	toError,
@@ -382,6 +384,8 @@ export class JobQueryService {
 	}
 
 	/** List job metadata using the same cursor as full listings, without reading payloads. */
+	// Called through Monque.query in the public facade.
+	// fallow-ignore-next-line unused-class-member
 	async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
 		const page = await this.queryJobsWithCursor(options, false);
 		return { ...page, jobs: page.jobs.map(({ data: _data, ...summary }) => summary) };
@@ -495,15 +499,9 @@ export class JobQueryService {
 	}
 
 	private async loadQueueStats(name?: string): Promise<QueueStats> {
-		const matchStage: Document = {};
-
-		if (name !== undefined) {
-			matchStage['name'] = name;
-		}
-
 		const pipeline: Document[] = [
 			// Optional match stage for filtering by name
-			...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+			...(name === undefined ? [] : [{ $match: { name } }]),
 			// Facet to calculate counts and avg processing duration in parallel
 			{
 				$facet: {
@@ -543,60 +541,26 @@ export class JobQueryService {
 		];
 
 		try {
-			const results = await this.ctx.collection.aggregate(pipeline, { maxTimeMS: 30000 }).toArray();
+			const results = await this.ctx.collection
+				.aggregate<{
+					statusCounts: Array<{ _id: string; count: number }>;
+					total: Array<{ count: number }>;
+					avgDuration: Array<{ avgMs: number | null }>;
+				}>(pipeline, { maxTimeMS: 30000 })
+				.toArray();
 
 			const result = results[0];
 
-			// Initialize with zeros
-			const stats: QueueStats = {
-				pending: 0,
-				processing: 0,
-				completed: 0,
-				failed: 0,
-				cancelled: 0,
-				total: 0,
-			};
+			const stats = createEmptyQueueStats();
+			if (!result) return stats;
 
-			if (result) {
-				// Map status counts to stats
-				const statusCounts = result['statusCounts'] as Array<{ _id: string; count: number }>;
-				for (const entry of statusCounts) {
-					const status = entry._id;
-					const count = entry.count;
-
-					switch (status) {
-						case JobStatus.PENDING:
-							stats.pending = count;
-							break;
-						case JobStatus.PROCESSING:
-							stats.processing = count;
-							break;
-						case JobStatus.COMPLETED:
-							stats.completed = count;
-							break;
-						case JobStatus.FAILED:
-							stats.failed = count;
-							break;
-						case JobStatus.CANCELLED:
-							stats.cancelled = count;
-							break;
-					}
-				}
-
-				// Extract total
-				const totalResult = result['total'] as Array<{ count: number }>;
-				if (totalResult.length > 0 && totalResult[0]) {
-					stats.total = totalResult[0].count;
-				}
-
-				// Extract average processing duration
-				const avgDurationResult = result['avgDuration'] as Array<{ avgMs: number }>;
-				if (avgDurationResult.length > 0 && avgDurationResult[0]) {
-					const avgMs = avgDurationResult[0].avgMs;
-					if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
-						stats.avgProcessingDurationMs = Math.round(avgMs);
-					}
-				}
+			for (const { _id, count } of result.statusCounts) {
+				if (isValidJobStatus(_id)) stats[_id] = count;
+			}
+			stats.total = result.total[0]?.count ?? 0;
+			const avgMs = result.avgDuration[0]?.avgMs;
+			if (typeof avgMs === 'number' && !Number.isNaN(avgMs)) {
+				stats.avgProcessingDurationMs = Math.round(avgMs);
 			}
 
 			return stats;
@@ -643,6 +607,15 @@ export class JobQueryService {
 					? {
 							concurrency: worker.concurrency,
 							activeCount: worker.activeJobs.size,
+							paused: this.ctx.isPaused(name),
+							hasSchema: worker.schema !== undefined,
+							maxRetries: worker.retryOptions?.maxRetries ?? this.ctx.options.maxRetries,
+							baseRetryInterval:
+								worker.retryOptions?.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+							maxBackoffDelay:
+								worker.retryOptions?.maxBackoffDelay ??
+								this.ctx.options.maxBackoffDelay ??
+								DEFAULT_MAX_BACKOFF_DELAY,
 						}
 					: null;
 

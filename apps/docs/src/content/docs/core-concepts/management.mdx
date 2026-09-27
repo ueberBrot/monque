@@ -175,6 +175,11 @@ for (const view of views) {
 
 Each summary includes counts, `hasPersistedJobs`, `hasRegisteredWorker`, and the local
 worker's `concurrency` and `activeCount` when registered. Names are sorted alphabetically.
+Local worker summaries also report effective `paused` state, `hasSchema`, `maxRetries`,
+`baseRetryInterval`, and `maxBackoffDelay`. Retry delays are milliseconds and include
+inherited scheduler defaults. Worker state is refreshed on every call, even when counts
+are cached. Pauses apply only to this scheduler instance; active executions retain their
+original retry policy after a worker is replaced.
 A name can appear with historical jobs but no worker, or with a registered worker and no
 persisted jobs.
 

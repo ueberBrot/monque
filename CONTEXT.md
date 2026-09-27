@@ -109,8 +109,9 @@ processing jobs block duplicates; completed and failed jobs do not.
   `ManagementOptions`, not through singleton routers with baked-in scheduler state.
 - The Management Surface exposes existing public Monque management operations before adding
   new operator behavior.
-- The first Management Surface excludes job creation, worker registration, and scheduler
-  lifecycle operations.
+- The Management Surface excludes job creation, worker registration, and scheduler startup
+  or shutdown. Local pause/resume controls target the attached scheduler identity and leave
+  running handlers uninterrupted.
 - Management read-only mode allows reads and rejects all mutations with `403`.
 - The Management Route Map exposes capabilities so clients can reflect disabled actions.
 - Unsupported Management actions keep their route in the v1 contract and return `403`;
