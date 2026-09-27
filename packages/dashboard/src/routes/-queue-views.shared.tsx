@@ -196,7 +196,7 @@ function QueueViewsOverview({
 							<p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
 								<ServerCog className="size-3.5" />
 								{view.hasRegisteredWorker
-									? `${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`
+									? `${view.worker?.paused ? 'Paused · ' : ''}${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`
 									: 'Historical only · No registered worker'}
 							</p>
 						</div>
@@ -263,6 +263,43 @@ function QueueViewDetailHeader({
 				</div>
 			</div>
 			<QueueStatsGrid stats={stats} />
+			{queueView?.worker ? (
+				<dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
+					{(
+						[
+							['Concurrency', queueView.worker.concurrency],
+							['Failure limit', queueView.worker.maxRetries],
+							[
+								'Base retry delay',
+								queueView.worker.baseRetryInterval === undefined
+									? undefined
+									: `${queueView.worker.baseRetryInterval} ms`,
+							],
+							[
+								'Max backoff',
+								queueView.worker.maxBackoffDelay === undefined
+									? undefined
+									: `${queueView.worker.maxBackoffDelay} ms`,
+							],
+							[
+								'Payload validation',
+								queueView.worker.hasSchema === undefined
+									? undefined
+									: queueView.worker.hasSchema
+										? 'Enabled'
+										: 'Not configured',
+							],
+						] as const
+					)
+						.filter(([, value]) => value !== undefined)
+						.map(([label, value]) => (
+							<div key={label}>
+								<dt className="text-xs text-muted-foreground">{label}</dt>
+								<dd className="mt-1 font-medium tabular-nums">{value}</dd>
+							</div>
+						))}
+				</dl>
+			) : null}
 		</section>
 	);
 }

@@ -14,8 +14,9 @@ bun add @monque/management-express @monque/management @monque/core express mongo
 
 `@monque/core`, `@monque/management`, `express`, and `mongodb` are peer dependencies.
 
-Requires `@monque/core` 1.12.0 or newer within version 1. Upgrade core alongside the adapter
-so job details and actions can look up jobs by string ID.
+Requires `@monque/core` 1.15.0 or newer within version 1 and `@monque/management` 0.6.x.
+Upgrade them alongside the adapter to expose effective worker policies and renewable
+lease deadlines.
 
 ## Usage
 
