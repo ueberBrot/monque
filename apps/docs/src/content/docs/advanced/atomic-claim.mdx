@@ -85,6 +85,14 @@ On a successful one-time run, the job becomes completed. A successful recurring 
 to pending at its next cron time. A failed run either returns to pending for retry or
 becomes failed when retries are exhausted.
 
+Each execution receives a new `claimId`. Completion, failure, release, and heartbeat updates
+apply only to that claim. If recovery assigns the job again, a late result from the old
+handler cannot overwrite the new execution, even when a scheduler ID is reused.
+
+This protects the stored job state, not external side effects: a handler that lost its claim
+can still finish its own code. Keep handlers idempotent. Upgrade every scheduler sharing
+the collection to get this protection; older versions do not check claim IDs.
+
 ## Failure Handling
 
 A crashed worker can leave a job in processing. With `recoverStaleJobs: true`, a subsequent

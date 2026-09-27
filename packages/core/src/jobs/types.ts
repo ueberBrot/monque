@@ -85,6 +85,9 @@ export interface Job<T = unknown> {
 	 */
 	claimedBy?: string | null;
 
+	/** Identifier of this execution's claim; changes whenever the job is claimed again. */
+	claimId?: string;
+
 	/**
 	 * Timestamp of the last heartbeat update for this job.
 	 * Used to detect stale jobs when a scheduler instance crashes without releasing.

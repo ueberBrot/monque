@@ -149,7 +149,7 @@ export class JobProcessor {
 
 								if (this.ctx.isRunning()) {
 									// Add to activeJobs immediately to correctly track concurrency
-									worker.activeJobs.set(job._id.toString(), job);
+									worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
 									this._totalActiveJobs++;
 
 									this.processJob(job, worker).catch((error: unknown) => {
@@ -192,7 +192,7 @@ export class JobProcessor {
 	 * @param worker - The worker registration containing the handler and active job tracking
 	 */
 	private async processJob(job: PersistedJob, worker: WorkerRegistration): Promise<void> {
-		const jobId = job._id.toString();
+		const claimId = job.claimId ?? job._id.toString();
 		const startTime = Date.now();
 
 		try {
@@ -216,7 +216,7 @@ export class JobProcessor {
 				this.ctx.emit('job:fail', { job: updatedJob, error: err, willRetry });
 			}
 		} finally {
-			worker.activeJobs.delete(jobId);
+			worker.activeJobs.delete(claimId);
 			this._totalActiveJobs--;
 			this.ctx.notifyJobFinished();
 		}

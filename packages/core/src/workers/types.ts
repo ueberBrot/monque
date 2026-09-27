@@ -34,6 +34,6 @@ export interface WorkerRegistration<T = unknown> {
 	handler: JobHandler<T>;
 	/** Maximum concurrent jobs for this worker */
 	concurrency: number;
-	/** Map of active job IDs to their job data */
+	/** Map of active claim IDs to their job data */
 	activeJobs: Map<string, PersistedJob<T>>;
 }

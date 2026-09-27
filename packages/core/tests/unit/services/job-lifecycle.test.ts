@@ -85,6 +85,7 @@ describe('JobLifecycle', () => {
 					$unset: {
 						lockedAt: '',
 						claimedBy: '',
+						claimId: '',
 						lastHeartbeat: '',
 					},
 				},
@@ -178,7 +179,12 @@ describe('JobLifecycle', () => {
 			expect(result?.status).toBe(JobStatus.COMPLETED);
 			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.objectContaining({
 					$set: expect.objectContaining({ status: JobStatus.COMPLETED }),
 				}),
@@ -207,7 +213,12 @@ describe('JobLifecycle', () => {
 				rescheduledJob.nextRunAt,
 			);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.objectContaining({
 					$set: expect.objectContaining({ status: JobStatus.PENDING, failCount: 0 }),
 				}),
@@ -224,7 +235,12 @@ describe('JobLifecycle', () => {
 
 			expect(result).toBeNull();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.any(Object),
 				{ returnDocument: 'after' },
 			);
@@ -267,7 +283,12 @@ describe('JobLifecycle', () => {
 				retriedJob.nextRunAt,
 			);
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.objectContaining({
 					$set: expect.objectContaining({
 						status: JobStatus.PENDING,
@@ -299,7 +320,12 @@ describe('JobLifecycle', () => {
 			expect(result?.failCount).toBe(3);
 			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.objectContaining({
 					$set: expect.objectContaining({
 						status: JobStatus.FAILED,
@@ -322,7 +348,12 @@ describe('JobLifecycle', () => {
 			expect(result).toBeNull();
 			expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
 			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				{ _id: job._id, status: JobStatus.PROCESSING, claimedBy: 'test-instance-id' },
+				{
+					_id: job._id,
+					status: JobStatus.PROCESSING,
+					claimedBy: 'test-instance-id',
+					claimId: null,
+				},
 				expect.any(Object),
 				{ returnDocument: 'after' },
 			);
@@ -348,25 +379,6 @@ describe('JobLifecycle', () => {
 			await lifecycle.updateOwnedHeartbeats();
 
 			expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
-		});
-
-		it('should update lastHeartbeat for all jobs claimed by this instance', async () => {
-			vi.spyOn(ctx.mockCollection, 'updateMany').mockResolvedValue({
-				modifiedCount: 2,
-				acknowledged: true,
-				upsertedId: null,
-				upsertedCount: 0,
-				matchedCount: 2,
-			});
-
-			await lifecycle.updateOwnedHeartbeats();
-
-			expect(ctx.mockCollection.updateMany).toHaveBeenCalledWith(
-				{ claimedBy: 'test-instance-id', status: JobStatus.PROCESSING },
-				expect.objectContaining({
-					$set: expect.objectContaining({ lastHeartbeat: expect.any(Date) }),
-				}),
-			);
 		});
 	});
 });

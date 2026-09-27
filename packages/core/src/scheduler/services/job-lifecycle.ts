@@ -33,6 +33,7 @@ export class JobLifecycle {
 				$set: {
 					status: JobStatus.PROCESSING,
 					claimedBy: this.ctx.instanceId,
+					claimId: randomUUID(),
 					lockedAt: now,
 					lastHeartbeat: now,
 					heartbeatInterval: this.ctx.options.heartbeatInterval,
@@ -183,11 +184,19 @@ export class JobLifecycle {
 		if (!this.ctx.isRunning()) {
 			return;
 		}
+		const claimIds: string[] = [];
+		for (const worker of this.ctx.workers.values()) {
+			for (const job of worker.activeJobs.values()) {
+				if (job.claimId) claimIds.push(job.claimId);
+			}
+		}
+		if (claimIds.length === 0) return;
 
 		const now = new Date();
 		await this.ctx.collection.updateMany(
 			{
 				claimedBy: this.ctx.instanceId,
+				claimId: { $in: claimIds },
 				status: JobStatus.PROCESSING,
 			},
 			{
@@ -214,11 +223,7 @@ export class JobLifecycle {
 					status: JobStatus.PENDING,
 					updatedAt: new Date(),
 				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-				},
+				$unset: this.claimCleanupFields(),
 			},
 		);
 
@@ -254,22 +259,27 @@ export class JobLifecycle {
 		_id: PersistedJob['_id'];
 		status: typeof JobStatus.PROCESSING;
 		claimedBy: string;
+		claimId: string | null;
 	} {
 		return {
 			_id: job._id,
 			status: JobStatus.PROCESSING,
 			claimedBy: this.ctx.instanceId,
+			claimId: job.claimId ?? null,
 		};
 	}
 
 	/**
 	 * Claim fields removed whenever ownership ends.
 	 */
-	private claimCleanupFields(): { lockedAt: ''; claimedBy: ''; lastHeartbeat: '' } {
+	private claimCleanupFields(): { lockedAt: ''; claimedBy: ''; claimId: ''; lastHeartbeat: '' } {
 		return {
 			lockedAt: '',
 			claimedBy: '',
+			claimId: '',
 			lastHeartbeat: '',
 		};
 	}
 }
+
+import { randomUUID } from 'node:crypto';

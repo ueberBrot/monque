@@ -39,10 +39,10 @@ _Avoid_: dashboard server, management adapter
 It claims jobs, sends heartbeats, and releases ownership when work completes.
 
 **Claim** — atomic transition from pending to processing. A claim writes `claimedBy`,
-`lockedAt`, `lastHeartbeat`, and `heartbeatInterval`.
+a unique `claimId`, `lockedAt`, `lastHeartbeat`, and `heartbeatInterval`.
 
-**Owned Job** — processing job whose `claimedBy` matches current scheduler instance.
-Completion and failure transitions require ownership.
+**Owned Job** — processing job whose `claimedBy` matches the current scheduler instance
+and whose `claimId` matches the execution's claim. Completion and failure require that claim.
 
 **Stale Job** — processing job whose `lockedAt` is older than `lockTimeout`. Stale recovery
 resets it to pending and clears claim fields.
