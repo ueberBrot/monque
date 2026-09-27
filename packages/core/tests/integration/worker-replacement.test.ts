@@ -72,6 +72,7 @@ describe('replacing a running worker', () => {
 				expect((await monque.getJob(next._id))?.status).toBe(JobStatus.PENDING);
 				release.resolve();
 				await waitFor(async () => (await monque.getJob(next._id))?.status === JobStatus.COMPLETED);
+				await monque.stop();
 				expect(order).toEqual(['original', 'latest']);
 				expect((await monque.getJob(original._id))?.status).toBe(
 					fail ? JobStatus.FAILED : JobStatus.COMPLETED,
