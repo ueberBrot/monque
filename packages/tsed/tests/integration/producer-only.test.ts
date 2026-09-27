@@ -60,6 +60,22 @@ describe('Producer-only Mode (disableJobProcessing)', () => {
 			]);
 		});
 
+		it('keeps injected job writes in the caller-owned transaction', async () => {
+			const service = PlatformTest.get<MonqueService>(MonqueService);
+			const db = getTestDb();
+			await db.client.withSession(async (session) => {
+				session.startTransaction();
+				await service.enqueue('producer-test.job', {}, { session });
+				await service.enqueueMany([{ name: 'producer-test.job', data: {} }], { session });
+				await service.schedule('0 0 1 1 *', 'producer-test.job', {}, { session });
+				expect(await db.collection('monque_jobs').countDocuments({}, { session })).toBe(3);
+				expect(await db.collection('monque_jobs').countDocuments()).toBe(0);
+				await session.abortTransaction();
+				expect(session.hasEnded).toBe(false);
+			});
+			expect(await service.getJobs()).toEqual([]);
+		});
+
 		it('should not process jobs even with jobs defined', async () => {
 			const service = PlatformTest.get<MonqueService>(MonqueService);
 

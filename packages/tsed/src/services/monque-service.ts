@@ -29,6 +29,7 @@ import type {
 	EnqueueOptions,
 	GetJobsFilter,
 	JobSelector,
+	JobWriteOptions,
 	Monque,
 	PersistedJob,
 	ProcessingState,
@@ -93,8 +94,11 @@ export class MonqueService {
 	}
 
 	/** Enqueue a batch using full namespaced job names and per-job scheduling options. */
-	async enqueueMany(jobs: readonly EnqueueJob[]): Promise<EnqueueManyResult> {
-		return this.monque.enqueueMany(jobs);
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options?: JobWriteOptions,
+	): Promise<EnqueueManyResult> {
+		return this.monque.enqueueMany(jobs, options);
 	}
 
 	/**

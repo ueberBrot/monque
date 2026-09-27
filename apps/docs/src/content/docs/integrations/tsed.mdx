@@ -48,7 +48,7 @@ Install these peer dependencies alongside the integration:
 
 | Package | Version | Required |
 |---------|---------|----------|
-| `@monque/core` | `^1.10.1` | Yes |
+| `@monque/core` | `^1.15.0` | Yes |
 | `mongodb` | `^7.6.0` | Yes |
 | `@tsed/core` | `^8.38.7` | Yes |
 | `@tsed/di` | `^8.38.7` | Yes |
@@ -334,7 +334,10 @@ Commonly used methods:
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
 - [`now()`](/monque/api-tsed/classes/monqueservice/#now) - Run a job immediately.
 
-
+For [transactional submission](/monque/core-concepts/jobs/#enqueue-in-a-transaction),
+pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()`. Create the session
+from the same `MongoClient` used by your configured database connection. Your
+application owns the transaction and session lifetime.
 
 <Aside type="tip">
   See the [Ts.ED API Reference](/monque/api-tsed/classes/monqueservice/) for queries, bulk actions, and other methods.

@@ -31,6 +31,7 @@ export {
 	type JobStatusType,
 	type JobSummary,
 	type JobSummaryPage,
+	type JobWriteOptions,
 	type PersistedJob,
 	type QueueStats,
 	type QueueViewSummary,

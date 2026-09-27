@@ -13,6 +13,7 @@ import {
 	type EnqueueOptions,
 	type Job,
 	JobStatus,
+	type JobWriteOptions,
 	type PersistedJob,
 	type ScheduleOptions,
 } from '@/jobs';
@@ -78,8 +79,9 @@ export class JobIntake {
 	private async persistPendingJob<T>(
 		operation: 'enqueue' | 'schedule',
 		job: Omit<Job<T>, '_id'>,
-		uniqueKey?: string,
+		options: EnqueueOptions | ScheduleOptions,
 	): Promise<PersistedJob<T>> {
+		const { uniqueKey, session } = options;
 		if (uniqueKey !== undefined) {
 			const filter = {
 				name: job.name,
@@ -95,9 +97,11 @@ export class JobIntake {
 					{
 						upsert: true,
 						returnDocument: 'after',
+						...(session && { session }),
 					},
 				)
 				.catch(async (error: unknown) => {
+					if (session?.inTransaction()) throw error;
 					if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
 					const pattern: unknown = error['keyPattern'];
 					if (
@@ -110,7 +114,10 @@ export class JobIntake {
 						Object.keys(pattern).length !== 2
 					)
 						throw error;
-					const existing = await this.ctx.collection.findOne(filter, { readPreference: 'primary' });
+					const existing = await this.ctx.collection.findOne(filter, {
+						readPreference: 'primary',
+						...(session && { session }),
+					});
 					if (!existing) throw error;
 					return existing;
 				});
@@ -122,16 +129,20 @@ export class JobIntake {
 			}
 
 			const persistedJob = this.ctx.documentToPersistedJob<T>(result);
-			if (persistedJob.status === JobStatus.PENDING) {
+			if (persistedJob.status === JobStatus.PENDING && !session?.inTransaction()) {
 				this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
 			}
 
 			return persistedJob;
 		}
 
-		const result = await this.ctx.collection.insertOne(job as Document);
+		const result = await this.ctx.collection.insertOne(
+			job as Document,
+			session ? { session } : undefined,
+		);
 		const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
-		this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		if (!session?.inTransaction())
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
 
 		return persistedJob;
 	}
@@ -167,8 +178,9 @@ export class JobIntake {
 		}
 
 		try {
-			return await this.persistPendingJob('schedule', job, options.uniqueKey);
+			return await this.persistPendingJob('schedule', job, options);
 		} catch (error) {
+			if (options.session?.inTransaction()) throw error;
 			if (error instanceof ConnectionError) {
 				throw error;
 			}
@@ -206,8 +218,9 @@ export class JobIntake {
 	async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
 		const job = this.createEnqueuedJob(name, data, options);
 		try {
-			return await this.persistPendingJob('enqueue', job, options.uniqueKey);
+			return await this.persistPendingJob('enqueue', job, options);
 		} catch (error) {
+			if (options.session?.inTransaction()) throw error;
 			if (error instanceof ConnectionError) {
 				throw error;
 			}
@@ -216,7 +229,11 @@ export class JobIntake {
 		}
 	}
 
-	async enqueueMany(inputs: readonly EnqueueJob[]): Promise<EnqueueManyResult> {
+	async enqueueMany(
+		inputs: readonly EnqueueJob[],
+		options: JobWriteOptions = {},
+	): Promise<EnqueueManyResult> {
+		const { session } = options;
 		const jobs = inputs.map((input) => this.createEnqueuedJob(input.name, input.data, input));
 		if (jobs.length === 0) return { insertedCount: 0, deduplicatedCount: 0 };
 
@@ -237,10 +254,11 @@ export class JobIntake {
 						upsert: true,
 					},
 				})),
-				{ ordered: false },
+				{ ordered: false, ...(session && { session }) },
 			);
 			return { insertedCount: result.upsertedCount, deduplicatedCount: result.matchedCount };
 		} catch (error) {
+			if (session?.inTransaction()) throw error;
 			if (error instanceof MongoBulkWriteError) {
 				result = error.result;
 				const writeErrors = result.getWriteErrors();
@@ -263,7 +281,11 @@ export class JobIntake {
 								$or: conflicts,
 								status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
 							},
-							{ projection: { name: 1, uniqueKey: 1 }, readPreference: 'primary' },
+							{
+								projection: { name: 1, uniqueKey: 1 },
+								readPreference: 'primary',
+								...(session && { session }),
+							},
 						)
 						.toArray()
 						// Preserve the write error if reconciliation cannot confirm deduplication.
@@ -284,7 +306,7 @@ export class JobIntake {
 		} finally {
 			for (const index of Object.keys(result?.upsertedIds ?? {})) {
 				const job = jobs[Number(index)];
-				if (job) this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+				if (job && !session?.inTransaction()) this.ctx.notifyPendingJob(job.name, job.nextRunAt);
 			}
 		}
 	}
