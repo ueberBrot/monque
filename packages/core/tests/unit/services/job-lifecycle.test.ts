@@ -42,6 +42,11 @@ describe('JobLifecycle', () => {
 					returnDocument: 'after',
 				},
 			);
+			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalledWith(
+				expect.objectContaining({ $or: expect.any(Array) }),
+				expect.any(Object),
+				expect.any(Object),
+			);
 		});
 	});
 
@@ -105,34 +110,6 @@ describe('JobLifecycle', () => {
 
 			expect(job).toBeNull();
 			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
-		});
-
-		it('should atomically claim a pending job', async () => {
-			const pendingJob = JobFactory.build({ name: 'test-job' });
-			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(pendingJob);
-
-			const job = await lifecycle.claimNext('test-job');
-
-			expect(job).not.toBeNull();
-			expect(job?.name).toBe('test-job');
-			expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
-				expect.objectContaining({
-					name: 'test-job',
-					status: JobStatus.PENDING,
-				}),
-				expect.objectContaining({
-					$set: expect.objectContaining({
-						status: JobStatus.PROCESSING,
-						claimedBy: 'test-instance-id',
-					}),
-				}),
-				expect.any(Object),
-			);
-			expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalledWith(
-				expect.objectContaining({ $or: expect.any(Array) }),
-				expect.any(Object),
-				expect.any(Object),
-			);
 		});
 
 		it('should return null when no jobs available', async () => {

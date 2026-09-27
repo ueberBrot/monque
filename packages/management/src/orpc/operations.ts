@@ -87,7 +87,7 @@ export function createManagementOperations<TContext = unknown>(
 ): ManagementOperations<TContext> {
 	return {
 		getProcessingState: async (input, context) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 			return readProcessingState(options, input?.name);
 		},
 		pauseProcessing: (input, context) => executeProcessingAction(options, 'pause', input, context),
@@ -106,7 +106,7 @@ export function createManagementOperations<TContext = unknown>(
 			);
 		},
 		listQueueViews: async (context: TContext, filter?: QueueViewQueryDto) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 			const scope = filter?.name === undefined ? undefined : { name: filter.name };
 			const summaries = await options.monque.getQueueViewSummaries(scope);
 			// Older compatible scheduler facades may ignore the additive filter argument.
@@ -115,7 +115,7 @@ export function createManagementOperations<TContext = unknown>(
 			);
 		},
 		listJobs: async (input: JobListQueryDto, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			const cursorOptions = toJobCursorOptions(input);
 
@@ -144,12 +144,12 @@ export function createManagementOperations<TContext = unknown>(
 			}
 		},
 		getJobStats: async (input: { name?: string | undefined }, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			return toQueueStatsDto(await options.monque.getQueueStats(toQueueStatsFilter(input)));
 		},
 		getJob: async (input: JobDetailInputDto, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			const { job } = await resolvePersistedJob(options, input.params.id);
 
@@ -373,13 +373,6 @@ async function handleBulkJobMutation<TContext>(
 	await requireManagementAction(options, action, context, { selector });
 
 	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
-}
-
-async function requireReadAuthorization<TContext>(
-	options: ManagementOptions<TContext>,
-	context: TContext,
-): Promise<void> {
-	await requireManagementAction(options, 'read', context);
 }
 
 async function requireManagementAction<TContext>(

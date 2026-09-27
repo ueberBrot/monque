@@ -39,8 +39,8 @@ With `pollingIntervalMs: 15_000`:
 | Data | Base interval |
 | --- | --- |
 | Job lists and job details | 15 seconds |
-| Queue statistics and scheduler health | 45 seconds |
-| Permissions | 90 seconds |
+| Queue statistics, scheduler health, and processing state | 45 seconds |
+| Permissions | 45 seconds for processing controls; 90 seconds elsewhere |
 
 Each interval adds up to 10% random delay to spread requests across clients. Requests back
 off after errors, and periodic polling pauses while the tab is hidden. Job actions refresh

@@ -7,6 +7,14 @@ import type { RetryOptions } from '@/workers';
 
 import type { SchedulerContext } from './types.js';
 
+const CLAIM_CLEANUP_FIELDS = {
+	lockedAt: '',
+	claimedBy: '',
+	claimId: '',
+	leaseExpiresAt: '',
+	lastHeartbeat: '',
+} as const;
+
 /**
  * Concentrates ownership-sensitive job lifecycle operations.
  *
@@ -75,7 +83,7 @@ export class JobLifecycle {
 				status: JobStatus.PENDING,
 				updatedAt: new Date(),
 			},
-			$unset: this.claimCleanupFields(),
+			$unset: CLAIM_CLEANUP_FIELDS,
 		});
 	}
 
@@ -89,50 +97,29 @@ export class JobLifecycle {
 
 		const now = new Date();
 
-		if (job.repeatInterval) {
-			const nextRunAt = getNextCronDate(job.repeatInterval, undefined, job.timezone);
-			const result = await this.ctx.collection.findOneAndUpdate(
-				this.ownedJobFilter(job),
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: now,
-					},
-					$unset: {
-						...this.claimCleanupFields(),
-						failReason: '',
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			if (!result) {
-				return null;
-			}
-
-			const persistedJob = this.ctx.documentToPersistedJob(result);
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-			return persistedJob;
-		}
-
+		const completion = job.repeatInterval
+			? {
+					status: JobStatus.PENDING,
+					nextRunAt: getNextCronDate(job.repeatInterval, undefined, job.timezone),
+					failCount: 0,
+				}
+			: { status: JobStatus.COMPLETED };
 		const result = await this.ctx.collection.findOneAndUpdate(
 			this.ownedJobFilter(job),
 			{
-				$set: {
-					status: JobStatus.COMPLETED,
-					updatedAt: now,
-				},
-				$unset: {
-					...this.claimCleanupFields(),
-					failReason: '',
-				},
+				$set: { ...completion, updatedAt: now },
+				$unset: { ...CLAIM_CLEANUP_FIELDS, failReason: '' },
 			},
 			{ returnDocument: 'after' },
 		);
 
-		return result ? this.ctx.documentToPersistedJob(result) : null;
+		if (!result) return null;
+
+		const persistedJob = this.ctx.documentToPersistedJob(result);
+		if (completion.status === JobStatus.PENDING) {
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		}
+		return persistedJob;
 	}
 
 	/**
@@ -150,44 +137,30 @@ export class JobLifecycle {
 		const now = new Date();
 		const newFailCount = job.failCount + 1;
 
-		if (
+		const terminal =
 			error instanceof NonRetryableError ||
-			newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries)
-		) {
-			const result = await this.ctx.collection.findOneAndUpdate(
-				this.ownedJobFilter(job),
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: now,
-					},
-					$unset: this.claimCleanupFields(),
-				},
-				{ returnDocument: 'after' },
-			);
-
-			return result ? this.ctx.documentToPersistedJob(result) : null;
-		}
-
-		const nextRunAt = calculateBackoff(
-			newFailCount,
-			options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
-			options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
-		);
+			newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries);
+		const retry = terminal
+			? { status: JobStatus.FAILED }
+			: {
+					status: JobStatus.PENDING,
+					nextRunAt: calculateBackoff(
+						newFailCount,
+						options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+						options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
+					),
+				};
 
 		const result = await this.ctx.collection.findOneAndUpdate(
 			this.ownedJobFilter(job),
 			{
 				$set: {
-					status: JobStatus.PENDING,
+					...retry,
 					failCount: newFailCount,
 					failReason: error.message,
-					nextRunAt,
 					updatedAt: now,
 				},
-				$unset: this.claimCleanupFields(),
+				$unset: CLAIM_CLEANUP_FIELDS,
 			},
 			{ returnDocument: 'after' },
 		);
@@ -197,7 +170,9 @@ export class JobLifecycle {
 		}
 
 		const persistedJob = this.ctx.documentToPersistedJob(result);
-		this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		if (!terminal) {
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		}
 		return persistedJob;
 	}
 
@@ -259,7 +234,7 @@ export class JobLifecycle {
 					status: JobStatus.PENDING,
 					updatedAt: new Date(),
 				},
-				$unset: this.claimCleanupFields(),
+				$unset: CLAIM_CLEANUP_FIELDS,
 			},
 		);
 
@@ -299,25 +274,6 @@ export class JobLifecycle {
 			claimedBy: this.ctx.instanceId,
 			claimId: job.claimId ?? null,
 			...(job.leaseExpiresAt === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
-		};
-	}
-
-	/**
-	 * Claim fields removed whenever ownership ends.
-	 */
-	private claimCleanupFields(): {
-		lockedAt: '';
-		claimedBy: '';
-		claimId: '';
-		lastHeartbeat: '';
-		leaseExpiresAt: '';
-	} {
-		return {
-			lockedAt: '',
-			claimedBy: '',
-			claimId: '',
-			leaseExpiresAt: '',
-			lastHeartbeat: '',
 		};
 	}
 }

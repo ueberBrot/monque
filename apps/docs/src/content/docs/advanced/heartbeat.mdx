@@ -48,10 +48,9 @@ intervals of headroom for database delays and event-loop pauses. Each heartbeat 
 `leaseExpiresAt` using MongoDB's clock; `lockedAt` continues to identify the original claim
 time. An expired lease cannot be revived by a delayed heartbeat or completed by a late handler.
 
-With leases enabled, running schedulers also check for expired claims after heartbeats.
-They recover expired leases and legacy absolute locks and notify workers that jobs are ready.
-No external cron job or additional scheduler process is required. Detection can take a lease
-duration plus a maintenance interval, and longer during database outages.
+With leases enabled, running schedulers recover expired leases and absolute locks
+after each heartbeat. After a crash, recovery can take up to a lease duration plus
+one `heartbeatInterval`, and longer during database outages.
 
 Enabling leases affects new claims. Existing processing jobs keep their absolute lock
 deadline until they finish or are recovered. Keep `lockTimeout` appropriate for those jobs.
@@ -78,7 +77,8 @@ sequenceDiagram
 ```
 
 Without leases, recovery happens only during initialization. With leases, it also happens
-while a scheduler remains running. Recovered jobs may repeat side effects from an interrupted run, so workers must be
+while a scheduler remains running. Recovered jobs may repeat side effects from an
+interrupted run, so workers must be
 [idempotent](/monque/core-concepts/jobs/#idempotent-operations).
 
 Set `recoverStaleJobs: false` only when your application provides its own recovery process.

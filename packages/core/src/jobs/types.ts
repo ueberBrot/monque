@@ -174,7 +174,7 @@ export interface EnqueueManyResult {
 export interface JobWriteOptions {
 	/**
 	 * Session from the MongoClient used by Monque. The caller owns its lifetime,
-	 * transaction, and commit. Jobs become visible to workers after commit.
+	 * transaction, and commit. In a transaction, jobs become visible to workers after commit.
 	 */
 	session?: ClientSession;
 }
@@ -410,9 +410,11 @@ export interface QueueViewWorkerSummary {
 	readonly paused?: boolean;
 	/** Whether this local worker validates payloads with Standard Schema. */
 	readonly hasSchema?: boolean;
-	/** Effective retry limit and delays captured for new executions. */
+	/** Effective retry limit for new executions, including the scheduler default. */
 	readonly maxRetries?: number;
+	/** Base delay for exponential retry backoff in milliseconds, including the scheduler default. */
 	readonly baseRetryInterval?: number;
+	/** Maximum retry delay in milliseconds, when configured. */
 	readonly maxBackoffDelay?: number;
 }
 

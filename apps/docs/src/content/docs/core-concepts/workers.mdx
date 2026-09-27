@@ -287,11 +287,10 @@ worker are still acquired in their scheduled order.
 | Memory-intensive tasks          | Limited by available RAM |
 | External API calls | Limit simultaneous requests; enforce time-based rate limits separately |
 
-When an execution finishes, Monque notifies the local scheduler to claim waiting
-jobs for the available slot. This shares the normal notification batching window
-and works even when change streams are unavailable. Change streams remain the
-primary way to discover database changes; without them, the polling interval
-controls discovery of work written by other producers.
+When an execution finishes, waiting jobs can use the freed local slot without
+waiting for `pollInterval`, even when change streams are unavailable. Work written
+by other producers is discovered through change streams or, when unavailable,
+within `pollInterval`.
 
 ## Multiple Workers
 

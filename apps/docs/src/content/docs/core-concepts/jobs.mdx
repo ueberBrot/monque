@@ -112,10 +112,9 @@ job with the same name and unique key keeps its payload and schedule. Writes are
 unordered; when new items share a key, do not rely on which payload wins. Completed,
 failed, and cancelled jobs do not block a new job with that key.
 
-The result contains counts rather than job documents, avoiding a read-back query.
-MongoDB may split large batches into multiple requests. Without a transaction,
-a database error can leave some jobs persisted while other jobs fail. `ConnectionError.cause` retains the MongoDB error, including
-partial results when available. Use stable unique keys when retrying, and remember
+The result contains counts, not job documents. Without a transaction, a database
+error can leave some jobs persisted while other jobs fail. `ConnectionError.cause`
+contains the MongoDB error and any available partial results. Use stable unique keys when retrying, and remember
 that deduplication lasts only while a job is pending or processing.
 
 ### Enqueue in a Transaction
@@ -151,8 +150,8 @@ Let `withTransaction()` retry eligible failures, and keep external side effects
 outside its callback. Do not catch a failed write and continue using an aborted
 transaction. A returned job or batch count is provisional until commit succeeds.
 
-Change streams wake workers after commit. If streams are unavailable, the existing
-fallback poll discovers committed jobs; no additional polling is introduced.
+Change streams wake workers after commit. When streams are unavailable, committed
+jobs are discovered within the configured `pollInterval`.
 
 ### Scheduled Execution
 

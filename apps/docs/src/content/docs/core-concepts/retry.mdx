@@ -83,8 +83,8 @@ monque.register('send-email', emailHandler, {
 ```
 
 Each omitted value inherits the scheduler setting. `maxRetries: 0` or `1` makes the
-first failure terminal; `NonRetryableError` always skips retries. The existing
-failure-count and jitter rules apply to worker overrides too.
+first failure terminal; `NonRetryableError` always skips retries. Worker overrides
+use the same failure-count and jitter rules as scheduler settings.
 
 Settings belong to the local worker, not the stored job. Configure workers for the
 same job name consistently across scheduler instances. Replacing a worker affects

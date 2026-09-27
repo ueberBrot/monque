@@ -8,13 +8,13 @@ import { Aside } from '@astrojs/starlight/components';
 Before deploying, check how your workers handle retries, shutdown, and jobs left running after a crash.
 
 Numeric scheduler options must be finite and non-negative. Concurrency, retry counts,
-and payload byte limits must be safe integers; durations accept fractional milliseconds. Polling, heartbeat,
-and retention check intervals must be at least 1 ms; these timers and `shutdownTimeout`
+and payload byte limits must be safe integers; durations accept fractional milliseconds.
+Polling, heartbeat, and retention check intervals must be at least 1 ms; these timers and `shutdownTimeout`
 cannot exceed 2,147,483,647 ms (about 24.8 days). Invalid options throw `MonqueError`
 when constructing Monque or registering a worker, including through Ts.ED.
 
 Zero remains valid for limits and durations outside those repeating timers: for example,
-`statsCacheTtlMs: 0` disables cached snapshots, zero concurrency prevents new claims,
+`statsCacheTtlMs: 0` disables statistics caching, zero concurrency prevents new claims,
 and a retention age of zero makes terminal jobs eligible at the next cleanup.
 
 ## Quick Reference

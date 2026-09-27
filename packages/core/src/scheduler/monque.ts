@@ -494,7 +494,7 @@ export class Monque extends EventEmitter {
 	}
 
 	/**
-	 * Enqueue jobs using unordered MongoDB bulk writes. Validates all inputs before writing.
+	 * Submit a batch with per-job scheduling and deduplication. Input validation finishes before writing.
 	 * A database failure can leave some jobs persisted; ConnectionError.cause retains
 	 * the driver's error and partial result. Use unique keys when retrying a batch.
 	 * Pass a session to join a caller-owned transaction; transaction errors remain native.
