@@ -1198,11 +1198,11 @@ export class Monque extends EventEmitter {
 		});
 
 		// Race between job completion and timeout
-		const timeout = new Promise<'timeout'>((resolve) => {
-			setTimeout(() => resolve('timeout'), this.options.shutdownTimeout);
-		});
+		const timeout = Promise.withResolvers<'timeout'>();
+		const timeoutId = setTimeout(() => timeout.resolve('timeout'), this.options.shutdownTimeout);
 
-		const result = await Promise.race([waitForJobs, timeout]);
+		const result = await Promise.race([waitForJobs, timeout.promise]);
+		clearTimeout(timeoutId);
 
 		this._drainResolve = null;
 
