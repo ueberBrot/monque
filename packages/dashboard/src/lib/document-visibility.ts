@@ -66,4 +66,4 @@ function useDocumentVisiblePollingInterval(
 	);
 }
 
-export { isDocumentVisible, useDocumentVisible, useDocumentVisiblePollingInterval };
+export { useDocumentVisible, useDocumentVisiblePollingInterval };

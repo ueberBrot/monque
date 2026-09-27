@@ -18,6 +18,8 @@
 	"entry": [
 		"packages/*/src/index.ts",
 		"packages/management/src/contract.ts",
+		// Shared form composition API, kept available to dashboard forms.
+		"packages/dashboard/src/forms/index.ts",
 		"apps/docs/src/components/SiteTitle.astro",
 		"apps/docs/src/styles/custom.css",
 		"scripts/renovate-generate-changeset.ts"
