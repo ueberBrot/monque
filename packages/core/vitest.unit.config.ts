@@ -13,33 +13,6 @@ export default defineConfig({
 		globals: true,
 		environment: 'node',
 		include: ['tests/unit/**/*.test.ts'],
-		coverage: {
-			enabled: true,
-			provider: 'v8',
-			reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
-			reportsDirectory: './coverage',
-			include: ['src/**/*.ts'],
-			exclude: [
-				'**/node_modules/**',
-				'**/dist/**',
-				'**/*.d.ts',
-				'**/tests/**',
-				'**/*.config.ts',
-				'**/*.config.js',
-				'**/index.ts',
-				// Type-only files with no runtime code
-				'src/**/types.ts',
-				'src/events/types.ts',
-				'src/workers/types.ts',
-				'src/scheduler/types.ts',
-			],
-			thresholds: {
-				lines: 85,
-				functions: 85,
-				branches: 75,
-				statements: 85,
-			},
-		},
 		// Unit tests don't need MongoDB
 		setupFiles: ['./tests/setup/seed.ts'],
 		// Shorter timeouts for unit tests

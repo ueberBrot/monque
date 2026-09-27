@@ -45,16 +45,17 @@
 	},
 	"files": [
 		"dist",
-		"src"
+		"src",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"build": "tsdown",
 		"check:exports": "publint && attw --pack .",
-		"clean": "rimraf dist coverage .turbo",
+		"clean": "rimraf dist .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
 		"test": "vitest run --config vitest.config.ts",
-		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts",
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"lint": "biome check ."
@@ -70,7 +71,6 @@
 		"@types/express": "^5.0.6",
 		"@types/node": "^22.19.19",
 		"@types/supertest": "^7.2.0",
-		"@vitest/coverage-v8": "^4.1.8",
 		"express": "^5.2.1",
 		"supertest": "^7.2.2",
 		"tsdown": "^0.22.1",

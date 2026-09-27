@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb';
+import { type BulkWriteResult, MongoBulkWriteError, MongoServerError, ObjectId } from 'mongodb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockContext, JobFactory } from '@tests/factories';
@@ -17,6 +17,84 @@ describe('JobIntake', () => {
 
 	afterEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it.each([
+		{ code: 11000, count: 3 },
+		{ code: 91, count: 2 },
+	])('preserves partial bulk failures after an earlier duplicate: %j', async ({ code, count }) => {
+		const insertedId = new ObjectId();
+		const result = {
+			upsertedCount: 1,
+			matchedCount: 0,
+			upsertedIds: { 1: insertedId },
+			getWriteErrors: () => [{ code: 11000, index: 0 }],
+			getWriteConcernError: () => undefined,
+		} as unknown as BulkWriteResult;
+		const error = new MongoBulkWriteError({ message: 'Later batch failed', code }, result);
+		vi.spyOn(ctx.mockCollection, 'bulkWrite').mockRejectedValueOnce(error);
+		await expect(
+			intake.enqueueMany(
+				Array.from({ length: count }, (_, index) => ({
+					name: 'work',
+					data: { index },
+					uniqueKey: String(index),
+				})),
+			),
+		).rejects.toMatchObject({ cause: error });
+		expect(ctx.mockCollection.find).not.toHaveBeenCalled();
+		expect(ctx.notifyPendingJob).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([JobStatus.PENDING, JobStatus.PROCESSING])(
+		'returns the competing %s job after an active-key upsert race',
+		async (status) => {
+			const existing = JobFactory.build({ name: 'work', uniqueKey: 'shared', status });
+			vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(
+				new MongoServerError({
+					message: 'Concurrent upsert lost',
+					code: 11000,
+					keyPattern: { name: 1, uniqueKey: 1 },
+				}),
+			);
+			vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(existing);
+			const job = await intake.enqueue('work', { replacement: true }, { uniqueKey: 'shared' });
+			expect(job).toEqual(existing);
+			expect(ctx.mockCollection.findOne).toHaveBeenCalledWith(
+				{
+					name: 'work',
+					uniqueKey: 'shared',
+					status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+				},
+				{ readPreference: 'primary' },
+			);
+		},
+	);
+
+	it('preserves a duplicate error from another unique index', async () => {
+		const error = new MongoServerError({
+			message: 'Other index',
+			code: 11000,
+			keyPattern: { 'data.id': 1 },
+		});
+		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(error);
+		await expect(intake.enqueue('work', {}, { uniqueKey: 'shared' })).rejects.toMatchObject({
+			cause: error,
+		});
+		expect(ctx.mockCollection.findOne).not.toHaveBeenCalled();
+	});
+
+	it('preserves the collision when the competing job is no longer active', async () => {
+		const error = new MongoServerError({
+			message: 'Concurrent upsert lost',
+			code: 11000,
+			keyPattern: { name: 1, uniqueKey: 1 },
+		});
+		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockRejectedValueOnce(error);
+		vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(null);
+		await expect(
+			intake.schedule('* * * * *', 'work', {}, { uniqueKey: 'shared' }),
+		).rejects.toMatchObject({ cause: error });
 	});
 
 	it('rejects invalid job names before hitting MongoDB', async () => {
@@ -244,7 +322,7 @@ describe('JobIntake', () => {
 	});
 
 	it('throws ConnectionError when unique schedule returns no document', async () => {
-		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValueOnce(null);
+		vi.spyOn(ctx.mockCollection, 'findOneAndUpdate').mockResolvedValue(null);
 
 		await expect(
 			intake.schedule('0 * * * *', 'unique-schedule', {}, { uniqueKey: 'key' }),

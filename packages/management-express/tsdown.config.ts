@@ -11,7 +11,6 @@ export default defineConfig({
 	deps: {
 		neverBundle: ['@monque/core', '@monque/management', 'express', 'mongodb'],
 	},
-	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
 	attw: true,
 	unused: {

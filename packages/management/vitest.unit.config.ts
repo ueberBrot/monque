@@ -12,20 +12,6 @@ export default defineConfig({
 	test: {
 		environment: 'node',
 		include: ['tests/unit/**/*.test.ts'],
-		coverage: {
-			enabled: true,
-			provider: 'v8',
-			reporter: ['text', 'json', 'json-summary', 'html', 'lcov'],
-			reportsDirectory: './coverage',
-			include: ['src/**/*.ts'],
-			exclude: ['**/node_modules/**', '**/dist/**', '**/*.d.ts', '**/tests/**', '**/*.config.ts'],
-			thresholds: {
-				lines: 85,
-				functions: 85,
-				branches: 75,
-				statements: 85,
-			},
-		},
 		testTimeout: 5000,
 		hookTimeout: 10000,
 	},

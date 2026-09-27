@@ -39,8 +39,8 @@ With `pollingIntervalMs: 15_000`:
 | Data | Base interval |
 | --- | --- |
 | Job lists and job details | 15 seconds |
-| Queue statistics and scheduler health | 45 seconds |
-| Permissions | 90 seconds |
+| Queue statistics, scheduler health, and processing state | 45 seconds |
+| Permissions | 45 seconds for processing controls; 90 seconds elsewhere |
 
 Each interval adds up to 10% random delay to spread requests across clients. Requests back
 off after errors, and periodic polling pauses while the tab is hidden. Job actions refresh
@@ -72,6 +72,23 @@ When a worker throws core's `NonRetryableError`, the job appears as Failed with 
 and actual attempt count. Retry remains available when permitted by the Management API;
 fix the cause before retrying. This also applies to recurring jobs, which stop until
 manually retried. Existing Dashboard and serving adapters support these failed jobs.
+
+## Local processing and worker policies
+
+Open a Queue View to inspect the worker's concurrency, retry settings, and whether it uses
+Standard Schema payload validation. Pause or resume that local worker beside its processing
+state. Health provides the corresponding whole-instance control. Running jobs continue;
+other scheduler instances are unaffected. Resuming the instance preserves individual worker
+pauses. If a worker is paused by the whole instance, resume the instance from Health first.
+
+Controls show the scheduler identity and respect Management permissions and read-only mode.
+If the instance changes between reading state and sending a control request, the action fails
+with a conflict. Check the displayed instance before retrying. Custom facades that omit
+processing controls show an unavailable message while job browsing remains usable.
+
+For jobs with renewable leases, job details show the lease deadline under Lifecycle.
+Worker policies describe new executions on this instance; they do not change a job already
+running. Queue counts still include jobs processed by other instances.
 
 ## Statistics freshness
 

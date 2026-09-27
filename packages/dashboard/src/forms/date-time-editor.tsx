@@ -1,65 +1,12 @@
 import { format } from 'date-fns';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { parseDateTime } from '@/lib/dates';
 
-import { useAppForm, withForm } from './form.js';
-
-const draftDefaults = { date: '', time: '00:00' };
-
-const DateTimeDraftFields = withForm({
-	defaultValues: draftDefaults,
-	props: { id: '', month: new Date(), onMonthChange: (_month: Date) => {} },
-	render: function DateTimeDraftFields({ form, id, month, onMonthChange }) {
-		return (
-			<form.Subscribe selector={(state) => state.values}>
-				{({ date, time }) => (
-					<>
-						<form.AppField
-							name="date"
-							listeners={{
-								onChange: ({ value }) => {
-									const parsed = parseDateTime(value, '12:00');
-									if (parsed) onMonthChange(parsed);
-								},
-							}}
-						>
-							{(field) => (
-								<>
-									<field.CalendarField month={month} onMonthChange={onMonthChange} />
-									<div className="grid grid-cols-[1.5fr_1fr] gap-3">
-										<field.TextField
-											id={`${id}-date`}
-											label="Date"
-											placeholder="YYYY-MM-DD"
-											invalid={date.length > 0 && !parseDateTime(date, '12:00')}
-										/>
-										<form.AppField name="time">
-											{(timeField) => (
-												<timeField.TextField
-													id={`${id}-time`}
-													label="Time (24h)"
-													placeholder="HH:mm"
-													invalid={date.length > 0 && !parseDateTime(date, time)}
-												/>
-											)}
-										</form.AppField>
-									</div>
-								</>
-							)}
-						</form.AppField>
-						{date.length > 0 && !parseDateTime(date, time) ? (
-							<p role="status" className="text-xs text-destructive">
-								Enter a valid local date (YYYY-MM-DD) and time (HH:mm).
-							</p>
-						) : null}
-					</>
-				)}
-			</form.Subscribe>
-		);
-	},
-});
+import { CalendarInput } from './calendar-field.js';
 
 export function DateTimeEditor({
 	id,
@@ -72,40 +19,64 @@ export function DateTimeEditor({
 	allowClear: boolean;
 	onApply: (value: string) => void;
 }) {
-	const form = useAppForm({
-		defaultValues: { date: value.slice(0, 10), time: value.slice(11, 16) || '00:00' },
-		onSubmit: ({ value }) => {
-			const draft = parseDateTime(value.date, value.time);
-			if (draft) onApply(format(draft, "yyyy-MM-dd'T'HH:mm"));
-		},
-	});
-	const [month, setMonth] = useState(
-		() => parseDateTime(value.slice(0, 10), value.slice(11, 16)) ?? new Date(),
-	);
+	const [date, setDate] = useState(value.slice(0, 10));
+	const [time, setTime] = useState(value.slice(11, 16) || '00:00');
+	const [month, setMonth] = useState(() => parseDateTime(date, time) ?? new Date());
+	const changeDate = useCallback((value: string) => {
+		setDate(value);
+		const parsed = parseDateTime(value, '12:00');
+		if (parsed) setMonth(parsed);
+	}, []);
+	const draft = parseDateTime(date, time);
 	return (
-		<form.AppForm>
-			<DateTimeDraftFields form={form} id={id} month={month} onMonthChange={setMonth} />
+		<>
+			<CalendarInput value={date} onChange={changeDate} month={month} onMonthChange={setMonth} />
+			<div className="grid grid-cols-[1.5fr_1fr] gap-3">
+				<Field>
+					<FieldLabel htmlFor={`${id}-date`}>Date</FieldLabel>
+					<Input
+						id={`${id}-date`}
+						name="date"
+						value={date}
+						placeholder="YYYY-MM-DD"
+						aria-invalid={date.length > 0 && !parseDateTime(date, '12:00')}
+						onChange={(event) => changeDate(event.currentTarget.value)}
+					/>
+				</Field>
+				<Field>
+					<FieldLabel htmlFor={`${id}-time`}>Time (24h)</FieldLabel>
+					<Input
+						id={`${id}-time`}
+						name="time"
+						value={time}
+						placeholder="HH:mm"
+						aria-invalid={date.length > 0 && !draft}
+						onChange={(event) => setTime(event.currentTarget.value)}
+					/>
+				</Field>
+			</div>
+			{date.length > 0 && !draft ? (
+				<p role="status" className="text-xs text-destructive">
+					Enter a valid local date (YYYY-MM-DD) and time (HH:mm).
+				</p>
+			) : null}
 			<div className="flex justify-between gap-2">
 				{allowClear ? (
 					<Button type="button" variant="ghost" onClick={() => onApply('')}>
 						Clear
 					</Button>
 				) : null}
-				<form.Subscribe selector={(state) => parseDateTime(state.values.date, state.values.time)}>
-					{(draft) => (
-						<Button
-							type="button"
-							className="ml-auto"
-							disabled={!draft}
-							onClick={() => {
-								void form.handleSubmit();
-							}}
-						>
-							Apply
-						</Button>
-					)}
-				</form.Subscribe>
+				<Button
+					type="button"
+					className="ml-auto"
+					disabled={!draft}
+					onClick={() => {
+						if (draft) onApply(format(draft, "yyyy-MM-dd'T'HH:mm"));
+					}}
+				>
+					Apply
+				</Button>
 			</div>
-		</form.AppForm>
+		</>
 	);
 }

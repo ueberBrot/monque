@@ -1,6 +1,7 @@
 import {
 	type BulkOperationResult,
 	InvalidCursorError,
+	InvalidJobIdentifierError,
 	type JobSelector,
 	JobStateError,
 	type PersistedJob,
@@ -26,6 +27,9 @@ import type {
 	JobDto,
 	JobListQueryDto,
 	JobSelectorDto,
+	ProcessingActionDto,
+	ProcessingQueryDto,
+	ProcessingStateDto,
 	QueueStatsDto,
 	QueueViewQueryDto,
 	QueueViewSummaryListDto,
@@ -56,9 +60,15 @@ type SingleJobMutationInput =
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 
 export interface ManagementOperations<TContext = unknown> {
+	getProcessingState(
+		input: ProcessingQueryDto | undefined,
+		context: TContext,
+	): Promise<ProcessingStateDto>;
+	pauseProcessing(input: ProcessingActionDto, context: TContext): Promise<ProcessingStateDto>;
+	resumeProcessing(input: ProcessingActionDto, context: TContext): Promise<ProcessingStateDto>;
 	getHealth(): SchedulerHealthDto;
 	selectedJobActions(input: SelectedJobActionsDto, context: TContext): Promise<BulkActionResultDto>;
-	getCapabilities(context: TContext): Promise<CapabilitiesDto>;
+	getCapabilities(context: TContext, input?: ProcessingQueryDto): Promise<CapabilitiesDto>;
 	listQueueViews(context: TContext, filter?: QueueViewQueryDto): Promise<QueueViewSummaryListDto>;
 	listJobs(input: JobListQueryDto, context: TContext): Promise<JobCursorPageDto>;
 	getJobStats(input: { name?: string | undefined }, context: TContext): Promise<QueueStatsDto>;
@@ -76,11 +86,27 @@ export function createManagementOperations<TContext = unknown>(
 	options: ManagementOptions<TContext>,
 ): ManagementOperations<TContext> {
 	return {
+		getProcessingState: async (input, context) => {
+			await requireManagementAction(options, 'read', context);
+			return readProcessingState(options, input?.name);
+		},
+		pauseProcessing: (input, context) => executeProcessingAction(options, 'pause', input, context),
+		resumeProcessing: (input, context) =>
+			executeProcessingAction(options, 'resume', input, context),
 		selectedJobActions: (input, context) => handleSelectedJobActions(options, input, context),
 		getHealth: () => toSchedulerHealthDto(options.monque.isHealthy()),
-		getCapabilities: (context: TContext) => getManagementCapabilities(options, context),
+		getCapabilities: (context, input) => {
+			const state = options.monque.getProcessingState
+				? readProcessingState(options, input?.name)
+				: undefined;
+			return getManagementCapabilities(
+				options,
+				context,
+				state ? { name: state.name, instanceId: state.instanceId } : {},
+			);
+		},
 		listQueueViews: async (context: TContext, filter?: QueueViewQueryDto) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 			const scope = filter?.name === undefined ? undefined : { name: filter.name };
 			const summaries = await options.monque.getQueueViewSummaries(scope);
 			// Older compatible scheduler facades may ignore the additive filter argument.
@@ -89,7 +115,7 @@ export function createManagementOperations<TContext = unknown>(
 			);
 		},
 		listJobs: async (input: JobListQueryDto, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			const cursorOptions = toJobCursorOptions(input);
 
@@ -118,12 +144,12 @@ export function createManagementOperations<TContext = unknown>(
 			}
 		},
 		getJobStats: async (input: { name?: string | undefined }, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			return toQueueStatsDto(await options.monque.getQueueStats(toQueueStatsFilter(input)));
 		},
 		getJob: async (input: JobDetailInputDto, context: TContext) => {
-			await requireReadAuthorization(options, context);
+			await requireManagementAction(options, 'read', context);
 
 			const { job } = await resolvePersistedJob(options, input.params.id);
 
@@ -181,6 +207,53 @@ export function createManagementOperations<TContext = unknown>(
 				options.monque.deleteJobs?.bind(options.monque),
 			),
 	};
+}
+
+function readProcessingState<TContext>(
+	options: ManagementOptions<TContext>,
+	name?: string,
+): ProcessingStateDto {
+	if (!options.monque.getProcessingState) {
+		throw new ORPCError('FORBIDDEN', { message: 'Processing state is unsupported' });
+	}
+	try {
+		const state = options.monque.getProcessingState(name);
+		return {
+			instanceId: state.instanceId,
+			...(state.name === undefined ? {} : { name: state.name }),
+			paused: state.paused,
+			globallyPaused: state.globallyPaused,
+		};
+	} catch (error) {
+		if (error instanceof InvalidJobIdentifierError) {
+			throw new ORPCError('BAD_REQUEST', { message: error.message });
+		}
+		throw error;
+	}
+}
+
+async function executeProcessingAction<TContext>(
+	options: ManagementOptions<TContext>,
+	action: 'pause' | 'resume',
+	input: ProcessingActionDto,
+	context: TContext,
+): Promise<ProcessingStateDto> {
+	const mutate = options.monque[action];
+	if (!mutate || !options.monque.getProcessingState) {
+		throw new ORPCError('FORBIDDEN', { message: 'Unsupported action' });
+	}
+	await requireManagementAction(options, action, context, {
+		name: input.name,
+		instanceId: input.instanceId,
+	});
+	const state = readProcessingState(options, input.name);
+	if (state.instanceId !== input.instanceId) {
+		throw new ORPCError('CONFLICT', {
+			message: 'Scheduler instance changed; refresh before retrying',
+		});
+	}
+	mutate.call(options.monque, input.name);
+	return readProcessingState(options, input.name);
 }
 
 async function executeJobMutation<TContext>(
@@ -300,13 +373,6 @@ async function handleBulkJobMutation<TContext>(
 	await requireManagementAction(options, action, context, { selector });
 
 	return toBulkActionResultDto(await mapJobStateConflict(() => supportedMutate(selector)));
-}
-
-async function requireReadAuthorization<TContext>(
-	options: ManagementOptions<TContext>,
-	context: TContext,
-): Promise<void> {
-	await requireManagementAction(options, 'read', context);
 }
 
 async function requireManagementAction<TContext>(

@@ -1,7 +1,19 @@
+import { randomUUID } from 'node:crypto';
+import type { Document, Filter } from 'mongodb';
+
 import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
 import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from '@/shared';
+import type { RetryOptions } from '@/workers';
 
 import type { SchedulerContext } from './types.js';
+
+const CLAIM_CLEANUP_FIELDS = {
+	lockedAt: '',
+	claimedBy: '',
+	claimId: '',
+	leaseExpiresAt: '',
+	lastHeartbeat: '',
+} as const;
 
 /**
  * Concentrates ownership-sensitive job lifecycle operations.
@@ -18,27 +30,41 @@ export class JobLifecycle {
 	 * Atomically claim the earliest due pending job for a Worker.
 	 */
 	async claimNext(name: string): Promise<PersistedJob | null> {
-		if (!this.ctx.isRunning()) {
+		if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
 			return null;
 		}
 
 		const now = new Date();
+		const { leaseDuration } = this.ctx.options;
+		const claim = {
+			status: JobStatus.PROCESSING,
+			claimedBy: this.ctx.instanceId,
+			claimId: randomUUID(),
+			lockedAt: now,
+			lastHeartbeat: now,
+			heartbeatInterval: this.ctx.options.heartbeatInterval,
+			updatedAt: now,
+		};
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{
 				name,
 				status: JobStatus.PENDING,
 				nextRunAt: { $lte: now },
 			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.ctx.instanceId,
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.ctx.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
+			leaseDuration === undefined
+				? { $set: claim, $unset: { leaseExpiresAt: '' } }
+				: [
+						{
+							$set: {
+								...claim,
+								claimedBy: { $literal: this.ctx.instanceId },
+								lockedAt: '$$NOW',
+								lastHeartbeat: '$$NOW',
+								updatedAt: '$$NOW',
+								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
+							},
+						},
+					],
 			{
 				sort: { nextRunAt: 1 },
 				returnDocument: 'after',
@@ -57,7 +83,7 @@ export class JobLifecycle {
 				status: JobStatus.PENDING,
 				updatedAt: new Date(),
 			},
-			$unset: this.claimCleanupFields(),
+			$unset: CLAIM_CLEANUP_FIELDS,
 		});
 	}
 
@@ -71,56 +97,39 @@ export class JobLifecycle {
 
 		const now = new Date();
 
-		if (job.repeatInterval) {
-			const nextRunAt = getNextCronDate(job.repeatInterval, undefined, job.timezone);
-			const result = await this.ctx.collection.findOneAndUpdate(
-				this.ownedJobFilter(job),
-				{
-					$set: {
-						status: JobStatus.PENDING,
-						nextRunAt,
-						failCount: 0,
-						updatedAt: now,
-					},
-					$unset: {
-						...this.claimCleanupFields(),
-						failReason: '',
-					},
-				},
-				{ returnDocument: 'after' },
-			);
-
-			if (!result) {
-				return null;
-			}
-
-			const persistedJob = this.ctx.documentToPersistedJob(result);
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-			return persistedJob;
-		}
-
+		const completion = job.repeatInterval
+			? {
+					status: JobStatus.PENDING,
+					nextRunAt: getNextCronDate(job.repeatInterval, undefined, job.timezone),
+					failCount: 0,
+				}
+			: { status: JobStatus.COMPLETED };
 		const result = await this.ctx.collection.findOneAndUpdate(
 			this.ownedJobFilter(job),
 			{
-				$set: {
-					status: JobStatus.COMPLETED,
-					updatedAt: now,
-				},
-				$unset: {
-					...this.claimCleanupFields(),
-					failReason: '',
-				},
+				$set: { ...completion, updatedAt: now },
+				$unset: { ...CLAIM_CLEANUP_FIELDS, failReason: '' },
 			},
 			{ returnDocument: 'after' },
 		);
 
-		return result ? this.ctx.documentToPersistedJob(result) : null;
+		if (!result) return null;
+
+		const persistedJob = this.ctx.documentToPersistedJob(result);
+		if (completion.status === JobStatus.PENDING) {
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		}
+		return persistedJob;
 	}
 
 	/**
 	 * Fail an Owned Job, either scheduling a retry or marking it terminal.
 	 */
-	async failOwned(job: Job, error: Error): Promise<PersistedJob | null> {
+	async failOwned(
+		job: Job,
+		error: Error,
+		options: RetryOptions = this.ctx.options,
+	): Promise<PersistedJob | null> {
 		if (!isPersistedJob(job)) {
 			return null;
 		}
@@ -128,41 +137,30 @@ export class JobLifecycle {
 		const now = new Date();
 		const newFailCount = job.failCount + 1;
 
-		if (error instanceof NonRetryableError || newFailCount >= this.ctx.options.maxRetries) {
-			const result = await this.ctx.collection.findOneAndUpdate(
-				this.ownedJobFilter(job),
-				{
-					$set: {
-						status: JobStatus.FAILED,
-						failCount: newFailCount,
-						failReason: error.message,
-						updatedAt: now,
-					},
-					$unset: this.claimCleanupFields(),
-				},
-				{ returnDocument: 'after' },
-			);
-
-			return result ? this.ctx.documentToPersistedJob(result) : null;
-		}
-
-		const nextRunAt = calculateBackoff(
-			newFailCount,
-			this.ctx.options.baseRetryInterval,
-			this.ctx.options.maxBackoffDelay,
-		);
+		const terminal =
+			error instanceof NonRetryableError ||
+			newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries);
+		const retry = terminal
+			? { status: JobStatus.FAILED }
+			: {
+					status: JobStatus.PENDING,
+					nextRunAt: calculateBackoff(
+						newFailCount,
+						options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+						options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
+					),
+				};
 
 		const result = await this.ctx.collection.findOneAndUpdate(
 			this.ownedJobFilter(job),
 			{
 				$set: {
-					status: JobStatus.PENDING,
+					...retry,
 					failCount: newFailCount,
 					failReason: error.message,
-					nextRunAt,
 					updatedAt: now,
 				},
-				$unset: this.claimCleanupFields(),
+				$unset: CLAIM_CLEANUP_FIELDS,
 			},
 			{ returnDocument: 'after' },
 		);
@@ -172,7 +170,9 @@ export class JobLifecycle {
 		}
 
 		const persistedJob = this.ctx.documentToPersistedJob(result);
-		this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		if (!terminal) {
+			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+		}
 		return persistedJob;
 	}
 
@@ -180,22 +180,39 @@ export class JobLifecycle {
 	 * Refresh heartbeat timestamps for jobs owned by this scheduler instance.
 	 */
 	async updateOwnedHeartbeats(): Promise<void> {
-		if (!this.ctx.isRunning()) {
-			return;
+		const claimIds: string[] = [];
+		for (const worker of this.ctx.workers.values()) {
+			for (const job of worker.activeJobs.values()) {
+				if (job.claimId) claimIds.push(job.claimId);
+			}
 		}
+		if (claimIds.length === 0) return;
 
 		const now = new Date();
+		const { leaseDuration } = this.ctx.options;
 		await this.ctx.collection.updateMany(
 			{
 				claimedBy: this.ctx.instanceId,
+				claimId: { $in: claimIds },
 				status: JobStatus.PROCESSING,
+				...(leaseDuration === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
 			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
+			leaseDuration === undefined
+				? {
+						$set: {
+							lastHeartbeat: now,
+							updatedAt: now,
+						},
+					}
+				: [
+						{
+							$set: {
+								lastHeartbeat: '$$NOW',
+								updatedAt: '$$NOW',
+								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
+							},
+						},
+					],
 		);
 	}
 
@@ -207,23 +224,23 @@ export class JobLifecycle {
 		const result = await this.ctx.collection.updateMany(
 			{
 				status: JobStatus.PROCESSING,
-				lockedAt: { $lt: staleThreshold },
+				$or: [
+					{ leaseExpiresAt: { $exists: false }, lockedAt: { $lt: staleThreshold } },
+					{ leaseExpiresAt: { $exists: true }, $expr: { $lte: ['$leaseExpiresAt', '$$NOW'] } },
+				],
 			},
 			{
 				$set: {
 					status: JobStatus.PENDING,
 					updatedAt: new Date(),
 				},
-				$unset: {
-					lockedAt: '',
-					claimedBy: '',
-					lastHeartbeat: '',
-				},
+				$unset: CLAIM_CLEANUP_FIELDS,
 			},
 		);
 
 		if (result.modifiedCount > 0) {
 			this.ctx.emit('stale:recovered', { count: result.modifiedCount });
+			this.ctx.notifyPendingJob(undefined, new Date());
 		}
 	}
 
@@ -250,26 +267,13 @@ export class JobLifecycle {
 	/**
 	 * MongoDB precondition for mutating a job owned by this scheduler.
 	 */
-	private ownedJobFilter(job: PersistedJob): {
-		_id: PersistedJob['_id'];
-		status: typeof JobStatus.PROCESSING;
-		claimedBy: string;
-	} {
+	private ownedJobFilter(job: PersistedJob): Filter<Document> {
 		return {
 			_id: job._id,
 			status: JobStatus.PROCESSING,
 			claimedBy: this.ctx.instanceId,
-		};
-	}
-
-	/**
-	 * Claim fields removed whenever ownership ends.
-	 */
-	private claimCleanupFields(): { lockedAt: ''; claimedBy: ''; lastHeartbeat: '' } {
-		return {
-			lockedAt: '',
-			claimedBy: '',
-			lastHeartbeat: '',
+			claimId: job.claimId ?? null,
+			...(job.leaseExpiresAt === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
 		};
 	}
 }

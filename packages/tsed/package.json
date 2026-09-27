@@ -51,24 +51,25 @@
 	},
 	"files": [
 		"dist",
-		"src"
+		"src",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"build": "tsdown",
 		"check:exports": "publint && attw --pack .",
-		"clean": "rimraf dist coverage .turbo",
+		"clean": "rimraf dist .turbo",
 		"type-check": "tsc --noEmit",
 		"pretest": "bun run type-check",
 		"test": "vitest run",
-		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts --coverage.enabled=false",
-		"test:integration": "bun run type-check && vitest run tests/integration --coverage.enabled=false",
+		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts",
+		"test:integration": "bun run type-check && vitest run tests/integration",
 		"test:watch": "vitest",
 		"test:watch:unit": "vitest --config vitest.unit.config.ts",
 		"test:watch:integration": "vitest tests/integration",
 		"lint": "biome check ."
 	},
 	"peerDependencies": {
-		"@monque/core": "^1.10.1",
+		"@monque/core": "^1.15.0",
 		"@tsed/core": "^8.38.7",
 		"@tsed/di": "^8.38.7",
 		"@tsed/mongoose": "^8.38.7",
@@ -88,11 +89,10 @@
 		"@tsed/mongoose": "^8.38.7",
 		"@tsed/platform-http": "^8.38.7",
 		"@types/node": "^22.20.3",
-		"@vitest/coverage-v8": "^5.0.1",
 		"cookie": "^1.1.1",
 		"mongodb": "^7.6.0",
-		"testcontainers": "^12.1.0",
 		"tsdown": "^0.23.0",
-		"vitest": "^5.0.1"
+		"vitest": "^5.0.1",
+		"zod": "^4.6.5"
 	}
 }

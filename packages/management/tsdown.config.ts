@@ -19,7 +19,6 @@ export default defineConfig({
 	define: {
 		__MONQUE_MANAGEMENT_PACKAGE_VERSION__: JSON.stringify(packageJson.version),
 	},
-	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
 	attw: true,
 	unused: {

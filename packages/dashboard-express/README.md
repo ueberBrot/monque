@@ -1,7 +1,8 @@
 # @monque/dashboard-express
 
 Serve the Monque dashboard from your Express application alongside its Management API.
-The router includes the built dashboard and supports nested mount paths and direct job links.
+The router serves the built dashboard, including nested mount paths and direct job links.
+Mount the Management API separately; this package serves the UI and its assets.
 
 [View screenshots](../dashboard/README.md#screenshots).
 
@@ -86,7 +87,8 @@ assets, API, and OpenAPI document. Browser API requests include credentials, so 
 session cookies work automatically. If you use separate mount prefixes, protect both.
 
 Pass the authenticated principal through the Management router's `context` callback and check
-permissions in `authorize`. For a read-only dashboard, pass `readOnly: true` to the Management
+permissions in `authorize`, including `pause` and `resume` for local processing controls.
+For a read-only dashboard, pass `readOnly: true` to the Management
 router. Permissions are enforced by the API and reflected in available dashboard actions.
 
 See [Management Express](../management-express/README.md) for API configuration and

@@ -11,7 +11,6 @@ export default defineConfig({
 	deps: {
 		neverBundle: ['@monque/dashboard', 'express'],
 	},
-	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
 	attw: true,
 });

@@ -1,9 +1,9 @@
 import { type Document, ObjectId } from 'mongodb';
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from '@/jobs';
-import { buildSelectorQuery } from '@/scheduler';
 import { ConnectionError, JobStateError, MonqueError, toError } from '@/shared';
 
+import { buildSelectorQuery } from '../helpers.js';
 import {
 	RETRYABLE_JOB_STATUSES,
 	type RetryableJobStatusType,
@@ -137,6 +137,8 @@ export class JobManager {
 						failReason: '',
 						lockedAt: '',
 						claimedBy: '',
+						claimId: '',
+						leaseExpiresAt: '',
 						lastHeartbeat: '',
 					},
 				},
@@ -166,6 +168,8 @@ export class JobManager {
 			delete updatedDoc['failReason'];
 			delete updatedDoc['lockedAt'];
 			delete updatedDoc['claimedBy'];
+			delete updatedDoc['claimId'];
+			delete updatedDoc['leaseExpiresAt'];
 			delete updatedDoc['lastHeartbeat'];
 
 			const job = this.ctx.documentToPersistedJob(updatedDoc);
@@ -406,7 +410,14 @@ export class JobManager {
 					},
 				},
 				{
-					$unset: ['failReason', 'lockedAt', 'claimedBy', 'lastHeartbeat'],
+					$unset: [
+						'failReason',
+						'lockedAt',
+						'claimedBy',
+						'claimId',
+						'lastHeartbeat',
+						'leaseExpiresAt',
+					],
 				},
 			]);
 

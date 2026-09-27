@@ -6,10 +6,6 @@ out
 dist
 *.tgz
 
-# code coverage
-coverage
-*.lcov
-
 # logs
 logs
 *.log
@@ -27,6 +23,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # caches
 .eslintcache
 .cache
+.fallow/
 *.tsbuildinfo
 
 # IntelliJ based IDEs

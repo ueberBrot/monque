@@ -10,7 +10,6 @@
 		"includes": [
 			"**",
 			"!!**/dist",
-			"!!**/coverage",
 			"!!**/.turbo",
 			"!!**/.astro",
 			"!!**/.agents",

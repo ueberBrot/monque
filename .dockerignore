@@ -19,10 +19,8 @@ docker-compose*.yml
 .idea
 .vscode
 
-# Coverage and logs
-coverage
+# Logs
 *.log
-*.lcov
 
 # Environment
 .env*

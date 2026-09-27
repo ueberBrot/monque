@@ -1,7 +1,7 @@
 # @monque/dashboard-dev
 
-Development app for working on the Monque dashboard with mock data, local MongoDB,
-or an existing Management API. Requires Bun and Node.js 22.12 or newer; MongoDB mode
+Run the Dashboard locally with mock data, a MongoDB scheduler, or your own Management API.
+This app is for repository development and is not published. Requires Bun and Node.js 22.12 or newer; MongoDB mode
 and browser tests also require Docker with Compose.
 
 To add the dashboard to your own application, use
@@ -98,10 +98,9 @@ bunx playwright install chromium
 bun run test:e2e
 ```
 
-Browser tests build and serve the dashboard through Express with real MongoDB, covering desktop
-and mobile with and without authentication. Each parallel worker reuses a server and an isolated
-test database, resets data between tests, and removes its database on teardown. Development data
-is unaffected. Set `MONQUE_DASHBOARD_TEST_MONGO_URI` to use a different MongoDB instance.
+Browser tests exercise the Dashboard through Express and MongoDB on desktop and mobile,
+with and without authentication. They use isolated databases and leave development data
+untouched. Set `MONQUE_DASHBOARD_TEST_MONGO_URI` to use a different MongoDB instance.
 
 ```bash
 bun run test:e2e --project=mongo-desktop-auth

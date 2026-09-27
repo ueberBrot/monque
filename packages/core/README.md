@@ -1,171 +1,118 @@
-<p align="center">
-  <img src="../../assets/logo.svg" width="180" alt="Monque logo" />
-</p>
+# @monque/core
 
-<h1 align="center">@monque/core</h1>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/@monque/core">
-    <img src="https://img.shields.io/npm/v/%40monque%2Fcore?style=for-the-badge&label=%40monque%2Fcore" alt="@monque/core version" />
-  </a>
-  <a href="https://github.com/ueberBrot/monque/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/ueberBrot/monque/ci.yml?branch=main&style=for-the-badge&logo=github" alt="CI Status" />
-  </a>
-  <a href="https://codecov.io/gh/ueberBrot/monque">
-    <img src="https://img.shields.io/codecov/c/github/ueberBrot/monque?style=for-the-badge&logo=codecov&logoColor=white" alt="Codecov" />
-  </a>
-  <a href="https://opensource.org/licenses/ISC">
-    <img src="https://img.shields.io/badge/License-ISC-blue.svg?style=for-the-badge" alt="License: ISC" />
-  </a>
-  <a href="https://bun.sh">
-    <img src="https://img.shields.io/badge/Built%20with-Bun-fbf0df?style=for-the-badge&logo=bun&logoColor=black" alt="Built with Bun" />
-  </a>
-</p>
-
-A MongoDB job queue for TypeScript. Register workers, enqueue jobs, and schedule recurring work.
-
-## Features
-
-- Atomic claims let multiple schedulers process jobs from one collection.
-- Failed jobs retry with exponential backoff. You control the failure limit and delays.
-- Cron expressions schedule recurring jobs.
-- TypeScript generics describe job payloads and worker handlers.
-- Job events let you record completion, failure, and processing time.
-- Monque uses the native MongoDB driver and can share your application's connection.
-- Shutdown waits for running jobs up to the configured timeout. Jobs left processing can be recovered on a later startup.
+Run background jobs in Node.js using MongoDB. Register workers, submit jobs, and share
+one jobs collection across multiple processes. Monque uses the native MongoDB driver
+and can reuse your application's connection.
 
 ## Installation
 
-Using Bun:
 ```bash
 bun add @monque/core mongodb
 ```
 
-Or using npm/yarn/pnpm:
-```bash
-npm install @monque/core mongodb
-yarn add @monque/core mongodb
-pnpm add @monque/core mongodb
-```
+Requires Node.js 22.12 or newer and MongoDB 4.4 or newer. Install `mongodb` within the
+package's peer dependency range. Change Streams and transactions require a replica set
+or sharded cluster; workers can use polling with standalone MongoDB.
 
-## Usage
+## Run a worker
 
 ```typescript
 import { Monque } from '@monque/core';
 import { MongoClient } from 'mongodb';
 
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
-
-const monque = new Monque(client.db('myapp'), {
-  collectionName: 'jobs',
-  pollInterval: 1000,
-  maxRetries: 10,
-  workerConcurrency: 5,
-});
-
+const client = await MongoClient.connect('mongodb://localhost:27017');
+const monque = new Monque(client.db('myapp'));
 await monque.initialize();
 
-// Register workers
-monque.register<{ to: string; subject: string }>('send-email', async (job) => {
-  await sendEmail(job.data.to, job.data.subject);
-});
-
-// Start processing
+monque.register<{ message: string }>('log-message', async (job) => {
+  console.log(job.data.message);
+}, { concurrency: 2, maxRetries: 3 });
 monque.start();
 
-// Enqueue jobs
-await monque.enqueue('send-email', { to: 'user@example.com', subject: 'Hello' });
+await monque.enqueue('log-message', { message: 'Hello from Monque' });
+await monque.schedule('0 9 * * *', 'log-message', { message: 'Daily reminder' }, {
+  timezone: 'UTC',
+  uniqueKey: 'daily-reminder',
+});
 
-// Schedule recurring jobs
-await monque.schedule('0 9 * * *', 'daily-report', { type: 'summary' });
+async function shutdown() {
+  await monque.stop();
+  await client.close();
+}
 
-// Management
-await monque.cancelJob('job-id');
-const stats = await monque.getQueueStats();
-const queueViews = await monque.getQueueViewSummaries();
-
-// Graceful shutdown
-await monque.stop();
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 ```
 
-## API
+Register a worker for each job name you submit. `stop()` waits for running handlers up to
+`shutdownTimeout`; close your MongoDB client afterwards.
 
-### `new Monque(db, options?)`
+## Scheduling and execution
 
-Pass a connected MongoDB database and any scheduler options you want to override.
+| Need | Use |
+| --- | --- |
+| Immediate or delayed work | `enqueue(name, data, { runAt?, uniqueKey? })` |
+| Recurring work | `schedule(cron, name, data, { timezone?, uniqueKey? })` |
+| Batch submission | `enqueueMany(jobs)` with per-job scheduling and unique keys |
+| Jobs committed with business data | Pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
+| Payload validation | Pass a Standard Schema compatible `schema` to `register()` |
+| Retry policy | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker |
+| Concurrency limits | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency` |
+| Local processing control | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)` |
 
-**Options:**
-- `collectionName` - MongoDB collection name (default: `'monque_jobs'`)
-- `pollInterval` - Polling interval in ms (default: `1000`)
-- `maxRetries` - Failed attempts before terminal failure, including the initial attempt (default: `10`)
-- `baseRetryInterval` - Base backoff interval in ms (default: `1000`)
-- `shutdownTimeout` - Graceful shutdown timeout in ms (default: `30000`)
-- `workerConcurrency` - Jobs per worker (default: `5`; `defaultConcurrency` is a deprecated alias)
-- `lockTimeout` - Stale job threshold in ms (default: `1800000`)
-- `recoverStaleJobs` - Recover stale jobs on startup (default: `true`)
+A unique key prevents duplicate pending or processing jobs with the same name. Once a
+job is terminal, that key can be used again. Batch submission returns inserted and
+deduplicated counts; without a transaction, a database error can leave partial writes.
 
-### Methods
+Schema validation runs when a worker claims a job. Invalid input fails without invoking
+the handler; transformed output is passed to the handler while stored input stays unchanged.
 
-- `initialize()` - Set up collection and indexes
-- `enqueue(name, data, options?)` - Enqueue a job
-- `now(name, data)` - Enqueue for immediate processing
-- `schedule(cron, name, data)` - Schedule recurring job
-- `register(name, handler, options?)` - Register a worker
-- `start()` - Start processing jobs
-- `stop()` - Graceful shutdown
-- `isHealthy()` - Check scheduler health
+Retries and recovery can repeat a job. Handlers must tolerate repeated external side effects.
+A pause prevents new local executions; running handlers and other scheduler instances continue.
 
-**Management:**
-- `getJob(id)` - Get job details
-- `getJobs(filter)` - List jobs
-- `getJobsWithCursor(options)` - Paginated list
-- `getQueueStats(filter?)` - Queue statistics
-- `getQueueViewSummaries({ name }?)` - Job counts and worker activity, optionally scoped to one name
-- `cancelJob(id)` - Cancel a job
-- `retryJob(id)` - Retry a job
-- `rescheduleJob(id, date)` - Reschedule a job
-- `deleteJob(id)` - Delete a job
-- `cancelJobs(filter)` - Bulk cancel
-- `retryJobs(filter)` - Bulk retry
-- `deleteJobs(filter)` - Bulk delete
+## Recovering interrupted work
 
-### Events
+By default, initialization recovers jobs whose absolute `lockTimeout` has expired.
+Heartbeats do not extend that timeout. For long-running jobs and recovery without
+restarting a surviving scheduler, set `leaseDuration` longer than `heartbeatInterval`.
+
+Upgrade all schedulers sharing a collection before enabling leases. See
+[heartbeat and recovery settings](https://ueberBrot.github.io/monque/advanced/heartbeat/)
+for renewal, shutdown, and deployment behavior.
+
+## Queries, actions, and events
+
+Use `getJob()`, `getJobsWithCursor()`, `getQueueStats()`, and `getQueueViewSummaries()`
+to inspect jobs and local worker activity. Job actions include retry, cancellation,
+rescheduling, and deletion, with bulk methods for matching jobs.
 
 ```typescript
-monque.on('job:start', (job) => { /* job started */ });
-monque.on('job:complete', ({ job, duration }) => { /* job completed */ });
-monque.on('job:fail', ({ job, error, willRetry }) => { /* job failed */ });
-monque.on('job:error', ({ error, job }) => { /* unexpected error; job may be undefined */ });
-monque.on('job:cancelled', ({ job }) => { /* job cancelled */ });
-monque.on('job:retried', ({ job, previousStatus }) => { /* job retried */ });
-monque.on('job:deleted', ({ jobId }) => { /* job deleted */ });
-monque.on('stale:recovered', ({ count }) => { /* stale jobs recovered */ });
+monque.on('job:complete', ({ job, duration }) => {
+  console.log(`${job.name} completed in ${duration}ms`);
+});
+monque.on('job:fail', ({ job, error, willRetry }) => {
+  console.error(job.name, error.message, { willRetry });
+});
 ```
+
+For HTTP access, use [@monque/management](../management). Express applications can add
+[@monque/management-express](../management-express) and
+[@monque/dashboard-express](../dashboard-express).
+
+## Documentation
+
+- [Jobs, batches, and transactions](https://ueberBrot.github.io/monque/core-concepts/jobs/)
+- [Workers, validation, and pauses](https://ueberBrot.github.io/monque/core-concepts/workers/)
+- [Retries](https://ueberBrot.github.io/monque/core-concepts/retry/)
+- [Queries and actions](https://ueberBrot.github.io/monque/core-concepts/management/)
+- [API reference](https://ueberBrot.github.io/monque/api/readme/)
 
 ## Development
 
-### Running Tests
-
-```bash
-# Run tests once (fresh container each time)
-bun run test
-
-# Run tests in watch mode with container reuse (faster iteration)
-bun run test:dev
-
-# Or enable reuse globally in your shell profile
-export TESTCONTAINERS_REUSE_ENABLE=true
-bun run test:watch
-```
-
-With `TESTCONTAINERS_REUSE_ENABLE=true`, tests reuse the MongoDB container across runs. Ryuk, the Testcontainers cleanup daemon, still removes orphaned containers.
-
-To manually clean up reusable containers:
-```bash
-docker ps -q --filter label=org.testcontainers=true | while read -r id; do docker stop "$id"; done
-```
+From this package directory, run `bun run test:unit` for unit tests or `bun run test`
+for the full suite. Integration tests use MongoDB Testcontainers and require Docker.
+See the [repository README](../../README.md#development) for workspace commands.
 
 ## License
 
-ISC
+[ISC](./LICENSE)

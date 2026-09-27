@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { z } from 'zod';
 
+import { ProcessingControls } from '@/components/processing-controls';
 import { QueryFreshness } from '@/components/query-freshness';
 import { parseJobsRouteSearch } from '@/features/jobs/job-list-search';
 import { useDocumentVisiblePollingInterval } from '@/lib/document-visibility';
@@ -89,6 +90,13 @@ function QueueViewDetailRoute() {
 	return (
 		<div className="grid gap-4">
 			<QueueViewDetailHeader name={name} queueView={queueView} stats={stats} />
+			{queueView?.hasRegisteredWorker ? (
+				<ProcessingControls
+					managementApi={managementApi}
+					name={name}
+					pollingIntervalMs={runtimeConfig.pollingIntervalMs}
+				/>
+			) : null}
 			<Link
 				to="/jobs"
 				search={parseJobsRouteSearch({ name })}

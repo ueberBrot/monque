@@ -18,7 +18,6 @@ export default defineConfig({
 			'mongodb',
 		],
 	},
-	copy: ['LICENSE', 'README.md', 'CHANGELOG.md'],
 	publint: true,
 	attw: true,
 	unused: {

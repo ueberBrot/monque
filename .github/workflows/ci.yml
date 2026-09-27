@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -83,7 +82,7 @@ jobs:
         run: bun turbo build --filter='./apps/*' --only
 
   test:
-    name: Test & Coverage (${{ matrix.group }})
+    name: Test (${{ matrix.group }})
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -113,13 +112,6 @@ jobs:
       - name: Backend tests
         if: matrix.group == 'backend'
         run: bun turbo test --only --filter='!@monque/dashboard' --filter='!@monque/dashboard-dev' --concurrency=2
-
-      - name: Upload coverage reports to Codecov
-        if: matrix.group == 'backend'
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})

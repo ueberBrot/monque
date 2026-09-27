@@ -73,7 +73,6 @@ export function validateCronExpression(expression: string): void {
 }
 
 function handleCronParseError(expression: string, error: unknown): never {
-	/* istanbul ignore next -- @preserve cron-parser always throws Error objects */
 	const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
 	throw new InvalidCronError(
 		expression,
