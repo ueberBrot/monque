@@ -1,7 +1,7 @@
-import type { JobSelector, PersistedJob } from '@monque/core';
+import { type JobSelector, Monque, type PersistedJob } from '@monque/core';
 import type { ManagementMonque } from '@monque/management';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { ObjectId } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -72,6 +72,22 @@ function mountErrorJson(app: Express): void {
 }
 
 describe('Express Management Adapter', () => {
+	test('controls the addressed scheduler through the mounted HTTP routes', async () => {
+		const monque = new Monque(new MongoClient('mongodb://localhost:27017').db('controls'));
+		const app = createManagementApp({ monque });
+		const state = await request(app).get('/monque/api/v1/processing').expect(200);
+		const body = { instanceId: state.body.instanceId, name: 'email' };
+		await request(app).post('/monque/api/v1/processing/actions/pause').send(body).expect(200);
+		expect(monque.isPaused('email')).toBe(true);
+		await request(app)
+			.post('/monque/api/v1/processing/actions/resume')
+			.send({ ...body, instanceId: 'other' })
+			.expect(409);
+		expect(monque.isPaused('email')).toBe(true);
+		await request(app).post('/monque/api/v1/processing/actions/resume').send(body).expect(200);
+		expect(monque.isPaused('email')).toBe(false);
+	});
+
 	test('serves local worker policies through the mounted queue-view endpoint', async () => {
 		const worker = {
 			concurrency: 2,
@@ -242,6 +258,8 @@ describe('Express Management Adapter', () => {
 					reschedule: false,
 					delete: false,
 					deleteBulk: false,
+					pause: false,
+					resume: false,
 				},
 			});
 

@@ -11,6 +11,9 @@ import {
 	JobSelectorDtoSchema,
 	JobStatsQueryDtoSchema,
 	ManagementErrorDtoSchema,
+	ProcessingActionDtoSchema,
+	ProcessingQueryDtoSchema,
+	ProcessingStateDtoSchema,
 	QueueStatsDtoSchema,
 	QueueViewQueryDtoSchema,
 	QueueViewSummaryListDtoSchema,
@@ -54,6 +57,36 @@ const SingleJobActionErrors = {
  * routes still depends on the methods available on `ManagementOptions.monque`.
  */
 export const managementContract = {
+	processingState: oc
+		.route({
+			method: 'GET',
+			path: '/api/v1/processing',
+			operationId: 'getProcessingState',
+			successStatus: 200,
+		})
+		.input(ProcessingQueryDtoSchema.optional())
+		.errors(ManagementMutationErrors)
+		.output(ProcessingStateDtoSchema),
+	pauseProcessing: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/processing/actions/pause',
+			operationId: 'pauseProcessing',
+			successStatus: 200,
+		})
+		.input(ProcessingActionDtoSchema)
+		.errors(ManagementMutationErrors)
+		.output(ProcessingStateDtoSchema),
+	resumeProcessing: oc
+		.route({
+			method: 'POST',
+			path: '/api/v1/processing/actions/resume',
+			operationId: 'resumeProcessing',
+			successStatus: 200,
+		})
+		.input(ProcessingActionDtoSchema)
+		.errors(ManagementMutationErrors)
+		.output(ProcessingStateDtoSchema),
 	selectedJobActions: oc
 		.route({
 			method: 'POST',
@@ -82,6 +115,7 @@ export const managementContract = {
 			successStatus: 200,
 			successDescription: 'Successful response',
 		})
+		.input(ProcessingQueryDtoSchema.optional())
 		.output(CapabilitiesDtoSchema),
 	queueViews: oc
 		.route({

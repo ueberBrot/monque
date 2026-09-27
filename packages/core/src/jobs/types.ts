@@ -1,4 +1,4 @@
-import type { ObjectId } from 'mongodb';
+import type { ClientSession, ObjectId } from 'mongodb';
 
 /**
  * Represents the lifecycle states of a job in the queue.
@@ -145,7 +145,7 @@ export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
  * });
  * ```
  */
-export interface EnqueueOptions {
+export interface EnqueueOptions extends JobWriteOptions {
 	/**
 	 * Deduplication key. If a job with this key is already pending or processing,
 	 * the enqueue operation will not create a duplicate.
@@ -158,6 +158,27 @@ export interface EnqueueOptions {
 	runAt?: Date;
 }
 
+/** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
+export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, 'session'> {
+	name: string;
+	data: T;
+}
+
+/** Counts acknowledged by a successful enqueueMany() call. */
+export interface EnqueueManyResult {
+	insertedCount: number;
+	deduplicatedCount: number;
+}
+
+/** Options shared by job writes. */
+export interface JobWriteOptions {
+	/**
+	 * Session from the MongoClient used by Monque. The caller owns its lifetime,
+	 * transaction, and commit. Jobs become visible to workers after commit.
+	 */
+	session?: ClientSession;
+}
+
 /**
  * Options for scheduling a recurring job.
  *
@@ -168,7 +189,7 @@ export interface EnqueueOptions {
  * });
  * ```
  */
-export interface ScheduleOptions {
+export interface ScheduleOptions extends JobWriteOptions {
 	/**
 	 * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
 	 * When omitted, cron evaluation uses the server's local timezone.

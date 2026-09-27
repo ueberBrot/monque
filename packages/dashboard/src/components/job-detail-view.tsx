@@ -216,6 +216,14 @@ function getLifecycleMetadataItems(job: JobDto): readonly MetadataItem[] {
 		['Updated', <JobTimestamp key="updatedAt" value={job.updatedAt} />],
 		['Locked', <JobTimestamp key="lockedAt" value={job.lockedAt} />],
 		['Last heartbeat', <JobTimestamp key="lastHeartbeat" value={job.lastHeartbeat} />],
+		...(job.leaseExpiresAt
+			? [
+					[
+						'Lease expires',
+						<JobTimestamp key="leaseExpiresAt" value={job.leaseExpiresAt} />,
+					] satisfies MetadataItem,
+				]
+			: []),
 		['Heartbeat interval', job.heartbeatInterval ? `${job.heartbeatInterval} ms` : 'Not set'],
 	];
 }

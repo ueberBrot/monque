@@ -24,11 +24,15 @@ import type {
 	BulkOperationResult,
 	CursorOptions,
 	CursorPage,
+	EnqueueJob,
+	EnqueueManyResult,
 	EnqueueOptions,
 	GetJobsFilter,
 	JobSelector,
+	JobWriteOptions,
 	Monque,
 	PersistedJob,
+	ProcessingState,
 	QueueStats,
 	QueueViewSummary,
 	ScheduleOptions,
@@ -87,6 +91,14 @@ export class MonqueService {
 	 */
 	async enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>> {
 		return this.monque.enqueue(name, data, options);
+	}
+
+	/** Enqueue a batch using full namespaced job names and per-job scheduling options. */
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options?: JobWriteOptions,
+	): Promise<EnqueueManyResult> {
+		return this.monque.enqueueMany(jobs, options);
 	}
 
 	/**
@@ -277,6 +289,11 @@ export class MonqueService {
 	/** Whether the local scheduler, or named worker, is effectively paused. */
 	isPaused(name?: string): boolean {
 		return this.monque.isPaused(name);
+	}
+
+	/** Identify and inspect the local scheduler's global or named-worker pause state. */
+	getProcessingState(name?: string): ProcessingState {
+		return this.monque.getProcessingState(name);
 	}
 
 	/**
