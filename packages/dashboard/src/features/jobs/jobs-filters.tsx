@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useAppForm } from '@/forms/form';
+import { useAppForm } from '@/forms';
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/lib/dates';
 import { useMediaQuery } from '@/lib/use-media-query';
 

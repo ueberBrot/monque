@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 
 import { Command, CommandEmpty, CommandItem, CommandList } from '@/components/ui/command';
-import { useAppForm } from '@/forms/form';
+import { useAppForm } from '@/forms';
 
 function CommandSearch({
 	commands,

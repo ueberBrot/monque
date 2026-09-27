@@ -24,29 +24,8 @@
 	--monque-secondary: #d97706; /* Darker orange for contrast */
 	--monque-secondary-high: #78350f; /* Dark brown/orange for text */
 
-	/* Accent (Green) - Controls links, active states, etc. */
-	--sl-color-accent-low: var(--monque-primary-low);
-	--sl-color-accent: var(--monque-primary);
-	--sl-color-accent-high: var(--monque-primary-high);
-	--sl-color-text-accent: var(--monque-primary);
-
-	/* Green Palette */
-	--sl-color-green-low: var(--monque-primary-low);
-	--sl-color-green: var(--monque-primary);
-	--sl-color-green-high: var(--monque-primary-high);
-
-	--sl-color-purple-low: var(--monque-primary-low);
-	--sl-color-purple: var(--monque-primary);
-	--sl-color-purple-high: var(--monque-primary-high);
-
 	/* Banner Customization (Orange/Caution) */
-	--sl-color-banner-bg: var(--monque-secondary);
 	--sl-color-banner-text: #fffbeb; /* Light cream for contrast on orange */
-
-	/* Orange Palette Mapping */
-	--sl-color-orange: var(--monque-secondary);
-	--sl-color-orange-low: var(--monque-secondary-low);
-	--sl-color-orange-high: var(--monque-secondary-high);
 }
 
 /* Apply variables to Starlight Dark Theme */
@@ -56,26 +35,23 @@
 	--sl-color-gray-1: #e0e6e6;
 	--sl-color-gray-2: #bdc4c4;
 
-	/* Accent (Green) - Controls links, active states, etc. */
+	/* Banner Customization (Orange/Caution) */
+	--sl-color-banner-text: #052e16; /* Extremely dark green/black for high contrast */
+}
+
+:root[data-theme="light"],
+:root[data-theme="dark"] {
 	--sl-color-accent-low: var(--monque-primary-low);
 	--sl-color-accent: var(--monque-primary);
 	--sl-color-accent-high: var(--monque-primary-high);
 	--sl-color-text-accent: var(--monque-primary);
-
-	/* Green Palette (Tips normally use Purple in Starlight, so we override Purple) */
 	--sl-color-green-low: var(--monque-primary-low);
 	--sl-color-green: var(--monque-primary);
 	--sl-color-green-high: var(--monque-primary-high);
-
 	--sl-color-purple-low: var(--monque-primary-low);
 	--sl-color-purple: var(--monque-primary);
 	--sl-color-purple-high: var(--monque-primary-high);
-
-	/* Banner Customization (Orange/Caution) */
 	--sl-color-banner-bg: var(--monque-secondary);
-	--sl-color-banner-text: #052e16; /* Extremely dark green/black for high contrast */
-
-	/* Orange Palette Mapping */
 	--sl-color-orange: var(--monque-secondary);
 	--sl-color-orange-low: var(--monque-secondary-low);
 	--sl-color-orange-high: var(--monque-secondary-high);
