@@ -1056,7 +1056,7 @@ export class Monque extends EventEmitter {
 		this.workers.set(name, {
 			handler: handler as JobHandler,
 			concurrency,
-			activeJobs: new Map(),
+			activeJobs: this.workers.get(name)?.activeJobs ?? new Map(),
 		});
 	}
 
