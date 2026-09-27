@@ -1,0 +1,141 @@
+{
+	"$schema": "./node_modules/fallow/schema.json",
+	// There is no root tsconfig; semantic analysis must load each workspace explicitly.
+	"typeAware": {
+		"projects": [
+			"packages/core/tsconfig.json",
+			"packages/tsed/tsconfig.json",
+			"packages/management/tsconfig.json",
+			"packages/management-express/tsconfig.json",
+			"packages/dashboard/tsconfig.json",
+			"packages/dashboard-express/tsconfig.json",
+			"apps/dashboard-dev/tsconfig.json",
+			"apps/docs/tsconfig.json"
+		],
+		"require": "complete"
+	},
+	// Public source entry points, Starlight config strings, and Renovate's CI entry.
+	"entry": [
+		"packages/*/src/index.ts",
+		"packages/management/src/contract.ts",
+		// Shared form composition API, kept available to dashboard forms.
+		"packages/dashboard/src/forms/index.ts",
+		"apps/docs/src/components/SiteTitle.astro",
+		"apps/docs/src/styles/custom.css",
+		"scripts/renovate-generate-changeset.ts"
+	],
+	// Fallow cannot traverse hidden source directories; this is agent tooling, not a package.
+	"ignorePatterns": [".sandcastle/**"],
+	// Starlight CSS strings, Vite external config, and Astro's image service.
+	"ignoreDependencies": ["@fontsource/quicksand", "satteri", "sharp"],
+	"framework": [
+		{
+			"name": "monque-build-tools",
+			"enablers": ["unplugin-unused"],
+			"toolingDependencies": ["@ai-hero/sandcastle", "unplugin-unused"]
+		},
+		{
+			// Ts.ED FakeResponse imports this compatible cookie version in integration tests.
+			"name": "monque-tsed-tests",
+			"enablers": ["@tsed/platform-http"],
+			"toolingDependencies": ["cookie"]
+		},
+		{
+			"name": "monque-api-docs",
+			"enablers": ["starlight-typedoc"],
+			"toolingDependencies": [
+				"@monque/core",
+				"@monque/tsed",
+				"@monque/management",
+				"@monque/management-express"
+			]
+		},
+		{
+			"name": "monque-dashboard-dev",
+			"detection": { "type": "fileExists", "pattern": "apps/dashboard-dev/vite.config.ts" },
+			"toolingDependencies": ["@monque/dashboard"]
+		}
+	],
+	"usedClassMembers": [
+		{ "implements": "OnInit", "members": ["$onInit"] },
+		{ "implements": "OnDestroy", "members": ["$onDestroy"] }
+	],
+	// Keep generated imports in the graph; shadcn controls are maintained through its registry.
+	"ignoreFindings": [
+		"packages/dashboard/src/routeTree.gen.ts",
+		"packages/dashboard/src/components/ui/**"
+	],
+	"overrides": [
+		{
+			"files": ["**/tests/**"],
+			"rules": { "unused-exports": "off", "unused-types": "off", "unused-class-members": "off" }
+		},
+		{
+			// Public facades are called by installed consumers as well as workspace code.
+			"files": [
+				"packages/core/src/scheduler/monque.ts",
+				"packages/tsed/src/services/monque-service.ts"
+			],
+			"rules": { "unused-class-members": "off" }
+		}
+	],
+	"duplicates": {
+		"ignore": [
+			"**/tests/**",
+			"**/*.config.*",
+			"**/*.gen.ts",
+			"packages/dashboard/src/components/ui/**"
+		]
+	},
+	"health": {
+		"ignore": [
+			"**/tests/**",
+			"**/*.config.*",
+			"**/*.gen.ts",
+			"packages/dashboard/src/components/ui/**"
+		]
+	},
+	// Enforce the existing package direction, including the browser-safe Management contract.
+	"boundaries": {
+		"zones": [
+			{ "name": "core", "patterns": ["packages/core/src/**"] },
+			{ "name": "tsed", "patterns": ["packages/tsed/src/**"] },
+			{
+				"name": "contract",
+				"patterns": [
+					"packages/management/src/contract.ts",
+					"packages/management/src/schemas/**",
+					"packages/management/src/orpc/contract.ts"
+				]
+			},
+			{
+				"name": "management",
+				"patterns": [
+					"packages/management/src/index.ts",
+					"packages/management/src/mappers/**",
+					"packages/management/src/surface/**",
+					"packages/management/src/orpc/{index,router,openapi,operations}.ts"
+				]
+			},
+			{ "name": "management-express", "patterns": ["packages/management-express/src/**"] },
+			{
+				"name": "dashboard",
+				"patterns": ["packages/dashboard/src/**", "packages/dashboard/index.html"]
+			},
+			{ "name": "dashboard-express", "patterns": ["packages/dashboard-express/src/**"] }
+		],
+		"rules": [
+			{ "from": "core", "allow": [] },
+			{ "from": "tsed", "allow": ["core"] },
+			{ "from": "contract", "allow": [] },
+			{ "from": "management", "allow": ["core", "contract"] },
+			{ "from": "management-express", "allow": ["core", "management", "contract"] },
+			{ "from": "dashboard", "allow": ["contract"] },
+			{ "from": "dashboard-express", "allow": ["dashboard"] }
+		],
+		"coverage": {
+			"requireAllFiles": true,
+			"allowUnmatched": ["apps/**", "**/tests/**", "**/*.config.*", "scripts/**", ".sandcastle/**"]
+		}
+	}
+}

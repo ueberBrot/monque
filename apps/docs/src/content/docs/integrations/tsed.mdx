@@ -48,7 +48,7 @@ Install these peer dependencies alongside the integration:
 
 | Package | Version | Required |
 |---------|---------|----------|
-| `@monque/core` | `^1.10.1` | Yes |
+| `@monque/core` | `^1.15.0` | Yes |
 | `mongodb` | `^7.6.0` | Yes |
 | `@tsed/core` | `^8.38.7` | Yes |
 | `@tsed/di` | `^8.38.7` | Yes |
@@ -167,6 +167,33 @@ export class EmailJobs {
 `@Job()` also accepts `baseRetryInterval` and `maxBackoffDelay`. Omitted retry
 settings inherit your application's `monque` configuration. See
 [per-worker retry settings](/monque/core-concepts/retry/#per-worker-settings).
+
+For runtime payload validation, pass any Standard Schema compatible validator:
+
+```typescript
+import { z } from 'zod';
+
+const emailSchema = z.object({ email: z.email() });
+
+@JobController('email')
+export class ValidatedEmailJobs {
+  @Job('deliver', { schema: emailSchema })
+  async deliver(job: MonqueJob<z.output<typeof emailSchema>>) {
+    await sendEmail(job.data.email);
+  }
+}
+```
+
+The handler receives validated output; invalid payloads fail before the method or
+its request-scoped dependencies are invoked. See
+[payload validation](/monque/core-concepts/workers/#with-payload-validation) for
+transformation, retry, and stored-input behavior.
+
+Use `MonqueService.pause()`, `resume()`, and `isPaused()` for local processing controls.
+Pass the fully qualified name to control one worker, for example
+`monqueService.pause('email.send')`. Omitting the name controls the local instance.
+Running jobs continue; other instances are unaffected. See
+[pausing local processing](/monque/core-concepts/workers/#pausing-local-processing).
 
 ### 2. Schedule Jobs (Cron)
 
@@ -296,12 +323,21 @@ export class WorkerServer {}
 
 Inject `MonqueService` to call methods on the application's [`Monque`](/monque/api/classes/monque/) instance.
 
+`MonqueService.getQueueViewSummaries()` returns queue counts and current local worker
+activity, pause state, retry settings, and schema presence. You can pass the injected
+service directly as the Management API's `monque` option, keeping its reads and actions
+attached to the same scheduler.
+
 Commonly used methods:
 - [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
+- [`enqueueMany()`](/monque/api-tsed/classes/monqueservice/#enqueuemany) - Submit a batch with per-job scheduling and unique keys, including in producer-only applications. Returns inserted and deduplicated counts; see [batch submission](/monque/core-concepts/jobs/#enqueue-a-batch) for partial-failure behavior.
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
 - [`now()`](/monque/api-tsed/classes/monqueservice/#now) - Run a job immediately.
 
-
+For [transactional submission](/monque/core-concepts/jobs/#enqueue-in-a-transaction),
+pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()`. Create the session
+from the same `MongoClient` used by your configured database connection. Your
+application owns the transaction and session lifetime.
 
 <Aside type="tip">
   See the [Ts.ED API Reference](/monque/api-tsed/classes/monqueservice/) for queries, bulk actions, and other methods.

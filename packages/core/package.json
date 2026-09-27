@@ -69,6 +69,7 @@
 		"persistence"
 	],
 	"dependencies": {
+		"@standard-schema/spec": "^1.1.0",
 		"cron-parser": "^5.10.1"
 	},
 	"peerDependencies": {
@@ -83,6 +84,7 @@
 		"fishery": "^2.4.0",
 		"mongodb": "^7.6.0",
 		"tsdown": "^0.23.0",
-		"vitest": "^5.0.1"
+		"vitest": "^5.0.1",
+		"zod": "^4.6.5"
 	}
 }

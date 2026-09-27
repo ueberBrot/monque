@@ -2,12 +2,7 @@ export {
 	toBulkActionResultDto,
 	toDeleteJobDto,
 } from './actions.js';
-export {
-	toJobCursorPageDto,
-	toJobDto,
-	toJobSummaryDto,
-	toJobSummaryPageDto,
-} from './job.js';
+export { toJobCursorPageDto, toJobDto, toJobSummaryPageDto } from './job.js';
 export {
 	toQueueStatsDto,
 	toQueueViewSummaryListDto,

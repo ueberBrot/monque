@@ -24,12 +24,17 @@ import type {
 	BulkOperationResult,
 	CursorOptions,
 	CursorPage,
+	EnqueueJob,
+	EnqueueManyResult,
 	EnqueueOptions,
 	GetJobsFilter,
 	JobSelector,
+	JobWriteOptions,
 	Monque,
 	PersistedJob,
+	ProcessingState,
 	QueueStats,
+	QueueViewSummary,
 	ScheduleOptions,
 } from '@monque/core';
 import { MonqueError } from '@monque/core';
@@ -86,6 +91,14 @@ export class MonqueService {
 	 */
 	async enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>> {
 		return this.monque.enqueue(name, data, options);
+	}
+
+	/** Enqueue a batch using full namespaced job names and per-job scheduling options. */
+	async enqueueMany(
+		jobs: readonly EnqueueJob[],
+		options?: JobWriteOptions,
+	): Promise<EnqueueManyResult> {
+		return this.monque.enqueueMany(jobs, options);
 	}
 
 	/**
@@ -252,9 +265,36 @@ export class MonqueService {
 		return this.monque.getQueueStats(filter);
 	}
 
+	/** Read persisted queue counts and fresh local worker policies. */
+	async getQueueViewSummaries(
+		filter?: Pick<JobSelector, 'name'>,
+	): Promise<readonly QueueViewSummary[]> {
+		return this.monque.getQueueViewSummaries(filter);
+	}
+
 	// ─────────────────────────────────────────────────────────────────────────────
-	// Health Check
+	// Local Processing Controls
 	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** Pause local executions, optionally for one fully qualified job name. */
+	pause(name?: string): void {
+		this.monque.pause(name);
+	}
+
+	/** Resume local executions without restarting the scheduler. */
+	resume(name?: string): void {
+		this.monque.resume(name);
+	}
+
+	/** Whether the local scheduler, or named worker, is effectively paused. */
+	isPaused(name?: string): boolean {
+		return this.monque.isPaused(name);
+	}
+
+	/** Identify and inspect the local scheduler's global or named-worker pause state. */
+	getProcessingState(name?: string): ProcessingState {
+		return this.monque.getProcessingState(name);
+	}
 
 	/**
 	 * Check if the scheduler is healthy and running.

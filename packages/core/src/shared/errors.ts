@@ -1,3 +1,5 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+
 import type { Job } from '@/jobs';
 
 /**
@@ -300,5 +302,18 @@ export class NonRetryableError extends MonqueError {
 	constructor(message: string) {
 		super(message);
 		this.name = 'NonRetryableError';
+	}
+}
+
+/** A worker schema rejected the persisted payload. The handler is not invoked. */
+export class PayloadValidationError extends NonRetryableError {
+	constructor(
+		public readonly jobName: string,
+		public readonly issues: ReadonlyArray<StandardSchemaV1.Issue>,
+	) {
+		super(
+			`Invalid payload for job "${jobName}": ${issues.map((issue) => issue.message).join('; ')}`,
+		);
+		this.name = 'PayloadValidationError';
 	}
 }

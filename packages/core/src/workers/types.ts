@@ -1,3 +1,5 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+
 import type { JobHandler, PersistedJob } from '@/jobs';
 import type { MonqueOptions } from '@/scheduler/types';
 
@@ -17,7 +19,10 @@ export type RetryOptions = Pick<
  * });
  * ```
  */
-export interface WorkerOptions extends RetryOptions {
+export interface WorkerOptions<T = unknown> extends RetryOptions {
+	/** Validate persisted input before handling it; the handler receives the schema output. */
+	schema?: StandardSchemaV1<unknown, T>;
+
 	/**
 	 * Number of concurrent jobs this worker can process.
 	 * @default 5 (uses defaultConcurrency from MonqueOptions)
@@ -43,6 +48,8 @@ export interface WorkerRegistration<T = unknown> {
 	concurrency: number;
 	/** Retry settings captured when this worker was registered */
 	retryOptions?: RetryOptions;
+	/** Optional payload validator for this worker's executions */
+	schema?: StandardSchemaV1<unknown, T>;
 	/** Map of active claim IDs to their job data */
 	activeJobs: Map<string, PersistedJob<T>>;
 }

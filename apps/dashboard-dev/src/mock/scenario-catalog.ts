@@ -213,6 +213,8 @@ function createScenarioCapabilities({ readOnly }: { readonly readOnly: boolean }
 			reschedule: !readOnly,
 			delete: !readOnly,
 			deleteBulk: !readOnly,
+			pause: !readOnly,
+			resume: !readOnly,
 		},
 	};
 }
@@ -291,6 +293,11 @@ function buildQueueViews(
 					? {
 							concurrency: (index % 3) + 1,
 							activeCount: queueJobs.filter((job) => job.status === 'processing').length,
+							paused: false,
+							hasSchema: index === 0,
+							maxRetries: 3,
+							baseRetryInterval: 1000,
+							maxBackoffDelay: 60000,
 						}
 					: null,
 			};

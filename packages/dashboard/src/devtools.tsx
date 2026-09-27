@@ -3,6 +3,7 @@ import { formDevtoolsPlugin } from '@tanstack/react-form-devtools';
 import type { QueryClient } from '@tanstack/react-query';
 import { ReactQueryDevtoolsPanel } from '@tanstack/react-query-devtools';
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools';
+import { tableDevtoolsPlugin } from '@tanstack/react-table-devtools';
 
 import type { getRouter } from './router.js';
 
@@ -25,6 +26,7 @@ function DashboardDevtools({ queryClient, router }: DashboardDevtoolsProps) {
 			}}
 			plugins={[
 				formDevtoolsPlugin(),
+				tableDevtoolsPlugin(),
 				{
 					id: 'tanstack-query',
 					name: 'TanStack Query',

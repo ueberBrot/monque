@@ -28,6 +28,10 @@ export const JobDtoSchema = z
 		lockedAt: z.iso.datetime().nullable(),
 		claimedBy: z.string().nullable(),
 		lastHeartbeat: z.iso.datetime().nullable(),
+		leaseExpiresAt: z.iso
+			.datetime()
+			.optional()
+			.describe('Renewable claim deadline measured by MongoDB; absent for absolute locks.'),
 		heartbeatInterval: z.number().int().nonnegative().optional(),
 		failCount: z.number().int().nonnegative(),
 		failureReason: z.string().nullable(),
