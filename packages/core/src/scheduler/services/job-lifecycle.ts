@@ -22,7 +22,7 @@ export class JobLifecycle {
 	 * Atomically claim the earliest due pending job for a Worker.
 	 */
 	async claimNext(name: string): Promise<PersistedJob | null> {
-		if (!this.ctx.isRunning()) {
+		if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
 			return null;
 		}
 

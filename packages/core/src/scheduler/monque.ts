@@ -135,6 +135,8 @@ export class Monque extends EventEmitter {
 	private readonly options: ResolvedMonqueOptions;
 	private collection: Collection<Document> | null = null;
 	private workers: Map<string, WorkerRegistration> = new Map();
+	private paused = false;
+	private readonly pausedWorkers = new Set<string>();
 	private isRunning = false;
 	private isInitialized = false;
 
@@ -335,6 +337,7 @@ export class Monque extends EventEmitter {
 			instanceId: this.options.schedulerInstanceId,
 			workers: this.workers,
 			isRunning: () => this.isRunning,
+			isPaused: (name?: string) => this.isPaused(name),
 			emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
 				this.emit(event, payload),
 			notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
@@ -1090,6 +1093,31 @@ export class Monque extends EventEmitter {
 	// ─────────────────────────────────────────────────────────────────────────────
 	// Public API - Lifecycle
 	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** Pause new executions locally, optionally for one job name. Running jobs continue. */
+	pause(name?: string): void {
+		if (name === undefined) this.paused = true;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.add(name);
+		}
+	}
+
+	/** Resume local executions. Resuming the instance preserves individually paused workers. */
+	resume(name?: string): void {
+		if (name === undefined) this.paused = false;
+		else {
+			validateJobName(name);
+			this.pausedWorkers.delete(name);
+		}
+		this._pendingNotificationRouter?.notifyRunnableJob(name);
+	}
+
+	/** Whether the local instance, or the named worker, is effectively paused. */
+	isPaused(name?: string): boolean {
+		if (name !== undefined) validateJobName(name);
+		return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+	}
 
 	/**
 	 * Start polling for and processing jobs.

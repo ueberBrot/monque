@@ -61,6 +61,8 @@ export interface SchedulerContext {
 
 	/** Whether the scheduler is currently running */
 	isRunning: () => boolean;
+	/** Whether new executions are paused locally for the instance or job name */
+	isPaused: (name?: string) => boolean;
 
 	/** Type-safe event emitter */
 	emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;

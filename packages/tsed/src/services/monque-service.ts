@@ -253,8 +253,23 @@ export class MonqueService {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
-	// Health Check
+	// Local Processing Controls
 	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** Pause local executions, optionally for one fully qualified job name. */
+	pause(name?: string): void {
+		this.monque.pause(name);
+	}
+
+	/** Resume local executions without restarting the scheduler. */
+	resume(name?: string): void {
+		this.monque.resume(name);
+	}
+
+	/** Whether the local scheduler, or named worker, is effectively paused. */
+	isPaused(name?: string): boolean {
+		return this.monque.isPaused(name);
+	}
 
 	/**
 	 * Check if the scheduler is healthy and running.

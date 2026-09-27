@@ -189,6 +189,12 @@ its request-scoped dependencies are invoked. See
 [payload validation](/monque/core-concepts/workers/#with-payload-validation) for
 transformation, retry, and stored-input behavior.
 
+Use `MonqueService.pause()`, `resume()`, and `isPaused()` for local processing controls.
+Pass the fully qualified name to control one worker, for example
+`monqueService.pause('email.send')`. Omitting the name controls the local instance.
+Running jobs continue; other instances are unaffected. See
+[pausing local processing](/monque/core-concepts/workers/#pausing-local-processing).
+
 ### 2. Schedule Jobs (Cron)
 
 Use the [`@Cron`](/monque/api-tsed/functions/cron/) decorator to schedule recurring tasks. Cron jobs are automatically registered and scheduled with Monque during the application's `$onInit` lifecycle phase.

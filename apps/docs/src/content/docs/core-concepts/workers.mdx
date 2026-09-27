@@ -15,6 +15,7 @@ A worker is a handler registered for a job name. Monque calls it when a matching
 | [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker concurrency, retries, payload validation, and replacement |
 | [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
 | [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
+| [`pause()`](/monque/api/classes/monque/#pause) / [`resume()`](/monque/api/classes/monque/#resume) | Pause or resume local execution |
 | [`now()`](/monque/api/classes/monque/#now) | Enqueue for immediate execution |
 | [`MonqueOptions.workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency) | Global concurrency default |
 
@@ -103,6 +104,34 @@ Workers also accept [retry overrides](/monque/core-concepts/retry/#per-worker-se
 </Aside>
 
 ## Worker Lifecycle
+
+### Pausing Local Processing
+
+Pause one worker or all execution in this scheduler instance:
+
+```typescript
+monque.pause('send-email');
+monque.isPaused('send-email'); // true
+monque.resume('send-email');
+
+monque.pause();
+monque.isPaused(); // true
+monque.resume();
+```
+
+Running executions continue, including their heartbeats. Enqueueing, stale recovery,
+and other scheduler instances remain active. A claim that finishes arriving after a
+pause is released without starting its handler. Resuming wakes local polling promptly;
+it does not restart the scheduler.
+
+Pauses are local memory state and are lost when the process exits. You can pause
+before initialization or worker registration, and repeated calls are safe. A stop/start
+cycle on the same instance preserves pauses. Resuming the whole instance preserves
+individually paused workers; resuming a worker does not override a whole-instance pause.
+`isPaused(name)` reports the effective state, while `isPaused()` reports the instance pause.
+
+Use `stop()` when you need to drain and shut down. A paused, connected scheduler stays
+healthy. To stop execution across a fleet, pause each consumer instance.
 
 ### Replacing a Handler
 

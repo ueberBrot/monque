@@ -73,7 +73,7 @@ export class JobProcessor {
 	 * Used by change stream handler for targeted polling.
 	 */
 	async poll(targetNames?: ReadonlySet<string>): Promise<void> {
-		if (!this.ctx.isRunning()) {
+		if (!this.ctx.isRunning() || this.ctx.isPaused()) {
 			return;
 		}
 
@@ -91,7 +91,7 @@ export class JobProcessor {
 				await this._doPoll(targetNames);
 				// Re-polls are always full polls to catch all pending work
 				targetNames = undefined;
-			} while (this._repollRequested && this.ctx.isRunning());
+			} while (this._repollRequested && this.ctx.isRunning() && !this.ctx.isPaused());
 		} finally {
 			this._isPolling = false;
 		}
@@ -119,7 +119,7 @@ export class JobProcessor {
 
 		for (const name of names) {
 			const worker = this.ctx.workers.get(name);
-			if (!worker) continue;
+			if (!worker || this.ctx.isPaused(name)) continue;
 			// Skip workers not in the target set (if provided)
 			if (targetNames && !targetNames.has(name)) {
 				continue;
@@ -161,7 +161,7 @@ export class JobProcessor {
 								found++;
 								this.lastServedWorker = name;
 
-								if (this.ctx.isRunning()) {
+								if (this.ctx.isRunning() && !this.ctx.isPaused(name)) {
 									// Add to activeJobs immediately to correctly track concurrency
 									worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
 									this._totalActiveJobs++;
@@ -172,8 +172,10 @@ export class JobProcessor {
 								} else {
 									try {
 										await this.lifecycle.releaseOwnedClaim(job);
-									} catch {
-										// Best-effort shutdown cleanup.
+									} catch (error) {
+										if (this.ctx.isRunning())
+											this.ctx.emit('job:error', { error: toError(error), job });
+										// Shutdown cleanup remains best effort.
 									}
 								}
 							})
