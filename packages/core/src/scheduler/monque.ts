@@ -43,6 +43,7 @@ import {
 	type SchedulerContext,
 } from './services/index.js';
 import type { MonqueOptions } from './types.js';
+import { validateIntegerOption, validateOptions } from './validate-options.js';
 
 /**
  * Default configuration values
@@ -176,6 +177,8 @@ export class Monque extends EventEmitter {
 			maxPayloadSize: options.maxPayloadSize,
 			statsCacheTtlMs: options.statsCacheTtlMs ?? 5000,
 		};
+
+		validateOptions(this.options);
 
 		if (options.defaultConcurrency !== undefined) {
 			console.warn(
@@ -1054,6 +1057,7 @@ export class Monque extends EventEmitter {
 	register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions = {}): void {
 		validateJobName(name);
 		const concurrency = options.concurrency ?? this.options.workerConcurrency;
+		validateIntegerOption('concurrency', concurrency);
 
 		// Check for existing worker and throw unless replace is explicitly true
 		if (this.workers.has(name) && options.replace !== true) {
