@@ -22,28 +22,20 @@ function validateNumberOption(
 }
 
 export function validateOptions(options: ResolvedMonqueOptions): void {
-	for (const name of ['pollInterval', 'safetyPollInterval', 'heartbeatInterval'] as const) {
-		validateNumberOption(name, options[name], 1, MAX_TIMER_DELAY);
-	}
+	validateNumberOption('pollInterval', options.pollInterval, 1, MAX_TIMER_DELAY);
+	validateNumberOption('safetyPollInterval', options.safetyPollInterval, 1, MAX_TIMER_DELAY);
+	validateNumberOption('heartbeatInterval', options.heartbeatInterval, 1, MAX_TIMER_DELAY);
 	validateNumberOption('shutdownTimeout', options.shutdownTimeout, 0, MAX_TIMER_DELAY);
-	for (const name of [
-		'workerConcurrency',
-		'instanceConcurrency',
-		'maxRetries',
-		'maxPayloadSize',
-	] as const) {
-		validateIntegerOption(name, options[name]);
-	}
-	for (const name of [
-		'baseRetryInterval',
-		'maxBackoffDelay',
-		'lockTimeout',
-		'statsCacheTtlMs',
-	] as const) {
-		validateNumberOption(name, options[name]);
-	}
-	for (const status of ['completed', 'failed', 'cancelled'] as const) {
-		validateNumberOption(`jobRetention.${status}`, options.jobRetention?.[status]);
-	}
+	validateIntegerOption('workerConcurrency', options.workerConcurrency);
+	validateIntegerOption('instanceConcurrency', options.instanceConcurrency);
+	validateIntegerOption('maxRetries', options.maxRetries);
+	validateIntegerOption('maxPayloadSize', options.maxPayloadSize);
+	validateNumberOption('baseRetryInterval', options.baseRetryInterval);
+	validateNumberOption('maxBackoffDelay', options.maxBackoffDelay);
+	validateNumberOption('lockTimeout', options.lockTimeout);
+	validateNumberOption('statsCacheTtlMs', options.statsCacheTtlMs);
+	validateNumberOption('jobRetention.completed', options.jobRetention?.completed);
+	validateNumberOption('jobRetention.failed', options.jobRetention?.failed);
+	validateNumberOption('jobRetention.cancelled', options.jobRetention?.cancelled);
 	validateNumberOption('jobRetention.interval', options.jobRetention?.interval, 1, MAX_TIMER_DELAY);
 }
