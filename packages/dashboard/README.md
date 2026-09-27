@@ -2,7 +2,9 @@
 
 Inspect Monque jobs and scheduler health in your browser. Filter a job list, share its URL,
 or open a job to view its payload and failures. You can retry, cancel, reschedule, or delete
-jobs when your API permissions allow it.
+jobs when your API permissions allow it. Queue Views show local worker policies and
+pause controls; Health provides whole-instance pause and resume. Running jobs continue
+while paused, and other scheduler instances are unaffected.
 
 The dashboard supports light and dark themes and mobile layouts.
 
@@ -38,8 +40,9 @@ app.use(
 Open `/ops/dashboard` on your application's origin. `apiBaseUrl` is the Management router's
 mount path, **without `/api/v1`**. The dashboard's base path comes from its Express mount.
 Omit `pollingIntervalMs` to disable automatic polling. Job lists use this base interval; queue
-statistics and health refresh every three intervals, and Health permissions every six. Polling
-adds up to 10% jitter, backs off after errors, and pauses in hidden tabs. Relative timestamps
+statistics, health, processing state, and processing-control permissions refresh every three
+intervals. Other permissions refresh every six. Polling adds up to 10% jitter, backs off
+after errors, and pauses in hidden tabs. Relative timestamps
 update locally without API requests.
 
 All configuration is passed through the router options in your server code. The Express adapter

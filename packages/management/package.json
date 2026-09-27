@@ -58,7 +58,8 @@
 	"files": [
 		"dist",
 		"contract",
-		"src"
+		"src",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"build": "tsdown",

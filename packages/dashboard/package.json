@@ -48,7 +48,8 @@
 	},
 	"files": [
 		"dist",
-		"src"
+		"src",
+		"CHANGELOG.md"
 	],
 	"imports": {
 		"#/*": "./src/*"

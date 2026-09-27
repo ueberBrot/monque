@@ -1,7 +1,8 @@
 # @monque/management
 
-Inspect jobs, read queue counts, and run job actions over HTTP. This package provides an
-oRPC request handler, OpenAPI generation, and Zod schemas with TypeScript types.
+Inspect jobs, read queue counts, and run job actions over HTTP. This package provides
+an HTTP handler, an OpenAPI document, and Zod schemas with TypeScript types.
+The route contract is also available to oRPC clients.
 
 Use it with your own HTTP server. Express applications can mount the API with
 `@monque/management-express` and add the browser interface with `@monque/dashboard-express`.
@@ -66,6 +67,9 @@ The API uses the `/api/v1` prefix:
 | ------ | ---- | --------- |
 | `GET` | `/health` | `getSchedulerHealth` |
 | `GET` | `/capabilities` | `getCapabilities` |
+| `GET` | `/processing?name=...` (optional job name) | `getProcessingState` |
+| `POST` | `/processing/actions/pause` | `pauseProcessing` |
+| `POST` | `/processing/actions/resume` | `resumeProcessing` |
 | `GET` | `/queue-views?name=...` (optional exact name filter) | `listQueueViews` |
 | `GET` | `/jobs` | `listJobs` |
 | `GET` | `/jobs/stats` | `getJobStats` |
@@ -94,6 +98,26 @@ permission. The bulk authorization input includes `ids`; per-job checks include 
 The response contains `{ count, errors }`, with a status for every failed ID. Reschedule uses
 its individual permission for both checks. To act on jobs matching a filter, use the
 selector-based bulk routes.
+
+## Local processing controls
+
+Read `/api/v1/processing`, then send its `instanceId` to the pause or resume endpoint:
+
+```json
+{ "instanceId": "scheduler-id-from-the-state-response", "name": "send-email" }
+```
+
+Omit `name` to control the whole attached scheduler. Running jobs continue and other
+scheduler instances are unaffected. Resuming the instance preserves individual worker
+pauses. A mismatched instance ID returns `409`; use instance-specific or sticky routing
+when your application runs multiple schedulers.
+
+The `pause` and `resume` authorization actions receive `name` and `instanceId`.
+Read-only mode denies both. Query `/api/v1/capabilities?name=send-email` to check
+permissions for one worker. Pauses are lost when the scheduler process exits.
+
+Queue Views include effective local worker retry settings, pause state, and schema
+presence. Jobs with renewable leases include their `leaseExpiresAt` deadline.
 
 ## Request cost and permissions
 

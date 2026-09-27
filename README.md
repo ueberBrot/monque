@@ -1,184 +1,124 @@
 <p align="center">
-  <img src="assets/logo-with-text.svg" alt="Monque Logo" width="800"/>
+  <img src="assets/logo-with-text.svg" alt="Monque" width="800" />
 </p>
 
 <p align="center">
   <a href="https://github.com/ueberbrot/monque/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI" />
+    <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/ci.yml?branch=main&style=for-the-badge&label=CI" alt="CI status" />
   </a>
-  <a href="https://www.npmjs.com/package/@monque/core">
-    <img src="https://img.shields.io/npm/v/%40monque%2Fcore?style=for-the-badge&label=%40monque%2Fcore" alt="@monque/core version" />
-  </a>
-  <a href="https://www.npmjs.com/package/@monque/tsed">
-    <img src="https://img.shields.io/npm/v/%40monque%2Ftsed?style=for-the-badge&label=%40monque%2Ftsed" alt="@monque/tsed version" />
-  </a>
-  <a href="https://github.com/ueberbrot/monque/actions/workflows/deploy-docs.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/ueberbrot/monque/deploy-docs.yml?branch=main&style=for-the-badge&label=DOCS" alt="Docs" />
-  </a>
-  <a href="https://codecov.io/gh/ueberBrot/monque">
-    <img src="https://img.shields.io/codecov/c/github/ueberBrot/monque?style=for-the-badge&logo=codecov&logoColor=white" alt="Codecov" />
-  </a>
-  <a href="https://github.com/ueberbrot/monque/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE" alt="License" />
-  </a>
-  <a href="https://ueberBrot.github.io/monque/">
-    <img src="https://img.shields.io/website?url=https%3A%2F%2FueberBrot.github.io%2Fmonque%2F&style=for-the-badge&label=WEBSITE" alt="Website" />
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/ueberbrot/monque?style=for-the-badge&label=LICENSE" alt="ISC license" />
   </a>
 </p>
 
-<p align="center">
-  <b>A TypeScript job scheduler backed by MongoDB, with retries and recurring jobs.</b>
-</p>
+Monque runs background jobs in Node.js applications using MongoDB. Schedule work, register
+workers, and let multiple processes share a jobs collection. Add the Management API and
+Dashboard to inspect jobs and control processing from your application.
 
-<p align="center">
-  <a href="https://ueberBrot.github.io/monque/"><b>Documentation</b></a> | <a href="https://ueberBrot.github.io/monque/getting-started/quick-start/"><b>Quick Start</b></a>
-</p>
+[Documentation](https://ueberBrot.github.io/monque/) ·
+[Getting started](https://ueberBrot.github.io/monque/getting-started/quick-start/) ·
+[Dashboard setup](https://ueberBrot.github.io/monque/dashboard/express/)
 
 ## Packages
 
-| Package                         | Description                                 |
-| ------------------------------- | ------------------------------------------- |
-| [@monque/core](./packages/core) | Core job scheduler with MongoDB backend     |
-| [@monque/tsed](./packages/tsed) | Native Ts.ED integration with decorators    |
-| [@monque/management](./packages/management) | Framework-neutral job queries and actions over HTTP |
-| [@monque/management-express](./packages/management-express) | Express adapter for the Management API |
-| [@monque/dashboard](./packages/dashboard) | Prebuilt dashboard assets and configuration types |
-| [@monque/dashboard-express](./packages/dashboard-express) | Express adapter that serves the dashboard |
-| [@monque/docs](./apps/docs)     | Documentation site                          |
+Start with `@monque/core`. The other packages add framework integration, an HTTP API,
+or a browser dashboard around the same scheduler.
 
-Start with `@monque/core`. Ts.ED applications can use `@monque/tsed` to register workers
-and manage scheduler startup and shutdown. To add an operator UI to Express, use the
-[dashboard setup guide](https://ueberBrot.github.io/monque/dashboard/express/): the
-Management adapter exposes your initialized scheduler, and the Dashboard adapter serves
-the UI that calls it. Both routers use your application's authentication middleware.
+| Package | Use it to |
+| --- | --- |
+| [@monque/core](./packages/core) | Enqueue jobs, register workers, and manage scheduling and execution. |
+| [@monque/tsed](./packages/tsed) | Register workers with Ts.ED decorators and manage the scheduler through dependency injection. |
+| [@monque/management](./packages/management) | Expose job queries and actions through an HTTP contract with authorization hooks and OpenAPI. |
+| [@monque/management-express](./packages/management-express) | Mount the Management API in an Express application. |
+| [@monque/dashboard](./packages/dashboard) | Use the prebuilt browser dashboard assets in a server integration. |
+| [@monque/dashboard-express](./packages/dashboard-express) | Serve the Dashboard from Express without a frontend build. |
 
-## Features
+For Express, mount both `@monque/management-express` and `@monque/dashboard-express`.
+The first exposes your scheduler; the second serves the UI. Protect both with your
+application's authentication middleware. See the [complete setup](https://ueberBrot.github.io/monque/dashboard/express/).
 
-- Atomic claims let multiple schedulers share a jobs collection. Jobs can run again after retries or recovery, so handlers must be idempotent.
-- Heartbeats record worker activity. Startup recovery returns jobs with expired locks to pending.
-- TypeScript generics describe the payload each worker receives.
-- Use Monque with any Node.js framework and subscribe to job events for logging.
-- MongoDB Change Streams notify workers of new jobs, with polling as a fallback.
-- Schedule recurring work with 5-field cron expressions.
-- Failed jobs retry with configurable exponential backoff.
+## Working with jobs
 
-## Quick Start
+- **Schedule work:** enqueue immediately, choose a future date, or use a recurring cron
+  schedule with a timezone. Submit batches with `enqueueMany()` or include job writes
+  in your own MongoDB transaction.
+- **Control execution:** set worker and instance concurrency, configure retries per worker,
+  and pause or resume local processing without interrupting running jobs.
+- **Validate payloads:** pass a Standard Schema compatible validator to a worker.
+  The handler receives validated output, including schema transformations.
+- **Recover interrupted work:** atomic claims coordinate workers across processes.
+  Optional renewable leases keep long-running jobs claimed and let surviving schedulers
+  recover abandoned work. Change Streams wake workers, with polling as a fallback.
+- **Inspect and operate:** browse jobs and worker policies, inspect failures and lease
+  deadlines, and retry, cancel, reschedule, or delete jobs through the API or Dashboard.
 
-Install dependencies (MongoDB is a peer dependency):
+Retries and recovery can run a job more than once. Keep handlers idempotent; claim
+ownership protects stored job state, but cannot undo a handler's external side effects.
+Pause and resume controls apply only to the scheduler instance receiving the request.
+
+## Quick start
+
+Install core and its MongoDB peer dependency:
+
 ```bash
 bun add @monque/core mongodb
-
-npm install @monque/core mongodb
-
-pnpm add @monque/core mongodb
 ```
 
 ```typescript
 import { Monque } from '@monque/core';
 import { MongoClient } from 'mongodb';
 
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
-
+const client = await MongoClient.connect('mongodb://localhost:27017');
 const monque = new Monque(client.db('myapp'));
 await monque.initialize();
 
-// Register a type-safe worker
-interface EmailJob {
-  to: string;
-  subject: string;
-}
-
-monque.register<EmailJob>('send-email', async (job) => {
-  console.log('Sending email to:', job.data.to);
-  await sendEmail(job.data);
+monque.register<{ message: string }>('log-message', async (job) => {
+  console.log(job.data.message);
 });
-
-// Monitor job lifecycle
-monque.on('job:complete', ({ job, duration }) => {
-  console.log(`Job ${job.name} completed in ${duration}ms`);
-});
-
-// Start processing
 monque.start();
 
-// Enqueue jobs
-await monque.enqueue('send-email', { 
-  to: 'user@example.com',
-  subject: 'Welcome!'
-});
+await monque.enqueue('log-message', { message: 'Hello from Monque' });
 
-// Schedule recurring jobs
-await monque.schedule('0 9 * * *', 'daily-report', { type: 'sales' });
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
+async function shutdown() {
   await monque.stop();
   await client.close();
-});
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 ```
 
-## Configuration
-
-```typescript
-const monque = new Monque(db, {
-  collectionName: 'monque_jobs',   // Default: 'monque_jobs'
-  pollInterval: 1000,              // Default: 1000ms (backup polling)
-  maxRetries: 10,                  // Default: 10
-  baseRetryInterval: 1000,         // Default: 1000ms
-  shutdownTimeout: 30000,          // Default: 30s
-  workerConcurrency: 5,           // Default: 5 jobs per worker
-  lockTimeout: 1800000,            // Default: 30 minutes
-  heartbeatInterval: 30000,        // Default: 30s
-  recoverStaleJobs: true,          // Default: true
-});
-```
-
-## Development
-
-This repository uses Bun workspaces and scripts for development.
-
-```bash
-# Install dependencies
-bun install
-
-# Run tests
-bun run test
-
-# Build all packages & apps
-bun run build
-
-# Format & lint code
-bun run check
-
-# Run docs locally
-bun run dev:docs
-```
+See the guides for [scheduling and transactions](https://ueberBrot.github.io/monque/core-concepts/jobs/),
+[workers and validation](https://ueberBrot.github.io/monque/core-concepts/workers/),
+[retry settings](https://ueberBrot.github.io/monque/core-concepts/retry/), and
+[renewable leases](https://ueberBrot.github.io/monque/advanced/heartbeat/).
 
 ## Requirements
 
-- Node.js 22.12 or newer
-- MongoDB 4.4 or newer (a replica set or sharded cluster is required for Change Streams)
-- Bun 1.3.5+ (development only; required to work on this repo)
+- Node.js 22.12 or newer.
+- MongoDB 4.4 or newer. Change Streams and transactions require a replica set or sharded cluster.
+  Workers can use polling with a standalone MongoDB server.
 
-## Documentation
+## Development
 
-See the documentation for setup and usage:
+Use the Bun version pinned in [package.json](./package.json). Integration tests need Docker
+for MongoDB Testcontainers.
 
-- [Installation Guide](https://ueberBrot.github.io/monque/getting-started/installation/)
-- [Quick Start Tutorial](https://ueberBrot.github.io/monque/getting-started/quick-start/)
-- [Core Concepts](https://ueberBrot.github.io/monque/core-concepts/jobs/)
+```bash
+bun install
+bun run check
+bun run test
+bun run build
+```
+
+The documentation site lives in [apps/docs](./apps/docs). Run `bun run dev:docs` to work on it locally.
 
 ## Inspired by
 
-Monque takes inspiration from these job scheduling libraries:
-
-- [Agenda](https://github.com/agenda/agenda) - The original MongoDB job scheduler
-- [Pulse](https://github.com/pulsecron/pulse) - An Agenda fork, now archived
-- [BullMQ](https://github.com/taskforcesh/bullmq) - Redis-based job queue
-- [pg-boss](https://github.com/timgit/pg-boss) - Postgres-backed job queue
-- [graphile-worker](https://github.com/graphile/worker) - Postgres job worker
+- [Agenda](https://github.com/agenda/agenda) and [Pulse](https://github.com/pulsecron/pulse): MongoDB job scheduling.
+- [BullMQ](https://github.com/taskforcesh/bullmq): Redis job queues.
+- [pg-boss](https://github.com/timgit/pg-boss) and [Graphile Worker](https://github.com/graphile/worker): PostgreSQL job queues.
 
 ## License
 
-ISC © Maurice de Bruyn
+[ISC](./LICENSE) © Maurice de Bruyn

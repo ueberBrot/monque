@@ -1,10 +1,10 @@
 # @monque/management-express
 
-Serve the Monque Management API from Express. The router provides job queries and actions,
-request context for permission checks, and an OpenAPI document.
+Mount the Monque Management API in Express. Inspect jobs, perform job actions, and
+control local processing through the scheduler already running in your application.
+The router also serves an OpenAPI document.
 
-Use your application's authentication middleware to protect it. To add the browser dashboard,
-install `@monque/dashboard-express`.
+To add the browser dashboard, use [@monque/dashboard-express](../dashboard-express).
 
 ## Installation
 
@@ -12,67 +12,63 @@ install `@monque/dashboard-express`.
 bun add @monque/management-express @monque/management @monque/core express mongodb
 ```
 
-`@monque/core`, `@monque/management`, `express`, and `mongodb` are peer dependencies.
+These four dependencies are peers. Requires core 1.15 or newer within version 1,
+Management 0.6.x, and the Express and MongoDB versions listed in
+[package.json](./package.json).
 
-Requires `@monque/core` 1.15.0 or newer within version 1 and `@monque/management` 0.6.x.
-Upgrade them alongside the adapter to expose effective worker policies and renewable
-lease deadlines.
+## Mount the API
 
-## Usage
+Use your existing Express app and initialized `Monque` instance:
 
 ```typescript
-import { Monque } from '@monque/core';
 import { createManagementExpressRouter } from '@monque/management-express';
-import express from 'express';
-import { MongoClient } from 'mongodb';
 
-const app = express();
-const client = new MongoClient('mongodb://localhost:27017');
-await client.connect();
-
-const monque = new Monque(client.db('monque'));
-await monque.initialize();
-
-app.use(
-	'/monque',
-	requireOperator,
-	createManagementExpressRouter({
-		monque,
-		context: ({ req }) => ({
-			userId: req.get('x-user-id') ?? 'anonymous',
-		}),
-		authorize: ({ action, context }) => {
-			return context.userId !== 'anonymous' || action === 'read';
-		},
-	}),
-);
+app.use('/ops', createManagementExpressRouter({ monque, readOnly: true }));
 ```
 
-If mounted at `/monque`, Management API routes are served under `/monque/api/v1/*`.
-Authentication stays in the host Express app; mount auth middleware before the router.
+This exposes reads under `/ops/api/v1`, such as `/ops/api/v1/jobs` and
+`/ops/api/v1/queue-views`. `readOnly: true` rejects mutations, including pause and resume.
+Omit it to enable supported actions.
+
+## Authentication and authorization
+
+The router does not authenticate requests. Mount your application's authentication
+middleware before it, including when using read-only mode:
+
+```typescript
+app.use('/ops', requireOperator);
+app.use('/ops', createManagementExpressRouter({ monque }));
+```
+
+`requireOperator` is middleware supplied by your application. The `/ops` mount also
+protects the OpenAPI document and a Dashboard mounted under `/ops/dashboard`.
+
+For per-action permissions, use `context` to pass authenticated request data into the
+Management `authorize` callback. Derive identity and roles from your trusted session or
+authentication middleware, not unchecked request headers. Job authorization receives
+the relevant job or selector; processing controls receive the target instance ID and
+optional job name. See [Management authorization](https://ueberBrot.github.io/monque/management/surface/).
 
 ## OpenAPI
 
-OpenAPI JSON is served at `/openapi.json` relative to the mount path by default:
-
-```text
-/monque/openapi.json
-```
-
-The document describes the Management API and includes the router's mount URL in `servers`.
+The router serves `/openapi.json` relative to its mount path by default. With the example
+above, open `/ops/openapi.json`. The document includes the mount URL in `servers`.
 
 ```typescript
 app.use(
-	'/internal/management',
-	createManagementExpressRouter({
-		monque,
-		openApi: {
-			path: '/docs/openapi.json',
-			serverUrl: 'https://ops.example.com/internal/management',
-		},
-	}),
+  '/internal/management',
+  createManagementExpressRouter({
+    monque,
+    openApi: {
+      path: '/docs/openapi.json',
+      serverUrl: 'https://ops.example.com/internal/management',
+    },
+  }),
 );
 ```
 
-Set `openApi: false` to disable this route. You can load the document into an API viewer
-such as Scalar; install the viewer separately.
+Set `openApi: false` to disable that route. You can load the document into an API viewer
+such as Scalar, installed separately.
+
+See [@monque/management](../management) for routes, response formats, processing-control
+semantics, and authorization options.
