@@ -138,6 +138,7 @@ export class JobManager {
 						lockedAt: '',
 						claimedBy: '',
 						claimId: '',
+						leaseExpiresAt: '',
 						lastHeartbeat: '',
 					},
 				},
@@ -168,6 +169,7 @@ export class JobManager {
 			delete updatedDoc['lockedAt'];
 			delete updatedDoc['claimedBy'];
 			delete updatedDoc['claimId'];
+			delete updatedDoc['leaseExpiresAt'];
 			delete updatedDoc['lastHeartbeat'];
 
 			const job = this.ctx.documentToPersistedJob(updatedDoc);
@@ -408,7 +410,14 @@ export class JobManager {
 					},
 				},
 				{
-					$unset: ['failReason', 'lockedAt', 'claimedBy', 'claimId', 'lastHeartbeat'],
+					$unset: [
+						'failReason',
+						'lockedAt',
+						'claimedBy',
+						'claimId',
+						'lastHeartbeat',
+						'leaseExpiresAt',
+					],
 				},
 			]);
 

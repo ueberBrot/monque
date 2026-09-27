@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import type { Document, Filter } from 'mongodb';
+
 import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
 import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from '@/shared';
 
@@ -23,23 +26,36 @@ export class JobLifecycle {
 		}
 
 		const now = new Date();
+		const { leaseDuration } = this.ctx.options;
+		const claim = {
+			status: JobStatus.PROCESSING,
+			claimedBy: this.ctx.instanceId,
+			claimId: randomUUID(),
+			lockedAt: now,
+			lastHeartbeat: now,
+			heartbeatInterval: this.ctx.options.heartbeatInterval,
+			updatedAt: now,
+		};
 		const result = await this.ctx.collection.findOneAndUpdate(
 			{
 				name,
 				status: JobStatus.PENDING,
 				nextRunAt: { $lte: now },
 			},
-			{
-				$set: {
-					status: JobStatus.PROCESSING,
-					claimedBy: this.ctx.instanceId,
-					claimId: randomUUID(),
-					lockedAt: now,
-					lastHeartbeat: now,
-					heartbeatInterval: this.ctx.options.heartbeatInterval,
-					updatedAt: now,
-				},
-			},
+			leaseDuration === undefined
+				? { $set: claim, $unset: { leaseExpiresAt: '' } }
+				: [
+						{
+							$set: {
+								...claim,
+								claimedBy: { $literal: this.ctx.instanceId },
+								lockedAt: '$$NOW',
+								lastHeartbeat: '$$NOW',
+								updatedAt: '$$NOW',
+								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
+							},
+						},
+					],
 			{
 				sort: { nextRunAt: 1 },
 				returnDocument: 'after',
@@ -181,9 +197,6 @@ export class JobLifecycle {
 	 * Refresh heartbeat timestamps for jobs owned by this scheduler instance.
 	 */
 	async updateOwnedHeartbeats(): Promise<void> {
-		if (!this.ctx.isRunning()) {
-			return;
-		}
 		const claimIds: string[] = [];
 		for (const worker of this.ctx.workers.values()) {
 			for (const job of worker.activeJobs.values()) {
@@ -193,18 +206,30 @@ export class JobLifecycle {
 		if (claimIds.length === 0) return;
 
 		const now = new Date();
+		const { leaseDuration } = this.ctx.options;
 		await this.ctx.collection.updateMany(
 			{
 				claimedBy: this.ctx.instanceId,
 				claimId: { $in: claimIds },
 				status: JobStatus.PROCESSING,
+				...(leaseDuration === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
 			},
-			{
-				$set: {
-					lastHeartbeat: now,
-					updatedAt: now,
-				},
-			},
+			leaseDuration === undefined
+				? {
+						$set: {
+							lastHeartbeat: now,
+							updatedAt: now,
+						},
+					}
+				: [
+						{
+							$set: {
+								lastHeartbeat: '$$NOW',
+								updatedAt: '$$NOW',
+								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
+							},
+						},
+					],
 		);
 	}
 
@@ -216,7 +241,10 @@ export class JobLifecycle {
 		const result = await this.ctx.collection.updateMany(
 			{
 				status: JobStatus.PROCESSING,
-				lockedAt: { $lt: staleThreshold },
+				$or: [
+					{ leaseExpiresAt: { $exists: false }, lockedAt: { $lt: staleThreshold } },
+					{ leaseExpiresAt: { $exists: true }, $expr: { $lte: ['$leaseExpiresAt', '$$NOW'] } },
+				],
 			},
 			{
 				$set: {
@@ -229,6 +257,7 @@ export class JobLifecycle {
 
 		if (result.modifiedCount > 0) {
 			this.ctx.emit('stale:recovered', { count: result.modifiedCount });
+			this.ctx.notifyPendingJob(undefined, new Date());
 		}
 	}
 
@@ -255,31 +284,32 @@ export class JobLifecycle {
 	/**
 	 * MongoDB precondition for mutating a job owned by this scheduler.
 	 */
-	private ownedJobFilter(job: PersistedJob): {
-		_id: PersistedJob['_id'];
-		status: typeof JobStatus.PROCESSING;
-		claimedBy: string;
-		claimId: string | null;
-	} {
+	private ownedJobFilter(job: PersistedJob): Filter<Document> {
 		return {
 			_id: job._id,
 			status: JobStatus.PROCESSING,
 			claimedBy: this.ctx.instanceId,
 			claimId: job.claimId ?? null,
+			...(job.leaseExpiresAt === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
 		};
 	}
 
 	/**
 	 * Claim fields removed whenever ownership ends.
 	 */
-	private claimCleanupFields(): { lockedAt: ''; claimedBy: ''; claimId: ''; lastHeartbeat: '' } {
+	private claimCleanupFields(): {
+		lockedAt: '';
+		claimedBy: '';
+		claimId: '';
+		lastHeartbeat: '';
+		leaseExpiresAt: '';
+	} {
 		return {
 			lockedAt: '',
 			claimedBy: '',
 			claimId: '',
+			leaseExpiresAt: '',
 			lastHeartbeat: '',
 		};
 	}
 }
-
-import { randomUUID } from 'node:crypto';

@@ -88,6 +88,9 @@ export interface Job<T = unknown> {
 	/** Identifier of this execution's claim; changes whenever the job is claimed again. */
 	claimId?: string;
 
+	/** Renewable claim deadline, measured by MongoDB's clock. Absent for absolute locks. */
+	leaseExpiresAt?: Date;
+
 	/**
 	 * Timestamp of the last heartbeat update for this job.
 	 * Used to detect stale jobs when a scheduler instance crashes without releasing.

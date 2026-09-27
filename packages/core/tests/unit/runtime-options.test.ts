@@ -78,6 +78,15 @@ describe('runtime options', () => {
 		).not.toThrow();
 	});
 
+	it('requires enough lease time for a heartbeat and a valid deadline', () => {
+		for (const leaseDuration of [0, -1, Number.NaN, Infinity, 20, 2_147_483_648]) {
+			expect(() => new Monque(db, { heartbeatInterval: 20, leaseDuration })).toThrow(
+				'leaseDuration',
+			);
+		}
+		expect(() => new Monque(db, { heartbeatInterval: 20, leaseDuration: 1000 })).not.toThrow();
+	});
+
 	it('validates registration before changing the registered worker', () => {
 		const monque = new Monque(db);
 		const handler = async () => {};

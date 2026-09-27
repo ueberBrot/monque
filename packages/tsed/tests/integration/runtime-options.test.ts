@@ -1,12 +1,45 @@
 import { type Job, MonqueError } from '@monque/core';
+import { PlatformTest } from '@tsed/platform-http/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { JobController, Job as MonqueJob } from '@/decorators';
+import { MonqueService } from '@/services';
 
+import { waitFor } from '../test-utils.js';
 import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
 
 describe('runtime options', () => {
 	afterEach(resetMonque);
+
+	it('renews claims configured through Ts.ED', async () => {
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		@JobController('lease')
+		class EphemeralLeaseController {
+			@MonqueJob('work')
+			async handler() {
+				started.resolve();
+				await release.promise;
+			}
+		}
+		try {
+			await bootstrapMonque({
+				imports: [EphemeralLeaseController],
+				connectionStrategy: 'db',
+				monqueConfig: { leaseDuration: 1000, heartbeatInterval: 20 },
+			});
+			const service = PlatformTest.get<MonqueService>(MonqueService);
+			const job = await service.enqueue('lease.work', {});
+			await started.promise;
+			const deadline = (await service.getJob(job._id.toString()))?.leaseExpiresAt;
+			await waitFor(async () => {
+				const current = (await service.getJob(job._id.toString()))?.leaseExpiresAt;
+				return current instanceof Date && deadline instanceof Date && current > deadline;
+			});
+		} finally {
+			release.resolve();
+		}
+	});
 
 	it('rejects invalid scheduler configuration during bootstrap', async () => {
 		await expect(

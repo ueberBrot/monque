@@ -167,6 +167,7 @@ export class Monque extends EventEmitter {
 			workerConcurrency:
 				options.workerConcurrency ?? options.defaultConcurrency ?? DEFAULTS.workerConcurrency,
 			lockTimeout: options.lockTimeout ?? DEFAULTS.lockTimeout,
+			...(options.leaseDuration !== undefined ? { leaseDuration: options.leaseDuration } : {}),
 			recoverStaleJobs: options.recoverStaleJobs ?? DEFAULTS.recoverStaleJobs,
 			maxBackoffDelay: options.maxBackoffDelay,
 			instanceConcurrency: options.instanceConcurrency ?? options.maxConcurrency,
@@ -1139,7 +1140,16 @@ export class Monque extends EventEmitter {
 
 		// Start heartbeat and retention timers
 		this.lifecycleManager.startTimers({
-			updateHeartbeats: () => this.jobLifecycle.updateOwnedHeartbeats(),
+			updateHeartbeats: async () => {
+				await this.jobLifecycle.updateOwnedHeartbeats();
+				if (
+					this.isRunning &&
+					this.options.leaseDuration !== undefined &&
+					this.options.recoverStaleJobs
+				) {
+					await this.jobLifecycle.recoverStaleJobs();
+				}
+			},
 		});
 	}
 
@@ -1182,10 +1192,8 @@ export class Monque extends EventEmitter {
 			return;
 		}
 
-		// Stop all lifecycle timers FIRST to prevent new poll callbacks
-		// This closes the race window where a queued poll tick could
-		// check isRunning before the flag is set to false
-		this.lifecycleManager.stopTimers();
+		// Renewable claims stay alive while handlers drain; recovery stops with polling.
+		this.lifecycleManager.stopTimers(this.options.leaseDuration !== undefined);
 		this._pendingNotificationRouter?.close();
 
 		this.isRunning = false;
@@ -1202,6 +1210,7 @@ export class Monque extends EventEmitter {
 
 		// Wait for all active jobs to complete (with timeout)
 		if (this.getActiveJobCount() === 0) {
+			this.lifecycleManager.stopTimers();
 			return;
 		}
 
@@ -1217,6 +1226,7 @@ export class Monque extends EventEmitter {
 
 		const result = await Promise.race([waitForJobs, timeout.promise]);
 		clearTimeout(timeoutId);
+		this.lifecycleManager.stopTimers();
 
 		this._drainResolve = null;
 

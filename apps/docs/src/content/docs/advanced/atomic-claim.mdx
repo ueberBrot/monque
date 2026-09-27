@@ -97,7 +97,8 @@ the collection to get this protection; older versions do not check claim IDs.
 
 A crashed worker can leave a job in processing. With `recoverStaleJobs: true`, a subsequent
 initialization recovers jobs whose `lockedAt` is older than `lockTimeout`. Heartbeat updates
-do not extend that timeout. Choose a timeout longer than the longest valid handler run.
+do not extend that timeout by default. Choose a timeout longer than the longest valid handler run,
+or enable `leaseDuration` for renewable claims and recovery while schedulers remain running.
 See [Heartbeat Mechanism](/monque/advanced/heartbeat/) for recovery settings.
 
 Call `await monque.stop()` during shutdown, before closing the MongoDB client. It stops

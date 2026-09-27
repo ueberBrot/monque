@@ -33,6 +33,10 @@ export function validateOptions(options: ResolvedMonqueOptions): void {
 	validateNumberOption('baseRetryInterval', options.baseRetryInterval);
 	validateNumberOption('maxBackoffDelay', options.maxBackoffDelay);
 	validateNumberOption('lockTimeout', options.lockTimeout);
+	validateNumberOption('leaseDuration', options.leaseDuration, 1, MAX_TIMER_DELAY);
+	if (options.leaseDuration !== undefined && options.leaseDuration <= options.heartbeatInterval) {
+		throw new MonqueError('leaseDuration must exceed heartbeatInterval');
+	}
 	validateNumberOption('statsCacheTtlMs', options.statsCacheTtlMs);
 	validateNumberOption('jobRetention.completed', options.jobRetention?.completed);
 	validateNumberOption('jobRetention.failed', options.jobRetention?.failed);
