@@ -101,7 +101,9 @@ See the guides for [scheduling and transactions](https://ueberBrot.github.io/mon
 
 ## Development
 
-Install the [Vite+ global CLI](https://viteplus.dev/guide/global-cli), then use `vp` for repository commands. It selects Bun from [package.json](./package.json) and Node from [.node-version](./.node-version). Integration tests need Docker for MongoDB Testcontainers.
+Install the [Vite+ global CLI](https://viteplus.dev/guide/global-cli) and use the versions
+pinned in [package.json](./package.json) and [.node-version](./.node-version).
+Integration tests need Docker for MongoDB Testcontainers.
 
 ```bash
 vp install
@@ -109,25 +111,6 @@ vp run check
 vp run test
 vp run build
 ```
-
-Package tasks live in each `vite.config.ts`. From a package directory, use
-`vp run test:unit`; from the root, use `vp run @monque/core#test:unit`.
-`vp run check` fixes formatting/lint and checks types; CI uses read-only checks.
-Vite+ installs the staged-check hook on `vp install`. Library builds retain ESM and
-CommonJS outputs and strict export/declaration validation.
-
-Use `vp fmt` to format, `vp fmt --check` to verify formatting, and `vp lint --deny-warnings`
-to lint. `vp run check` also builds required dependencies and checks every workspace;
-bare `vp check` runs formatting and lint checks directly. Run `vp run` to browse available tasks.
-Root scripts retain only shared workflows and hook setup. Without the global CLI,
-install dependencies with Bun and prefix commands with `bun x`, for example `bun x vp fmt`.
-
-Dashboard source also uses `@shadcn/lint` to catch unknown Tailwind classes through the
-same `vp lint` command. It covers `packages/dashboard/src` and `apps/dashboard-dev/src`,
-excluding generated routes and imported `components/ui` primitives. Both use the dashboard theme.
-
-Update the bundled toolchain with `vp migrate --no-interactive --no-agent --no-editor --no-hooks`;
-Vite+ and its Vite/Vitest aliases must be updated together in the Bun catalog.
 
 The documentation site lives in [apps/docs](./apps/docs). Run `vp run @monque/docs#dev` to work on it locally.
 
