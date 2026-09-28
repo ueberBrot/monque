@@ -152,6 +152,44 @@ jobs:
             apps/dashboard-dev/test-results
           retention-days: 7
 
+  cache-probe:
+    name: Temporary Linux cache probe
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-vite-plus
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-artifacts
+          path: packages
+      - name: Enable caching for the probes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          probes = [
+              ('packages/core/vite.config.ts', '// The native type checker cannot run under Linux task file tracing.', 'cache: { output: [] },'),
+              ('apps/docs/vite.config.ts', '// Astro spawns native tooling that cannot run under Linux task file tracing.', 'cache: { output: ["dist/**"] },'),
+          ]
+          for name, comment, cache in probes:
+              path = Path(name)
+              source = path.read_text()
+              before = comment + '\n        cache: false,'
+              assert source.count(before) == 1, name
+              path.write_text(source.replace(before, cache))
+          PY
+      - name: Cached type check
+        continue-on-error: true
+        run: |
+          vp run --filter @monque/core --ignore-depends-on type-check
+          vp run --filter @monque/core --ignore-depends-on type-check
+      - name: Cached Astro build
+        continue-on-error: true
+        run: |
+          vp run --filter @monque/docs --ignore-depends-on build
+          vp run --filter @monque/docs --ignore-depends-on build
+
   ci-gate:
     name: CI Gate
     needs: [quality, build-apps, test, dashboard-e2e]
