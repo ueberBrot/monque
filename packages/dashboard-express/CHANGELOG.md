@@ -6,11 +6,6 @@
 
 - [#562](https://github.com/ueberBrot/monque/pull/562) [`70538f4`](https://github.com/ueberBrot/monque/commit/70538f45465e018717d1adaec8bc4533c7acbc28) - Update dependencies.
 
-### Patch Changes
-
-- Updated dependencies [[`70538f4`](https://github.com/ueberBrot/monque/commit/70538f45465e018717d1adaec8bc4533c7acbc28)]:
-  - @monque/dashboard@0.4.0
-
 ## 0.2.0
 
 ### Minor Changes
