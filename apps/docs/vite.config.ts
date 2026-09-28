@@ -25,8 +25,7 @@ export default defineConfig({
             from: ["dependencies", "devDependencies"],
           },
         ],
-        // Astro spawns native tooling that cannot run under Linux task file tracing.
-        cache: false,
+        cache: { output: ["dist/**"] },
       },
       preview: {
         command: "astro preview",
@@ -52,7 +51,7 @@ export default defineConfig({
             from: ["dependencies", "devDependencies"],
           },
         ],
-        cache: false,
+        cache: { output: [".astro/**", "src/content/docs/api*/**"] },
       },
     },
   },

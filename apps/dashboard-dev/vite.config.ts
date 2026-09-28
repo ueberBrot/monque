@@ -57,7 +57,7 @@ const config = defineConfig(({ mode }) => {
               from: ["dependencies", "devDependencies"],
             },
           ],
-          cache: false,
+          cache: { output: [] },
         },
         test: {
           command: "vp test run",

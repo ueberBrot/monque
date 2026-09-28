@@ -101,7 +101,11 @@ See the guides for [scheduling and transactions](https://ueberBrot.github.io/mon
 
 ## Development
 
-Install the [Vite+ global CLI](https://viteplus.dev/guide/global-cli), then use `vp` for repository commands. It selects Bun from [package.json](./package.json) and Node from [.node-version](./.node-version). Integration tests need Docker for MongoDB Testcontainers.
+Install the [Vite+ global CLI](https://viteplus.dev/guide/global-cli), then use `vp` for repository commands. The toolchain pins are in [package.json](./package.json) and [.node-version](./.node-version). Integration tests need Docker for MongoDB Testcontainers.
+
+If Vite+ uses system-first mode (`vp env current`), your existing version manager selects
+the active Node executable. With fnm, run `fnm use --install-if-missing` from the repository
+root after a pin changes, then check `node --version` and `vp exec node --version`.
 
 ```bash
 vp install
@@ -121,6 +125,11 @@ to lint. `vp run check` also builds required dependencies and checks every works
 bare `vp check` runs formatting and lint checks directly. Run `vp run` to browse available tasks.
 Root scripts retain only shared workflows and hook setup. Without the global CLI,
 install dependencies with Bun and prefix commands with `bun x`, for example `bun x vp fmt`.
+
+If a cached task fails locally with `spawn EBUSY`, retry that invocation with
+`--no-cache`, for example `vp run --no-cache check`. This failure was reproduced on a
+WSL2 host even with the pinned Node version; cached type checks and Astro builds passed
+on GitHub's Ubuntu runner. Keep caching enabled in the shared task configuration.
 
 Dashboard source also uses `@shadcn/lint` to catch unknown Tailwind classes through the
 same `vp lint` command. It covers `packages/dashboard/src` and `apps/dashboard-dev/src`,
