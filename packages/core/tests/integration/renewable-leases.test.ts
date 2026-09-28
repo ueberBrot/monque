@@ -63,8 +63,9 @@ describe("renewable leases", () => {
   it.each([false, true])(
     "does not revive an expired lease or accept its late result (failure: %s)",
     async (fail) => {
+      const collectionName = uniqueCollectionName("expired-lease");
       const owner = new Monque(db, {
-        collectionName: uniqueCollectionName("expired-lease"),
+        collectionName,
         leaseDuration: 500,
         heartbeatInterval: 20,
         shutdownTimeout: 1,
@@ -91,8 +92,11 @@ describe("renewable leases", () => {
       try {
         await started.promise;
         await owner.stop();
-        const deadline = (await owner.getJob(job._id))?.leaseExpiresAt;
-        await waitFor(async () => deadline instanceof Date && Date.now() > deadline.getTime());
+        // Establish expiry atomically; a heartbeat started before stop() may still be in flight.
+        const deadline = new Date(0);
+        await db
+          .collection(collectionName)
+          .updateOne({ _id: job._id }, { $set: { leaseExpiresAt: deadline } });
         owner.start();
         const probe = await owner.enqueue("probe", {});
         await probeStarted.promise;
