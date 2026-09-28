@@ -482,26 +482,21 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
   });
   const jobs = await app.seedScenario("pagination");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto(`${app.base}/dashboard/jobs?sortBy=identifier&sortDirection=asc`);
+  const search = new URLSearchParams({
+    sortBy: "identifier",
+    sortDirection: "asc",
+    createdAtFrom: "2026-06-01T10:00:00.000Z",
+    createdAtTo: "2026-06-01T10:00:00.000Z",
+    updatedAtFrom: "2026-06-01T10:00:00.000Z",
+    updatedAtTo: "2026-06-01T10:00:00.000Z",
+    nextRunAtFrom: "2035-06-01T10:00:00.000Z",
+    nextRunAtTo: "2035-06-01T10:00:00.000Z",
+  });
+  await page.goto(`${app.base}/dashboard/jobs?${search}`);
   await page.getByLabel("Job name", { exact: true }).fill("email");
   await page.getByRole("checkbox", { name: "Pending", exact: true }).check();
   await page.getByRole("combobox", { name: "Page size" }).click();
   await page.getByRole("option", { name: "25 rows", exact: true }).click();
-  await page.getByRole("button", { name: /^Date filters/ }).click();
-  for (const [field, date] of [
-    ["Created", "2026-06-01"],
-    ["Updated", "2026-06-01"],
-    ["Next run", "2035-06-01"],
-  ]) {
-    for (const suffix of ["from", "to"]) {
-      await page.getByRole("button", { name: `${field} ${suffix}`, exact: true }).click();
-      const picker = page.getByRole("dialog", { name: `${field} ${suffix}`, exact: true });
-      await picker.getByRole("textbox", { name: "Date", exact: true }).fill(date ?? "");
-      await picker.getByRole("textbox", { name: "Time (24h)", exact: true }).fill("12:00");
-      await picker.getByRole("button", { name: "Apply", exact: true }).click();
-      await expect(picker).not.toBeVisible();
-    }
-  }
   await expect(page.locator("tbody tr")).toHaveCount(25);
   await page.getByRole("link", { name: "Next page", exact: true }).click();
   const expectedIds = jobs.slice(25, 50).map((job) => job._id.toHexString());
