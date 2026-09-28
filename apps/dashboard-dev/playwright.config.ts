@@ -8,7 +8,13 @@ export default defineConfig<{ authenticated: boolean }>({
   fullyParallel: true,
   forbidOnly: Boolean(process.env["CI"]),
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
-  use: { trace: "retain-on-failure", screenshot: "only-on-failure", timezoneId: "Europe/Berlin" },
+  use: {
+    // Headless shell can lose new-tab events: https://github.com/microsoft/playwright/issues/42142
+    channel: "chromium",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    timezoneId: "Europe/Berlin",
+  },
   projects: [
     { name: "mongo-desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "mongo-mobile", use: { ...devices["Pixel 7"] } },

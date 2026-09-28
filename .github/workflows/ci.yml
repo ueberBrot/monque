@@ -158,7 +158,7 @@ jobs:
           path: .
       - name: Install Chromium
         working-directory: apps/dashboard-dev
-        run: vp exec playwright install --with-deps --only-shell chromium
+        run: vp exec playwright install --with-deps --no-shell chromium
       - name: Test built dashboard with MongoDB and Express
         working-directory: apps/dashboard-dev
         run: vp exec playwright test --project=${{ matrix.project }}
