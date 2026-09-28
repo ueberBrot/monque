@@ -51,6 +51,11 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      "release:publish": {
+        // Build publishable packages only when Changesets takes its publish path.
+        command: "vp run --filter './packages/*' build && vp exec changeset publish",
+        cache: false,
+      },
       "release:version": {
         command: "vp exec changeset version && vp install --lockfile-only --ignore-scripts",
         cache: false,
@@ -77,7 +82,11 @@ export default defineConfig({
     },
   },
   test: {
-    projects: ["packages/*/vite.config.ts", "apps/dashboard-dev/vite.config.ts"],
+    projects: [
+      "packages/*/vite.config.ts",
+      "apps/dashboard-dev/vite.config.ts",
+      { test: { name: "ci", include: ["scripts/ci/tests/**/*.test.ts"] } },
+    ],
   },
   staged: {
     "*": "vp check --fix",

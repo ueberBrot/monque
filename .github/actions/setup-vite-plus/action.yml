@@ -9,11 +9,8 @@ inputs:
     description: "Optional npm registry URL for release authentication"
     default: ""
   task-cache:
-    description: "Persist the Vite Task cache between CI runs"
-    default: "true"
-  task-cache-scope:
-    description: "Separate caches for matrix groups"
-    default: "default"
+    description: "Persist Vite Task outputs for jobs that run cacheable tasks"
+    default: "false"
 
 runs:
   using: "composite"
@@ -36,6 +33,6 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: node_modules/.vite/task-cache
-        key: ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.task-cache-scope }}-${{ hashFiles('bun.lock', '.node-version') }}-${{ github.sha }}
+        key: ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.node-version || 'pinned' }}-${{ hashFiles('bun.lock', '.node-version') }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.task-cache-scope }}-${{ hashFiles('bun.lock', '.node-version') }}-
+          ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.node-version || 'pinned' }}-${{ hashFiles('bun.lock', '.node-version') }}-

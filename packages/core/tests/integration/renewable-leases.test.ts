@@ -63,9 +63,10 @@ describe("renewable leases", () => {
   it.each([false, true])(
     "does not revive an expired lease or accept its late result (failure: %s)",
     async (fail) => {
+      const collectionName = uniqueCollectionName("expired-lease");
       const owner = new Monque(db, {
-        collectionName: uniqueCollectionName("expired-lease"),
-        leaseDuration: 500,
+        collectionName,
+        leaseDuration: 30_000,
         heartbeatInterval: 20,
         shutdownTimeout: 1,
         recoverStaleJobs: false,
@@ -91,8 +92,11 @@ describe("renewable leases", () => {
       try {
         await started.promise;
         await owner.stop();
-        const deadline = (await owner.getJob(job._id))?.leaseExpiresAt;
-        await waitFor(async () => deadline instanceof Date && Date.now() > deadline.getTime());
+        // Establish expiry atomically; a heartbeat started before stop() may still be in flight.
+        const deadline = new Date(0);
+        await db
+          .collection(collectionName)
+          .updateOne({ _id: job._id }, { $set: { leaseExpiresAt: deadline } });
         owner.start();
         const probe = await owner.enqueue("probe", {});
         await probeStarted.promise;
@@ -123,7 +127,7 @@ describe("renewable leases", () => {
       const collectionName = uniqueCollectionName("leases");
       const worker = new Monque(db, {
         collectionName,
-        leaseDuration: 1000,
+        leaseDuration: 30_000,
         heartbeatInterval: 20,
         lockTimeout: 10,
       });
@@ -143,14 +147,16 @@ describe("renewable leases", () => {
         await started.promise;
         const claimed = await worker.getJob(job._id);
         if (draining) stopping = worker.stop();
-        await waitFor(async () => {
-          const heartbeat = (await worker.getJob(job._id))?.lastHeartbeat;
-          return (
-            heartbeat instanceof Date &&
-            claimed?.leaseExpiresAt instanceof Date &&
-            heartbeat > claimed.leaseExpiresAt
-          );
-        });
+        let previousDeadline = claimed?.leaseExpiresAt;
+        // Two renewals rule out a single heartbeat already in flight when draining starts.
+        for (let renewal = 0; renewal < 2; renewal++) {
+          await waitFor(async () => {
+            const deadline = (await worker.getJob(job._id))?.leaseExpiresAt;
+            if (!deadline || !previousDeadline || deadline <= previousDeadline) return false;
+            previousDeadline = deadline;
+            return true;
+          });
+        }
         await observer.initialize();
         expect(await observer.getJob(job._id)).toMatchObject({
           status: JobStatus.PROCESSING,

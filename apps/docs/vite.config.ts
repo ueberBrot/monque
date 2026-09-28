@@ -1,5 +1,7 @@
 import { defineConfig } from "vite-plus";
 
+const astroInputs = [{ auto: true }, "!**/.astro", "!**/.astro/**"];
+
 export default defineConfig({
   run: {
     tasks: {
@@ -17,16 +19,21 @@ export default defineConfig({
         command: "astro dev",
         cache: false,
       },
+      "generate:api": {
+        command: "astro sync",
+        dependsOn: [{ task: "build", from: ["dependencies", "devDependencies"] }],
+        cache: {
+          input: [...astroInputs, "!src/content/docs/api*", "!src/content/docs/api*/**"],
+          output: ["src/content/docs/api*/**"],
+        },
+      },
       build: {
-        command: "astro build",
-        dependsOn: [
-          {
-            task: "build",
-            from: ["dependencies", "devDependencies"],
-          },
-        ],
-        // Astro spawns native tooling that cannot run under Linux task file tracing.
-        cache: false,
+        command: "MONQUE_DOCS_REUSE_API=1 astro build",
+        dependsOn: ["generate:api"],
+        cache: {
+          input: [...astroInputs, "!dist", "!dist/**"],
+          output: ["dist/**"],
+        },
       },
       preview: {
         command: "astro preview",
@@ -36,23 +43,17 @@ export default defineConfig({
         command: "astro",
         cache: false,
       },
-      lint: {
-        command: "vp lint src/",
-        cache: false,
-      },
       clean: {
         command: "rimraf dist .astro",
         cache: false,
       },
       "type-check": {
-        command: "astro check",
-        dependsOn: [
-          {
-            task: "build",
-            from: ["dependencies", "devDependencies"],
-          },
-        ],
-        cache: false,
+        command: "MONQUE_DOCS_REUSE_API=1 astro check",
+        dependsOn: ["generate:api"],
+        cache: {
+          input: astroInputs,
+          output: [".astro/**"],
+        },
       },
     },
   },

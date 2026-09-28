@@ -41,8 +41,7 @@ export default defineConfig({
             from: ["dependencies", "devDependencies"],
           },
         ],
-        // The native type checker cannot run under Linux task file tracing.
-        cache: false,
+        cache: { output: [] },
       },
       test: {
         command: "vp test run",
@@ -65,10 +64,6 @@ export default defineConfig({
         command: "vp test",
         cache: false,
       },
-      lint: {
-        command: "vp lint .",
-        cache: false,
-      },
     },
   },
   pack: {
@@ -89,6 +84,7 @@ export default defineConfig({
     attw: {
       // Validate both ESM and CommonJS consumers.
       profile: "strict",
+      level: "error",
     },
     unused: {
       enabled: true,

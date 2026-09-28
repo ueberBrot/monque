@@ -473,7 +473,14 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
   authenticated,
   isMobile,
 }) => {
-  await app.seedScenario("pagination");
+  // Keep the previous page visible long enough to exercise placeholder-data handling.
+  await page.route("**/api/v1/jobs?*", async (route) => {
+    if (new URL(route.request().url()).searchParams.has("cursor")) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+    await route.continue();
+  });
+  const jobs = await app.seedScenario("pagination");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto(`${app.base}/dashboard/jobs?sortBy=identifier&sortDirection=asc`);
   await page.getByLabel("Job name", { exact: true }).fill("email");
@@ -496,9 +503,19 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
     }
   }
   await expect(page.locator("tbody tr")).toHaveCount(25);
-  const first = await page.locator("tbody a").first().getAttribute("href");
   await page.getByRole("link", { name: "Next page", exact: true }).click();
-  await expect(page.locator("tbody a").first()).not.toHaveAttribute("href", first ?? "");
+  const expectedIds = jobs.slice(25, 50).map((job) => job._id.toHexString());
+  await expect
+    .poll(() =>
+      page
+        .locator("tbody a")
+        .evaluateAll((elements) =>
+          elements.map((element) =>
+            new URL(element.getAttribute("href") ?? "", location.origin).pathname.split("/").at(-1),
+          ),
+        ),
+    )
+    .toEqual(expectedIds);
   const links = await page
     .locator("tbody a")
     .evaluateAll((elements) => elements.map((element) => element.getAttribute("href")));
