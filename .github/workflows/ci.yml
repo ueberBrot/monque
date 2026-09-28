@@ -41,9 +41,6 @@ jobs:
           vp run --filter './packages/*' --filter './apps/*' --ignore-depends-on type-check
           vp lint --type-aware --type-check -A all
 
-      - name: Check exports
-        run: vp run --filter './packages/*' --ignore-depends-on check:exports
-
       - name: Upload built packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

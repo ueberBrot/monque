@@ -68,10 +68,6 @@ export default defineConfig({
         command: "vp test tests/integration",
         cache: false,
       },
-      lint: {
-        command: "vp lint .",
-        cache: false,
-      },
     },
   },
   pack: {
@@ -96,6 +92,7 @@ export default defineConfig({
     attw: {
       // Validate both ESM and CommonJS consumers.
       profile: "strict",
+      level: "error",
     },
     unused: {
       enabled: true,

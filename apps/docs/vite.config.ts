@@ -35,10 +35,6 @@ export default defineConfig({
         command: "astro",
         cache: false,
       },
-      lint: {
-        command: "vp lint src/",
-        cache: false,
-      },
       clean: {
         command: "rimraf dist .astro",
         cache: false,

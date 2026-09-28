@@ -57,9 +57,6 @@ const config = defineConfig({
           output: ["dist/**"],
         },
       },
-      "build:client": {
-        command: "vp build",
-      },
       "check:exports": {
         command: "publint && attw --pack .",
         dependsOn: ["build"],
@@ -98,10 +95,6 @@ const config = defineConfig({
           output: [],
         },
       },
-      lint: {
-        command: "vp lint .",
-        cache: false,
-      },
     },
   },
   test: {
@@ -130,6 +123,7 @@ const config = defineConfig({
     attw: {
       // Validate both ESM and CommonJS consumers.
       profile: "strict",
+      level: "error",
     },
   },
 
