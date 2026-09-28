@@ -22,26 +22,26 @@ Add the routers to your existing Express app and reuse its initialized `Monque` 
 For a new application, the following is a complete server entrypoint:
 
 ```typescript
-import { Monque } from '@monque/core';
-import { createDashboardExpressRouter } from '@monque/dashboard-express';
-import { createManagementExpressRouter } from '@monque/management-express';
-import express from 'express';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { createDashboardExpressRouter } from "@monque/dashboard-express";
+import { createManagementExpressRouter } from "@monque/management-express";
+import express from "express";
+import { MongoClient } from "mongodb";
 
-const client = await MongoClient.connect('mongodb://localhost:27017');
-const monque = new Monque(client.db('my-app'));
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("my-app"));
 await monque.initialize();
 monque.start();
 
 const app = express();
 
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", createManagementExpressRouter({ monque }));
 app.use(
-	'/ops/dashboard',
-	createDashboardExpressRouter({
-		apiBaseUrl: '/ops',
-		pollingIntervalMs: 15_000,
-	}),
+  "/ops/dashboard",
+  createDashboardExpressRouter({
+    apiBaseUrl: "/ops",
+    pollingIntervalMs: 15_000,
+  }),
 );
 
 app.listen(3000);
@@ -57,11 +57,11 @@ See the [core README](../core/README.md) for workers and scheduling.
 Pass your settings to `createDashboardExpressRouter()` in server code. The router supplies
 the browser configuration automatically.
 
-| Setting | Example | Meaning |
-| --- | --- | --- |
-| Dashboard mount | `app.use('/ops/dashboard', …)` | URL where the dashboard is served; its base path is inferred automatically. |
-| `apiBaseUrl` | `'/ops'` | Required Management router mount URL. The dashboard appends `/api/v1/...`. |
-| `pollingIntervalMs` | `15_000` | Base job refresh interval while visible. Statistics and health refresh less often. Omit to disable periodic polling. |
+| Setting             | Example                        | Meaning                                                                                                              |
+| ------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Dashboard mount     | `app.use('/ops/dashboard', …)` | URL where the dashboard is served; its base path is inferred automatically.                                          |
+| `apiBaseUrl`        | `'/ops'`                       | Required Management router mount URL. The dashboard appends `/api/v1/...`.                                           |
+| `pollingIntervalMs` | `15_000`                       | Base job refresh interval while visible. Statistics and health refresh less often. Omit to disable periodic polling. |
 
 **Do not include `/api/v1` in `apiBaseUrl`.** In the example, the jobs endpoint is
 `/ops/api/v1/jobs`. The API and dashboard may use different mount paths.
@@ -79,7 +79,7 @@ The example allows unauthenticated access. To require your application's login o
 mount its middleware **before both routers**:
 
 ```typescript
-app.use('/ops', requireOperator);
+app.use("/ops", requireOperator);
 ```
 
 `requireOperator` is middleware supplied by your application. This mount protects the dashboard,

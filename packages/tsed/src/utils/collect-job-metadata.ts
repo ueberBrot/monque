@@ -4,41 +4,41 @@
  * Collects all job metadata from a class decorated with @JobController.
  * Used by MonqueModule to discover and register all jobs.
  */
-import { Store } from '@tsed/core';
+import { Store } from "@tsed/core";
 
-import { MONQUE } from '@/constants';
-import type { CronDecoratorOptions, JobDecoratorOptions, JobStore } from '@/decorators';
+import { MONQUE } from "@/constants";
+import type { CronDecoratorOptions, JobDecoratorOptions, JobStore } from "@/decorators";
 
-import { buildJobName } from './build-job-name.js';
+import { buildJobName } from "./build-job-name.js";
 
 /**
  * Collected job registration info ready for Monque.register()
  */
 export interface CollectedJobMetadata {
-	/**
-	 * Full job name (with namespace prefix if applicable)
-	 */
-	fullName: string;
+  /**
+   * Full job name (with namespace prefix if applicable)
+   */
+  fullName: string;
 
-	/**
-	 * Method name on the controller class
-	 */
-	method: string;
+  /**
+   * Method name on the controller class
+   */
+  method: string;
 
-	/**
-	 * Job options to pass to Monque.register()
-	 */
-	opts: JobDecoratorOptions | CronDecoratorOptions;
+  /**
+   * Job options to pass to Monque.register()
+   */
+  opts: JobDecoratorOptions | CronDecoratorOptions;
 
-	/**
-	 * Whether this is a cron job
-	 */
-	isCron: boolean;
+  /**
+   * Whether this is a cron job
+   */
+  isCron: boolean;
 
-	/**
-	 * Cron pattern (only for cron jobs)
-	 */
-	cronPattern?: string;
+  /**
+   * Cron pattern (only for cron jobs)
+   */
+  cronPattern?: string;
 }
 
 /**
@@ -58,38 +58,38 @@ export interface CollectedJobMetadata {
  * ```
  */
 export function collectJobMetadata(
-	target: new (...args: unknown[]) => unknown,
+  target: new (...args: unknown[]) => unknown,
 ): CollectedJobMetadata[] {
-	const store = Store.from(target);
-	const jobStore = store.get<JobStore>(MONQUE);
+  const store = Store.from(target);
+  const jobStore = store.get<JobStore>(MONQUE);
 
-	if (!jobStore) {
-		return [];
-	}
+  if (!jobStore) {
+    return [];
+  }
 
-	const results: CollectedJobMetadata[] = [];
-	const namespace = jobStore.namespace;
+  const results: CollectedJobMetadata[] = [];
+  const namespace = jobStore.namespace;
 
-	// Collect regular jobs
-	for (const job of jobStore.jobs) {
-		results.push({
-			fullName: buildJobName(namespace, job.name),
-			method: job.method,
-			opts: job.opts,
-			isCron: false,
-		});
-	}
+  // Collect regular jobs
+  for (const job of jobStore.jobs) {
+    results.push({
+      fullName: buildJobName(namespace, job.name),
+      method: job.method,
+      opts: job.opts,
+      isCron: false,
+    });
+  }
 
-	// Collect cron jobs
-	for (const cron of jobStore.cronJobs) {
-		results.push({
-			fullName: buildJobName(namespace, cron.name),
-			method: cron.method,
-			opts: cron.opts,
-			isCron: true,
-			cronPattern: cron.pattern,
-		});
-	}
+  // Collect cron jobs
+  for (const cron of jobStore.cronJobs) {
+    results.push({
+      fullName: buildJobName(namespace, cron.name),
+      method: cron.method,
+      opts: cron.opts,
+      isCron: true,
+      cronPattern: cron.pattern,
+    });
+  }
 
-	return results;
+  return results;
 }

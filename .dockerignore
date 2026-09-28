@@ -26,9 +26,6 @@ docker-compose*.yml
 .env*
 !.env.example
 
-# Turbo cache
-.turbo
-
 # Specs and docs (not needed in container)
 specs
 starting-files

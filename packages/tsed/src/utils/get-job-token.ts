@@ -16,14 +16,14 @@
  * // Symbol("monque:job:EmailJobs")
  * ```
  */
-import { MonqueError } from '@monque/core';
+import { MonqueError } from "@monque/core";
 
 export function getJobToken(target: new (...args: unknown[]) => unknown): symbol {
-	const name = target.name?.trim();
+  const name = target.name?.trim();
 
-	if (!name) {
-		throw new MonqueError('Job class must have a non-empty name');
-	}
+  if (!name) {
+    throw new MonqueError("Job class must have a non-empty name");
+  }
 
-	return Symbol.for(`monque:job:${name}`);
+  return Symbol.for(`monque:job:${name}`);
 }

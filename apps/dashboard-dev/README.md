@@ -1,7 +1,7 @@
 # @monque/dashboard-dev
 
 Run the Dashboard locally with mock data, a MongoDB scheduler, or your own Management API.
-This app is for repository development and is not published. Requires Bun and Node.js 22.12 or newer; MongoDB mode
+This app is for repository development and is not published. Use Vite+ with the repository's pinned Bun and Node versions; MongoDB mode
 and browser tests also require Docker with Compose.
 
 To add the dashboard to your own application, use
@@ -13,9 +13,9 @@ To add the dashboard to your own application, use
 From the repository root:
 
 ```bash
-bun install
-bun run build --filter=@monque/dashboard-dev
-bun run dev:dashboard-dev
+vp install
+vp run @monque/dashboard-dev#build
+vp run @monque/dashboard-dev#dev
 ```
 
 Open the URL printed by Vite, normally **http://localhost:3400**. This starts mock mode
@@ -27,7 +27,7 @@ From the repository root:
 
 ```bash
 docker compose -f apps/dashboard-dev/compose.yml up -d --wait
-bun run dev:dashboard-db
+vp run @monque/dashboard-dev#dev:db
 ```
 
 This starts a scheduler and workers using MongoDB. A recurring demo creates work every
@@ -52,13 +52,13 @@ ignored by Git and loaded automatically by the development app. You can also set
 in your shell. These settings apply only to this development app; applications using
 `@monque/dashboard-express` configure the router in their own server code.
 
-| Variable | Default / purpose |
-| --- | --- |
-| `MONQUE_DASHBOARD_DEV_MODE` | `mock`; also supports `db` and `live`. The `dev:dashboard-db` command selects `db`. |
-| `MONQUE_DASHBOARD_DEV_SCENARIO` | `pending-jobs`; initial mock scenario. |
-| `MONQUE_DASHBOARD_DEV_MONGO_URI` | `mongodb://127.0.0.1:27018/?directConnection=true` |
-| `MONQUE_DASHBOARD_DEV_DATABASE_NAME` | `monque_dashboard_dev` |
-| `MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL` | Required in `live` mode; the existing Management router's mount URL. |
+| Variable                                 | Default / purpose                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `MONQUE_DASHBOARD_DEV_MODE`              | `mock`; also supports `db` and `live`. The `vp run @monque/dashboard-dev#dev:db` command selects `db`. |
+| `MONQUE_DASHBOARD_DEV_SCENARIO`          | `pending-jobs`; initial mock scenario.                                                                 |
+| `MONQUE_DASHBOARD_DEV_MONGO_URI`         | `mongodb://127.0.0.1:27018/?directConnection=true`                                                     |
+| `MONQUE_DASHBOARD_DEV_DATABASE_NAME`     | `monque_dashboard_dev`                                                                                 |
+| `MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL` | Required in `live` mode; the existing Management router's mount URL.                                   |
 
 Mock scenarios: `pending-jobs`, `failed-jobs`, `large-dataset`, `empty-state`, `unauthorized`,
 `forbidden`, `read-only`, `api-error`, and `mutation-conflict`.
@@ -72,7 +72,7 @@ MONQUE_DASHBOARD_DEV_MODE=live
 MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL=http://localhost:3000/ops
 ```
 
-Then run `bun run dev:dashboard-dev` from the root. The development server proxies API requests
+Then run `vp run @monque/dashboard-dev#dev` from the root. The development server proxies API requests
 to that URL; do not append `/api/v1`. Actions affect that API's data.
 
 Automatic refresh is one second in MongoDB mode and ten seconds in mock/live mode.
@@ -91,11 +91,11 @@ docker compose -f apps/dashboard-dev/compose.yml up -d --wait
 Run from `apps/dashboard-dev`:
 
 ```bash
-bun run test:unit
+vp run test:unit
 
 docker compose up -d --wait
-bunx playwright install chromium
-bun run test:e2e
+vp exec playwright install chromium
+vp run test:e2e
 ```
 
 Browser tests exercise the Dashboard through Express and MongoDB on desktop and mobile,
@@ -103,9 +103,9 @@ with and without authentication. They use isolated databases and leave developme
 untouched. Set `MONQUE_DASHBOARD_TEST_MONGO_URI` to use a different MongoDB instance.
 
 ```bash
-bun run test:e2e --project=mongo-desktop-auth
-bun run test:e2e --workers=4
-bunx playwright show-report
+vp run test:e2e --project=mongo-desktop-auth
+vp run test:e2e --workers=4
+vp exec playwright show-report
 ```
 
 Projects: `mongo-desktop`, `mongo-mobile`, `mongo-desktop-auth`, and `mongo-mobile-auth`.

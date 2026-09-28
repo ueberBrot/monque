@@ -1,5 +1,5 @@
-import type { Job, JobStatusType, PersistedJob } from './types.js';
-import { JobStatus } from './types.js';
+import type { Job, JobStatusType, PersistedJob } from "./types.js";
+import { JobStatus } from "./types.js";
 
 /**
  * Type guard to check if a job has been persisted to MongoDB.
@@ -35,7 +35,7 @@ import { JobStatus } from './types.js';
  * ```
  */
 export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
-	return '_id' in job && job._id !== undefined && job._id !== null;
+  return "_id" in job && job._id !== undefined && job._id !== null;
 }
 
 /**
@@ -71,7 +71,7 @@ export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
  * ```
  */
 export function isValidJobStatus(value: unknown): value is JobStatusType {
-	return typeof value === 'string' && Object.values(JobStatus).includes(value as JobStatusType);
+  return typeof value === "string" && Object.values(JobStatus).includes(value as JobStatusType);
 }
 
 /**
@@ -99,7 +99,7 @@ export function isValidJobStatus(value: unknown): value is JobStatusType {
  * ```
  */
 export function isPendingJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.PENDING;
+  return job.status === JobStatus.PENDING;
 }
 
 /**
@@ -120,7 +120,7 @@ export function isPendingJob<T>(job: Job<T>): boolean {
  * ```
  */
 export function isProcessingJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.PROCESSING;
+  return job.status === JobStatus.PROCESSING;
 }
 
 /**
@@ -141,7 +141,7 @@ export function isProcessingJob<T>(job: Job<T>): boolean {
  * ```
  */
 export function isCompletedJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.COMPLETED;
+  return job.status === JobStatus.COMPLETED;
 }
 
 /**
@@ -166,7 +166,7 @@ export function isCompletedJob<T>(job: Job<T>): boolean {
  * ```
  */
 export function isFailedJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.FAILED;
+  return job.status === JobStatus.FAILED;
 }
 
 /**
@@ -187,7 +187,7 @@ export function isFailedJob<T>(job: Job<T>): boolean {
  * ```
  */
 export function isCancelledJob<T>(job: Job<T>): boolean {
-	return job.status === JobStatus.CANCELLED;
+  return job.status === JobStatus.CANCELLED;
 }
 
 /**
@@ -216,5 +216,5 @@ export function isCancelledJob<T>(job: Job<T>): boolean {
  * ```
  */
 export function isRecurringJob<T>(job: Job<T>): boolean {
-	return job.repeatInterval !== undefined && job.repeatInterval !== null;
+  return job.repeatInterval !== undefined && job.repeatInterval !== null;
 }

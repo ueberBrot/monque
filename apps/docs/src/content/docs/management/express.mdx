@@ -21,9 +21,9 @@ Requires Node.js 22.12 or newer and Express 5.2.1 or newer within version 5.
 Reuse your application's initialized `Monque` instance:
 
 ```typescript
-import { createManagementExpressRouter } from '@monque/management-express';
+import { createManagementExpressRouter } from "@monque/management-express";
 
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", createManagementExpressRouter({ monque }));
 ```
 
 The API is available under `/ops/api/v1`, with OpenAPI JSON at `/ops/openapi.json`.
@@ -37,15 +37,15 @@ unauthenticated requests and make the authenticated principal available to later
 For example, if it sets `res.locals.operator`:
 
 ```typescript
-app.use('/ops', requireOperator);
+app.use("/ops", requireOperator);
 app.use(
-  '/ops',
+  "/ops",
   createManagementExpressRouter<{ canManageJobs: boolean }>({
     monque,
     context: ({ res }) => ({
       canManageJobs: res.locals.operator.canManageJobs === true,
     }),
-    authorize: ({ action, context }) => action === 'read' || context.canManageJobs,
+    authorize: ({ action, context }) => action === "read" || context.canManageJobs,
   }),
 );
 ```
@@ -64,12 +64,12 @@ Customize the document path and the public server URL:
 
 ```typescript
 app.use(
-  '/internal/management',
+  "/internal/management",
   createManagementExpressRouter({
     monque,
     openApi: {
-      path: '/docs/openapi.json',
-      serverUrl: 'https://ops.example.com/internal/management',
+      path: "/docs/openapi.json",
+      serverUrl: "https://ops.example.com/internal/management",
     },
   }),
 );

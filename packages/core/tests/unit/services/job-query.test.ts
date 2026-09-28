@@ -5,862 +5,862 @@
  * Uses mock SchedulerContext to test query building in isolation.
  */
 
-import { ObjectId } from 'mongodb';
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
-
-import { createMockContext, createWorker, JobFactory } from '@tests/factories';
-import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from '@/jobs';
-import { JobCursorSortDirection, JobCursorSortField } from '@/jobs';
-import { JobQueryService } from '@/scheduler/services/job-query.js';
-import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from '@/shared';
-
-describe('JobQueryService', () => {
-	let ctx: ReturnType<typeof createMockContext>;
-	let queryService: JobQueryService;
-
-	beforeEach(() => {
-		ctx = createMockContext();
-		queryService = new JobQueryService(ctx);
-	});
-
-	afterEach(() => {
-		vi.clearAllMocks();
-		vi.useRealTimers();
-	});
-
-	describe('getJob', () => {
-		it('should throw ConnectionError when database operation fails', async () => {
-			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce(
-				new Error('Database connection lost'),
-			);
-
-			const error = await queryService.getJob(new ObjectId()).catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to get job/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			vi.spyOn(ctx.mockCollection, 'findOne').mockRejectedValueOnce('String error');
-
-			await expect(queryService.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
-		});
-	});
-
-	describe('getJobs', () => {
-		it('should throw ConnectionError when database operation fails', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database timeout')),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const error = await queryService.getJobs().catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to query jobs/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				skip: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await expect(queryService.getJobs()).rejects.toThrow(ConnectionError);
-		});
-	});
-
-	describe('getJobsWithCursor', () => {
-		it('should return page with jobs and cursor info', async () => {
-			const jobs = JobFactory.buildList(2);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-			expect(page.jobs).toHaveLength(2);
-			expect(page.hasNextPage).toBe(false);
-			expect(page.hasPreviousPage).toBe(false);
-		});
-
-		it('should throw InvalidCursorError for malformed cursor', async () => {
-			await expect(
-				queryService.getJobsWithCursor({ cursor: 'invalid-base64-cursor' }),
-			).rejects.toThrow(InvalidCursorError);
-		});
-
-		it('should detect hasNextPage when more results exist', async () => {
-			// Return 11 jobs when limit is 10 (fetches limit + 1 to detect next page)
-			const jobs = JobFactory.buildList(11);
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-			expect(page.jobs).toHaveLength(10); // Should trim to limit
-			expect(page.hasNextPage).toBe(true);
-		});
-
-		it('should sort by whitelisted field with identifier tie-breaker', async () => {
-			const jobs = JobFactory.buildList(2, {
-				updatedAt: new Date('2026-02-01T00:00:00.000Z'),
-			});
-
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockResolvedValueOnce(jobs),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await queryService.getJobsWithCursor({
-				limit: 10,
-				sort: {
-					by: JobCursorSortField.UPDATED_AT,
-					direction: JobCursorSortDirection.DESC,
-				},
-				filter: {
-					updatedAtFrom: new Date('2026-01-01T00:00:00.000Z'),
-				},
-			});
-
-			expect(ctx.mockCollection.find).toHaveBeenCalledWith(
-				{
-					updatedAt: {
-						$gte: new Date('2026-01-01T00:00:00.000Z'),
-					},
-				},
-				{ maxTimeMS: 30_000 },
-			);
-			expect(mockCursor.sort).toHaveBeenCalledWith({
-				updatedAt: -1,
-				_id: -1,
-			});
-		});
-
-		it('should throw ConnectionError when database operation fails', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database error')),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			const mockCursor = {
-				sort: vi.fn().mockReturnThis(),
-				limit: vi.fn().mockReturnThis(),
-				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'find').mockReturnValueOnce(
-				mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-			);
-
-			await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
-		});
-	});
-
-	describe('getQueueStats', () => {
-		it('should return queue statistics with status counts', async () => {
-			const mockAggregateResult = [
-				{
-					statusCounts: [
-						{ _id: 'pending', count: 5 },
-						{ _id: 'processing', count: 2 },
-						{ _id: 'completed', count: 10 },
-						{ _id: 'failed', count: 1 },
-						{ _id: 'cancelled', count: 0 },
-					],
-					avgDuration: [{ avgMs: 150.5 }],
-					total: [{ count: 18 }],
-				},
-			];
-
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
-
-			expect(stats.pending).toBe(5);
-			expect(stats.processing).toBe(2);
-			expect(stats.completed).toBe(10);
-			expect(stats.failed).toBe(1);
-			expect(stats.cancelled).toBe(0);
-			expect(stats.total).toBe(18);
-			expect(stats.avgProcessingDurationMs).toBe(151); // Rounded from 150.5
-		});
-
-		it('should return empty stats when aggregation result is undefined', async () => {
-			// Edge case: aggregation returns empty array (no first result)
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
-
-			expect(stats.pending).toBe(0);
-			expect(stats.processing).toBe(0);
-			expect(stats.completed).toBe(0);
-			expect(stats.failed).toBe(0);
-			expect(stats.cancelled).toBe(0);
-			expect(stats.total).toBe(0);
-			expect(stats.avgProcessingDurationMs).toBeUndefined();
-		});
-
-		it('should apply name filter when provided', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						statusCounts: [],
-						avgDuration: [],
-						total: [{ count: 0 }],
-					},
-				]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await queryService.getQueueStats({ name: 'email-job' });
-
-			expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(
-				expect.arrayContaining([expect.objectContaining({ $match: { name: 'email-job' } })]),
-				{ maxTimeMS: 30000 },
-			);
-		});
-
-		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
-			const timeoutError = Object.assign(new Error('max time expired'), { code: 50 });
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
-		});
-
-		it('should throw AggregationTimeoutError when write concern reports timeout code', async () => {
-			const timeoutError = Object.assign(new Error('write concern timeout'), {
-				writeConcernError: { code: 50 },
-			});
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
-		});
-
-		it('should throw ConnectionError when aggregation fails with other errors', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const error = await queryService.getQueueStats().catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to get queue stats/);
-		});
-
-		it('should wrap non-Error thrown values in ConnectionError', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce('Network failure'),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueStats()).rejects.toThrow(ConnectionError);
-		});
-
-		it('should handle empty avgDuration result gracefully', async () => {
-			const mockAggregateResult = [
-				{
-					statusCounts: [{ _id: 'pending', count: 3 }],
-					avgDuration: [], // No completed jobs
-					total: [{ count: 3 }],
-				},
-			];
-
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
-
-			expect(stats.pending).toBe(3);
-			expect(stats.total).toBe(3);
-			expect(stats.avgProcessingDurationMs).toBeUndefined();
-		});
-
-		it('should handle NaN avgMs gracefully', async () => {
-			const mockAggregateResult = [
-				{
-					statusCounts: [],
-					avgDuration: [{ avgMs: Number.NaN }],
-					total: [{ count: 0 }],
-				},
-			];
-
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const stats = await queryService.getQueueStats();
-			expect(stats.avgProcessingDurationMs).toBeUndefined();
-		});
-
-		describe('getQueueStats caching', () => {
-			function mockAggregateResult(stats: Partial<Record<string, number>>) {
-				const statusCounts = Object.entries(stats)
-					.filter(([key]) => key !== 'total' && key !== 'avgMs')
-					.map(([_id, count]) => ({ _id, count }));
-
-				const mockAggregateCursor = {
-					toArray: vi.fn().mockResolvedValueOnce([
-						{
-							statusCounts,
-							avgDuration: [],
-							total: [{ count: stats['total'] ?? 0 }],
-						},
-					]),
-				};
-
-				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-					mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-				);
-			}
-
-			it('shares concurrent statistics reads without sharing mutable results', async () => {
-				mockAggregateResult({ pending: 5, total: 5 });
-				const results = await Promise.all(
-					Array.from({ length: 10 }, () => queryService.getQueueStats()),
-				);
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
-				expect(results.every((result) => result.pending === 5)).toBe(true);
-				expect(results[0]).not.toBe(results[1]);
-			});
-
-			it('does not let an in-flight read repopulate an invalidated snapshot', async () => {
-				const pending = Promise.withResolvers<unknown[]>();
-				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce({
-					toArray: () => pending.promise,
-				} as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
-				const oldRead = queryService.getQueueStats();
-				queryService.clearStatsCache();
-				mockAggregateResult({ pending: 2, total: 2 });
-				expect((await queryService.getQueueStats()).pending).toBe(2);
-				pending.resolve([
-					{ statusCounts: [{ _id: 'pending', count: 1 }], total: [{ count: 1 }], avgDuration: [] },
-				]);
-				expect((await oldRead).pending).toBe(1);
-				expect((await queryService.getQueueStats()).pending).toBe(2);
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-			});
-
-			it('shares a failed read but retries the next request', async () => {
-				vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce({
-					toArray: async () => {
-						throw new Error('Unavailable');
-					},
-				} as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
-				const results = await Promise.allSettled([
-					queryService.getQueueStats(),
-					queryService.getQueueStats(),
-				]);
-				expect(results.every((result) => result.status === 'rejected')).toBe(true);
-				mockAggregateResult({ pending: 3, total: 3 });
-				expect((await queryService.getQueueStats()).pending).toBe(3);
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-			});
-
-			it('should return cached result on second call within TTL', async () => {
-				mockAggregateResult({ pending: 5, total: 5 });
-
-				const first = await queryService.getQueueStats();
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
-
-				const second = await queryService.getQueueStats();
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
-
-				expect(first.pending).toBe(5);
-				expect(second.pending).toBe(5);
-				expect(first.total).toBe(5);
-				expect(second.total).toBe(5);
-			});
-
-			it('should re-query after TTL expires', async () => {
-				vi.useFakeTimers();
-				ctx.options.statsCacheTtlMs = 50;
-				mockAggregateResult({ pending: 5, total: 5 });
-
-				const first = await queryService.getQueueStats();
-				expect(first.pending).toBe(5);
-
-				await vi.advanceTimersByTimeAsync(50);
-
-				mockAggregateResult({ pending: 10, total: 10 });
-				const second = await queryService.getQueueStats();
-
-				expect(second.pending).toBe(10);
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-			});
-
-			it('should cache per-filter (different name filters have separate entries)', async () => {
-				mockAggregateResult({ pending: 3, total: 3 });
-				await queryService.getQueueStats({ name: 'job-a' });
-
-				mockAggregateResult({ pending: 7, total: 7 });
-				await queryService.getQueueStats({ name: 'job-b' });
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-
-				const cachedA = await queryService.getQueueStats({ name: 'job-a' });
-				const cachedB = await queryService.getQueueStats({ name: 'job-b' });
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-				expect(cachedA.pending).toBe(3);
-				expect(cachedB.pending).toBe(7);
-			});
-
-			it('should not cache when statsCacheTtlMs is 0', async () => {
-				ctx.options.statsCacheTtlMs = 0;
-
-				mockAggregateResult({ pending: 5, total: 5 });
-				const first = await queryService.getQueueStats();
-
-				mockAggregateResult({ pending: 10, total: 10 });
-				const second = await queryService.getQueueStats();
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-				expect(first.pending).toBe(5);
-				expect(second.pending).toBe(10);
-			});
-
-			it('should separate unfiltered and filtered cache entries', async () => {
-				mockAggregateResult({ pending: 20, total: 20 });
-				await queryService.getQueueStats();
-
-				mockAggregateResult({ pending: 5, total: 5 });
-				await queryService.getQueueStats({ name: 'specific' });
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-
-				const cachedUnfiltered = await queryService.getQueueStats();
-				const cachedFiltered = await queryService.getQueueStats({ name: 'specific' });
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-				expect(cachedUnfiltered.total).toBe(20);
-				expect(cachedFiltered.total).toBe(5);
-			});
-
-			it('should evict oldest entry when cache exceeds max size', async () => {
-				ctx.options.statsCacheTtlMs = 60_000;
-
-				// Fill cache with 101 entries (exceeds MAX_CACHE_SIZE of 100)
-				for (let i = 0; i <= 100; i++) {
-					mockAggregateResult({ pending: i, total: i });
-					await queryService.getQueueStats({ name: `job-${i}` });
-				}
-
-				// job-0 was the first entry and should have been evicted
-				vi.mocked(ctx.mockCollection.aggregate).mockClear();
-				mockAggregateResult({ pending: 999, total: 999 });
-				const evicted = await queryService.getQueueStats({ name: 'job-0' });
-
-				// Should have hit DB (cache miss — evicted)
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
-				expect(evicted.pending).toBe(999);
-
-				// Most recent entry should still be cached
-				vi.mocked(ctx.mockCollection.aggregate).mockClear();
-				const cached = await queryService.getQueueStats({ name: 'job-100' });
-				expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
-				expect(cached.pending).toBe(100);
-			});
-
-			it('clearStatsCache should clear all cached entries', async () => {
-				mockAggregateResult({ pending: 5, total: 5 });
-				await queryService.getQueueStats();
-
-				// Verify cached
-				const cached = await queryService.getQueueStats();
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
-				expect(cached.pending).toBe(5);
-
-				queryService.clearStatsCache();
-
-				mockAggregateResult({ pending: 99, total: 99 });
-				const afterClear = await queryService.getQueueStats();
-
-				expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
-				expect(afterClear.pending).toBe(99);
-			});
-		});
-	});
-
-	describe('getQueueViewSummaries', () => {
-		it('should expose readonly Queue View snapshots in the public contract', () => {
-			type QueueViewNestedSnapshots = Pick<QueueViewSummary, 'stats' | 'worker'>;
-
-			expectTypeOf<QueueViewNestedSnapshots>().toEqualTypeOf<Readonly<QueueViewNestedSnapshots>>();
-			expectTypeOf<QueueViewSummary['stats']>().toEqualTypeOf<Readonly<QueueStats>>();
-			expectTypeOf<
-				QueueViewSummary['worker']
-			>().toEqualTypeOf<Readonly<QueueViewWorkerSummary> | null>();
-		});
-
-		it('should return persisted job names sorted by name with statistics', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						_id: 'report-daily',
-						pending: 1,
-						processing: 0,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 1,
-						completedDurationTotal: 0,
-						completedDurationCount: 0,
-					},
-					{
-						_id: 'email-send',
-						pending: 2,
-						processing: 0,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 2,
-						completedDurationTotal: 0,
-						completedDurationCount: 0,
-					},
-				]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const summaries = await queryService.getQueueViewSummaries();
-
-			expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(expect.any(Array), {
-				maxTimeMS: 30000,
-			});
-			expect(summaries.map((summary) => summary.name)).toEqual(['email-send', 'report-daily']);
-			expect(summaries).toMatchObject([
-				{
-					name: 'email-send',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: false,
-					stats: { pending: 2, total: 2 },
-					worker: null,
-				},
-				{
-					name: 'report-daily',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: false,
-					stats: { pending: 1, total: 1 },
-					worker: null,
-				},
-			]);
-		});
-
-		it('should include registered-worker-only job names with zero statistics', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			ctx.workers.set('image-resize', createWorker({ concurrency: 7 }));
-
-			const summaries = await queryService.getQueueViewSummaries();
-
-			expect(summaries).toMatchObject([
-				{
-					name: 'image-resize',
-					hasPersistedJobs: false,
-					hasRegisteredWorker: true,
-					stats: {
-						pending: 0,
-						processing: 0,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 0,
-					},
-					worker: {
-						concurrency: 7,
-						activeCount: 0,
-					},
-				},
-			]);
-		});
-
-		it('should return an empty immutable list when no jobs or workers exist', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const summaries = await queryService.getQueueViewSummaries();
-
-			expect(summaries).toEqual([]);
-			expect(Object.isFrozen(summaries)).toBe(true);
-		});
-
-		it('should include historical-only job names with completed duration averages', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						_id: 'archive-user',
-						pending: 0,
-						processing: 0,
-						completed: 2,
-						failed: 1,
-						cancelled: 1,
-						total: 4,
-						completedDurationTotal: 5000,
-						completedDurationCount: 2,
-					},
-				]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const summaries = await queryService.getQueueViewSummaries();
-
-			expect(summaries).toMatchObject([
-				{
-					name: 'archive-user',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: false,
-					stats: {
-						completed: 2,
-						failed: 1,
-						cancelled: 1,
-						total: 4,
-						avgProcessingDurationMs: 2500,
-					},
-					worker: null,
-				},
-			]);
-		});
-
-		it('should combine persisted jobs and registered workers with active counts', async () => {
-			const activeJob = JobFactory.build({ name: 'email-send' });
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						_id: 'email-send',
-						pending: 1,
-						processing: 1,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 2,
-						completedDurationTotal: 0,
-						completedDurationCount: 0,
-					},
-				]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-			ctx.workers.set(
-				'email-send',
-				createWorker({
-					concurrency: 3,
-					activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
-				}),
-			);
-
-			const summaries = await queryService.getQueueViewSummaries();
-
-			expect(summaries).toMatchObject([
-				{
-					name: 'email-send',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: true,
-					stats: {
-						pending: 1,
-						processing: 1,
-						total: 2,
-					},
-					worker: {
-						concurrency: 3,
-						activeCount: 1,
-					},
-				},
-			]);
-		});
-
-		it('should expose immutable public summaries without worker maps or active job ids', async () => {
-			const activeJob = JobFactory.build({ name: 'email-send' });
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockResolvedValueOnce([
-					{
-						_id: 'email-send',
-						pending: 0,
-						processing: 1,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 1,
-						completedDurationTotal: 0,
-						completedDurationCount: 0,
-					},
-				]),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-			ctx.workers.set(
-				'email-send',
-				createWorker({
-					concurrency: 3,
-					activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
-				}),
-			);
-
-			const summaries = await queryService.getQueueViewSummaries();
-			const summary = summaries[0];
-			expect(summary).toBeDefined();
-			if (!summary) {
-				throw new Error('Expected Queue View summary');
-			}
-
-			expect(Object.isFrozen(summaries)).toBe(true);
-			expect(Object.isFrozen(summary)).toBe(true);
-			expect(Object.isFrozen(summary.stats)).toBe(true);
-			expect(Object.isFrozen(summary.worker)).toBe(true);
-			expect(Object.keys(summary.worker ?? {})).toEqual([
-				'concurrency',
-				'activeCount',
-				'paused',
-				'hasSchema',
-				'maxRetries',
-				'baseRetryInterval',
-				'maxBackoffDelay',
-			]);
-			expect(summary.worker).not.toHaveProperty('activeJobs');
-			expect(summary.worker).not.toHaveProperty('activeJobIds');
-		});
-
-		it('should throw ConnectionError when aggregation fails', async () => {
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(new Error('Database connection lost')),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			const error = await queryService.getQueueViewSummaries().catch((e: unknown) => e);
-			expect(error).toBeInstanceOf(ConnectionError);
-			expect((error as ConnectionError).message).toMatch(/Failed to get queue view summaries/);
-		});
-
-		it('should throw AggregationTimeoutError when aggregation exceeds timeout', async () => {
-			const timeoutError = Object.assign(new Error('max time expired'), { code: 50 });
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
-		});
-
-		it('should throw AggregationTimeoutError when write concern reports timeout code', async () => {
-			const timeoutError = Object.assign(new Error('write concern timeout'), {
-				writeConcernError: { code: 50 },
-			});
-			const mockAggregateCursor = {
-				toArray: vi.fn().mockRejectedValueOnce(timeoutError),
-			};
-
-			vi.spyOn(ctx.mockCollection, 'aggregate').mockReturnValueOnce(
-				mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
-			);
-
-			await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
-		});
-	});
+import { ObjectId } from "mongodb";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vite-plus/test";
+
+import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from "@/jobs";
+import { JobCursorSortDirection, JobCursorSortField } from "@/jobs";
+import { JobQueryService } from "@/scheduler/services/job-query.js";
+import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from "@/shared";
+import { createMockContext, createWorker, JobFactory } from "@tests/factories";
+
+describe("JobQueryService", () => {
+  let ctx: ReturnType<typeof createMockContext>;
+  let queryService: JobQueryService;
+
+  beforeEach(() => {
+    ctx = createMockContext();
+    queryService = new JobQueryService(ctx);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  describe("getJob", () => {
+    it("should throw ConnectionError when database operation fails", async () => {
+      vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce(
+        new Error("Database connection lost"),
+      );
+
+      const error = await queryService.getJob(new ObjectId()).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect((error as ConnectionError).message).toMatch(/Failed to get job/);
+    });
+
+    it("should wrap non-Error thrown values in ConnectionError", async () => {
+      vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce("String error");
+
+      await expect(queryService.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
+    });
+  });
+
+  describe("getJobs", () => {
+    it("should throw ConnectionError when database operation fails", async () => {
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockRejectedValueOnce(new Error("Database timeout")),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      const error = await queryService.getJobs().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect((error as ConnectionError).message).toMatch(/Failed to query jobs/);
+    });
+
+    it("should wrap non-Error thrown values in ConnectionError", async () => {
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        skip: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockRejectedValueOnce("Network failure"),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      await expect(queryService.getJobs()).rejects.toThrow(ConnectionError);
+    });
+  });
+
+  describe("getJobsWithCursor", () => {
+    it("should return page with jobs and cursor info", async () => {
+      const jobs = JobFactory.buildList(2);
+
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockResolvedValueOnce(jobs),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      const page = await queryService.getJobsWithCursor({ limit: 10 });
+
+      expect(page.jobs).toHaveLength(2);
+      expect(page.hasNextPage).toBe(false);
+      expect(page.hasPreviousPage).toBe(false);
+    });
+
+    it("should throw InvalidCursorError for malformed cursor", async () => {
+      await expect(
+        queryService.getJobsWithCursor({ cursor: "invalid-base64-cursor" }),
+      ).rejects.toThrow(InvalidCursorError);
+    });
+
+    it("should detect hasNextPage when more results exist", async () => {
+      // Return 11 jobs when limit is 10 (fetches limit + 1 to detect next page)
+      const jobs = JobFactory.buildList(11);
+
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockResolvedValueOnce(jobs),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      const page = await queryService.getJobsWithCursor({ limit: 10 });
+
+      expect(page.jobs).toHaveLength(10); // Should trim to limit
+      expect(page.hasNextPage).toBe(true);
+    });
+
+    it("should sort by whitelisted field with identifier tie-breaker", async () => {
+      const jobs = JobFactory.buildList(2, {
+        updatedAt: new Date("2026-02-01T00:00:00.000Z"),
+      });
+
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockResolvedValueOnce(jobs),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      await queryService.getJobsWithCursor({
+        limit: 10,
+        sort: {
+          by: JobCursorSortField.UPDATED_AT,
+          direction: JobCursorSortDirection.DESC,
+        },
+        filter: {
+          updatedAtFrom: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      });
+
+      expect(ctx.mockCollection.find).toHaveBeenCalledWith(
+        {
+          updatedAt: {
+            $gte: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        },
+        { maxTimeMS: 30_000 },
+      );
+      expect(mockCursor.sort).toHaveBeenCalledWith({
+        updatedAt: -1,
+        _id: -1,
+      });
+    });
+
+    it("should throw ConnectionError when database operation fails", async () => {
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockRejectedValueOnce(new Error("Database error")),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+    });
+
+    it("should wrap non-Error thrown values in ConnectionError", async () => {
+      const mockCursor = {
+        sort: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        toArray: vi.fn().mockRejectedValueOnce("Network failure"),
+      };
+
+      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
+        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
+      );
+
+      await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
+    });
+  });
+
+  describe("getQueueStats", () => {
+    it("should return queue statistics with status counts", async () => {
+      const mockAggregateResult = [
+        {
+          statusCounts: [
+            { _id: "pending", count: 5 },
+            { _id: "processing", count: 2 },
+            { _id: "completed", count: 10 },
+            { _id: "failed", count: 1 },
+            { _id: "cancelled", count: 0 },
+          ],
+          avgDuration: [{ avgMs: 150.5 }],
+          total: [{ count: 18 }],
+        },
+      ];
+
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const stats = await queryService.getQueueStats();
+
+      expect(stats.pending).toBe(5);
+      expect(stats.processing).toBe(2);
+      expect(stats.completed).toBe(10);
+      expect(stats.failed).toBe(1);
+      expect(stats.cancelled).toBe(0);
+      expect(stats.total).toBe(18);
+      expect(stats.avgProcessingDurationMs).toBe(151); // Rounded from 150.5
+    });
+
+    it("should return empty stats when aggregation result is undefined", async () => {
+      // Edge case: aggregation returns empty array (no first result)
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const stats = await queryService.getQueueStats();
+
+      expect(stats.pending).toBe(0);
+      expect(stats.processing).toBe(0);
+      expect(stats.completed).toBe(0);
+      expect(stats.failed).toBe(0);
+      expect(stats.cancelled).toBe(0);
+      expect(stats.total).toBe(0);
+      expect(stats.avgProcessingDurationMs).toBeUndefined();
+    });
+
+    it("should apply name filter when provided", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([
+          {
+            statusCounts: [],
+            avgDuration: [],
+            total: [{ count: 0 }],
+          },
+        ]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await queryService.getQueueStats({ name: "email-job" });
+
+      expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ $match: { name: "email-job" } })]),
+        { maxTimeMS: 30000 },
+      );
+    });
+
+    it("should throw AggregationTimeoutError when aggregation exceeds timeout", async () => {
+      const timeoutError = Object.assign(new Error("max time expired"), { code: 50 });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
+    });
+
+    it("should throw AggregationTimeoutError when write concern reports timeout code", async () => {
+      const timeoutError = Object.assign(new Error("write concern timeout"), {
+        writeConcernError: { code: 50 },
+      });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await expect(queryService.getQueueStats()).rejects.toThrow(AggregationTimeoutError);
+    });
+
+    it("should throw ConnectionError when aggregation fails with other errors", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(new Error("Database connection lost")),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const error = await queryService.getQueueStats().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect((error as ConnectionError).message).toMatch(/Failed to get queue stats/);
+    });
+
+    it("should wrap non-Error thrown values in ConnectionError", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce("Network failure"),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await expect(queryService.getQueueStats()).rejects.toThrow(ConnectionError);
+    });
+
+    it("should handle empty avgDuration result gracefully", async () => {
+      const mockAggregateResult = [
+        {
+          statusCounts: [{ _id: "pending", count: 3 }],
+          avgDuration: [], // No completed jobs
+          total: [{ count: 3 }],
+        },
+      ];
+
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const stats = await queryService.getQueueStats();
+
+      expect(stats.pending).toBe(3);
+      expect(stats.total).toBe(3);
+      expect(stats.avgProcessingDurationMs).toBeUndefined();
+    });
+
+    it("should handle NaN avgMs gracefully", async () => {
+      const mockAggregateResult = [
+        {
+          statusCounts: [],
+          avgDuration: [{ avgMs: Number.NaN }],
+          total: [{ count: 0 }],
+        },
+      ];
+
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce(mockAggregateResult),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const stats = await queryService.getQueueStats();
+      expect(stats.avgProcessingDurationMs).toBeUndefined();
+    });
+
+    describe("getQueueStats caching", () => {
+      function mockAggregateResult(stats: Partial<Record<string, number>>) {
+        const statusCounts = Object.entries(stats)
+          .filter(([key]) => key !== "total" && key !== "avgMs")
+          .map(([_id, count]) => ({ _id, count }));
+
+        const mockAggregateCursor = {
+          toArray: vi.fn().mockResolvedValueOnce([
+            {
+              statusCounts,
+              avgDuration: [],
+              total: [{ count: stats["total"] ?? 0 }],
+            },
+          ]),
+        };
+
+        vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+          mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+        );
+      }
+
+      it("shares concurrent statistics reads without sharing mutable results", async () => {
+        mockAggregateResult({ pending: 5, total: 5 });
+        const results = await Promise.all(
+          Array.from({ length: 10 }, () => queryService.getQueueStats()),
+        );
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+        expect(results.every((result) => result.pending === 5)).toBe(true);
+        expect(results[0]).not.toBe(results[1]);
+      });
+
+      it("does not let an in-flight read repopulate an invalidated snapshot", async () => {
+        const pending = Promise.withResolvers<unknown[]>();
+        vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce({
+          toArray: () => pending.promise,
+        } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+        const oldRead = queryService.getQueueStats();
+        queryService.clearStatsCache();
+        mockAggregateResult({ pending: 2, total: 2 });
+        expect((await queryService.getQueueStats()).pending).toBe(2);
+        pending.resolve([
+          { statusCounts: [{ _id: "pending", count: 1 }], total: [{ count: 1 }], avgDuration: [] },
+        ]);
+        expect((await oldRead).pending).toBe(1);
+        expect((await queryService.getQueueStats()).pending).toBe(2);
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+      });
+
+      it("shares a failed read but retries the next request", async () => {
+        vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce({
+          toArray: async () => {
+            throw new Error("Unavailable");
+          },
+        } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+        const results = await Promise.allSettled([
+          queryService.getQueueStats(),
+          queryService.getQueueStats(),
+        ]);
+        expect(results.every((result) => result.status === "rejected")).toBe(true);
+        mockAggregateResult({ pending: 3, total: 3 });
+        expect((await queryService.getQueueStats()).pending).toBe(3);
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+      });
+
+      it("should return cached result on second call within TTL", async () => {
+        mockAggregateResult({ pending: 5, total: 5 });
+
+        const first = await queryService.getQueueStats();
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+
+        const second = await queryService.getQueueStats();
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+
+        expect(first.pending).toBe(5);
+        expect(second.pending).toBe(5);
+        expect(first.total).toBe(5);
+        expect(second.total).toBe(5);
+      });
+
+      it("should re-query after TTL expires", async () => {
+        vi.useFakeTimers();
+        ctx.options.statsCacheTtlMs = 50;
+        mockAggregateResult({ pending: 5, total: 5 });
+
+        const first = await queryService.getQueueStats();
+        expect(first.pending).toBe(5);
+
+        await vi.advanceTimersByTimeAsync(50);
+
+        mockAggregateResult({ pending: 10, total: 10 });
+        const second = await queryService.getQueueStats();
+
+        expect(second.pending).toBe(10);
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+      });
+
+      it("should cache per-filter (different name filters have separate entries)", async () => {
+        mockAggregateResult({ pending: 3, total: 3 });
+        await queryService.getQueueStats({ name: "job-a" });
+
+        mockAggregateResult({ pending: 7, total: 7 });
+        await queryService.getQueueStats({ name: "job-b" });
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+
+        const cachedA = await queryService.getQueueStats({ name: "job-a" });
+        const cachedB = await queryService.getQueueStats({ name: "job-b" });
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+        expect(cachedA.pending).toBe(3);
+        expect(cachedB.pending).toBe(7);
+      });
+
+      it("should not cache when statsCacheTtlMs is 0", async () => {
+        ctx.options.statsCacheTtlMs = 0;
+
+        mockAggregateResult({ pending: 5, total: 5 });
+        const first = await queryService.getQueueStats();
+
+        mockAggregateResult({ pending: 10, total: 10 });
+        const second = await queryService.getQueueStats();
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+        expect(first.pending).toBe(5);
+        expect(second.pending).toBe(10);
+      });
+
+      it("should separate unfiltered and filtered cache entries", async () => {
+        mockAggregateResult({ pending: 20, total: 20 });
+        await queryService.getQueueStats();
+
+        mockAggregateResult({ pending: 5, total: 5 });
+        await queryService.getQueueStats({ name: "specific" });
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+
+        const cachedUnfiltered = await queryService.getQueueStats();
+        const cachedFiltered = await queryService.getQueueStats({ name: "specific" });
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+        expect(cachedUnfiltered.total).toBe(20);
+        expect(cachedFiltered.total).toBe(5);
+      });
+
+      it("should evict oldest entry when cache exceeds max size", async () => {
+        ctx.options.statsCacheTtlMs = 60_000;
+
+        // Fill cache with 101 entries (exceeds MAX_CACHE_SIZE of 100)
+        for (let i = 0; i <= 100; i++) {
+          mockAggregateResult({ pending: i, total: i });
+          await queryService.getQueueStats({ name: `job-${i}` });
+        }
+
+        // job-0 was the first entry and should have been evicted
+        vi.mocked(ctx.mockCollection.aggregate).mockClear();
+        mockAggregateResult({ pending: 999, total: 999 });
+        const evicted = await queryService.getQueueStats({ name: "job-0" });
+
+        // Should have hit DB (cache miss — evicted)
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+        expect(evicted.pending).toBe(999);
+
+        // Most recent entry should still be cached
+        vi.mocked(ctx.mockCollection.aggregate).mockClear();
+        const cached = await queryService.getQueueStats({ name: "job-100" });
+        expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+        expect(cached.pending).toBe(100);
+      });
+
+      it("clearStatsCache should clear all cached entries", async () => {
+        mockAggregateResult({ pending: 5, total: 5 });
+        await queryService.getQueueStats();
+
+        // Verify cached
+        const cached = await queryService.getQueueStats();
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(1);
+        expect(cached.pending).toBe(5);
+
+        queryService.clearStatsCache();
+
+        mockAggregateResult({ pending: 99, total: 99 });
+        const afterClear = await queryService.getQueueStats();
+
+        expect(ctx.mockCollection.aggregate).toHaveBeenCalledTimes(2);
+        expect(afterClear.pending).toBe(99);
+      });
+    });
+  });
+
+  describe("getQueueViewSummaries", () => {
+    it("should expose readonly Queue View snapshots in the public contract", () => {
+      type QueueViewNestedSnapshots = Pick<QueueViewSummary, "stats" | "worker">;
+
+      expectTypeOf<QueueViewNestedSnapshots>().toEqualTypeOf<Readonly<QueueViewNestedSnapshots>>();
+      expectTypeOf<QueueViewSummary["stats"]>().toEqualTypeOf<Readonly<QueueStats>>();
+      expectTypeOf<
+        QueueViewSummary["worker"]
+      >().toEqualTypeOf<Readonly<QueueViewWorkerSummary> | null>();
+    });
+
+    it("should return persisted job names sorted by name with statistics", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([
+          {
+            _id: "report-daily",
+            pending: 1,
+            processing: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 1,
+            completedDurationTotal: 0,
+            completedDurationCount: 0,
+          },
+          {
+            _id: "email-send",
+            pending: 2,
+            processing: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 2,
+            completedDurationTotal: 0,
+            completedDurationCount: 0,
+          },
+        ]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const summaries = await queryService.getQueueViewSummaries();
+
+      expect(ctx.mockCollection.aggregate).toHaveBeenCalledWith(expect.any(Array), {
+        maxTimeMS: 30000,
+      });
+      expect(summaries.map((summary) => summary.name)).toEqual(["email-send", "report-daily"]);
+      expect(summaries).toMatchObject([
+        {
+          name: "email-send",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: false,
+          stats: { pending: 2, total: 2 },
+          worker: null,
+        },
+        {
+          name: "report-daily",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: false,
+          stats: { pending: 1, total: 1 },
+          worker: null,
+        },
+      ]);
+    });
+
+    it("should include registered-worker-only job names with zero statistics", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      ctx.workers.set("image-resize", createWorker({ concurrency: 7 }));
+
+      const summaries = await queryService.getQueueViewSummaries();
+
+      expect(summaries).toMatchObject([
+        {
+          name: "image-resize",
+          hasPersistedJobs: false,
+          hasRegisteredWorker: true,
+          stats: {
+            pending: 0,
+            processing: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 0,
+          },
+          worker: {
+            concurrency: 7,
+            activeCount: 0,
+          },
+        },
+      ]);
+    });
+
+    it("should return an empty immutable list when no jobs or workers exist", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const summaries = await queryService.getQueueViewSummaries();
+
+      expect(summaries).toEqual([]);
+      expect(Object.isFrozen(summaries)).toBe(true);
+    });
+
+    it("should include historical-only job names with completed duration averages", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([
+          {
+            _id: "archive-user",
+            pending: 0,
+            processing: 0,
+            completed: 2,
+            failed: 1,
+            cancelled: 1,
+            total: 4,
+            completedDurationTotal: 5000,
+            completedDurationCount: 2,
+          },
+        ]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const summaries = await queryService.getQueueViewSummaries();
+
+      expect(summaries).toMatchObject([
+        {
+          name: "archive-user",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: false,
+          stats: {
+            completed: 2,
+            failed: 1,
+            cancelled: 1,
+            total: 4,
+            avgProcessingDurationMs: 2500,
+          },
+          worker: null,
+        },
+      ]);
+    });
+
+    it("should combine persisted jobs and registered workers with active counts", async () => {
+      const activeJob = JobFactory.build({ name: "email-send" });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([
+          {
+            _id: "email-send",
+            pending: 1,
+            processing: 1,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 2,
+            completedDurationTotal: 0,
+            completedDurationCount: 0,
+          },
+        ]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+      ctx.workers.set(
+        "email-send",
+        createWorker({
+          concurrency: 3,
+          activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
+        }),
+      );
+
+      const summaries = await queryService.getQueueViewSummaries();
+
+      expect(summaries).toMatchObject([
+        {
+          name: "email-send",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: true,
+          stats: {
+            pending: 1,
+            processing: 1,
+            total: 2,
+          },
+          worker: {
+            concurrency: 3,
+            activeCount: 1,
+          },
+        },
+      ]);
+    });
+
+    it("should expose immutable public summaries without worker maps or active job ids", async () => {
+      const activeJob = JobFactory.build({ name: "email-send" });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockResolvedValueOnce([
+          {
+            _id: "email-send",
+            pending: 0,
+            processing: 1,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 1,
+            completedDurationTotal: 0,
+            completedDurationCount: 0,
+          },
+        ]),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+      ctx.workers.set(
+        "email-send",
+        createWorker({
+          concurrency: 3,
+          activeJobs: new Map([[activeJob._id.toString(), activeJob]]),
+        }),
+      );
+
+      const summaries = await queryService.getQueueViewSummaries();
+      const summary = summaries[0];
+      expect(summary).toBeDefined();
+      if (!summary) {
+        throw new Error("Expected Queue View summary");
+      }
+
+      expect(Object.isFrozen(summaries)).toBe(true);
+      expect(Object.isFrozen(summary)).toBe(true);
+      expect(Object.isFrozen(summary.stats)).toBe(true);
+      expect(Object.isFrozen(summary.worker)).toBe(true);
+      expect(Object.keys(summary.worker ?? {})).toEqual([
+        "concurrency",
+        "activeCount",
+        "paused",
+        "hasSchema",
+        "maxRetries",
+        "baseRetryInterval",
+        "maxBackoffDelay",
+      ]);
+      expect(summary.worker).not.toHaveProperty("activeJobs");
+      expect(summary.worker).not.toHaveProperty("activeJobIds");
+    });
+
+    it("should throw ConnectionError when aggregation fails", async () => {
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(new Error("Database connection lost")),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      const error = await queryService.getQueueViewSummaries().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect((error as ConnectionError).message).toMatch(/Failed to get queue view summaries/);
+    });
+
+    it("should throw AggregationTimeoutError when aggregation exceeds timeout", async () => {
+      const timeoutError = Object.assign(new Error("max time expired"), { code: 50 });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
+    });
+
+    it("should throw AggregationTimeoutError when write concern reports timeout code", async () => {
+      const timeoutError = Object.assign(new Error("write concern timeout"), {
+        writeConcernError: { code: 50 },
+      });
+      const mockAggregateCursor = {
+        toArray: vi.fn().mockRejectedValueOnce(timeoutError),
+      };
+
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        mockAggregateCursor as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+      );
+
+      await expect(queryService.getQueueViewSummaries()).rejects.toThrow(AggregationTimeoutError);
+    });
+  });
 });

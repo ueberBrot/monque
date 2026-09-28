@@ -13,5 +13,5 @@
  * ```
  */
 export function buildJobName(namespace: string | undefined, name: string): string {
-	return namespace ? `${namespace}.${name}` : name;
+  return namespace ? `${namespace}.${name}` : name;
 }

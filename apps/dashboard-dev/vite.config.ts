@@ -1,99 +1,135 @@
-import { fileURLToPath } from 'node:url';
-import babel from '@rolldown/plugin-babel';
-import tailwindcss from '@tailwindcss/vite';
-import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { fileURLToPath } from "node:url";
+import viteReact from "@vitejs/plugin-react";
+import { defineConfig, lazyPlugins, loadConfigFromFile, loadEnv } from "vite-plus";
 
-import { readDashboardDevServerEnvironment } from './src/environment.js';
-import { createLocalDbManagementServer } from './src/local-db/management-server.js';
-import { createManagementMiddleware, MANAGEMENT_MOUNT_PATH } from './src/management-middleware.js';
-import { createMockManagementOpenApiHandler } from './src/mock/management-server.js';
-import { isDashboardDevScenarioId } from './src/mock/scenario-catalog.js';
+import { readDashboardDevServerEnvironment } from "./src/environment.js";
 
 const config = defineConfig(({ mode }) => {
-	const env = loadEnv(mode, process.cwd(), '');
-	const { environment, liveApiBaseUrl, mongoUri, databaseName } =
-		readDashboardDevServerEnvironment(env);
-	const devMode = environment.mode;
-	const mockHandler = createMockManagementOpenApiHandler();
-	let localDbServer: ReturnType<typeof createLocalDbManagementServer> | undefined;
+  const env = loadEnv(mode, process.cwd(), "MONQUE_DASHBOARD_");
+  const { environment, liveApiBaseUrl } = readDashboardDevServerEnvironment(env);
+  const devMode = environment.mode;
 
-	return {
-		define: {
-			'import.meta.env.MONQUE_DASHBOARD_DEV_CONFIG': JSON.stringify(environment),
-		},
-		resolve: {
-			alias: {
-				'@': fileURLToPath(new URL('../../packages/dashboard/src', import.meta.url)),
-				'@dashboard-dev': fileURLToPath(new URL('./src', import.meta.url)),
-				'@monque/management/contract': fileURLToPath(
-					new URL('../../packages/management/src/contract.ts', import.meta.url),
-				),
-			},
-		},
-		build: {
-			outDir: 'dist',
-			emptyOutDir: true,
-		},
-		server:
-			devMode === 'live' && liveApiBaseUrl
-				? {
-						port: 3400,
-						proxy: {
-							'/api': {
-								changeOrigin: true,
-								target: liveApiBaseUrl,
-							},
-						},
-					}
-				: { port: 3400 },
-		plugins: [
-			tailwindcss(),
-			viteReact(),
-			babel({ presets: [reactCompilerPreset({ target: '19' })] }),
-			{
-				name: 'monque-dashboard-dev-mock-api',
-				configureServer(server) {
-					if (devMode !== 'mock') {
-						return;
-					}
+  return {
+    run: {
+      tasks: {
+        dev: {
+          command: "vp dev",
+          cache: false,
+          dependsOn: [
+            {
+              task: "build",
+              from: ["dependencies", "devDependencies"],
+            },
+          ],
+        },
+        "dev:db": {
+          command: "MONQUE_DASHBOARD_DEV_MODE=db vp dev",
+          cache: false,
+          dependsOn: [
+            {
+              task: "build",
+              from: ["dependencies", "devDependencies"],
+            },
+          ],
+        },
+        build: {
+          command: "vp build",
+          dependsOn: [
+            {
+              task: "build",
+              from: ["dependencies", "devDependencies"],
+            },
+          ],
+          cache: {
+            env: ["NODE_ENV", "MONQUE_DASHBOARD_*"],
+            output: ["dist/**"],
+          },
+        },
+        preview: {
+          command: "vp preview",
+          cache: false,
+        },
+        "type-check": {
+          command: "vp lint --type-aware --type-check -A all",
+          dependsOn: [
+            {
+              task: "build",
+              from: ["dependencies", "devDependencies"],
+            },
+          ],
+          cache: { output: [] },
+        },
+        test: {
+          command: "vp test run",
+          dependsOn: ["type-check"],
+          cache: false,
+        },
+        "test:unit": {
+          command: "vp test run",
+          dependsOn: ["type-check"],
+          cache: {
+            env: ["CI", "TZ"],
+            output: [],
+          },
+        },
+        "test:e2e": {
+          command: "playwright test",
+          dependsOn: ["@monque/dashboard-express#build", "@monque/management-express#build"],
+          cache: false,
+        },
+        clean: {
+          command: "rimraf dist",
+          cache: false,
+        },
+      },
+    },
+    test: {
+      environment: "node",
+      maxWorkers: 2,
+      include: ["tests/unit/**/*.test.{ts,tsx}"],
+      setupFiles: ["../../packages/dashboard/tests/setup/browser.ts"],
+    },
 
-					server.middlewares.use(
-						MANAGEMENT_MOUNT_PATH,
-						createManagementMiddleware(async (request) => {
-							const scenarioHeader = request.headers.get('x-monque-dev-scenario');
-							const scenarioId = isDashboardDevScenarioId(scenarioHeader)
-								? scenarioHeader
-								: environment.scenarioId;
-							const result = await mockHandler.handle(request, { context: { scenarioId } });
-							return result.matched ? result.response : undefined;
-						}),
-					);
-				},
-			},
-			{
-				name: 'monque-dashboard-dev-local-db-api',
-				configureServer(server) {
-					if (devMode !== 'db') {
-						return;
-					}
-
-					localDbServer = createLocalDbManagementServer({
-						mongoUri,
-						databaseName,
-					});
-
-					server.middlewares.use(MANAGEMENT_MOUNT_PATH, localDbServer.middleware);
-					void localDbServer.start().catch((error: unknown) => {
-						server.config.logger.error(error instanceof Error ? error.message : String(error));
-					});
-				},
-				async closeBundle() {
-					await localDbServer?.close();
-				},
-			},
-		],
-	};
+    define: {
+      "import.meta.env.MONQUE_DASHBOARD_DEV_CONFIG": JSON.stringify(environment),
+    },
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("../../packages/dashboard/src", import.meta.url)),
+        "@dashboard-dev": fileURLToPath(new URL("./src", import.meta.url)),
+        "@monque/management/contract": fileURLToPath(
+          new URL("../../packages/management/src/contract.ts", import.meta.url),
+        ),
+      },
+    },
+    build: {
+      outDir: "dist",
+      emptyOutDir: true,
+    },
+    server:
+      devMode === "live" && liveApiBaseUrl
+        ? {
+            port: 3400,
+            proxy: {
+              "/api": {
+                changeOrigin: true,
+                target: liveApiBaseUrl,
+              },
+            },
+          }
+        : { port: 3400 },
+    plugins:
+      lazyPlugins(async () => {
+        if (process.env["VITEST"]) return [viteReact()];
+        // Defer workspace runtime imports until builds have produced their entrypoints.
+        const loaded = await loadConfigFromFile(
+          { command: "serve", mode },
+          fileURLToPath(new URL("./vite.plugins.config.ts", import.meta.url)),
+        );
+        if (!loaded) throw new Error("Could not load dashboard development plugins");
+        return loaded.config.plugins ?? [];
+      }) ?? [],
+  };
 });
 
 export default config;

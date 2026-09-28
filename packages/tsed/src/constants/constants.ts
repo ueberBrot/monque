@@ -9,4 +9,4 @@
  * Store.from(Class).set(MONQUE, metadata);
  * ```
  */
-export const MONQUE = Symbol.for('monque');
+export const MONQUE = Symbol.for("monque");

@@ -15,224 +15,224 @@
  * ```
  */
 export interface MonqueOptions {
-	/**
-	 * Name of the MongoDB collection for storing jobs.
-	 * @default 'monque_jobs'
-	 */
-	collectionName?: string;
+  /**
+   * Name of the MongoDB collection for storing jobs.
+   * @default 'monque_jobs'
+   */
+  collectionName?: string;
 
-	/**
-	 * Interval in milliseconds between polling for new jobs.
-	 * @default 1000
-	 */
-	pollInterval?: number;
+  /**
+   * Interval in milliseconds between polling for new jobs.
+   * @default 1000
+   */
+  pollInterval?: number;
 
-	/**
-	 * Maximum number of retry attempts before marking a job as permanently failed.
-	 * @default 10
-	 */
-	maxRetries?: number;
+  /**
+   * Maximum number of retry attempts before marking a job as permanently failed.
+   * @default 10
+   */
+  maxRetries?: number;
 
-	/**
-	 * Base interval in milliseconds for exponential backoff calculation.
-	 * Actual delay = 2^failCount * baseRetryInterval
-	 * @default 1000
-	 */
-	baseRetryInterval?: number;
+  /**
+   * Base interval in milliseconds for exponential backoff calculation.
+   * Actual delay = 2^failCount * baseRetryInterval
+   * @default 1000
+   */
+  baseRetryInterval?: number;
 
-	/**
-	 * Maximum delay in milliseconds for exponential backoff.
-	 * If calculated delay exceeds this value, it will be capped.
-	 *
-	 * Defaults to 24 hours to prevent unbounded delays.
-	 * @default 86400000 (24 hours)
-	 */
-	maxBackoffDelay?: number | undefined;
+  /**
+   * Maximum delay in milliseconds for exponential backoff.
+   * If calculated delay exceeds this value, it will be capped.
+   *
+   * Defaults to 24 hours to prevent unbounded delays.
+   * @default 86400000 (24 hours)
+   */
+  maxBackoffDelay?: number | undefined;
 
-	/**
-	 * Timeout in milliseconds for graceful shutdown.
-	 * @default 30000
-	 */
-	shutdownTimeout?: number;
+  /**
+   * Timeout in milliseconds for graceful shutdown.
+   * @default 30000
+   */
+  shutdownTimeout?: number;
 
-	/**
-	 * Default number of concurrent jobs per worker.
-	 *
-	 * This is the per-worker concurrency limit applied when a worker is registered
-	 * without specifying its own `concurrency` option.
-	 *
-	 * @default 5
-	 */
-	workerConcurrency?: number;
+  /**
+   * Default number of concurrent jobs per worker.
+   *
+   * This is the per-worker concurrency limit applied when a worker is registered
+   * without specifying its own `concurrency` option.
+   *
+   * @default 5
+   */
+  workerConcurrency?: number;
 
-	/**
-	 * Default number of concurrent jobs per worker.
-	 *
-	 * @default 5
-	 * @deprecated Use `workerConcurrency` instead. Will be removed in a future major version.
-	 */
-	defaultConcurrency?: number;
+  /**
+   * Default number of concurrent jobs per worker.
+   *
+   * @default 5
+   * @deprecated Use `workerConcurrency` instead. Will be removed in a future major version.
+   */
+  defaultConcurrency?: number;
 
-	/**
-	 * Maximum time in milliseconds a job can be in 'processing' status before
-	 * being considered stale and eligible for recovery.
-	 *
-	 * Applies to claims without a renewable lease. This is an absolute time locked
-	 * limit based on `lockedAt`, not a heartbeat timeout.
-	 * @default 1800000 (30 minutes)
-	 */
-	lockTimeout?: number;
+  /**
+   * Maximum time in milliseconds a job can be in 'processing' status before
+   * being considered stale and eligible for recovery.
+   *
+   * Applies to claims without a renewable lease. This is an absolute time locked
+   * limit based on `lockedAt`, not a heartbeat timeout.
+   * @default 1800000 (30 minutes)
+   */
+  lockTimeout?: number;
 
-	/**
-	 * Opt into renewable claims and periodic stale recovery, in milliseconds.
-	 * Must exceed heartbeatInterval. Upgrade all schedulers sharing the collection
-	 * before enabling this option. Omit to keep absolute lockTimeout behavior.
-	 */
-	leaseDuration?: number;
+  /**
+   * Opt into renewable claims and periodic stale recovery, in milliseconds.
+   * Must exceed heartbeatInterval. Upgrade all schedulers sharing the collection
+   * before enabling this option. Omit to keep absolute lockTimeout behavior.
+   */
+  leaseDuration?: number;
 
-	/**
-	 * Unique identifier for this scheduler instance.
-	 * Used for atomic job claiming - each instance uses this ID to claim jobs.
-	 * Defaults to a randomly generated UUID v4.
-	 * @default crypto.randomUUID()
-	 */
-	schedulerInstanceId?: string;
+  /**
+   * Unique identifier for this scheduler instance.
+   * Used for atomic job claiming - each instance uses this ID to claim jobs.
+   * Defaults to a randomly generated UUID v4.
+   * @default crypto.randomUUID()
+   */
+  schedulerInstanceId?: string;
 
-	/**
-	 * Interval in milliseconds for heartbeat updates during job processing.
-	 * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
-	 * to indicate liveness for monitoring/debugging.
-	 *
-	 * With `leaseDuration`, each heartbeat also extends the claim's lease.
-	 * Otherwise, recovery uses `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
-	 * @default 30000 (30 seconds)
-	 */
-	heartbeatInterval?: number;
+  /**
+   * Interval in milliseconds for heartbeat updates during job processing.
+   * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
+   * to indicate liveness for monitoring/debugging.
+   *
+   * With `leaseDuration`, each heartbeat also extends the claim's lease.
+   * Otherwise, recovery uses `lockedAt` + `lockTimeout`, not `lastHeartbeat`.
+   * @default 30000 (30 seconds)
+   */
+  heartbeatInterval?: number;
 
-	/**
-	 * Whether to recover stale processing jobs on startup and, with `leaseDuration`,
-	 * after each heartbeat. Expired leases and unleased claims older than
-	 * `lockTimeout` are reset to pending.
-	 * @default true
-	 */
-	recoverStaleJobs?: boolean;
+  /**
+   * Whether to recover stale processing jobs on startup and, with `leaseDuration`,
+   * after each heartbeat. Expired leases and unleased claims older than
+   * `lockTimeout` are reset to pending.
+   * @default true
+   */
+  recoverStaleJobs?: boolean;
 
-	/**
-	 * Configuration for automatic cleanup of completed, failed, and cancelled jobs.
-	 * If undefined, no cleanup is performed.
-	 */
-	jobRetention?:
-		| {
-				/**
-				 * Age in milliseconds after which completed jobs are deleted.
-				 * Cleaned up based on 'updatedAt' timestamp.
-				 */
-				completed?: number;
+  /**
+   * Configuration for automatic cleanup of completed, failed, and cancelled jobs.
+   * If undefined, no cleanup is performed.
+   */
+  jobRetention?:
+    | {
+        /**
+         * Age in milliseconds after which completed jobs are deleted.
+         * Cleaned up based on 'updatedAt' timestamp.
+         */
+        completed?: number;
 
-				/**
-				 * Age in milliseconds after which failed jobs are deleted.
-				 * Cleaned up based on 'updatedAt' timestamp.
-				 */
-				failed?: number;
+        /**
+         * Age in milliseconds after which failed jobs are deleted.
+         * Cleaned up based on 'updatedAt' timestamp.
+         */
+        failed?: number;
 
-				/**
-				 * Age in milliseconds after which cancelled jobs are deleted.
-				 * Based on 'updatedAt'. Omit to retain cancelled jobs indefinitely.
-				 */
-				cancelled?: number;
+        /**
+         * Age in milliseconds after which cancelled jobs are deleted.
+         * Based on 'updatedAt'. Omit to retain cancelled jobs indefinitely.
+         */
+        cancelled?: number;
 
-				/**
-				 * Interval in milliseconds for running the cleanup job.
-				 * @default 3600000 (1 hour)
-				 */
-				interval?: number;
-		  }
-		| undefined;
+        /**
+         * Interval in milliseconds for running the cleanup job.
+         * @default 3600000 (1 hour)
+         */
+        interval?: number;
+      }
+    | undefined;
 
-	/**
-	 * Maximum number of concurrent jobs processed by this instance across all registered workers.
-	 *
-	 * If reached, the scheduler will stop claiming new jobs until active jobs complete.
-	 * Use this to prevent a single instance from overwhelming system resources.
-	 *
-	 * Note: This is an instance-level limit. Each worker still respects its own `concurrency`
-	 * setting, but the total across all workers cannot exceed this limit.
-	 *
-	 * @example
-	 * ```typescript
-	 * const monque = new Monque(db, {
-	 *   instanceConcurrency: 10, // Instance processes max 10 jobs total
-	 *   workerConcurrency: 5,    // Each worker defaults to 5 concurrent jobs
-	 * });
-	 *
-	 * // With 3 workers at concurrency 5, normally 15 jobs could run.
-	 * // With instanceConcurrency: 10, only 10 jobs run at any time.
-	 * ```
-	 */
-	instanceConcurrency?: number | undefined;
+  /**
+   * Maximum number of concurrent jobs processed by this instance across all registered workers.
+   *
+   * If reached, the scheduler will stop claiming new jobs until active jobs complete.
+   * Use this to prevent a single instance from overwhelming system resources.
+   *
+   * Note: This is an instance-level limit. Each worker still respects its own `concurrency`
+   * setting, but the total across all workers cannot exceed this limit.
+   *
+   * @example
+   * ```typescript
+   * const monque = new Monque(db, {
+   *   instanceConcurrency: 10, // Instance processes max 10 jobs total
+   *   workerConcurrency: 5,    // Each worker defaults to 5 concurrent jobs
+   * });
+   *
+   * // With 3 workers at concurrency 5, normally 15 jobs could run.
+   * // With instanceConcurrency: 10, only 10 jobs run at any time.
+   * ```
+   */
+  instanceConcurrency?: number | undefined;
 
-	/**
-	 * Maximum number of concurrent jobs processed by this instance across all registered workers.
-	 *
-	 * @deprecated Use `instanceConcurrency` instead. Will be removed in a future major version.
-	 */
-	maxConcurrency?: number | undefined;
+  /**
+   * Maximum number of concurrent jobs processed by this instance across all registered workers.
+   *
+   * @deprecated Use `instanceConcurrency` instead. Will be removed in a future major version.
+   */
+  maxConcurrency?: number | undefined;
 
-	/**
-	 * Skip automatic index creation during initialization.
-	 *
-	 * When `true`, `initialize()` will not create MongoDB indexes. Use this in production
-	 * environments where indexes are managed externally (e.g., via migration scripts or DBA
-	 * tooling). See the production checklist for the full list of required indexes.
-	 *
-	 * @default false
-	 */
-	skipIndexCreation?: boolean;
+  /**
+   * Skip automatic index creation during initialization.
+   *
+   * When `true`, `initialize()` will not create MongoDB indexes. Use this in production
+   * environments where indexes are managed externally (e.g., via migration scripts or DBA
+   * tooling). See the production checklist for the full list of required indexes.
+   *
+   * @default false
+   */
+  skipIndexCreation?: boolean;
 
-	/**
-	 * Maximum allowed BSON byte size for job data payloads.
-	 *
-	 * When set, `enqueue()`, `enqueueMany()`, `now()`, and `schedule()` validate the payload size
-	 * using `BSON.calculateObjectSize()` before insertion. Jobs exceeding this limit
-	 * throw `PayloadTooLargeError`.
-	 *
-	 * When undefined, no size validation occurs.
-	 */
-	maxPayloadSize?: number | undefined;
+  /**
+   * Maximum allowed BSON byte size for job data payloads.
+   *
+   * When set, `enqueue()`, `enqueueMany()`, `now()`, and `schedule()` validate the payload size
+   * using `BSON.calculateObjectSize()` before insertion. Jobs exceeding this limit
+   * throw `PayloadTooLargeError`.
+   *
+   * When undefined, no size validation occurs.
+   */
+  maxPayloadSize?: number | undefined;
 
-	/**
-	 * TTL in milliseconds for getQueueStats() and getQueueViewSummaries() counts.
-	 *
-	 * When set to a positive value, repeated getQueueStats() calls with the same
-	 * filter return cached results instead of re-executing the aggregation pipeline.
-	 * Each unique filter (job name) maintains its own cache entry.
-	 *
-	 * Set to 0 to disable cached snapshots. Concurrent reads still share one query.
-	 * @default 5000
-	 */
-	statsCacheTtlMs?: number;
+  /**
+   * TTL in milliseconds for getQueueStats() and getQueueViewSummaries() counts.
+   *
+   * When set to a positive value, repeated getQueueStats() calls with the same
+   * filter return cached results instead of re-executing the aggregation pipeline.
+   * Each unique filter (job name) maintains its own cache entry.
+   *
+   * Set to 0 to disable cached snapshots. Concurrent reads still share one query.
+   * @default 5000
+   */
+  statsCacheTtlMs?: number;
 
-	/**
-	 * Interval in milliseconds between safety polls when change streams are active.
-	 *
-	 * When change streams are connected, the scheduler uses them as the primary
-	 * notification mechanism and only polls at this longer interval as a safety net
-	 * to catch any missed events. When change streams are unavailable, the scheduler
-	 * falls back to the standard `pollInterval`.
-	 *
-	 * This is separate from `heartbeatInterval`, which updates job liveness signals.
-	 *
-	 * @default 30000 (30 seconds)
-	 */
-	safetyPollInterval?: number;
+  /**
+   * Interval in milliseconds between safety polls when change streams are active.
+   *
+   * When change streams are connected, the scheduler uses them as the primary
+   * notification mechanism and only polls at this longer interval as a safety net
+   * to catch any missed events. When change streams are unavailable, the scheduler
+   * falls back to the standard `pollInterval`.
+   *
+   * This is separate from `heartbeatInterval`, which updates job liveness signals.
+   *
+   * @default 30000 (30 seconds)
+   */
+  safetyPollInterval?: number;
 }
 
 /** Processing state on one scheduler instance, optionally scoped to one job name. */
 export interface ProcessingState {
-	readonly instanceId: string;
-	readonly name?: string;
-	/** Effective pause state for the requested scope. */
-	readonly paused: boolean;
-	/** A scheduler-wide pause also prevents every named worker from claiming jobs. */
-	readonly globallyPaused: boolean;
+  readonly instanceId: string;
+  readonly name?: string;
+  /** Effective pause state for the requested scope. */
+  readonly paused: boolean;
+  /** A scheduler-wide pause also prevents every named worker from claiming jobs. */
+  readonly globallyPaused: boolean;
 }

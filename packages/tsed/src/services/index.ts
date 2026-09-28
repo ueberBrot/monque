@@ -1,1 +1,1 @@
-export { MonqueService } from './monque-service.js';
+export { MonqueService } from "./monque-service.js";

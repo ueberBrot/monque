@@ -1,1 +1,1 @@
-export type { MonqueEventMap } from './types.js';
+export type { MonqueEventMap } from "./types.js";

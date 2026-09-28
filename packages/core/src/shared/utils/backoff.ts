@@ -42,14 +42,14 @@ export const DEFAULT_JITTER_FACTOR = 0.25;
  * ```
  */
 export function applyJitter(delay: number, factor: number): number {
-	if (factor <= 0 || delay <= 0) {
-		return delay;
-	}
+  if (factor <= 0 || delay <= 0) {
+    return delay;
+  }
 
-	const spread = delay * factor;
-	// Uniform random in [-spread, +spread]
-	const jitter = (Math.random() * 2 - 1) * spread;
-	return Math.max(0, Math.round(delay + jitter));
+  const spread = delay * factor;
+  // Uniform random in [-spread, +spread]
+  const jitter = (Math.random() * 2 - 1) * spread;
+  return Math.max(0, Math.round(delay + jitter));
 }
 
 /**
@@ -76,13 +76,13 @@ export function applyJitter(delay: number, factor: number): number {
  * ```
  */
 export function calculateBackoff(
-	failCount: number,
-	baseInterval: number = DEFAULT_BASE_INTERVAL,
-	maxDelay?: number,
-	jitterFactor: number = DEFAULT_JITTER_FACTOR,
+  failCount: number,
+  baseInterval: number = DEFAULT_BASE_INTERVAL,
+  maxDelay?: number,
+  jitterFactor: number = DEFAULT_JITTER_FACTOR,
 ): Date {
-	const delay = calculateBackoffDelay(failCount, baseInterval, maxDelay, jitterFactor);
-	return new Date(Date.now() + delay);
+  const delay = calculateBackoffDelay(failCount, baseInterval, maxDelay, jitterFactor);
+  return new Date(Date.now() + delay);
 }
 
 /**
@@ -95,13 +95,13 @@ export function calculateBackoff(
  * @returns The delay in milliseconds
  */
 export function calculateBackoffDelay(
-	failCount: number,
-	baseInterval: number = DEFAULT_BASE_INTERVAL,
-	maxDelay?: number,
-	jitterFactor: number = DEFAULT_JITTER_FACTOR,
+  failCount: number,
+  baseInterval: number = DEFAULT_BASE_INTERVAL,
+  maxDelay?: number,
+  jitterFactor: number = DEFAULT_JITTER_FACTOR,
 ): number {
-	const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
-	const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
-	const jittered = applyJitter(baseDelay, jitterFactor);
-	return Math.min(jittered, effectiveMaxDelay);
+  const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
+  const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
+  const jittered = applyJitter(baseDelay, jitterFactor);
+  return Math.min(jittered, effectiveMaxDelay);
 }

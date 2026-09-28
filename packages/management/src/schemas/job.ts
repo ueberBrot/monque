@@ -1,12 +1,12 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Job lifecycle status values returned by the management API. */
 export const JobStatusDtoSchema = z.enum([
-	'pending',
-	'processing',
-	'completed',
-	'failed',
-	'cancelled',
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
 ]);
 
 /** Job lifecycle status returned by the management API. */
@@ -19,104 +19,104 @@ export type JobStatusDto = z.infer<typeof JobStatusDtoSchema>;
  * to `null` when absent.
  */
 export const JobDtoSchema = z
-	.object({
-		id: z.string(),
-		name: z.string(),
-		status: JobStatusDtoSchema,
-		payload: z.unknown().nonoptional(),
-		nextRunAt: z.iso.datetime(),
-		lockedAt: z.iso.datetime().nullable(),
-		claimedBy: z.string().nullable(),
-		lastHeartbeat: z.iso.datetime().nullable(),
-		leaseExpiresAt: z.iso
-			.datetime()
-			.optional()
-			.describe('Renewable claim deadline measured by MongoDB; absent for absolute locks.'),
-		heartbeatInterval: z.number().int().nonnegative().optional(),
-		failCount: z.number().int().nonnegative(),
-		failureReason: z.string().nullable(),
-		repeatInterval: z.string().optional(),
-		timezone: z
-			.string()
-			.optional()
-			.describe(
-				'IANA timezone for the recurring schedule; omitted uses the server local timezone.',
-			),
-		uniqueKey: z.string().optional(),
-		createdAt: z.iso.datetime(),
-		updatedAt: z.iso.datetime(),
-	})
-	.strict();
+  .object({
+    id: z.string(),
+    name: z.string(),
+    status: JobStatusDtoSchema,
+    payload: z.unknown().nonoptional(),
+    nextRunAt: z.iso.datetime(),
+    lockedAt: z.iso.datetime().nullable(),
+    claimedBy: z.string().nullable(),
+    lastHeartbeat: z.iso.datetime().nullable(),
+    leaseExpiresAt: z.iso
+      .datetime()
+      .optional()
+      .describe("Renewable claim deadline measured by MongoDB; absent for absolute locks."),
+    heartbeatInterval: z.number().int().nonnegative().optional(),
+    failCount: z.number().int().nonnegative(),
+    failureReason: z.string().nullable(),
+    repeatInterval: z.string().optional(),
+    timezone: z
+      .string()
+      .optional()
+      .describe(
+        "IANA timezone for the recurring schedule; omitted uses the server local timezone.",
+      ),
+    uniqueKey: z.string().optional(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
 
 /** Public job representation returned by management read and mutation endpoints. */
 export type JobDto = z.infer<typeof JobDtoSchema>;
 
 /** Cursor-paginated job list response. */
 export const JobCursorPageDtoSchema = z
-	.object({
-		jobs: z.array(JobDtoSchema),
-		cursor: z.string().nullable(),
-		hasNextPage: z.boolean(),
-		hasPreviousPage: z.boolean(),
-	})
-	.strict();
+  .object({
+    jobs: z.array(JobDtoSchema),
+    cursor: z.string().nullable(),
+    hasNextPage: z.boolean(),
+    hasPreviousPage: z.boolean(),
+  })
+  .strict();
 
 /** Cursor-paginated job list response. */
 export type JobCursorPageDto = z.infer<typeof JobCursorPageDtoSchema>;
 
 /** Sort fields accepted by job list endpoints: identifier, createdAt, updatedAt, or nextRunAt. */
-export const JobListSortByDtoSchema = z.enum(['identifier', 'createdAt', 'updatedAt', 'nextRunAt']);
+export const JobListSortByDtoSchema = z.enum(["identifier", "createdAt", "updatedAt", "nextRunAt"]);
 
 /** Sort field accepted by job list endpoints. */
 export type JobListSortByDto = z.infer<typeof JobListSortByDtoSchema>;
 
 /** Sort directions accepted by job list endpoints: ascending or descending. */
-export const JobListSortDirectionDtoSchema = z.enum(['asc', 'desc']);
+export const JobListSortDirectionDtoSchema = z.enum(["asc", "desc"]);
 
 /** Sort direction accepted by job list endpoints. */
 export type JobListSortDirectionDto = z.infer<typeof JobListSortDirectionDtoSchema>;
 
 /** Query parameters accepted by `GET /api/v1/jobs`. */
 export const JobListQueryDtoSchema = z
-	.object({
-		cursor: z.string().optional(),
-		limit: z.string().optional(),
-		view: z.enum(['full', 'summary']).optional(),
-		name: z.string().min(1).optional(),
-		status: z.union([JobStatusDtoSchema, z.array(JobStatusDtoSchema).min(1)]).optional(),
-		createdAtFrom: z.iso.datetime().optional(),
-		createdAtTo: z.iso.datetime().optional(),
-		updatedAtFrom: z.iso.datetime().optional(),
-		updatedAtTo: z.iso.datetime().optional(),
-		nextRunAtFrom: z.iso.datetime().optional(),
-		nextRunAtTo: z.iso.datetime().optional(),
-		sortBy: JobListSortByDtoSchema.optional(),
-		sortDirection: JobListSortDirectionDtoSchema.optional(),
-	})
-	.strict();
+  .object({
+    cursor: z.string().optional(),
+    limit: z.string().optional(),
+    view: z.enum(["full", "summary"]).optional(),
+    name: z.string().min(1).optional(),
+    status: z.union([JobStatusDtoSchema, z.array(JobStatusDtoSchema).min(1)]).optional(),
+    createdAtFrom: z.iso.datetime().optional(),
+    createdAtTo: z.iso.datetime().optional(),
+    updatedAtFrom: z.iso.datetime().optional(),
+    updatedAtTo: z.iso.datetime().optional(),
+    nextRunAtFrom: z.iso.datetime().optional(),
+    nextRunAtTo: z.iso.datetime().optional(),
+    sortBy: JobListSortByDtoSchema.optional(),
+    sortDirection: JobListSortDirectionDtoSchema.optional(),
+  })
+  .strict();
 
 /** Query parameters accepted by `GET /api/v1/jobs`. */
 export type JobListQueryDto = z.infer<typeof JobListQueryDtoSchema>;
 
 /** Path parameters for routes targeting a single job. */
 export const JobDetailParamsDtoSchema = z
-	.object({
-		id: z.string(),
-	})
-	.strict();
+  .object({
+    id: z.string(),
+  })
+  .strict();
 
 /** Path parameters for routes targeting a single job. */
 export type JobDetailParamsDto = z.infer<typeof JobDetailParamsDtoSchema>;
 
 /** Detailed oRPC input shape for single-job routes. */
 export const JobDetailInputDtoSchema = z
-	.object({
-		params: JobDetailParamsDtoSchema,
-		query: z.object({}).strict().optional(),
-		headers: z.looseObject({}).optional(),
-		body: z.unknown().optional(),
-	})
-	.strict();
+  .object({
+    params: JobDetailParamsDtoSchema,
+    query: z.object({}).strict().optional(),
+    headers: z.looseObject({}).optional(),
+    body: z.unknown().optional(),
+  })
+  .strict();
 
 /** Detailed oRPC input shape for single-job routes. */
 export type JobDetailInputDto = z.infer<typeof JobDetailInputDtoSchema>;

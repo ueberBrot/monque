@@ -9,10 +9,10 @@
  * Constitution guidelines.
  */
 export const ProviderTypes = {
-	/** Provider type for @JobController decorated classes */
-	JOB_CONTROLLER: 'monque:job-controller',
-	/** Provider type for cron job handlers */
-	CRON: 'monque:cron',
+  /** Provider type for @JobController decorated classes */
+  JOB_CONTROLLER: "monque:job-controller",
+  /** Provider type for cron job handlers */
+  CRON: "monque:cron",
 } as const;
 
 /**

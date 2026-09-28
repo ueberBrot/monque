@@ -1,9 +1,9 @@
-import type { DeleteResult } from 'mongodb';
+import type { DeleteResult } from "mongodb";
 
-import { JobStatus } from '@/jobs';
-import { toError } from '@/shared';
+import { JobStatus } from "@/jobs";
+import { toError } from "@/shared";
 
-import type { SchedulerContext } from './types.js';
+import type { SchedulerContext } from "./types.js";
 
 /**
  * Default retention check interval (1 hour).
@@ -22,8 +22,8 @@ export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const
  * to Owned Job heartbeat updates without creating a direct dependency.
  */
 interface TimerCallbacks {
-	/** Update heartbeats for claimed jobs */
-	updateHeartbeats: () => Promise<void>;
+  /** Update heartbeats for claimed jobs */
+  updateHeartbeats: () => Promise<void>;
 }
 
 /**
@@ -35,96 +35,96 @@ interface TimerCallbacks {
  * @internal Not part of public API.
  */
 export class LifecycleManager {
-	private readonly ctx: SchedulerContext;
-	private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
-	private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
-	private heartbeatRunning = false;
+  private readonly ctx: SchedulerContext;
+  private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
+  private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+  private heartbeatRunning = false;
 
-	constructor(ctx: SchedulerContext) {
-		this.ctx = ctx;
-	}
+  constructor(ctx: SchedulerContext) {
+    this.ctx = ctx;
+  }
 
-	/**
-	 * Start all lifecycle timers.
-	 *
-	 * Sets up the heartbeat interval and optional retention cleanup interval.
-	 *
-	 * @param callbacks - Functions to invoke on each timer tick
-	 */
-	startTimers(callbacks: TimerCallbacks): void {
-		// Start heartbeat interval for claimed jobs
-		this.heartbeatIntervalId = setInterval(async () => {
-			if (this.heartbeatRunning) return;
-			this.heartbeatRunning = true;
-			try {
-				await callbacks.updateHeartbeats();
-			} catch (error) {
-				this.ctx.emit('job:error', { error: toError(error) });
-			} finally {
-				this.heartbeatRunning = false;
-			}
-		}, this.ctx.options.heartbeatInterval);
+  /**
+   * Start all lifecycle timers.
+   *
+   * Sets up the heartbeat interval and optional retention cleanup interval.
+   *
+   * @param callbacks - Functions to invoke on each timer tick
+   */
+  startTimers(callbacks: TimerCallbacks): void {
+    // Start heartbeat interval for claimed jobs
+    this.heartbeatIntervalId = setInterval(async () => {
+      if (this.heartbeatRunning) return;
+      this.heartbeatRunning = true;
+      try {
+        await callbacks.updateHeartbeats();
+      } catch (error) {
+        this.ctx.emit("job:error", { error: toError(error) });
+      } finally {
+        this.heartbeatRunning = false;
+      }
+    }, this.ctx.options.heartbeatInterval);
 
-		// Start cleanup interval if retention is configured
-		if (this.ctx.options.jobRetention) {
-			const interval = this.ctx.options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL;
+    // Start cleanup interval if retention is configured
+    if (this.ctx.options.jobRetention) {
+      const interval = this.ctx.options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL;
 
-			// Run immediately on start
-			this.cleanupJobs().catch((error: unknown) => {
-				this.ctx.emit('job:error', { error: toError(error) });
-			});
+      // Run immediately on start
+      this.cleanupJobs().catch((error: unknown) => {
+        this.ctx.emit("job:error", { error: toError(error) });
+      });
 
-			this.cleanupIntervalId = setInterval(() => {
-				this.cleanupJobs().catch((error: unknown) => {
-					this.ctx.emit('job:error', { error: toError(error) });
-				});
-			}, interval);
-		}
-	}
+      this.cleanupIntervalId = setInterval(() => {
+        this.cleanupJobs().catch((error: unknown) => {
+          this.ctx.emit("job:error", { error: toError(error) });
+        });
+      }, interval);
+    }
+  }
 
-	/**
-	 * Stop all lifecycle timers.
-	 *
-	 * Clears heartbeat and cleanup intervals.
-	 */
-	stopTimers(keepHeartbeat = false): void {
-		if (this.cleanupIntervalId) {
-			clearInterval(this.cleanupIntervalId);
-			this.cleanupIntervalId = null;
-		}
+  /**
+   * Stop all lifecycle timers.
+   *
+   * Clears heartbeat and cleanup intervals.
+   */
+  stopTimers(keepHeartbeat = false): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+      this.cleanupIntervalId = null;
+    }
 
-		if (this.heartbeatIntervalId && !keepHeartbeat) {
-			clearInterval(this.heartbeatIntervalId);
-			this.heartbeatIntervalId = null;
-		}
-	}
+    if (this.heartbeatIntervalId && !keepHeartbeat) {
+      clearInterval(this.heartbeatIntervalId);
+      this.heartbeatIntervalId = null;
+    }
+  }
 
-	/**
-	 * Clean up terminal jobs based on each status's configured retention period.
-	 *
-	 * @returns Promise resolving when all deletion operations complete
-	 */
-	async cleanupJobs(): Promise<void> {
-		if (!this.ctx.options.jobRetention) {
-			return;
-		}
+  /**
+   * Clean up terminal jobs based on each status's configured retention period.
+   *
+   * @returns Promise resolving when all deletion operations complete
+   */
+  async cleanupJobs(): Promise<void> {
+    if (!this.ctx.options.jobRetention) {
+      return;
+    }
 
-		const now = Date.now();
-		const deletions: Promise<DeleteResult>[] = [];
+    const now = Date.now();
+    const deletions: Promise<DeleteResult>[] = [];
 
-		for (const status of [...CLEANUP_STATUSES, JobStatus.CANCELLED]) {
-			const age = this.ctx.options.jobRetention[status];
-			if (age == null) continue;
-			deletions.push(
-				this.ctx.collection.deleteMany({
-					status,
-					updatedAt: { $lt: new Date(now - age) },
-				}),
-			);
-		}
+    for (const status of [...CLEANUP_STATUSES, JobStatus.CANCELLED]) {
+      const age = this.ctx.options.jobRetention[status];
+      if (age == null) continue;
+      deletions.push(
+        this.ctx.collection.deleteMany({
+          status,
+          updatedAt: { $lt: new Date(now - age) },
+        }),
+      );
+    }
 
-		if (deletions.length > 0) {
-			await Promise.all(deletions);
-		}
-	}
+    if (deletions.length > 0) {
+      await Promise.all(deletions);
+    }
+  }
 }

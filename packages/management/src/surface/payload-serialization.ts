@@ -1,30 +1,30 @@
-import type { PersistedJob } from '@monque/core';
+import type { PersistedJob } from "@monque/core";
 
-import type { ManagementOptions, ManagementPayloadSerializer } from './types.js';
+import type { ManagementOptions, ManagementPayloadSerializer } from "./types.js";
 
 export async function serializeJobPayload<TContext>(
-	options: ManagementOptions<TContext>,
-	job: PersistedJob,
-	context: TContext,
+  options: ManagementOptions<TContext>,
+  job: PersistedJob,
+  context: TContext,
 ): Promise<unknown> {
-	const serializePayload = getPayloadSerializer(options, job.name);
+  const serializePayload = getPayloadSerializer(options, job.name);
 
-	if (!serializePayload) {
-		return job.data;
-	}
+  if (!serializePayload) {
+    return job.data;
+  }
 
-	return serializePayload({ job, payload: job.data, context });
+  return serializePayload({ job, payload: job.data, context });
 }
 
 function getPayloadSerializer<TContext>(
-	options: ManagementOptions<TContext>,
-	jobName: string,
+  options: ManagementOptions<TContext>,
+  jobName: string,
 ): ManagementPayloadSerializer<TContext> | undefined {
-	const serializers = options.serializePayloadByJobName;
+  const serializers = options.serializePayloadByJobName;
 
-	if (serializers && Object.hasOwn(serializers, jobName)) {
-		return serializers[jobName] ?? options.serializePayload;
-	}
+  if (serializers && Object.hasOwn(serializers, jobName)) {
+    return serializers[jobName] ?? options.serializePayload;
+  }
 
-	return options.serializePayload;
+  return options.serializePayload;
 }

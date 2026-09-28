@@ -1,90 +1,75 @@
 {
-	"name": "@monque/core",
-	"version": "1.15.0",
-	"description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
-	"author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/ueberBrot/monque.git",
-		"directory": "packages/core"
-	},
-	"license": "ISC",
-	"bugs": {
-		"url": "https://github.com/ueberBrot/monque/issues"
-	},
-	"homepage": "https://github.com/ueberBrot/monque#readme",
-	"sideEffects": false,
-	"type": "module",
-	"engines": {
-		"node": ">=22.12.0"
-	},
-	"publishConfig": {
-		"access": "public"
-	},
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.mjs",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"import": {
-				"types": "./dist/index.d.mts",
-				"default": "./dist/index.mjs"
-			},
-			"require": {
-				"types": "./dist/index.d.cts",
-				"default": "./dist/index.cjs"
-			}
-		}
-	},
-	"files": [
-		"dist",
-		"src",
-		"CHANGELOG.md"
-	],
-	"scripts": {
-		"build": "tsdown",
-		"check:exports": "publint && attw --pack .",
-		"clean": "rimraf dist .turbo",
-		"type-check": "tsc --noEmit",
-		"pretest": "bun run type-check",
-		"test": "vitest run",
-		"test:unit": "bun run type-check && vitest run --config vitest.unit.config.ts",
-		"test:integration": "bun run type-check && vitest run integration/",
-		"test:dev": "TESTCONTAINERS_REUSE_ENABLE=true vitest",
-		"test:watch": "vitest",
-		"test:watch:unit": "vitest --config vitest.unit.config.ts",
-		"test:watch:integration": "vitest integration/",
-		"lint": "biome check ."
-	},
-	"keywords": [
-		"job",
-		"queue",
-		"scheduler",
-		"mongodb",
-		"cron",
-		"background-jobs",
-		"typescript",
-		"distributed",
-		"task-queue",
-		"atomic",
-		"persistence"
-	],
-	"dependencies": {
-		"@standard-schema/spec": "^1.1.0",
-		"cron-parser": "^5.10.1"
-	},
-	"peerDependencies": {
-		"mongodb": "^7.6.0"
-	},
-	"devDependencies": {
-		"@faker-js/faker": "^10.6.0",
-		"@testcontainers/mongodb": "^12.1.0",
-		"@total-typescript/ts-reset": "^0.6.1",
-		"@types/node": "^22.20.3",
-		"fishery": "^2.4.0",
-		"mongodb": "^7.6.0",
-		"tsdown": "^0.23.0",
-		"vitest": "^5.0.1",
-		"zod": "^4.6.5"
-	}
+  "name": "@monque/core",
+  "version": "1.15.0",
+  "description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
+  "keywords": [
+    "atomic",
+    "background-jobs",
+    "cron",
+    "distributed",
+    "job",
+    "mongodb",
+    "persistence",
+    "queue",
+    "scheduler",
+    "task-queue",
+    "typescript"
+  ],
+  "homepage": "https://github.com/ueberBrot/monque#readme",
+  "bugs": {
+    "url": "https://github.com/ueberBrot/monque/issues"
+  },
+  "license": "ISC",
+  "author": "Maurice de Bruyn <debruyn.maurice@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ueberBrot/monque.git",
+    "directory": "packages/core"
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "cron-parser": "^5.10.1"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "@testcontainers/mongodb": "^12.2.0",
+    "@total-typescript/ts-reset": "^0.6.1",
+    "@types/node": "^22.20.4",
+    "fishery": "^2.4.0",
+    "mongodb": "^7.7.0",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:",
+    "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "mongodb": "^7.6.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
 }

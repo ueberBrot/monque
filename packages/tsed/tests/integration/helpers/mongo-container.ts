@@ -1,13 +1,13 @@
-import { inject } from 'vitest';
+import { inject } from "vite-plus/test";
 
-declare module 'vitest' {
-	export interface ProvidedContext {
-		tsedMongoUri: string;
-	}
+declare module "vitest" {
+  export interface ProvidedContext {
+    tsedMongoUri: string;
+  }
 }
 
 export function getMongoUrl(): string {
-	const uri = inject('tsedMongoUri');
-	if (!uri) throw new Error('MongoDB global setup has not provided tsedMongoUri');
-	return uri;
+  const uri = inject("tsedMongoUri");
+  if (!uri) throw new Error("MongoDB global setup has not provided tsedMongoUri");
+  return uri;
 }

@@ -1,16 +1,38 @@
 {
-	"$schema": "./node_modules/knip/schema.json",
-	"ignore": ["specs/**"],
-	"ignoreBinaries": [],
-	"ignoreDependencies": ["@fontsource/quicksand", "sharp"],
-	"workspaces": {
-		"apps/docs": {
-			"entry": [],
-			"project": []
-		},
-		"packages/*": {
-			"entry": [],
-			"project": ["src/**/*.ts", "tests/**/*.ts"]
-		}
-	}
+  "$schema": "./node_modules/knip/schema.json",
+  "ignore": ["specs/**", ".agents/**"],
+  "ignoreBinaries": [],
+  "ignoreDependencies": ["@fontsource/quicksand", "sharp", "vite", "vitest", "unplugin-unused"],
+  "workspaces": {
+    "apps/docs": {
+      "entry": [],
+      "project": [],
+      "ignoreDependencies": [
+        "@astrojs/check",
+        "@monque/core",
+        "@monque/management",
+        "@monque/management-express",
+        "@monque/tsed",
+        "satteri",
+        "@monque/dashboard",
+        "@monque/dashboard-express"
+      ]
+    },
+    "packages/*": {
+      "entry": ["src/index.ts", "vite*.config.ts"],
+      "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"]
+    },
+    "apps/dashboard-dev": {
+      "ignoreDependencies": ["@monque/dashboard"]
+    },
+    "packages/tsed": {
+      "ignoreDependencies": ["cookie"],
+      "entry": ["src/index.ts", "vite*.config.ts"]
+    },
+    "packages/dashboard": {
+      "entry": ["src/index.ts", "src/forms/index.ts", "vite.config.ts"],
+      "project": ["src/**/*.{ts,tsx,css}", "tests/**/*.{ts,tsx}"],
+      "ignore": ["src/components/ui/**"]
+    }
+  }
 }

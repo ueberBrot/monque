@@ -41,9 +41,9 @@ Commands supports search and keyboard selection, with no direct destructive-acti
 
 ## Components
 
-Generate UI primitives with `bunx shadcn@latest add <component>` from `packages/dashboard`.
+Generate UI primitives with `vp dlx shadcn@latest add <component>` from `packages/dashboard`.
 Use the configured `base-nova` registry. Keep generated Base UI behavior, named exports, and
-Biome formatting. Status badge variants are a project extension. Command uses the registry's
+Oxfmt formatting. Status badge variants are a project extension. Command uses the registry's
 cmdk implementation inside a Base UI dialog. Use shadcn controls for forms, menus, dialogs,
 tables, and collapsibles. Avoid native confirm/prompt dialogs.
 Use `class-variance-authority` (CVA) for component variants, matching the installed shadcn components.

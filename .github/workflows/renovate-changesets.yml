@@ -39,16 +39,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
         with:
-          turbo-cache: 'false'
+          task-cache: "false"
 
       - name: Generate changeset (if needed)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bun scripts/renovate-generate-changeset.ts
+        run: vp run changeset:renovate
 
       - name: Commit and push changeset
         run: |

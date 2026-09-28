@@ -1,40 +1,40 @@
-import { createRouter as createTanStackRouter, type RouterHistory } from '@tanstack/react-router';
+import { createRouter as createTanStackRouter, type RouterHistory } from "@tanstack/react-router";
 
 import {
-	DashboardRouteError,
-	DashboardRouteNotFound,
-	DashboardRoutePending,
-} from './components/route-feedback.js';
-import type { DashboardRouterContext } from './router-context.js';
-import { routeTree } from './routeTree.gen';
+  DashboardRouteError,
+  DashboardRouteNotFound,
+  DashboardRoutePending,
+} from "./components/route-feedback.js";
+import type { DashboardRouterContext } from "./router-context.js";
+import { routeTree } from "./routeTree.gen";
 
 function getRouter(
-	context: DashboardRouterContext,
-	options?: {
-		readonly history?: RouterHistory;
-	},
+  context: DashboardRouterContext,
+  options?: {
+    readonly history?: RouterHistory;
+  },
 ) {
-	const router = createTanStackRouter({
-		routeTree,
-		defaultErrorComponent: DashboardRouteError,
-		defaultPendingComponent: DashboardRoutePending,
-		defaultNotFoundComponent: DashboardRouteNotFound,
-		basepath: context.runtimeConfig.basePath,
-		context,
-		...(options?.history ? { history: options.history } : {}),
-		scrollRestoration: true,
-		scrollToTopSelectors: ['#main-content'],
-		defaultPreload: 'intent',
-		defaultPreloadStaleTime: 0,
-	});
+  const router = createTanStackRouter({
+    routeTree,
+    defaultErrorComponent: DashboardRouteError,
+    defaultPendingComponent: DashboardRoutePending,
+    defaultNotFoundComponent: DashboardRouteNotFound,
+    basepath: context.runtimeConfig.basePath,
+    context,
+    ...(options?.history ? { history: options.history } : {}),
+    scrollRestoration: true,
+    scrollToTopSelectors: ["#main-content"],
+    defaultPreload: "intent",
+    defaultPreloadStaleTime: 0,
+  });
 
-	return router;
+  return router;
 }
 
-declare module '@tanstack/react-router' {
-	interface Register {
-		router: ReturnType<typeof getRouter>;
-	}
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof getRouter>;
+  }
 }
 
 export { getRouter };

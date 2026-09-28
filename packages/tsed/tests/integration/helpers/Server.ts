@@ -1,8 +1,8 @@
-import { Configuration } from '@tsed/di';
+import { Configuration } from "@tsed/di";
 
 @Configuration({
-	port: 0,
-	disableComponentScan: true,
-	httpsPort: false,
+  port: 0,
+  disableComponentScan: true,
+  httpsPort: false,
 })
 export class Server {}

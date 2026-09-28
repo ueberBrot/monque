@@ -1,195 +1,195 @@
-import type { Job } from '@monque/core';
-import { InjectorService, LOGGER, ProviderScope, Scope } from '@tsed/di';
-import { PlatformTest } from '@tsed/platform-http/testing';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Job } from "@monque/core";
+import { InjectorService, LOGGER, ProviderScope, Scope } from "@tsed/di";
+import { PlatformTest } from "@tsed/platform-http/testing";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { JobController, Job as MonqueJob } from '@/decorators';
-import { MonqueModule } from '@/monque-module';
-import { MonqueService } from '@/services';
+import { JobController, Job as MonqueJob } from "@/decorators";
+import { MonqueModule } from "@/monque-module";
+import { MonqueService } from "@/services";
 
-import { waitFor } from '../test-utils.js';
-import { bootstrapMonque, resetMonque } from './helpers/bootstrap.js';
-import { Server } from './helpers/Server.js';
+import { waitFor } from "../test-utils.js";
+import { bootstrapMonque, resetMonque } from "./helpers/bootstrap.js";
+import { Server } from "./helpers/Server.js";
 
 // 1. Request Scoped Job
-@JobController('request-scoped')
+@JobController("request-scoped")
 @Scope(ProviderScope.REQUEST)
 class RequestScopedController {
-	static processed = false;
-	static instanceCount = 0;
+  static processed = false;
+  static instanceCount = 0;
 
-	constructor() {
-		RequestScopedController.instanceCount++;
-	}
+  constructor() {
+    RequestScopedController.instanceCount++;
+  }
 
-	@MonqueJob('job')
-	async handler(_job: Job) {
-		RequestScopedController.processed = true;
-	}
+  @MonqueJob("job")
+  async handler(_job: Job) {
+    RequestScopedController.processed = true;
+  }
 }
 
 // 2. Error Throwing Job
-@JobController('error')
+@JobController("error")
 class ErrorController {
-	@MonqueJob('throw')
-	async handler(_job: Job) {
-		throw new Error('Intentional Failure');
-	}
+  @MonqueJob("throw")
+  async handler(_job: Job) {
+    throw new Error("Intentional Failure");
+  }
 }
 
 // 3. Unresolvable Job
-@JobController('unresolvable')
+@JobController("unresolvable")
 class UnresolvableController {
-	@MonqueJob('job')
-	async handler(_job: Job) {}
+  @MonqueJob("job")
+  async handler(_job: Job) {}
 }
 
-describe('MonqueModule Lifecycle Integration', () => {
-	afterEach(resetMonque);
+describe("MonqueModule Lifecycle Integration", () => {
+  afterEach(resetMonque);
 
-	describe('Lifecycle (Mongoose Strategy)', () => {
-		beforeEach(() =>
-			bootstrapMonque({ connectionStrategy: 'mongoose', imports: [ErrorController] }),
-		);
+  describe("Lifecycle (Mongoose Strategy)", () => {
+    beforeEach(() =>
+      bootstrapMonque({ connectionStrategy: "mongoose", imports: [ErrorController] }),
+    );
 
-		it('persists and executes jobs through the Mongoose database strategy', async () => {
-			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-			const job = await monqueService.now('error.throw', {});
-			await waitFor(async () => (await monqueService.getJob(job._id.toString()))?.failCount === 1);
-			expect((await monqueService.getJob(job._id.toString()))?.failReason).toBe(
-				'Intentional Failure',
-			);
-		});
-	});
+    it("persists and executes jobs through the Mongoose database strategy", async () => {
+      const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+      const job = await monqueService.now("error.throw", {});
+      await waitFor(async () => (await monqueService.getJob(job._id.toString()))?.failCount === 1);
+      expect((await monqueService.getJob(job._id.toString()))?.failReason).toBe(
+        "Intentional Failure",
+      );
+    });
+  });
 
-	describe('Configuration Error', () => {
-		it('should throw if configuration is missing database strategy', async () => {
-			const platform = PlatformTest.bootstrap(Server, {
-				imports: [MonqueModule],
-				monque: { enabled: true },
-			});
+  describe("Configuration Error", () => {
+    it("should throw if configuration is missing database strategy", async () => {
+      const platform = PlatformTest.bootstrap(Server, {
+        imports: [MonqueModule],
+        monque: { enabled: true },
+      });
 
-			await expect(platform()).rejects.toThrow(
-				"MonqueTsedConfig requires exactly one of 'db', 'dbFactory', or 'dbToken' to be set",
-			);
-		});
-	});
+      await expect(platform()).rejects.toThrow(
+        "MonqueTsedConfig requires exactly one of 'db', 'dbFactory', or 'dbToken' to be set",
+      );
+    });
+  });
 
-	describe('Disabled Module', () => {
-		beforeEach(() =>
-			bootstrapMonque({
-				connectionStrategy: 'dbFactory',
-				monqueConfig: { enabled: false },
-			}),
-		);
+  describe("Disabled Module", () => {
+    beforeEach(() =>
+      bootstrapMonque({
+        connectionStrategy: "dbFactory",
+        monqueConfig: { enabled: false },
+      }),
+    );
 
-		it('should not throw when module is disabled but service should throw on access', async () => {
-			const monqueService = PlatformTest.get<MonqueService>(MonqueService);
-			expect(monqueService).toBeDefined();
-			await expect(monqueService.enqueue('test', {})).rejects.toThrow();
-		});
-	});
+    it("should not throw when module is disabled but service should throw on access", async () => {
+      const monqueService = PlatformTest.get<MonqueService>(MonqueService);
+      expect(monqueService).toBeDefined();
+      await expect(monqueService.enqueue("test", {})).rejects.toThrow();
+    });
+  });
 
-	describe('Validation & Resolution Edge Cases', () => {
-		beforeEach(() => {
-			RequestScopedController.processed = false;
-			RequestScopedController.instanceCount = 0;
-		});
+  describe("Validation & Resolution Edge Cases", () => {
+    beforeEach(() => {
+      RequestScopedController.processed = false;
+      RequestScopedController.instanceCount = 0;
+    });
 
-		it('should warn and skip if job controller instance cannot be resolved', async () => {
-			// Mock injector to fail resolution for UnresolvableController
-			const originalGet = InjectorService.prototype.get;
-			const getSpy = vi.spyOn(InjectorService.prototype, 'get').mockImplementation(function (
-				this: InjectorService,
-				token: unknown,
-			) {
-				if (token === UnresolvableController) {
-					return undefined;
-				}
-				return originalGet.call(this, token as Parameters<InjectorService['get']>[0]);
-			});
+    it("should warn and skip if job controller instance cannot be resolved", async () => {
+      // Mock injector to fail resolution for UnresolvableController
+      const originalGet = InjectorService.prototype.get;
+      const getSpy = vi.spyOn(InjectorService.prototype, "get").mockImplementation(function (
+        this: InjectorService,
+        token: unknown,
+      ) {
+        if (token === UnresolvableController) {
+          return undefined;
+        }
+        return originalGet.call(this, token as Parameters<InjectorService["get"]>[0]);
+      });
 
-			try {
-				await bootstrapMonque({
-					imports: [UnresolvableController],
-					connectionStrategy: 'db',
-				});
+      try {
+        await bootstrapMonque({
+          imports: [UnresolvableController],
+          connectionStrategy: "db",
+        });
 
-				// If we reached here without error, the module handled the missing instance gracefully.
-				const service = PlatformTest.get<MonqueService>(MonqueService);
-				expect(service).toBeDefined();
-			} finally {
-				// Cleanup
-				getSpy.mockRestore();
-			}
-		});
+        // If we reached here without error, the module handled the missing instance gracefully.
+        const service = PlatformTest.get<MonqueService>(MonqueService);
+        expect(service).toBeDefined();
+      } finally {
+        // Cleanup
+        getSpy.mockRestore();
+      }
+    });
 
-		it('should invoke request scoped job controllers for each job', async () => {
-			RequestScopedController.processed = false;
-			RequestScopedController.instanceCount = 0;
+    it("should invoke request scoped job controllers for each job", async () => {
+      RequestScopedController.processed = false;
+      RequestScopedController.instanceCount = 0;
 
-			await bootstrapMonque({
-				imports: [RequestScopedController],
-				connectionStrategy: 'db',
-			});
+      await bootstrapMonque({
+        imports: [RequestScopedController],
+        connectionStrategy: "db",
+      });
 
-			const service = PlatformTest.get<MonqueService>(MonqueService);
+      const service = PlatformTest.get<MonqueService>(MonqueService);
 
-			// Enqueue a job
-			await service.enqueue('request-scoped.job', {});
+      // Enqueue a job
+      await service.enqueue("request-scoped.job", {});
 
-			// Wait for processing (simple poll)
-			await waitFor(() => RequestScopedController.processed, {
-				timeout: 5000,
-			});
+      // Wait for processing (simple poll)
+      await waitFor(() => RequestScopedController.processed, {
+        timeout: 5000,
+      });
 
-			expect(RequestScopedController.processed).toBe(true);
-			expect(RequestScopedController.instanceCount).toBeGreaterThan(0);
-		});
+      expect(RequestScopedController.processed).toBe(true);
+      expect(RequestScopedController.instanceCount).toBeGreaterThan(0);
+    });
 
-		it('should catch and log errors from job handlers', async () => {
-			await bootstrapMonque({
-				imports: [ErrorController],
-				connectionStrategy: 'db',
-			});
+    it("should catch and log errors from job handlers", async () => {
+      await bootstrapMonque({
+        imports: [ErrorController],
+        connectionStrategy: "db",
+      });
 
-			const service = PlatformTest.get<MonqueService>(MonqueService);
-			const logger = PlatformTest.get(LOGGER);
-			const errorSpy = vi.spyOn(logger, 'error');
+      const service = PlatformTest.get<MonqueService>(MonqueService);
+      const logger = PlatformTest.get(LOGGER);
+      const errorSpy = vi.spyOn(logger, "error");
 
-			await service.enqueue('error.throw', {});
+      await service.enqueue("error.throw", {});
 
-			// Wait for logger to be called
-			await waitFor(() => errorSpy.mock.calls.length > 0, { timeout: 5000 });
+      // Wait for logger to be called
+      await waitFor(() => errorSpy.mock.calls.length > 0, { timeout: 5000 });
 
-			expect(errorSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					event: 'MONQUE_JOB_ERROR',
-					jobName: 'error.throw',
-				}),
-			);
-		});
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "MONQUE_JOB_ERROR",
+          jobName: "error.throw",
+        }),
+      );
+    });
 
-		it('should throw on duplicate job registration', async () => {
-			@JobController('duplicate')
-			class DuplicateController1 {
-				@MonqueJob('job')
-				async handler(_job: Job) {}
-			}
+    it("should throw on duplicate job registration", async () => {
+      @JobController("duplicate")
+      class DuplicateController1 {
+        @MonqueJob("job")
+        async handler(_job: Job) {}
+      }
 
-			@JobController('duplicate')
-			class DuplicateController2 {
-				@MonqueJob('job')
-				async handler(_job: Job) {}
-			}
+      @JobController("duplicate")
+      class DuplicateController2 {
+        @MonqueJob("job")
+        async handler(_job: Job) {}
+      }
 
-			// We use a fresh bootstrap here because we want to fail during initialization
-			await expect(
-				bootstrapMonque({
-					imports: [DuplicateController1, DuplicateController2],
-					connectionStrategy: 'dbFactory',
-				}),
-			).rejects.toThrow('Monque: Duplicate job registration detected');
-		});
-	});
+      // We use a fresh bootstrap here because we want to fail during initialization
+      await expect(
+        bootstrapMonque({
+          imports: [DuplicateController1, DuplicateController2],
+          connectionStrategy: "dbFactory",
+        }),
+      ).rejects.toThrow("Monque: Duplicate job registration detected");
+    });
+  });
 });

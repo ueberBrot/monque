@@ -1,10 +1,10 @@
-import type { SchedulerHealthDto } from '../schemas/index.js';
+import type { SchedulerHealthDto } from "../schemas/index.js";
 
 export function toSchedulerHealthDto(healthy: boolean): SchedulerHealthDto {
-	return {
-		status: healthy ? 'ok' : 'unavailable',
-		scheduler: {
-			healthy,
-		},
-	};
+  return {
+    status: healthy ? "ok" : "unavailable",
+    scheduler: {
+      healthy,
+    },
+  };
 }

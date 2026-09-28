@@ -1,10 +1,10 @@
-import { createManagementSurface } from '@monque/management';
-import { type NextFunction, type Request, type Response, Router } from 'express';
+import { createManagementSurface } from "@monque/management";
+import { type NextFunction, type Request, type Response, Router } from "express";
 
-import { createOpenApiContext } from './context.js';
-import { createRequest, sendResponse } from './http.js';
-import { mountOpenApiRoute } from './openapi.js';
-import type { ManagementExpressRouterOptions } from './types.js';
+import { createOpenApiContext } from "./context.js";
+import { createRequest, sendResponse } from "./http.js";
+import { mountOpenApiRoute } from "./openapi.js";
+import type { ManagementExpressRouterOptions } from "./types.js";
 
 /**
  * Creates an Express router for the Monque Management Surface.
@@ -69,29 +69,29 @@ import type { ManagementExpressRouterOptions } from './types.js';
  * ```
  */
 export function createManagementExpressRouter<TContext = unknown>(
-	options: ManagementExpressRouterOptions<TContext>,
+  options: ManagementExpressRouterOptions<TContext>,
 ): Router {
-	const router = Router();
-	const { context, openApi, ...managementOptions } = options;
-	const surface = createManagementSurface(managementOptions);
-	mountOpenApiRoute(router, openApi);
+  const router = Router();
+  const { context, openApi, ...managementOptions } = options;
+  const surface = createManagementSurface(managementOptions);
+  mountOpenApiRoute(router, openApi);
 
-	router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-		try {
-			const result = await surface.openApiHandler.handle(createRequest(req), {
-				context: await createOpenApiContext(req, res, context),
-			});
+  router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const result = await surface.openApiHandler.handle(createRequest(req), {
+        context: await createOpenApiContext(req, res, context),
+      });
 
-			if (!result.matched) {
-				next();
-				return;
-			}
+      if (!result.matched) {
+        next();
+        return;
+      }
 
-			await sendResponse(res, result.response);
-		} catch (error) {
-			next(error);
-		}
-	});
+      await sendResponse(res, result.response);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-	return router;
+  return router;
 }

@@ -24,16 +24,16 @@ The Express adapter includes the built dashboard, so you do not need a frontend 
 In your Express server, mount both routers using your initialized `Monque` instance:
 
 ```typescript
-import { createDashboardExpressRouter } from '@monque/dashboard-express';
-import { createManagementExpressRouter } from '@monque/management-express';
+import { createDashboardExpressRouter } from "@monque/dashboard-express";
+import { createManagementExpressRouter } from "@monque/management-express";
 
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", createManagementExpressRouter({ monque }));
 app.use(
-	'/ops/dashboard',
-	createDashboardExpressRouter({
-		apiBaseUrl: '/ops',
-		pollingIntervalMs: 15_000,
-	}),
+  "/ops/dashboard",
+  createDashboardExpressRouter({
+    apiBaseUrl: "/ops",
+    pollingIntervalMs: 15_000,
+  }),
 );
 ```
 

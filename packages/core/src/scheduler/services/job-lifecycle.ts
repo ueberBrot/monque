@@ -1,18 +1,18 @@
-import { randomUUID } from 'node:crypto';
-import type { Document, Filter } from 'mongodb';
+import { randomUUID } from "node:crypto";
+import type { Document, Filter } from "mongodb";
 
-import { isPersistedJob, type Job, JobStatus, type PersistedJob } from '@/jobs';
-import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from '@/shared';
-import type { RetryOptions } from '@/workers';
+import { isPersistedJob, type Job, JobStatus, type PersistedJob } from "@/jobs";
+import { ConnectionError, calculateBackoff, getNextCronDate, NonRetryableError } from "@/shared";
+import type { RetryOptions } from "@/workers";
 
-import type { SchedulerContext } from './types.js';
+import type { SchedulerContext } from "./types.js";
 
 const CLAIM_CLEANUP_FIELDS = {
-	lockedAt: '',
-	claimedBy: '',
-	claimId: '',
-	leaseExpiresAt: '',
-	lastHeartbeat: '',
+  lockedAt: "",
+  claimedBy: "",
+  claimId: "",
+  leaseExpiresAt: "",
+  lastHeartbeat: "",
 } as const;
 
 /**
@@ -24,256 +24,256 @@ const CLAIM_CLEANUP_FIELDS = {
  * @internal Not part of public API.
  */
 export class JobLifecycle {
-	constructor(private readonly ctx: SchedulerContext) {}
+  constructor(private readonly ctx: SchedulerContext) {}
 
-	/**
-	 * Atomically claim the earliest due pending job for a Worker.
-	 */
-	async claimNext(name: string): Promise<PersistedJob | null> {
-		if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
-			return null;
-		}
+  /**
+   * Atomically claim the earliest due pending job for a Worker.
+   */
+  async claimNext(name: string): Promise<PersistedJob | null> {
+    if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
+      return null;
+    }
 
-		const now = new Date();
-		const { leaseDuration } = this.ctx.options;
-		const claim = {
-			status: JobStatus.PROCESSING,
-			claimedBy: this.ctx.instanceId,
-			claimId: randomUUID(),
-			lockedAt: now,
-			lastHeartbeat: now,
-			heartbeatInterval: this.ctx.options.heartbeatInterval,
-			updatedAt: now,
-		};
-		const result = await this.ctx.collection.findOneAndUpdate(
-			{
-				name,
-				status: JobStatus.PENDING,
-				nextRunAt: { $lte: now },
-			},
-			leaseDuration === undefined
-				? { $set: claim, $unset: { leaseExpiresAt: '' } }
-				: [
-						{
-							$set: {
-								...claim,
-								claimedBy: { $literal: this.ctx.instanceId },
-								lockedAt: '$$NOW',
-								lastHeartbeat: '$$NOW',
-								updatedAt: '$$NOW',
-								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
-							},
-						},
-					],
-			{
-				sort: { nextRunAt: 1 },
-				returnDocument: 'after',
-			},
-		);
+    const now = new Date();
+    const { leaseDuration } = this.ctx.options;
+    const claim = {
+      status: JobStatus.PROCESSING,
+      claimedBy: this.ctx.instanceId,
+      claimId: randomUUID(),
+      lockedAt: now,
+      lastHeartbeat: now,
+      heartbeatInterval: this.ctx.options.heartbeatInterval,
+      updatedAt: now,
+    };
+    const result = await this.ctx.collection.findOneAndUpdate(
+      {
+        name,
+        status: JobStatus.PENDING,
+        nextRunAt: { $lte: now },
+      },
+      leaseDuration === undefined
+        ? { $set: claim, $unset: { leaseExpiresAt: "" } }
+        : [
+            {
+              $set: {
+                ...claim,
+                claimedBy: { $literal: this.ctx.instanceId },
+                lockedAt: "$$NOW",
+                lastHeartbeat: "$$NOW",
+                updatedAt: "$$NOW",
+                leaseExpiresAt: { $add: ["$$NOW", leaseDuration] },
+              },
+            },
+          ],
+      {
+        sort: { nextRunAt: 1 },
+        returnDocument: "after",
+      },
+    );
 
-		return result ? this.ctx.documentToPersistedJob(result) : null;
-	}
+    return result ? this.ctx.documentToPersistedJob(result) : null;
+  }
 
-	/**
-	 * Release a just-claimed job when processing cannot start.
-	 */
-	async releaseOwnedClaim(job: PersistedJob): Promise<void> {
-		await this.ctx.collection.updateOne(this.ownedJobFilter(job), {
-			$set: {
-				status: JobStatus.PENDING,
-				updatedAt: new Date(),
-			},
-			$unset: CLAIM_CLEANUP_FIELDS,
-		});
-	}
+  /**
+   * Release a just-claimed job when processing cannot start.
+   */
+  async releaseOwnedClaim(job: PersistedJob): Promise<void> {
+    await this.ctx.collection.updateOne(this.ownedJobFilter(job), {
+      $set: {
+        status: JobStatus.PENDING,
+        updatedAt: new Date(),
+      },
+      $unset: CLAIM_CLEANUP_FIELDS,
+    });
+  }
 
-	/**
-	 * Complete an Owned Job or reschedule its recurring next run.
-	 */
-	async completeOwned(job: Job): Promise<PersistedJob | null> {
-		if (!isPersistedJob(job)) {
-			return null;
-		}
+  /**
+   * Complete an Owned Job or reschedule its recurring next run.
+   */
+  async completeOwned(job: Job): Promise<PersistedJob | null> {
+    if (!isPersistedJob(job)) {
+      return null;
+    }
 
-		const now = new Date();
+    const now = new Date();
 
-		const completion = job.repeatInterval
-			? {
-					status: JobStatus.PENDING,
-					nextRunAt: getNextCronDate(job.repeatInterval, undefined, job.timezone),
-					failCount: 0,
-				}
-			: { status: JobStatus.COMPLETED };
-		const result = await this.ctx.collection.findOneAndUpdate(
-			this.ownedJobFilter(job),
-			{
-				$set: { ...completion, updatedAt: now },
-				$unset: { ...CLAIM_CLEANUP_FIELDS, failReason: '' },
-			},
-			{ returnDocument: 'after' },
-		);
+    const completion = job.repeatInterval
+      ? {
+          status: JobStatus.PENDING,
+          nextRunAt: getNextCronDate(job.repeatInterval, undefined, job.timezone),
+          failCount: 0,
+        }
+      : { status: JobStatus.COMPLETED };
+    const result = await this.ctx.collection.findOneAndUpdate(
+      this.ownedJobFilter(job),
+      {
+        $set: { ...completion, updatedAt: now },
+        $unset: { ...CLAIM_CLEANUP_FIELDS, failReason: "" },
+      },
+      { returnDocument: "after" },
+    );
 
-		if (!result) return null;
+    if (!result) return null;
 
-		const persistedJob = this.ctx.documentToPersistedJob(result);
-		if (completion.status === JobStatus.PENDING) {
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-		}
-		return persistedJob;
-	}
+    const persistedJob = this.ctx.documentToPersistedJob(result);
+    if (completion.status === JobStatus.PENDING) {
+      this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+    }
+    return persistedJob;
+  }
 
-	/**
-	 * Fail an Owned Job, either scheduling a retry or marking it terminal.
-	 */
-	async failOwned(
-		job: Job,
-		error: Error,
-		options: RetryOptions = this.ctx.options,
-	): Promise<PersistedJob | null> {
-		if (!isPersistedJob(job)) {
-			return null;
-		}
+  /**
+   * Fail an Owned Job, either scheduling a retry or marking it terminal.
+   */
+  async failOwned(
+    job: Job,
+    error: Error,
+    options: RetryOptions = this.ctx.options,
+  ): Promise<PersistedJob | null> {
+    if (!isPersistedJob(job)) {
+      return null;
+    }
 
-		const now = new Date();
-		const newFailCount = job.failCount + 1;
+    const now = new Date();
+    const newFailCount = job.failCount + 1;
 
-		const terminal =
-			error instanceof NonRetryableError ||
-			newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries);
-		const retry = terminal
-			? { status: JobStatus.FAILED }
-			: {
-					status: JobStatus.PENDING,
-					nextRunAt: calculateBackoff(
-						newFailCount,
-						options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
-						options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
-					),
-				};
+    const terminal =
+      error instanceof NonRetryableError ||
+      newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries);
+    const retry = terminal
+      ? { status: JobStatus.FAILED }
+      : {
+          status: JobStatus.PENDING,
+          nextRunAt: calculateBackoff(
+            newFailCount,
+            options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
+            options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay,
+          ),
+        };
 
-		const result = await this.ctx.collection.findOneAndUpdate(
-			this.ownedJobFilter(job),
-			{
-				$set: {
-					...retry,
-					failCount: newFailCount,
-					failReason: error.message,
-					updatedAt: now,
-				},
-				$unset: CLAIM_CLEANUP_FIELDS,
-			},
-			{ returnDocument: 'after' },
-		);
+    const result = await this.ctx.collection.findOneAndUpdate(
+      this.ownedJobFilter(job),
+      {
+        $set: {
+          ...retry,
+          failCount: newFailCount,
+          failReason: error.message,
+          updatedAt: now,
+        },
+        $unset: CLAIM_CLEANUP_FIELDS,
+      },
+      { returnDocument: "after" },
+    );
 
-		if (!result) {
-			return null;
-		}
+    if (!result) {
+      return null;
+    }
 
-		const persistedJob = this.ctx.documentToPersistedJob(result);
-		if (!terminal) {
-			this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-		}
-		return persistedJob;
-	}
+    const persistedJob = this.ctx.documentToPersistedJob(result);
+    if (!terminal) {
+      this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+    }
+    return persistedJob;
+  }
 
-	/**
-	 * Refresh heartbeat timestamps for jobs owned by this scheduler instance.
-	 */
-	async updateOwnedHeartbeats(): Promise<void> {
-		const claimIds: string[] = [];
-		for (const worker of this.ctx.workers.values()) {
-			for (const job of worker.activeJobs.values()) {
-				if (job.claimId) claimIds.push(job.claimId);
-			}
-		}
-		if (claimIds.length === 0) return;
+  /**
+   * Refresh heartbeat timestamps for jobs owned by this scheduler instance.
+   */
+  async updateOwnedHeartbeats(): Promise<void> {
+    const claimIds: string[] = [];
+    for (const worker of this.ctx.workers.values()) {
+      for (const job of worker.activeJobs.values()) {
+        if (job.claimId) claimIds.push(job.claimId);
+      }
+    }
+    if (claimIds.length === 0) return;
 
-		const now = new Date();
-		const { leaseDuration } = this.ctx.options;
-		await this.ctx.collection.updateMany(
-			{
-				claimedBy: this.ctx.instanceId,
-				claimId: { $in: claimIds },
-				status: JobStatus.PROCESSING,
-				...(leaseDuration === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
-			},
-			leaseDuration === undefined
-				? {
-						$set: {
-							lastHeartbeat: now,
-							updatedAt: now,
-						},
-					}
-				: [
-						{
-							$set: {
-								lastHeartbeat: '$$NOW',
-								updatedAt: '$$NOW',
-								leaseExpiresAt: { $add: ['$$NOW', leaseDuration] },
-							},
-						},
-					],
-		);
-	}
+    const now = new Date();
+    const { leaseDuration } = this.ctx.options;
+    await this.ctx.collection.updateMany(
+      {
+        claimedBy: this.ctx.instanceId,
+        claimId: { $in: claimIds },
+        status: JobStatus.PROCESSING,
+        ...(leaseDuration === undefined ? {} : { $expr: { $gt: ["$leaseExpiresAt", "$$NOW"] } }),
+      },
+      leaseDuration === undefined
+        ? {
+            $set: {
+              lastHeartbeat: now,
+              updatedAt: now,
+            },
+          }
+        : [
+            {
+              $set: {
+                lastHeartbeat: "$$NOW",
+                updatedAt: "$$NOW",
+                leaseExpiresAt: { $add: ["$$NOW", leaseDuration] },
+              },
+            },
+          ],
+    );
+  }
 
-	/**
-	 * Recover processing jobs whose ownership lock has expired.
-	 */
-	async recoverStaleJobs(): Promise<void> {
-		const staleThreshold = new Date(Date.now() - this.ctx.options.lockTimeout);
-		const result = await this.ctx.collection.updateMany(
-			{
-				status: JobStatus.PROCESSING,
-				$or: [
-					{ leaseExpiresAt: { $exists: false }, lockedAt: { $lt: staleThreshold } },
-					{ leaseExpiresAt: { $exists: true }, $expr: { $lte: ['$leaseExpiresAt', '$$NOW'] } },
-				],
-			},
-			{
-				$set: {
-					status: JobStatus.PENDING,
-					updatedAt: new Date(),
-				},
-				$unset: CLAIM_CLEANUP_FIELDS,
-			},
-		);
+  /**
+   * Recover processing jobs whose ownership lock has expired.
+   */
+  async recoverStaleJobs(): Promise<void> {
+    const staleThreshold = new Date(Date.now() - this.ctx.options.lockTimeout);
+    const result = await this.ctx.collection.updateMany(
+      {
+        status: JobStatus.PROCESSING,
+        $or: [
+          { leaseExpiresAt: { $exists: false }, lockedAt: { $lt: staleThreshold } },
+          { leaseExpiresAt: { $exists: true }, $expr: { $lte: ["$leaseExpiresAt", "$$NOW"] } },
+        ],
+      },
+      {
+        $set: {
+          status: JobStatus.PENDING,
+          updatedAt: new Date(),
+        },
+        $unset: CLAIM_CLEANUP_FIELDS,
+      },
+    );
 
-		if (result.modifiedCount > 0) {
-			this.ctx.emit('stale:recovered', { count: result.modifiedCount });
-			this.ctx.notifyPendingJob(undefined, new Date());
-		}
-	}
+    if (result.modifiedCount > 0) {
+      this.ctx.emit("stale:recovered", { count: result.modifiedCount });
+      this.ctx.notifyPendingJob(undefined, new Date());
+    }
+  }
 
-	/**
-	 * Guard startup against another active scheduler using this instance id.
-	 */
-	async assertNoActiveInstanceCollision(): Promise<void> {
-		const aliveThreshold = new Date(Date.now() - this.ctx.options.heartbeatInterval * 2);
-		const activeJob = await this.ctx.collection.findOne({
-			claimedBy: this.ctx.instanceId,
-			status: JobStatus.PROCESSING,
-			lastHeartbeat: { $gte: aliveThreshold },
-		});
+  /**
+   * Guard startup against another active scheduler using this instance id.
+   */
+  async assertNoActiveInstanceCollision(): Promise<void> {
+    const aliveThreshold = new Date(Date.now() - this.ctx.options.heartbeatInterval * 2);
+    const activeJob = await this.ctx.collection.findOne({
+      claimedBy: this.ctx.instanceId,
+      status: JobStatus.PROCESSING,
+      lastHeartbeat: { $gte: aliveThreshold },
+    });
 
-		if (activeJob) {
-			throw new ConnectionError(
-				`Another active Monque instance is using schedulerInstanceId "${this.ctx.instanceId}". ` +
-					`Found processing job "${activeJob['name']}" with recent heartbeat. ` +
-					`Use a unique schedulerInstanceId or wait for the other instance to stop.`,
-			);
-		}
-	}
+    if (activeJob) {
+      throw new ConnectionError(
+        `Another active Monque instance is using schedulerInstanceId "${this.ctx.instanceId}". ` +
+          `Found processing job "${activeJob["name"]}" with recent heartbeat. ` +
+          `Use a unique schedulerInstanceId or wait for the other instance to stop.`,
+      );
+    }
+  }
 
-	/**
-	 * MongoDB precondition for mutating a job owned by this scheduler.
-	 */
-	private ownedJobFilter(job: PersistedJob): Filter<Document> {
-		return {
-			_id: job._id,
-			status: JobStatus.PROCESSING,
-			claimedBy: this.ctx.instanceId,
-			claimId: job.claimId ?? null,
-			...(job.leaseExpiresAt === undefined ? {} : { $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] } }),
-		};
-	}
+  /**
+   * MongoDB precondition for mutating a job owned by this scheduler.
+   */
+  private ownedJobFilter(job: PersistedJob): Filter<Document> {
+    return {
+      _id: job._id,
+      status: JobStatus.PROCESSING,
+      claimedBy: this.ctx.instanceId,
+      claimId: job.claimId ?? null,
+      ...(job.leaseExpiresAt === undefined ? {} : { $expr: { $gt: ["$leaseExpiresAt", "$$NOW"] } }),
+    };
+  }
 }

@@ -23,24 +23,24 @@ to expose effective worker policies and renewable lease deadlines.
 ## Usage
 
 ```typescript
-import { Monque } from '@monque/core';
-import { createManagementSurface, generateManagementOpenApiDocument } from '@monque/management';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { createManagementSurface, generateManagementOpenApiDocument } from "@monque/management";
+import { MongoClient } from "mongodb";
 
-const client = new MongoClient('mongodb://localhost:27017');
+const client = new MongoClient("mongodb://localhost:27017");
 await client.connect();
 
-const monque = new Monque(client.db('monque'));
+const monque = new Monque(client.db("monque"));
 await monque.initialize();
 
 const management = createManagementSurface({
-	monque,
-	readOnly: true,
-	authorize: ({ action }) => action === 'read',
+  monque,
+  readOnly: true,
+  authorize: ({ action }) => action === "read",
 });
 
 const result = await management.openApiHandler.handle(
-	new Request('https://example.com/api/v1/health', { method: 'GET' }),
+  new Request("https://example.com/api/v1/health", { method: "GET" }),
 );
 
 const openApiDocument = await generateManagementOpenApiDocument();
@@ -53,9 +53,9 @@ Pass information from your authenticated session to `openApiHandler.handle()` as
 
 ```typescript
 await management.openApiHandler.handle(request, {
-	context: {
-		managementContext: { userId: 'operator-1' },
-	},
+  context: {
+    managementContext: { userId: "operator-1" },
+  },
 });
 ```
 
@@ -63,25 +63,25 @@ await management.openApiHandler.handle(request, {
 
 The API uses the `/api/v1` prefix:
 
-| Method | Path | Operation |
-| ------ | ---- | --------- |
-| `GET` | `/health` | `getSchedulerHealth` |
-| `GET` | `/capabilities` | `getCapabilities` |
-| `GET` | `/processing?name=...` (optional job name) | `getProcessingState` |
-| `POST` | `/processing/actions/pause` | `pauseProcessing` |
-| `POST` | `/processing/actions/resume` | `resumeProcessing` |
-| `GET` | `/queue-views?name=...` (optional exact name filter) | `listQueueViews` |
-| `GET` | `/jobs` | `listJobs` |
-| `GET` | `/jobs/stats` | `getJobStats` |
-| `GET` | `/jobs/{id}` | `getJob` |
-| `POST` | `/jobs/{id}/actions/cancel` | `cancelJob` |
-| `POST` | `/jobs/{id}/actions/retry` | `retryJob` |
-| `POST` | `/jobs/{id}/actions/reschedule` | `rescheduleJob` |
-| `DELETE` | `/jobs/{id}` | `deleteJob` |
-| `POST` | `/jobs/actions/cancel` | `cancelJobs` |
-| `POST` | `/jobs/actions/retry` | `retryJobs` |
-| `POST` | `/jobs/actions/delete` | `deleteJobs` |
-| `POST` | `/jobs/actions/selected` | `selectedJobActions` |
+| Method   | Path                                                 | Operation            |
+| -------- | ---------------------------------------------------- | -------------------- |
+| `GET`    | `/health`                                            | `getSchedulerHealth` |
+| `GET`    | `/capabilities`                                      | `getCapabilities`    |
+| `GET`    | `/processing?name=...` (optional job name)           | `getProcessingState` |
+| `POST`   | `/processing/actions/pause`                          | `pauseProcessing`    |
+| `POST`   | `/processing/actions/resume`                         | `resumeProcessing`   |
+| `GET`    | `/queue-views?name=...` (optional exact name filter) | `listQueueViews`     |
+| `GET`    | `/jobs`                                              | `listJobs`           |
+| `GET`    | `/jobs/stats`                                        | `getJobStats`        |
+| `GET`    | `/jobs/{id}`                                         | `getJob`             |
+| `POST`   | `/jobs/{id}/actions/cancel`                          | `cancelJob`          |
+| `POST`   | `/jobs/{id}/actions/retry`                           | `retryJob`           |
+| `POST`   | `/jobs/{id}/actions/reschedule`                      | `rescheduleJob`      |
+| `DELETE` | `/jobs/{id}`                                         | `deleteJob`          |
+| `POST`   | `/jobs/actions/cancel`                               | `cancelJobs`         |
+| `POST`   | `/jobs/actions/retry`                                | `retryJobs`          |
+| `POST`   | `/jobs/actions/delete`                               | `deleteJobs`         |
+| `POST`   | `/jobs/actions/selected`                             | `selectedJobActions` |
 
 Actions the scheduler does not support return `403`. They still appear in the OpenAPI document.
 `readOnly: true` also keeps read endpoints available while write actions return `403`.

@@ -7,18 +7,18 @@ Pass options to `createDashboardExpressRouter()` in your server code:
 
 ```typescript
 app.use(
-  '/ops/dashboard',
+  "/ops/dashboard",
   createDashboardExpressRouter({
-    apiBaseUrl: '/ops',
+    apiBaseUrl: "/ops",
     pollingIntervalMs: 15_000,
   }),
 );
 ```
 
-| Option | Required | Meaning |
-| --- | --- | --- |
-| `apiBaseUrl` | Yes | Management router mount URL, such as `/ops`. Do not include `/api/v1`. |
-| `pollingIntervalMs` | No | Positive integer in milliseconds. Omit to disable periodic refresh. |
+| Option              | Required | Meaning                                                                |
+| ------------------- | -------- | ---------------------------------------------------------------------- |
+| `apiBaseUrl`        | Yes      | Management router mount URL, such as `/ops`. Do not include `/api/v1`. |
+| `pollingIntervalMs` | No       | Positive integer in milliseconds. Omit to disable periodic refresh.    |
 
 The dashboard base path is inferred from its Express mount. Keep the public dashboard path
 and the path Express receives consistent when configuring a reverse proxy.
@@ -36,11 +36,11 @@ Never include credentials or secrets in it.
 
 With `pollingIntervalMs: 15_000`:
 
-| Data | Base interval |
-| --- | --- |
-| Job lists and job details | 15 seconds |
-| Queue statistics, scheduler health, and processing state | 45 seconds |
-| Permissions | 45 seconds for processing controls; 90 seconds elsewhere |
+| Data                                                     | Base interval                                            |
+| -------------------------------------------------------- | -------------------------------------------------------- |
+| Job lists and job details                                | 15 seconds                                               |
+| Queue statistics, scheduler health, and processing state | 45 seconds                                               |
+| Permissions                                              | 45 seconds for processing controls; 90 seconds elsewhere |
 
 Each interval adds up to 10% random delay to spread requests across clients. Requests back
 off after errors, and periodic polling pauses while the tab is hidden. Job actions refresh
@@ -113,13 +113,13 @@ Express applications only need the router options above.
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| API requests return 404 | `apiBaseUrl` must point to the Management mount, without `/api/v1`. |
-| Direct job links fail after reload | Serve dashboard paths through the dashboard router and preserve the mount path at the proxy. |
-| API requests return 401 or 403 | Check session middleware, cookies, `readOnly`, and `authorize`. |
-| Jobs remain pending | Register a worker for the exact job name and call `monque.start()` after initialization. Check the job's scheduled time. |
-| Scheduler is unavailable but jobs are visible | Health describes the `Monque` instance passed to the API. An initialized instance that has not been started can read jobs but reports unhealthy. |
-| Worker activity is zero despite jobs processing elsewhere | Worker registration and activity describe the local instance, not every process using the collection. |
-| A recent status change is not visible yet | Wait for the next refresh or use Refresh. Statistics also have a cache TTL. |
-| Relative times appear in the future | Compare browser and server clocks. A future scheduled run is expected; future creation or update times can indicate clock skew. |
+| Symptom                                                   | Check                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API requests return 404                                   | `apiBaseUrl` must point to the Management mount, without `/api/v1`.                                                                              |
+| Direct job links fail after reload                        | Serve dashboard paths through the dashboard router and preserve the mount path at the proxy.                                                     |
+| API requests return 401 or 403                            | Check session middleware, cookies, `readOnly`, and `authorize`.                                                                                  |
+| Jobs remain pending                                       | Register a worker for the exact job name and call `monque.start()` after initialization. Check the job's scheduled time.                         |
+| Scheduler is unavailable but jobs are visible             | Health describes the `Monque` instance passed to the API. An initialized instance that has not been started can read jobs but reports unhealthy. |
+| Worker activity is zero despite jobs processing elsewhere | Worker registration and activity describe the local instance, not every process using the collection.                                            |
+| A recent status change is not visible yet                 | Wait for the next refresh or use Refresh. Statistics also have a cache TTL.                                                                      |
+| Relative times appear in the future                       | Compare browser and server clocks. A future scheduled run is expected; future creation or update times can indicate clock skew.                  |

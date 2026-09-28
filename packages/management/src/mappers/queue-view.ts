@@ -1,52 +1,52 @@
-import type { QueueStats, QueueViewSummary } from '@monque/core';
+import type { QueueStats, QueueViewSummary } from "@monque/core";
 
 import type {
-	QueueStatsDto,
-	QueueViewSummaryDto,
-	QueueViewSummaryListDto,
-} from '../schemas/index.js';
+  QueueStatsDto,
+  QueueViewSummaryDto,
+  QueueViewSummaryListDto,
+} from "../schemas/index.js";
 
 export function toQueueViewSummaryListDto(
-	queueViews: readonly QueueViewSummary[],
+  queueViews: readonly QueueViewSummary[],
 ): QueueViewSummaryListDto {
-	return {
-		queueViews: queueViews.map(toQueueViewSummaryDto),
-	};
+  return {
+    queueViews: queueViews.map(toQueueViewSummaryDto),
+  };
 }
 
 export function toQueueStatsDto(stats: QueueStats): QueueStatsDto {
-	const dto: QueueStatsDto = {
-		pending: stats.pending,
-		processing: stats.processing,
-		completed: stats.completed,
-		failed: stats.failed,
-		cancelled: stats.cancelled,
-		total: stats.total,
-	};
+  const dto: QueueStatsDto = {
+    pending: stats.pending,
+    processing: stats.processing,
+    completed: stats.completed,
+    failed: stats.failed,
+    cancelled: stats.cancelled,
+    total: stats.total,
+  };
 
-	if (stats.avgProcessingDurationMs !== undefined) {
-		dto.avgProcessingDurationMs = stats.avgProcessingDurationMs;
-	}
+  if (stats.avgProcessingDurationMs !== undefined) {
+    dto.avgProcessingDurationMs = stats.avgProcessingDurationMs;
+  }
 
-	return dto;
+  return dto;
 }
 
 function toQueueViewSummaryDto(queueView: QueueViewSummary): QueueViewSummaryDto {
-	return {
-		name: queueView.name,
-		hasPersistedJobs: queueView.hasPersistedJobs,
-		hasRegisteredWorker: queueView.hasRegisteredWorker,
-		stats: toQueueStatsDto(queueView.stats),
-		worker: queueView.worker
-			? {
-					concurrency: queueView.worker.concurrency,
-					activeCount: queueView.worker.activeCount,
-					paused: queueView.worker.paused,
-					hasSchema: queueView.worker.hasSchema,
-					maxRetries: queueView.worker.maxRetries,
-					baseRetryInterval: queueView.worker.baseRetryInterval,
-					maxBackoffDelay: queueView.worker.maxBackoffDelay,
-				}
-			: null,
-	};
+  return {
+    name: queueView.name,
+    hasPersistedJobs: queueView.hasPersistedJobs,
+    hasRegisteredWorker: queueView.hasRegisteredWorker,
+    stats: toQueueStatsDto(queueView.stats),
+    worker: queueView.worker
+      ? {
+          concurrency: queueView.worker.concurrency,
+          activeCount: queueView.worker.activeCount,
+          paused: queueView.worker.paused,
+          hasSchema: queueView.worker.hasSchema,
+          maxRetries: queueView.worker.maxRetries,
+          baseRetryInterval: queueView.worker.baseRetryInterval,
+          maxBackoffDelay: queueView.worker.maxBackoffDelay,
+        }
+      : null,
+  };
 }

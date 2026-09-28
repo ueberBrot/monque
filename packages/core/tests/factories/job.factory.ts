@@ -1,17 +1,17 @@
-import { faker } from '@faker-js/faker';
-import { Factory } from 'fishery';
-import { ObjectId } from 'mongodb';
+import { faker } from "@faker-js/faker";
+import { Factory } from "fishery";
+import { ObjectId } from "mongodb";
 
-import { TEST_CONSTANTS } from '@tests/setup/constants.js';
-import { JobStatus, type PersistedJob } from '@/jobs';
+import { JobStatus, type PersistedJob } from "@/jobs";
+import { TEST_CONSTANTS } from "@tests/setup/constants.js";
 
 /**
  * Transient parameters for JobFactory.
  * These don't end up in the built object but control factory behavior.
  */
 interface JobTransientParams {
-	/** Generate custom data shape instead of default email/userId */
-	withData?: Record<string, unknown>;
+  /** Generate custom data shape instead of default email/userId */
+  withData?: Record<string, unknown>;
 }
 
 /**
@@ -34,70 +34,70 @@ interface JobTransientParams {
  * ```
  */
 export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientParams>(
-	({ transientParams }) => {
-		const data = transientParams.withData ?? {
-			email: faker.internet.email(),
-			userId: faker.string.uuid(),
-		};
+  ({ transientParams }) => {
+    const data = transientParams.withData ?? {
+      email: faker.internet.email(),
+      userId: faker.string.uuid(),
+    };
 
-		return {
-			_id: new ObjectId(faker.database.mongodbObjectId()),
-			name: TEST_CONSTANTS.JOB_NAME,
-			data,
-			status: JobStatus.PENDING,
-			failCount: 0,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			nextRunAt: new Date(),
-		};
-	},
+    return {
+      _id: new ObjectId(faker.database.mongodbObjectId()),
+      name: TEST_CONSTANTS.JOB_NAME,
+      data,
+      status: JobStatus.PENDING,
+      failCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      nextRunAt: new Date(),
+    };
+  },
 );
 
 /** Convenience builders for common job states */
 export const JobFactoryHelpers = {
-	/** Build a job in PENDING state */
-	pending: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.PENDING,
-			...overrides,
-		}),
+  /** Build a job in PENDING state */
+  pending: (overrides?: Partial<PersistedJob<unknown>>) =>
+    JobFactory.build({
+      status: JobStatus.PENDING,
+      ...overrides,
+    }),
 
-	/** Build a job in PROCESSING state with lockedAt set */
-	processing: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.PROCESSING,
-			lockedAt: new Date(),
-			claimedBy: overrides?.claimedBy ?? 'test-instance-id',
-			lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
-			...overrides,
-		}),
+  /** Build a job in PROCESSING state with lockedAt set */
+  processing: (overrides?: Partial<PersistedJob<unknown>>) =>
+    JobFactory.build({
+      status: JobStatus.PROCESSING,
+      lockedAt: new Date(),
+      claimedBy: overrides?.claimedBy ?? "test-instance-id",
+      lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
+      ...overrides,
+    }),
 
-	/** Build a job in COMPLETED state */
-	completed: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.COMPLETED,
-			...overrides,
-		}),
+  /** Build a job in COMPLETED state */
+  completed: (overrides?: Partial<PersistedJob<unknown>>) =>
+    JobFactory.build({
+      status: JobStatus.COMPLETED,
+      ...overrides,
+    }),
 
-	/** Build a job in FAILED state with failCount and failReason */
-	failed: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.FAILED,
-			failCount: 10,
-			failReason: 'Max retries exceeded',
-			...overrides,
-		}),
+  /** Build a job in FAILED state with failCount and failReason */
+  failed: (overrides?: Partial<PersistedJob<unknown>>) =>
+    JobFactory.build({
+      status: JobStatus.FAILED,
+      failCount: 10,
+      failReason: "Max retries exceeded",
+      ...overrides,
+    }),
 
-	/** Build a job in CANCELLED state */
-	cancelled: (overrides?: Partial<PersistedJob<unknown>>) =>
-		JobFactory.build({
-			status: JobStatus.CANCELLED,
-			...overrides,
-		}),
+  /** Build a job in CANCELLED state */
+  cancelled: (overrides?: Partial<PersistedJob<unknown>>) =>
+    JobFactory.build({
+      status: JobStatus.CANCELLED,
+      ...overrides,
+    }),
 
-	/** Build a job with custom data payload */
-	withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
-		JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {
-			transient: { withData: data },
-		}) as PersistedJob<T>,
+  /** Build a job with custom data payload */
+  withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
+    JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {
+      transient: { withData: data },
+    }) as PersistedJob<T>,
 };

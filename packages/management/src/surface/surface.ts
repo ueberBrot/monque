@@ -1,7 +1,7 @@
-import { OpenAPIHandler } from '@orpc/openapi/fetch';
+import { OpenAPIHandler } from "@orpc/openapi/fetch";
 
-import { createManagementRouter } from '../orpc/index.js';
-import type { ManagementOptions, ManagementSurface } from './types.js';
+import { createManagementRouter } from "../orpc/index.js";
+import type { ManagementOptions, ManagementSurface } from "./types.js";
 
 /**
  * Create a framework-neutral OpenAPI handler for the Monque management API.
@@ -24,11 +24,11 @@ import type { ManagementOptions, ManagementSurface } from './types.js';
  * ```
  */
 export function createManagementSurface<TContext = unknown>(
-	options: ManagementOptions<TContext>,
+  options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
-	return {
-		openApiHandler: new OpenAPIHandler(createManagementRouter(options), {
-			customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
-		}),
-	};
+  return {
+    openApiHandler: new OpenAPIHandler(createManagementRouter(options), {
+      customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
+    }),
+  };
 }
