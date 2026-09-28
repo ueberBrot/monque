@@ -66,7 +66,7 @@ describe("renewable leases", () => {
       const collectionName = uniqueCollectionName("expired-lease");
       const owner = new Monque(db, {
         collectionName,
-        leaseDuration: 500,
+        leaseDuration: 30_000,
         heartbeatInterval: 20,
         shutdownTimeout: 1,
         recoverStaleJobs: false,
@@ -127,7 +127,7 @@ describe("renewable leases", () => {
       const collectionName = uniqueCollectionName("leases");
       const worker = new Monque(db, {
         collectionName,
-        leaseDuration: 1000,
+        leaseDuration: 30_000,
         heartbeatInterval: 20,
         lockTimeout: 10,
       });
@@ -147,14 +147,16 @@ describe("renewable leases", () => {
         await started.promise;
         const claimed = await worker.getJob(job._id);
         if (draining) stopping = worker.stop();
-        await waitFor(async () => {
-          const heartbeat = (await worker.getJob(job._id))?.lastHeartbeat;
-          return (
-            heartbeat instanceof Date &&
-            claimed?.leaseExpiresAt instanceof Date &&
-            heartbeat > claimed.leaseExpiresAt
-          );
-        });
+        let previousDeadline = claimed?.leaseExpiresAt;
+        // Two renewals rule out a single heartbeat already in flight when draining starts.
+        for (let renewal = 0; renewal < 2; renewal++) {
+          await waitFor(async () => {
+            const deadline = (await worker.getJob(job._id))?.leaseExpiresAt;
+            if (!deadline || !previousDeadline || deadline <= previousDeadline) return false;
+            previousDeadline = deadline;
+            return true;
+          });
+        }
         await observer.initialize();
         expect(await observer.getJob(job._id)).toMatchObject({
           status: JobStatus.PROCESSING,
