@@ -40,15 +40,13 @@ jobs:
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-
-      - name: Build
-        run: vp run build
+          task-cache: "true"
 
       - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          publish-script: vp exec changeset publish
+          publish-script: vp run release:publish
           version-script: vp run release:version
           commit-message: "chore: update versions"
           pr-title: "chore: update versions"

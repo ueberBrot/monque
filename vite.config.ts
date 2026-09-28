@@ -51,6 +51,11 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      "release:publish": {
+        // Build publishable packages only when Changesets takes its publish path.
+        command: "vp run --filter './packages/*' build && vp exec changeset publish",
+        cache: false,
+      },
       "release:version": {
         command: "vp exec changeset version && vp install --lockfile-only --ignore-scripts",
         cache: false,

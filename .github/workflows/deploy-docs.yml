@@ -21,6 +21,7 @@ jobs:
   build:
     name: Build Docs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
     steps:
@@ -52,6 +53,8 @@ jobs:
         id: setup
         if: steps.decide.outputs.should_deploy == 'true'
         uses: ./.github/actions/setup-vite-plus
+        with:
+          task-cache: "true"
 
       - name: Build packages
         if: steps.decide.outputs.should_deploy == 'true'
@@ -67,6 +70,7 @@ jobs:
     needs: build
     if: needs.build.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
