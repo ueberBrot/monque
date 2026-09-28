@@ -7,7 +7,7 @@ import { isDashboardDevScenarioId } from "./src/mock/scenario-catalog.js";
 
 export default defineConfig(async ({ mode }) => {
   const { environment, mongoUri, databaseName } = readDashboardDevServerEnvironment(
-    loadEnv(mode, process.cwd(), ""),
+    loadEnv(mode, process.cwd(), "MONQUE_DASHBOARD_"),
   );
   const devMode = environment.mode;
 

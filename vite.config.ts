@@ -82,7 +82,11 @@ export default defineConfig({
     },
   },
   test: {
-    projects: ["packages/*/vite.config.ts", "apps/dashboard-dev/vite.config.ts"],
+    projects: [
+      "packages/*/vite.config.ts",
+      "apps/dashboard-dev/vite.config.ts",
+      { test: { name: "ci", include: ["scripts/ci/tests/**/*.test.ts"] } },
+    ],
   },
   staged: {
     "*": "vp check --fix",

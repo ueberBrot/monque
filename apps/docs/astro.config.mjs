@@ -1,6 +1,6 @@
 // @ts-check
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { unified } from "@astrojs/markdown-remark";
 import starlight from "@astrojs/starlight";
 import astroMermaid from "astro-mermaid";
@@ -14,6 +14,34 @@ const corePackageJsonUrl = new URL("../../packages/core/package.json", import.me
 const corePackageJson = JSON.parse(readFileSync(corePackageJsonUrl, "utf8"));
 const coreVersion =
   typeof corePackageJson?.version === "string" ? corePackageJson.version : "unknown";
+
+const apiReferences = [
+  { package: "core", output: "api", label: "Core API" },
+  { package: "tsed", output: "api-tsed", label: "Ts.ED API" },
+  { package: "management", output: "api-management", label: "Management API" },
+  {
+    package: "management-express",
+    output: "api-management-express",
+    label: "Management Express API",
+  },
+  { package: "dashboard", output: "api-dashboard", label: "Dashboard API" },
+  { package: "dashboard-express", output: "api-dashboard-express", label: "Dashboard Express API" },
+];
+const reuseApi = process.env["MONQUE_DOCS_REUSE_API"] === "1";
+if (reuseApi) {
+  for (const { output } of apiReferences) {
+    const directory = new URL(`./src/content/docs/${output}/`, import.meta.url);
+    if (
+      !readdirSync(directory, { recursive: true, encoding: "utf8" }).some((file) =>
+        file.endsWith(".md"),
+      )
+    ) {
+      throw new Error(
+        `Missing generated documentation in ${output}; run vp run generate:api first.`,
+      );
+    }
+  }
+}
 
 // https://astro.build/config
 export default defineConfig({
@@ -112,38 +140,11 @@ export default defineConfig({
         },
         {
           label: "API Reference",
-          items: [
-            {
-              label: "Core API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api", collapsed: true } }],
-            },
-            {
-              label: "Ts.ED API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api-tsed", collapsed: true } }],
-            },
-            {
-              label: "Management API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api-management", collapsed: true } }],
-            },
-            {
-              label: "Management Express API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api-management-express", collapsed: true } }],
-            },
-            {
-              label: "Dashboard API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api-dashboard", collapsed: true } }],
-            },
-            {
-              label: "Dashboard Express API",
-              collapsed: true,
-              items: [{ autogenerate: { directory: "api-dashboard-express", collapsed: true } }],
-            },
-          ],
+          items: apiReferences.map(({ output, label }) => ({
+            label,
+            collapsed: true,
+            items: [{ autogenerate: { directory: output, collapsed: true } }],
+          })),
         },
       ],
       head: [
@@ -161,120 +162,26 @@ export default defineConfig({
         starlightLinksValidator({
           errorOnRelativeLinks: true,
         }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/core/src/index.ts"],
-          tsconfig: "../../packages/core/tsconfig.json",
-          output: "api",
-          sidebar: {
-            label: "Core API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/tsed/src/index.ts"],
-          tsconfig: "../../packages/tsed/tsconfig.json",
-          output: "api-tsed",
-          sidebar: {
-            label: "Ts.ED API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/management/src/index.ts"],
-          tsconfig: "../../packages/management/tsconfig.json",
-          output: "api-management",
-          sidebar: {
-            label: "Management API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/management-express/src/index.ts"],
-          tsconfig: "../../packages/management-express/tsconfig.json",
-          output: "api-management-express",
-          sidebar: {
-            label: "Management Express API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/dashboard/src/index.ts"],
-          tsconfig: "../../packages/dashboard/tsconfig.json",
-          output: "api-dashboard",
-          sidebar: {
-            label: "Dashboard API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
-        starlightTypeDoc({
-          entryPoints: ["../../packages/dashboard-express/src/index.ts"],
-          tsconfig: "../../packages/dashboard-express/tsconfig.json",
-          output: "api-dashboard-express",
-          sidebar: {
-            label: "Dashboard Express API",
-            collapsed: true,
-          },
-          typeDoc: {
-            excludePrivate: true,
-            excludeProtected: true,
-            excludeInternal: true,
-            readme: "none",
-            parametersFormat: "table",
-            enumMembersFormat: "table",
-            useCodeBlocks: true,
-            gitRevision: "main",
-          },
-        }),
+        ...(reuseApi
+          ? []
+          : apiReferences.map(({ package: name, output, label }) =>
+              starlightTypeDoc({
+                entryPoints: [`../../packages/${name}/src/index.ts`],
+                tsconfig: `../../packages/${name}/tsconfig.json`,
+                output,
+                sidebar: { label, collapsed: true },
+                typeDoc: {
+                  excludePrivate: true,
+                  excludeProtected: true,
+                  excludeInternal: true,
+                  readme: "none",
+                  parametersFormat: "table",
+                  enumMembersFormat: "table",
+                  useCodeBlocks: true,
+                  gitRevision: "main",
+                },
+              }),
+            )),
       ],
     }),
   ],

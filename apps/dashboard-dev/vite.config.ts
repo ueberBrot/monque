@@ -5,7 +5,7 @@ import { defineConfig, lazyPlugins, loadConfigFromFile, loadEnv } from "vite-plu
 import { readDashboardDevServerEnvironment } from "./src/environment.js";
 
 const config = defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const env = loadEnv(mode, process.cwd(), "MONQUE_DASHBOARD_");
   const { environment, liveApiBaseUrl } = readDashboardDevServerEnvironment(env);
   const devMode = environment.mode;
 

@@ -15,6 +15,8 @@ permissions:
 jobs:
   quality:
     name: Quality & Package Builds
+    outputs:
+      runtime: ${{ steps.scope.outputs.runtime }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,11 +28,20 @@ jobs:
         with:
           task-cache: "true"
 
+      - name: Select checks
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash scripts/ci/scope.sh
+
       - name: Format
         run: vp fmt --check
 
       - name: Lint
         run: vp lint --deny-warnings
+
+      - name: Test CI selection and gate
+        run: vp test run --project ci
 
       - name: Build packages
         run: vp run --filter './packages/*' build
@@ -38,14 +49,17 @@ jobs:
       # Workspace type checks consume the packages' generated declarations.
       - name: Type check
         run: |
+          vp run --filter @monque/docs --ignore-depends-on generate:api
           vp run --filter './packages/*' --filter './apps/*' --ignore-depends-on type-check
           vp lint --type-aware --type-check -A all
 
-      - name: Upload built packages
+      - name: Upload build outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-artifacts
-          path: packages/*/dist
+          path: |
+            packages/*/dist
+            apps/docs/src/content/docs/api*/**
           if-no-files-found: error
           compression-level: 1
           retention-days: 1
@@ -64,17 +78,25 @@ jobs:
         with:
           task-cache: "true"
 
-      - name: Download built packages
+      - name: Download build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
-          path: packages
+          path: .
 
       - name: Build apps
-        run: vp run --filter './apps/*' --ignore-depends-on build
+        env:
+          RUNTIME_CHECKS: ${{ needs.quality.outputs.runtime }}
+        run: |
+          if [[ "$RUNTIME_CHECKS" == "true" ]]; then
+            vp run --filter './apps/*' --ignore-depends-on build
+          else
+            vp run --filter @monque/docs --ignore-depends-on build
+          fi
 
   test:
     name: Test (${{ matrix.group }})
+    if: needs.quality.outputs.runtime == 'true'
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -89,11 +111,11 @@ jobs:
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
 
-      - name: Download built packages
+      - name: Download build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
-          path: packages
+          path: .
 
       - name: Frontend tests
         if: matrix.group == 'frontend'
@@ -105,6 +127,7 @@ jobs:
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})
+    if: needs.quality.outputs.runtime == 'true'
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -128,11 +151,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
-      - name: Download built packages
+      - name: Download build outputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
-          path: packages
+          path: .
       - name: Install Chromium
         working-directory: apps/dashboard-dev
         run: vp exec playwright install --with-deps --only-shell chromium
@@ -156,13 +179,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check results
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          for result in $RESULTS; do
-            if [[ "$result" != "success" ]]; then
-              echo "Job failed with result: $result"
-              exit 1
-            fi
-          done
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: bash scripts/ci/gate.sh
