@@ -17,31 +17,40 @@ or sharded cluster; workers can use polling with standalone MongoDB.
 ## Run a worker
 
 ```typescript
-import { Monque } from '@monque/core';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { MongoClient } from "mongodb";
 
-const client = await MongoClient.connect('mongodb://localhost:27017');
-const monque = new Monque(client.db('myapp'));
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("myapp"));
 await monque.initialize();
 
-monque.register<{ message: string }>('log-message', async (job) => {
-  console.log(job.data.message);
-}, { concurrency: 2, maxRetries: 3 });
+monque.register<{ message: string }>(
+  "log-message",
+  async (job) => {
+    console.log(job.data.message);
+  },
+  { concurrency: 2, maxRetries: 3 },
+);
 monque.start();
 
-await monque.enqueue('log-message', { message: 'Hello from Monque' });
-await monque.schedule('0 9 * * *', 'log-message', { message: 'Daily reminder' }, {
-  timezone: 'UTC',
-  uniqueKey: 'daily-reminder',
-});
+await monque.enqueue("log-message", { message: "Hello from Monque" });
+await monque.schedule(
+  "0 9 * * *",
+  "log-message",
+  { message: "Daily reminder" },
+  {
+    timezone: "UTC",
+    uniqueKey: "daily-reminder",
+  },
+);
 
 async function shutdown() {
   await monque.stop();
   await client.close();
 }
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 ```
 
 Register a worker for each job name you submit. `stop()` waits for running handlers up to
@@ -49,16 +58,16 @@ Register a worker for each job name you submit. `stop()` waits for running handl
 
 ## Scheduling and execution
 
-| Need | Use |
-| --- | --- |
-| Immediate or delayed work | `enqueue(name, data, { runAt?, uniqueKey? })` |
-| Recurring work | `schedule(cron, name, data, { timezone?, uniqueKey? })` |
-| Batch submission | `enqueueMany(jobs)` with per-job scheduling and unique keys |
+| Need                              | Use                                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey? })`                                                       |
+| Recurring work                    | `schedule(cron, name, data, { timezone?, uniqueKey? })`                                             |
+| Batch submission                  | `enqueueMany(jobs)` with per-job scheduling and unique keys                                         |
 | Jobs committed with business data | Pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
-| Payload validation | Pass a Standard Schema compatible `schema` to `register()` |
-| Retry policy | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker |
-| Concurrency limits | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency` |
-| Local processing control | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)` |
+| Payload validation                | Pass a Standard Schema compatible `schema` to `register()`                                          |
+| Retry policy                      | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker                 |
+| Concurrency limits                | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency`                         |
+| Local processing control          | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)`                                    |
 
 A unique key prevents duplicate pending or processing jobs with the same name. Once a
 job is terminal, that key can be used again. Batch submission returns inserted and
@@ -87,10 +96,10 @@ to inspect jobs and local worker activity. Job actions include retry, cancellati
 rescheduling, and deletion, with bulk methods for matching jobs.
 
 ```typescript
-monque.on('job:complete', ({ job, duration }) => {
+monque.on("job:complete", ({ job, duration }) => {
   console.log(`${job.name} completed in ${duration}ms`);
 });
-monque.on('job:fail', ({ job, error, willRetry }) => {
+monque.on("job:fail", ({ job, error, willRetry }) => {
   console.error(job.name, error.message, { willRetry });
 });
 ```
@@ -109,7 +118,7 @@ For HTTP access, use [@monque/management](../management). Express applications c
 
 ## Development
 
-From this package directory, run `bun run test:unit` for unit tests or `bun run test`
+From this package directory, run `vp run test:unit` for unit tests or `vp run test`
 for the full suite. Integration tests use MongoDB Testcontainers and require Docker.
 See the [repository README](../../README.md#development) for workspace commands.
 

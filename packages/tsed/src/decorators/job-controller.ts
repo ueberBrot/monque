@@ -16,12 +16,12 @@
  * }
  * ```
  */
-import { Store, useDecorators } from '@tsed/core';
-import { Injectable } from '@tsed/di';
+import { Store, useDecorators } from "@tsed/core";
+import { Injectable } from "@tsed/di";
 
-import { MONQUE, ProviderTypes } from '@/constants';
+import { MONQUE, ProviderTypes } from "@/constants";
 
-import type { JobStore } from './types.js';
+import type { JobStore } from "./types.js";
 
 /**
  * Class decorator that registers a class as a job controller.
@@ -29,27 +29,27 @@ import type { JobStore } from './types.js';
  * @param namespace - Optional namespace prefix for job names
  */
 export function JobController(namespace?: string): ClassDecorator {
-	return useDecorators(
-		// Register as injectable with custom provider type
-		Injectable({
-			type: ProviderTypes.JOB_CONTROLLER,
-		}),
-		// Apply custom decorator to store metadata
-		(target: object) => {
-			const store = Store.from(target);
+  return useDecorators(
+    // Register as injectable with custom provider type
+    Injectable({
+      type: ProviderTypes.JOB_CONTROLLER,
+    }),
+    // Apply custom decorator to store metadata
+    (target: object) => {
+      const store = Store.from(target);
 
-			// Get existing store or create new one
-			const existing = store.get<Partial<JobStore>>(MONQUE) || {};
+      // Get existing store or create new one
+      const existing = store.get<Partial<JobStore>>(MONQUE) || {};
 
-			// Merge with new metadata, only include namespace if defined
-			const jobStore: JobStore = {
-				type: 'controller',
-				...(namespace !== undefined && { namespace }),
-				jobs: existing.jobs || [],
-				cronJobs: existing.cronJobs || [],
-			};
+      // Merge with new metadata, only include namespace if defined
+      const jobStore: JobStore = {
+        type: "controller",
+        ...(namespace !== undefined && { namespace }),
+        jobs: existing.jobs || [],
+        cronJobs: existing.cronJobs || [],
+      };
 
-			store.set(MONQUE, jobStore);
-		},
-	);
+      store.set(MONQUE, jobStore);
+    },
+  );
 }

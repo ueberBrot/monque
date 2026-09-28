@@ -18,8 +18,8 @@
  * }
  * ```
  */
-import { appendJobMetadata } from './append-job-metadata.js';
-import type { JobDecoratorOptions, JobMetadata } from './types.js';
+import { appendJobMetadata } from "./append-job-metadata.js";
+import type { JobDecoratorOptions, JobMetadata } from "./types.js";
 
 /**
  * Method decorator that registers a method as a job handler.
@@ -28,19 +28,19 @@ import type { JobDecoratorOptions, JobMetadata } from './types.js';
  * @param options - Optional job configuration (concurrency, replace, etc.)
  */
 export function Job(name: string, options?: JobDecoratorOptions): MethodDecorator {
-	return <T>(
-		target: object,
-		propertyKey: string | symbol,
-		_descriptor: TypedPropertyDescriptor<T>,
-	): void => {
-		const methodName = String(propertyKey);
+  return <T>(
+    target: object,
+    propertyKey: string | symbol,
+    _descriptor: TypedPropertyDescriptor<T>,
+  ): void => {
+    const methodName = String(propertyKey);
 
-		const jobMetadata: JobMetadata = {
-			name,
-			method: methodName,
-			opts: options || {},
-		};
+    const jobMetadata: JobMetadata = {
+      name,
+      method: methodName,
+      opts: options || {},
+    };
 
-		appendJobMetadata(target, jobMetadata);
-	};
+    appendJobMetadata(target, jobMetadata);
+  };
 }

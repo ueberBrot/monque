@@ -1,5 +1,5 @@
 // helpers
-export { buildSelectorQuery } from './helpers.js';
+export { buildSelectorQuery } from "./helpers.js";
 // Main class and options
-export { Monque } from './monque.js';
-export type { MonqueOptions, ProcessingState } from './types.js';
+export { Monque } from "./monque.js";
+export type { MonqueOptions, ProcessingState } from "./types.js";

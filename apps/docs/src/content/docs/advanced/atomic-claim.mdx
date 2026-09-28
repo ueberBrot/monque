@@ -17,8 +17,8 @@ By default, each `Monque` instance gets a generated UUID. You can provide a uniq
 identify its jobs in logs and the dashboard:
 
 ```typescript
-import { hostname } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
 
 const monque = new Monque(db, {
   schedulerInstanceId: `${hostname()}-${randomUUID()}`,
@@ -49,12 +49,12 @@ that process should run:
 
 ```typescript
 const monque = new Monque(db, {
-  collectionName: 'monque_jobs',
+  collectionName: "monque_jobs",
   workerConcurrency: 5,
   instanceConcurrency: 20,
 });
 
-monque.register('send-email', emailHandler);
+monque.register("send-email", emailHandler);
 await monque.initialize();
 monque.start();
 ```

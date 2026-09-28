@@ -20,12 +20,12 @@ const monque = new Monque(db, {
 });
 ```
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `heartbeatInterval` | 30 seconds | How often this instance updates heartbeats for its processing jobs. |
-| `lockTimeout` | 30 minutes | Age of `lockedAt` after which a processing job is eligible for startup recovery. |
-| `leaseDuration` | Disabled | Renewable claim lifetime in milliseconds; must exceed `heartbeatInterval` and be at most 2,147,483,647 ms. |
-| `recoverStaleJobs` | `true` | Recover eligible jobs during initialization and, with leases enabled, during heartbeat maintenance. |
+| Option              | Default    | Purpose                                                                                                    |
+| ------------------- | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| `heartbeatInterval` | 30 seconds | How often this instance updates heartbeats for its processing jobs.                                        |
+| `lockTimeout`       | 30 minutes | Age of `lockedAt` after which a processing job is eligible for startup recovery.                           |
+| `leaseDuration`     | Disabled   | Renewable claim lifetime in milliseconds; must exceed `heartbeatInterval` and be at most 2,147,483,647 ms. |
+| `recoverStaleJobs`  | `true`     | Recover eligible jobs during initialization and, with leases enabled, during heartbeat maintenance.        |
 
 Set `lockTimeout` above your longest expected job duration, with room for slower runs.
 If a valid handler can take an hour, a 30-minute timeout can cause another initializing
@@ -99,10 +99,10 @@ Heartbeats describe activity for jobs owned by each scheduler instance. Listen f
 background update failures and recovery events:
 
 ```typescript
-monque.on('job:error', ({ error }) => {
-  console.error('Scheduler error:', error.message);
+monque.on("job:error", ({ error }) => {
+  console.error("Scheduler error:", error.message);
 });
-monque.on('stale:recovered', ({ count }) => {
+monque.on("stale:recovered", ({ count }) => {
   console.warn(`Recovered ${count} jobs`);
 });
 ```
@@ -119,12 +119,12 @@ completes or times out. A timeout does not forcibly stop the handler's applicati
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| A running job is recovered by another instance | For absolute locks, increase `lockTimeout`. For leases, check renewal errors and increase the heartbeat headroom. |
-| Heartbeats stop advancing | Check worker process availability, database errors, and event-loop blocking. |
-| Crashed jobs remain processing | Check `recoverStaleJobs` and the claim deadline. Without leases enabled on a surviving scheduler, recovery requires initialization. |
-| Many jobs are recovered on each deployment | Check shutdown handling, handler duration, crash logs, and `shutdownTimeout`. |
+| Symptom                                        | Check                                                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A running job is recovered by another instance | For absolute locks, increase `lockTimeout`. For leases, check renewal errors and increase the heartbeat headroom.                   |
+| Heartbeats stop advancing                      | Check worker process availability, database errors, and event-loop blocking.                                                        |
+| Crashed jobs remain processing                 | Check `recoverStaleJobs` and the claim deadline. Without leases enabled on a surviving scheduler, recovery requires initialization. |
+| Many jobs are recovered on each deployment     | Check shutdown handling, handler duration, crash logs, and `shutdownTimeout`.                                                       |
 
 Break up CPU-heavy work or move it off the event loop so heartbeats can run. Leases can
 expire if renewal is blocked; heartbeats never extend a legacy absolute `lockTimeout`.

@@ -1,15 +1,15 @@
 import type {
-	BulkOperationResult,
-	CursorOptions,
-	CursorPage,
-	JobSelector,
-	Monque,
-	PersistedJob,
-	QueueStats,
-} from '@monque/core';
-import type { OpenAPIHandler } from '@orpc/openapi/fetch';
+  BulkOperationResult,
+  CursorOptions,
+  CursorPage,
+  JobSelector,
+  Monque,
+  PersistedJob,
+  QueueStats,
+} from "@monque/core";
+import type { OpenAPIHandler } from "@orpc/openapi/fetch";
 
-export type { CapabilitiesDto, CapabilityActionsDto } from '../schemas/index.js';
+export type { CapabilitiesDto, CapabilityActionsDto } from "../schemas/index.js";
 
 /**
  * Authorization action names used by the management surface.
@@ -18,16 +18,16 @@ export type { CapabilitiesDto, CapabilityActionsDto } from '../schemas/index.js'
  * action names so scheduler support and authorization can be reported independently.
  */
 export type ManagementAction =
-	| 'read'
-	| 'pause'
-	| 'resume'
-	| 'cancel'
-	| 'cancelBulk'
-	| 'retry'
-	| 'retryBulk'
-	| 'reschedule'
-	| 'delete'
-	| 'deleteBulk';
+  | "read"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "cancelBulk"
+  | "retry"
+  | "retryBulk"
+  | "reschedule"
+  | "delete"
+  | "deleteBulk";
 
 /**
  * Scheduler API required by `@monque/management`.
@@ -37,24 +37,24 @@ export type ManagementAction =
  * return `403 Unsupported action`.
  */
 export interface ManagementMonque {
-	getProcessingState?: Monque['getProcessingState'];
-	pause?: Monque['pause'];
-	resume?: Monque['resume'];
-	isHealthy: Pick<Monque, 'isHealthy'>['isHealthy'];
-	getQueueViewSummaries: Pick<Monque, 'getQueueViewSummaries'>['getQueueViewSummaries'];
-	getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
-	getJobSummariesWithCursor?(
-		options?: CursorOptions,
-	): Promise<Omit<CursorPage, 'jobs'> & { jobs: Omit<PersistedJob, 'data'>[] }>;
-	getJob(id: string): Promise<PersistedJob | null>;
-	getQueueStats(filter?: { name?: string }): Promise<QueueStats>;
-	cancelJob?(id: string): Promise<PersistedJob | null>;
-	retryJob?(id: string): Promise<PersistedJob | null>;
-	rescheduleJob?(id: string, runAt: Date): Promise<PersistedJob | null>;
-	deleteJob?(id: string): Promise<boolean>;
-	cancelJobs?(selector: JobSelector): Promise<BulkOperationResult>;
-	retryJobs?(selector: JobSelector): Promise<BulkOperationResult>;
-	deleteJobs?(selector: JobSelector): Promise<BulkOperationResult>;
+  getProcessingState?: Monque["getProcessingState"];
+  pause?: Monque["pause"];
+  resume?: Monque["resume"];
+  isHealthy: Pick<Monque, "isHealthy">["isHealthy"];
+  getQueueViewSummaries: Pick<Monque, "getQueueViewSummaries">["getQueueViewSummaries"];
+  getJobsWithCursor(options?: CursorOptions): Promise<CursorPage>;
+  getJobSummariesWithCursor?(
+    options?: CursorOptions,
+  ): Promise<Omit<CursorPage, "jobs"> & { jobs: Omit<PersistedJob, "data">[] }>;
+  getJob(id: string): Promise<PersistedJob | null>;
+  getQueueStats(filter?: { name?: string }): Promise<QueueStats>;
+  cancelJob?(id: string): Promise<PersistedJob | null>;
+  retryJob?(id: string): Promise<PersistedJob | null>;
+  rescheduleJob?(id: string, runAt: Date): Promise<PersistedJob | null>;
+  deleteJob?(id: string): Promise<boolean>;
+  cancelJobs?(selector: JobSelector): Promise<BulkOperationResult>;
+  retryJobs?(selector: JobSelector): Promise<BulkOperationResult>;
+  deleteJobs?(selector: JobSelector): Promise<BulkOperationResult>;
 }
 
 /**
@@ -66,15 +66,15 @@ export interface ManagementMonque {
  * @template TContext - Application context supplied through the OpenAPI handler call.
  */
 export interface ManagementAuthorizationInput<TContext = unknown> {
-	action: ManagementAction;
-	context: TContext;
-	job?: PersistedJob | undefined;
-	selector?: JobSelector | undefined;
-	ids?: readonly string[] | undefined;
-	/** Processing controls use name for a local worker, or omit it for all local workers. */
-	name?: string | undefined;
-	/** Scheduler targeted by a processing control request. */
-	instanceId?: string | undefined;
+  action: ManagementAction;
+  context: TContext;
+  job?: PersistedJob | undefined;
+  selector?: JobSelector | undefined;
+  ids?: readonly string[] | undefined;
+  /** Processing controls use name for a local worker, or omit it for all local workers. */
+  name?: string | undefined;
+  /** Scheduler targeted by a processing control request. */
+  instanceId?: string | undefined;
 }
 
 /**
@@ -84,7 +84,7 @@ export interface ManagementAuthorizationInput<TContext = unknown> {
  * be handled as a normal oRPC error.
  */
 export type ManagementAuthorize<TContext = unknown> = (
-	input: ManagementAuthorizationInput<TContext>,
+  input: ManagementAuthorizationInput<TContext>,
 ) => boolean | Promise<boolean>;
 
 /**
@@ -96,9 +96,9 @@ export type ManagementAuthorize<TContext = unknown> = (
  * @template TContext - Application context supplied through the OpenAPI handler call.
  */
 export interface ManagementPayloadSerializationInput<TContext = unknown> {
-	job: PersistedJob;
-	payload: unknown;
-	context: TContext;
+  job: PersistedJob;
+  payload: unknown;
+  context: TContext;
 }
 
 /**
@@ -107,7 +107,7 @@ export interface ManagementPayloadSerializationInput<TContext = unknown> {
  * The returned value must be serializable by the HTTP framework that sends the response.
  */
 export type ManagementPayloadSerializer<TContext = unknown> = (
-	input: ManagementPayloadSerializationInput<TContext>,
+  input: ManagementPayloadSerializationInput<TContext>,
 ) => Promise<unknown>;
 
 /**
@@ -116,18 +116,18 @@ export type ManagementPayloadSerializer<TContext = unknown> = (
  * @template TContext - Application context supplied through the OpenAPI handler call.
  */
 export interface ManagementOptions<TContext = unknown> {
-	/** Scheduler instance or facade backing the management endpoints. */
-	monque: ManagementMonque;
-	/** When true, all mutation endpoints return `403` even if the scheduler supports them. */
-	readOnly?: boolean;
-	/** Optional authorization hook invoked before reads and mutations. */
-	authorize?: ManagementAuthorize<TContext>;
-	/** Opt in only when authorization checks can run independently. Defaults to sequential. */
-	parallelCapabilityChecks?: boolean;
-	/** Default payload serializer for returned jobs. */
-	serializePayload?: ManagementPayloadSerializer<TContext>;
-	/** Payload serializers keyed by job name, taking precedence over `serializePayload`. */
-	serializePayloadByJobName?: Record<string, ManagementPayloadSerializer<TContext>>;
+  /** Scheduler instance or facade backing the management endpoints. */
+  monque: ManagementMonque;
+  /** When true, all mutation endpoints return `403` even if the scheduler supports them. */
+  readOnly?: boolean;
+  /** Optional authorization hook invoked before reads and mutations. */
+  authorize?: ManagementAuthorize<TContext>;
+  /** Opt in only when authorization checks can run independently. Defaults to sequential. */
+  parallelCapabilityChecks?: boolean;
+  /** Default payload serializer for returned jobs. */
+  serializePayload?: ManagementPayloadSerializer<TContext>;
+  /** Payload serializers keyed by job name, taking precedence over `serializePayload`. */
+  serializePayloadByJobName?: Record<string, ManagementPayloadSerializer<TContext>>;
 }
 
 /**
@@ -137,7 +137,7 @@ export interface ManagementOptions<TContext = unknown> {
  * is passed to authorization and payload serialization hooks.
  */
 export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, unknown> & {
-	managementContext?: TContext;
+  managementContext?: TContext;
 };
 
 /**
@@ -146,5 +146,5 @@ export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, u
  * Call `openApiHandler.handle(request, options)` from your HTTP framework adapter.
  */
 export interface ManagementSurface<TContext = unknown> {
-	readonly openApiHandler: OpenAPIHandler<ManagementOpenApiContext<TContext>>;
+  readonly openApiHandler: OpenAPIHandler<ManagementOpenApiContext<TContext>>;
 }

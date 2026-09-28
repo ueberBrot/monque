@@ -7,38 +7,38 @@ After [installing Monque and MongoDB](/monque/getting-started/installation/), cr
 entrypoint with a worker and an initial job:
 
 ```typescript
-import { Monque } from '@monque/core';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { MongoClient } from "mongodb";
 
-const client = await MongoClient.connect('mongodb://localhost:27017');
-const monque = new Monque(client.db('my-app'));
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("my-app"));
 
-monque.register<{ message: string }>('print-message', async (job) => {
+monque.register<{ message: string }>("print-message", async (job) => {
   console.log(job.data.message);
 });
 
-monque.on('job:complete', ({ job, duration }) => {
+monque.on("job:complete", ({ job, duration }) => {
   console.log(`${job.name} completed in ${duration}ms`);
 });
-monque.on('job:fail', ({ job, error, willRetry }) => {
+monque.on("job:fail", ({ job, error, willRetry }) => {
   console.error(job._id, error.message, { willRetry });
 });
-monque.on('job:error', ({ error }) => {
-  console.error('Scheduler error:', error.message);
+monque.on("job:error", ({ error }) => {
+  console.error("Scheduler error:", error.message);
 });
 
 await monque.initialize();
 monque.start();
 
-await monque.now('print-message', { message: 'Hello from Monque' });
+await monque.now("print-message", { message: "Hello from Monque" });
 
 async function shutdown() {
   await monque.stop();
   await client.close();
 }
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 ```
 
 `initialize()` creates indexes and prepares the scheduler. `start()` begins processing.
@@ -59,11 +59,11 @@ See [Idempotent operations](/monque/core-concepts/jobs/#idempotent-operations).
 
 ```typescript
 await monque.enqueue(
-  'print-message',
-  { message: 'One minute later' },
+  "print-message",
+  { message: "One minute later" },
   {
     runAt: new Date(Date.now() + 60_000),
-    uniqueKey: 'delayed-message',
+    uniqueKey: "delayed-message",
   },
 );
 ```
@@ -75,10 +75,10 @@ being created. It does not prevent a later job after the earlier one completes o
 
 ```typescript
 await monque.schedule(
-  '0 * * * *',
-  'print-message',
-  { message: 'Hourly message' },
-  { uniqueKey: 'hourly-message' },
+  "0 * * * *",
+  "print-message",
+  { message: "Hourly message" },
+  { uniqueKey: "hourly-message" },
 );
 ```
 
@@ -90,7 +90,7 @@ cron expressions, timezone behavior, and cancellation.
 
 ```typescript
 const page = await monque.getJobSummariesWithCursor({
-  filter: { name: 'print-message' },
+  filter: { name: "print-message" },
   limit: 20,
 });
 console.log(page.jobs);

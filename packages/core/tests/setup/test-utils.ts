@@ -21,11 +21,11 @@
  * ```
  */
 
-import { randomUUID } from 'node:crypto';
-import type { Collection, Db, Document, ObjectId } from 'mongodb';
+import { randomUUID } from "node:crypto";
+import type { Collection, Db, Document, ObjectId } from "mongodb";
 
-import { getMongoClient } from '@tests/setup/mongodb.js';
-import type { Job } from '@/jobs';
+import type { Job } from "@/jobs";
+import { getMongoClient } from "@tests/setup/mongodb.js";
 
 /**
  * Gets an isolated test database.
@@ -35,11 +35,11 @@ import type { Job } from '@/jobs';
  * @returns A MongoDB Db instance for isolated testing
  */
 export async function getTestDb(testName: string): Promise<Db> {
-	const client = await getMongoClient();
-	// Sanitize test name for use as database name
-	const sanitizedName = testName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const client = await getMongoClient();
+  // Sanitize test name for use as database name
+  const sanitizedName = testName.replace(/[^a-zA-Z0-9_-]/g, "_");
 
-	return client.db(`monque_${sanitizedName.slice(0, 20)}_${randomUUID().replaceAll('-', '')}`);
+  return client.db(`monque_${sanitizedName.slice(0, 20)}_${randomUUID().replaceAll("-", "")}`);
 }
 
 /**
@@ -49,7 +49,7 @@ export async function getTestDb(testName: string): Promise<Db> {
  * @param db - The database instance to drop
  */
 export async function cleanupTestDb(db: Db): Promise<void> {
-	await db.dropDatabase();
+  await db.dropDatabase();
 }
 
 /**
@@ -60,7 +60,7 @@ export async function cleanupTestDb(db: Db): Promise<void> {
  * @param collectionName - Name of the collection to clear
  */
 export async function clearCollection(db: Db, collectionName: string): Promise<void> {
-	await db.collection(collectionName).deleteMany({});
+  await db.collection(collectionName).deleteMany({});
 }
 
 /**
@@ -71,9 +71,9 @@ export async function clearCollection(db: Db, collectionName: string): Promise<v
  * @returns Unique collection name with random suffix
  */
 export function uniqueCollectionName(baseName: string): string {
-	const suffix = Math.random().toString(36).substring(2, 8);
+  const suffix = Math.random().toString(36).substring(2, 8);
 
-	return `${baseName}_${suffix}`;
+  return `${baseName}_${suffix}`;
 }
 
 /**
@@ -86,25 +86,25 @@ export function uniqueCollectionName(baseName: string): string {
  * @throws Error if timeout is exceeded
  */
 export async function waitFor(
-	condition: () => Promise<boolean>,
-	options: { timeout?: number; interval?: number } = {},
+  condition: () => Promise<boolean>,
+  options: { timeout?: number; interval?: number } = {},
 ): Promise<void> {
-	const { timeout = 10000, interval = 100 } = options;
-	const startTime = Date.now();
+  const { timeout = 10000, interval = 100 } = options;
+  const startTime = Date.now();
 
-	while (Date.now() - startTime < timeout) {
-		if (await condition()) {
-			return;
-		}
+  while (Date.now() - startTime < timeout) {
+    if (await condition()) {
+      return;
+    }
 
-		await new Promise((resolve) => setTimeout(resolve, interval));
-	}
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
 
-	const elapsed = Date.now() - startTime;
-	throw new Error(
-		`waitFor condition not met within ${timeout}ms (elapsed: ${elapsed}ms). ` +
-			`Consider increasing timeout or checking test conditions.`,
-	);
+  const elapsed = Date.now() - startTime;
+  throw new Error(
+    `waitFor condition not met within ${timeout}ms (elapsed: ${elapsed}ms). ` +
+      `Consider increasing timeout or checking test conditions.`,
+  );
 }
 
 /**
@@ -114,11 +114,11 @@ export async function waitFor(
  * @param instances - Array of Monque instances or objects with a stop method
  */
 export async function stopMonqueInstances(
-	instances: { stop: () => Promise<void> }[],
+  instances: { stop: () => Promise<void> }[],
 ): Promise<void> {
-	await Promise.all(instances.map((i) => i.stop()));
-	// Clear the array in place
-	instances.length = 0;
+  await Promise.all(instances.map((i) => i.stop()));
+  // Clear the array in place
+  instances.length = 0;
 }
 
 /**
@@ -129,10 +129,10 @@ export async function stopMonqueInstances(
  * @param jobId - The ObjectId of the job to trigger
  */
 export async function triggerJobImmediately(
-	collection: Collection,
-	jobId: ObjectId,
+  collection: Collection,
+  jobId: ObjectId,
 ): Promise<void> {
-	await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
+  await collection.updateOne({ _id: jobId }, { $set: { nextRunAt: new Date() } });
 }
 
 /**
@@ -151,9 +151,9 @@ export async function triggerJobImmediately(
  * ```
  */
 export async function findJobByQuery<T = unknown>(
-	collection: Collection,
-	query: Document,
+  collection: Collection,
+  query: Document,
 ): Promise<Job<T> | null> {
-	const doc = await collection.findOne(query);
-	return doc as Job<T> | null;
+  const doc = await collection.findOne(query);
+  return doc as Job<T> | null;
 }

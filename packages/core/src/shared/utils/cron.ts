@@ -1,6 +1,6 @@
-import { CronExpressionParser } from 'cron-parser';
+import { CronExpressionParser } from "cron-parser";
 
-import { InvalidCronError } from '../errors.js';
+import { InvalidCronError } from "../errors.js";
 
 /**
  * Parse a cron expression and return the next scheduled run date.
@@ -27,30 +27,30 @@ import { InvalidCronError } from '../errors.js';
  * ```
  */
 export function getNextCronDate(expression: string, currentDate?: Date, timezone?: string): Date {
-	if (timezone !== undefined) {
-		try {
-			if (timezone.startsWith('+') || timezone.startsWith('-')) {
-				throw new RangeError('Fixed offsets are not IANA timezone identifiers');
-			}
-			// Intl rejects host-relative aliases such as Luxon's "local" and "system".
-			new Intl.DateTimeFormat('en', { timeZone: timezone });
-		} catch {
-			throw new InvalidCronError(
-				expression,
-				`Invalid timezone "${timezone}". Expected an IANA timezone such as "Europe/Berlin" or "UTC".`,
-			);
-		}
-	}
+  if (timezone !== undefined) {
+    try {
+      if (timezone.startsWith("+") || timezone.startsWith("-")) {
+        throw new RangeError("Fixed offsets are not IANA timezone identifiers");
+      }
+      // Intl rejects host-relative aliases such as Luxon's "local" and "system".
+      new Intl.DateTimeFormat("en", { timeZone: timezone });
+    } catch {
+      throw new InvalidCronError(
+        expression,
+        `Invalid timezone "${timezone}". Expected an IANA timezone such as "Europe/Berlin" or "UTC".`,
+      );
+    }
+  }
 
-	try {
-		const interval = CronExpressionParser.parse(expression, {
-			currentDate: currentDate ?? new Date(),
-			...(timezone === undefined ? {} : { tz: timezone }),
-		});
-		return interval.next().toDate();
-	} catch (error) {
-		handleCronParseError(expression, error);
-	}
+  try {
+    const interval = CronExpressionParser.parse(expression, {
+      currentDate: currentDate ?? new Date(),
+      ...(timezone === undefined ? {} : { tz: timezone }),
+    });
+    return interval.next().toDate();
+  } catch (error) {
+    handleCronParseError(expression, error);
+  }
 }
 
 /**
@@ -65,19 +65,19 @@ export function getNextCronDate(expression: string, currentDate?: Date, timezone
  * ```
  */
 export function validateCronExpression(expression: string): void {
-	try {
-		CronExpressionParser.parse(expression);
-	} catch (error) {
-		handleCronParseError(expression, error);
-	}
+  try {
+    CronExpressionParser.parse(expression);
+  } catch (error) {
+    handleCronParseError(expression, error);
+  }
 }
 
 function handleCronParseError(expression: string, error: unknown): never {
-	const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
-	throw new InvalidCronError(
-		expression,
-		`Invalid cron expression "${expression}": ${errorMessage}. ` +
-			'Expected 5-field format: "minute hour day-of-month month day-of-week" or predefined expression (e.g. @daily). ' +
-			'Example: "0 9 * * 1" (every Monday at 9am)',
-	);
+  const errorMessage = error instanceof Error ? error.message : "Unknown parsing error";
+  throw new InvalidCronError(
+    expression,
+    `Invalid cron expression "${expression}": ${errorMessage}. ` +
+      'Expected 5-field format: "minute hour day-of-month month day-of-week" or predefined expression (e.g. @daily). ' +
+      'Example: "0 9 * * 1" (every Monday at 9am)',
+  );
 }

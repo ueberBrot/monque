@@ -14,7 +14,6 @@ permissions:
   pull-requests: write
   id-token: write
 
-
 jobs:
   release:
     name: Release
@@ -36,21 +35,21 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Build
-        run: bun run build
+        run: vp run build
 
       - name: Create Release PR or Publish
         id: changesets
         uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          publish-script: bunx changeset publish
-          version-script: bun run release:version
+          publish-script: vp exec changeset publish
+          version-script: vp run release:version
           commit-message: "chore: update versions"
           pr-title: "chore: update versions"
           github-token: ${{ steps.app-token.outputs.token }}

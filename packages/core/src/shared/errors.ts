@@ -1,6 +1,6 @@
-import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-import type { Job } from '@/jobs';
+import type { Job } from "@/jobs";
 
 /**
  * Base error class for all Monque-related errors.
@@ -17,14 +17,14 @@ import type { Job } from '@/jobs';
  * ```
  */
 export class MonqueError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'MonqueError';
-		// Maintains proper stack trace for where our error was thrown (only available on V8)
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, MonqueError);
-		}
-	}
+  constructor(message: string) {
+    super(message);
+    this.name = "MonqueError";
+    // Maintains proper stack trace for where our error was thrown (only available on V8)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, MonqueError);
+    }
+  }
 }
 
 /**
@@ -42,16 +42,16 @@ export class MonqueError extends Error {
  * ```
  */
 export class InvalidCronError extends MonqueError {
-	constructor(
-		public readonly expression: string,
-		message: string,
-	) {
-		super(message);
-		this.name = 'InvalidCronError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidCronError);
-		}
-	}
+  constructor(
+    public readonly expression: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "InvalidCronError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, InvalidCronError);
+    }
+  }
 }
 
 /**
@@ -69,16 +69,16 @@ export class InvalidCronError extends MonqueError {
  * ```
  */
 export class ConnectionError extends MonqueError {
-	constructor(message: string, options?: { cause?: Error }) {
-		super(message);
-		this.name = 'ConnectionError';
-		if (options?.cause) {
-			this.cause = options.cause;
-		}
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ConnectionError);
-		}
-	}
+  constructor(message: string, options?: { cause?: Error }) {
+    super(message);
+    this.name = "ConnectionError";
+    if (options?.cause) {
+      this.cause = options.cause;
+    }
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ConnectionError);
+    }
+  }
 }
 
 /**
@@ -97,16 +97,16 @@ export class ConnectionError extends MonqueError {
  * ```
  */
 export class ShutdownTimeoutError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly incompleteJobs: Job[],
-	) {
-		super(message);
-		this.name = 'ShutdownTimeoutError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, ShutdownTimeoutError);
-		}
-	}
+  constructor(
+    message: string,
+    public readonly incompleteJobs: Job[],
+  ) {
+    super(message);
+    this.name = "ShutdownTimeoutError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ShutdownTimeoutError);
+    }
+  }
 }
 
 /**
@@ -129,16 +129,16 @@ export class ShutdownTimeoutError extends MonqueError {
  * ```
  */
 export class WorkerRegistrationError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly jobName: string,
-	) {
-		super(message);
-		this.name = 'WorkerRegistrationError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, WorkerRegistrationError);
-		}
-	}
+  constructor(
+    message: string,
+    public readonly jobName: string,
+  ) {
+    super(message);
+    this.name = "WorkerRegistrationError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, WorkerRegistrationError);
+    }
+  }
 }
 
 /**
@@ -156,18 +156,18 @@ export class WorkerRegistrationError extends MonqueError {
  * ```
  */
 export class JobStateError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly jobId: string,
-		public readonly currentStatus: string,
-		public readonly attemptedAction: 'cancel' | 'retry' | 'reschedule',
-	) {
-		super(message);
-		this.name = 'JobStateError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, JobStateError);
-		}
-	}
+  constructor(
+    message: string,
+    public readonly jobId: string,
+    public readonly currentStatus: string,
+    public readonly attemptedAction: "cancel" | "retry" | "reschedule",
+  ) {
+    super(message);
+    this.name = "JobStateError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, JobStateError);
+    }
+  }
 }
 
 /**
@@ -185,21 +185,21 @@ export class JobStateError extends MonqueError {
  * ```
  */
 export class InvalidCursorError extends MonqueError {
-	constructor(message: string) {
-		super(message);
-		this.name = 'InvalidCursorError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidCursorError);
-		}
-	}
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCursorError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, InvalidCursorError);
+    }
+  }
 }
 
 /** Error thrown when a job query contains invalid filters or pagination options. */
 export class InvalidJobQueryError extends MonqueError {
-	constructor(message: string) {
-		super(message);
-		this.name = 'InvalidJobQueryError';
-	}
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidJobQueryError";
+  }
 }
 
 /**
@@ -217,17 +217,17 @@ export class InvalidJobQueryError extends MonqueError {
  * ```
  */
 export class InvalidJobIdentifierError extends MonqueError {
-	constructor(
-		public readonly field: 'name' | 'uniqueKey',
-		public readonly value: string,
-		message: string,
-	) {
-		super(message);
-		this.name = 'InvalidJobIdentifierError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, InvalidJobIdentifierError);
-		}
-	}
+  constructor(
+    public readonly field: "name" | "uniqueKey",
+    public readonly value: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "InvalidJobIdentifierError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, InvalidJobIdentifierError);
+    }
+  }
 }
 
 /**
@@ -245,13 +245,13 @@ export class InvalidJobIdentifierError extends MonqueError {
  * ```
  */
 export class AggregationTimeoutError extends MonqueError {
-	constructor(message: string = 'Statistics aggregation exceeded 30 second timeout') {
-		super(message);
-		this.name = 'AggregationTimeoutError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, AggregationTimeoutError);
-		}
-	}
+  constructor(message: string = "Statistics aggregation exceeded 30 second timeout") {
+    super(message);
+    this.name = "AggregationTimeoutError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, AggregationTimeoutError);
+    }
+  }
 }
 
 /**
@@ -271,17 +271,17 @@ export class AggregationTimeoutError extends MonqueError {
  * ```
  */
 export class PayloadTooLargeError extends MonqueError {
-	constructor(
-		message: string,
-		public readonly actualSize: number,
-		public readonly maxSize: number,
-	) {
-		super(message);
-		this.name = 'PayloadTooLargeError';
-		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, PayloadTooLargeError);
-		}
-	}
+  constructor(
+    message: string,
+    public readonly actualSize: number,
+    public readonly maxSize: number,
+  ) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, PayloadTooLargeError);
+    }
+  }
 }
 
 /**
@@ -289,21 +289,21 @@ export class PayloadTooLargeError extends MonqueError {
  * Recurring jobs stop too. Operators can still retry the failed job manually.
  */
 export class NonRetryableError extends MonqueError {
-	constructor(message: string) {
-		super(message);
-		this.name = 'NonRetryableError';
-	}
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
 }
 
 /** A worker schema rejected the persisted payload. The handler is not invoked. */
 export class PayloadValidationError extends NonRetryableError {
-	constructor(
-		public readonly jobName: string,
-		public readonly issues: ReadonlyArray<StandardSchemaV1.Issue>,
-	) {
-		super(
-			`Invalid payload for job "${jobName}": ${issues.map((issue) => issue.message).join('; ')}`,
-		);
-		this.name = 'PayloadValidationError';
-	}
+  constructor(
+    public readonly jobName: string,
+    public readonly issues: ReadonlyArray<StandardSchemaV1.Issue>,
+  ) {
+    super(
+      `Invalid payload for job "${jobName}": ${issues.map((issue) => issue.message).join("; ")}`,
+    );
+    this.name = "PayloadValidationError";
+  }
 }

@@ -3,7 +3,7 @@ title: Installation
 description: Install the Monque packages and connect to MongoDB.
 ---
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
 ## Prerequisites
 
@@ -19,33 +19,42 @@ import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
   docker exec -it mongodb mongosh --eval "rs.initiate()"
   ```
 
-  Run the second command after MongoDB is accepting connections.
+Run the second command after MongoDB is accepting connections.
 
-  For a local deployment with Atlas features, MongoDB also provides the Atlas Local image (`mongodb/mongodb-atlas-local`).
+For a local deployment with Atlas features, MongoDB also provides the Atlas Local image (`mongodb/mongodb-atlas-local`).
+
 </Aside>
 
 ## Install the Package
 
 <Tabs>
   <TabItem label="bun">
+
     ```bash
     bun add @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="npm">
+
     ```bash
     npm install @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="pnpm">
+
     ```bash
     pnpm add @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="yarn">
+
     ```bash
     yarn add @monque/core mongodb
     ```
+
   </TabItem>
 </Tabs>
 
@@ -57,14 +66,14 @@ that supported range.
 
 ## Choose packages
 
-| Package | Use it for |
-| --- | --- |
-| `@monque/core` | Register workers, enqueue jobs, schedule recurring work, and query MongoDB jobs. |
-| `@monque/tsed` | Integrate workers and scheduler lifecycle with a Ts.ED application. |
-| `@monque/management` | Expose job queries and actions through an HTTP contract. |
-| `@monque/management-express` | Serve the Management API from Express. |
-| `@monque/dashboard-express` | Serve the bundled dashboard from Express. Includes `@monque/dashboard`. |
-| `@monque/dashboard` | Access built dashboard assets and configuration types for custom server adapters. |
+| Package                      | Use it for                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `@monque/core`               | Register workers, enqueue jobs, schedule recurring work, and query MongoDB jobs.  |
+| `@monque/tsed`               | Integrate workers and scheduler lifecycle with a Ts.ED application.               |
+| `@monque/management`         | Expose job queries and actions through an HTTP contract.                          |
+| `@monque/management-express` | Serve the Management API from Express.                                            |
+| `@monque/dashboard-express`  | Serve the bundled dashboard from Express. Includes `@monque/dashboard`.           |
+| `@monque/dashboard`          | Access built dashboard assets and configuration types for custom server adapters. |
 
 For an Express application with the dashboard:
 

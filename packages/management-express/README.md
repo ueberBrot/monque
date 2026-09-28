@@ -21,9 +21,9 @@ Management 0.6.x, and the Express and MongoDB versions listed in
 Use your existing Express app and initialized `Monque` instance:
 
 ```typescript
-import { createManagementExpressRouter } from '@monque/management-express';
+import { createManagementExpressRouter } from "@monque/management-express";
 
-app.use('/ops', createManagementExpressRouter({ monque, readOnly: true }));
+app.use("/ops", createManagementExpressRouter({ monque, readOnly: true }));
 ```
 
 This exposes reads under `/ops/api/v1`, such as `/ops/api/v1/jobs` and
@@ -36,8 +36,8 @@ The router does not authenticate requests. Mount your application's authenticati
 middleware before it, including when using read-only mode:
 
 ```typescript
-app.use('/ops', requireOperator);
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", requireOperator);
+app.use("/ops", createManagementExpressRouter({ monque }));
 ```
 
 `requireOperator` is middleware supplied by your application. The `/ops` mount also
@@ -56,12 +56,12 @@ above, open `/ops/openapi.json`. The document includes the mount URL in `servers
 
 ```typescript
 app.use(
-  '/internal/management',
+  "/internal/management",
   createManagementExpressRouter({
     monque,
     openApi: {
-      path: '/docs/openapi.json',
-      serverUrl: 'https://ops.example.com/internal/management',
+      path: "/docs/openapi.json",
+      serverUrl: "https://ops.example.com/internal/management",
     },
   }),
 );

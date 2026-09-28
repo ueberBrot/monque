@@ -26,14 +26,14 @@ bun add @monque/dashboard-express @monque/management-express @monque/management 
 Pass your initialized `Monque` instance to the Management router, then mount the dashboard:
 
 ```typescript
-import { createDashboardExpressRouter } from '@monque/dashboard-express';
-import { createManagementExpressRouter } from '@monque/management-express';
+import { createDashboardExpressRouter } from "@monque/dashboard-express";
+import { createManagementExpressRouter } from "@monque/management-express";
 
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", createManagementExpressRouter({ monque }));
 app.use(
-  '/ops/dashboard',
+  "/ops/dashboard",
   createDashboardExpressRouter({
-    apiBaseUrl: '/ops',
+    apiBaseUrl: "/ops",
     pollingIntervalMs: 15_000,
   }),
 );
@@ -43,10 +43,10 @@ Open `/ops/dashboard` on your application's origin. The example allows unauthent
 access. Add your application's authentication middleware as described below before
 exposing it to other users.
 
-| URL | Purpose |
-| --- | --- |
-| `/ops/dashboard` | Dashboard |
-| `/ops/api/v1/jobs` | Job list endpoint |
+| URL                 | Purpose                     |
+| ------------------- | --------------------------- |
+| `/ops/dashboard`    | Dashboard                   |
+| `/ops/api/v1/jobs`  | Job list endpoint           |
 | `/ops/openapi.json` | Management OpenAPI document |
 
 `apiBaseUrl` is the Management router's mount URL, without `/api/v1`. The dashboard's own
@@ -58,35 +58,35 @@ server code. No dashboard-specific environment variables or browser scripts are 
 This server registers a worker, schedules a recurring job, and serves the dashboard:
 
 ```typescript
-import { Monque } from '@monque/core';
-import { createDashboardExpressRouter } from '@monque/dashboard-express';
-import { createManagementExpressRouter } from '@monque/management-express';
-import express from 'express';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { createDashboardExpressRouter } from "@monque/dashboard-express";
+import { createManagementExpressRouter } from "@monque/management-express";
+import express from "express";
+import { MongoClient } from "mongodb";
 
-const client = await MongoClient.connect('mongodb://localhost:27017');
-const monque = new Monque(client.db('my-app'));
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("my-app"));
 
-monque.register<{ message: string }>('print-message', async (job) => {
+monque.register<{ message: string }>("print-message", async (job) => {
   console.log(job.data.message);
 });
 
 await monque.initialize();
 monque.start();
 
-await monque.now('print-message', { message: 'Hello from Monque' });
+await monque.now("print-message", { message: "Hello from Monque" });
 await monque.schedule(
-  '* * * * *',
-  'print-message',
-  { message: 'A recurring job ran' },
-  { uniqueKey: 'minute-message' },
+  "* * * * *",
+  "print-message",
+  { message: "A recurring job ran" },
+  { uniqueKey: "minute-message" },
 );
 
 const app = express();
-app.use('/ops', createManagementExpressRouter({ monque }));
+app.use("/ops", createManagementExpressRouter({ monque }));
 app.use(
-  '/ops/dashboard',
-  createDashboardExpressRouter({ apiBaseUrl: '/ops', pollingIntervalMs: 15_000 }),
+  "/ops/dashboard",
+  createDashboardExpressRouter({ apiBaseUrl: "/ops", pollingIntervalMs: 15_000 }),
 );
 
 const server = app.listen(3000);
@@ -97,8 +97,8 @@ async function shutdown() {
   await client.close();
 }
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 ```
 
 Open `http://localhost:3000/ops/dashboard`. Replace the example worker with your application's
@@ -111,9 +111,9 @@ Use your application's login or session middleware before both routers. For the 
 above, protect the shared `/ops` prefix:
 
 ```typescript
-app.use('/ops', requireOperator);
-app.use('/ops', createManagementExpressRouter({ monque }));
-app.use('/ops/dashboard', createDashboardExpressRouter({ apiBaseUrl: '/ops' }));
+app.use("/ops", requireOperator);
+app.use("/ops", createManagementExpressRouter({ monque }));
+app.use("/ops/dashboard", createDashboardExpressRouter({ apiBaseUrl: "/ops" }));
 ```
 
 `requireOperator` is middleware provided by your application that rejects unauthenticated
@@ -129,7 +129,7 @@ The dashboard does not provide a login page or issue sessions.
 For read-only access:
 
 ```typescript
-app.use('/ops', createManagementExpressRouter({ monque, readOnly: true }));
+app.use("/ops", createManagementExpressRouter({ monque, readOnly: true }));
 ```
 
 For role-based permissions, pass the authenticated principal through `context` and check

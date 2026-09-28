@@ -28,10 +28,10 @@ await monque.initialize();
 monque.start();
 ```
 
-| State | Periodic poll interval | Additional job discovery |
-| --- | --- | --- |
-| Change Streams active | `safetyPollInterval`, default 30 seconds | Notifications for pending jobs and scheduled wakeups |
-| Change Streams unavailable | `pollInterval`, default 1 second | Regular polling |
+| State                      | Periodic poll interval                   | Additional job discovery                             |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------- |
+| Change Streams active      | `safetyPollInterval`, default 30 seconds | Notifications for pending jobs and scheduled wakeups |
+| Change Streams unavailable | `pollInterval`, default 1 second         | Regular polling                                      |
 
 Notifications for a job name trigger checks for its registered worker. Several notifications
 arriving together are debounced for 100 milliseconds. Future jobs schedule a wakeup for their
@@ -47,17 +47,17 @@ The dashboard reads the Management API; it does not open a MongoDB Change Stream
 Register event listeners before starting the scheduler:
 
 ```typescript
-monque.on('changestream:connected', () => {
-  console.log('Change Stream connected');
+monque.on("changestream:connected", () => {
+  console.log("Change Stream connected");
 });
-monque.on('changestream:error', ({ error }) => {
-  console.error('Change Stream error:', error.message);
+monque.on("changestream:error", ({ error }) => {
+  console.error("Change Stream error:", error.message);
 });
-monque.on('changestream:fallback', ({ reason }) => {
-  console.warn('Using regular polling:', reason);
+monque.on("changestream:fallback", ({ reason }) => {
+  console.warn("Using regular polling:", reason);
 });
-monque.on('changestream:closed', () => {
-  console.log('Change Stream closed');
+monque.on("changestream:closed", () => {
+  console.log("Change Stream closed");
 });
 ```
 
@@ -73,11 +73,11 @@ an active Change Stream and is not a live database connectivity probe.
 Use a payload timestamp to measure how long a ready job waits before its handler starts:
 
 ```typescript
-monque.register<{ enqueuedAt: number }>('measure-latency', async (job) => {
-  console.log('Pickup latency in ms:', Date.now() - job.data.enqueuedAt);
+monque.register<{ enqueuedAt: number }>("measure-latency", async (job) => {
+  console.log("Pickup latency in ms:", Date.now() - job.data.enqueuedAt);
 });
 
-await monque.enqueue('measure-latency', { enqueuedAt: Date.now() });
+await monque.enqueue("measure-latency", { enqueuedAt: Date.now() });
 ```
 
 Compare a standalone deployment using polling with a replica set using Change Streams.
@@ -87,12 +87,12 @@ wait when workers are busy.
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| Stream never connects | Verify the deployment is a replica set or sharded cluster and the connection has the required MongoDB permissions. |
-| Frequent reconnects | Inspect `changestream:error` events, network interruptions, and database availability. |
-| Jobs wait despite an active stream | Check worker registration, concurrency limits, `nextRunAt`, and handler duration. |
-| Jobs process but Health shows unavailable | Check that Management uses the started scheduler instance rather than a separate read-only instance. |
+| Symptom                                   | Check                                                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Stream never connects                     | Verify the deployment is a replica set or sharded cluster and the connection has the required MongoDB permissions. |
+| Frequent reconnects                       | Inspect `changestream:error` events, network interruptions, and database availability.                             |
+| Jobs wait despite an active stream        | Check worker registration, concurrency limits, `nextRunAt`, and handler duration.                                  |
+| Jobs process but Health shows unavailable | Check that Management uses the started scheduler instance rather than a separate read-only instance.               |
 
 Call `await monque.stop()` before closing the MongoDB client. This closes the stream and
 stops scheduler polling as part of shutdown.

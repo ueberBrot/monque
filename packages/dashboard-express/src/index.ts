@@ -1,6 +1,6 @@
-export { createDashboardExpressRouter } from './router.js';
+export { createDashboardExpressRouter } from "./router.js";
 export type {
-	DashboardExpressApiBaseUrlResolver,
-	DashboardExpressApiBaseUrlValue,
-	DashboardExpressRouterOptions,
-} from './types.js';
+  DashboardExpressApiBaseUrlResolver,
+  DashboardExpressApiBaseUrlValue,
+  DashboardExpressRouterOptions,
+} from "./types.js";

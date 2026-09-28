@@ -1,14 +1,14 @@
-import { MongoDBContainer } from '@testcontainers/mongodb';
-import type { TestProject } from 'vitest/node';
+import { MongoDBContainer } from "@testcontainers/mongodb";
+import type { TestProject } from "vite-plus/test/node";
 
 /** One container per Vitest project; workers own only their client connections. */
 export async function setup(project: TestProject): Promise<() => Promise<void>> {
-	const reuse = process.env['TESTCONTAINERS_REUSE_ENABLE'] === 'true';
-	const mongo = new MongoDBContainer('mongo:8');
-	const container = await (reuse ? mongo.withReuse() : mongo).start();
-	project.provide('coreMongoUri', container.getConnectionString());
+  const reuse = process.env["TESTCONTAINERS_REUSE_ENABLE"] === "true";
+  const mongo = new MongoDBContainer("mongo:8");
+  const container = await (reuse ? mongo.withReuse() : mongo).start();
+  project.provide("coreMongoUri", container.getConnectionString());
 
-	return async () => {
-		if (!reuse) await container.stop();
-	};
+  return async () => {
+    if (!reuse) await container.stop();
+  };
 }

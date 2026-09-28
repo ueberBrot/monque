@@ -3,7 +3,7 @@ title: Project Direction
 description: High-level direction for Monque core and ecosystem.
 ---
 
-import Roadmap from '../../components/Roadmap.astro';
+import Roadmap from "../../components/Roadmap.astro";
 
 These are the current features and planned additions. Planned work has no release date.
 
@@ -11,46 +11,48 @@ See [Dashboard setup](/monque/dashboard/express/) for the available integration.
 
 ## Direction
 
-<Roadmap items={[
-  {
-    title: 'Management Ecosystem',
-    status: 'current',
-    description: 'Use the Management API with your HTTP framework through an adapter.',
-    features: [
-      'Describe the HTTP API with OpenAPI',
-      'Use application authentication and permissions for each action',
-      'Add framework adapters only when there is clear demand'
-    ]
-  },
-  {
-    title: 'Dashboard',
-    status: 'current',
-    description: 'Inspect and manage jobs through a dashboard served from your application.',
-    features: [
-      'Serve prebuilt assets with the Express dashboard adapter',
-      'Inspect Queue Views, jobs, payloads, and scheduler health',
-      'Share filtered job lists and run individual or bulk actions',
-      'Use application authentication and API-enforced permissions'
-    ]
-  },
-  {
-    title: 'Orchestration And Pipelines',
-    status: 'planned',
-    description: 'Define how related jobs run in sequence or depend on each other.',
-    features: [
-      'Coordinate related jobs in application code',
-      'Define pipelines through configuration',
-      'Track progress through job events and the Management API'
-    ]
-  },
-  {
-    title: 'Operational Scale',
-    status: 'planned',
-    description: 'Add controls for applications with larger queues or multiple tenants.',
-    features: [
-      'Group jobs by namespace or tenant',
-      'Set rate limits, job priorities, and processing policies',
-      'Standalone dashboard deployment and Docker packaging'
-    ]
-  }
-]} />
+<Roadmap
+  items={[
+    {
+      title: "Management Ecosystem",
+      status: "current",
+      description: "Use the Management API with your HTTP framework through an adapter.",
+      features: [
+        "Describe the HTTP API with OpenAPI",
+        "Use application authentication and permissions for each action",
+        "Add framework adapters only when there is clear demand",
+      ],
+    },
+    {
+      title: "Dashboard",
+      status: "current",
+      description: "Inspect and manage jobs through a dashboard served from your application.",
+      features: [
+        "Serve prebuilt assets with the Express dashboard adapter",
+        "Inspect Queue Views, jobs, payloads, and scheduler health",
+        "Share filtered job lists and run individual or bulk actions",
+        "Use application authentication and API-enforced permissions",
+      ],
+    },
+    {
+      title: "Orchestration And Pipelines",
+      status: "planned",
+      description: "Define how related jobs run in sequence or depend on each other.",
+      features: [
+        "Coordinate related jobs in application code",
+        "Define pipelines through configuration",
+        "Track progress through job events and the Management API",
+      ],
+    },
+    {
+      title: "Operational Scale",
+      status: "planned",
+      description: "Add controls for applications with larger queues or multiple tenants.",
+      features: [
+        "Group jobs by namespace or tenant",
+        "Set rate limits, job priorities, and processing policies",
+        "Standalone dashboard deployment and Docker packaging",
+      ],
+    },
+  ]}
+/>

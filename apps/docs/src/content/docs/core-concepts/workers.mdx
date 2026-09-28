@@ -3,28 +3,28 @@ title: Workers
 description: Learn how to register and configure workers to process jobs.
 ---
 
-import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 
 A worker is a handler registered for a job name. Monque calls it when a matching job is due and a concurrency slot is available.
 
 ## Quick Reference
 
-| Method / Type | Description |
-|---------------|-------------|
-| [`register()`](/monque/api/classes/monque/#register) | Register a job handler |
-| [`WorkerOptions`](/monque/api/interfaces/workeroptions/) | Worker concurrency, retries, payload validation, and replacement |
-| [`start()`](/monque/api/classes/monque/#start) | Start processing jobs |
-| [`stop()`](/monque/api/classes/monque/#stop) | Graceful shutdown |
-| [`pause()`](/monque/api/classes/monque/#pause) / [`resume()`](/monque/api/classes/monque/#resume) | Pause or resume local execution |
-| [`now()`](/monque/api/classes/monque/#now) | Enqueue for immediate execution |
-| [`MonqueOptions.workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency) | Global concurrency default |
+| Method / Type                                                                                     | Description                                                      |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [`register()`](/monque/api/classes/monque/#register)                                              | Register a job handler                                           |
+| [`WorkerOptions`](/monque/api/interfaces/workeroptions/)                                          | Worker concurrency, retries, payload validation, and replacement |
+| [`start()`](/monque/api/classes/monque/#start)                                                    | Start processing jobs                                            |
+| [`stop()`](/monque/api/classes/monque/#stop)                                                      | Graceful shutdown                                                |
+| [`pause()`](/monque/api/classes/monque/#pause) / [`resume()`](/monque/api/classes/monque/#resume) | Pause or resume local execution                                  |
+| [`now()`](/monque/api/classes/monque/#now)                                                        | Enqueue for immediate execution                                  |
+| [`MonqueOptions.workerConcurrency`](/monque/api/interfaces/monqueoptions/#workerconcurrency)      | Global concurrency default                                       |
 
 ## Registering a Worker
 
 Register a handler for a job name with [`register()`](/monque/api/classes/monque/#register):
 
 ```typescript
-monque.register('job-name', async (job) => {
+monque.register("job-name", async (job) => {
   // Your processing logic
 });
 ```
@@ -38,10 +38,10 @@ interface ImageProcessJob {
   imageUrl: string;
   width: number;
   height: number;
-  format: 'jpeg' | 'png' | 'webp';
+  format: "jpeg" | "png" | "webp";
 }
 
-monque.register<ImageProcessJob>('process-image', async (job) => {
+monque.register<ImageProcessJob>("process-image", async (job) => {
   const { imageUrl, width, height, format } = job.data;
   // TypeScript knows all property types
   await processImage(imageUrl, { width, height, format });
@@ -54,12 +54,16 @@ Pass a [Standard Schema](https://standardschema.dev/schema) compatible schema to
 validate persisted input before your handler runs. For example, using Zod:
 
 ```typescript
-import { z } from 'zod';
+import { z } from "zod";
 
 const schema = z.object({ email: z.email() });
-monque.register('send-email', async (job) => {
-  await sendEmail(job.data.email);
-}, { schema });
+monque.register(
+  "send-email",
+  async (job) => {
+    await sendEmail(job.data.email);
+  },
+  { schema },
+);
 ```
 
 Monque accepts the standard interface from `@standard-schema/spec`; install your
@@ -82,25 +86,30 @@ exceptions thrown by a validator follow the worker's normal retry policy.
 Pass [`WorkerOptions`](/monque/api/interfaces/workeroptions/) to set concurrency or replace a handler:
 
 ```typescript
-monque.register('heavy-computation', async (job) => {
-  await compute(job.data);
-}, {
-  concurrency: 2 // Only 2 concurrent jobs (overrides workerConcurrency)
-});
+monque.register(
+  "heavy-computation",
+  async (job) => {
+    await compute(job.data);
+  },
+  {
+    concurrency: 2, // Only 2 concurrent jobs (overrides workerConcurrency)
+  },
+);
 ```
 
 ## Worker Options
 
-| Option        | Type     | Default                         | Description                             |
-| ------------- | -------- | ------------------------------- | --------------------------------------- |
-| `concurrency` | `number` | `5` (from `workerConcurrency`)  | Maximum concurrent jobs for this worker |
-| `replace`     | `boolean` | `false`                         | Replace an existing worker with the same name instead of throwing |
-| `schema` | `StandardSchemaV1` | None | Validate input and pass the schema output to the handler |
+| Option        | Type               | Default                        | Description                                                       |
+| ------------- | ------------------ | ------------------------------ | ----------------------------------------------------------------- |
+| `concurrency` | `number`           | `5` (from `workerConcurrency`) | Maximum concurrent jobs for this worker                           |
+| `replace`     | `boolean`          | `false`                        | Replace an existing worker with the same name instead of throwing |
+| `schema`      | `StandardSchemaV1` | None                           | Validate input and pass the schema output to the handler          |
 
 Workers also accept [retry overrides](/monque/core-concepts/retry/#per-worker-settings).
 
 <Aside type="note">
-  Each worker type maintains its own concurrency limit. A scheduler with 3 workers at concurrency 5 each could process up to 15 jobs simultaneously.
+  Each worker type maintains its own concurrency limit. A scheduler with 3 workers at concurrency 5
+  each could process up to 15 jobs simultaneously.
 </Aside>
 
 ## Worker Lifecycle
@@ -110,9 +119,9 @@ Workers also accept [retry overrides](/monque/core-concepts/retry/#per-worker-se
 Pause one worker or all execution in this scheduler instance:
 
 ```typescript
-monque.pause('send-email');
-monque.isPaused('send-email'); // true
-monque.resume('send-email');
+monque.pause("send-email");
+monque.isPaused("send-email"); // true
+monque.resume("send-email");
 
 monque.pause();
 monque.isPaused(); // true
@@ -141,7 +150,7 @@ healthy. To stop execution across a fleet, pause each consumer instance.
 Pass `{ replace: true }` to register a new handler for an existing job name:
 
 ```typescript
-monque.register('send-email', updatedEmailHandler, { replace: true, concurrency: 3 });
+monque.register("send-email", updatedEmailHandler, { replace: true, concurrency: 3 });
 ```
 
 Running jobs finish with their original handler and remain visible in Queue Views.
@@ -168,10 +177,10 @@ instances from claiming the same pending job at the same time. See
 Your handler function is called with the full job document:
 
 ```typescript
-monque.register('example', async (job) => {
-  console.log(job._id);      // ObjectId
-  console.log(job.name);     // 'example'
-  console.log(job.data);     // Your payload
+monque.register("example", async (job) => {
+  console.log(job._id); // ObjectId
+  console.log(job.name); // 'example'
+  console.log(job.data); // Your payload
   console.log(job.failCount); // Previous failures
 });
 ```
@@ -188,7 +197,7 @@ monque.register('example', async (job) => {
 If your handler throws or returns a rejected promise, the job is automatically retried:
 
 ```typescript
-monque.register('flaky-api', async (job) => {
+monque.register("flaky-api", async (job) => {
   const response = await fetch(job.data.apiUrl);
   if (!response.ok) {
     throw new Error(`API returned ${response.status}`);
@@ -205,12 +214,12 @@ permanently deleted. The job becomes `failed` immediately and emits `job:fail` w
 configured retry policy.
 
 ```typescript
-import { NonRetryableError } from '@monque/core';
+import { NonRetryableError } from "@monque/core";
 
-monque.register<{ resourceId: string }>('check-external-resource', async (job) => {
+monque.register<{ resourceId: string }>("check-external-resource", async (job) => {
   const exists = await checkResourceExists(job.data.resourceId);
   if (!exists) {
-    throw new NonRetryableError('Resource permanently deleted');
+    throw new NonRetryableError("Resource permanently deleted");
   }
 
   await processResource(job.data.resourceId);
@@ -218,10 +227,9 @@ monque.register<{ resourceId: string }>('check-external-resource', async (job) =
 ```
 
 <Aside type="tip">
-  Returning normally records a successful run. Throw `NonRetryableError` when you need
-  to preserve a failure for inspection. After correcting the cause, you can use
-  `retryJob()` to retry it manually. For recurring jobs, permanent failure stops the
-  schedule until you retry it.
+  Returning normally records a successful run. Throw `NonRetryableError` when you need to preserve a
+  failure for inspection. After correcting the cause, you can use `retryJob()` to retry it manually.
+  For recurring jobs, permanent failure stops the schedule until you retry it.
 </Aside>
 
 ## Concurrency Control
@@ -232,7 +240,7 @@ Set in [`MonqueOptions`](/monque/api/interfaces/monqueoptions/):
 
 ```typescript
 const monque = new Monque(db, {
-  workerConcurrency: 10 // All workers default to 10 concurrent jobs
+  workerConcurrency: 10, // All workers default to 10 concurrent jobs
 });
 ```
 
@@ -240,13 +248,13 @@ const monque = new Monque(db, {
 
 ```typescript
 // Low-priority background tasks: higher concurrency
-monque.register('log-analytics', handler, { concurrency: 20 });
+monque.register("log-analytics", handler, { concurrency: 20 });
 
 // Resource-intensive tasks: lower concurrency
-monque.register('video-transcode', handler, { concurrency: 2 });
+monque.register("video-transcode", handler, { concurrency: 2 });
 
 // External API calls: limit simultaneous requests
-monque.register('api-sync', handler, { concurrency: 5 });
+monque.register("api-sync", handler, { concurrency: 5 });
 ```
 
 ### Instance-level Concurrency
@@ -255,15 +263,15 @@ Use [`instanceConcurrency`](/monque/api/interfaces/monqueoptions/#instanceconcur
 
 ```typescript
 const monque = new Monque(db, {
-  instanceConcurrency: 10,   // Instance processes max 10 jobs total
-  workerConcurrency: 5       // Each worker defaults to 5 concurrent jobs
+  instanceConcurrency: 10, // Instance processes max 10 jobs total
+  workerConcurrency: 5, // Each worker defaults to 5 concurrent jobs
 });
 
 // With 3 workers at concurrency 5, normally 15 jobs could run simultaneously.
 // With instanceConcurrency: 10, only 10 jobs run at any time across all workers.
-monque.register('emails', emailHandler);      // Up to 5 concurrent
-monque.register('notifications', notifyHandler); // Up to 5 concurrent
-monque.register('webhooks', webhookHandler);  // Up to 5 concurrent
+monque.register("emails", emailHandler); // Up to 5 concurrent
+monque.register("notifications", notifyHandler); // Up to 5 concurrent
+monque.register("webhooks", webhookHandler); // Up to 5 concurrent
 // But total across all three never exceeds 10
 ```
 
@@ -274,18 +282,18 @@ waiting for shared capacity. Running jobs are not interrupted, and jobs within e
 worker are still acquired in their scheduled order.
 
 <Aside type="tip">
-  Set `instanceConcurrency` to fit the CPU, memory, and database connections available to
-  one scheduler process.
+  Set `instanceConcurrency` to fit the CPU, memory, and database connections available to one
+  scheduler process.
 </Aside>
 
 ### Concurrency Strategy
 
-| Scenario                        | Recommended Concurrency  |
-| ------------------------------- | ------------------------ |
-| CPU-bound tasks                 | 1-2 per core             |
-| I/O-bound tasks (database, API) | 5-20                     |
-| Memory-intensive tasks          | Limited by available RAM |
-| External API calls | Limit simultaneous requests; enforce time-based rate limits separately |
+| Scenario                        | Recommended Concurrency                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| CPU-bound tasks                 | 1-2 per core                                                           |
+| I/O-bound tasks (database, API) | 5-20                                                                   |
+| Memory-intensive tasks          | Limited by available RAM                                               |
+| External API calls              | Limit simultaneous requests; enforce time-based rate limits separately |
 
 When an execution finishes, waiting jobs can use the freed local slot without
 waiting for `pollInterval`, even when change streams are unavailable. Work written
@@ -298,17 +306,17 @@ Register multiple workers for different job types:
 
 ```typescript
 // Email processing
-monque.register<EmailJob>('send-email', async (job) => {
+monque.register<EmailJob>("send-email", async (job) => {
   await sendEmail(job.data);
 });
 
 // Image processing
-monque.register<ImageJob>('resize-image', async (job) => {
+monque.register<ImageJob>("resize-image", async (job) => {
   await resizeImage(job.data);
 });
 
 // Notification dispatch
-monque.register<NotificationJob>('push-notification', async (job) => {
+monque.register<NotificationJob>("push-notification", async (job) => {
   await sendPushNotification(job.data);
 });
 ```
@@ -319,23 +327,27 @@ Workers can be registered before or after `start()`:
 
 <Tabs>
   <TabItem label="Before Start (Recommended)">
+
     ```typescript
     // Register all workers first
     monque.register('job-a', handlerA);
     monque.register('job-b', handlerB);
-    
+
     // Then start processing
     monque.start();
     ```
+
   </TabItem>
   <TabItem label="After Start">
+
     ```typescript
     monque.start();
-    
+
     // Workers registered after start begin processing
     // on the next poll cycle
     monque.register('dynamic-worker', handler);
     ```
+
   </TabItem>
 </Tabs>
 
@@ -352,11 +364,11 @@ Keep unrelated tasks in separate handlers so they can be retried independently:
 
 ```typescript
 // ✅ Good - Single responsibility
-monque.register('send-email', sendEmailHandler);
-monque.register('update-stats', updateStatsHandler);
+monque.register("send-email", sendEmailHandler);
+monque.register("update-stats", updateStatsHandler);
 
 // ❌ Bad - Too much in one handler
-monque.register('process-order', async (job) => {
+monque.register("process-order", async (job) => {
   await sendConfirmationEmail();
   await updateInventory();
   await notifyShipping();
@@ -369,12 +381,12 @@ monque.register('process-order', async (job) => {
 Design for idempotency:
 
 ```typescript
-monque.register('sync-data', async (job) => {
+monque.register("sync-data", async (job) => {
   const { batchId } = job.data;
-  
+
   // Track progress in external state
   const progress = await getProgress(batchId);
-  
+
   // Resume from where we left off
   for (const item of progress.remaining) {
     await processItem(item);
@@ -388,25 +400,25 @@ monque.register('sync-data', async (job) => {
 Use job events for centralized logging:
 
 ```typescript
-monque.on('job:start', (job) => {
-  logger.info('Job started', { jobId: job._id, name: job.name });
+monque.on("job:start", (job) => {
+  logger.info("Job started", { jobId: job._id, name: job.name });
 });
 
-monque.on('job:complete', ({ job, duration }) => {
-  logger.info('Job completed', { 
-    jobId: job._id, 
-    name: job.name, 
-    duration 
+monque.on("job:complete", ({ job, duration }) => {
+  logger.info("Job completed", {
+    jobId: job._id,
+    name: job.name,
+    duration,
   });
 });
 
-monque.on('job:fail', ({ job, error, willRetry }) => {
-  logger.error('Job failed', {
+monque.on("job:fail", ({ job, error, willRetry }) => {
+  logger.error("Job failed", {
     jobId: job._id,
     name: job.name,
     error: error.message,
     willRetry,
-    failCount: job.failCount
+    failCount: job.failCount,
   });
 });
 ```

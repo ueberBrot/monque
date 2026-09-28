@@ -13,7 +13,7 @@ Use these methods on an initialized `Monque` instance. To expose them over HTTP,
 hexadecimal string, including IDs returned by the Management API:
 
 ```typescript
-const job = await monque.getJob('507f1f77bcf86cd799439011');
+const job = await monque.getJob("507f1f77bcf86cd799439011");
 if (job) {
   console.log(job.name, job.status, job.data);
 }
@@ -26,8 +26,8 @@ Missing jobs and invalid ID strings return `null`.
 Use [`getJobsWithCursor()`](/monque/api/classes/monque/#getjobswithcursor) to read jobs in pages:
 
 ```typescript
-const filter = { name: 'send-email', status: 'failed' } as const;
-const sort = { by: 'createdAt', direction: 'desc' } as const;
+const filter = { name: "send-email", status: "failed" } as const;
+const sort = { by: "createdAt", direction: "desc" } as const;
 const firstPage = await monque.getJobsWithCursor({ filter, sort, limit: 20 });
 
 if (firstPage.hasNextPage && firstPage.cursor) {
@@ -64,7 +64,7 @@ you do not need payloads:
 
 ```typescript
 const page = await monque.getJobSummariesWithCursor({
-  filter: { name: 'send-email' },
+  filter: { name: "send-email" },
   limit: 50,
 });
 
@@ -81,16 +81,16 @@ query and returned jobs. Load a job's payload with `getJob()` when needed.
 Pass a hexadecimal job ID to change or delete a job:
 
 ```typescript
-const id = '507f1f77bcf86cd799439011';
+const id = "507f1f77bcf86cd799439011";
 const cancelled = await monque.cancelJob(id);
 ```
 
-| Method | Eligible jobs | Result |
-| --- | --- | --- |
-| [`cancelJob(id)`](/monque/api/classes/monque/#canceljob) | Pending jobs | Sets status to `cancelled`. |
-| [`retryJob(id)`](/monque/api/classes/monque/#retryjob) | Failed or cancelled jobs | Sets status to `pending`, clears failure state, and makes the job due immediately. |
-| [`rescheduleJob(id, date)`](/monque/api/classes/monque/#reschedulejob) | Pending jobs | Changes `nextRunAt`. |
-| [`deleteJob(id)`](/monque/api/classes/monque/#deletejob) | Any status | Permanently removes the document. |
+| Method                                                                 | Eligible jobs            | Result                                                                             |
+| ---------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| [`cancelJob(id)`](/monque/api/classes/monque/#canceljob)               | Pending jobs             | Sets status to `cancelled`.                                                        |
+| [`retryJob(id)`](/monque/api/classes/monque/#retryjob)                 | Failed or cancelled jobs | Sets status to `pending`, clears failure state, and makes the job due immediately. |
+| [`rescheduleJob(id, date)`](/monque/api/classes/monque/#reschedulejob) | Pending jobs             | Changes `nextRunAt`.                                                               |
+| [`deleteJob(id)`](/monque/api/classes/monque/#deletejob)               | Any status               | Permanently removes the document.                                                  |
 
 Cancel, retry, and reschedule return the updated job or `null` if it is missing. An
 incompatible state raises `JobStateError`. Repeated cancellation does not emit a second
@@ -107,10 +107,10 @@ await monque.rescheduleJob(id, nextHour);
 Bulk methods act on all jobs matching the selector, including jobs outside the current page:
 
 ```typescript
-const cancelled = await monque.cancelJobs({ name: 'send-email' });
-const retried = await monque.retryJobs({ name: 'send-email', status: 'failed' });
+const cancelled = await monque.cancelJobs({ name: "send-email" });
+const retried = await monque.retryJobs({ name: "send-email", status: "failed" });
 const deleted = await monque.deleteJobs({
-  status: ['completed', 'cancelled'],
+  status: ["completed", "cancelled"],
   olderThan: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
 });
 
@@ -138,7 +138,7 @@ Each method returns `{ count, errors }` and emits its corresponding bulk event. 
 const stats = await monque.getQueueStats();
 console.log(stats.pending, stats.processing, stats.completed, stats.failed, stats.cancelled);
 
-const emailStats = await monque.getQueueStats({ name: 'send-email' });
+const emailStats = await monque.getQueueStats({ name: "send-email" });
 console.log(emailStats.total);
 ```
 

@@ -1,9 +1,9 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 
-export const Route = createFileRoute('/')({
-	component: Home,
+export const Route = createFileRoute("/")({
+  component: Home,
 });
 
 function Home() {
-	return <Navigate to="/queue-views" replace />;
+  return <Navigate to="/queue-views" replace />;
 }

@@ -1,789 +1,789 @@
 import {
-	type CursorOptions,
-	InvalidCursorError,
-	type QueueStats,
-	type QueueViewSummary,
-} from '@monque/core';
-import { ObjectId } from 'mongodb';
-import { describe, expect, test } from 'vitest';
+  type CursorOptions,
+  InvalidCursorError,
+  type QueueStats,
+  type QueueViewSummary,
+} from "@monque/core";
+import { ObjectId } from "mongodb";
+import { describe, expect, test } from "vite-plus/test";
 
+import { createManagementSurface } from "@/index";
+import { JobCursorPageDtoSchema, JobDtoSchema } from "@/schemas";
 import {
-	createManagementJob,
-	createManagementMonque,
-	expectJsonResponse,
-	getManagementJobById,
-	handleManagementGet,
-} from '@tests/unit/management-test-utils';
-import { createManagementSurface } from '@/index';
-import { JobCursorPageDtoSchema, JobDtoSchema } from '@/schemas';
+  createManagementJob,
+  createManagementMonque,
+  expectJsonResponse,
+  getManagementJobById,
+  handleManagementGet,
+} from "@tests/unit/management-test-utils";
 
-describe('oRPC Management read routes', () => {
-	test.each([new Date('2026-09-27T12:00:00Z'), undefined])(
-		'serializes renewable lease deadlines in detail and both listing views: %s',
-		async (leaseExpiresAt) => {
-			const job = createManagementJob({
-				status: 'processing',
-				...(leaseExpiresAt ? { leaseExpiresAt } : {}),
-			});
-			const surface = createManagementSurface({
-				monque: createManagementMonque({
-					getJob: getManagementJobById(job),
-					getJobsWithCursor: async () => ({
-						jobs: [job],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					}),
-				}),
-			});
-			for (const path of [
-				`/api/v1/jobs/${job._id.toHexString()}`,
-				'/api/v1/jobs',
-				'/api/v1/jobs?view=summary',
-			]) {
-				const response = await handleManagementGet(surface, path);
-				expect(response.status).toBe(200);
-				const body = await response.json();
-				const dto = path.includes(job._id.toHexString())
-					? JobDtoSchema.parse(body)
-					: JobCursorPageDtoSchema.parse(body).jobs[0];
-				if (leaseExpiresAt)
-					expect(dto).toMatchObject({ leaseExpiresAt: leaseExpiresAt.toISOString() });
-				else expect(dto).not.toHaveProperty('leaseExpiresAt');
-			}
-		},
-	);
+describe("oRPC Management read routes", () => {
+  test.each([new Date("2026-09-27T12:00:00Z"), undefined])(
+    "serializes renewable lease deadlines in detail and both listing views: %s",
+    async (leaseExpiresAt) => {
+      const job = createManagementJob({
+        status: "processing",
+        ...(leaseExpiresAt ? { leaseExpiresAt } : {}),
+      });
+      const surface = createManagementSurface({
+        monque: createManagementMonque({
+          getJob: getManagementJobById(job),
+          getJobsWithCursor: async () => ({
+            jobs: [job],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          }),
+        }),
+      });
+      for (const path of [
+        `/api/v1/jobs/${job._id.toHexString()}`,
+        "/api/v1/jobs",
+        "/api/v1/jobs?view=summary",
+      ]) {
+        const response = await handleManagementGet(surface, path);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const dto = path.includes(job._id.toHexString())
+          ? JobDtoSchema.parse(body)
+          : JobCursorPageDtoSchema.parse(body).jobs[0];
+        if (leaseExpiresAt)
+          expect(dto).toMatchObject({ leaseExpiresAt: leaseExpiresAt.toISOString() });
+        else expect(dto).not.toHaveProperty("leaseExpiresAt");
+      }
+    },
+  );
 
-	test('exposes a terminal failure after one attempt', async () => {
-		const job = createManagementJob({
-			status: 'failed',
-			failCount: 1,
-			failReason: 'Account no longer exists',
-		});
-		const surface = createManagementSurface({
-			monque: createManagementMonque({ getJob: getManagementJobById(job) }),
-		});
-		const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
-		expect(response.status).toBe(200);
-		expect(JobDtoSchema.parse(await response.json())).toMatchObject({
-			status: 'failed',
-			failCount: 1,
-			failureReason: 'Account no longer exists',
-		});
-	});
+  test("exposes a terminal failure after one attempt", async () => {
+    const job = createManagementJob({
+      status: "failed",
+      failCount: 1,
+      failReason: "Account no longer exists",
+    });
+    const surface = createManagementSurface({
+      monque: createManagementMonque({ getJob: getManagementJobById(job) }),
+    });
+    const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+    expect(response.status).toBe(200);
+    expect(JobDtoSchema.parse(await response.json())).toMatchObject({
+      status: "failed",
+      failCount: 1,
+      failureReason: "Account no longer exists",
+    });
+  });
 
-	test.each(['Europe/Berlin', undefined])(
-		'preserves schedule timezone %s in detail and list responses',
-		async (timezone) => {
-			const job = createManagementJob({
-				repeatInterval: '0 9 * * *',
-				...(timezone === undefined ? {} : { timezone }),
-			});
-			const surface = createManagementSurface({
-				monque: createManagementMonque({
-					getJob: getManagementJobById(job),
-					getJobsWithCursor: async () => ({
-						jobs: [job],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					}),
-				}),
-			});
-			for (const path of [
-				`/api/v1/jobs/${job._id.toHexString()}`,
-				'/api/v1/jobs',
-				'/api/v1/jobs?view=summary',
-			]) {
-				const response = await handleManagementGet(surface, path);
-				expect(response.status).toBe(200);
-				const body = await response.json();
-				const dto = path.includes(job._id.toHexString())
-					? JobDtoSchema.parse(body)
-					: JobCursorPageDtoSchema.parse(body).jobs[0];
-				if (timezone === undefined) expect(dto).not.toHaveProperty('timezone');
-				else expect(dto).toMatchObject({ timezone, repeatInterval: '0 9 * * *' });
-			}
-		},
-	);
+  test.each(["Europe/Berlin", undefined])(
+    "preserves schedule timezone %s in detail and list responses",
+    async (timezone) => {
+      const job = createManagementJob({
+        repeatInterval: "0 9 * * *",
+        ...(timezone === undefined ? {} : { timezone }),
+      });
+      const surface = createManagementSurface({
+        monque: createManagementMonque({
+          getJob: getManagementJobById(job),
+          getJobsWithCursor: async () => ({
+            jobs: [job],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          }),
+        }),
+      });
+      for (const path of [
+        `/api/v1/jobs/${job._id.toHexString()}`,
+        "/api/v1/jobs",
+        "/api/v1/jobs?view=summary",
+      ]) {
+        const response = await handleManagementGet(surface, path);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const dto = path.includes(job._id.toHexString())
+          ? JobDtoSchema.parse(body)
+          : JobCursorPageDtoSchema.parse(body).jobs[0];
+        if (timezone === undefined) expect(dto).not.toHaveProperty("timezone");
+        else expect(dto).toMatchObject({ timezone, repeatInterval: "0 9 * * *" });
+      }
+    },
+  );
 
-	test('summary listings omit payloads without invoking payload serializers', async () => {
-		const job = createManagementJob();
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJobsWithCursor: async () => ({
-					jobs: [job],
-					cursor: null,
-					hasNextPage: false,
-					hasPreviousPage: false,
-				}),
-			}),
-			serializePayload: () => {
-				throw new Error('Summary reads must not serialize payloads');
-			},
-		});
-		const response = await handleManagementGet(surface, '/api/v1/jobs?view=summary');
-		expect(response.status).toBe(200);
-		expect(await response.json()).toMatchObject({
-			jobs: [{ id: job._id.toHexString(), payload: null }],
-		});
-	});
+  test("summary listings omit payloads without invoking payload serializers", async () => {
+    const job = createManagementJob();
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJobsWithCursor: async () => ({
+          jobs: [job],
+          cursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        }),
+      }),
+      serializePayload: () => {
+        throw new Error("Summary reads must not serialize payloads");
+      },
+    });
+    const response = await handleManagementGet(surface, "/api/v1/jobs?view=summary");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      jobs: [{ id: job._id.toHexString(), payload: null }],
+    });
+  });
 
-	test('lists Job DTOs through cursor pagination with repeated status filters', async () => {
-		const jobId = new ObjectId();
-		let capturedOptions: CursorOptions | undefined;
-		const serializedPayloads: unknown[] = [];
-		const job = createManagementJob({
-			_id: jobId,
-			data: { to: 'person@example.test', token: 'secret' },
-			status: 'failed',
-			lockedAt: null,
-			claimedBy: null,
-			lastHeartbeat: null,
-			failCount: 2,
-			failReason: 'SMTP rejected',
-		});
-		const surface = createManagementSurface<{ userId: string }>({
-			monque: createManagementMonque({
-				getJobsWithCursor: async (options) => {
-					capturedOptions = options;
+  test("lists Job DTOs through cursor pagination with repeated status filters", async () => {
+    const jobId = new ObjectId();
+    let capturedOptions: CursorOptions | undefined;
+    const serializedPayloads: unknown[] = [];
+    const job = createManagementJob({
+      _id: jobId,
+      data: { to: "person@example.test", token: "secret" },
+      status: "failed",
+      lockedAt: null,
+      claimedBy: null,
+      lastHeartbeat: null,
+      failCount: 2,
+      failReason: "SMTP rejected",
+    });
+    const surface = createManagementSurface<{ userId: string }>({
+      monque: createManagementMonque({
+        getJobsWithCursor: async (options) => {
+          capturedOptions = options;
 
-					return {
-						jobs: [job],
-						cursor: 'next-cursor',
-						hasNextPage: true,
-						hasPreviousPage: false,
-					};
-				},
-			}),
-			serializePayload: ({ context, job: serializedJob, payload }) => {
-				serializedPayloads.push(payload);
+          return {
+            jobs: [job],
+            cursor: "next-cursor",
+            hasNextPage: true,
+            hasPreviousPage: false,
+          };
+        },
+      }),
+      serializePayload: ({ context, job: serializedJob, payload }) => {
+        serializedPayloads.push(payload);
 
-				return Promise.resolve({
-					visibleTo: context.userId,
-					jobName: serializedJob.name,
-				});
-			},
-		});
+        return Promise.resolve({
+          visibleTo: context.userId,
+          jobName: serializedJob.name,
+        });
+      },
+    });
 
-		const response = await handleManagementGet(
-			surface,
-			'/api/v1/jobs?cursor=current-cursor&limit=250&name=send-email&status=pending&status=failed',
-			{ managementContext: { userId: 'operator-1' } },
-		);
+    const response = await handleManagementGet(
+      surface,
+      "/api/v1/jobs?cursor=current-cursor&limit=250&name=send-email&status=pending&status=failed",
+      { managementContext: { userId: "operator-1" } },
+    );
 
-		expect(capturedOptions).toEqual({
-			cursor: 'current-cursor',
-			limit: 100,
-			filter: {
-				name: 'send-email',
-				status: ['pending', 'failed'],
-			},
-			sort: {
-				by: 'createdAt',
-				direction: 'desc',
-			},
-		});
-		expect(serializedPayloads).toEqual([{ to: 'person@example.test', token: 'secret' }]);
-		await expectJsonResponse(response, 200, {
-			jobs: [
-				{
-					id: jobId.toHexString(),
-					name: 'send-email',
-					status: 'failed',
-					payload: {
-						visibleTo: 'operator-1',
-						jobName: 'send-email',
-					},
-					nextRunAt: '2026-01-01T00:00:00.000Z',
-					lockedAt: null,
-					claimedBy: null,
-					lastHeartbeat: null,
-					failCount: 2,
-					failureReason: 'SMTP rejected',
-					createdAt: '2025-12-31T23:00:00.000Z',
-					updatedAt: '2026-01-01T00:01:00.000Z',
-				},
-			],
-			cursor: 'next-cursor',
-			hasNextPage: true,
-			hasPreviousPage: false,
-		});
-	});
+    expect(capturedOptions).toEqual({
+      cursor: "current-cursor",
+      limit: 100,
+      filter: {
+        name: "send-email",
+        status: ["pending", "failed"],
+      },
+      sort: {
+        by: "createdAt",
+        direction: "desc",
+      },
+    });
+    expect(serializedPayloads).toEqual([{ to: "person@example.test", token: "secret" }]);
+    await expectJsonResponse(response, 200, {
+      jobs: [
+        {
+          id: jobId.toHexString(),
+          name: "send-email",
+          status: "failed",
+          payload: {
+            visibleTo: "operator-1",
+            jobName: "send-email",
+          },
+          nextRunAt: "2026-01-01T00:00:00.000Z",
+          lockedAt: null,
+          claimedBy: null,
+          lastHeartbeat: null,
+          failCount: 2,
+          failureReason: "SMTP rejected",
+          createdAt: "2025-12-31T23:00:00.000Z",
+          updatedAt: "2026-01-01T00:01:00.000Z",
+        },
+      ],
+      cursor: "next-cursor",
+      hasNextPage: true,
+      hasPreviousPage: false,
+    });
+  });
 
-	test('returns Job detail DTOs by id and maps missing or invalid ids', async () => {
-		const jobId = new ObjectId();
-		const job = createManagementJob({
-			_id: jobId,
-			data: { visible: true },
-			status: 'completed',
-		});
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJob: getManagementJobById(job),
-			}),
-		});
+  test("returns Job detail DTOs by id and maps missing or invalid ids", async () => {
+    const jobId = new ObjectId();
+    const job = createManagementJob({
+      _id: jobId,
+      data: { visible: true },
+      status: "completed",
+    });
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJob: getManagementJobById(job),
+      }),
+    });
 
-		const found = await handleManagementGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
-		const missing = await handleManagementGet(
-			surface,
-			`/api/v1/jobs/${new ObjectId().toHexString()}`,
-		);
-		const invalid = await handleManagementGet(surface, '/api/v1/jobs/not-an-object-id');
+    const found = await handleManagementGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+    const missing = await handleManagementGet(
+      surface,
+      `/api/v1/jobs/${new ObjectId().toHexString()}`,
+    );
+    const invalid = await handleManagementGet(surface, "/api/v1/jobs/not-an-object-id");
 
-		await expectJsonResponse(found, 200, {
-			id: jobId.toHexString(),
-			name: 'send-email',
-			status: 'completed',
-			payload: { visible: true },
-			nextRunAt: '2026-01-01T00:00:00.000Z',
-			lockedAt: null,
-			claimedBy: null,
-			lastHeartbeat: null,
-			failCount: 0,
-			failureReason: null,
-			createdAt: '2025-12-31T23:00:00.000Z',
-			updatedAt: '2026-01-01T00:01:00.000Z',
-		});
-		await expectJsonResponse(missing, 404, { error: 'Job not found' });
-		await expectJsonResponse(invalid, 400, { error: 'Invalid job id' });
-	});
+    await expectJsonResponse(found, 200, {
+      id: jobId.toHexString(),
+      name: "send-email",
+      status: "completed",
+      payload: { visible: true },
+      nextRunAt: "2026-01-01T00:00:00.000Z",
+      lockedAt: null,
+      claimedBy: null,
+      lastHeartbeat: null,
+      failCount: 0,
+      failureReason: null,
+      createdAt: "2025-12-31T23:00:00.000Z",
+      updatedAt: "2026-01-01T00:01:00.000Z",
+    });
+    await expectJsonResponse(missing, 404, { error: "Job not found" });
+    await expectJsonResponse(invalid, 400, { error: "Invalid job id" });
+  });
 
-	test('rejects Job detail query ids before reading from core', async () => {
-		const coreCalls: string[] = [];
-		const pathId = new ObjectId();
-		const queryId = new ObjectId();
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJob: async () => {
-					coreCalls.push('called');
+  test("rejects Job detail query ids before reading from core", async () => {
+    const coreCalls: string[] = [];
+    const pathId = new ObjectId();
+    const queryId = new ObjectId();
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJob: async () => {
+          coreCalls.push("called");
 
-					return null;
-				},
-			}),
-		});
+          return null;
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(
-			surface,
-			`/api/v1/jobs/${pathId.toHexString()}?id=${queryId.toHexString()}`,
-		);
+    const response = await handleManagementGet(
+      surface,
+      `/api/v1/jobs/${pathId.toHexString()}?id=${queryId.toHexString()}`,
+    );
 
-		await expectJsonResponse(response, 400, { error: 'Input validation failed' });
-		expect(coreCalls).toEqual([]);
-	});
+    await expectJsonResponse(response, 400, { error: "Input validation failed" });
+    expect(coreCalls).toEqual([]);
+  });
 
-	test.each(['send-email', 'constructor', '__proto__', 'hasOwnProperty'])(
-		'uses default Job page size and explicit payload serialization for %s',
-		async (name) => {
-			const jobId = new ObjectId();
-			let capturedOptions: CursorOptions | undefined;
-			const job = createManagementJob({
-				_id: jobId,
-				name,
-				data: { token: 'secret' },
-				lockedAt: new Date('2026-01-01T00:00:01.000Z'),
-				claimedBy: 'scheduler-1',
-				lastHeartbeat: new Date('2026-01-01T00:00:02.000Z'),
-				heartbeatInterval: 5000,
-				repeatInterval: '0 * * * *',
-				uniqueKey: 'send-email:user-1',
-			});
-			const surface = createManagementSurface<{ role: string }>({
-				monque: createManagementMonque({
-					getJobsWithCursor: async (options) => {
-						capturedOptions = options;
+  test.each(["send-email", "constructor", "__proto__", "hasOwnProperty"])(
+    "uses default Job page size and explicit payload serialization for %s",
+    async (name) => {
+      const jobId = new ObjectId();
+      let capturedOptions: CursorOptions | undefined;
+      const job = createManagementJob({
+        _id: jobId,
+        name,
+        data: { token: "secret" },
+        lockedAt: new Date("2026-01-01T00:00:01.000Z"),
+        claimedBy: "scheduler-1",
+        lastHeartbeat: new Date("2026-01-01T00:00:02.000Z"),
+        heartbeatInterval: 5000,
+        repeatInterval: "0 * * * *",
+        uniqueKey: "send-email:user-1",
+      });
+      const surface = createManagementSurface<{ role: string }>({
+        monque: createManagementMonque({
+          getJobsWithCursor: async (options) => {
+            capturedOptions = options;
 
-						return {
-							jobs: [job],
-							cursor: null,
-							hasNextPage: false,
-							hasPreviousPage: false,
-						};
-					},
-				}),
-				serializePayload: () => Promise.resolve({ source: 'global' }),
-				serializePayloadByJobName: {
-					[name]: ({ context }) =>
-						Promise.resolve({
-							source: 'job',
-							role: context.role,
-						}),
-				},
-			});
+            return {
+              jobs: [job],
+              cursor: null,
+              hasNextPage: false,
+              hasPreviousPage: false,
+            };
+          },
+        }),
+        serializePayload: () => Promise.resolve({ source: "global" }),
+        serializePayloadByJobName: {
+          [name]: ({ context }) =>
+            Promise.resolve({
+              source: "job",
+              role: context.role,
+            }),
+        },
+      });
 
-			const response = await handleManagementGet(surface, `/api/v1/jobs?name=${name}`, {
-				managementContext: { role: 'admin' },
-			});
+      const response = await handleManagementGet(surface, `/api/v1/jobs?name=${name}`, {
+        managementContext: { role: "admin" },
+      });
 
-			expect(capturedOptions).toEqual({
-				limit: 50,
-				filter: {
-					name,
-				},
-				sort: {
-					by: 'createdAt',
-					direction: 'desc',
-				},
-			});
-			await expectJsonResponse(response, 200, {
-				jobs: [
-					{
-						id: jobId.toHexString(),
-						name,
-						status: 'pending',
-						payload: {
-							source: 'job',
-							role: 'admin',
-						},
-						nextRunAt: '2026-01-01T00:00:00.000Z',
-						lockedAt: '2026-01-01T00:00:01.000Z',
-						claimedBy: 'scheduler-1',
-						lastHeartbeat: '2026-01-01T00:00:02.000Z',
-						heartbeatInterval: 5000,
-						failCount: 0,
-						failureReason: null,
-						repeatInterval: '0 * * * *',
-						uniqueKey: 'send-email:user-1',
-						createdAt: '2025-12-31T23:00:00.000Z',
-						updatedAt: '2026-01-01T00:01:00.000Z',
-					},
-				],
-				cursor: null,
-				hasNextPage: false,
-				hasPreviousPage: false,
-			});
-		},
-	);
+      expect(capturedOptions).toEqual({
+        limit: 50,
+        filter: {
+          name,
+        },
+        sort: {
+          by: "createdAt",
+          direction: "desc",
+        },
+      });
+      await expectJsonResponse(response, 200, {
+        jobs: [
+          {
+            id: jobId.toHexString(),
+            name,
+            status: "pending",
+            payload: {
+              source: "job",
+              role: "admin",
+            },
+            nextRunAt: "2026-01-01T00:00:00.000Z",
+            lockedAt: "2026-01-01T00:00:01.000Z",
+            claimedBy: "scheduler-1",
+            lastHeartbeat: "2026-01-01T00:00:02.000Z",
+            heartbeatInterval: 5000,
+            failCount: 0,
+            failureReason: null,
+            repeatInterval: "0 * * * *",
+            uniqueKey: "send-email:user-1",
+            createdAt: "2025-12-31T23:00:00.000Z",
+            updatedAt: "2026-01-01T00:01:00.000Z",
+          },
+        ],
+        cursor: null,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
+    },
+  );
 
-	test('passes a single Job status query as a scalar core filter', async () => {
-		let capturedOptions: CursorOptions | undefined;
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJobsWithCursor: async (options) => {
-					capturedOptions = options;
+  test("passes a single Job status query as a scalar core filter", async () => {
+    let capturedOptions: CursorOptions | undefined;
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJobsWithCursor: async (options) => {
+          capturedOptions = options;
 
-					return {
-						jobs: [],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					};
-				},
-			}),
-		});
+          return {
+            jobs: [],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          };
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/jobs?status=failed');
+    const response = await handleManagementGet(surface, "/api/v1/jobs?status=failed");
 
-		await expectJsonResponse(response, 200, {
-			jobs: [],
-			cursor: null,
-			hasNextPage: false,
-			hasPreviousPage: false,
-		});
-		expect(capturedOptions).toEqual({
-			limit: 50,
-			filter: {
-				status: 'failed',
-			},
-			sort: {
-				by: 'createdAt',
-				direction: 'desc',
-			},
-		});
-	});
+    await expectJsonResponse(response, 200, {
+      jobs: [],
+      cursor: null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    });
+    expect(capturedOptions).toEqual({
+      limit: 50,
+      filter: {
+        status: "failed",
+      },
+      sort: {
+        by: "createdAt",
+        direction: "desc",
+      },
+    });
+  });
 
-	test('maps Dashboard-grade Job list filters and sorting into core cursor options', async () => {
-		let capturedOptions: CursorOptions | undefined;
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJobsWithCursor: async (options) => {
-					capturedOptions = options;
+  test("maps Dashboard-grade Job list filters and sorting into core cursor options", async () => {
+    let capturedOptions: CursorOptions | undefined;
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJobsWithCursor: async (options) => {
+          capturedOptions = options;
 
-					return {
-						jobs: [],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					};
-				},
-			}),
-		});
+          return {
+            jobs: [],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          };
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(
-			surface,
-			'/api/v1/jobs?limit=200&name=send-email&status=failed&createdAtFrom=2026-01-01T00:00:00.000Z&createdAtTo=2026-01-31T00:00:00.000Z&updatedAtFrom=2026-02-01T00:00:00.000Z&updatedAtTo=2026-02-28T00:00:00.000Z&nextRunAtFrom=2026-03-01T00:00:00.000Z&nextRunAtTo=2026-03-31T00:00:00.000Z&sortBy=updatedAt&sortDirection=desc',
-		);
+    const response = await handleManagementGet(
+      surface,
+      "/api/v1/jobs?limit=200&name=send-email&status=failed&createdAtFrom=2026-01-01T00:00:00.000Z&createdAtTo=2026-01-31T00:00:00.000Z&updatedAtFrom=2026-02-01T00:00:00.000Z&updatedAtTo=2026-02-28T00:00:00.000Z&nextRunAtFrom=2026-03-01T00:00:00.000Z&nextRunAtTo=2026-03-31T00:00:00.000Z&sortBy=updatedAt&sortDirection=desc",
+    );
 
-		await expectJsonResponse(response, 200, {
-			jobs: [],
-			cursor: null,
-			hasNextPage: false,
-			hasPreviousPage: false,
-		});
-		expect(capturedOptions).toEqual({
-			limit: 100,
-			filter: {
-				name: 'send-email',
-				status: 'failed',
-				createdAtFrom: new Date('2026-01-01T00:00:00.000Z'),
-				createdAtTo: new Date('2026-01-31T00:00:00.000Z'),
-				updatedAtFrom: new Date('2026-02-01T00:00:00.000Z'),
-				updatedAtTo: new Date('2026-02-28T00:00:00.000Z'),
-				nextRunAtFrom: new Date('2026-03-01T00:00:00.000Z'),
-				nextRunAtTo: new Date('2026-03-31T00:00:00.000Z'),
-			},
-			sort: {
-				by: 'updatedAt',
-				direction: 'desc',
-			},
-		});
-	});
+    await expectJsonResponse(response, 200, {
+      jobs: [],
+      cursor: null,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    });
+    expect(capturedOptions).toEqual({
+      limit: 100,
+      filter: {
+        name: "send-email",
+        status: "failed",
+        createdAtFrom: new Date("2026-01-01T00:00:00.000Z"),
+        createdAtTo: new Date("2026-01-31T00:00:00.000Z"),
+        updatedAtFrom: new Date("2026-02-01T00:00:00.000Z"),
+        updatedAtTo: new Date("2026-02-28T00:00:00.000Z"),
+        nextRunAtFrom: new Date("2026-03-01T00:00:00.000Z"),
+        nextRunAtTo: new Date("2026-03-31T00:00:00.000Z"),
+      },
+      sort: {
+        by: "updatedAt",
+        direction: "desc",
+      },
+    });
+  });
 
-	test('maps invalid Job list query shapes and malformed cursors to stable 400 responses', async () => {
-		const coreCalls: string[] = [];
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getJobsWithCursor: async () => {
-					coreCalls.push('called');
-					throw new InvalidCursorError('Invalid cursor');
-				},
-			}),
-		});
+  test("maps invalid Job list query shapes and malformed cursors to stable 400 responses", async () => {
+    const coreCalls: string[] = [];
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getJobsWithCursor: async () => {
+          coreCalls.push("called");
+          throw new InvalidCursorError("Invalid cursor");
+        },
+      }),
+    });
 
-		const invalidStatus = await handleManagementGet(surface, '/api/v1/jobs?status=wat');
-		const invalidRepeatedStatus = await handleManagementGet(
-			surface,
-			'/api/v1/jobs?status=pending&status=wat',
-		);
-		const unsupportedFilter = await handleManagementGet(
-			surface,
-			'/api/v1/jobs?claimedBy=scheduler-1',
-		);
-		const invalidLimit = await handleManagementGet(surface, '/api/v1/jobs?limit=0');
-		const malformedCursor = await handleManagementGet(
-			surface,
-			'/api/v1/jobs?cursor=not-a-valid-cursor',
-		);
+    const invalidStatus = await handleManagementGet(surface, "/api/v1/jobs?status=wat");
+    const invalidRepeatedStatus = await handleManagementGet(
+      surface,
+      "/api/v1/jobs?status=pending&status=wat",
+    );
+    const unsupportedFilter = await handleManagementGet(
+      surface,
+      "/api/v1/jobs?claimedBy=scheduler-1",
+    );
+    const invalidLimit = await handleManagementGet(surface, "/api/v1/jobs?limit=0");
+    const malformedCursor = await handleManagementGet(
+      surface,
+      "/api/v1/jobs?cursor=not-a-valid-cursor",
+    );
 
-		await expectJsonResponse(invalidStatus, 400, { error: 'Input validation failed' });
-		await expectJsonResponse(invalidRepeatedStatus, 400, {
-			error: 'Input validation failed',
-		});
-		await expectJsonResponse(unsupportedFilter, 400, { error: 'Input validation failed' });
-		await expectJsonResponse(invalidLimit, 400, { error: 'Invalid limit' });
-		await expectJsonResponse(malformedCursor, 400, { error: 'Invalid cursor' });
-		expect(coreCalls).toEqual(['called']);
-	});
+    await expectJsonResponse(invalidStatus, 400, { error: "Input validation failed" });
+    await expectJsonResponse(invalidRepeatedStatus, 400, {
+      error: "Input validation failed",
+    });
+    await expectJsonResponse(unsupportedFilter, 400, { error: "Input validation failed" });
+    await expectJsonResponse(invalidLimit, 400, { error: "Invalid limit" });
+    await expectJsonResponse(malformedCursor, 400, { error: "Invalid cursor" });
+    expect(coreCalls).toEqual(["called"]);
+  });
 
-	test('rejects Job reads when authorization denies read access', async () => {
-		const calls: unknown[] = [];
-		const coreCalls: string[] = [];
-		const surface = createManagementSurface<{ role: string }>({
-			monque: createManagementMonque({
-				getJobsWithCursor: async () => {
-					coreCalls.push('list');
+  test("rejects Job reads when authorization denies read access", async () => {
+    const calls: unknown[] = [];
+    const coreCalls: string[] = [];
+    const surface = createManagementSurface<{ role: string }>({
+      monque: createManagementMonque({
+        getJobsWithCursor: async () => {
+          coreCalls.push("list");
 
-					return {
-						jobs: [],
-						cursor: null,
-						hasNextPage: false,
-						hasPreviousPage: false,
-					};
-				},
-				getJob: async () => {
-					coreCalls.push('detail');
+          return {
+            jobs: [],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          };
+        },
+        getJob: async () => {
+          coreCalls.push("detail");
 
-					return null;
-				},
-			}),
-			authorize: ({ action, context }) => {
-				calls.push({ action, context });
-				return false;
-			},
-		});
+          return null;
+        },
+      }),
+      authorize: ({ action, context }) => {
+        calls.push({ action, context });
+        return false;
+      },
+    });
 
-		const list = await handleManagementGet(surface, '/api/v1/jobs', {
-			managementContext: { role: 'viewer' },
-		});
-		const detail = await handleManagementGet(
-			surface,
-			`/api/v1/jobs/${new ObjectId().toHexString()}`,
-			{
-				managementContext: { role: 'viewer' },
-			},
-		);
+    const list = await handleManagementGet(surface, "/api/v1/jobs", {
+      managementContext: { role: "viewer" },
+    });
+    const detail = await handleManagementGet(
+      surface,
+      `/api/v1/jobs/${new ObjectId().toHexString()}`,
+      {
+        managementContext: { role: "viewer" },
+      },
+    );
 
-		await expectJsonResponse(list, 403, { error: 'Read access denied' });
-		await expectJsonResponse(detail, 403, { error: 'Read access denied' });
-		expect(calls).toEqual([
-			{ action: 'read', context: { role: 'viewer' } },
-			{ action: 'read', context: { role: 'viewer' } },
-		]);
-		expect(coreCalls).toEqual([]);
-	});
+    await expectJsonResponse(list, 403, { error: "Read access denied" });
+    await expectJsonResponse(detail, 403, { error: "Read access denied" });
+    expect(calls).toEqual([
+      { action: "read", context: { role: "viewer" } },
+      { action: "read", context: { role: "viewer" } },
+    ]);
+    expect(coreCalls).toEqual([]);
+  });
 
-	test('lists Queue Views through the public scheduler summary API', async () => {
-		const scopes: Array<{ name?: string } | undefined> = [];
-		const queueViews = [
-			{
-				name: 'send-email',
-				hasPersistedJobs: true,
-				hasRegisteredWorker: true,
-				stats: {
-					pending: 1,
-					processing: 2,
-					completed: 3,
-					failed: 4,
-					cancelled: 5,
-					total: 15,
-					avgProcessingDurationMs: 123,
-				},
-				worker: {
-					concurrency: 10,
-					activeCount: 2,
-					paused: true,
-					hasSchema: true,
-					maxRetries: 0,
-					baseRetryInterval: 0.5,
-					maxBackoffDelay: 100,
-				},
-			},
-			{
-				name: 'historical-report',
-				hasPersistedJobs: true,
-				hasRegisteredWorker: false,
-				stats: {
-					pending: 0,
-					processing: 0,
-					completed: 7,
-					failed: 1,
-					cancelled: 0,
-					total: 8,
-				},
-				worker: null,
-			},
-		] satisfies QueueViewSummary[];
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getQueueViewSummaries: async (filter?: { name?: string }) => {
-					scopes.push(filter);
-					return queueViews;
-				},
-			}),
-		});
+  test("lists Queue Views through the public scheduler summary API", async () => {
+    const scopes: Array<{ name?: string } | undefined> = [];
+    const queueViews = [
+      {
+        name: "send-email",
+        hasPersistedJobs: true,
+        hasRegisteredWorker: true,
+        stats: {
+          pending: 1,
+          processing: 2,
+          completed: 3,
+          failed: 4,
+          cancelled: 5,
+          total: 15,
+          avgProcessingDurationMs: 123,
+        },
+        worker: {
+          concurrency: 10,
+          activeCount: 2,
+          paused: true,
+          hasSchema: true,
+          maxRetries: 0,
+          baseRetryInterval: 0.5,
+          maxBackoffDelay: 100,
+        },
+      },
+      {
+        name: "historical-report",
+        hasPersistedJobs: true,
+        hasRegisteredWorker: false,
+        stats: {
+          pending: 0,
+          processing: 0,
+          completed: 7,
+          failed: 1,
+          cancelled: 0,
+          total: 8,
+        },
+        worker: null,
+      },
+    ] satisfies QueueViewSummary[];
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getQueueViewSummaries: async (filter?: { name?: string }) => {
+          scopes.push(filter);
+          return queueViews;
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/queue-views');
-		expect(scopes).toEqual([undefined]);
+    const response = await handleManagementGet(surface, "/api/v1/queue-views");
+    expect(scopes).toEqual([undefined]);
 
-		await expectJsonResponse(response, 200, {
-			queueViews: [
-				{
-					name: 'send-email',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: true,
-					stats: {
-						pending: 1,
-						processing: 2,
-						completed: 3,
-						failed: 4,
-						cancelled: 5,
-						total: 15,
-						avgProcessingDurationMs: 123,
-					},
-					worker: {
-						concurrency: 10,
-						activeCount: 2,
-						paused: true,
-						hasSchema: true,
-						maxRetries: 0,
-						baseRetryInterval: 0.5,
-						maxBackoffDelay: 100,
-					},
-				},
-				{
-					name: 'historical-report',
-					hasPersistedJobs: true,
-					hasRegisteredWorker: false,
-					stats: {
-						pending: 0,
-						processing: 0,
-						completed: 7,
-						failed: 1,
-						cancelled: 0,
-						total: 8,
-					},
-					worker: null,
-				},
-			],
-		});
-	});
+    await expectJsonResponse(response, 200, {
+      queueViews: [
+        {
+          name: "send-email",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: true,
+          stats: {
+            pending: 1,
+            processing: 2,
+            completed: 3,
+            failed: 4,
+            cancelled: 5,
+            total: 15,
+            avgProcessingDurationMs: 123,
+          },
+          worker: {
+            concurrency: 10,
+            activeCount: 2,
+            paused: true,
+            hasSchema: true,
+            maxRetries: 0,
+            baseRetryInterval: 0.5,
+            maxBackoffDelay: 100,
+          },
+        },
+        {
+          name: "historical-report",
+          hasPersistedJobs: true,
+          hasRegisteredWorker: false,
+          stats: {
+            pending: 0,
+            processing: 0,
+            completed: 7,
+            failed: 1,
+            cancelled: 0,
+            total: 8,
+          },
+          worker: null,
+        },
+      ],
+    });
+  });
 
-	test('passes the Queue View name filter to core and filters legacy scheduler summaries', async () => {
-		const scopes: Array<{ name?: string } | undefined> = [];
-		const summary = (name: string): QueueViewSummary => ({
-			name,
-			hasPersistedJobs: false,
-			hasRegisteredWorker: true,
-			stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
-			worker: { concurrency: 1, activeCount: 0 },
-		});
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getQueueViewSummaries: async (filter?: { name?: string }) => {
-					scopes.push(filter);
-					return [summary('alpha'), summary('beta')];
-				},
-			}),
-		});
-		const response = await handleManagementGet(surface, '/api/v1/queue-views?name=beta');
-		await expectJsonResponse(response, 200, { queueViews: [summary('beta')] });
-		expect(scopes).toEqual([{ name: 'beta' }]);
-		const missing = await handleManagementGet(surface, '/api/v1/queue-views?name=missing');
-		await expectJsonResponse(missing, 200, { queueViews: [] });
-	});
+  test("passes the Queue View name filter to core and filters legacy scheduler summaries", async () => {
+    const scopes: Array<{ name?: string } | undefined> = [];
+    const summary = (name: string): QueueViewSummary => ({
+      name,
+      hasPersistedJobs: false,
+      hasRegisteredWorker: true,
+      stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+      worker: { concurrency: 1, activeCount: 0 },
+    });
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getQueueViewSummaries: async (filter?: { name?: string }) => {
+          scopes.push(filter);
+          return [summary("alpha"), summary("beta")];
+        },
+      }),
+    });
+    const response = await handleManagementGet(surface, "/api/v1/queue-views?name=beta");
+    await expectJsonResponse(response, 200, { queueViews: [summary("beta")] });
+    expect(scopes).toEqual([{ name: "beta" }]);
+    const missing = await handleManagementGet(surface, "/api/v1/queue-views?name=missing");
+    await expectJsonResponse(missing, 200, { queueViews: [] });
+  });
 
-	test('returns Job statistics through the public scheduler stats API', async () => {
-		const calls: Array<{ name?: string } | undefined> = [];
-		const stats = {
-			pending: 4,
-			processing: 3,
-			completed: 20,
-			failed: 2,
-			cancelled: 1,
-			total: 30,
-			avgProcessingDurationMs: 456,
-		} satisfies QueueStats;
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getQueueStats: async (filter) => {
-					calls.push(filter);
-					return stats;
-				},
-			}),
-		});
+  test("returns Job statistics through the public scheduler stats API", async () => {
+    const calls: Array<{ name?: string } | undefined> = [];
+    const stats = {
+      pending: 4,
+      processing: 3,
+      completed: 20,
+      failed: 2,
+      cancelled: 1,
+      total: 30,
+      avgProcessingDurationMs: 456,
+    } satisfies QueueStats;
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getQueueStats: async (filter) => {
+          calls.push(filter);
+          return stats;
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=send-email');
-		const globalResponse = await handleManagementGet(surface, '/api/v1/jobs/stats');
+    const response = await handleManagementGet(surface, "/api/v1/jobs/stats?name=send-email");
+    const globalResponse = await handleManagementGet(surface, "/api/v1/jobs/stats");
 
-		await expectJsonResponse(response, 200, {
-			pending: 4,
-			processing: 3,
-			completed: 20,
-			failed: 2,
-			cancelled: 1,
-			total: 30,
-			avgProcessingDurationMs: 456,
-		});
-		await expectJsonResponse(globalResponse, 200, {
-			pending: 4,
-			processing: 3,
-			completed: 20,
-			failed: 2,
-			cancelled: 1,
-			total: 30,
-			avgProcessingDurationMs: 456,
-		});
-		expect(calls).toEqual([{ name: 'send-email' }, undefined]);
-	});
+    await expectJsonResponse(response, 200, {
+      pending: 4,
+      processing: 3,
+      completed: 20,
+      failed: 2,
+      cancelled: 1,
+      total: 30,
+      avgProcessingDurationMs: 456,
+    });
+    await expectJsonResponse(globalResponse, 200, {
+      pending: 4,
+      processing: 3,
+      completed: 20,
+      failed: 2,
+      cancelled: 1,
+      total: 30,
+      avgProcessingDurationMs: 456,
+    });
+    expect(calls).toEqual([{ name: "send-email" }, undefined]);
+  });
 
-	test('rejects Queue View reads when authorization denies read access', async () => {
-		const calls: unknown[] = [];
-		const queueViewCalls: string[] = [];
-		const surface = createManagementSurface<{ role: string }>({
-			monque: createManagementMonque({
-				getQueueViewSummaries: async () => {
-					queueViewCalls.push('called');
-					return [];
-				},
-			}),
-			authorize: ({ action, context }) => {
-				calls.push({ action, context });
-				return false;
-			},
-		});
+  test("rejects Queue View reads when authorization denies read access", async () => {
+    const calls: unknown[] = [];
+    const queueViewCalls: string[] = [];
+    const surface = createManagementSurface<{ role: string }>({
+      monque: createManagementMonque({
+        getQueueViewSummaries: async () => {
+          queueViewCalls.push("called");
+          return [];
+        },
+      }),
+      authorize: ({ action, context }) => {
+        calls.push({ action, context });
+        return false;
+      },
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/queue-views', {
-			managementContext: { role: 'viewer' },
-		});
+    const response = await handleManagementGet(surface, "/api/v1/queue-views", {
+      managementContext: { role: "viewer" },
+    });
 
-		await expectJsonResponse(response, 403, { error: 'Read access denied' });
-		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
-		expect(queueViewCalls).toEqual([]);
-	});
+    await expectJsonResponse(response, 403, { error: "Read access denied" });
+    expect(calls).toEqual([{ action: "read", context: { role: "viewer" } }]);
+    expect(queueViewCalls).toEqual([]);
+  });
 
-	test('rejects invalid Job stats query shapes before calling core', async () => {
-		const calls: string[] = [];
-		const surface = createManagementSurface({
-			monque: createManagementMonque({
-				getQueueStats: async () => {
-					calls.push('called');
-					return {
-						pending: 0,
-						processing: 0,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 0,
-					};
-				},
-			}),
-		});
+  test("rejects invalid Job stats query shapes before calling core", async () => {
+    const calls: string[] = [];
+    const surface = createManagementSurface({
+      monque: createManagementMonque({
+        getQueueStats: async () => {
+          calls.push("called");
+          return {
+            pending: 0,
+            processing: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 0,
+          };
+        },
+      }),
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/jobs/stats?name=one&name=two');
+    const response = await handleManagementGet(surface, "/api/v1/jobs/stats?name=one&name=two");
 
-		await expectJsonResponse(response, 400, { error: 'Input validation failed' });
-		expect(calls).toEqual([]);
-	});
+    await expectJsonResponse(response, 400, { error: "Input validation failed" });
+    expect(calls).toEqual([]);
+  });
 
-	test('rejects Job stats reads when authorization denies read access', async () => {
-		const calls: unknown[] = [];
-		const statsCalls: string[] = [];
-		const surface = createManagementSurface<{ role: string }>({
-			monque: createManagementMonque({
-				getQueueStats: async () => {
-					statsCalls.push('called');
-					return {
-						pending: 0,
-						processing: 0,
-						completed: 0,
-						failed: 0,
-						cancelled: 0,
-						total: 0,
-					};
-				},
-			}),
-			authorize: ({ action, context }) => {
-				calls.push({ action, context });
-				return false;
-			},
-		});
+  test("rejects Job stats reads when authorization denies read access", async () => {
+    const calls: unknown[] = [];
+    const statsCalls: string[] = [];
+    const surface = createManagementSurface<{ role: string }>({
+      monque: createManagementMonque({
+        getQueueStats: async () => {
+          statsCalls.push("called");
+          return {
+            pending: 0,
+            processing: 0,
+            completed: 0,
+            failed: 0,
+            cancelled: 0,
+            total: 0,
+          };
+        },
+      }),
+      authorize: ({ action, context }) => {
+        calls.push({ action, context });
+        return false;
+      },
+    });
 
-		const response = await handleManagementGet(surface, '/api/v1/jobs/stats', {
-			managementContext: { role: 'viewer' },
-		});
+    const response = await handleManagementGet(surface, "/api/v1/jobs/stats", {
+      managementContext: { role: "viewer" },
+    });
 
-		await expectJsonResponse(response, 403, { error: 'Read access denied' });
-		expect(calls).toEqual([{ action: 'read', context: { role: 'viewer' } }]);
-		expect(statsCalls).toEqual([]);
-	});
+    await expectJsonResponse(response, 403, { error: "Read access denied" });
+    expect(calls).toEqual([{ action: "read", context: { role: "viewer" } }]);
+    expect(statsCalls).toEqual([]);
+  });
 });
 
-test('omits null optional fields from persisted jobs at the DTO boundary', async () => {
-	const job = createManagementJob();
-	// BSON stores explicit undefined properties as null by default.
-	Object.defineProperties(job, {
-		heartbeatInterval: { value: null },
-		repeatInterval: { value: null },
-		uniqueKey: { value: null },
-	});
-	const surface = createManagementSurface({
-		monque: createManagementMonque({ getJob: async () => job }),
-	});
-	const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
-	expect(response.status).toBe(200);
-	const body = await response.json();
-	expect(body).not.toHaveProperty('heartbeatInterval');
-	expect(body).not.toHaveProperty('repeatInterval');
-	expect(body).not.toHaveProperty('uniqueKey');
-	expect(body).toMatchObject({ id: job._id.toHexString(), name: job.name });
+test("omits null optional fields from persisted jobs at the DTO boundary", async () => {
+  const job = createManagementJob();
+  // BSON stores explicit undefined properties as null by default.
+  Object.defineProperties(job, {
+    heartbeatInterval: { value: null },
+    repeatInterval: { value: null },
+    uniqueKey: { value: null },
+  });
+  const surface = createManagementSurface({
+    monque: createManagementMonque({ getJob: async () => job }),
+  });
+  const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body).not.toHaveProperty("heartbeatInterval");
+  expect(body).not.toHaveProperty("repeatInterval");
+  expect(body).not.toHaveProperty("uniqueKey");
+  expect(body).toMatchObject({ id: job._id.toHexString(), name: job.name });
 });

@@ -1,6 +1,6 @@
-import type { CronDecoratorOptions, CronMetadata } from '@/decorators/types.js';
+import type { CronDecoratorOptions, CronMetadata } from "@/decorators/types.js";
 
-import { appendJobMetadata } from './append-job-metadata.js';
+import { appendJobMetadata } from "./append-job-metadata.js";
 
 /**
  * Method decorator that registers a method as a scheduled cron job.
@@ -20,21 +20,21 @@ import { appendJobMetadata } from './append-job-metadata.js';
  * ```
  */
 export function Cron(pattern: string, options?: CronDecoratorOptions): MethodDecorator {
-	return <T>(
-		target: object,
-		propertyKey: string | symbol,
-		_descriptor: TypedPropertyDescriptor<T>,
-	): void => {
-		const methodName = String(propertyKey);
+  return <T>(
+    target: object,
+    propertyKey: string | symbol,
+    _descriptor: TypedPropertyDescriptor<T>,
+  ): void => {
+    const methodName = String(propertyKey);
 
-		const cronMetadata: CronMetadata = {
-			pattern,
-			// Default name to method name if not provided
-			name: options?.name || methodName,
-			method: methodName,
-			opts: options || {},
-		};
+    const cronMetadata: CronMetadata = {
+      pattern,
+      // Default name to method name if not provided
+      name: options?.name || methodName,
+      method: methodName,
+      opts: options || {},
+    };
 
-		appendJobMetadata(target, cronMetadata);
-	};
+    appendJobMetadata(target, cronMetadata);
+  };
 }

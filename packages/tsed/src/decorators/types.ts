@@ -2,7 +2,7 @@
  * @monque/tsed - Decorator Types
  */
 
-import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from '@monque/core';
+import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from "@monque/core";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Job Decorator Options
@@ -26,21 +26,21 @@ export interface JobDecoratorOptions extends CoreWorkerOptions {}
  * Stored in the JobStore and used by MonqueModule to register workers.
  */
 export interface JobMetadata {
-	/**
-	 * Job name (without namespace prefix).
-	 * Combined with controller namespace to form full job name.
-	 */
-	name: string;
+  /**
+   * Job name (without namespace prefix).
+   * Combined with controller namespace to form full job name.
+   */
+  name: string;
 
-	/**
-	 * Method name on the controller class.
-	 */
-	method: string;
+  /**
+   * Method name on the controller class.
+   */
+  method: string;
 
-	/**
-	 * Job options forwarded to Monque.register().
-	 */
-	opts: JobDecoratorOptions;
+  /**
+   * Job options forwarded to Monque.register().
+   */
+  opts: JobDecoratorOptions;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,10 +53,10 @@ export interface JobMetadata {
  * Maps to @monque/core ScheduleOptions with additional metadata overrides.
  */
 export interface CronDecoratorOptions extends ScheduleOptions {
-	/**
-	 * Override job name (defaults to method name).
-	 */
-	name?: string;
+  /**
+   * Override job name (defaults to method name).
+   */
+  name?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,25 +69,25 @@ export interface CronDecoratorOptions extends ScheduleOptions {
  * Stored in the JobStore and used by MonqueModule to schedule cron jobs.
  */
 export interface CronMetadata {
-	/**
-	 * Cron expression (5-field standard or predefined like @daily).
-	 */
-	pattern: string;
+  /**
+   * Cron expression (5-field standard or predefined like @daily).
+   */
+  pattern: string;
 
-	/**
-	 * Job name (defaults to method name if not specified in options).
-	 */
-	name: string;
+  /**
+   * Job name (defaults to method name if not specified in options).
+   */
+  name: string;
 
-	/**
-	 * Method name on the controller class.
-	 */
-	method: string;
+  /**
+   * Method name on the controller class.
+   */
+  method: string;
 
-	/**
-	 * Schedule options forwarded to Monque.schedule().
-	 */
-	opts: CronDecoratorOptions;
+  /**
+   * Schedule options forwarded to Monque.schedule().
+   */
+  opts: CronDecoratorOptions;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,25 +107,25 @@ export interface CronMetadata {
  * ```
  */
 export interface JobStore {
-	/**
-	 * Type identifier for the store.
-	 * Always "controller" for JobController.
-	 */
-	type: 'controller';
+  /**
+   * Type identifier for the store.
+   * Always "controller" for JobController.
+   */
+  type: "controller";
 
-	/**
-	 * Optional namespace prefix for all jobs in this controller.
-	 * When set, job names become "{namespace}.{name}".
-	 */
-	namespace?: string;
+  /**
+   * Optional namespace prefix for all jobs in this controller.
+   * When set, job names become "{namespace}.{name}".
+   */
+  namespace?: string;
 
-	/**
-	 * Job method registrations from @Job decorators.
-	 */
-	jobs: JobMetadata[];
+  /**
+   * Job method registrations from @Job decorators.
+   */
+  jobs: JobMetadata[];
 
-	/**
-	 * Cron job registrations from @Cron decorators.
-	 */
-	cronJobs: CronMetadata[];
+  /**
+   * Cron job registrations from @Cron decorators.
+   */
+  cronJobs: CronMetadata[];
 }

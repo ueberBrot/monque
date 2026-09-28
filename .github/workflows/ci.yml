@@ -14,20 +14,20 @@ permissions:
 
 jobs:
   lint:
-    name: Lint & Format
+    name: Format
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
         with:
-          turbo-cache: 'false'
+          task-cache: "false"
 
-      - name: Lint & Format
-        run: bun run lint
+      - name: Format
+        run: vp fmt --check
 
   build:
     name: Build Packages & Type Check
@@ -38,18 +38,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
 
       - name: Build packages
-        run: bun turbo build --filter='./packages/*'
+        run: vp run --filter './packages/*' build
 
       # Workspace type checks consume the packages' generated declarations.
       - name: Type check
-        run: bun turbo type-check --only
+        run: |
+          vp run --filter './packages/*' --filter './apps/*' --ignore-depends-on type-check
+          vp lint --type-aware --type-check -A all
+
+      - name: Lint
+        run: vp lint --deny-warnings
 
       - name: Check exports
-        run: bun turbo check:exports --filter='./packages/*' --only
+        run: vp run --filter './packages/*' --ignore-depends-on check:exports
 
       - name: Upload built packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -69,8 +74,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
 
       - name: Download built packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -79,7 +84,7 @@ jobs:
           path: packages
 
       - name: Build apps
-        run: bun turbo build --filter='./apps/*' --only
+        run: vp run --filter './apps/*' --ignore-depends-on build
 
   test:
     name: Test (${{ matrix.group }})
@@ -94,10 +99,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
         with:
-          turbo-cache-scope: ${{ matrix.group }}
+          task-cache-scope: ${{ matrix.group }}
 
       - name: Download built packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -107,11 +112,11 @@ jobs:
 
       - name: Frontend tests
         if: matrix.group == 'frontend'
-        run: bun turbo test --only --filter=@monque/dashboard --filter=@monque/dashboard-dev --concurrency=1
+        run: vp run --filter @monque/dashboard --filter @monque/dashboard-dev --ignore-depends-on --concurrency-limit 1 test
 
       - name: Backend tests
         if: matrix.group == 'backend'
-        run: bun turbo test --only --filter='!@monque/dashboard' --filter='!@monque/dashboard-dev' --concurrency=2
+        run: vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})
@@ -136,10 +141,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Setup Bun Environment
-        uses: ./.github/actions/setup-bun-env
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-vite-plus
         with:
-          turbo-cache: 'false'
+          task-cache: "false"
       - name: Download built packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -147,10 +152,10 @@ jobs:
           path: packages
       - name: Install Chromium
         working-directory: apps/dashboard-dev
-        run: bunx playwright install --with-deps --only-shell chromium
+        run: vp exec playwright install --with-deps --only-shell chromium
       - name: Test built dashboard with MongoDB and Express
         working-directory: apps/dashboard-dev
-        run: bunx playwright test --project=${{ matrix.project }}
+        run: vp exec playwright test --project=${{ matrix.project }}
       - name: Upload browser reports and failure traces
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

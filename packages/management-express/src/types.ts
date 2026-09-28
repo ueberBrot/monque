@@ -1,5 +1,5 @@
-import type { ManagementOptions } from '@monque/management';
-import type { Request, Response } from 'express';
+import type { ManagementOptions } from "@monque/management";
+import type { Request, Response } from "express";
 
 /**
  * Express request objects passed to adapter callbacks.
@@ -9,10 +9,10 @@ import type { Request, Response } from 'express';
  * framework-native state such as headers, authenticated users, cookies, or mount details.
  */
 export interface ManagementExpressContextInput {
-	/** Incoming Express request for the management route being handled. */
-	req: Request;
-	/** Outgoing Express response for the management route being handled. */
-	res: Response;
+  /** Incoming Express request for the management route being handled. */
+  req: Request;
+  /** Outgoing Express response for the management route being handled. */
+  res: Response;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface ManagementExpressContextInput {
  * ```
  */
 export type ManagementExpressContextFactory<TContext = unknown> = (
-	input: ManagementExpressContextInput,
+  input: ManagementExpressContextInput,
 ) => TContext | Promise<TContext>;
 
 /**
@@ -68,8 +68,8 @@ export type ManagementExpressContextFactory<TContext = unknown> = (
  * ```
  */
 export type ManagementExpressOpenApiServerUrl =
-	| string
-	| ((input: ManagementExpressContextInput) => string | Promise<string>);
+  | string
+  | ((input: ManagementExpressContextInput) => string | Promise<string>);
 
 /**
  * Configures adapter-served OpenAPI JSON.
@@ -79,24 +79,24 @@ export type ManagementExpressOpenApiServerUrl =
  * Set {@link ManagementExpressRouterOptions.openApi} to `false` to disable this route.
  */
 export interface ManagementExpressOpenApiOptions {
-	/**
-	 * Path where OpenAPI JSON is served, relative to the Express router mount.
-	 *
-	 * A leading slash is optional. For example, both `openapi.json` and `/openapi.json`
-	 * serve the document at the same router-relative path.
-	 *
-	 * @defaultValue `/openapi.json`
-	 */
-	path?: string;
-	/**
-	 * OpenAPI server URL for the mounted management API.
-	 *
-	 * This value is written to `document.servers` on the response. It does not change which
-	 * routes the adapter serves.
-	 *
-	 * @defaultValue The Express mount path, based on `req.baseUrl`.
-	 */
-	serverUrl?: ManagementExpressOpenApiServerUrl;
+  /**
+   * Path where OpenAPI JSON is served, relative to the Express router mount.
+   *
+   * A leading slash is optional. For example, both `openapi.json` and `/openapi.json`
+   * serve the document at the same router-relative path.
+   *
+   * @defaultValue `/openapi.json`
+   */
+  path?: string;
+  /**
+   * OpenAPI server URL for the mounted management API.
+   *
+   * This value is written to `document.servers` on the response. It does not change which
+   * routes the adapter serves.
+   *
+   * @defaultValue The Express mount path, based on `req.baseUrl`.
+   */
+  serverUrl?: ManagementExpressOpenApiServerUrl;
 }
 
 /**
@@ -137,22 +137,23 @@ export interface ManagementExpressOpenApiOptions {
  * );
  * ```
  */
-export interface ManagementExpressRouterOptions<TContext = unknown>
-	extends ManagementOptions<TContext> {
-	/**
-	 * Optional factory that maps Express request state into Management Surface context.
-	 *
-	 * The returned value is available to management `authorize`, `serializePayload`, and
-	 * `serializePayloadByJobName` hooks as their `context` input.
-	 */
-	context?: ManagementExpressContextFactory<TContext>;
-	/**
-	 * Adapter-served OpenAPI JSON configuration.
-	 *
-	 * Pass `false` when the host application serves the generated OpenAPI document itself.
-	 * Pass an object to customize the router-relative path or OpenAPI server URL.
-	 *
-	 * @defaultValue `{ path: '/openapi.json', serverUrl: req.baseUrl }`
-	 */
-	openApi?: false | ManagementExpressOpenApiOptions;
+export interface ManagementExpressRouterOptions<
+  TContext = unknown,
+> extends ManagementOptions<TContext> {
+  /**
+   * Optional factory that maps Express request state into Management Surface context.
+   *
+   * The returned value is available to management `authorize`, `serializePayload`, and
+   * `serializePayloadByJobName` hooks as their `context` input.
+   */
+  context?: ManagementExpressContextFactory<TContext>;
+  /**
+   * Adapter-served OpenAPI JSON configuration.
+   *
+   * Pass `false` when the host application serves the generated OpenAPI document itself.
+   * Pass an object to customize the router-relative path or OpenAPI server URL.
+   *
+   * @defaultValue `{ path: '/openapi.json', serverUrl: req.baseUrl }`
+   */
+  openApi?: false | ManagementExpressOpenApiOptions;
 }

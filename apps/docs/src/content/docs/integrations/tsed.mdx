@@ -3,42 +3,50 @@ title: Ts.ED Integration
 description: Use Monque with the Ts.ED framework
 ---
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
 `@monque/tsed` registers job handlers through decorators, injects their dependencies, and starts and stops the scheduler with your Ts.ED application.
 
 ## Quick Reference
 
-| Method / Type | Description |
-|---------------|-------------|
-| [`MonqueModule`](/monque/api-tsed/classes/monquemodule/) | Main Ts.ED module |
-| [`@JobController()`](/monque/api-tsed/functions/jobcontroller/) | Register a job controller |
-| [`@Job()`](/monque/api-tsed/functions/job/) | Register a job handler |
-| [`@Cron()`](/monque/api-tsed/functions/cron/) | Register a scheduled job |
-| [`MonqueService`](/monque/api-tsed/classes/monqueservice/) | Injectable job management service |
+| Method / Type                                                   | Description                       |
+| --------------------------------------------------------------- | --------------------------------- |
+| [`MonqueModule`](/monque/api-tsed/classes/monquemodule/)        | Main Ts.ED module                 |
+| [`@JobController()`](/monque/api-tsed/functions/jobcontroller/) | Register a job controller         |
+| [`@Job()`](/monque/api-tsed/functions/job/)                     | Register a job handler            |
+| [`@Cron()`](/monque/api-tsed/functions/cron/)                   | Register a scheduled job          |
+| [`MonqueService`](/monque/api-tsed/classes/monqueservice/)      | Injectable job management service |
 
 ## Installation
 
 <Tabs>
   <TabItem label="bun">
+
     ```bash
     bun add @monque/tsed @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="npm">
+
     ```bash
     npm install @monque/tsed @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="pnpm">
+
     ```bash
     pnpm add @monque/tsed @monque/core mongodb
     ```
+
   </TabItem>
   <TabItem label="yarn">
+
     ```bash
     yarn add @monque/tsed @monque/core mongodb
     ```
+
   </TabItem>
 </Tabs>
 
@@ -46,12 +54,12 @@ import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 Install these peer dependencies alongside the integration:
 
-| Package | Version | Required |
-|---------|---------|----------|
-| `@monque/core` | `^1.15.0` | Yes |
-| `mongodb` | `^7.6.0` | Yes |
-| `@tsed/core` | `^8.38.7` | Yes |
-| `@tsed/di` | `^8.38.7` | Yes |
+| Package          | Version   | Required                      |
+| ---------------- | --------- | ----------------------------- |
+| `@monque/core`   | `^1.15.0` | Yes                           |
+| `mongodb`        | `^7.6.0`  | Yes                           |
+| `@tsed/core`     | `^8.38.7` | Yes                           |
+| `@tsed/di`       | `^8.38.7` | Yes                           |
 | `@tsed/mongoose` | `^8.38.7` | Only for Mongoose integration |
 
 ## Configuration
@@ -71,7 +79,7 @@ import { MonqueModule } from "@monque/tsed";
   monque: {
     enabled: true,
     db: myExistingDbInstance,
-  }
+  },
 })
 export class Server {}
 ```
@@ -92,11 +100,11 @@ import { MongoClient } from "mongodb";
   monque: {
     enabled: true,
     dbFactory: async () => {
-        const client = await MongoClient.connect("mongodb://localhost:27017/my-app");
-        return client.db("my-app");
+      const client = await MongoClient.connect("mongodb://localhost:27017/my-app");
+      return client.db("my-app");
     },
-    collectionName: "custom_jobs" // Optional: defaults to "monque_jobs"
-  }
+    collectionName: "custom_jobs", // Optional: defaults to "monque_jobs"
+  },
 })
 export class Server {}
 ```
@@ -117,17 +125,19 @@ import { MonqueModule } from "@monque/tsed";
 @Configuration({
   imports: [
     MongooseModule, // Establish Mongoose connections
-    MonqueModule    // Hooks into existing Mongoose connections
+    MonqueModule, // Hooks into existing Mongoose connections
   ],
-  mongoose: [{
-    id: "default",
-    url: "mongodb://localhost:27017/my-app" // Mongoose manages this connection
-  }],
+  mongoose: [
+    {
+      id: "default",
+      url: "mongodb://localhost:27017/my-app", // Mongoose manages this connection
+    },
+  ],
   monque: {
     enabled: true,
-    dbToken: MongooseService,        // Reference the Mongoose service
-    mongooseConnectionId: "default" // Identify which connection to reuse
-  }
+    dbToken: MongooseService, // Reference the Mongoose service
+    mongooseConnectionId: "default", // Identify which connection to reuse
+  },
 })
 export class Server {}
 ```
@@ -171,13 +181,13 @@ settings inherit your application's `monque` configuration. See
 For runtime payload validation, pass any Standard Schema compatible validator:
 
 ```typescript
-import { z } from 'zod';
+import { z } from "zod";
 
 const emailSchema = z.object({ email: z.email() });
 
-@JobController('email')
+@JobController("email")
 export class ValidatedEmailJobs {
-  @Job('deliver', { schema: emailSchema })
+  @Job("deliver", { schema: emailSchema })
   async deliver(job: MonqueJob<z.output<typeof emailSchema>>) {
     await sendEmail(job.data.email);
   }
@@ -214,10 +224,15 @@ export class ReportJobs {
 Both `@Cron` and `MonqueService.schedule()` forward the core `timezone` option:
 
 ```typescript
-await monqueService.schedule('0 9 * * *', 'daily-report', {}, {
-  timezone: 'Europe/Berlin',
-  uniqueKey: 'daily-report',
-});
+await monqueService.schedule(
+  "0 9 * * *",
+  "daily-report",
+  {},
+  {
+    timezone: "Europe/Berlin",
+    uniqueKey: "daily-report",
+  },
+);
 ```
 
 Use a version of `@monque/core` with timezone support on every worker before enabling
@@ -244,7 +259,7 @@ export class AuthService {
     await this.monque.enqueue("email.send", {
       to: user.email,
       subject: "Welcome!",
-      templateId: "welcome"
+      templateId: "welcome",
     });
   }
 }
@@ -256,14 +271,14 @@ Import `NonRetryableError` from `@monque/core` and throw it from an `@Job` or `@
 handler when another attempt cannot help:
 
 ```typescript
-import { NonRetryableError } from '@monque/core';
-import { Job, JobController } from '@monque/tsed';
+import { NonRetryableError } from "@monque/core";
+import { Job, JobController } from "@monque/tsed";
 
-@JobController('reports')
+@JobController("reports")
 export class ReportJobs {
-  @Job('deliver')
+  @Job("deliver")
   async deliver() {
-    throw new NonRetryableError('Destination account no longer exists');
+    throw new NonRetryableError("Destination account no longer exists");
   }
 }
 ```
@@ -290,8 +305,8 @@ separate worker servers:
   imports: [MonqueModule],
   monque: {
     dbFactory: async () => client.db("myapp"),
-    disableJobProcessing: true  // Producer-only mode
-  }
+    disableJobProcessing: true, // Producer-only mode
+  },
 })
 export class ApiServer {}
 
@@ -301,18 +316,16 @@ export class ApiServer {}
   monque: {
     dbFactory: async () => client.db("myapp"),
     // disableJobProcessing defaults to false
-  }
+  },
 })
 export class WorkerServer {}
 ```
 
 <Aside type="note">
-  When `disableJobProcessing: true`:
-  - The database connection is still established
-  - `MonqueService` can enqueue jobs via `enqueue()`, `now()`, etc.
-  - Jobs are **not** registered (even if `@Job` decorators exist)
-  - The polling loop is **not** started
-  - `isHealthy()` returns `false` (since the scheduler isn't running)
+  When `disableJobProcessing: true`: - The database connection is still established -
+  `MonqueService` can enqueue jobs via `enqueue()`, `now()`, etc. - Jobs are **not** registered
+  (even if `@Job` decorators exist) - The polling loop is **not** started - `isHealthy()` returns
+  `false` (since the scheduler isn't running)
 </Aside>
 
 ## API Reference
@@ -329,6 +342,7 @@ service directly as the Management API's `monque` option, keeping its reads and 
 attached to the same scheduler.
 
 Commonly used methods:
+
 - [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
 - [`enqueueMany()`](/monque/api-tsed/classes/monqueservice/#enqueuemany) - Submit a batch with per-job scheduling and unique keys, including in producer-only applications. Returns inserted and deduplicated counts; see [batch submission](/monque/core-concepts/jobs/#enqueue-a-batch) for partial-failure behavior.
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
@@ -340,7 +354,8 @@ from the same `MongoClient` used by your configured database connection. Your
 application owns the transaction and session lifetime.
 
 <Aside type="tip">
-  See the [Ts.ED API Reference](/monque/api-tsed/classes/monqueservice/) for queries, bulk actions, and other methods.
+  See the [Ts.ED API Reference](/monque/api-tsed/classes/monqueservice/) for queries, bulk actions,
+  and other methods.
 </Aside>
 
 ## Dashboard and Management API

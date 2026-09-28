@@ -24,14 +24,14 @@ Dashboard to inspect jobs and control processing from your application.
 Start with `@monque/core`. The other packages add framework integration, an HTTP API,
 or a browser dashboard around the same scheduler.
 
-| Package | Use it to |
-| --- | --- |
-| [@monque/core](./packages/core) | Enqueue jobs, register workers, and manage scheduling and execution. |
-| [@monque/tsed](./packages/tsed) | Register workers with Ts.ED decorators and manage the scheduler through dependency injection. |
-| [@monque/management](./packages/management) | Expose job queries and actions through an HTTP contract with authorization hooks and OpenAPI. |
-| [@monque/management-express](./packages/management-express) | Mount the Management API in an Express application. |
-| [@monque/dashboard](./packages/dashboard) | Use the prebuilt browser dashboard assets in a server integration. |
-| [@monque/dashboard-express](./packages/dashboard-express) | Serve the Dashboard from Express without a frontend build. |
+| Package                                                     | Use it to                                                                                     |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [@monque/core](./packages/core)                             | Enqueue jobs, register workers, and manage scheduling and execution.                          |
+| [@monque/tsed](./packages/tsed)                             | Register workers with Ts.ED decorators and manage the scheduler through dependency injection. |
+| [@monque/management](./packages/management)                 | Expose job queries and actions through an HTTP contract with authorization hooks and OpenAPI. |
+| [@monque/management-express](./packages/management-express) | Mount the Management API in an Express application.                                           |
+| [@monque/dashboard](./packages/dashboard)                   | Use the prebuilt browser dashboard assets in a server integration.                            |
+| [@monque/dashboard-express](./packages/dashboard-express)   | Serve the Dashboard from Express without a frontend build.                                    |
 
 For Express, mount both `@monque/management-express` and `@monque/dashboard-express`.
 The first exposes your scheduler; the second serves the UI. Protect both with your
@@ -65,27 +65,27 @@ bun add @monque/core mongodb
 ```
 
 ```typescript
-import { Monque } from '@monque/core';
-import { MongoClient } from 'mongodb';
+import { Monque } from "@monque/core";
+import { MongoClient } from "mongodb";
 
-const client = await MongoClient.connect('mongodb://localhost:27017');
-const monque = new Monque(client.db('myapp'));
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("myapp"));
 await monque.initialize();
 
-monque.register<{ message: string }>('log-message', async (job) => {
+monque.register<{ message: string }>("log-message", async (job) => {
   console.log(job.data.message);
 });
 monque.start();
 
-await monque.enqueue('log-message', { message: 'Hello from Monque' });
+await monque.enqueue("log-message", { message: "Hello from Monque" });
 
 async function shutdown() {
   await monque.stop();
   await client.close();
 }
 
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
 ```
 
 See the guides for [scheduling and transactions](https://ueberBrot.github.io/monque/core-concepts/jobs/),
@@ -101,17 +101,35 @@ See the guides for [scheduling and transactions](https://ueberBrot.github.io/mon
 
 ## Development
 
-Use the Bun version pinned in [package.json](./package.json). Integration tests need Docker
-for MongoDB Testcontainers.
+Install the [Vite+ global CLI](https://viteplus.dev/guide/global-cli), then use `vp` for repository commands. It selects Bun from [package.json](./package.json) and Node from [.node-version](./.node-version). Integration tests need Docker for MongoDB Testcontainers.
 
 ```bash
-bun install
-bun run check
-bun run test
-bun run build
+vp install
+vp run check
+vp run test
+vp run build
 ```
 
-The documentation site lives in [apps/docs](./apps/docs). Run `bun run dev:docs` to work on it locally.
+Package tasks live in each `vite.config.ts`. From a package directory, use
+`vp run test:unit`; from the root, use `vp run @monque/core#test:unit`.
+`vp run check` fixes formatting/lint and checks types; CI uses read-only checks.
+Vite+ installs the staged-check hook on `vp install`. Library builds retain ESM and
+CommonJS outputs and strict export/declaration validation.
+
+Use `vp fmt` to format, `vp fmt --check` to verify formatting, and `vp lint --deny-warnings`
+to lint. `vp run check` also builds required dependencies and checks every workspace;
+bare `vp check` runs formatting and lint checks directly. Run `vp run` to browse available tasks.
+Root scripts retain only shared workflows and hook setup. Without the global CLI,
+install dependencies with Bun and prefix commands with `bun x`, for example `bun x vp fmt`.
+
+Dashboard source also uses `@shadcn/lint` to catch unknown Tailwind classes through the
+same `vp lint` command. It covers `packages/dashboard/src` and `apps/dashboard-dev/src`,
+excluding generated routes and imported `components/ui` primitives. Both use the dashboard theme.
+
+Update the bundled toolchain with `vp migrate --no-interactive --no-agent --no-editor --no-hooks`;
+Vite+ and its Vite/Vitest aliases must be updated together in the Bun catalog.
+
+The documentation site lives in [apps/docs](./apps/docs). Run `vp run @monque/docs#dev` to work on it locally.
 
 ## Inspired by
 

@@ -1,5 +1,5 @@
-import { afterAll } from 'vitest';
+import { afterAll } from "vite-plus/test";
 
-import { closeMongoDb } from './mongodb.js';
+import { closeMongoDb } from "./mongodb.js";
 
 afterAll(closeMongoDb);

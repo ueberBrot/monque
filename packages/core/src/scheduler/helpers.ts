@@ -1,53 +1,53 @@
-import { type Document, type Filter, ObjectId } from 'mongodb';
+import { type Document, type Filter, ObjectId } from "mongodb";
 
 import {
-	CursorDirection,
-	type CursorDirectionType,
-	isValidJobStatus,
-	type JobCursorFilter,
-	type JobCursorSort,
-	JobCursorSortDirection,
-	type JobCursorSortDirectionType,
-	JobCursorSortField,
-	type JobCursorSortFieldType,
-	type JobSelector,
-} from '@/jobs';
-import { InvalidCursorError, InvalidJobQueryError } from '@/shared';
+  CursorDirection,
+  type CursorDirectionType,
+  isValidJobStatus,
+  type JobCursorFilter,
+  type JobCursorSort,
+  JobCursorSortDirection,
+  type JobCursorSortDirectionType,
+  JobCursorSortField,
+  type JobCursorSortFieldType,
+  type JobSelector,
+} from "@/jobs";
+import { InvalidCursorError, InvalidJobQueryError } from "@/shared";
 
 type CursorQueryFilter = JobSelector | JobCursorFilter;
-type DateRangeField = 'createdAt' | 'updatedAt' | 'nextRunAt';
+type DateRangeField = "createdAt" | "updatedAt" | "nextRunAt";
 type DateRangeQuery = {
-	$gt?: Date;
-	$gte?: Date;
-	$lt?: Date;
-	$lte?: Date;
+  $gt?: Date;
+  $gte?: Date;
+  $lt?: Date;
+  $lte?: Date;
 };
 
 type EncodedCursorPayload = {
-	id: string;
-	sort: {
-		by: JobCursorSortFieldType;
-		direction: JobCursorSortDirectionType;
-		value: string;
-	};
+  id: string;
+  sort: {
+    by: JobCursorSortFieldType;
+    direction: JobCursorSortDirectionType;
+    value: string;
+  };
 };
 
 export type DecodedCursor = {
-	id: ObjectId;
-	direction: CursorDirectionType;
-	sort?: {
-		by: JobCursorSortFieldType;
-		direction: JobCursorSortDirectionType;
-		value: Date;
-	};
+  id: ObjectId;
+  direction: CursorDirectionType;
+  sort?: {
+    by: JobCursorSortFieldType;
+    direction: JobCursorSortDirectionType;
+    value: Date;
+  };
 };
 
 const DEFAULT_CURSOR_SORT: JobCursorSort = {
-	by: JobCursorSortField.IDENTIFIER,
-	direction: JobCursorSortDirection.ASC,
+  by: JobCursorSortField.IDENTIFIER,
+  direction: JobCursorSortDirection.ASC,
 };
 const LEGACY_CURSOR_PAYLOAD_BYTES = 12;
-const STRUCTURED_CURSOR_PAYLOAD_PREFIX = '{'.charCodeAt(0);
+const STRUCTURED_CURSOR_PAYLOAD_PREFIX = "{".charCodeAt(0);
 
 /**
  * Build a MongoDB query filter from a selector or cursor filter.
@@ -58,120 +58,120 @@ const STRUCTURED_CURSOR_PAYLOAD_PREFIX = '{'.charCodeAt(0);
  * @returns A standard MongoDB filter object
  */
 export function buildSelectorQuery(filter: CursorQueryFilter): Filter<Document> {
-	const query: Filter<Document> = {};
-	const name = parseJobNameFilter(filter);
+  const query: Filter<Document> = {};
+  const name = parseJobNameFilter(filter);
 
-	if (name !== undefined) {
-		query['name'] = name;
-	}
+  if (name !== undefined) {
+    query["name"] = name;
+  }
 
-	const status = filter.status;
-	if (status !== undefined) {
-		if (Array.isArray(status)) {
-			const statuses = [...status];
-			if (!statuses.every(isValidJobStatus)) {
-				throw new InvalidJobQueryError('Job status filter contains an invalid status');
-			}
-			query['status'] = { $in: statuses };
-		} else {
-			if (!isValidJobStatus(status)) {
-				throw new InvalidJobQueryError('Job status filter must be a valid status or status array');
-			}
-			query['status'] = status;
-		}
-	}
+  const status = filter.status;
+  if (status !== undefined) {
+    if (Array.isArray(status)) {
+      const statuses = [...status];
+      if (!statuses.every(isValidJobStatus)) {
+        throw new InvalidJobQueryError("Job status filter contains an invalid status");
+      }
+      query["status"] = { $in: statuses };
+    } else {
+      if (!isValidJobStatus(status)) {
+        throw new InvalidJobQueryError("Job status filter must be a valid status or status array");
+      }
+      query["status"] = status;
+    }
+  }
 
-	applySelectorCreatedAtRange(query, filter);
-	applyCursorDateRanges(query, filter);
+  applySelectorCreatedAtRange(query, filter);
+  applyCursorDateRanges(query, filter);
 
-	return query;
+  return query;
 }
 
 /** Validate an exact Job Name scope before query construction or cache lookup. */
 export function parseJobNameFilter(filter: unknown): string | undefined {
-	if (!isRecord(filter)) {
-		throw new InvalidJobQueryError('Job filter must be an object');
-	}
-	const name = filter['name'];
-	if (name !== undefined && (typeof name !== 'string' || name.length === 0)) {
-		throw new InvalidJobQueryError('Job name filter must be a non-empty string');
-	}
-	return name;
+  if (!isRecord(filter)) {
+    throw new InvalidJobQueryError("Job filter must be an object");
+  }
+  const name = filter["name"];
+  if (name !== undefined && (typeof name !== "string" || name.length === 0)) {
+    throw new InvalidJobQueryError("Job name filter must be a non-empty string");
+  }
+  return name;
 }
 
 function applySelectorCreatedAtRange(query: Filter<Document>, filter: CursorQueryFilter): void {
-	if (!('olderThan' in filter || 'newerThan' in filter)) {
-		return;
-	}
-	validateQueryDate(filter.olderThan, 'olderThan');
-	validateQueryDate(filter.newerThan, 'newerThan');
+  if (!("olderThan" in filter || "newerThan" in filter)) {
+    return;
+  }
+  validateQueryDate(filter.olderThan, "olderThan");
+  validateQueryDate(filter.newerThan, "newerThan");
 
-	const range = getDateRange(query, 'createdAt');
+  const range = getDateRange(query, "createdAt");
 
-	if (filter.olderThan) {
-		range['$lt'] = filter.olderThan;
-	}
+  if (filter.olderThan) {
+    range["$lt"] = filter.olderThan;
+  }
 
-	if (filter.newerThan) {
-		range['$gt'] = filter.newerThan;
-	}
+  if (filter.newerThan) {
+    range["$gt"] = filter.newerThan;
+  }
 
-	query['createdAt'] = range;
+  query["createdAt"] = range;
 }
 
 function applyCursorDateRanges(query: Filter<Document>, filter: CursorQueryFilter): void {
-	if ('createdAtFrom' in filter || 'createdAtTo' in filter) {
-		applyDateRange(query, 'createdAt', filter.createdAtFrom, filter.createdAtTo);
-	}
+  if ("createdAtFrom" in filter || "createdAtTo" in filter) {
+    applyDateRange(query, "createdAt", filter.createdAtFrom, filter.createdAtTo);
+  }
 
-	if ('updatedAtFrom' in filter || 'updatedAtTo' in filter) {
-		applyDateRange(query, 'updatedAt', filter.updatedAtFrom, filter.updatedAtTo);
-	}
+  if ("updatedAtFrom" in filter || "updatedAtTo" in filter) {
+    applyDateRange(query, "updatedAt", filter.updatedAtFrom, filter.updatedAtTo);
+  }
 
-	if ('nextRunAtFrom' in filter || 'nextRunAtTo' in filter) {
-		applyDateRange(query, 'nextRunAt', filter.nextRunAtFrom, filter.nextRunAtTo);
-	}
+  if ("nextRunAtFrom" in filter || "nextRunAtTo" in filter) {
+    applyDateRange(query, "nextRunAt", filter.nextRunAtFrom, filter.nextRunAtTo);
+  }
 }
 
 function applyDateRange(
-	query: Filter<Document>,
-	field: DateRangeField,
-	from?: Date,
-	to?: Date,
+  query: Filter<Document>,
+  field: DateRangeField,
+  from?: Date,
+  to?: Date,
 ): void {
-	validateQueryDate(from, `${field}From`);
-	validateQueryDate(to, `${field}To`);
-	if (!from && !to) {
-		return;
-	}
+  validateQueryDate(from, `${field}From`);
+  validateQueryDate(to, `${field}To`);
+  if (!from && !to) {
+    return;
+  }
 
-	const range = getDateRange(query, field);
+  const range = getDateRange(query, field);
 
-	if (from) {
-		range['$gte'] = from;
-	}
+  if (from) {
+    range["$gte"] = from;
+  }
 
-	if (to) {
-		range['$lte'] = to;
-	}
+  if (to) {
+    range["$lte"] = to;
+  }
 
-	query[field] = range;
+  query[field] = range;
 }
 
 function validateQueryDate(value: unknown, field: string): void {
-	if (value !== undefined && (!(value instanceof Date) || !Number.isFinite(value.getTime()))) {
-		throw new InvalidJobQueryError(`${field} must be a valid Date`);
-	}
+  if (value !== undefined && (!(value instanceof Date) || !Number.isFinite(value.getTime()))) {
+    throw new InvalidJobQueryError(`${field} must be a valid Date`);
+  }
 }
 
 function getDateRange(query: Filter<Document>, field: DateRangeField): DateRangeQuery {
-	const existing = query[field];
+  const existing = query[field];
 
-	if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-		return existing as DateRangeQuery;
-	}
+  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+    return existing as DateRangeQuery;
+  }
 
-	return {};
+  return {};
 }
 
 /**
@@ -190,38 +190,38 @@ function getDateRange(query: Filter<Document>, field: DateRangeField): DateRange
  * @returns Opaque base64url-encoded cursor string
  */
 export function encodeCursor(
-	id: ObjectId,
-	direction: CursorDirectionType,
-	sort: JobCursorSort = DEFAULT_CURSOR_SORT,
-	sortValue?: Date,
+  id: ObjectId,
+  direction: CursorDirectionType,
+  sort: JobCursorSort = DEFAULT_CURSOR_SORT,
+  sortValue?: Date,
 ): string {
-	const prefix = direction === CursorDirection.FORWARD ? 'F' : 'B';
+  const prefix = direction === CursorDirection.FORWARD ? "F" : "B";
 
-	if (
-		sort.by === JobCursorSortField.IDENTIFIER &&
-		sort.direction === JobCursorSortDirection.ASC &&
-		sortValue === undefined
-	) {
-		const buffer = Buffer.from(id.toHexString(), 'hex');
+  if (
+    sort.by === JobCursorSortField.IDENTIFIER &&
+    sort.direction === JobCursorSortDirection.ASC &&
+    sortValue === undefined
+  ) {
+    const buffer = Buffer.from(id.toHexString(), "hex");
 
-		return prefix + buffer.toString('base64url');
-	}
+    return prefix + buffer.toString("base64url");
+  }
 
-	if (sort.by !== JobCursorSortField.IDENTIFIER && sortValue === undefined) {
-		throw new InvalidCursorError('Cursor sort value is required');
-	}
+  if (sort.by !== JobCursorSortField.IDENTIFIER && sortValue === undefined) {
+    throw new InvalidCursorError("Cursor sort value is required");
+  }
 
-	const payload: EncodedCursorPayload = {
-		id: id.toHexString(),
-		sort: {
-			by: sort.by,
-			direction: sort.direction,
-			value: (sortValue ?? new Date(id.getTimestamp())).toISOString(),
-		},
-	};
-	const buffer = Buffer.from(JSON.stringify(payload), 'utf8');
+  const payload: EncodedCursorPayload = {
+    id: id.toHexString(),
+    sort: {
+      by: sort.by,
+      direction: sort.direction,
+      value: (sortValue ?? new Date(id.getTimestamp())).toISOString(),
+    },
+  };
+  const buffer = Buffer.from(JSON.stringify(payload), "utf8");
 
-	return prefix + buffer.toString('base64url');
+  return prefix + buffer.toString("base64url");
 }
 
 /**
@@ -235,107 +235,107 @@ export function encodeCursor(
  * @throws {InvalidCursorError} If the cursor format, ID, or sort metadata is invalid
  */
 export function decodeCursor(cursor: string): DecodedCursor {
-	if (!cursor || cursor.length < 2) {
-		throw new InvalidCursorError('Cursor is empty or too short');
-	}
+  if (!cursor || cursor.length < 2) {
+    throw new InvalidCursorError("Cursor is empty or too short");
+  }
 
-	const prefix = cursor.charAt(0);
-	const payload = cursor.slice(1);
+  const prefix = cursor.charAt(0);
+  const payload = cursor.slice(1);
 
-	let direction: CursorDirectionType;
+  let direction: CursorDirectionType;
 
-	if (prefix === 'F') {
-		direction = CursorDirection.FORWARD;
-	} else if (prefix === 'B') {
-		direction = CursorDirection.BACKWARD;
-	} else {
-		throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
-	}
+  if (prefix === "F") {
+    direction = CursorDirection.FORWARD;
+  } else if (prefix === "B") {
+    direction = CursorDirection.BACKWARD;
+  } else {
+    throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
+  }
 
-	try {
-		const buffer = Buffer.from(payload, 'base64url');
+  try {
+    const buffer = Buffer.from(payload, "base64url");
 
-		if (buffer.byteLength === LEGACY_CURSOR_PAYLOAD_BYTES) {
-			return {
-				id: new ObjectId(buffer.toString('hex')),
-				direction,
-			};
-		}
+    if (buffer.byteLength === LEGACY_CURSOR_PAYLOAD_BYTES) {
+      return {
+        id: new ObjectId(buffer.toString("hex")),
+        direction,
+      };
+    }
 
-		if (buffer[0] === STRUCTURED_CURSOR_PAYLOAD_PREFIX) {
-			return decodeStructuredCursor(buffer.toString('utf8'), direction);
-		}
+    if (buffer[0] === STRUCTURED_CURSOR_PAYLOAD_PREFIX) {
+      return decodeStructuredCursor(buffer.toString("utf8"), direction);
+    }
 
-		throw new InvalidCursorError('Invalid length');
-	} catch (error) {
-		if (error instanceof InvalidCursorError) {
-			throw error;
-		}
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+    throw new InvalidCursorError("Invalid length");
+  } catch (error) {
+    if (error instanceof InvalidCursorError) {
+      throw error;
+    }
+    throw new InvalidCursorError("Invalid cursor payload");
+  }
 }
 
 export function normalizeCursorSort(sort?: JobCursorSort): JobCursorSort {
-	return sort ?? DEFAULT_CURSOR_SORT;
+  return sort ?? DEFAULT_CURSOR_SORT;
 }
 
 function decodeStructuredCursor(
-	jsonPayload: string,
-	direction: CursorDirectionType,
+  jsonPayload: string,
+  direction: CursorDirectionType,
 ): DecodedCursor {
-	let payload: unknown;
+  let payload: unknown;
 
-	try {
-		payload = JSON.parse(jsonPayload);
-	} catch {
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+  try {
+    payload = JSON.parse(jsonPayload);
+  } catch {
+    throw new InvalidCursorError("Invalid cursor payload");
+  }
 
-	if (!isRecord(payload) || !isRecord(payload['sort'])) {
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+  if (!isRecord(payload) || !isRecord(payload["sort"])) {
+    throw new InvalidCursorError("Invalid cursor payload");
+  }
 
-	const id = payload['id'];
-	const sort = payload['sort'];
-	const sortBy = sort['by'];
-	const sortDirection = sort['direction'];
-	const sortValueRaw = sort['value'];
+  const id = payload["id"];
+  const sort = payload["sort"];
+  const sortBy = sort["by"];
+  const sortDirection = sort["direction"];
+  const sortValueRaw = sort["value"];
 
-	if (
-		typeof id !== 'string' ||
-		typeof sortValueRaw !== 'string' ||
-		!ObjectId.isValid(id) ||
-		!isValidCursorSortField(sortBy) ||
-		!isValidCursorSortDirection(sortDirection)
-	) {
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+  if (
+    typeof id !== "string" ||
+    typeof sortValueRaw !== "string" ||
+    !ObjectId.isValid(id) ||
+    !isValidCursorSortField(sortBy) ||
+    !isValidCursorSortDirection(sortDirection)
+  ) {
+    throw new InvalidCursorError("Invalid cursor payload");
+  }
 
-	const sortValue = new Date(sortValueRaw);
+  const sortValue = new Date(sortValueRaw);
 
-	if (Number.isNaN(sortValue.getTime())) {
-		throw new InvalidCursorError('Invalid cursor payload');
-	}
+  if (Number.isNaN(sortValue.getTime())) {
+    throw new InvalidCursorError("Invalid cursor payload");
+  }
 
-	return {
-		id: new ObjectId(id),
-		direction,
-		sort: {
-			by: sortBy,
-			direction: sortDirection,
-			value: sortValue,
-		},
-	};
+  return {
+    id: new ObjectId(id),
+    direction,
+    sort: {
+      by: sortBy,
+      direction: sortDirection,
+      value: sortValue,
+    },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidCursorSortField(value: unknown): value is JobCursorSortFieldType {
-	return Object.values(JobCursorSortField).includes(value as JobCursorSortFieldType);
+  return Object.values(JobCursorSortField).includes(value as JobCursorSortFieldType);
 }
 
 function isValidCursorSortDirection(value: unknown): value is JobCursorSortDirectionType {
-	return Object.values(JobCursorSortDirection).includes(value as JobCursorSortDirectionType);
+  return Object.values(JobCursorSortDirection).includes(value as JobCursorSortDirectionType);
 }

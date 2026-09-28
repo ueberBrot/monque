@@ -19,11 +19,11 @@ bun add @monque/management @monque/core mongodb
 Create a Management handler from an initialized instance:
 
 ```typescript
-import { createManagementSurface } from '@monque/management';
+import { createManagementSurface } from "@monque/management";
 
 const management = createManagementSurface<{ canManageJobs: boolean }>({
   monque,
-  authorize: ({ action, context }) => action === 'read' || context.canManageJobs,
+  authorize: ({ action, context }) => action === "read" || context.canManageJobs,
 });
 
 const result = await management.openApiHandler.handle(request, {
@@ -45,25 +45,25 @@ calling the handler and derive `managementContext` from the authenticated sessio
 
 Paths are relative to the Management router's mount URL:
 
-| Method | Path | Operation |
-| --- | --- | --- |
-| `GET` | `/api/v1/health` | Scheduler health |
-| `GET` | `/api/v1/capabilities` | Read-only mode and available actions |
-| `GET` | `/api/v1/processing` | Local pause state and scheduler identity; optional `name` |
-| `POST` | `/api/v1/processing/actions/pause` | Pause all local workers or one job name |
-| `POST` | `/api/v1/processing/actions/resume` | Resume all local workers or one job name |
-| `GET` | `/api/v1/queue-views` | Job counts grouped by name and local worker activity |
-| `GET` | `/api/v1/jobs` | Cursor-paginated jobs |
-| `GET` | `/api/v1/jobs/stats` | Job counts, optionally filtered by name |
-| `GET` | `/api/v1/jobs/{id}` | Job detail and payload |
-| `POST` | `/api/v1/jobs/{id}/actions/cancel` | Cancel a pending job |
-| `POST` | `/api/v1/jobs/{id}/actions/retry` | Retry a failed or cancelled job |
-| `POST` | `/api/v1/jobs/{id}/actions/reschedule` | Change a pending job's run time |
-| `DELETE` | `/api/v1/jobs/{id}` | Delete a job |
-| `POST` | `/api/v1/jobs/actions/cancel` | Cancel jobs matching a selector |
-| `POST` | `/api/v1/jobs/actions/retry` | Retry jobs matching a selector |
-| `POST` | `/api/v1/jobs/actions/delete` | Delete jobs matching a selector |
-| `POST` | `/api/v1/jobs/actions/selected` | Act on specific job IDs |
+| Method   | Path                                   | Operation                                                 |
+| -------- | -------------------------------------- | --------------------------------------------------------- |
+| `GET`    | `/api/v1/health`                       | Scheduler health                                          |
+| `GET`    | `/api/v1/capabilities`                 | Read-only mode and available actions                      |
+| `GET`    | `/api/v1/processing`                   | Local pause state and scheduler identity; optional `name` |
+| `POST`   | `/api/v1/processing/actions/pause`     | Pause all local workers or one job name                   |
+| `POST`   | `/api/v1/processing/actions/resume`    | Resume all local workers or one job name                  |
+| `GET`    | `/api/v1/queue-views`                  | Job counts grouped by name and local worker activity      |
+| `GET`    | `/api/v1/jobs`                         | Cursor-paginated jobs                                     |
+| `GET`    | `/api/v1/jobs/stats`                   | Job counts, optionally filtered by name                   |
+| `GET`    | `/api/v1/jobs/{id}`                    | Job detail and payload                                    |
+| `POST`   | `/api/v1/jobs/{id}/actions/cancel`     | Cancel a pending job                                      |
+| `POST`   | `/api/v1/jobs/{id}/actions/retry`      | Retry a failed or cancelled job                           |
+| `POST`   | `/api/v1/jobs/{id}/actions/reschedule` | Change a pending job's run time                           |
+| `DELETE` | `/api/v1/jobs/{id}`                    | Delete a job                                              |
+| `POST`   | `/api/v1/jobs/actions/cancel`          | Cancel jobs matching a selector                           |
+| `POST`   | `/api/v1/jobs/actions/retry`           | Retry jobs matching a selector                            |
+| `POST`   | `/api/v1/jobs/actions/delete`          | Delete jobs matching a selector                           |
+| `POST`   | `/api/v1/jobs/actions/selected`        | Act on specific job IDs                                   |
 
 Job IDs are MongoDB ObjectId strings. Dates in requests and responses use ISO 8601 UTC
 strings, such as `2026-09-19T12:00:00.000Z`. Job responses use `payload` for the job's data
@@ -124,18 +124,18 @@ confirm the intended instance before retrying. Give each scheduler a unique
 
 `GET /api/v1/jobs` accepts:
 
-| Parameter | Meaning |
-| --- | --- |
-| `name` | Exact job name; substring and payload search are not supported. |
-| `status` | `pending`, `processing`, `completed`, `failed`, or `cancelled`. Repeat the parameter for multiple statuses. |
-| `limit` | Positive page size; defaults to 50 and values above 100 are capped at 100. |
-| `cursor` | Opaque cursor returned by the previous response. |
-| `sortBy` | `identifier`, `createdAt` (default), `updatedAt`, or `nextRunAt`. |
-| `sortDirection` | `asc` or `desc`; defaults to `desc`. |
-| `createdAtFrom`, `createdAtTo` | Inclusive creation-time range. |
-| `updatedAtFrom`, `updatedAtTo` | Inclusive update-time range. |
-| `nextRunAtFrom`, `nextRunAtTo` | Inclusive scheduled-time range. |
-| `view` | `full` (default) or `summary`. |
+| Parameter                      | Meaning                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `name`                         | Exact job name; substring and payload search are not supported.                                             |
+| `status`                       | `pending`, `processing`, `completed`, `failed`, or `cancelled`. Repeat the parameter for multiple statuses. |
+| `limit`                        | Positive page size; defaults to 50 and values above 100 are capped at 100.                                  |
+| `cursor`                       | Opaque cursor returned by the previous response.                                                            |
+| `sortBy`                       | `identifier`, `createdAt` (default), `updatedAt`, or `nextRunAt`.                                           |
+| `sortDirection`                | `asc` or `desc`; defaults to `desc`.                                                                        |
+| `createdAtFrom`, `createdAtTo` | Inclusive creation-time range.                                                                              |
+| `updatedAtFrom`, `updatedAtTo` | Inclusive update-time range.                                                                                |
+| `nextRunAtFrom`, `nextRunAtTo` | Inclusive scheduled-time range.                                                                             |
+| `view`                         | `full` (default) or `summary`.                                                                              |
 
 ```text
 /ops/api/v1/jobs?name=send-email&status=failed&limit=20&sortBy=createdAt&sortDirection=desc&view=summary
@@ -169,7 +169,11 @@ The response reports successful changes and individual failures:
 {
   "count": 1,
   "errors": [
-    { "jobId": "507f1f77bcf86cd799439012", "status": 409, "error": "Cannot retry job in status 'processing'" }
+    {
+      "jobId": "507f1f77bcf86cd799439012",
+      "status": 409,
+      "error": "Cannot retry job in status 'processing'"
+    }
   ]
 }
 ```
@@ -202,19 +206,19 @@ Management. `authorize` then decides which operations that user may perform:
 ```typescript
 const management = createManagementSurface<{ canManageJobs: boolean }>({
   monque,
-  authorize: ({ action, context }) => action === 'read' || context.canManageJobs,
+  authorize: ({ action, context }) => action === "read" || context.canManageJobs,
 });
 ```
 
 Available action names are `read`, `cancel`, `cancelBulk`, `retry`, `retryBulk`, `reschedule`,
 `delete`, and `deleteBulk`. The callback receives:
 
-| Input | Available when |
-| --- | --- |
-| `context` | Every authorization check |
-| `job` | A single job is targeted |
+| Input      | Available when                               |
+| ---------- | -------------------------------------------- |
+| `context`  | Every authorization check                    |
+| `job`      | A single job is targeted                     |
 | `selector` | A selector-based bulk operation is requested |
-| `ids` | The initial check for a selected-job request |
+| `ids`      | The initial check for a selected-job request |
 
 Capabilities checks do not include a job, selector, or IDs. Handle those inputs as optional.
 Selected cancel, retry, and delete requests first check the corresponding bulk permission,
@@ -241,14 +245,14 @@ Choose which payload fields API clients can see:
 Install Zod with `bun add zod` if your application does not already use it.
 
 ```typescript
-import { z } from 'zod';
+import { z } from "zod";
 
 const EmailPreview = z.object({ subject: z.string() });
 const management = createManagementSurface({
   monque,
   serializePayload: async () => null,
   serializePayloadByJobName: {
-    'send-email': async ({ job }) => EmailPreview.parse(job.data),
+    "send-email": async ({ job }) => EmailPreview.parse(job.data),
   },
 });
 ```

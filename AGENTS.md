@@ -1,6 +1,6 @@
 # Agent Guidelines for Monque
 
-This repository is a TypeScript monorepo using **Bun**, **Turborepo**, and **Biome**.
+This repository is a TypeScript monorepo using **Bun** and **Vite+** (Vite Task, Oxfmt, Oxlint, Vitest, and package builds).
 You are an expert software engineer working in this environment.
 
 ## Agent skills
@@ -28,28 +28,29 @@ diff does not mean there is no work to review. Use the user's request as the spe
 it describes the work without a separate ticket or spec file.
 
 ## 1. Core Principles
+
 - **Be Extremely Concise**: Sacrifice grammar for brevity. Output code and essential explanations only.
 - **Safety First**: Never commit secrets. verify all changes with tests, type-check, lint and format.
 - **Modern Standards**: Use modern TypeScript (ESNext).
 
 ## 2. Commands
 
-All commands use `bun`. Never use `npm`, `yarn`, or `pnpm`.
+Use `vp` as the primary CLI. It selects Bun from `package.json` and Node from `.node-version`. Install with `vp install`; run workflows with `vp run`. Without the global CLI, use `bun x vp` after installing dependencies with Bun. Root scripts provide shared workspace workflows; package-specific commands use `vp run @monque/package#task`.
 
-| Task              | Command                         |
-| ----------------- | ------------------------------- |
-| Install           | `bun install`                   |
-| Build             | `bun run build` (uses `tsdown`) |
-| Clean             | `bun run clean`                 |
-| Lint (check only) | `bun run lint`                  |
-| Fix lint + format | `bun run check`                 |
-| Format only       | `bun run format`                |
-| Type-check        | `bun run type-check`            |
-| All tests         | `bun run test`                  |
-| Unit tests        | `bun run test:unit`             |
-| Integration tests | `bun run test:integration`      |
-| Dev mode (watch)  | `bun run test:dev`              |
-| Unused exports    | `bun run check:unused` (knip)   |
+| Task              | Command                                      |
+| ----------------- | -------------------------------------------- |
+| Install           | `vp install`                                 |
+| Build             | `vp run build` (uses `vp pack` / `vp build`) |
+| Clean             | `vp run clean`                               |
+| Lint (check only) | `vp lint --deny-warnings`                    |
+| Fix lint + format | `vp run check`                               |
+| Format only       | `vp fmt`                                     |
+| Type-check        | `vp run type-check`                          |
+| All tests         | `vp run test`                                |
+| Unit tests        | `vp run test:unit`                           |
+| Integration tests | `vp run test:integration`                    |
+| Dev mode (watch)  | `vp run @monque/core#test:watch`             |
+| Unused exports    | `vp run check:unused` (knip)                 |
 
 ### Running a Single Test
 
@@ -57,22 +58,22 @@ Run from the **package directory**, not the repo root:
 
 ```bash
 cd packages/core
-bun run test src/scheduler/services/job-processor.test.ts
+vp run test tests/unit/services/job-processor.test.ts
 
 # Unit only:
-bun run test:unit tests/unit/backoff.test.ts
+vp run test:unit tests/unit/backoff.test.ts
 ```
 
 Filter a specific package from root:
 
 ```bash
-bun run test:core        # all @monque/core tests
-bun run test:unit:core   # unit only for core
+vp run @monque/core#test        # all @monque/core tests
+vp run @monque/core#test:unit   # unit only for core
 ```
 
-### Pre-commit Hooks (Lefthook)
+### Pre-commit Hooks (Vite+)
 
-Runs automatically: `type-check` + `biome check --write` on staged files.
+The `.vite-hooks/pre-commit` hook runs workspace type checks and `vp staged`. Staged files use `vp check --fix`; manifest changes also verify the frozen Bun lockfile.
 
 ## 3. File Structure
 
@@ -95,15 +96,15 @@ monque/
 │   └── tsed/           # @monque/tsed - Ts.ED DI integration
 ├── apps/docs/          # Documentation site (Astro)
 ├── specs/              # Specifications
-└── biome.json          # Linter/formatter config
+└── vite.config.ts      # Shared Oxfmt, Oxlint, tests, and staged checks
 ```
 
 ## 4. Code Style
 
-### Formatting (Biome-enforced)
+### Formatting (Oxfmt defaults)
 
-- **Indentation**: Tabs (width 2)
-- **Quotes**: Single quotes
+- **Indentation**: 2 spaces
+- **Quotes**: Double quotes
 - **Semicolons**: Always
 - **Line width**: 100 characters
 
@@ -121,16 +122,21 @@ monque/
 
 ### Imports
 
-Biome auto-sorts imports into these groups (separated by blank lines):
+Oxfmt handles import sorting and group separation using its native configuration. Imports use these groups (separated by blank lines):
 
 1. URL imports
 2. Built-ins (`node:url`, `bun:test`) + external packages (`mongodb`, `zod`)
-3. *(blank line)*
-4. Internal aliases (`@/utils`, `@tests/factories`)
-5. *(blank line)*
+3. _(blank line)_
+4. Internal aliases (`@/utils`, `@tests/factories`, `@test-utils/seed`)
+5. _(blank line)_
 6. Relative imports (`./types.js`)
 
+Workspace tasks and package builds live in each package's `vite.config.ts`. Task names must not duplicate `package.json` scripts. Root lint/format policy applies to every package. Use `vp run -r <task>` across the workspace or `vp run --filter @monque/core <task>` for one package.
+
+Oxlint uses its default correctness rules plus native React checks. The `@shadcn/lint` unknown-class rule applies only to dashboard and dashboard-dev source, excluding `components/ui` and generated routes. Run `vp lint --deny-warnings` to include these checks; use `vp run type-check` for TypeScript checking.
+
 Rules:
+
 - `import type { ... }` for type-only imports (enforced by `verbatimModuleSyntax`)
 - Mixed: `export { type Job, JobStatus }` with inline `type` keyword
 - Relative imports use `.js` extensions (`from './types.js'`)
@@ -139,6 +145,7 @@ Rules:
 ### TypeScript Strictness
 
 Strict mode with these extra flags enabled:
+
 - `noUncheckedIndexedAccess` - Index signatures return `T | undefined`
 - `exactOptionalPropertyTypes` - `undefined` must be explicit in optional props
 - `noImplicitOverride` - `override` keyword required
@@ -146,19 +153,21 @@ Strict mode with these extra flags enabled:
 - `noUnusedLocals` / `noUnusedParameters`
 
 Rules:
+
 - **No `any`**. Use `unknown` with type guards. Generic defaults: `<T = unknown>`.
 - **No non-null assertions** (`!`). Use optional chaining or type guards.
 - **No enums**. Use `as const` objects:
   ```typescript
-  export const JobStatus = { PENDING: 'pending', PROCESSING: 'processing' } as const;
+  export const JobStatus = { PENDING: "pending", PROCESSING: "processing" } as const;
   export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
   ```
 - **Explicit return types** on all public API methods.
-- **Named exports only**. Zero default exports in the entire codebase.
+- **Named exports only**. Configuration and plugin entrypoints may default-export the object required by their tool.
 
 ### Error Handling
 
 Custom error hierarchy - all extend `MonqueError`:
+
 ```
 MonqueError
 ├── InvalidCronError
@@ -171,6 +180,7 @@ MonqueError
 ```
 
 Patterns:
+
 - Guard-style early throws for validation
 - Try/catch with re-wrapping at service boundaries
 - Catch-and-emit for background operations (polling, heartbeats)
@@ -182,7 +192,7 @@ Patterns:
 - Every directory has an `index.ts` barrel re-exporting its public API
 - Root `src/index.ts` is the single public entrypoint, grouped by category with comments
 - Use `export type { ... }` for pure type re-exports
-- Never use default exports
+- Application/library code uses named exports; configuration entrypoints may default-export.
 
 ## 5. Architecture
 
@@ -207,7 +217,7 @@ Patterns:
 
 ## 6. Testing
 
-Framework: **Vitest** with `globals: true` (no need to import `describe`/`it`/`expect`).
+Framework: **Vitest via Vite+** (`vite-plus/test` imports; `vite-plus` configuration) with `globals: true` (no need to import `describe`/`it`/`expect`).
 
 ### Test Organization
 
@@ -240,4 +250,4 @@ Always test: Happy Path, Idempotency, Resilience (backoff, race conditions).
 2. **Plan** changes if complex
 3. **Implement** following all style rules above
 4. **Test** - add/update tests covering changes
-5. **Verify** - run `bun run check` and `bun run test:unit` before finishing
+5. **Verify** - run `vp run check` and `vp run test:unit` before finishing

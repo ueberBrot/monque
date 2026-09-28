@@ -1,0 +1,41 @@
+name: "Setup Vite+"
+description: "Setup the pinned Vite+ toolchain, Bun, dependencies, and task cache"
+
+inputs:
+  node-version:
+    description: "Node.js runtime (defaults to .node-version)"
+    default: ""
+  registry-url:
+    description: "Optional npm registry URL for release authentication"
+    default: ""
+  task-cache:
+    description: "Persist the Vite Task cache between CI runs"
+    default: "true"
+  task-cache-scope:
+    description: "Separate caches for matrix groups"
+    default: "default"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Vite+ and Bun
+      uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      with:
+        node-version: ${{ inputs.node-version }}
+        node-version-file: .node-version
+        registry-url: ${{ inputs.registry-url }}
+        cache: true
+        run-install: |
+          args: ['--frozen-lockfile']
+      env:
+        VP_GIT_HOOKS: "0"
+
+    # Install first: package managers may recreate node_modules.
+    - name: Restore Vite Task cache
+      if: inputs.task-cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: node_modules/.vite/task-cache
+        key: ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.task-cache-scope }}-${{ hashFiles('bun.lock', '.node-version') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-vite-task-${{ github.workflow }}-${{ github.job }}-${{ inputs.task-cache-scope }}-${{ hashFiles('bun.lock', '.node-version') }}-

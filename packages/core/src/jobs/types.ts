@@ -1,4 +1,4 @@
-import type { ClientSession, ObjectId } from 'mongodb';
+import type { ClientSession, ObjectId } from "mongodb";
 
 /**
  * Represents the lifecycle states of a job in the queue.
@@ -18,16 +18,16 @@ import type { ClientSession, ObjectId } from 'mongodb';
  * ```
  */
 export const JobStatus = {
-	/** Job is waiting to be picked up by a worker */
-	PENDING: 'pending',
-	/** Job is currently being executed by a worker */
-	PROCESSING: 'processing',
-	/** Job completed successfully */
-	COMPLETED: 'completed',
-	/** Job failed without automatic retries, either explicitly or after exhausting retry attempts */
-	FAILED: 'failed',
-	/** Job was manually cancelled */
-	CANCELLED: 'cancelled',
+  /** Job is waiting to be picked up by a worker */
+  PENDING: "pending",
+  /** Job is currently being executed by a worker */
+  PROCESSING: "processing",
+  /** Job completed successfully */
+  COMPLETED: "completed",
+  /** Job failed without automatic retries, either explicitly or after exhausting retry attempts */
+  FAILED: "failed",
+  /** Job was manually cancelled */
+  CANCELLED: "cancelled",
 } as const;
 
 /**
@@ -60,70 +60,70 @@ export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
  * ```
  */
 export interface Job<T = unknown> {
-	/** MongoDB document identifier */
-	_id?: ObjectId;
+  /** MongoDB document identifier */
+  _id?: ObjectId;
 
-	/** Job type identifier, matches worker registration */
-	name: string;
+  /** Job type identifier, matches worker registration */
+  name: string;
 
-	/** Job payload - must be JSON-serializable */
-	data: T;
+  /** Job payload - must be JSON-serializable */
+  data: T;
 
-	/** Current lifecycle state */
-	status: JobStatusType;
+  /** Current lifecycle state */
+  status: JobStatusType;
 
-	/** When the job should be processed */
-	nextRunAt: Date;
+  /** When the job should be processed */
+  nextRunAt: Date;
 
-	/** Timestamp when job was locked for processing */
-	lockedAt?: Date | null;
+  /** Timestamp when job was locked for processing */
+  lockedAt?: Date | null;
 
-	/**
-	 * Unique identifier of the scheduler instance that claimed this job.
-	 * Used for atomic claim pattern - ensures only one instance processes each job.
-	 * Set when a job is claimed, cleared when job completes or fails.
-	 */
-	claimedBy?: string | null;
+  /**
+   * Unique identifier of the scheduler instance that claimed this job.
+   * Used for atomic claim pattern - ensures only one instance processes each job.
+   * Set when a job is claimed, cleared when job completes or fails.
+   */
+  claimedBy?: string | null;
 
-	/** Identifier of this execution's claim; changes whenever the job is claimed again. */
-	claimId?: string;
+  /** Identifier of this execution's claim; changes whenever the job is claimed again. */
+  claimId?: string;
 
-	/** Renewable claim deadline, measured by MongoDB's clock. Absent for absolute locks. */
-	leaseExpiresAt?: Date;
+  /** Renewable claim deadline, measured by MongoDB's clock. Absent for absolute locks. */
+  leaseExpiresAt?: Date;
 
-	/**
-	 * Timestamp of the last heartbeat update for this job.
-	 * Used to detect stale jobs when a scheduler instance crashes without releasing.
-	 * Updated periodically while job is being processed.
-	 */
-	lastHeartbeat?: Date | null;
+  /**
+   * Timestamp of the last heartbeat update for this job.
+   * Used to detect stale jobs when a scheduler instance crashes without releasing.
+   * Updated periodically while job is being processed.
+   */
+  lastHeartbeat?: Date | null;
 
-	/**
-	 * Heartbeat interval in milliseconds for this job.
-	 * Stored on the job to allow recovery logic to use the correct timeout.
-	 */
-	heartbeatInterval?: number;
+  /**
+   * Heartbeat interval in milliseconds for this job.
+   * Stored on the job to allow recovery logic to use the correct timeout.
+   */
+  heartbeatInterval?: number;
 
-	/** Number of failed attempts */
-	failCount: number;
+  /** Number of failed attempts */
+  failCount: number;
 
-	/** Last failure error message */
-	failReason?: string;
+  /** Last failure error message */
+  failReason?: string;
 
-	/** Cron expression for recurring jobs */
-	repeatInterval?: string;
+  /** Cron expression for recurring jobs */
+  repeatInterval?: string;
 
-	/** IANA timezone for recurring cron evaluation; omitted uses the server's local timezone. */
-	timezone?: string;
+  /** IANA timezone for recurring cron evaluation; omitted uses the server's local timezone. */
+  timezone?: string;
 
-	/** Deduplication key to prevent duplicate jobs */
-	uniqueKey?: string;
+  /** Deduplication key to prevent duplicate jobs */
+  uniqueKey?: string;
 
-	/** Job creation timestamp */
-	createdAt: Date;
+  /** Job creation timestamp */
+  createdAt: Date;
 
-	/** Last modification timestamp */
-	updatedAt: Date;
+  /** Last modification timestamp */
+  updatedAt: Date;
 }
 
 /**
@@ -146,37 +146,37 @@ export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
  * ```
  */
 export interface EnqueueOptions extends JobWriteOptions {
-	/**
-	 * Deduplication key. If a job with this key is already pending or processing,
-	 * the enqueue operation will not create a duplicate.
-	 */
-	uniqueKey?: string;
+  /**
+   * Deduplication key. If a job with this key is already pending or processing,
+   * the enqueue operation will not create a duplicate.
+   */
+  uniqueKey?: string;
 
-	/**
-	 * When the job should be processed. Defaults to immediately (new Date()).
-	 */
-	runAt?: Date;
+  /**
+   * When the job should be processed. Defaults to immediately (new Date()).
+   */
+  runAt?: Date;
 }
 
 /** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
-export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, 'session'> {
-	name: string;
-	data: T;
+export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session"> {
+  name: string;
+  data: T;
 }
 
 /** Counts acknowledged by a successful enqueueMany() call. */
 export interface EnqueueManyResult {
-	insertedCount: number;
-	deduplicatedCount: number;
+  insertedCount: number;
+  deduplicatedCount: number;
 }
 
 /** Options shared by job writes. */
 export interface JobWriteOptions {
-	/**
-	 * Session from the MongoClient used by Monque. The caller owns its lifetime,
-	 * transaction, and commit. In a transaction, jobs become visible to workers after commit.
-	 */
-	session?: ClientSession;
+  /**
+   * Session from the MongoClient used by Monque. The caller owns its lifetime,
+   * transaction, and commit. In a transaction, jobs become visible to workers after commit.
+   */
+  session?: ClientSession;
 }
 
 /**
@@ -190,17 +190,17 @@ export interface JobWriteOptions {
  * ```
  */
 export interface ScheduleOptions extends JobWriteOptions {
-	/**
-	 * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
-	 * When omitted, cron evaluation uses the server's local timezone.
-	 */
-	timezone?: string;
+  /**
+   * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
+   * When omitted, cron evaluation uses the server's local timezone.
+   */
+  timezone?: string;
 
-	/**
-	 * Deduplication key. If a job with this key is already pending or processing,
-	 * the schedule operation will not create a duplicate.
-	 */
-	uniqueKey?: string;
+  /**
+   * Deduplication key. If a job with this key is already pending or processing,
+   * the schedule operation will not create a duplicate.
+   */
+  uniqueKey?: string;
 }
 
 /**
@@ -225,17 +225,17 @@ export interface ScheduleOptions extends JobWriteOptions {
  * ```
  */
 export interface GetJobsFilter {
-	/** Filter by job type name */
-	name?: string;
+  /** Filter by job type name */
+  name?: string;
 
-	/** Filter by status (single or multiple) */
-	status?: JobStatusType | JobStatusType[];
+  /** Filter by status (single or multiple) */
+  status?: JobStatusType | JobStatusType[];
 
-	/** Maximum jobs to return: integer from 1 to 1000 (default: 100). */
-	limit?: number;
+  /** Maximum jobs to return: integer from 1 to 1000 (default: 100). */
+  limit?: number;
 
-	/** Number of jobs to skip for pagination: non-negative safe integer (default: 0). */
-	skip?: number;
+  /** Number of jobs to skip for pagination: non-negative safe integer (default: 0). */
+  skip?: number;
 }
 
 /**
@@ -261,28 +261,28 @@ export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
  * ```
  */
 export const CursorDirection = {
-	FORWARD: 'forward',
-	BACKWARD: 'backward',
+  FORWARD: "forward",
+  BACKWARD: "backward",
 } as const;
 
 export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
 
 export const JobCursorSortField = {
-	IDENTIFIER: 'identifier',
-	CREATED_AT: 'createdAt',
-	UPDATED_AT: 'updatedAt',
-	NEXT_RUN_AT: 'nextRunAt',
+  IDENTIFIER: "identifier",
+  CREATED_AT: "createdAt",
+  UPDATED_AT: "updatedAt",
+  NEXT_RUN_AT: "nextRunAt",
 } as const;
 
 export type JobCursorSortFieldType = (typeof JobCursorSortField)[keyof typeof JobCursorSortField];
 
 export const JobCursorSortDirection = {
-	ASC: 'asc',
-	DESC: 'desc',
+  ASC: "asc",
+  DESC: "desc",
 } as const;
 
 export type JobCursorSortDirectionType =
-	(typeof JobCursorSortDirection)[keyof typeof JobCursorSortDirection];
+  (typeof JobCursorSortDirection)[keyof typeof JobCursorSortDirection];
 
 /**
  * Selector options for bulk operations.
@@ -299,26 +299,26 @@ export type JobCursorSortDirectionType =
  * ```
  */
 export interface JobSelector {
-	name?: string;
-	status?: JobStatusType | JobStatusType[];
-	olderThan?: Date;
-	newerThan?: Date;
+  name?: string;
+  status?: JobStatusType | JobStatusType[];
+  olderThan?: Date;
+  newerThan?: Date;
 }
 
 export interface JobCursorFilter {
-	name?: string;
-	status?: JobStatusType | JobStatusType[];
-	createdAtFrom?: Date;
-	createdAtTo?: Date;
-	updatedAtFrom?: Date;
-	updatedAtTo?: Date;
-	nextRunAtFrom?: Date;
-	nextRunAtTo?: Date;
+  name?: string;
+  status?: JobStatusType | JobStatusType[];
+  createdAtFrom?: Date;
+  createdAtTo?: Date;
+  updatedAtFrom?: Date;
+  updatedAtTo?: Date;
+  nextRunAtFrom?: Date;
+  nextRunAtTo?: Date;
 }
 
 export interface JobCursorSort {
-	by: JobCursorSortFieldType;
-	direction: JobCursorSortDirectionType;
+  by: JobCursorSortFieldType;
+  direction: JobCursorSortDirectionType;
 }
 
 /**
@@ -334,12 +334,12 @@ export interface JobCursorSort {
  * ```
  */
 export interface CursorOptions {
-	cursor?: string;
-	/** Maximum jobs to return: integer from 1 to 1000 (default: 50). */
-	limit?: number;
-	direction?: CursorDirectionType;
-	filter?: JobCursorFilter;
-	sort?: JobCursorSort;
+  cursor?: string;
+  /** Maximum jobs to return: integer from 1 to 1000 (default: 50). */
+  limit?: number;
+  direction?: CursorDirectionType;
+  filter?: JobCursorFilter;
+  sort?: JobCursorSort;
 }
 
 /**
@@ -358,17 +358,17 @@ export interface CursorOptions {
  * ```
  */
 export interface CursorPage<T = unknown> {
-	jobs: PersistedJob<T>[];
-	cursor: string | null;
-	hasNextPage: boolean;
-	hasPreviousPage: boolean;
+  jobs: PersistedJob<T>[];
+  cursor: string | null;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }
 
 /** Persisted metadata without the job payload. */
-export type JobSummary = Omit<PersistedJob, 'data'>;
+export type JobSummary = Omit<PersistedJob, "data">;
 
 /** Cursor page of job metadata. */
-export type JobSummaryPage = Omit<CursorPage, 'jobs'> & { jobs: JobSummary[] };
+export type JobSummaryPage = Omit<CursorPage, "jobs"> & { jobs: JobSummary[] };
 
 /**
  * Aggregated statistics for the job queue.
@@ -384,13 +384,13 @@ export type JobSummaryPage = Omit<CursorPage, 'jobs'> & { jobs: JobSummary[] };
  * ```
  */
 export interface QueueStats {
-	pending: number;
-	processing: number;
-	completed: number;
-	failed: number;
-	cancelled: number;
-	total: number;
-	avgProcessingDurationMs?: number;
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  total: number;
+  avgProcessingDurationMs?: number;
 }
 
 /**
@@ -400,22 +400,22 @@ export interface QueueStats {
  * excludes the Worker handler, active Job ids, and internal Worker maps.
  */
 export interface QueueViewWorkerSummary {
-	/** Maximum concurrent jobs this local Worker can process */
-	readonly concurrency: number;
+  /** Maximum concurrent jobs this local Worker can process */
+  readonly concurrency: number;
 
-	/** Number of jobs currently active in this local Worker */
-	readonly activeCount: number;
+  /** Number of jobs currently active in this local Worker */
+  readonly activeCount: number;
 
-	/** Effective local pause state, including a scheduler-wide pause. */
-	readonly paused?: boolean;
-	/** Whether this local worker validates payloads with Standard Schema. */
-	readonly hasSchema?: boolean;
-	/** Effective retry limit for new executions, including the scheduler default. */
-	readonly maxRetries?: number;
-	/** Base delay for exponential retry backoff in milliseconds, including the scheduler default. */
-	readonly baseRetryInterval?: number;
-	/** Maximum retry delay in milliseconds, when configured. */
-	readonly maxBackoffDelay?: number;
+  /** Effective local pause state, including a scheduler-wide pause. */
+  readonly paused?: boolean;
+  /** Whether this local worker validates payloads with Standard Schema. */
+  readonly hasSchema?: boolean;
+  /** Effective retry limit for new executions, including the scheduler default. */
+  readonly maxRetries?: number;
+  /** Base delay for exponential retry backoff in milliseconds, including the scheduler default. */
+  readonly baseRetryInterval?: number;
+  /** Maximum retry delay in milliseconds, when configured. */
+  readonly maxBackoffDelay?: number;
 }
 
 /**
@@ -425,20 +425,20 @@ export interface QueueViewWorkerSummary {
  * a persisted queue entity.
  */
 export interface QueueViewSummary {
-	/** Job Name represented by this Queue View */
-	readonly name: string;
+  /** Job Name represented by this Queue View */
+  readonly name: string;
 
-	/** Whether at least one persisted Job exists for this Job Name */
-	readonly hasPersistedJobs: boolean;
+  /** Whether at least one persisted Job exists for this Job Name */
+  readonly hasPersistedJobs: boolean;
 
-	/** Whether this scheduler instance has a local Worker registered for this Job Name */
-	readonly hasRegisteredWorker: boolean;
+  /** Whether this scheduler instance has a local Worker registered for this Job Name */
+  readonly hasRegisteredWorker: boolean;
 
-	/** Aggregated persisted Job statistics for this Job Name */
-	readonly stats: Readonly<QueueStats>;
+  /** Aggregated persisted Job statistics for this Job Name */
+  readonly stats: Readonly<QueueStats>;
 
-	/** Local Worker observability, or null when no local Worker is registered */
-	readonly worker: Readonly<QueueViewWorkerSummary> | null;
+  /** Local Worker observability, or null when no local Worker is registered */
+  readonly worker: Readonly<QueueViewWorkerSummary> | null;
 }
 
 /**
@@ -455,6 +455,6 @@ export interface QueueViewSummary {
  * ```
  */
 export interface BulkOperationResult {
-	count: number;
-	errors: Array<{ jobId: string; error: string }>;
+  count: number;
+  errors: Array<{ jobId: string; error: string }>;
 }

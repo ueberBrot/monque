@@ -25,16 +25,16 @@ bun add @tsed/mongoose mongoose
 ```
 
 ```typescript
-import { MonqueModule } from '@monque/tsed';
-import { Configuration } from '@tsed/di';
-import { MongooseService } from '@tsed/mongoose';
+import { MonqueModule } from "@monque/tsed";
+import { Configuration } from "@tsed/di";
+import { MongooseService } from "@tsed/mongoose";
 
 @Configuration({
   imports: [MonqueModule],
-  mongoose: [{ id: 'default', url: 'mongodb://localhost:27017/myapp' }],
+  mongoose: [{ id: "default", url: "mongodb://localhost:27017/myapp" }],
   monque: {
     dbToken: MongooseService,
-    mongooseConnectionId: 'default',
+    mongooseConnectionId: "default",
     workerConcurrency: 5,
   },
 })
@@ -53,19 +53,19 @@ connection and must close it after the scheduler stops.
 Ensure your application imports the job controller so Ts.ED can discover it:
 
 ```typescript
-import type { Job as MonqueJob } from '@monque/core';
-import { Cron, Job, JobController } from '@monque/tsed';
+import type { Job as MonqueJob } from "@monque/core";
+import { Cron, Job, JobController } from "@monque/tsed";
 
-@JobController('logs')
+@JobController("logs")
 export class LogJobs {
-  @Job('message', { concurrency: 2, maxRetries: 3 })
+  @Job("message", { concurrency: 2, maxRetries: 3 })
   async writeMessage(job: MonqueJob<{ message: string }>) {
     console.log(job.data.message);
   }
 
-  @Cron('0 9 * * *', { name: 'daily', timezone: 'UTC' })
+  @Cron("0 9 * * *", { name: "daily", timezone: "UTC" })
   async daily() {
-    console.log('Daily reminder');
+    console.log("Daily reminder");
   }
 }
 ```
@@ -80,15 +80,15 @@ Scheduler settings such as `lockTimeout` and `leaseDuration` belong in `monque` 
 Inject `MonqueService` and use fully qualified job names:
 
 ```typescript
-import { MonqueService } from '@monque/tsed';
-import { Inject, Service } from '@tsed/di';
+import { MonqueService } from "@monque/tsed";
+import { Inject, Service } from "@tsed/di";
 
 @Service()
 export class LogService {
   constructor(@Inject(MonqueService) private readonly monque: MonqueService) {}
 
   async log(message: string) {
-    return this.monque.enqueue('logs.message', { message });
+    return this.monque.enqueue("logs.message", { message });
   }
 }
 ```
@@ -112,7 +112,7 @@ See [@monque/management](../management) for authorization and available operatio
 
 ## Development
 
-Run `bun run test` from this package directory. Integration tests use the repository's
+Run `vp run test` from this package directory. Integration tests use the repository's
 MongoDB Testcontainers setup and require Docker. See the
 [repository README](../../README.md#development) for workspace commands.
 

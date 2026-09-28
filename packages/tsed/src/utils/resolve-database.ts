@@ -4,13 +4,13 @@
  * Multi-strategy database resolution for flexible MongoDB connection handling.
  */
 
-import { ConnectionError } from '@monque/core';
-import type { TokenProvider } from '@tsed/di';
-import type { Db } from 'mongodb';
+import { ConnectionError } from "@monque/core";
+import type { TokenProvider } from "@tsed/di";
+import type { Db } from "mongodb";
 
-import type { MonqueTsedConfig } from '@/config';
+import type { MonqueTsedConfig } from "@/config";
 
-import { isMongooseConnection, isMongooseService } from './guards.js';
+import { isMongooseConnection, isMongooseService } from "./guards.js";
 
 /**
  * Type for the injector function used to resolve DI tokens.
@@ -51,70 +51,70 @@ export type InjectorFn = <T>(token: TokenProvider<T>) => T | undefined;
  * ```
  */
 export async function resolveDatabase(
-	config: MonqueTsedConfig,
-	injectorFn?: InjectorFn,
+  config: MonqueTsedConfig,
+  injectorFn?: InjectorFn,
 ): Promise<Db> {
-	// Strategy 1: Direct Db instance
-	if (config.db) {
-		return config.db;
-	}
+  // Strategy 1: Direct Db instance
+  if (config.db) {
+    return config.db;
+  }
 
-	// Strategy 2: Factory function (sync or async)
-	if (config.dbFactory) {
-		return config.dbFactory();
-	}
+  // Strategy 2: Factory function (sync or async)
+  if (config.dbFactory) {
+    return config.dbFactory();
+  }
 
-	// Strategy 3: DI token resolution
-	if (config.dbToken) {
-		if (!injectorFn) {
-			throw new ConnectionError(
-				'MonqueTsedConfig.dbToken requires an injector function to resolve the database',
-			);
-		}
+  // Strategy 3: DI token resolution
+  if (config.dbToken) {
+    if (!injectorFn) {
+      throw new ConnectionError(
+        "MonqueTsedConfig.dbToken requires an injector function to resolve the database",
+      );
+    }
 
-		const resolved = injectorFn(config.dbToken);
+    const resolved = injectorFn(config.dbToken);
 
-		if (!resolved) {
-			throw new ConnectionError(
-				`Could not resolve database from token: ${String(config.dbToken)}. ` +
-					'Make sure the provider is registered in the DI container.',
-			);
-		}
+    if (!resolved) {
+      throw new ConnectionError(
+        `Could not resolve database from token: ${String(config.dbToken)}. ` +
+          "Make sure the provider is registered in the DI container.",
+      );
+    }
 
-		if (isMongooseService(resolved)) {
-			// Check for Mongoose Service (duck typing)
-			// It has a get() method that returns a connection
-			const connectionId = config.mongooseConnectionId || 'default';
-			const connection = resolved.get(connectionId);
+    if (isMongooseService(resolved)) {
+      // Check for Mongoose Service (duck typing)
+      // It has a get() method that returns a connection
+      const connectionId = config.mongooseConnectionId || "default";
+      const connection = resolved.get(connectionId);
 
-			if (!connection) {
-				throw new ConnectionError(
-					`MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
-						'Ensure the connection ID is correct and the connection is established.',
-				);
-			}
+      if (!connection) {
+        throw new ConnectionError(
+          `MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
+            "Ensure the connection ID is correct and the connection is established.",
+        );
+      }
 
-			if ('db' in connection && connection.db) {
-				return connection.db as Db;
-			}
-		}
+      if ("db" in connection && connection.db) {
+        return connection.db as Db;
+      }
+    }
 
-		if (isMongooseConnection(resolved)) {
-			// Check for Mongoose Connection (duck typing)
-			// It has a db property that is the native Db instance
-			return resolved.db as Db;
-		}
+    if (isMongooseConnection(resolved)) {
+      // Check for Mongoose Connection (duck typing)
+      // It has a db property that is the native Db instance
+      return resolved.db as Db;
+    }
 
-		// Default: Assume it is a native Db instance
-		if (typeof resolved !== 'object' || resolved === null || !('collection' in resolved)) {
-			throw new ConnectionError(
-				`Resolved value from token "${String(config.dbToken)}" does not appear to be a valid MongoDB Db instance.`,
-			);
-		}
+    // Default: Assume it is a native Db instance
+    if (typeof resolved !== "object" || resolved === null || !("collection" in resolved)) {
+      throw new ConnectionError(
+        `Resolved value from token "${String(config.dbToken)}" does not appear to be a valid MongoDB Db instance.`,
+      );
+    }
 
-		return resolved as Db;
-	}
+    return resolved as Db;
+  }
 
-	// No strategy provided
-	throw new ConnectionError("MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set");
+  // No strategy provided
+  throw new ConnectionError("MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set");
 }
