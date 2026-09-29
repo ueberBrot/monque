@@ -118,6 +118,7 @@ export type ManagementPayloadSerializer<TContext = unknown> = (
 export interface ManagementOptions<TContext = unknown> {
   /** Scheduler instance or facade backing the management endpoints. */
   monque: ManagementMonque;
+  trustedOrigins?: readonly string[];
   /** When true, all mutation endpoints return `403` even if the scheduler supports them. */
   readOnly?: boolean;
   /** Optional authorization hook invoked before reads and mutations. */

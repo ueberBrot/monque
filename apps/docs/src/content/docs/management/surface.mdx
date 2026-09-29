@@ -41,6 +41,31 @@ if (result.matched) {
 that server and pass unmatched requests to its other routes. Authenticate requests before
 calling the handler and derive `managementContext` from the authenticated session.
 
+## Browser mutation protection
+
+The HTTP handler rejects mutations with an untrusted `Origin` using `403`, before reading
+the body or invoking authorization and job operations. Same-origin browser requests work
+by default. Other origins, including sibling subdomains, must be explicitly trusted:
+
+```typescript
+const management = createManagementSurface({
+  monque,
+  trustedOrigins: ["https://dashboard.example.com"],
+});
+```
+
+Each entry must be an exact HTTP or HTTPS origin, including a port when required, without
+a trailing slash, path, credentials, query, or fragment. Wildcards are not accepted.
+Malformed and `null` request origins are always rejected. The default same-origin check
+uses the supplied `Request` URL, so adapters must preserve its correct scheme and host.
+
+Server clients without `Origin` remain supported. When `Origin` is absent, browser
+`Sec-Fetch-Site` values of `same-site`, `cross-site`, or an invalid value are rejected;
+`same-origin` and `none` are accepted. Read endpoints are unaffected. Authentication and
+operation authorization are still required, and CORS remains host-owned. For a trusted
+cross-origin Dashboard, allow only that origin in credentialed CORS and configure cookies
+for the intended browser access.
+
 ## Endpoints
 
 Paths are relative to the Management router's mount URL:

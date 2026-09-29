@@ -121,7 +121,9 @@ requests. This placement protects the dashboard, its assets, the Management API,
 OpenAPI document. Protect both prefixes if you mount the API and dashboard separately.
 
 Browser API requests include credentials, so same-origin session cookies work automatically.
-For APIs on another origin, configure credentialed CORS and cookies in your application.
+For APIs on another origin, set `trustedOrigins` on the Management router to the exact
+Dashboard origin, then configure credentialed CORS and cookies in your application.
+See [browser mutation protection](/monque/management/surface/#browser-mutation-protection).
 The dashboard does not provide a login page or issue sessions.
 
 ## Permissions
