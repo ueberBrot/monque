@@ -41,6 +41,11 @@ if (result.matched) {
 that server and pass unmatched requests to its other routes. Authenticate requests before
 calling the handler and derive `managementContext` from the authenticated session.
 
+The Fetch handler returned by `createManagementSurface` and the router returned by
+`createManagementExpressRouter` enforce the origin checks and body limits below. If you
+mount `createManagementRouter` with a custom oRPC HTTP handler, configure both protections
+on that handler.
+
 ## Browser mutation protection
 
 The HTTP handler rejects mutations with an untrusted `Origin` using `403`, before reading
