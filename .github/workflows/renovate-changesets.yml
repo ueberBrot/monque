@@ -43,7 +43,8 @@ jobs:
         run: |
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
           git fetch --no-tags origin "$HEAD_SHA"
 
       - name: Generate changeset commit
@@ -74,7 +75,8 @@ jobs:
           git check-ref-format "refs/heads/$HEAD_REF"
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=http.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WRITE_TOKEN" | base64 -w0)"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WRITE_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
           current_head=$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | cut -f1)
           if [ "$current_head" != "$HEAD_SHA" ]; then
             echo "PR head changed; skipping stale changeset."
