@@ -5,8 +5,7 @@ on:
     types: [opened, reopened, synchronize]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: renovate-changesets-${{ github.event.pull_request.number }}
@@ -16,50 +15,69 @@ jobs:
   add-changeset:
     name: Add changeset for Renovate PR
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
       (
         github.event.pull_request.user.login == 'renovate[bot]' ||
-        github.event.pull_request.user.login == 'mend-renovate[bot]' ||
-        github.actor == 'renovate[bot]' ||
-        github.actor == 'mend-renovate[bot]'
+        github.event.pull_request.user.login == 'mend-renovate[bot]'
       )
     steps:
+      - name: Checkout trusted base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Fetch pinned PR commit
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          READ_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$READ_TOKEN" | base64 -w0)"
+          git fetch --no-tags origin "$HEAD_SHA"
+
+      - name: Generate changeset commit
+        id: changeset
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/renovate-generate-changeset.ts
+
       - name: Generate App Token
+        if: steps.changeset.outputs.commit != ''
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
 
-      - name: Checkout PR branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Setup Vite+
-        uses: ./.github/actions/setup-vite-plus
-        with:
-          task-cache: "false"
-
-      - name: Generate changeset (if needed)
+      - name: Push changeset to unchanged PR head
+        if: steps.changeset.outputs.commit != ''
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: vp run changeset:renovate
-
-      - name: Commit and push changeset
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          CHANGESET_COMMIT: ${{ steps.changeset.outputs.commit }}
+          WRITE_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          if [ -z "$(git status --porcelain .changeset)" ]; then
-            echo "No changeset created; skipping commit."
+          git check-ref-format "refs/heads/$HEAD_REF"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$WRITE_TOKEN" | base64 -w0)"
+          current_head=$(git ls-remote --heads origin "refs/heads/$HEAD_REF" | cut -f1)
+          if [ "$current_head" != "$HEAD_SHA" ]; then
+            echo "PR head changed; skipping stale changeset."
             exit 0
           fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add .changeset/*.md
-          git commit -m "chore(changeset): add renovate deps changeset"
-          git push
+          git push --force-with-lease="refs/heads/$HEAD_REF:$HEAD_SHA" origin "$CHANGESET_COMMIT:refs/heads/$HEAD_REF"
