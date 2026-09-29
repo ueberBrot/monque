@@ -66,6 +66,26 @@ operation authorization are still required, and CORS remains host-owned. For a t
 cross-origin Dashboard, allow only that origin in credentialed CORS and configure cookies
 for the intended browser access.
 
+## Request body limits
+
+Management accepts request bodies up to 64 KiB by default. Larger bodies return HTTP 413
+before operation authorization, job lookups, or mutations. The limit counts bytes as the
+body arrives, including requests without a `Content-Length` header.
+
+Set `maxBodySize` in bytes when creating a Management Surface or Express router:
+
+```typescript
+const management = createManagementSurface({
+  monque,
+  maxBodySize: 32 * 1024,
+});
+```
+
+Use a nonnegative safe integer. Responses, including job payloads, are not limited by
+this setting. Configure your proxy and host body parser limits too: if middleware such
+as `express.json()` parses a body before Management, its original allocation has already
+happened, and Management checks the adapter's serialized body instead.
+
 ## Endpoints
 
 Paths are relative to the Management router's mount URL:

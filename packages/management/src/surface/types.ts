@@ -118,6 +118,8 @@ export type ManagementPayloadSerializer<TContext = unknown> = (
 export interface ManagementOptions<TContext = unknown> {
   /** Scheduler instance or facade backing the management endpoints. */
   monque: ManagementMonque;
+  /** Maximum request body size in bytes. Defaults to 65,536 bytes. */
+  maxBodySize?: number;
   trustedOrigins?: readonly string[];
   /** When true, all mutation endpoints return `403` even if the scheduler supports them. */
   readOnly?: boolean;

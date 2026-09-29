@@ -1,3 +1,4 @@
+import { createServer, request as httpRequest } from "node:http";
 import { type JobSelector, Monque, type PersistedJob } from "@monque/core";
 import type { ManagementMonque } from "@monque/management";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
@@ -531,6 +532,115 @@ describe("Express Management Adapter", () => {
         status: ["pending"],
       },
     ]);
+  });
+
+  test.each([false, true])(
+    "rejects oversized requests before job access with parsed middleware %s",
+    async (parsed) => {
+      const getJob = vi.fn(async () => null);
+      const cancelJob = vi.fn(async () => null);
+      const authorize = vi.fn(() => false);
+      const app = express();
+      if (parsed) {
+        app.use(express.json({ limit: "1mb" }));
+      }
+      app.use(
+        "/monque",
+        createManagementExpressRouter({
+          monque: createManagementMonque({ getJob, cancelJob }),
+          authorize,
+        }),
+      );
+
+      await request(app)
+        .post("/monque/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel")
+        .set("content-type", "application/json")
+        .send(JSON.stringify({ ignored: "x".repeat(70000) }))
+        .expect(413)
+        .expect({ error: "Payload Too Large" });
+
+      expect(getJob).not.toHaveBeenCalled();
+      expect(cancelJob).not.toHaveBeenCalled();
+      expect(authorize).not.toHaveBeenCalled();
+    },
+  );
+
+  test("applies a configured limit to approved parsed JSON mutations", async () => {
+    const deleteJobs = vi.fn(async () => ({ count: 1, errors: [] }));
+    const app = express();
+    app.use(express.json());
+    app.use(
+      "/monque",
+      createManagementExpressRouter({
+        monque: createManagementMonque({ deleteJobs }),
+        maxBodySize: 2,
+        trustedOrigins: ["https://ops.example"],
+      }),
+    );
+
+    await request(app)
+      .post("/monque/api/v1/jobs/actions/delete")
+      .set("origin", "https://ops.example")
+      .send({})
+      .expect(200);
+    await request(app)
+      .post("/monque/api/v1/jobs/actions/delete")
+      .set("origin", "https://ops.example")
+      .send({ name: "work" })
+      .expect(413);
+
+    expect(deleteJobs).toHaveBeenCalledOnce();
+    expect(deleteJobs).toHaveBeenCalledWith({});
+  });
+
+  test("returns 413 for an ongoing chunked upload without waiting for its end", async () => {
+    const getJob = vi.fn(async () => null);
+    const cancelJob = vi.fn(async () => null);
+    const app = createManagementApp({ monque: createManagementMonque({ getJob, cancelJob }) });
+    const server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a local HTTP listener");
+    }
+    let client: ReturnType<typeof httpRequest> | undefined;
+    try {
+      const response = await new Promise<{ status: number | undefined; body: string }>(
+        (resolve, reject) => {
+          client = httpRequest(
+            {
+              host: "127.0.0.1",
+              port: address.port,
+              method: "POST",
+              path: "/monque/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
+              headers: { "content-type": "application/json" },
+            },
+            (response) => {
+              let body = "";
+              response.setEncoding("utf8");
+              response.on("data", (chunk: string) => {
+                body += chunk;
+              });
+              response.on("end", () => resolve({ status: response.statusCode, body }));
+              response.on("error", reject);
+            },
+          );
+          client.on("error", reject);
+          client.write(Buffer.alloc(65537, 32));
+        },
+      );
+
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body)).toEqual({ error: "Payload Too Large" });
+      expect(getJob).not.toHaveBeenCalled();
+      expect(cancelJob).not.toHaveBeenCalled();
+    } finally {
+      client?.destroy();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   test("forwards management route errors to Express error middleware", async () => {
