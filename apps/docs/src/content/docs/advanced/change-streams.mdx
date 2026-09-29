@@ -38,6 +38,11 @@ arriving together are debounced for 100 milliseconds. Future jobs schedule a wak
 run time. Dates more than approximately 25 days away are handled without timer overflow
 warnings or repeated immediate wakeups.
 
+Future wakeup tracking has a fixed memory budget and prioritizes the nearest run times.
+If many scheduling or rescheduling notifications exceed that budget, later jobs are
+discovered through full polling. Discovery can then wait until the next `safetyPollInterval`
+(default 30 seconds) while Change Streams are active, or `pollInterval` while unavailable.
+
 These intervals control scheduler job discovery. They are independent of
 [dashboard refresh intervals](/monque/dashboard/configuration/#automatic-refresh).
 The dashboard reads the Management API; it does not open a MongoDB Change Stream.

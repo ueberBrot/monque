@@ -202,6 +202,52 @@ describe("PendingNotificationRouter", () => {
     expect(onPoll).toHaveBeenCalledOnce();
   });
 
+  it.each([false, true])(
+    "bounds wakeup polls after repeated future rescheduling, latest first: %s",
+    (latestFirst) => {
+      const now = Date.now();
+      for (let i = 0; i < 10_000; i++) {
+        const delay = latestFirst ? 10_000_000 - i * 1000 : 1000 + i * 1000;
+        router.notifyPendingJob("email", new Date(now + delay));
+      }
+
+      vi.advanceTimersByTime(1200);
+      expect(onPoll).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(10_000_000);
+      expect(vi.mocked(onPoll).mock.calls.length).toBeLessThanOrEqual(1024);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    "discovers later jobs through full polling after wakeup saturation, stream active: %s",
+    async (streamActive) => {
+      const now = Date.now();
+      const executedAt: number[] = [];
+      const pendingRunTimes = [4500, 7000];
+      vi.mocked(onPoll).mockImplementation(async () => {
+        while (pendingRunTimes.length > 0 && pendingRunTimes[0]! <= Date.now() - now) {
+          pendingRunTimes.shift();
+          executedAt.push(Date.now() - now);
+        }
+      });
+      ctx.options.safetyPollInterval = 3000;
+      router.setChangeStreamActive(streamActive);
+      router.start();
+      await vi.advanceTimersByTimeAsync(0);
+
+      for (let i = 0; i < 10_000; i++) {
+        router.notifyPendingJob("email", new Date(now + 1000 + i));
+      }
+      for (const runAt of pendingRunTimes) {
+        router.notifyPendingJob("email", new Date(now + runAt));
+      }
+
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(executedAt).toEqual(streamActive ? [6000, 9000] : [5000, 7000]);
+    },
+  );
+
   it("emits job:error when a future wakeup poll rejects and preserves later wakeups", async () => {
     const pollError = new Error("Wakeup poll failed");
     onPoll = vi.fn().mockResolvedValue(undefined).mockRejectedValueOnce(pollError);

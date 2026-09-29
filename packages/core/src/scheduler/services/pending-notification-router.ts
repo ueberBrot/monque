@@ -10,6 +10,7 @@ const POLL_GRACE_PERIOD = 200;
 
 /** Node turns delays beyond this signed 32-bit limit into a 1 ms timer. */
 const MAX_TIMER_DELAY = 2_147_483_647;
+const MAX_WAKEUP_DEADLINES = 1024;
 
 /**
  * Owns Pending Notification scheduling, future wakeups, and full discovery deadlines.
@@ -30,7 +31,7 @@ export class PendingNotificationRouter {
 
   /** Time of the currently scheduled wakeup */
   private wakeupTime: Date | null = null;
-  private readonly wakeupTimes = new Set<number>();
+  private readonly wakeupTimes: number[] = [];
 
   private fullPollTimer: ReturnType<typeof setTimeout> | null = null;
   private fullPollDueAt: number | null = null;
@@ -98,7 +99,7 @@ export class PendingNotificationRouter {
 
     this.pendingTargetNames.clear();
     this.fullBatchPollRequested = false;
-    this.wakeupTimes.clear();
+    this.wakeupTimes.length = 0;
     this.clearWakeupTimer();
   }
 
@@ -131,7 +132,17 @@ export class PendingNotificationRouter {
    * When the timer fires, triggers a full poll to pick up all due Jobs.
    */
   private scheduleWakeup(nextRunAt: Date): void {
-    this.wakeupTimes.add(nextRunAt.getTime());
+    const time = nextRunAt.getTime();
+    if (
+      this.wakeupTimes.length === MAX_WAKEUP_DEADLINES &&
+      time > this.wakeupTimes[MAX_WAKEUP_DEADLINES - 1]!
+    ) {
+      return;
+    }
+    const index = this.wakeupTimes.findIndex((deadline) => deadline >= time);
+    if (index === -1) this.wakeupTimes.push(time);
+    else if (this.wakeupTimes[index] !== time) this.wakeupTimes.splice(index, 0, time);
+    if (this.wakeupTimes.length > MAX_WAKEUP_DEADLINES) this.wakeupTimes.pop();
     if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
       return;
     }
@@ -149,13 +160,12 @@ export class PendingNotificationRouter {
           this.scheduleWakeup(nextRunAt);
           return;
         }
-        let nextWakeup = Infinity;
         const now = Date.now();
-        for (const time of this.wakeupTimes) {
-          if (time <= now) this.wakeupTimes.delete(time);
-          else nextWakeup = Math.min(nextWakeup, time);
+        while (this.wakeupTimes.length > 0 && this.wakeupTimes[0]! <= now) {
+          this.wakeupTimes.shift();
         }
-        if (nextWakeup !== Infinity) this.scheduleWakeup(new Date(nextWakeup));
+        const nextWakeup = this.wakeupTimes[0];
+        if (nextWakeup !== undefined) this.scheduleWakeup(new Date(nextWakeup));
         this.onPoll().catch((error: unknown) => {
           this.ctx.emit("job:error", { error: toError(error) });
         });
