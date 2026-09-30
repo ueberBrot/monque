@@ -1,6 +1,8 @@
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
+import { ORPCError } from "@orpc/server";
 
 import { createManagementRouter } from "../orpc/index.js";
+import { isTrustedMutationRequest, parseTrustedOrigins } from "./csrf.js";
 import type { ManagementOptions, ManagementSurface } from "./types.js";
 
 /**
@@ -26,9 +28,28 @@ import type { ManagementOptions, ManagementSurface } from "./types.js";
 export function createManagementSurface<TContext = unknown>(
   options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
+  const trustedOrigins = parseTrustedOrigins(options.trustedOrigins ?? []);
+
   return {
     openApiHandler: new OpenAPIHandler(createManagementRouter(options), {
       customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
+      interceptors: [
+        (options) => {
+          if (!isTrustedMutationRequest(options.request, trustedOrigins)) {
+            return options.next({
+              ...options,
+              request: {
+                ...options.request,
+                body: async () => {
+                  throw new ORPCError("FORBIDDEN", { message: "Untrusted request origin" });
+                },
+              },
+            });
+          }
+
+          return options.next();
+        },
+      ],
     }),
   };
 }

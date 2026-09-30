@@ -72,6 +72,73 @@ function mountErrorJson(app: Express): void {
 }
 
 describe("Express Management Adapter", () => {
+  test("rejects sibling-origin forms carrying an authenticated operator cookie", async () => {
+    const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
+    const authorize = vi.fn(() => true);
+    const app = express();
+    app.use("/monque", (req, res, next) => {
+      if (req.get("cookie") !== "session=valid-operator") {
+        res.sendStatus(401);
+        return;
+      }
+      next();
+    });
+    app.use(
+      "/monque",
+      createManagementExpressRouter({ monque: createManagementMonque({ deleteJobs }), authorize }),
+    );
+
+    const response = await request(app)
+      .post("/monque/api/v1/jobs/actions/delete")
+      .set("Host", "ops.example.com")
+      .set("Origin", "http://evil.example.com")
+      .set("Sec-Fetch-Site", "same-site")
+      .set("Cookie", "session=valid-operator")
+      .type("form")
+      .send("")
+      .expect(403);
+
+    expect(response.body).toEqual({ error: "Untrusted request origin" });
+    expect(deleteJobs).not.toHaveBeenCalled();
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  test.each(["http://ops.example.com", "https://dashboard.example.com"])(
+    "permits authenticated mutations from approved origin %s",
+    async (origin) => {
+      const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
+      const app = createManagementApp({
+        monque: createManagementMonque({ deleteJobs }),
+        trustedOrigins: ["https://dashboard.example.com"],
+        context: ({ req }) => ({ authenticated: req.get("cookie") === "session=valid-operator" }),
+        authorize: ({ context }) => context.authenticated,
+      });
+      const response = await request(app)
+        .post("/monque/api/v1/jobs/actions/delete")
+        .set("Host", "ops.example.com")
+        .set("Origin", origin)
+        .set("Cookie", "session=valid-operator")
+        .send({})
+        .expect(200);
+
+      expect(response.body).toEqual({ count: 3, errors: [] });
+      expect(deleteJobs).toHaveBeenCalledWith({});
+    },
+  );
+
+  test("preserves host route fallthrough for unrelated cross-origin POST requests", async () => {
+    const app = createManagementApp({ monque: createManagementMonque() });
+    app.post("/monque/host-feature", (_req, res) => res.status(202).json({ accepted: true }));
+
+    const response = await request(app)
+      .post("/monque/host-feature")
+      .set("Origin", "https://other.example.com")
+      .send({})
+      .expect(202);
+
+    expect(response.body).toEqual({ accepted: true });
+  });
+
   test("controls the addressed scheduler through the mounted HTTP routes", async () => {
     const monque = new Monque(new MongoClient("mongodb://localhost:27017").db("controls"));
     const app = createManagementApp({ monque });

@@ -58,6 +58,13 @@ The `context` callback can return a value or a promise. The value is available t
 `authorize`, `serializePayload`, and `serializePayloadByJobName`. See
 [Management authorization](/monque/management/surface/#authorization) for permission details.
 
+Browser mutations use the Management handler's
+[origin protection](/monque/management/surface/#browser-mutation-protection). Same-origin
+Dashboard requests work by default; pass `trustedOrigins: ["https://dashboard.example.com"]`
+to allow a separate Dashboard origin. Express constructs the request URL from `req.protocol`
+and the `Host` header. Behind a reverse proxy, preserve the public host and configure
+Express proxy trust for the public protocol, or explicitly trust the public Dashboard origin.
+
 ## OpenAPI
 
 Customize the document path and the public server URL:
