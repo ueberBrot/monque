@@ -2,6 +2,7 @@ import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { ORPCError } from "@orpc/server";
 
 import { createManagementRouter } from "../orpc/index.js";
+import { createLimitedRequest } from "./body-limit.js";
 import { isTrustedMutationRequest, parseTrustedOrigins } from "./csrf.js";
 import type { ManagementOptions, ManagementSurface } from "./types.js";
 
@@ -28,10 +29,18 @@ import type { ManagementOptions, ManagementSurface } from "./types.js";
 export function createManagementSurface<TContext = unknown>(
   options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
+  const maxBodySize = options.maxBodySize ?? 64 * 1024;
+  if (!Number.isSafeInteger(maxBodySize) || maxBodySize < 0) {
+    throw new TypeError("maxBodySize must be a nonnegative safe integer");
+  }
   const trustedOrigins = parseTrustedOrigins(options.trustedOrigins ?? []);
 
   return {
     openApiHandler: new OpenAPIHandler(createManagementRouter(options), {
+      adapterInterceptors: [
+        (options) =>
+          options.next({ ...options, request: createLimitedRequest(options.request, maxBodySize) }),
+      ],
       customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
       interceptors: [
         (options) => {
