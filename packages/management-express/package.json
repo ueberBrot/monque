@@ -60,7 +60,7 @@
     "vite-plus": "catalog:"
   },
   "peerDependencies": {
-    "@monque/core": "^1.15.0",
+    "@monque/core": "^1.15.1",
     "@monque/management": ">=0.6.0 <0.8.0",
     "express": "^5.2.1",
     "mongodb": "^7.6.0"

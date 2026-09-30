@@ -204,7 +204,7 @@
         "vite-plus": "catalog:",
       },
       "peerDependencies": {
-        "@monque/core": "^1.15.0",
+        "@monque/core": "^1.15.1",
         "mongodb": "^7.6.0",
       },
     },
@@ -224,7 +224,7 @@
         "vite-plus": "catalog:",
       },
       "peerDependencies": {
-        "@monque/core": "^1.15.0",
+        "@monque/core": "^1.15.1",
         "@monque/management": ">=0.6.0 <0.8.0",
         "express": "^5.2.1",
         "mongodb": "^7.6.0",
@@ -249,7 +249,7 @@
         "zod": "^4.6.5",
       },
       "peerDependencies": {
-        "@monque/core": "^1.15.0",
+        "@monque/core": "^1.15.1",
         "@tsed/core": "^8.38.7",
         "@tsed/di": "^8.38.7",
         "@tsed/mongoose": "^8.38.7",
