@@ -3,7 +3,7 @@ services:
     image: mongodb/mongodb-atlas-local:8.2.6-20260529T125201Z
     container_name: monque-dashboard-atlas-local
     ports:
-      - "27018:27017"
+      - "127.0.0.1:27018:27017"
     volumes:
       - mongodb-atlas-local-data:/data/db
       - mongodb-atlas-local-config:/data/configdb
