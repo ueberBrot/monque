@@ -33,7 +33,7 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@shadcn/lint": "^0.2.0",
-    "@types/node": "^22.20.4",
+    "@types/node": "^26.6.3",
     "fallow": "3.31.0",
     "knip": "^6.39.0",
     "publint": "^0.3.24",

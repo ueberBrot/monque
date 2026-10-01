@@ -51,7 +51,7 @@
   "devDependencies": {
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/express": "^5.0.6",
-    "@types/node": "^22.20.4",
+    "@types/node": "^26.6.3",
     "@types/supertest": "^7.2.1",
     "express": "^5.2.1",
     "supertest": "^7.3.0",

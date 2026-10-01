@@ -59,7 +59,7 @@
     "@tsed/di": "^8.38.8",
     "@tsed/mongoose": "^8.38.8",
     "@tsed/platform-http": "^8.38.8",
-    "@types/node": "^22.20.4",
+    "@types/node": "^26.6.3",
     "cookie": "^1.1.1",
     "mongodb": "^7.7.0",
     "vite-plus": "catalog:",
