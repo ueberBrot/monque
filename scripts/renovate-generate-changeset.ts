@@ -53,28 +53,24 @@ async function main(): Promise<void> {
   const packagePaths = git(["ls-tree", "-r", "--name-only", "-z", baseSha, "--", "packages"])
     .split("\0")
     .filter((path) => /^packages\/[^/]+\/package\.json$/.test(path));
-  const changesets = new Map<string, string>();
+  const updatedPackages = new Set<string>();
   for (const path of packagePaths) {
     if (!changedFiles.includes("package.json") && !changedFiles.includes(path)) continue;
     const before = readJsonAt(baseSha, path);
     const after = readJsonAt(headSha, path);
     if (!isRecord(before) || !isRecord(after) || after.private === true) continue;
     if (typeof after.name !== "string") continue;
-    for (const { name, from, to } of dependencyUpdates(before, after, rootBefore, rootAfter)) {
-      const id = createHash("sha256")
-        .update(JSON.stringify([after.name, name, from, to]))
-        .digest("hex")
-        .slice(0, 16);
-      changesets.set(
-        `.changeset/renovate-deps-${id}.md`,
-        `---\n${JSON.stringify(after.name)}: minor\n---\n\nUpdate ${name} from ${from} to ${to}.\n`,
-      );
-    }
+    if (hasDependencyUpdates(before, after, rootBefore, rootAfter)) updatedPackages.add(after.name);
   }
-  if (changesets.size === 0) {
+  if (updatedPackages.size === 0) {
     console.log("No published dependency updates detected; nothing to do.");
     return;
   }
+
+  const id = createHash("sha256").update(headSha).digest("hex").slice(0, 16);
+  const path = `.changeset/renovate-deps-${id}.md`;
+  const releases = [...updatedPackages].sort().map((name) => `${JSON.stringify(name)}: minor`);
+  const content = `---\n${releases.join("\n")}\n---\n\nUpdate runtime dependencies.\n`;
 
   const directory = await mkdtemp(join(tmpdir(), "monque-renovate-index-"));
   try {
@@ -87,10 +83,8 @@ async function main(): Promise<void> {
       GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com",
     };
     git(["read-tree", headSha], { env });
-    for (const [path, content] of changesets) {
-      const blob = git(["hash-object", "-w", "--stdin"], { input: content });
-      git(["update-index", "--add", "--cacheinfo", "100644", blob, path], { env });
-    }
+    const blob = git(["hash-object", "-w", "--stdin"], { input: content });
+    git(["update-index", "--add", "--cacheinfo", "100644", blob, path], { env });
     const tree = git(["write-tree"], { env });
     const commit = git(["commit-tree", tree, "-p", headSha], {
       env,
@@ -105,13 +99,12 @@ async function main(): Promise<void> {
   }
 }
 
-function dependencyUpdates(
+function hasDependencyUpdates(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   rootBefore: unknown,
   rootAfter: unknown,
-): Array<{ name: string; from: string; to: string }> {
-  const updates = new Map<string, { name: string; from: string; to: string }>();
+): boolean {
   for (const key of ["dependencies", "optionalDependencies", "peerDependencies"]) {
     const prev = before[key];
     const next = after[key];
@@ -121,10 +114,10 @@ function dependencyUpdates(
       if (typeof rawFrom !== "string" || typeof rawTo !== "string") continue;
       const from = resolveVersion(name, rawFrom, rootBefore);
       const to = resolveVersion(name, rawTo, rootAfter);
-      if (from !== to) updates.set(name, { name, from, to });
+      if (from !== to) return true;
     }
   }
-  return [...updates.values()];
+  return false;
 }
 
 await main();

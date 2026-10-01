@@ -10,5 +10,12 @@ know; keep implementation history out of release notes.
 - Documentation, tests, development tooling, and behavior-preserving internal refactors
   do not need a changeset.
 
+Renovate PRs use one generated changeset covering all affected published packages, each
+with a **minor** bump and the summary "Update runtime dependencies." This includes
+`dependencies`, `optionalDependencies`, and `peerDependencies`, including `@monque/*`
+dependencies, and excludes `devDependencies`. Provide a manual changeset with specific
+notes when an update changes compatibility or requires consumer action; the generator
+preserves PRs that already include a changeset.
+
 Run `bunx changeset` from the repository root to create one. Run `bunx changeset status`
 to inspect the release plan and dependent package updates.
