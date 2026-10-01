@@ -117,16 +117,25 @@ describe("job discovery", () => {
     });
 
     const startupReads = new Set<number>();
+    const subscriptions = new Set<number>();
     let startupFinished = false;
+    let subscribed = false;
     client.on("commandStarted", (event: CommandStartedEvent) => {
       if (event.command["find"] === collectionName) startupReads.add(event.requestId);
+      if (
+        event.command["aggregate"] === collectionName &&
+        event.command["pipeline"][0]?.["$changeStream"]
+      ) {
+        subscriptions.add(event.requestId);
+      }
     });
     client.on("commandSucceeded", (event: CommandSucceededEvent) => {
       if (startupReads.has(event.requestId)) startupFinished = true;
+      if (subscriptions.has(event.requestId)) subscribed = true;
     });
 
     consumer.start();
-    await waitFor(async () => startupFinished, { timeout: 2000, interval: 10 });
+    await waitFor(async () => startupFinished && subscribed, { timeout: 3000, interval: 10 });
     await producer.enqueue("EMAIL", {}, { runAt: new Date(Date.now() + 700) });
 
     await waitFor(async () => handled.length === 1, { timeout: 3000, interval: 10 });
