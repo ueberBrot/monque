@@ -1,5 +1,19 @@
 # @monque/management-express
 
+## 0.6.0
+
+### Minor Changes
+
+- [#567](https://github.com/ueberBrot/monque/pull/567) [`4f066c2`](https://github.com/ueberBrot/monque/commit/4f066c234d95a32890d232c1232b71ba67de340d) - Bound future wakeup memory during repeated rescheduling while preserving nearby scheduled runs and polling for later jobs.
+
+- [#562](https://github.com/ueberBrot/monque/pull/562) [`70538f4`](https://github.com/ueberBrot/monque/commit/70538f45465e018717d1adaec8bc4533c7acbc28) - Update dependencies.
+
+- [#570](https://github.com/ueberBrot/monque/pull/570) [`d6ea22c`](https://github.com/ueberBrot/monque/commit/d6ea22c17b795d393316f1a4ff725b1ba6292fea) - Reject Management and Express request bodies over 64 KiB before job access, with a configurable `maxBodySize` limit.
+
+- [#566](https://github.com/ueberBrot/monque/pull/566) [`d409afa`](https://github.com/ueberBrot/monque/commit/d409afa68790f5e66e94bbef7c1894c3924e34a4) - Reject browser mutations from untrusted origins. Configure `trustedOrigins` for cross-origin Dashboards; same-origin browsers and originless server clients remain supported.
+
+- [#572](https://github.com/ueberBrot/monque/pull/572) [`d9c9642`](https://github.com/ueberBrot/monque/commit/d9c96422dafe290c1f50d345d9f006a71425c371) - Update mongodb from ^7.6.0 to ^7.7.0.
+
 ## 0.5.0
 
 ### Minor Changes

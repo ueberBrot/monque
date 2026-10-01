@@ -1,5 +1,29 @@
 # @monque/core
 
+## 1.16.0
+
+### Minor Changes
+
+- [#572](https://github.com/ueberBrot/monque/pull/572) [`d9c9642`](https://github.com/ueberBrot/monque/commit/d9c96422dafe290c1f50d345d9f006a71425c371) - Update mongodb from ^7.6.0 to ^7.7.0.
+
+### Patch Changes
+
+- [#567](https://github.com/ueberBrot/monque/pull/567) [`4f066c2`](https://github.com/ueberBrot/monque/commit/4f066c234d95a32890d232c1232b71ba67de340d) - Bound future wakeup memory during repeated rescheduling while preserving nearby scheduled runs and polling for later jobs.
+
+- [#582](https://github.com/ueberBrot/monque/pull/582) [`fc42ec1`](https://github.com/ueberBrot/monque/commit/fc42ec11703cbaebb5c5b10f80879d9415abd5e5) - Run future jobs on time when stored and registered job names match under MongoDB collection collation, including jobs enqueued after startup.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Filter processing-only change stream updates to reduce notification overhead while retaining scheduling and completion signals.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Reduce idle polling to one indexed read across eligible job names on collections with default binary collation, avoiding atomic claim attempts for empty workers.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Omit job payloads from change stream notifications to reduce network traffic; workers still receive complete job data.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Wake persisted future jobs on schedule at startup and after draining due work, without waiting for the next safety poll.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Target scheduled wakeups to the relevant job names, reducing unrelated worker checks while keeping wakeup tracking bounded.
+
+- [#575](https://github.com/ueberBrot/monque/pull/575) [`146ca89`](https://github.com/ueberBrot/monque/commit/146ca89d7cfa7ce01c66ddcc426ca7cb0c8546b5) - Preserve targeted job names when notifications overlap an active poll, with bounded tracking and full discovery when the name budget is exceeded.
+
 ## 1.15.0
 
 ### Minor Changes
