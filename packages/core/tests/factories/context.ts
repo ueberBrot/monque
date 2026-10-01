@@ -52,6 +52,7 @@ function createMockCollection(): Collection<Document> {
     deleteOne: vi.fn(),
     deleteMany: vi.fn(),
     countDocuments: vi.fn(),
+    options: vi.fn().mockResolvedValue({}),
     aggregate: vi.fn(),
     watch: vi.fn(),
     createIndexes: vi.fn(),

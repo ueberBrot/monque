@@ -33,15 +33,23 @@ monque.start();
 | Change Streams active      | `safetyPollInterval`, default 30 seconds | Notifications for pending jobs and scheduled wakeups |
 | Change Streams unavailable | `pollInterval`, default 1 second         | Regular polling                                      |
 
-Startup and periodic discovery read the earliest pending deadline for each registered job name with available
-capacity, then atomically claims due jobs. An idle collection needs one discovery read
-instead of a separate claim attempt for every name. Startup discovery also schedules
-wakeups for future jobs already stored in MongoDB.
+At startup and each periodic poll, Monque reads the earliest pending deadline for each
+registered job name with available capacity, then atomically claims due jobs. Scheduling
+reads use the primary MongoDB node with local read concern to see current claim state. With the default binary
+collation, an idle collection needs one indexed discovery read instead of a separate claim
+attempt for every name. Startup discovery also schedules wakeups for future jobs already
+stored in MongoDB.
+
+Collection collation is checked once. Collections with other collations retain per-worker
+atomic discovery so database name matching and shared concurrency fairness are preserved.
+Atomic discovery is also the fallback if collection metadata cannot be read.
 
 Notifications for a job name trigger checks for its registered worker. Several notifications
 arriving together are batched for 100 milliseconds. Future jobs schedule a wakeup for their
 run time, retaining the relevant job names so unrelated workers need not be checked. Workers
 sharing an instance concurrency limit are checked in fair order across eligible names.
+Notifications that overlap an active poll retain their target names within a fixed memory
+budget; exceeding that budget requests full discovery.
 Dates more than approximately 25 days away are handled without timer overflow warnings or
 repeated immediate wakeups.
 

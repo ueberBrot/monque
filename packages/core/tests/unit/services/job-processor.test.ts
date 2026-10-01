@@ -5,6 +5,7 @@
  * Uses mock SchedulerContext to test processing logic in isolation.
  */
 
+import { ReadConcern } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus, type PersistedJob } from "@/jobs";
@@ -72,6 +73,37 @@ describe("JobProcessor", () => {
       expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
     });
 
+    it.each([false, true])(
+      "does not retry jobs already claimed on the primary, targeted poll: %s",
+      async (targeted) => {
+        ctx.workers.set("work", createWorker());
+        const staleJob = { _id: "work", nextRunAt: new Date(0) };
+        vi.mocked(ctx.mockCollection.aggregate).mockImplementation(
+          (_pipeline, options) =>
+            ({
+              toArray: vi.fn(async () =>
+                options?.readPreference === "primary" &&
+                ReadConcern.fromOptions(options)?.level === "local"
+                  ? []
+                  : [staleJob],
+              ),
+            }) as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+        );
+        vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+        vi.mocked(ctx.mockCollection.findOne).mockImplementation(async (_filter, options) =>
+          options?.readPreference === "primary" &&
+          ReadConcern.fromOptions(options)?.level === "local"
+            ? null
+            : staleJob,
+        );
+
+        await processor.poll(targeted ? new Set(["work"]) : undefined);
+
+        expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+        expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(targeted ? 1 : 0);
+      },
+    );
+
     it("does not turn failed claims into immediate retry notifications", async () => {
       ctx.workers.set("work", createWorker());
       vi.mocked(ctx.mockCollection.findOneAndUpdate).mockRejectedValue(
@@ -100,6 +132,30 @@ describe("JobProcessor", () => {
       expect(ctx.emit).toHaveBeenCalledWith("job:error", { error });
       expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
     });
+
+    it.each(["collation", "metadata unavailable"])(
+      "keeps atomic discovery when indexed discovery is unsafe: %s",
+      async (reason) => {
+        ctx.workers.set("work", createWorker());
+        const metadata = vi.mocked(ctx.mockCollection.options);
+        if (reason === "collation") {
+          metadata.mockResolvedValue({ collation: { locale: "en", strength: 2 } });
+        } else {
+          metadata.mockRejectedValue(new Error("Collection metadata access denied"));
+        }
+        vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+
+        await processor.poll();
+        await processor.poll();
+
+        expect(metadata).toHaveBeenCalledOnce();
+        expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+        expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledTimes(2);
+        expect(ctx.emitHistory.filter(({ event }) => event === "job:error")).toHaveLength(
+          reason === "collation" ? 0 : 1,
+        );
+      },
+    );
 
     it.each(["stop", "pause"])("does not claim after %s during discovery", async (action) => {
       ctx.workers.set("work", createWorker());
@@ -390,6 +446,38 @@ describe("JobProcessor", () => {
         );
       },
     );
+
+    it("bounds overlapping notifications with full discovery, then restores targeting", async () => {
+      for (const name of ["first", "second", "unrelated"]) {
+        ctx.workers.set(name, createWorker());
+      }
+      const acquisition = Promise.withResolvers<null>();
+      const claim = vi
+        .mocked(ctx.mockCollection.findOneAndUpdate)
+        .mockReturnValueOnce(acquisition.promise)
+        .mockResolvedValue(null);
+
+      const polling = processor.poll(new Set(["first"]));
+      await vi.waitFor(() => expect(claim).toHaveBeenCalledOnce());
+      await processor.poll(
+        new Set(["second", ...Array.from({ length: 1024 }, (_, i) => `unregistered-${i}`)]),
+      );
+      acquisition.resolve(null);
+      await polling;
+
+      expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
+      expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual([
+        "first",
+        "first",
+        "second",
+        "unrelated",
+      ]);
+
+      vi.clearAllMocks();
+      await processor.poll(new Set(["second"]));
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual(["second"]);
+    });
   });
 
   describe("worker execution through poll", () => {

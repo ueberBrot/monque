@@ -5,6 +5,8 @@ import type { WorkerRegistration } from "@/workers";
 import { JobLifecycle } from "./job-lifecycle.js";
 import type { SchedulerContext } from "./types.js";
 
+const MAX_REPOLL_TARGET_NAMES = 1024;
+
 /**
  * Internal service for job processing and execution.
  *
@@ -29,6 +31,7 @@ export class JobProcessor {
    */
   private _totalActiveJobs = 0;
   private lastServedWorker: string | undefined;
+  private indexedDiscoveryAvailable: boolean | undefined;
 
   private readonly lifecycle: JobLifecycle;
 
@@ -83,7 +86,16 @@ export class JobProcessor {
       this._repollRequested = true;
       if (!targetNames) this._repollTargetNames = undefined;
       else if (this._repollTargetNames) {
-        for (const name of targetNames) this._repollTargetNames.add(name);
+        for (const name of targetNames) {
+          if (
+            this._repollTargetNames.size === MAX_REPOLL_TARGET_NAMES &&
+            !this._repollTargetNames.has(name)
+          ) {
+            this._repollTargetNames = undefined;
+            break;
+          }
+          this._repollTargetNames.add(name);
+        }
       }
       return;
     }
@@ -206,7 +218,12 @@ export class JobProcessor {
     try {
       const job = await this.ctx.collection.findOne<{ nextRunAt: Date }>(
         { name, status: JobStatus.PENDING },
-        { projection: { _id: 0, nextRunAt: 1 }, sort: { nextRunAt: 1 } },
+        {
+          projection: { _id: 0, nextRunAt: 1 },
+          sort: { nextRunAt: 1 },
+          readPreference: "primary",
+          readConcern: { level: "local" },
+        },
       );
       if (job) this.ctx.notifyPendingJob(name, job.nextRunAt);
     } catch (error) {
@@ -217,12 +234,23 @@ export class JobProcessor {
   /** Read the earliest pending deadline per eligible name using the claim index. */
   private async discoverPending(names: ReadonlySet<string>): Promise<ReadonlySet<string>> {
     try {
+      if (this.indexedDiscoveryAvailable === undefined) {
+        const { collation } = await this.ctx.collection.options({ readPreference: "primary" });
+        this.indexedDiscoveryAvailable = !collation || collation["locale"] === "simple";
+      }
+      // Group keys only map exactly to registered names under binary comparison.
+      // Other collations retain the database's matching semantics through atomic claims.
+      if (!this.indexedDiscoveryAvailable) return names;
+
       const pending = await this.ctx.collection
-        .aggregate<{ _id: string; nextRunAt: Date }>([
-          { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
-          { $sort: { name: 1, nextRunAt: 1 } },
-          { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
-        ])
+        .aggregate<{ _id: string; nextRunAt: Date }>(
+          [
+            { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
+            { $sort: { name: 1, nextRunAt: 1 } },
+            { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
+          ],
+          { readPreference: "primary", readConcern: { level: "local" } },
+        )
         .toArray();
       const dueNames = new Set<string>();
       const now = Date.now();
@@ -233,6 +261,8 @@ export class JobProcessor {
       return dueNames;
     } catch (error) {
       // Discovery is an optimization; atomic claims remain the fallback on read failure.
+      // Metadata access is optional; do not retry it on every poll when unavailable.
+      this.indexedDiscoveryAvailable ??= false;
       this.ctx.emit("job:error", { error: toError(error) });
       return names;
     }
