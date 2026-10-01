@@ -137,7 +137,7 @@ jobs:
         project: [mongo-desktop, mongo-mobile, mongo-desktop-auth, mongo-mobile-auth]
     services:
       mongodb:
-        image: mongodb/mongodb-atlas-local:8.2.6-20260529T125201Z
+        image: mongodb/mongodb-atlas-local:8.3.2-20260529T125201Z
         ports:
           - 27018:27017
         options: >-
