@@ -9,6 +9,38 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("oRPC Management capabilities route", () => {
+  test("evaluates authorization checks sequentially by default", async () => {
+    const checks: string[] = [];
+    let active = 0;
+    let maximum = 0;
+    const surface = createManagementSurface({
+      monque: createManagementMonque({}, { mutations: true }),
+      authorize: async ({ action }) => {
+        checks.push(action);
+        active++;
+        maximum = Math.max(maximum, active);
+        await Promise.resolve();
+        active--;
+        return true;
+      },
+    });
+
+    const response = await handleManagementGet(surface, "/api/v1/capabilities");
+
+    expect(response.status).toBe(200);
+    expect(maximum).toBe(1);
+    expect(checks).toEqual([
+      "read",
+      "cancel",
+      "cancelBulk",
+      "retry",
+      "retryBulk",
+      "reschedule",
+      "delete",
+      "deleteBulk",
+    ]);
+  });
+
   test("can evaluate independent capability checks concurrently without sharing request context", async () => {
     const gate = Promise.withResolvers<void>();
     const checks: string[] = [];
@@ -18,17 +50,33 @@ describe("oRPC Management capabilities route", () => {
       authorize: async ({ action, context }) => {
         checks.push(`${context.user}:${action}`);
         await gate.promise;
-        return action === "read";
+        return action === (context.user === "alice" ? "read" : "retry");
       },
     });
-    const pending = handleManagementGet(surface, "/api/v1/capabilities", {
-      managementContext: { user: "alice" },
+    const pending = Promise.all([
+      handleManagementGet(surface, "/api/v1/capabilities", {
+        managementContext: { user: "alice" },
+      }),
+      handleManagementGet(surface, "/api/v1/capabilities", {
+        managementContext: { user: "bob" },
+      }),
+    ]);
+    try {
+      await vi.waitFor(() => expect(checks).toHaveLength(16));
+    } finally {
+      gate.resolve();
+    }
+    const [aliceResponse, bobResponse] = await pending;
+    expect(aliceResponse.status).toBe(200);
+    expect(bobResponse.status).toBe(200);
+    expect(await aliceResponse.json()).toMatchObject({
+      actions: { read: true, retry: false, delete: false },
     });
-    await vi.waitFor(() => expect(checks).toHaveLength(8));
-    gate.resolve();
-    const response = await pending;
-    expect(await response.json()).toMatchObject({ actions: { read: true, delete: false } });
-    expect(checks.every((check) => check.startsWith("alice:"))).toBe(true);
+    expect(await bobResponse.json()).toMatchObject({
+      actions: { read: false, retry: true, delete: false },
+    });
+    expect(checks.filter((check) => check.startsWith("alice:"))).toHaveLength(8);
+    expect(checks.filter((check) => check.startsWith("bob:"))).toHaveLength(8);
   });
 
   test("returns identical capabilities on repeated requests", async () => {
@@ -220,4 +268,42 @@ describe("oRPC Management capabilities route", () => {
     await expectJsonResponse(singleCancel, 403, { error: "Unsupported action" });
     await expectJsonResponse(bulkCancel, 200, { count: 0, errors: [] });
   });
+
+  test.each([
+    {
+      path: "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
+      body: undefined,
+      error: "Management surface is read-only",
+    },
+    {
+      path: "/api/v1/jobs/actions/cancel",
+      body: {},
+      error: "Management surface is read-only",
+    },
+    {
+      path: "/api/v1/jobs/actions/selected",
+      body: { action: "cancel", ids: ["507f1f77bcf86cd799439011"] },
+      error: "Unsupported action",
+    },
+    {
+      path: "/api/v1/processing/actions/pause",
+      body: { instanceId: "unsupported" },
+      error: "Unsupported action",
+    },
+  ])(
+    "preserves denial precedence for $path before resolving targets",
+    async ({ path, body, error }) => {
+      const authorize = vi.fn(() => true);
+      const getJob = vi.fn(async () => null);
+      const surface = createManagementSurface({
+        monque: createManagementMonque({ getJob }),
+        readOnly: true,
+        authorize,
+      });
+
+      await expectJsonResponse(await handleManagementPost(surface, path, body), 403, { error });
+      expect(authorize).not.toHaveBeenCalled();
+      expect(getJob).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -2,6 +2,19 @@ import type { Document, WithId } from "mongodb";
 
 import type { PersistedJob } from "./types.js";
 
+const OPTIONAL_JOB_FIELDS = [
+  "lockedAt",
+  "claimedBy",
+  "claimId",
+  "leaseExpiresAt",
+  "lastHeartbeat",
+  "heartbeatInterval",
+  "failReason",
+  "repeatInterval",
+  "timezone",
+  "uniqueKey",
+] as const satisfies readonly (keyof PersistedJob)[];
+
 /**
  * Convert a raw MongoDB document to a strongly-typed {@link PersistedJob}.
  *
@@ -26,35 +39,9 @@ export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): Pers
   };
 
   // Only set optional properties if they exist
-  if (doc["lockedAt"] !== undefined) {
-    job.lockedAt = doc["lockedAt"];
-  }
-  if (doc["claimedBy"] !== undefined) {
-    job.claimedBy = doc["claimedBy"];
-  }
-  if (doc["claimId"] !== undefined) {
-    job.claimId = doc["claimId"];
-  }
-  if (doc["leaseExpiresAt"] !== undefined) {
-    job.leaseExpiresAt = doc["leaseExpiresAt"];
-  }
-  if (doc["lastHeartbeat"] !== undefined) {
-    job.lastHeartbeat = doc["lastHeartbeat"];
-  }
-  if (doc["heartbeatInterval"] !== undefined) {
-    job.heartbeatInterval = doc["heartbeatInterval"];
-  }
-  if (doc["failReason"] !== undefined) {
-    job.failReason = doc["failReason"];
-  }
-  if (doc["repeatInterval"] !== undefined) {
-    job.repeatInterval = doc["repeatInterval"];
-  }
-  if (doc["timezone"] !== undefined) {
-    job.timezone = doc["timezone"];
-  }
-  if (doc["uniqueKey"] !== undefined) {
-    job.uniqueKey = doc["uniqueKey"];
+  const optionalFields: Partial<Record<(typeof OPTIONAL_JOB_FIELDS)[number], unknown>> = job;
+  for (const field of OPTIONAL_JOB_FIELDS) {
+    if (doc[field] !== undefined) optionalFields[field] = doc[field];
   }
 
   return job;

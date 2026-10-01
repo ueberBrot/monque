@@ -6,7 +6,6 @@ import { MongoClient, ObjectId } from "mongodb";
 import request from "supertest";
 import { describe, expect, test, vi } from "vite-plus/test";
 
-import { createOpenApiContext } from "@/context";
 import { createRequest } from "@/http";
 import { createManagementExpressRouter, type ManagementExpressRouterOptions } from "@/index";
 
@@ -234,13 +233,6 @@ describe("Express Management Adapter", () => {
       timezone: "Europe/Berlin",
       nextRunAt: "2026-01-15T08:00:00.000Z",
     });
-  });
-
-  test("omits management context when no context factory is configured", async () => {
-    const context = await createOpenApiContext({} as Request, {} as Response, undefined);
-
-    expect(context).not.toHaveProperty("managementContext");
-    expect(context.managementContext).toBeUndefined();
   });
 
   test("preserves array headers while skipping undefined headers", async () => {

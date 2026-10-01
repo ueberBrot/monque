@@ -79,7 +79,20 @@ describe("JobManager", () => {
   describe("retryJob", () => {
     it("should retry a failed job", async () => {
       const jobId = new ObjectId();
-      const failedJob = JobFactoryHelpers.failed({ _id: jobId });
+      const previousRunAt = new Date("2025-01-01T00:00:00.000Z");
+      const failedJob = Object.freeze(
+        JobFactoryHelpers.failed({
+          _id: jobId,
+          nextRunAt: previousRunAt,
+          updatedAt: previousRunAt,
+          lockedAt: previousRunAt,
+          claimedBy: "previous-instance",
+          claimId: "previous-claim",
+          leaseExpiresAt: previousRunAt,
+          lastHeartbeat: previousRunAt,
+        }),
+      );
+      const originalJob = { ...failedJob };
 
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(failedJob);
       const expectedUnset = {
@@ -95,13 +108,32 @@ describe("JobManager", () => {
 
       expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ _id: jobId }),
-        expect.objectContaining({ $unset: expectedUnset }),
+        {
+          $set: {
+            status: JobStatus.PENDING,
+            failCount: 0,
+            nextRunAt: job?.nextRunAt,
+            updatedAt: job?.updatedAt,
+          },
+          $unset: expectedUnset,
+        },
         expect.objectContaining({ returnDocument: "before" }),
       );
 
       expect(job?.status).toBe(JobStatus.PENDING);
-      expect(ctx.notifyPendingJob).toHaveBeenCalledWith(failedJob.name, expect.any(Date));
-      expect(ctx.emitHistory).toContainEqual(expect.objectContaining({ event: "job:retried" }));
+      expect(job?.failCount).toBe(0);
+      expect(job?.nextRunAt).toBeInstanceOf(Date);
+      expect(job?.nextRunAt).not.toEqual(previousRunAt);
+      expect(job?.updatedAt).toEqual(job?.nextRunAt);
+      for (const field of Object.keys(expectedUnset)) {
+        expect(job).not.toHaveProperty(field);
+      }
+      expect(ctx.notifyPendingJob).toHaveBeenCalledWith(failedJob.name, job?.nextRunAt);
+      expect(ctx.emitHistory).toContainEqual({
+        event: "job:retried",
+        payload: { job, previousStatus: JobStatus.FAILED },
+      });
+      expect(failedJob).toEqual(originalJob);
     });
 
     it("should retry a cancelled job", async () => {
@@ -275,19 +307,22 @@ describe("JobManager", () => {
 
       const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ConnectionError);
-      expect((error as ConnectionError).message).toMatch(/Failed to cancel job/);
+      expect((error as ConnectionError).message).toBe(`Failed to cancel job: ${dbError.message}`);
       expect((error as ConnectionError).cause).toBe(dbError);
     });
 
     it("should preserve JobStateError when thrown", async () => {
       const jobId = new ObjectId();
-      const processingJob = JobFactoryHelpers.processing({ _id: jobId });
-
-      vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
-      vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(processingJob);
+      const stateError = new JobStateError(
+        "Cannot cancel",
+        jobId.toString(),
+        "processing",
+        "cancel",
+      );
+      vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(stateError);
 
       const error = await manager.cancelJob(jobId.toString()).catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(JobStateError);
+      expect(error).toBe(stateError);
       expect(error).not.toBeInstanceOf(ConnectionError);
     });
   });
@@ -301,7 +336,7 @@ describe("JobManager", () => {
 
       const error = await manager.retryJob(jobId.toString()).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ConnectionError);
-      expect((error as ConnectionError).message).toMatch(/Failed to retry job/);
+      expect((error as ConnectionError).message).toBe(`Failed to retry job: ${dbError.message}`);
       expect((error as ConnectionError).cause).toBe(dbError);
     });
 
@@ -329,7 +364,9 @@ describe("JobManager", () => {
         .rescheduleJob(jobId.toString(), new Date())
         .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ConnectionError);
-      expect((error as ConnectionError).message).toMatch(/Failed to reschedule job/);
+      expect((error as ConnectionError).message).toBe(
+        `Failed to reschedule job: ${dbError.message}`,
+      );
       expect((error as ConnectionError).cause).toBe(dbError);
     });
 
@@ -357,7 +394,7 @@ describe("JobManager", () => {
 
       const error = await manager.deleteJob(jobId.toString()).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(ConnectionError);
-      expect((error as ConnectionError).message).toMatch(/Failed to delete job/);
+      expect((error as ConnectionError).message).toBe(`Failed to delete job: ${dbError.message}`);
       expect((error as ConnectionError).cause).toBe(dbError);
     });
 
@@ -366,7 +403,12 @@ describe("JobManager", () => {
 
       vi.spyOn(ctx.mockCollection, "deleteOne").mockRejectedValueOnce("String error");
 
-      await expect(manager.deleteJob(jobId.toString())).rejects.toThrow(ConnectionError);
+      const error = await manager.deleteJob(jobId.toString()).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect((error as ConnectionError).message).toBe(
+        "Failed to delete job: Unknown error during deleteJob",
+      );
+      expect(error).not.toHaveProperty("cause");
     });
   });
 
@@ -529,17 +571,20 @@ describe("JobManager", () => {
         expect.objectContaining({ event: "jobs:retried", payload: { count: 5 } }),
       );
       expect(ctx.mockCollection.find).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           status: JobStatus.PENDING,
           updatedAt: expect.any(Date),
-        }),
+        },
         { projection: { name: 1, nextRunAt: 1 } },
       );
       expect(ctx.notifyPendingJob).toHaveBeenCalledWith("bulk-email", bulkEmail.nextRunAt);
       expect(ctx.notifyPendingJob).toHaveBeenCalledWith("bulk-report", bulkReport.nextRunAt);
     });
 
-    it("should respect explicit status filter and intersect with retryable statuses", async () => {
+    it("retains the name and date scope while replacing terminal status for retry notifications", async () => {
+      const olderThan = new Date("2026-02-01T00:00:00.000Z");
+      const newerThan = new Date("2026-01-01T00:00:00.000Z");
+      const scope = { name: "bulk-retry", olderThan, newerThan };
       mockRetryNotificationDocs([]);
       vi.spyOn(ctx.mockCollection, "updateMany").mockResolvedValueOnce({
         modifiedCount: 3,
@@ -549,15 +594,23 @@ describe("JobManager", () => {
         upsertedId: null,
       });
 
-      const result = await manager.retryJobs({ status: JobStatus.FAILED });
+      const result = await manager.retryJobs({ ...scope, status: JobStatus.FAILED });
 
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
       const retryCall = vi.mocked(ctx.mockCollection.updateMany).mock.calls[0];
       expect(retryCall).toBeDefined();
       const [query] = retryCall ?? [];
-      expect(query).toEqual(expect.objectContaining({ status: "failed" }));
+      expect(query).toEqual({
+        name: scope.name,
+        status: JobStatus.FAILED,
+        createdAt: { $lt: olderThan, $gt: newerThan },
+      });
+      expect(ctx.mockCollection.find).toHaveBeenCalledWith(
+        { ...query, status: JobStatus.PENDING, updatedAt: expect.any(Date) },
+        { projection: { name: 1, nextRunAt: 1 } },
+      );
       expect(result).toEqual({ count: 3, errors: [] });
-      expect(ctx.notifyPendingJob).toHaveBeenCalledWith(undefined, expect.any(Date));
+      expect(ctx.notifyPendingJob).toHaveBeenCalledWith(scope.name, expect.any(Date));
     });
 
     it("should return count 0 when filter status does not include retryable statuses", async () => {

@@ -22,6 +22,8 @@ describe("createMockManagementFetch", () => {
 
     expect(queueViews.queueViews.length).toBeGreaterThan(0);
     expect(queueViews.queueViews[0]?.stats.pending).toBeGreaterThan(0);
+    expect(queueViews.queueViews[0]?.stats.processing).toBeGreaterThan(0);
+    expect(queueViews.queueViews[0]?.stats.avgProcessingDurationMs).toBe(42_000);
   });
 
   it("returns typed unauthorized errors for the unauthorized scenario", async () => {
@@ -126,6 +128,9 @@ it("removes historical-only views after their final job is deleted and preserves
     hasPersistedJobs: false,
     stats: { total: 0 },
   });
+  expect(
+    queueViews.find((view) => view.name === "send-email")?.stats.avgProcessingDurationMs,
+  ).toBeUndefined();
 });
 
 it("applies RequestInit overrides when a Request is passed to the mock fetch adapter", async () => {

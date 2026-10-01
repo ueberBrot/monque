@@ -1,9 +1,10 @@
-import { type Document, ObjectId } from "mongodb";
+import { type Document, ObjectId, type WithId } from "mongodb";
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from "@/jobs";
 import { ConnectionError, JobStateError, MonqueError, toError } from "@/shared";
 
 import { buildSelectorQuery } from "../helpers.js";
+import { CLAIM_CLEANUP_FIELDS } from "./job-lifecycle.js";
 import {
   RETRYABLE_JOB_STATUSES,
   type RetryableJobStatusType,
@@ -84,14 +85,7 @@ export class JobManager {
         "cancel",
       );
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during cancelJob";
-      throw new ConnectionError(
-        `Failed to cancel job: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "cancelJob", "cancel job");
     }
   }
 
@@ -121,27 +115,21 @@ export class JobManager {
 
       const _id = new ObjectId(jobId);
       const now = new Date();
+      const update = {
+        $set: {
+          status: JobStatus.PENDING,
+          failCount: 0,
+          nextRunAt: now,
+          updatedAt: now,
+        },
+        $unset: { failReason: "", ...CLAIM_CLEANUP_FIELDS },
+      };
       const result = await this.ctx.collection.findOneAndUpdate(
         {
           _id,
           status: { $in: RETRYABLE_JOB_STATUSES },
         },
-        {
-          $set: {
-            status: JobStatus.PENDING,
-            failCount: 0,
-            nextRunAt: now,
-            updatedAt: now,
-          },
-          $unset: {
-            failReason: "",
-            lockedAt: "",
-            claimedBy: "",
-            claimId: "",
-            leaseExpiresAt: "",
-            lastHeartbeat: "",
-          },
-        },
+        update,
         { returnDocument: "before" },
       );
 
@@ -160,31 +148,17 @@ export class JobManager {
       }
 
       const previousStatus = result["status"] as RetryableJobStatusType;
-      const updatedDoc = { ...result };
-      updatedDoc["status"] = JobStatus.PENDING;
-      updatedDoc["failCount"] = 0;
-      updatedDoc["nextRunAt"] = now;
-      updatedDoc["updatedAt"] = now;
-      delete updatedDoc["failReason"];
-      delete updatedDoc["lockedAt"];
-      delete updatedDoc["claimedBy"];
-      delete updatedDoc["claimId"];
-      delete updatedDoc["leaseExpiresAt"];
-      delete updatedDoc["lastHeartbeat"];
+      const updatedDoc: WithId<Document> = { ...result, ...update.$set };
+      for (const field of Object.keys(update.$unset)) {
+        delete updatedDoc[field];
+      }
 
       const job = this.ctx.documentToPersistedJob(updatedDoc);
       this.ctx.notifyPendingJob(job.name, job.nextRunAt);
       this.ctx.emit("job:retried", { job, previousStatus });
       return job;
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during retryJob";
-      throw new ConnectionError(
-        `Failed to retry job: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "retryJob", "retry job");
     }
   }
 
@@ -240,14 +214,7 @@ export class JobManager {
         "reschedule",
       );
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during rescheduleJob";
-      throw new ConnectionError(
-        `Failed to reschedule job: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "rescheduleJob", "reschedule job");
     }
   }
 
@@ -283,14 +250,7 @@ export class JobManager {
 
       return false;
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during deleteJob";
-      throw new ConnectionError(
-        `Failed to delete job: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "deleteJob", "delete job");
     }
   }
 
@@ -347,14 +307,7 @@ export class JobManager {
 
       return { count, errors: [] };
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during cancelJobs";
-      throw new ConnectionError(
-        `Failed to cancel jobs: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "cancelJobs", "cancel jobs");
     }
   }
 
@@ -410,14 +363,7 @@ export class JobManager {
           },
         },
         {
-          $unset: [
-            "failReason",
-            "lockedAt",
-            "claimedBy",
-            "claimId",
-            "lastHeartbeat",
-            "leaseExpiresAt",
-          ],
+          $unset: ["failReason", ...Object.keys(CLAIM_CLEANUP_FIELDS)],
         },
       ]);
 
@@ -433,14 +379,7 @@ export class JobManager {
 
       return { count, errors: [] };
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during retryJobs";
-      throw new ConnectionError(
-        `Failed to retry jobs: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "retryJobs", "retry jobs");
     }
   }
 
@@ -451,7 +390,14 @@ export class JobManager {
    * changed Jobs by their shared `updatedAt` timestamp to preserve precise wakeup times.
    */
   private async notifyRetriedPendingJobs(filter: JobSelector, updatedAt: Date): Promise<void> {
-    const query = buildRetryNotificationQuery(filter, updatedAt);
+    // Retried Jobs are pending; retain only the original name and creation-date scope.
+    const query = buildSelectorQuery({
+      ...(filter.name === undefined ? {} : { name: filter.name }),
+      ...(filter.olderThan === undefined ? {} : { olderThan: filter.olderThan }),
+      ...(filter.newerThan === undefined ? {} : { newerThan: filter.newerThan }),
+    });
+    query["status"] = JobStatus.PENDING;
+    query["updatedAt"] = updatedAt;
     const cursor = this.ctx.collection.find<PendingNotificationDocument>(query, {
       projection: { name: 1, nextRunAt: 1 },
     });
@@ -504,41 +450,18 @@ export class JobManager {
         errors: [],
       };
     } catch (error) {
-      if (error instanceof MonqueError) {
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : "Unknown error during deleteJobs";
-      throw new ConnectionError(
-        `Failed to delete jobs: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
+      throw jobMutationError(error, "deleteJobs", "delete jobs");
     }
   }
 }
 
-/**
- * Build the post-retry lookup without the original terminal status filter.
- *
- * Retried Jobs are pending after the update, but name and created-at selector constraints still apply.
- */
-function buildRetryNotificationQuery(filter: JobSelector, updatedAt: Date) {
-  const notificationFilter: JobSelector = {};
-
-  if (filter.name !== undefined) {
-    notificationFilter.name = filter.name;
+function jobMutationError(error: unknown, operation: string, action: string): MonqueError {
+  if (error instanceof MonqueError) {
+    return error;
   }
-
-  if (filter.olderThan !== undefined) {
-    notificationFilter.olderThan = filter.olderThan;
-  }
-
-  if (filter.newerThan !== undefined) {
-    notificationFilter.newerThan = filter.newerThan;
-  }
-
-  const query = buildSelectorQuery(notificationFilter);
-  query["status"] = JobStatus.PENDING;
-  query["updatedAt"] = updatedAt;
-
-  return query;
+  const message = error instanceof Error ? error.message : `Unknown error during ${operation}`;
+  return new ConnectionError(
+    `Failed to ${action}: ${message}`,
+    error instanceof Error ? { cause: error } : undefined,
+  );
 }

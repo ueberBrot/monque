@@ -27,7 +27,6 @@ import {
   ConnectionError,
   ShutdownTimeoutError,
   validateJobName,
-  validateUniqueKey,
   WorkerRegistrationError,
 } from "@/shared";
 import type { WorkerOptions, WorkerRegistration } from "@/workers";
@@ -66,8 +65,16 @@ const DEFAULTS = {
   lockTimeout: 1_800_000, // 30 minutes
   recoverStaleJobs: true,
   heartbeatInterval: 30000, // 30 seconds
-  retentionInterval: 3600_000, // 1 hour
 } as const;
+
+interface SchedulerRuntime {
+  intake: JobIntake;
+  manager: JobManager;
+  query: JobQueryService;
+  changeStreamHandler: ChangeStreamHandler;
+  lifecycleManager: LifecycleManager;
+  pendingNotificationRouter: PendingNotificationRouter;
+}
 
 /**
  * Monque - MongoDB-backed job scheduler
@@ -141,26 +148,14 @@ export class Monque extends EventEmitter {
   private paused = false;
   private readonly pausedWorkers = new Set<string>();
   private isRunning = false;
-  private isInitialized = false;
 
-  /**
-   * Resolve function for the reactive shutdown drain promise.
-   * Set during stop() when active jobs need to finish; called by
-   * onJobFinished() when the last active job completes.
-   *
-   * @private
-   */
-  private _drainResolve: (() => void) | null = null;
+  /** Each shutdown tracks its own in-progress jobs across synchronous restarts. */
+  #drainChecks = new Set<() => void>();
+  #runGeneration = 0;
 
-  // Internal services (initialized in initialize())
-  private _intake: JobIntake | null = null;
-  private _manager: JobManager | null = null;
-  private _query: JobQueryService | null = null;
-  private _jobLifecycle: JobLifecycle | null = null;
-  private _processor: JobProcessor | null = null;
-  private _changeStreamHandler: ChangeStreamHandler | null = null;
-  private _lifecycleManager: LifecycleManager | null = null;
-  private _pendingNotificationRouter: PendingNotificationRouter | null = null;
+  /** Published together after initialization succeeds. */
+  #initializedRuntime: SchedulerRuntime | null = null;
+  #initialization: Promise<void> | null = null;
 
   constructor(db: Db, options: MonqueOptions = {}) {
     super();
@@ -209,10 +204,18 @@ export class Monque extends EventEmitter {
    * @throws {ConnectionError} If collection or index creation fails
    */
   async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      return;
-    }
+    if (this.#initializedRuntime) return;
+    if (this.#initialization) return this.#initialization;
 
+    this.#initialization = this.#initializeRuntime();
+    try {
+      await this.#initialization;
+    } finally {
+      this.#initialization = null;
+    }
+  }
+
+  async #initializeRuntime(): Promise<void> {
     try {
       this.collection = this.db.collection(this.options.collectionName);
 
@@ -232,18 +235,18 @@ export class Monque extends EventEmitter {
 
       await jobLifecycle.assertNoActiveInstanceCollision();
 
-      this._jobLifecycle = jobLifecycle;
-      this._intake = new JobIntake(ctx);
-      this._manager = new JobManager(ctx);
-      this._query = new JobQueryService(ctx);
-      this._processor = new JobProcessor(ctx, jobLifecycle);
-      this._pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
-        this.processor.poll(targetNames),
+      const processor = new JobProcessor(ctx, jobLifecycle);
+      const pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
+        processor.poll(targetNames),
       );
-      this._changeStreamHandler = new ChangeStreamHandler(ctx, this._pendingNotificationRouter);
-      this._lifecycleManager = new LifecycleManager(ctx);
-
-      this.isInitialized = true;
+      this.#initializedRuntime = {
+        intake: new JobIntake(ctx),
+        manager: new JobManager(ctx),
+        query: new JobQueryService(ctx),
+        pendingNotificationRouter,
+        changeStreamHandler: new ChangeStreamHandler(ctx, pendingNotificationRouter),
+        lifecycleManager: new LifecycleManager(ctx, jobLifecycle),
+      };
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown error during initialization";
@@ -252,78 +255,16 @@ export class Monque extends EventEmitter {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Service Accessors (throw if not initialized)
+  // Initialized runtime
   // ─────────────────────────────────────────────────────────────────────────────
 
   /** @throws {ConnectionError} if not initialized */
-  private get intake(): JobIntake {
-    if (!this._intake) {
+  get #runtime(): SchedulerRuntime {
+    if (!this.#initializedRuntime) {
       throw new ConnectionError("Monque not initialized. Call initialize() first.");
     }
 
-    return this._intake;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get manager(): JobManager {
-    if (!this._manager) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._manager;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get query(): JobQueryService {
-    if (!this._query) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._query;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get jobLifecycle(): JobLifecycle {
-    if (!this._jobLifecycle) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._jobLifecycle;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get processor(): JobProcessor {
-    if (!this._processor) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._processor;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get changeStreamHandler(): ChangeStreamHandler {
-    if (!this._changeStreamHandler) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._changeStreamHandler;
-  }
-
-  /** @throws {ConnectionError} if not initialized */
-  private get lifecycleManager(): LifecycleManager {
-    if (!this._lifecycleManager) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-
-    return this._lifecycleManager;
-  }
-
-  private validateSchedulingIdentifiers(name: string, uniqueKey?: string): void {
-    validateJobName(name);
-
-    if (uniqueKey !== undefined) {
-      validateUniqueKey(uniqueKey);
-    }
+    return this.#initializedRuntime;
   }
 
   /**
@@ -344,11 +285,11 @@ export class Monque extends EventEmitter {
       emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
         this.emit(event, payload),
       notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
-        if (!this.isRunning || !this._pendingNotificationRouter) {
+        if (!this.isRunning) {
           return;
         }
 
-        this._pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
+        this.#initializedRuntime?.pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
       },
       notifyJobFinished: (name) => this.onJobFinished(name),
       documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
@@ -488,9 +429,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.enqueue}
    */
   async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-    this.ensureInitialized();
-    this.validateSchedulingIdentifiers(name, options.uniqueKey);
-    return this.intake.enqueue(name, data, options);
+    return this.#runtime.intake.enqueue(name, data, options);
   }
 
   /**
@@ -503,8 +442,7 @@ export class Monque extends EventEmitter {
     jobs: readonly EnqueueJob[],
     options: JobWriteOptions = {},
   ): Promise<EnqueueManyResult> {
-    this.ensureInitialized();
-    return this.intake.enqueueMany(jobs, options);
+    return this.#runtime.intake.enqueueMany(jobs, options);
   }
 
   /**
@@ -539,9 +477,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.now}
    */
   async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    this.ensureInitialized();
-    validateJobName(name);
-    return this.intake.now(name, data);
+    return this.#runtime.intake.now(name, data);
   }
 
   /**
@@ -600,9 +536,7 @@ export class Monque extends EventEmitter {
     data: T,
     options: ScheduleOptions = {},
   ): Promise<PersistedJob<T>> {
-    this.ensureInitialized();
-    this.validateSchedulingIdentifiers(name, options.uniqueKey);
-    return this.intake.schedule(cron, name, data, options);
+    return this.#runtime.intake.schedule(cron, name, data, options);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -630,12 +564,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.cancelJob}
    */
   async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.cancelJob(jobId);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.cancelJob(jobId));
   }
 
   /**
@@ -659,12 +588,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.retryJob}
    */
   async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.retryJob(jobId);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.retryJob(jobId));
   }
 
   /**
@@ -686,12 +610,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.rescheduleJob}
    */
   async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.rescheduleJob(jobId, runAt);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.rescheduleJob(jobId, runAt));
   }
 
   /**
@@ -714,12 +633,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.deleteJob}
    */
   async deleteJob(jobId: string): Promise<boolean> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.deleteJob(jobId);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.deleteJob(jobId));
   }
 
   /**
@@ -745,12 +659,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.cancelJobs}
    */
   async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.cancelJobs(filter);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.cancelJobs(filter));
   }
 
   /**
@@ -775,12 +684,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.retryJobs}
    */
   async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.retryJobs(filter);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.retryJobs(filter));
   }
 
   /**
@@ -806,12 +710,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobManager.deleteJobs}
    */
   async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    this.ensureInitialized();
-    try {
-      return await this.manager.deleteJobs(filter);
-    } finally {
-      this.query.clearStatsCache();
-    }
+    return this.#runJobMutation((manager) => manager.deleteJobs(filter));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -852,9 +751,9 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJob}
    */
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
-    this.ensureInitialized();
+    const { query } = this.#runtime;
     if (!ObjectId.isValid(id)) return null;
-    return this.query.getJob<T>(new ObjectId(id));
+    return query.getJob<T>(new ObjectId(id));
   }
 
   /**
@@ -902,8 +801,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJobs}
    */
   async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-    this.ensureInitialized();
-    return this.query.getJobs<T>(filter);
+    return this.#runtime.query.getJobs<T>(filter);
   }
 
   /**
@@ -939,14 +837,12 @@ export class Monque extends EventEmitter {
    */
 
   async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
-    this.ensureInitialized();
-    return this.query.getJobsWithCursor<T>(options);
+    return this.#runtime.query.getJobsWithCursor<T>(options);
   }
 
   /** List job metadata without reading payloads; shares the full listing cursor format. */
   async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
-    this.ensureInitialized();
-    return this.query.getJobSummariesWithCursor(options);
+    return this.#runtime.query.getJobSummariesWithCursor(options);
   }
 
   /**
@@ -978,8 +874,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getQueueStats}
    */
   async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    this.ensureInitialized();
-    return this.query.getQueueStats(filter);
+    return this.#runtime.query.getQueueStats(filter);
   }
 
   /**
@@ -1006,8 +901,7 @@ export class Monque extends EventEmitter {
   async getQueueViewSummaries(
     filter?: Pick<JobSelector, "name">,
   ): Promise<readonly QueueViewSummary[]> {
-    this.ensureInitialized();
-    return this.query.getQueueViewSummaries(filter);
+    return this.#runtime.query.getQueueViewSummaries(filter);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1127,7 +1021,7 @@ export class Monque extends EventEmitter {
       validateJobName(name);
       this.pausedWorkers.delete(name);
     }
-    this._pendingNotificationRouter?.notifyRunnableJob(name);
+    this.#initializedRuntime?.pendingNotificationRouter.notifyRunnableJob(name);
   }
 
   /** Whether the local instance, or the named worker, is effectively paused. */
@@ -1194,30 +1088,21 @@ export class Monque extends EventEmitter {
       return;
     }
 
-    if (!this.isInitialized) {
+    if (!this.#initializedRuntime) {
       throw new ConnectionError("Monque not initialized. Call initialize() before start().");
     }
 
+    const { changeStreamHandler, pendingNotificationRouter, lifecycleManager } = this.#runtime;
+    this.#runGeneration++;
     this.isRunning = true;
 
     // Set up change streams as the primary notification mechanism
-    this.changeStreamHandler.setup();
+    changeStreamHandler.setup();
 
-    this._pendingNotificationRouter?.start();
+    pendingNotificationRouter.start();
 
     // Start heartbeat and retention timers
-    this.lifecycleManager.startTimers({
-      updateHeartbeats: async () => {
-        await this.jobLifecycle.updateOwnedHeartbeats();
-        if (
-          this.isRunning &&
-          this.options.leaseDuration !== undefined &&
-          this.options.recoverStaleJobs
-        ) {
-          await this.jobLifecycle.recoverStaleJobs();
-        }
-      },
-    });
+    lifecycleManager.startTimers();
   }
 
   /**
@@ -1227,6 +1112,7 @@ export class Monque extends EventEmitter {
    * Times out after the configured `shutdownTimeout` (default: 30 seconds), emitting
    * a `job:error` event with a `ShutdownTimeoutError` containing incomplete jobs.
    * On timeout, jobs still in progress are left as `processing` for stale job recovery.
+   * Restarting does not extend this shutdown to jobs started after it began.
    *
    * It's safe to call `stop()` multiple times - subsequent calls are no-ops if already stopped.
    *
@@ -1259,46 +1145,45 @@ export class Monque extends EventEmitter {
       return;
     }
 
+    const { lifecycleManager, pendingNotificationRouter, query, changeStreamHandler } =
+      this.#runtime;
+    const generation = this.#runGeneration;
+    const drainingJobs = new Set(this.getActiveJobsList());
+    const getIncompleteJobs = () => this.getActiveJobsList().filter((job) => drainingJobs.has(job));
+
     // Renewable claims stay alive while handlers drain; recovery stops with polling.
-    this.lifecycleManager.stopTimers(this.options.leaseDuration !== undefined);
-    this._pendingNotificationRouter?.close();
+    lifecycleManager.stopTimers(this.options.leaseDuration !== undefined);
+    pendingNotificationRouter.close();
 
     this.isRunning = false;
 
     // Clear stats cache for clean state on restart
-    this._query?.clearStatsCache();
+    query.clearStatsCache();
 
     // Close change stream — catch-and-ignore per shutdown cleanup guideline
     try {
-      await this.changeStreamHandler.close();
+      await changeStreamHandler.close();
     } catch {
       // ignore errors during shutdown cleanup
     }
 
-    // Wait for all active jobs to complete (with timeout)
-    if (this.getActiveJobCount() === 0) {
-      this.lifecycleManager.stopTimers();
-      return;
+    let timedOut = false;
+    if (getIncompleteJobs().length > 0) {
+      const drain = Promise.withResolvers<"timeout" | undefined>();
+      const checkDrain = () => {
+        if (getIncompleteJobs().length === 0) drain.resolve(undefined);
+      };
+      this.#drainChecks.add(checkDrain);
+      const timeoutId = setTimeout(() => drain.resolve("timeout"), this.options.shutdownTimeout);
+      timedOut = (await drain.promise) === "timeout";
+      clearTimeout(timeoutId);
+      this.#drainChecks.delete(checkDrain);
     }
 
-    // Reactive drain: resolve when the last active job finishes.
-    // onJobFinished() is called from processJob's finally block.
-    const waitForJobs = new Promise<undefined>((resolve) => {
-      this._drainResolve = () => resolve(undefined);
-    });
+    if (generation === this.#runGeneration) lifecycleManager.stopTimers();
 
-    // Race between job completion and timeout
-    const timeout = Promise.withResolvers<"timeout">();
-    const timeoutId = setTimeout(() => timeout.resolve("timeout"), this.options.shutdownTimeout);
-
-    const result = await Promise.race([waitForJobs, timeout.promise]);
-    clearTimeout(timeoutId);
-    this.lifecycleManager.stopTimers();
-
-    this._drainResolve = null;
-
-    if (result === "timeout") {
-      const incompleteJobs = this.getActiveJobsList();
+    if (timedOut) {
+      const incompleteJobs = getIncompleteJobs();
 
       const error = new ShutdownTimeoutError(
         `Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
@@ -1355,53 +1240,31 @@ export class Monque extends EventEmitter {
    * ```
    */
   isHealthy(): boolean {
-    return this.isRunning && this.isInitialized && this.collection !== null;
+    return this.isRunning && this.#initializedRuntime !== null && this.collection !== null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /** Invalidate query caches after every management mutation, including partial failures. */
+  async #runJobMutation<T>(operation: (manager: JobManager) => Promise<T>): Promise<T> {
+    const { manager, query } = this.#runtime;
+    try {
+      return await operation(manager);
+    } finally {
+      query.clearStatsCache();
+    }
+  }
+
   /**
-   * Wake polling when local capacity is freed, and resolve a pending shutdown
-   * drain when no active jobs remain.
+   * Wake polling when local capacity is freed and check each shutdown's drain.
    *
    * @private
    */
   private onJobFinished(name: string): void {
-    this._pendingNotificationRouter?.notifyRunnableJob(name);
-    if (this._drainResolve && this.getActiveJobCount() === 0) {
-      this._drainResolve();
-    }
-  }
-
-  /**
-   * Ensure the scheduler is initialized before operations.
-   *
-   * @private
-   * @throws {ConnectionError} If scheduler not initialized or collection unavailable
-   */
-  private ensureInitialized(): void {
-    if (!this.isInitialized || !this.collection) {
-      throw new ConnectionError("Monque not initialized. Call initialize() first.");
-    }
-  }
-
-  /**
-   * Get total count of active jobs across all workers.
-   *
-   * Returns only the count (O(workers)) instead of allocating
-   * a throw-away array of IDs, since callers only need `.length`.
-   *
-   * @private
-   * @returns Number of jobs currently being processed
-   */
-  private getActiveJobCount(): number {
-    let count = 0;
-    for (const worker of this.workers.values()) {
-      count += worker.activeJobs.size;
-    }
-    return count;
+    this.#initializedRuntime?.pendingNotificationRouter.notifyRunnableJob(name);
+    for (const checkDrain of this.#drainChecks) checkDrain();
   }
 
   /**

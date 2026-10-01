@@ -1,15 +1,23 @@
 import { type Document, ObjectId, type WithId } from "mongodb";
-import { describe, expect, expectTypeOf, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import { documentToPersistedJob, JobStatus } from "@/jobs";
 import { JobFactory } from "@tests/factories";
 
 describe("documentToPersistedJob", () => {
-  it("preserves required fields and omits absent optional fields", () => {
+  it("copies only known fields and preserves inherited optional values", () => {
     const original = JobFactory.build();
-    const doc = original as unknown as WithId<Document>;
+    const doc: WithId<Document> = { ...original, claimId: undefined, internalOnly: "ignored" };
+    let reads = 0;
+    Object.setPrototypeOf(doc, {
+      get lockedAt() {
+        reads++;
+        return null;
+      },
+    });
 
-    expect(documentToPersistedJob(doc)).toStrictEqual(original);
+    expect(documentToPersistedJob(doc)).toStrictEqual({ ...original, lockedAt: null });
+    expect(reads).toBe(2);
   });
 
   it("preserves explicit null values for nullable fields", () => {
@@ -23,7 +31,7 @@ describe("documentToPersistedJob", () => {
     expect(documentToPersistedJob(doc)).toStrictEqual(original);
   });
 
-  it("maps every populated field and preserves the generic payload contract", () => {
+  it("maps every populated field and preserves reference identity", () => {
     type OrderData = { orderId: string; items: string[]; total: number };
     const data: OrderData = { orderId: "order-123", items: ["item-a", "item-b"], total: 99.99 };
     const now = new Date();
@@ -38,16 +46,20 @@ describe("documentToPersistedJob", () => {
       updatedAt: now,
       lockedAt: now,
       claimedBy: "instance-1",
+      claimId: "claim-1",
+      leaseExpiresAt: now,
       lastHeartbeat: now,
       heartbeatInterval: 5000,
       failReason: "timeout",
       repeatInterval: "0 * * * *",
+      timezone: "Europe/Berlin",
       uniqueKey: "dedup-key",
     };
 
     const result = documentToPersistedJob<OrderData>(doc);
 
-    expectTypeOf(result.data).toEqualTypeOf<OrderData>();
     expect(result).toStrictEqual(doc);
+    expect(result.data).toBe(data);
+    expect(result.leaseExpiresAt).toBe(now);
   });
 });

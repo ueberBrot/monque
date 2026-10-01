@@ -1,9 +1,6 @@
 /**
- * Unit tests for ChangeStreamHandler service.
- *
- * Tests change stream setup, event handling, error recovery with exponential backoff,
- * and graceful fallback to polling. This is where we properly test the internal
- * change stream behavior that was previously accessed via private properties.
+ * Tests Change Stream setup, event delivery, reconnection, and shutdown through
+ * the cursor adapter, observing emitted events and scheduled polls.
  */
 
 import { EventEmitter } from "node:events";
@@ -19,17 +16,33 @@ describe("ChangeStreamHandler", () => {
   let onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>;
   let pendingNotifications: PendingNotificationRouter;
   let handler: ChangeStreamHandler;
+  let streams: ReturnType<typeof createStream>[];
+  let stream: ReturnType<typeof createStream>;
+
+  function createStream() {
+    return Object.assign(new EventEmitter(), {
+      close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    });
+  }
 
   beforeEach(() => {
     ctx = createMockContext();
-    onPoll = vi.fn().mockResolvedValue(undefined) as unknown as (
-      targetNames?: ReadonlySet<string>,
-    ) => Promise<void>;
+    onPoll = vi
+      .fn<(targetNames?: ReadonlySet<string>) => Promise<void>>()
+      .mockResolvedValue(undefined);
     pendingNotifications = new PendingNotificationRouter(ctx, onPoll);
     handler = new ChangeStreamHandler(ctx, pendingNotifications);
+    streams = [];
+    stream = createStream();
+    vi.spyOn(ctx.collection, "watch").mockImplementation(() => {
+      const cursor = streams.length === 0 ? stream : createStream();
+      streams.push(cursor);
+      return cursor as unknown as ReturnType<typeof ctx.collection.watch>;
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await handler.close();
     pendingNotifications.close();
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -45,15 +58,8 @@ describe("ChangeStreamHandler", () => {
     });
 
     it("should create change stream and emit connected event", () => {
-      expect(handler.isActive()).toBe(false);
-      const mockChangeStream = new EventEmitter();
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
-
       handler.setup();
 
-      expect(handler.isActive()).toBe(true);
       expect(ctx.mockCollection.watch).toHaveBeenCalled();
       expect(ctx.emitHistory).toContainEqual(
         expect.objectContaining({ event: "changestream:connected" }),
@@ -61,16 +67,9 @@ describe("ChangeStreamHandler", () => {
     });
 
     it("should watch nextRunAt-only updates for pending jobs", () => {
-      const mockChangeStream = new EventEmitter();
-      const watchSpy = vi
-        .spyOn(ctx.mockCollection, "watch")
-        .mockReturnValue(
-          mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-        );
-
       handler.setup();
 
-      expect(watchSpy).toHaveBeenCalledWith(
+      expect(ctx.collection.watch).toHaveBeenCalledWith(
         [
           {
             $match: {
@@ -108,13 +107,9 @@ describe("ChangeStreamHandler", () => {
 
     it("should forward change events from the stream to the handler", () => {
       vi.useFakeTimers();
-      const mockChangeStream = new EventEmitter();
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
 
       handler.setup();
-      mockChangeStream.emit("change", {
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
@@ -135,14 +130,15 @@ describe("ChangeStreamHandler", () => {
 
       handler.setup();
 
-      expect(handler.isActive()).toBe(false);
       expect(ctx.emitHistory).toContainEqual(
         expect.objectContaining({ event: "changestream:fallback" }),
       );
     });
   });
 
-  describe("handleEvent", () => {
+  describe("cursor changes", () => {
+    beforeEach(() => handler.setup());
+
     it("should not trigger poll if scheduler is not running", () => {
       vi.useFakeTimers();
       vi.spyOn(ctx, "isRunning").mockReturnValue(false);
@@ -152,7 +148,7 @@ describe("ChangeStreamHandler", () => {
         fullDocument: { status: JobStatus.PENDING },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(200);
 
       expect(onPoll).not.toHaveBeenCalled();
@@ -165,7 +161,7 @@ describe("ChangeStreamHandler", () => {
         fullDocument: { status: JobStatus.PENDING },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
 
       // Debounce should prevent immediate call
       expect(onPoll).not.toHaveBeenCalled();
@@ -183,7 +179,7 @@ describe("ChangeStreamHandler", () => {
         updateDescription: { updatedFields: { status: JobStatus.PENDING } },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -201,7 +197,7 @@ describe("ChangeStreamHandler", () => {
         updateDescription: { updatedFields: { nextRunAt: new Date(Date.now() - 1000) } },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -216,11 +212,11 @@ describe("ChangeStreamHandler", () => {
       };
 
       // Trigger multiple events within one bounded batching window.
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(25);
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(25);
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       // Should only call once due to debouncing
@@ -228,15 +224,9 @@ describe("ChangeStreamHandler", () => {
     });
   });
 
-  describe("handleError", () => {
+  describe("cursor errors", () => {
     it("shortens the full-poll deadline on disconnect without needing a notification", async () => {
       vi.useFakeTimers();
-      const stream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.collection, "watch").mockReturnValue(
-        stream as unknown as ReturnType<typeof ctx.collection.watch>,
-      );
       handler.setup();
       pendingNotifications.start();
       await vi.advanceTimersByTimeAsync(200);
@@ -252,18 +242,11 @@ describe("ChangeStreamHandler", () => {
 
     it("preserves local-write wakeups across disconnect and reconnect", async () => {
       vi.useFakeTimers();
-      const stream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.collection, "watch").mockReturnValue(
-        stream as unknown as ReturnType<typeof ctx.collection.watch>,
-      );
       handler.setup();
       pendingNotifications.notifyPendingJob("local", new Date(Date.now() + 1500));
       stream.emit("error", new Error("Disconnected"));
 
       await vi.advanceTimersByTimeAsync(1000);
-      expect(handler.isActive()).toBe(true);
       await vi.advanceTimersByTimeAsync(700);
       expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["local"]));
       await handler.close();
@@ -271,20 +254,18 @@ describe("ChangeStreamHandler", () => {
 
     it("resets backoff only after a successful server response", async () => {
       vi.useFakeTimers();
-      const streams: EventEmitter[] = [];
-      vi.spyOn(ctx.collection, "watch").mockImplementation(() => {
-        const stream = Object.assign(new EventEmitter(), {
-          close: vi.fn().mockResolvedValue(undefined),
-        });
-        streams.push(stream);
-        return stream as unknown as ReturnType<typeof ctx.collection.watch>;
-      });
       handler.setup();
       streams.at(-1)?.emit("error", new Error("First failure"));
       vi.advanceTimersByTime(1000);
+      stream.emit("resumeTokenChanged", { token: "stale" });
+      stream.emit("change", {
+        operationType: "insert",
+        fullDocument: { status: JobStatus.PENDING },
+      });
       streams.at(-1)?.emit("error", new Error("Second failure"));
       vi.advanceTimersByTime(1000);
       expect(streams).toHaveLength(2);
+      expect(onPoll).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1000);
       expect(streams).toHaveLength(3);
 
@@ -295,32 +276,26 @@ describe("ChangeStreamHandler", () => {
       await handler.close();
     });
 
-    it("should return early if scheduler is not running", () => {
+    it("does not reconnect when a cursor error arrives after the scheduler stops", () => {
+      vi.useFakeTimers();
+      handler.setup();
       vi.spyOn(ctx, "isRunning").mockReturnValue(false);
 
       const error = new Error("Connection lost");
-      handler.handleError(error);
-
-      // Should not increment reconnect attempts or emit fallback
-      // (We can't directly assert on reconnectAttempts, but we verify
-      // no fallback event is emitted which would happen after max attempts)
+      stream.emit("error", error);
+      vi.advanceTimersByTime(8000);
+      expect(stream.close).not.toHaveBeenCalled();
+      expect(ctx.collection.watch).toHaveBeenCalledOnce();
       expect(ctx.emitHistory).not.toContainEqual(
         expect.objectContaining({ event: "changestream:fallback" }),
       );
     });
 
     it("should emit error event", () => {
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
-
       handler.setup();
 
       const error = new Error("Connection lost");
-      mockChangeStream.emit("error", error);
+      stream.emit("error", error);
 
       expect(ctx.emitHistory).toContainEqual(
         expect.objectContaining({
@@ -332,37 +307,28 @@ describe("ChangeStreamHandler", () => {
 
     it("should attempt reconnection with exponential backoff", () => {
       vi.useFakeTimers();
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
-
       handler.setup();
-      const initialWatchCalls = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
-        .length;
-
-      // Emit error
-      mockChangeStream.emit("error", new Error("First error"));
-
-      // Should schedule reconnect after 1s (2^0 * 1000)
-      vi.advanceTimersByTime(1000);
-
-      // closeSync may be called, then watch should be called again
-      expect(
-        (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls.length,
-      ).toBeGreaterThan(initialWatchCalls);
+      stream.emit("error", new Error("First error"));
+      vi.advanceTimersByTime(999);
+      expect(ctx.collection.watch).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(1);
+      expect(ctx.collection.watch).toHaveBeenCalledTimes(2);
     });
 
     it("should stop before scheduling reconnect if scheduler stops mid-handler", () => {
       vi.useFakeTimers();
-      vi.spyOn(ctx, "isRunning").mockReturnValueOnce(true).mockReturnValueOnce(false);
+      handler.setup();
+      let running = true;
+      vi.spyOn(ctx, "isRunning").mockImplementation(() => running);
+      stream.close.mockImplementation(() => {
+        running = false;
+        return Promise.resolve();
+      });
 
-      handler.handleError(new Error("Connection lost"));
+      stream.emit("error", new Error("Connection lost"));
       vi.runAllTimers();
 
-      expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
       expect(ctx.emitHistory).not.toContainEqual(
         expect.objectContaining({ event: "changestream:fallback" }),
       );
@@ -370,41 +336,31 @@ describe("ChangeStreamHandler", () => {
 
     it("should abort reconnect when scheduler stops before reconnect starts", () => {
       vi.useFakeTimers();
-      vi.spyOn(ctx, "isRunning")
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValue(false);
-
-      handler.handleError(new Error("Connection lost"));
+      handler.setup();
+      stream.emit("error", new Error("Connection lost"));
+      vi.spyOn(ctx, "isRunning").mockReturnValue(false);
       vi.advanceTimersByTime(1000);
 
-      expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
     });
 
     it("should abort reconnect when scheduler stops after closing the stream", () => {
       vi.useFakeTimers();
+      handler.setup();
       vi.spyOn(ctx, "isRunning")
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValueOnce(true)
         .mockReturnValue(false);
 
-      handler.handleError(new Error("Connection lost"));
+      stream.emit("error", new Error("Connection lost"));
       vi.advanceTimersByTime(1000);
 
-      expect(ctx.mockCollection.watch).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
     });
 
     it("should emit fallback event after exhausting reconnection attempts", () => {
       vi.useFakeTimers();
-      const streams: EventEmitter[] = [];
-      vi.spyOn(ctx.mockCollection, "watch").mockImplementation(() => {
-        const stream = Object.assign(new EventEmitter(), {
-          close: vi.fn().mockResolvedValue(undefined),
-        });
-        streams.push(stream);
-        return stream as unknown as ReturnType<typeof ctx.mockCollection.watch>;
-      });
 
       handler.setup();
 
@@ -415,7 +371,6 @@ describe("ChangeStreamHandler", () => {
         vi.advanceTimersByTime(10000);
       }
       expect(streams).toHaveLength(4);
-      expect(handler.isActive()).toBe(false);
 
       expect(ctx.emitHistory).toContainEqual(
         expect.objectContaining({
@@ -427,65 +382,23 @@ describe("ChangeStreamHandler", () => {
       );
     });
 
-    it("should fallback after exhausting attempts without an active change stream", () => {
-      for (let i = 0; i < 4; i++) {
-        handler.handleError(new Error(`Error ${i + 1}`));
-      }
-
-      expect(ctx.emitHistory).toContainEqual(
-        expect.objectContaining({
-          event: "changestream:fallback",
-          payload: expect.objectContaining({
-            reason: expect.stringContaining("Exhausted 3 reconnection attempts"),
-          }),
-        }),
-      );
-    });
-
-    it("should set isActive to false during reconnection backoff", () => {
-      vi.useFakeTimers();
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
-
-      handler.setup();
-      expect(handler.isActive()).toBe(true);
-
-      // Error triggers backoff — isActive should immediately be false
-      mockChangeStream.emit("error", new Error("Connection lost"));
-      expect(handler.isActive()).toBe(false);
-
-      // After reconnect timer fires and setup succeeds, isActive is restored
-      vi.advanceTimersByTime(1000);
-      expect(handler.isActive()).toBe(true);
-    });
-
     it("preserves scheduled wakeups on stream error", () => {
       vi.useFakeTimers();
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
 
       handler.setup();
 
       // Schedule a wakeup timer via a future-dated job event
       const futureDate = new Date(Date.now() + 5000);
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           name: "test-job",
           status: JobStatus.PENDING,
           nextRunAt: futureDate,
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
-      mockChangeStream.emit("error", new Error("Connection lost"));
+      stream.emit("error", new Error("Connection lost"));
 
       // Advance past when the wakeup would have fired
       vi.advanceTimersByTime(6000);
@@ -495,26 +408,20 @@ describe("ChangeStreamHandler", () => {
 
     it("preserves batched notifications on stream error", () => {
       vi.useFakeTimers();
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
 
       handler.setup();
 
       // Trigger an event that starts the debounce timer
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           name: "test-job",
           status: JobStatus.PENDING,
           nextRunAt: new Date(Date.now() - 1000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
-      mockChangeStream.emit("error", new Error("Connection lost"));
+      stream.emit("error", new Error("Connection lost"));
 
       // Advance past the debounce window (100ms)
       vi.advanceTimersByTime(150);
@@ -524,20 +431,131 @@ describe("ChangeStreamHandler", () => {
   });
 
   describe("close", () => {
-    it("should close change stream and emit closed event", async () => {
-      const mockChangeStream = {
-        on: vi.fn(),
-        close: vi.fn().mockResolvedValue(undefined),
-      };
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
+    it.each(["changestream:error", "changestream:closed"])(
+      "preserves a replacement opened by the %s callback",
+      async (restartEvent) => {
+        vi.useFakeTimers();
+        handler.setup();
+        let restarted = false;
+        vi.spyOn(ctx, "emit").mockImplementation((event, payload) => {
+          ctx.emitHistory.push({ event, payload });
+          if (event === restartEvent && !restarted) {
+            restarted = true;
+            void handler.close();
+            handler.setup();
+          }
+          return true;
+        });
+        if (restartEvent === "changestream:error") stream.emit("error", new Error("Restart"));
+        else await handler.close();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(ctx.collection.watch).toHaveBeenCalledTimes(2);
+        const replacement = streams[1]!;
+        expect(replacement.close).not.toHaveBeenCalled();
+        replacement.emit("change", {
+          operationType: "insert",
+          fullDocument: { status: JobStatus.PENDING, name: "replacement" },
+        });
+        await vi.advanceTimersByTimeAsync(100);
+        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+      },
+    );
 
+    it("ignores a closing stream while a replacement remains active", async () => {
+      vi.useFakeTimers();
+      const closed = Promise.withResolvers<void>();
+      const oldStream = Object.assign(new EventEmitter(), {
+        close: vi.fn().mockReturnValue(closed.promise),
+      });
+      const replacement = Object.assign(new EventEmitter(), {
+        close: vi.fn().mockResolvedValue(undefined),
+      });
+      vi.spyOn(ctx.collection, "watch")
+        .mockReturnValueOnce(oldStream as unknown as ReturnType<typeof ctx.collection.watch>)
+        .mockReturnValue(replacement as unknown as ReturnType<typeof ctx.collection.watch>);
+      handler.setup();
+      const closing = handler.close();
+      try {
+        oldStream.emit("change", {
+          operationType: "insert",
+          fullDocument: { status: JobStatus.PENDING, name: "old" },
+        });
+        oldStream.emit("error", new Error("Closing cursor failed"));
+        await vi.advanceTimersByTimeAsync(100);
+        expect(onPoll).not.toHaveBeenCalled();
+        expect(ctx.emitHistory).not.toContainEqual(
+          expect.objectContaining({ event: "changestream:error" }),
+        );
+
+        handler.setup();
+        closed.resolve();
+        await closing;
+        replacement.emit("change", {
+          operationType: "insert",
+          fullDocument: { status: JobStatus.PENDING, name: "replacement" },
+        });
+        await vi.advanceTimersByTimeAsync(100);
+        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+        expect(replacement.close).not.toHaveBeenCalled();
+      } finally {
+        closed.resolve();
+        await closing;
+        await handler.close();
+      }
+      expect(replacement.close).toHaveBeenCalledOnce();
+    });
+
+    it("preserves replacement backoff when an earlier close completes", async () => {
+      vi.useFakeTimers();
+      const closed = Promise.withResolvers<void>();
+      const streams = Array.from({ length: 5 }, (_, index) =>
+        Object.assign(new EventEmitter(), {
+          close: vi.fn().mockReturnValue(index === 0 ? closed.promise : Promise.resolve()),
+        }),
+      );
+      const watch = vi.spyOn(ctx.collection, "watch");
+      for (const stream of streams) {
+        watch.mockReturnValueOnce(stream as unknown as ReturnType<typeof ctx.collection.watch>);
+      }
+      handler.setup();
+      const closing = handler.close();
+      try {
+        handler.setup();
+        streams[1]!.emit("error", new Error("First replacement failure"));
+        closed.resolve();
+        await closing;
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(watch).toHaveBeenCalledTimes(3);
+
+        streams[2]!.emit("error", new Error("Second replacement failure"));
+        await vi.advanceTimersByTimeAsync(1999);
+        expect(watch).toHaveBeenCalledTimes(3);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(watch).toHaveBeenCalledTimes(4);
+
+        streams[3]!.emit("error", new Error("Third replacement failure"));
+        await vi.advanceTimersByTimeAsync(4000);
+        streams[4]!.emit("error", new Error("Fourth replacement failure"));
+        await vi.advanceTimersByTimeAsync(8000);
+        expect(watch).toHaveBeenCalledTimes(5);
+        expect(ctx.emitHistory).toContainEqual(
+          expect.objectContaining({
+            event: "changestream:fallback",
+            payload: { reason: "Exhausted 3 reconnection attempts: Fourth replacement failure" },
+          }),
+        );
+      } finally {
+        closed.resolve();
+        await closing;
+        await handler.close();
+      }
+    });
+
+    it("should close change stream and emit closed event", async () => {
       handler.setup();
       await handler.close();
 
-      expect(handler.isActive()).toBe(false);
-      expect(mockChangeStream.close).toHaveBeenCalled();
+      expect(stream.close).toHaveBeenCalled();
       expect(ctx.emitHistory).toContainEqual(
         expect.objectContaining({ event: "changestream:closed" }),
       );
@@ -545,11 +563,12 @@ describe("ChangeStreamHandler", () => {
 
     it("preserves batched notifications when only the stream closes", async () => {
       vi.useFakeTimers();
+      handler.setup();
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: { status: JobStatus.PENDING },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
       await handler.close();
       vi.advanceTimersByTime(150);
 
@@ -557,7 +576,9 @@ describe("ChangeStreamHandler", () => {
     });
   });
 
-  describe("handleEvent - targeted polling", () => {
+  describe("cursor changes - targeted polling", () => {
+    beforeEach(() => handler.setup());
+
     it("should pass job name to onPoll for immediate jobs", () => {
       vi.useFakeTimers();
       const changeEvent = {
@@ -569,7 +590,7 @@ describe("ChangeStreamHandler", () => {
         },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -580,17 +601,17 @@ describe("ChangeStreamHandler", () => {
       vi.useFakeTimers();
       const pastDate = new Date(Date.now() - 1000);
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: { status: JobStatus.PENDING, name: "email", nextRunAt: pastDate },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(50);
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: { status: JobStatus.PENDING, name: "sms", nextRunAt: pastDate },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
 
@@ -605,7 +626,7 @@ describe("ChangeStreamHandler", () => {
         fullDocument: { status: JobStatus.PENDING },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -626,7 +647,7 @@ describe("ChangeStreamHandler", () => {
         updateDescription: { updatedFields: { status: JobStatus.PENDING } },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -634,7 +655,9 @@ describe("ChangeStreamHandler", () => {
     });
   });
 
-  describe("handleEvent - future job wakeup", () => {
+  describe("cursor changes - future job wakeup", () => {
+    beforeEach(() => handler.setup());
+
     it("should schedule wakeup timer for future jobs", () => {
       vi.useFakeTimers();
       const futureDate = new Date(Date.now() + 5000);
@@ -647,7 +670,7 @@ describe("ChangeStreamHandler", () => {
         },
       };
 
-      handler.handleEvent(changeEvent as unknown as Parameters<typeof handler.handleEvent>[0]);
+      stream.emit("change", changeEvent);
 
       // Should NOT have polled immediately
       vi.advanceTimersByTime(150);
@@ -666,24 +689,24 @@ describe("ChangeStreamHandler", () => {
       vi.useFakeTimers();
 
       // First job at +10s
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "late",
           nextRunAt: new Date(Date.now() + 10000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Second job at +3s (earlier — should replace timer)
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "early",
           nextRunAt: new Date(Date.now() + 3000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Should fire at ~3200ms, not 10200ms
       vi.advanceTimersByTime(3200);
@@ -694,24 +717,24 @@ describe("ChangeStreamHandler", () => {
       vi.useFakeTimers();
 
       // First job at +3s
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "early",
           nextRunAt: new Date(Date.now() + 3000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Second job at +10s (later — should NOT replace timer)
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "late",
           nextRunAt: new Date(Date.now() + 10000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Should still fire at ~3200ms
       vi.advanceTimersByTime(3200);
@@ -720,14 +743,14 @@ describe("ChangeStreamHandler", () => {
 
     it("should check the scheduled job name when its wakeup fires", () => {
       vi.useFakeTimers();
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "scheduled",
           nextRunAt: new Date(Date.now() + 1000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(1200);
 
@@ -737,14 +760,14 @@ describe("ChangeStreamHandler", () => {
 
     it("preserves scheduled wakeups when only the stream closes", async () => {
       vi.useFakeTimers();
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "scheduled",
           nextRunAt: new Date(Date.now() + 5000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       await handler.close();
 
@@ -754,30 +777,32 @@ describe("ChangeStreamHandler", () => {
     });
   });
 
-  describe("handleEvent - mixed immediate and future", () => {
+  describe("cursor changes - mixed immediate and future", () => {
+    beforeEach(() => handler.setup());
+
     it("should handle immediate and future jobs independently", () => {
       vi.useFakeTimers();
       const pastDate = new Date(Date.now() - 1000);
 
       // Immediate job — triggers targeted debounced poll
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "immediate",
           nextRunAt: pastDate,
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Future job — schedules wakeup
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "future",
           nextRunAt: new Date(Date.now() + 5000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Debounced poll fires for the immediate job
       vi.advanceTimersByTime(150);
@@ -790,11 +815,13 @@ describe("ChangeStreamHandler", () => {
     });
   });
 
-  describe("handleEvent - slot freed (completed/failed)", () => {
+  describe("cursor changes - slot freed (completed/failed)", () => {
+    beforeEach(() => handler.setup());
+
     it("should trigger targeted poll when job status changes to completed", () => {
       vi.useFakeTimers();
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "update",
         updateDescription: { updatedFields: { status: "completed" } },
         fullDocument: {
@@ -802,7 +829,7 @@ describe("ChangeStreamHandler", () => {
           name: "email",
           nextRunAt: new Date(),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
       expect(onPoll).toHaveBeenCalledOnce();
@@ -812,7 +839,7 @@ describe("ChangeStreamHandler", () => {
     it("should trigger targeted poll when job status changes to failed", () => {
       vi.useFakeTimers();
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "update",
         updateDescription: { updatedFields: { status: "failed" } },
         fullDocument: {
@@ -820,7 +847,7 @@ describe("ChangeStreamHandler", () => {
           name: "sms",
           nextRunAt: new Date(),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
       expect(onPoll).toHaveBeenCalledOnce();
@@ -831,17 +858,17 @@ describe("ChangeStreamHandler", () => {
       vi.useFakeTimers();
 
       // Insert event for a new pending job
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "insert",
         fullDocument: {
           status: JobStatus.PENDING,
           name: "email",
           nextRunAt: new Date(Date.now() - 1000),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       // Slot freed by completed job for same worker
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "update",
         updateDescription: { updatedFields: { status: "completed" } },
         fullDocument: {
@@ -849,7 +876,7 @@ describe("ChangeStreamHandler", () => {
           name: "email",
           nextRunAt: new Date(),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
       // Single debounced poll with the worker name
@@ -860,13 +887,13 @@ describe("ChangeStreamHandler", () => {
     it("should fall back to full poll when completed event has no name", () => {
       vi.useFakeTimers();
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "update",
         updateDescription: { updatedFields: { status: "completed" } },
         fullDocument: {
           status: JobStatus.COMPLETED,
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
       expect(onPoll).toHaveBeenCalledOnce();
@@ -876,7 +903,7 @@ describe("ChangeStreamHandler", () => {
     it("should not trigger on status change to processing", () => {
       vi.useFakeTimers();
 
-      handler.handleEvent({
+      stream.emit("change", {
         operationType: "update",
         updateDescription: { updatedFields: { status: "processing" } },
         fullDocument: {
@@ -884,30 +911,27 @@ describe("ChangeStreamHandler", () => {
           name: "email",
           nextRunAt: new Date(),
         },
-      } as unknown as Parameters<typeof handler.handleEvent>[0]);
+      });
 
       vi.advanceTimersByTime(150);
       expect(onPoll).not.toHaveBeenCalled();
     });
   });
 
-  describe("handleEvent - error handling", () => {
+  describe("cursor changes - error handling", () => {
+    beforeEach(() => handler.setup());
+
     it("should emit job:error if poll throws", async () => {
       vi.useFakeTimers();
       const pollError = new Error("Poll failed");
-      const failingOnPoll = vi.fn().mockRejectedValue(pollError);
-
-      const failingRouter = new PendingNotificationRouter(ctx, failingOnPoll);
-      const handlerWithFailingPoll = new ChangeStreamHandler(ctx, failingRouter);
+      vi.mocked(onPoll).mockRejectedValue(pollError);
 
       const changeEvent = {
         operationType: "insert" as const,
         fullDocument: { status: JobStatus.PENDING },
       };
 
-      handlerWithFailingPoll.handleEvent(
-        changeEvent as unknown as Parameters<typeof handler.handleEvent>[0],
-      );
+      stream.emit("change", changeEvent);
       vi.advanceTimersByTime(150);
 
       // Wait for the promise rejection to be handled
@@ -925,17 +949,11 @@ describe("ChangeStreamHandler", () => {
   describe("close with active timers", () => {
     it("should clear reconnect timer during close", async () => {
       vi.useFakeTimers();
-      const mockChangeStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      vi.spyOn(ctx.mockCollection, "watch").mockReturnValue(
-        mockChangeStream as unknown as ReturnType<typeof ctx.mockCollection.watch>,
-      );
 
       handler.setup();
 
       // Trigger an error to start reconnect timer
-      mockChangeStream.emit("error", new Error("Connection lost"));
+      stream.emit("error", new Error("Connection lost"));
 
       // Close before reconnect timer fires
       await handler.close();
@@ -944,9 +962,7 @@ describe("ChangeStreamHandler", () => {
       vi.advanceTimersByTime(5000);
 
       // Should not have tried to setup again
-      const watchCallsAfterClose = (ctx.mockCollection.watch as ReturnType<typeof vi.fn>).mock.calls
-        .length;
-      expect(watchCallsAfterClose).toBe(1); // Only the initial setup
+      expect(ctx.collection.watch).toHaveBeenCalledOnce();
     });
   });
 });

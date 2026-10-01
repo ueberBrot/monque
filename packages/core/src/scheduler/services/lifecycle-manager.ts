@@ -3,6 +3,7 @@ import type { DeleteResult } from "mongodb";
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";
 
+import { JobLifecycle } from "./job-lifecycle.js";
 import type { SchedulerContext } from "./types.js";
 
 /**
@@ -16,17 +17,6 @@ const DEFAULT_RETENTION_INTERVAL = 3600_000;
 export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const;
 
 /**
- * Callbacks for timer-driven operations.
- *
- * These are provided by the Monque facade to wire LifecycleManager's timers
- * to Owned Job heartbeat updates without creating a direct dependency.
- */
-interface TimerCallbacks {
-  /** Update heartbeats for claimed jobs */
-  updateHeartbeats: () => Promise<void>;
-}
-
-/**
  * Manages scheduler lifecycle timers and job cleanup.
  *
  * Owns the heartbeat interval, cleanup interval, and the
@@ -35,29 +25,36 @@ interface TimerCallbacks {
  * @internal Not part of public API.
  */
 export class LifecycleManager {
-  private readonly ctx: SchedulerContext;
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
   private cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
   private heartbeatRunning = false;
 
-  constructor(ctx: SchedulerContext) {
-    this.ctx = ctx;
-  }
+  constructor(
+    private readonly ctx: SchedulerContext,
+    private readonly lifecycle = new JobLifecycle(ctx),
+  ) {}
 
   /**
    * Start all lifecycle timers.
    *
    * Sets up the heartbeat interval and optional retention cleanup interval.
-   *
-   * @param callbacks - Functions to invoke on each timer tick
    */
-  startTimers(callbacks: TimerCallbacks): void {
+  startTimers(): void {
+    this.stopTimers();
+
     // Start heartbeat interval for claimed jobs
     this.heartbeatIntervalId = setInterval(async () => {
       if (this.heartbeatRunning) return;
       this.heartbeatRunning = true;
       try {
-        await callbacks.updateHeartbeats();
+        await this.lifecycle.updateOwnedHeartbeats();
+        if (
+          this.ctx.isRunning() &&
+          this.ctx.options.leaseDuration !== undefined &&
+          this.ctx.options.recoverStaleJobs
+        ) {
+          await this.lifecycle.recoverStaleJobs();
+        }
       } catch (error) {
         this.ctx.emit("job:error", { error: toError(error) });
       } finally {
@@ -69,16 +66,14 @@ export class LifecycleManager {
     if (this.ctx.options.jobRetention) {
       const interval = this.ctx.options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL;
 
-      // Run immediately on start
-      this.cleanupJobs().catch((error: unknown) => {
-        this.ctx.emit("job:error", { error: toError(error) });
-      });
-
-      this.cleanupIntervalId = setInterval(() => {
+      const cleanup = () =>
         this.cleanupJobs().catch((error: unknown) => {
           this.ctx.emit("job:error", { error: toError(error) });
         });
-      }, interval);
+
+      // Run immediately on start
+      cleanup();
+      this.cleanupIntervalId = setInterval(cleanup, interval);
     }
   }
 

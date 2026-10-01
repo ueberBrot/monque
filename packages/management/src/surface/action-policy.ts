@@ -1,4 +1,5 @@
 import type { JobSelector, PersistedJob } from "@monque/core";
+import { ORPCError } from "@orpc/server";
 
 import type {
   CapabilitiesDto,
@@ -7,19 +8,6 @@ import type {
   ManagementMonque,
   ManagementOptions,
 } from "./types.js";
-
-const MANAGEMENT_ACTIONS = [
-  "read",
-  "cancel",
-  "cancelBulk",
-  "retry",
-  "retryBulk",
-  "reschedule",
-  "delete",
-  "deleteBulk",
-  "pause",
-  "resume",
-] as const;
 
 const DEFAULT_CAPABILITY_ACTIONS = {
   read: false,
@@ -32,9 +20,10 @@ const DEFAULT_CAPABILITY_ACTIONS = {
   deleteBulk: false,
   pause: false,
   resume: false,
-} satisfies CapabilityActionsDto & Record<(typeof MANAGEMENT_ACTIONS)[number], boolean>;
+} satisfies CapabilityActionsDto & Record<ManagementAction, boolean>;
+const MANAGEMENT_ACTIONS = Object.keys(DEFAULT_CAPABILITY_ACTIONS) as ManagementAction[];
 
-export interface ManagementActionTarget {
+interface ManagementActionTarget {
   name?: string | undefined;
   instanceId?: string | undefined;
   job?: PersistedJob | undefined;
@@ -42,78 +31,87 @@ export interface ManagementActionTarget {
   ids?: readonly string[] | undefined;
 }
 
-export type ManagementActionDecision = { allowed: true } | { allowed: false; message: string };
-
-export async function getManagementCapabilities<TContext>(
-  options: ManagementOptions<TContext>,
-  context: TContext,
-  processingTarget: ManagementActionTarget = {},
-): Promise<CapabilitiesDto> {
-  const readOnly = options.readOnly ?? false;
-  const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
-
-  const check = async (action: ManagementAction): Promise<void> => {
-    const decision = await decideManagementAction(options, action, context, {
-      ...(action === "pause" || action === "resume" ? processingTarget : {}),
-      supported: isManagementActionSupported(options.monque, action),
-    });
-
-    actions[action] = decision.allowed;
-  };
-  if (options.parallelCapabilityChecks) {
-    await Promise.all(MANAGEMENT_ACTIONS.map(check));
-  } else {
-    for (const action of MANAGEMENT_ACTIONS) await check(action);
-  }
-
+/** Shares capability decisions and enforcement for one mounted Management Surface. */
+export function createManagementActionPolicy<TContext>(options: ManagementOptions<TContext>) {
   return {
-    readOnly,
-    actions,
+    getCapabilities,
+    requireAction: async (
+      action: ManagementAction,
+      context: TContext,
+      target: ManagementActionTarget = {},
+    ): Promise<void> => {
+      requireAllowed(await getActionDenial(action, context, target));
+    },
+    // Processing and selected actions reject missing support before checking read-only mode.
+    requireSupported: (action: ManagementAction): void => {
+      if (!isManagementActionSupported(options.monque, action))
+        throwForbidden("Unsupported action");
+    },
+    requireMutation: <TMutator>(
+      action: Exclude<ManagementAction, "read">,
+      mutate: TMutator | undefined,
+    ): TMutator => {
+      requireAllowed(getSupportDenial(action));
+      if (mutate === undefined) throwForbidden("Unsupported action");
+      return mutate;
+    },
   };
+
+  async function getCapabilities(
+    context: TContext,
+    processingTarget: ManagementActionTarget = {},
+  ): Promise<CapabilitiesDto> {
+    const readOnly = options.readOnly ?? false;
+    const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
+    const check = async (action: ManagementAction): Promise<void> => {
+      actions[action] =
+        (await getActionDenial(
+          action,
+          context,
+          action === "pause" || action === "resume" ? processingTarget : {},
+          isManagementActionSupported(options.monque, action),
+        )) === undefined;
+    };
+    if (options.parallelCapabilityChecks) {
+      await Promise.all(MANAGEMENT_ACTIONS.map(check));
+    } else {
+      for (const action of MANAGEMENT_ACTIONS) await check(action);
+    }
+    return { readOnly, actions };
+  }
+
+  async function getActionDenial(
+    action: ManagementAction,
+    context: TContext,
+    target: ManagementActionTarget = {},
+    supported = true,
+  ): Promise<string | undefined> {
+    const denial = getSupportDenial(action, supported);
+    if (denial !== undefined) return denial;
+    if (
+      options.authorize &&
+      !(await options.authorize({
+        action,
+        context,
+        job: target.job,
+        selector: target.selector,
+        ids: target.ids,
+        ...(target.name === undefined ? {} : { name: target.name }),
+        ...(target.instanceId === undefined ? {} : { instanceId: target.instanceId }),
+      }))
+    ) {
+      return action === "read" ? "Read access denied" : "Action denied";
+    }
+    return undefined;
+  }
+
+  function getSupportDenial(action: ManagementAction, supported = true): string | undefined {
+    if (options.readOnly && action !== "read") return "Management surface is read-only";
+    return supported ? undefined : "Unsupported action";
+  }
 }
 
-export async function decideManagementAction<TContext>(
-  options: ManagementOptions<TContext>,
-  action: ManagementAction,
-  context: TContext,
-  input: ManagementActionTarget & { supported?: boolean } = {},
-): Promise<ManagementActionDecision> {
-  const supportDecision = decideManagementActionSupport(options, action, input.supported ?? true);
-
-  if (!supportDecision.allowed) {
-    return supportDecision;
-  }
-
-  if (await isAllowedByAuthorization(options, action, context, input)) {
-    return { allowed: true };
-  }
-
-  return {
-    allowed: false,
-    message: action === "read" ? "Read access denied" : "Action denied",
-  };
-}
-
-export function decideManagementActionSupport<TContext>(
-  options: ManagementOptions<TContext>,
-  action: ManagementAction,
-  supported = true,
-): ManagementActionDecision {
-  if (options.readOnly && action !== "read") {
-    return { allowed: false, message: "Management surface is read-only" };
-  }
-
-  if (!supported) {
-    return { allowed: false, message: "Unsupported action" };
-  }
-
-  return { allowed: true };
-}
-
-export function isManagementActionSupported(
-  monque: ManagementMonque,
-  action: ManagementAction,
-): boolean {
+function isManagementActionSupported(monque: ManagementMonque, action: ManagementAction): boolean {
   switch (action) {
     case "read":
       return true;
@@ -137,23 +135,10 @@ export function isManagementActionSupported(
   }
 }
 
-async function isAllowedByAuthorization<TContext>(
-  options: ManagementOptions<TContext>,
-  action: ManagementAction,
-  context: TContext,
-  target: ManagementActionTarget,
-): Promise<boolean> {
-  if (!options.authorize) {
-    return true;
-  }
+function requireAllowed(denial: string | undefined): void {
+  if (denial !== undefined) throwForbidden(denial);
+}
 
-  return options.authorize({
-    action,
-    context,
-    job: target.job,
-    selector: target.selector,
-    ids: target.ids,
-    ...(target.name === undefined ? {} : { name: target.name }),
-    ...(target.instanceId === undefined ? {} : { instanceId: target.instanceId }),
-  });
+function throwForbidden(message: string): never {
+  throw new ORPCError("FORBIDDEN", { message });
 }

@@ -1,7 +1,7 @@
 /**
  * Unit tests for JobQueryService.
  *
- * Tests job querying: getJob, getJobs, getJobsWithCursor.
+ * Tests job lookup, offset listing, statistics, and Queue Views.
  * Uses mock SchedulerContext to test query building in isolation.
  */
 
@@ -9,9 +9,8 @@ import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vite-plus/test";
 
 import type { QueueStats, QueueViewSummary, QueueViewWorkerSummary } from "@/jobs";
-import { JobCursorSortDirection, JobCursorSortField } from "@/jobs";
 import { JobQueryService } from "@/scheduler/services/job-query.js";
-import { AggregationTimeoutError, ConnectionError, InvalidCursorError } from "@/shared";
+import { AggregationTimeoutError, ConnectionError } from "@/shared";
 import { createMockContext, createWorker, JobFactory } from "@tests/factories";
 
 describe("JobQueryService", () => {
@@ -77,122 +76,6 @@ describe("JobQueryService", () => {
       );
 
       await expect(queryService.getJobs()).rejects.toThrow(ConnectionError);
-    });
-  });
-
-  describe("getJobsWithCursor", () => {
-    it("should return page with jobs and cursor info", async () => {
-      const jobs = JobFactory.buildList(2);
-
-      const mockCursor = {
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        toArray: vi.fn().mockResolvedValueOnce(jobs),
-      };
-
-      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
-        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-      );
-
-      const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-      expect(page.jobs).toHaveLength(2);
-      expect(page.hasNextPage).toBe(false);
-      expect(page.hasPreviousPage).toBe(false);
-    });
-
-    it("should throw InvalidCursorError for malformed cursor", async () => {
-      await expect(
-        queryService.getJobsWithCursor({ cursor: "invalid-base64-cursor" }),
-      ).rejects.toThrow(InvalidCursorError);
-    });
-
-    it("should detect hasNextPage when more results exist", async () => {
-      // Return 11 jobs when limit is 10 (fetches limit + 1 to detect next page)
-      const jobs = JobFactory.buildList(11);
-
-      const mockCursor = {
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        toArray: vi.fn().mockResolvedValueOnce(jobs),
-      };
-
-      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
-        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-      );
-
-      const page = await queryService.getJobsWithCursor({ limit: 10 });
-
-      expect(page.jobs).toHaveLength(10); // Should trim to limit
-      expect(page.hasNextPage).toBe(true);
-    });
-
-    it("should sort by whitelisted field with identifier tie-breaker", async () => {
-      const jobs = JobFactory.buildList(2, {
-        updatedAt: new Date("2026-02-01T00:00:00.000Z"),
-      });
-
-      const mockCursor = {
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        toArray: vi.fn().mockResolvedValueOnce(jobs),
-      };
-
-      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
-        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-      );
-
-      await queryService.getJobsWithCursor({
-        limit: 10,
-        sort: {
-          by: JobCursorSortField.UPDATED_AT,
-          direction: JobCursorSortDirection.DESC,
-        },
-        filter: {
-          updatedAtFrom: new Date("2026-01-01T00:00:00.000Z"),
-        },
-      });
-
-      expect(ctx.mockCollection.find).toHaveBeenCalledWith(
-        {
-          updatedAt: {
-            $gte: new Date("2026-01-01T00:00:00.000Z"),
-          },
-        },
-        { maxTimeMS: 30_000 },
-      );
-      expect(mockCursor.sort).toHaveBeenCalledWith({
-        updatedAt: -1,
-        _id: -1,
-      });
-    });
-
-    it("should throw ConnectionError when database operation fails", async () => {
-      const mockCursor = {
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        toArray: vi.fn().mockRejectedValueOnce(new Error("Database error")),
-      };
-
-      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
-        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-      );
-
-      await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
-    });
-
-    it("should wrap non-Error thrown values in ConnectionError", async () => {
-      const mockCursor = {
-        sort: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        toArray: vi.fn().mockRejectedValueOnce("Network failure"),
-      };
-
-      vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
-        mockCursor as unknown as ReturnType<typeof ctx.mockCollection.find>,
-      );
-
-      await expect(queryService.getJobsWithCursor()).rejects.toThrow(ConnectionError);
     });
   });
 

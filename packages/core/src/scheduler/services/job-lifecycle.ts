@@ -7,7 +7,7 @@ import type { RetryOptions } from "@/workers";
 
 import type { SchedulerContext } from "./types.js";
 
-const CLAIM_CLEANUP_FIELDS = {
+export const CLAIM_CLEANUP_FIELDS = {
   lockedAt: "",
   claimedBy: "",
   claimId: "",
