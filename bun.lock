@@ -107,7 +107,7 @@
         "zod": "^4.6.5",
       },
       "peerDependencies": {
-        "mongodb": "^7.6.0",
+        "mongodb": "^7.7.0",
       },
     },
     "packages/dashboard": {
@@ -205,7 +205,7 @@
       },
       "peerDependencies": {
         "@monque/core": "^1.15.1",
-        "mongodb": "^7.6.0",
+        "mongodb": "^7.7.0",
       },
     },
     "packages/management-express": {
@@ -227,7 +227,7 @@
         "@monque/core": "^1.15.1",
         "@monque/management": ">=0.7.0 <0.8.0",
         "express": "^5.2.1",
-        "mongodb": "^7.6.0",
+        "mongodb": "^7.7.0",
       },
     },
     "packages/tsed": {
@@ -253,7 +253,7 @@
         "@tsed/core": "^8.38.7",
         "@tsed/di": "^8.38.7",
         "@tsed/mongoose": "^8.38.7",
-        "mongodb": "^7.6.0",
+        "mongodb": "^7.7.0",
       },
       "optionalPeers": [
         "@tsed/mongoose",
