@@ -1,5 +1,15 @@
 # @monque/tsed
 
+## 1.15.0
+
+### Minor Changes
+
+- [#567](https://github.com/ueberBrot/monque/pull/567) [`4f066c2`](https://github.com/ueberBrot/monque/commit/4f066c234d95a32890d232c1232b71ba67de340d) - Bound future wakeup memory during repeated rescheduling while preserving nearby scheduled runs and polling for later jobs.
+
+- [#576](https://github.com/ueberBrot/monque/pull/576) [`097d6cc`](https://github.com/ueberBrot/monque/commit/097d6cc8138414c6c9baac5d06f67b36971025b6) - Update runtime dependencies.
+
+- [#572](https://github.com/ueberBrot/monque/pull/572) [`d9c9642`](https://github.com/ueberBrot/monque/commit/d9c96422dafe290c1f50d345d9f006a71425c371) - Update mongodb from ^7.6.0 to ^7.7.0.
+
 ## 1.14.0
 
 ### Minor Changes
