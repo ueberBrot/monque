@@ -41,7 +41,9 @@ attempt for every name. Startup discovery also schedules wakeups for future jobs
 stored in MongoDB.
 
 Collection collation is checked once. Collections with other collations retain per-worker
-atomic discovery so database name matching and shared concurrency fairness are preserved.
+atomic discovery and check all eligible workers for notifications so database name matching
+and shared concurrency fairness are preserved, including when stored and registered job
+names differ under the collection's collation.
 Atomic discovery is also the fallback if collection metadata cannot be read.
 
 Notifications for a job name trigger checks for its registered worker. Several notifications

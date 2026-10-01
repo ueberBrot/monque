@@ -31,7 +31,7 @@ export class JobProcessor {
    */
   private _totalActiveJobs = 0;
   private lastServedWorker: string | undefined;
-  private indexedDiscoveryAvailable: boolean | undefined;
+  private binaryNameMatching: boolean | undefined;
 
   private readonly lifecycle: JobLifecycle;
 
@@ -73,7 +73,8 @@ export class JobProcessor {
    * change-stream-triggered polls from being silently dropped.
    *
    * @param targetNames - Optional set of worker names to poll. When provided, only the
-   * specified workers are checked unless they share an instance concurrency limit.
+   * specified workers are checked when collection collation permits binary name matching
+   * and they do not share an instance concurrency limit.
    * Used by change stream handler for targeted polling.
    */
   async poll(targetNames?: ReadonlySet<string>): Promise<void> {
@@ -135,16 +136,23 @@ export class JobProcessor {
     }
 
     const eligibleNames = new Set(
-      [...names].filter((name) => {
+      names.filter((name) => {
         const worker = this.ctx.workers.get(name);
         return (
           worker !== undefined &&
           !this.ctx.isPaused(name) &&
-          worker.activeJobs.size < worker.concurrency &&
-          (!targetNames || targetNames.has(name))
+          worker.activeJobs.size < worker.concurrency
         );
       }),
     );
+    if (eligibleNames.size === 0) return;
+    // Notification names may differ from registered names under collection collation.
+    if (!(await this.usesBinaryNameMatching())) targetNames = undefined;
+    if (targetNames) {
+      for (const name of eligibleNames) {
+        if (!targetNames.has(name)) eligibleNames.delete(name);
+      }
+    }
     if (eligibleNames.size === 0) return;
     // Runnable notifications can claim directly; full discovery first excludes empty names.
     const dueNames = targetNames ? eligibleNames : await this.discoverPending(eligibleNames);
@@ -231,16 +239,27 @@ export class JobProcessor {
     }
   }
 
+  /** Cache whether notification and grouped names can match registered names exactly. */
+  private async usesBinaryNameMatching(): Promise<boolean> {
+    if (this.binaryNameMatching !== undefined) return this.binaryNameMatching;
+
+    try {
+      const { collation } = await this.ctx.collection.options({ readPreference: "primary" });
+      this.binaryNameMatching = !collation || collation["locale"] === "simple";
+    } catch (error) {
+      // Metadata access is optional; retain database matching without retrying every poll.
+      this.binaryNameMatching = false;
+      this.ctx.emit("job:error", { error: toError(error) });
+    }
+    return this.binaryNameMatching;
+  }
+
   /** Read the earliest pending deadline per eligible name using the claim index. */
   private async discoverPending(names: ReadonlySet<string>): Promise<ReadonlySet<string>> {
     try {
-      if (this.indexedDiscoveryAvailable === undefined) {
-        const { collation } = await this.ctx.collection.options({ readPreference: "primary" });
-        this.indexedDiscoveryAvailable = !collation || collation["locale"] === "simple";
-      }
       // Group keys only map exactly to registered names under binary comparison.
       // Other collations retain the database's matching semantics through atomic claims.
-      if (!this.indexedDiscoveryAvailable) return names;
+      if (!this.binaryNameMatching) return names;
 
       const pending = await this.ctx.collection
         .aggregate<{ _id: string; nextRunAt: Date }>(
@@ -261,8 +280,6 @@ export class JobProcessor {
       return dueNames;
     } catch (error) {
       // Discovery is an optimization; atomic claims remain the fallback on read failure.
-      // Metadata access is optional; do not retry it on every poll when unavailable.
-      this.indexedDiscoveryAvailable ??= false;
       this.ctx.emit("job:error", { error: toError(error) });
       return names;
     }

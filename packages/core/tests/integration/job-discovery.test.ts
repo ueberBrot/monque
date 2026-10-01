@@ -99,6 +99,49 @@ describe("job discovery", () => {
     expect(handled).toEqual(expect.arrayContaining(["due", "future", "other"]));
   });
 
+  it("runs a case-variant future job enqueued after startup discovery", async () => {
+    const collectionName = "future-collation";
+    await db.createCollection(collectionName, { collation: { locale: "en", strength: 2 } });
+    const producer = new Monque(db, { collectionName });
+    const consumer = new Monque(db, {
+      collectionName,
+      pollInterval: 60_000,
+      safetyPollInterval: 60_000,
+    });
+    instances.push(producer, consumer);
+    await producer.initialize();
+    await consumer.initialize();
+    const handled: string[] = [];
+    consumer.register("email", async (job) => {
+      handled.push(job.name);
+    });
+
+    const startupReads = new Set<number>();
+    const subscriptions = new Set<number>();
+    let startupFinished = false;
+    let subscribed = false;
+    client.on("commandStarted", (event: CommandStartedEvent) => {
+      if (event.command["find"] === collectionName) startupReads.add(event.requestId);
+      if (
+        event.command["aggregate"] === collectionName &&
+        event.command["pipeline"][0]?.["$changeStream"]
+      ) {
+        subscriptions.add(event.requestId);
+      }
+    });
+    client.on("commandSucceeded", (event: CommandSucceededEvent) => {
+      if (startupReads.has(event.requestId)) startupFinished = true;
+      if (subscriptions.has(event.requestId)) subscribed = true;
+    });
+
+    consumer.start();
+    await waitFor(async () => startupFinished && subscribed, { timeout: 3000, interval: 10 });
+    await producer.enqueue("EMAIL", {}, { runAt: new Date(Date.now() + 700) });
+
+    await waitFor(async () => handled.length === 1, { timeout: 3000, interval: 10 });
+    expect(handled).toEqual(["EMAIL"]);
+  });
+
   it("reads deadlines without scanning every pending job in each name", async () => {
     const collectionName = "backlog";
     const producer = new Monque(db, { collectionName });
