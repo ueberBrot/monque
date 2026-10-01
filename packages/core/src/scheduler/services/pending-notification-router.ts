@@ -11,6 +11,13 @@ const POLL_GRACE_PERIOD = 200;
 /** Node turns delays beyond this signed 32-bit limit into a 1 ms timer. */
 const MAX_TIMER_DELAY = 2_147_483_647;
 const MAX_WAKEUP_DEADLINES = 1024;
+const MAX_WAKEUP_NAMES = 1024;
+
+interface WakeupDeadline {
+  time: number;
+  /** Missing names require full discovery at this deadline. */
+  targetNames: Set<string> | undefined;
+}
 
 /**
  * Owns Pending Notification scheduling, future wakeups, and full discovery deadlines.
@@ -31,7 +38,8 @@ export class PendingNotificationRouter {
 
   /** Time of the currently scheduled wakeup */
   private wakeupTime: Date | null = null;
-  private readonly wakeupTimes: number[] = [];
+  private readonly wakeups: WakeupDeadline[] = [];
+  private wakeupNameCount = 0;
 
   private fullPollTimer: ReturnType<typeof setTimeout> | null = null;
   private fullPollDueAt: number | null = null;
@@ -63,7 +71,7 @@ export class PendingNotificationRouter {
     }
 
     if (nextRunAt.getTime() > Date.now()) {
-      this.scheduleWakeup(nextRunAt);
+      this.scheduleWakeup(jobName, nextRunAt);
       return;
     }
 
@@ -99,7 +107,8 @@ export class PendingNotificationRouter {
 
     this.pendingTargetNames.clear();
     this.fullBatchPollRequested = false;
-    this.wakeupTimes.length = 0;
+    this.wakeups.length = 0;
+    this.wakeupNameCount = 0;
     this.clearWakeupTimer();
   }
 
@@ -129,25 +138,46 @@ export class PendingNotificationRouter {
    * Schedule a wakeup timer for a future-dated Job.
    *
    * Maintains a single timer set to the earliest known future Job's `nextRunAt`.
-   * When the timer fires, triggers a full poll to pick up all due Jobs.
+   * When the timer fires, checks the names associated with all due deadlines.
+   * Unknown names or exhausted name tracking request full discovery instead.
    */
-  private scheduleWakeup(nextRunAt: Date): void {
+  private scheduleWakeup(jobName: string | undefined, nextRunAt: Date): void {
     const time = nextRunAt.getTime();
     if (
-      this.wakeupTimes.length === MAX_WAKEUP_DEADLINES &&
-      time > this.wakeupTimes[MAX_WAKEUP_DEADLINES - 1]!
+      this.wakeups.length === MAX_WAKEUP_DEADLINES &&
+      time > this.wakeups[MAX_WAKEUP_DEADLINES - 1]!.time
     ) {
       return;
     }
-    const index = this.wakeupTimes.findIndex((deadline) => deadline >= time);
-    if (index === -1) this.wakeupTimes.push(time);
-    else if (this.wakeupTimes[index] !== time) this.wakeupTimes.splice(index, 0, time);
-    if (this.wakeupTimes.length > MAX_WAKEUP_DEADLINES) this.wakeupTimes.pop();
+    const index = this.wakeups.findIndex((deadline) => deadline.time >= time);
+    let deadline = index === -1 ? undefined : this.wakeups[index];
+    if (deadline?.time !== time) {
+      deadline = { time, targetNames: new Set() };
+      if (index === -1) this.wakeups.push(deadline);
+      else this.wakeups.splice(index, 0, deadline);
+      if (this.wakeups.length > MAX_WAKEUP_DEADLINES) {
+        this.wakeupNameCount -= this.wakeups.pop()!.targetNames?.size ?? 0;
+      }
+    }
+    if (deadline.targetNames && !deadline.targetNames.has(jobName ?? "")) {
+      if (!jobName || this.wakeupNameCount === MAX_WAKEUP_NAMES) {
+        this.wakeupNameCount -= deadline.targetNames.size;
+        deadline.targetNames = undefined;
+      } else {
+        deadline.targetNames.add(jobName);
+        this.wakeupNameCount++;
+      }
+    }
     if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
       return;
     }
 
+    this.armWakeup();
+  }
+
+  private armWakeup(): void {
     this.clearWakeupTimer();
+    const nextRunAt = new Date(this.wakeups[0]!.time);
     this.wakeupTime = nextRunAt;
 
     const delay = Math.max(nextRunAt.getTime() - Date.now() + POLL_GRACE_PERIOD, MIN_POLL_INTERVAL);
@@ -157,16 +187,21 @@ export class PendingNotificationRouter {
         this.wakeupTime = null;
         this.wakeupTimer = null;
         if (delay > MAX_TIMER_DELAY) {
-          this.scheduleWakeup(nextRunAt);
+          this.armWakeup();
           return;
         }
         const now = Date.now();
-        while (this.wakeupTimes.length > 0 && this.wakeupTimes[0]! <= now) {
-          this.wakeupTimes.shift();
+        const names = new Set<string>();
+        let fullPoll = false;
+        while (this.wakeups.length > 0 && this.wakeups[0]!.time <= now) {
+          const deadline = this.wakeups.shift()!;
+          this.wakeupNameCount -= deadline.targetNames?.size ?? 0;
+          if (!deadline.targetNames) fullPoll = true;
+          else for (const name of deadline.targetNames) names.add(name);
         }
-        const nextWakeup = this.wakeupTimes[0];
-        if (nextWakeup !== undefined) this.scheduleWakeup(new Date(nextWakeup));
-        this.onPoll().catch((error: unknown) => {
+        if (this.wakeups.length > 0) this.armWakeup();
+        const poll = fullPoll ? this.onPoll() : this.onPoll(names);
+        poll.catch((error: unknown) => {
           this.ctx.emit("job:error", { error: toError(error) });
         });
       },

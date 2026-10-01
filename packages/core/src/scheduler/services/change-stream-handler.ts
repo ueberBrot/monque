@@ -69,11 +69,26 @@ export class ChangeStreamHandler {
               {
                 operationType: "update",
                 $or: [
-                  { "updateDescription.updatedFields.status": { $exists: true } },
+                  {
+                    "updateDescription.updatedFields.status": {
+                      $in: [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED],
+                    },
+                  },
                   { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
                 ],
               },
             ],
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            operationType: 1,
+            "fullDocument.name": 1,
+            "fullDocument.status": 1,
+            "fullDocument.nextRunAt": 1,
+            "updateDescription.updatedFields.status": 1,
+            "updateDescription.updatedFields.nextRunAt": 1,
           },
         },
       ];

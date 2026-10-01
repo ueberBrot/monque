@@ -17,6 +17,12 @@ describe("Monque Shutdown Race Condition", () => {
     collection = {
       createIndexes: vi.fn(),
       findOneAndUpdate: vi.fn(),
+      aggregate: vi.fn().mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([
+          { _id: "work", nextRunAt: new Date(0) },
+          { _id: "test-job", nextRunAt: new Date(0) },
+        ]),
+      }),
       watch: vi.fn(),
       updateMany: vi.fn(), // Needed for updateHeartbeats / recoverStaleJobs implicitly called
       updateOne: vi.fn(), // Needed for completeJob/failJob
@@ -95,8 +101,8 @@ describe("Monque Shutdown Race Condition", () => {
     // Start Monque (triggers poll via setInterval)
     monque.start();
 
-    // Advance time to trigger the first poll
-    // await vi.advanceTimersByTimeAsync(1000);
+    // Allow initial discovery to finish and begin the first claim.
+    await vi.advanceTimersByTimeAsync(0);
 
     // The first claim is pending before the worker fills its remaining slots.
     expect(collection.findOneAndUpdate).toHaveBeenCalledOnce();
