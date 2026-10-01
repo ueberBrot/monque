@@ -189,6 +189,7 @@ describe("Monitor Job Lifecycle Events", () => {
       vi.spyOn(db, "collection").mockReturnValue(collection);
 
       await monque.initialize();
+      await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
       monque.start();
 
       await waitFor(async () => errorEvents.length > 0);

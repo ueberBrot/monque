@@ -19,6 +19,7 @@ export class JobProcessor {
 
   /** Flag to request a re-poll after the current poll finishes */
   private _repollRequested = false;
+  private _repollTargetNames: Set<string> | undefined;
 
   /**
    * O(1) counter tracking the total number of active jobs across all workers.
@@ -59,13 +60,13 @@ export class JobProcessor {
   /**
    * Poll for available jobs and process them.
    *
-   * Called at regular intervals (configured by `pollInterval`). For each registered worker,
-   * attempts to acquire jobs up to the worker's available concurrency slots.
+   * Discovers the earliest pending deadline for each eligible worker, schedules future
+   * wakeups, and atomically acquires due jobs up to available concurrency slots.
    * Aborts early if the scheduler is stopping (`isRunning` is false) or if
    * the instance-level `instanceConcurrency` limit is reached.
    *
    * If a poll is requested while one is already running, it is queued and
-   * executed as a full poll after the current one finishes. This prevents
+   * checked after the current one finishes, preserving targeted names. This prevents
    * change-stream-triggered polls from being silently dropped.
    *
    * @param targetNames - Optional set of worker names to poll. When provided, only the
@@ -80,6 +81,10 @@ export class JobProcessor {
     if (this._isPolling) {
       // Queue a re-poll so work discovered during this poll isn't missed
       this._repollRequested = true;
+      if (!targetNames) this._repollTargetNames = undefined;
+      else if (this._repollTargetNames) {
+        for (const name of targetNames) this._repollTargetNames.add(name);
+      }
       return;
     }
 
@@ -88,9 +93,9 @@ export class JobProcessor {
     try {
       do {
         this._repollRequested = false;
+        this._repollTargetNames = new Set();
         await this._doPoll(targetNames);
-        // Re-polls are always full polls to catch all pending work
-        targetNames = undefined;
+        targetNames = this._repollTargetNames;
       } while (this._repollRequested && this.ctx.isRunning() && !this.ctx.isPaused());
     } finally {
       this._isPolling = false;
@@ -108,7 +113,7 @@ export class JobProcessor {
       return;
     }
 
-    let names: Iterable<string> = this.ctx.workers.keys();
+    let names = [...this.ctx.workers.keys()];
     if (instanceConcurrency !== undefined) {
       const entries = [...names];
       const next = entries.findIndex((name) => name === this.lastServedWorker) + 1;
@@ -117,6 +122,21 @@ export class JobProcessor {
       targetNames = undefined;
     }
 
+    const eligibleNames = new Set(
+      [...names].filter((name) => {
+        const worker = this.ctx.workers.get(name);
+        return (
+          worker !== undefined &&
+          !this.ctx.isPaused(name) &&
+          worker.activeJobs.size < worker.concurrency &&
+          (!targetNames || targetNames.has(name))
+        );
+      }),
+    );
+    if (eligibleNames.size === 0) return;
+    // Runnable notifications can claim directly; full discovery first excludes empty names.
+    const dueNames = targetNames ? eligibleNames : await this.discoverPending(eligibleNames);
+
     for (const name of names) {
       const worker = this.ctx.workers.get(name);
       if (!worker || this.ctx.isPaused(name)) continue;
@@ -124,6 +144,7 @@ export class JobProcessor {
       if (targetNames && !targetNames.has(name)) {
         continue;
       }
+      if (!dueNames.has(name)) continue;
 
       // Check if worker has capacity
       const workerAvailableSlots = worker.concurrency - worker.activeJobs.size;
@@ -149,6 +170,7 @@ export class JobProcessor {
       for (let batchSize = 1; remaining > 0 && this.ctx.isRunning(); batchSize *= 2) {
         const size = Math.min(batchSize, remaining);
         let found = 0;
+        let acquisitionFailed = false;
         const acquisitionPromises: Promise<void>[] = [];
         for (let i = 0; i < size; i++) {
           acquisitionPromises.push(
@@ -161,6 +183,7 @@ export class JobProcessor {
                 await this.dispatchClaim(job, worker, name);
               })
               .catch((error: unknown) => {
+                acquisitionFailed = true;
                 this.ctx.emit("job:error", { error: toError(error) });
               }),
           );
@@ -168,10 +191,50 @@ export class JobProcessor {
 
         await Promise.allSettled(acquisitionPromises);
         if (found < size) {
+          if (!acquisitionFailed && this.ctx.isRunning() && !this.ctx.isPaused(name)) {
+            await this.scheduleNextRun(name);
+          }
           break;
         }
         remaining -= size;
       }
+    }
+  }
+
+  /** An empty claim can hide a persisted future job behind work just acquired elsewhere. */
+  private async scheduleNextRun(name: string): Promise<void> {
+    try {
+      const job = await this.ctx.collection.findOne<{ nextRunAt: Date }>(
+        { name, status: JobStatus.PENDING },
+        { projection: { _id: 0, nextRunAt: 1 }, sort: { nextRunAt: 1 } },
+      );
+      if (job) this.ctx.notifyPendingJob(name, job.nextRunAt);
+    } catch (error) {
+      this.ctx.emit("job:error", { error: toError(error) });
+    }
+  }
+
+  /** Read the earliest pending deadline per eligible name using the claim index. */
+  private async discoverPending(names: ReadonlySet<string>): Promise<ReadonlySet<string>> {
+    try {
+      const pending = await this.ctx.collection
+        .aggregate<{ _id: string; nextRunAt: Date }>([
+          { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
+          { $sort: { name: 1, nextRunAt: 1 } },
+          { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
+        ])
+        .toArray();
+      const dueNames = new Set<string>();
+      const now = Date.now();
+      for (const job of pending) {
+        if (job.nextRunAt.getTime() <= now) dueNames.add(job._id);
+        else this.ctx.notifyPendingJob(job._id, job.nextRunAt);
+      }
+      return dueNames;
+    } catch (error) {
+      // Discovery is an optimization; atomic claims remain the fallback on read failure.
+      this.ctx.emit("job:error", { error: toError(error) });
+      return names;
     }
   }
 

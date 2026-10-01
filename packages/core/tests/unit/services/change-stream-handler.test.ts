@@ -79,11 +79,26 @@ describe("ChangeStreamHandler", () => {
                 {
                   operationType: "update",
                   $or: [
-                    { "updateDescription.updatedFields.status": { $exists: true } },
+                    {
+                      "updateDescription.updatedFields.status": {
+                        $in: [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED],
+                      },
+                    },
                     { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
                   ],
                 },
               ],
+            },
+          },
+          {
+            $project: {
+              _id: 1,
+              operationType: 1,
+              "fullDocument.name": 1,
+              "fullDocument.status": 1,
+              "fullDocument.nextRunAt": 1,
+              "updateDescription.updatedFields.status": 1,
+              "updateDescription.updatedFields.nextRunAt": 1,
             },
           },
         ],
@@ -250,7 +265,7 @@ describe("ChangeStreamHandler", () => {
       await vi.advanceTimersByTimeAsync(1000);
       expect(handler.isActive()).toBe(true);
       await vi.advanceTimersByTimeAsync(700);
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["local"]));
       await handler.close();
     });
 
@@ -703,7 +718,7 @@ describe("ChangeStreamHandler", () => {
       expect(onPoll).toHaveBeenCalledOnce();
     });
 
-    it("should trigger full poll when wakeup fires (not targeted)", () => {
+    it("should check the scheduled job name when its wakeup fires", () => {
       vi.useFakeTimers();
       handler.handleEvent({
         operationType: "insert",
@@ -717,8 +732,7 @@ describe("ChangeStreamHandler", () => {
       vi.advanceTimersByTime(1200);
 
       expect(onPoll).toHaveBeenCalledOnce();
-      // Wakeup fires a full poll with no targeted names argument
-      expect(onPoll).toHaveBeenCalledWith();
+      expect(onPoll).toHaveBeenCalledWith(new Set(["scheduled"]));
     });
 
     it("preserves scheduled wakeups when only the stream closes", async () => {

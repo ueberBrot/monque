@@ -18,6 +18,15 @@ describe("JobProcessor", () => {
 
   beforeEach(() => {
     ctx = createMockContext();
+    // Discovery may race another instance's claims; acquisition fixtures remain authoritative.
+    vi.mocked(ctx.mockCollection.aggregate).mockImplementation(
+      () =>
+        ({
+          toArray: vi.fn(async () =>
+            [...ctx.workers.keys()].map((name) => ({ _id: name, nextRunAt: new Date(0) })),
+          ),
+        }) as unknown as ReturnType<typeof ctx.mockCollection.aggregate>,
+    );
     processor = new JobProcessor(ctx);
   });
 
@@ -26,6 +35,86 @@ describe("JobProcessor", () => {
   });
 
   describe("poll", () => {
+    it("discovers an idle collection once without probing every registered name", async () => {
+      for (let i = 0; i < 100; i++) {
+        ctx.workers.set(`worker-${i}`, createWorker());
+      }
+      vi.mocked(ctx.mockCollection.aggregate).mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([]),
+      } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+
+      await processor.poll();
+
+      expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("arms persisted future deadlines without trying to claim them early", async () => {
+      ctx.workers.set("work", createWorker());
+      const runAt = new Date(Date.now() + 5000);
+      vi.mocked(ctx.mockCollection.aggregate).mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([{ _id: "work", nextRunAt: runAt }]),
+      } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+
+      await processor.poll();
+
+      expect(ctx.notifyPendingJob).toHaveBeenCalledExactlyOnceWith("work", runAt);
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("probes a notified name without a preliminary discovery read", async () => {
+      ctx.workers.set("work", createWorker());
+      vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+
+      await processor.poll(new Set(["work"]));
+
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+    });
+
+    it("does not turn failed claims into immediate retry notifications", async () => {
+      ctx.workers.set("work", createWorker());
+      vi.mocked(ctx.mockCollection.findOneAndUpdate).mockRejectedValue(
+        new Error("Write unavailable"),
+      );
+      vi.mocked(ctx.mockCollection.findOne).mockResolvedValue({
+        _id: "work",
+        nextRunAt: new Date(0),
+      });
+
+      await processor.poll(new Set(["work"]));
+
+      expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+    });
+
+    it("falls back to atomic claims when discovery fails", async () => {
+      ctx.workers.set("work", createWorker());
+      const error = new Error("Read unavailable");
+      vi.mocked(ctx.mockCollection.aggregate).mockReturnValue({
+        toArray: vi.fn().mockRejectedValue(error),
+      } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+      vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+
+      await processor.poll();
+
+      expect(ctx.emit).toHaveBeenCalledWith("job:error", { error });
+      expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+    });
+
+    it.each(["stop", "pause"])("does not claim after %s during discovery", async (action) => {
+      ctx.workers.set("work", createWorker());
+      const discovery = Promise.withResolvers<Array<{ _id: string; nextRunAt: Date }>>();
+      vi.mocked(ctx.mockCollection.aggregate).mockReturnValue({
+        toArray: vi.fn(() => discovery.promise),
+      } as unknown as ReturnType<typeof ctx.mockCollection.aggregate>);
+      const polling = processor.poll();
+      if (action === "stop") vi.mocked(ctx.isRunning).mockReturnValue(false);
+      else vi.mocked(ctx.isPaused).mockReturnValue(true);
+      discovery.resolve([{ _id: "work", nextRunAt: new Date(0) }]);
+      await polling;
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
     it.each([false, true])(
       "does not invoke a handler if paused during acquisition (release fails: %s)",
       async (releaseFails) => {
@@ -35,10 +124,11 @@ describe("JobProcessor", () => {
         const claimed = JobFactoryHelpers.processing({ name: "work" });
         const handler = vi.fn(async () => {});
         ctx.workers.set("work", createWorker({ handler }));
-        vi.spyOn(lifecycle, "claimNext").mockReturnValueOnce(acquisition.promise);
+        const claim = vi.spyOn(lifecycle, "claimNext").mockReturnValueOnce(acquisition.promise);
         const release = vi.spyOn(lifecycle, "releaseOwnedClaim").mockResolvedValue();
         if (releaseFails) release.mockRejectedValue(new Error("Release failed"));
         const polling = processor.poll();
+        await vi.waitFor(() => expect(claim).toHaveBeenCalled());
         vi.mocked(ctx.isPaused).mockReturnValue(true);
         acquisition.resolve(claimed);
         await polling;
@@ -259,6 +349,7 @@ describe("JobProcessor", () => {
 
       // Start first poll (will be held open)
       const pollPromise = processor.poll();
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce());
 
       // While first poll is running, request another poll
       const secondPollPromise = processor.poll(new Set(["test-job"]));
@@ -274,6 +365,31 @@ describe("JobProcessor", () => {
       // First poll: 1 call. Re-poll (full): 1 call.
       expect(spy).toHaveBeenCalledTimes(2);
     });
+
+    it.each([false, true])(
+      "retains overlapping discovery scope, full requested: %s",
+      async (full) => {
+        for (const name of ["first", "second", "unrelated"]) {
+          ctx.workers.set(name, createWorker());
+        }
+        const acquisition = Promise.withResolvers<null>();
+        const claim = vi
+          .mocked(ctx.mockCollection.findOneAndUpdate)
+          .mockReturnValueOnce(acquisition.promise)
+          .mockResolvedValue(null);
+
+        const polling = processor.poll(new Set(["first"]));
+        await vi.waitFor(() => expect(claim).toHaveBeenCalledOnce());
+        if (full) await processor.poll();
+        await processor.poll(new Set(["second"]));
+        acquisition.resolve(null);
+        await polling;
+
+        expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual(
+          full ? ["first", "first", "second", "unrelated"] : ["first", "second"],
+        );
+      },
+    );
   });
 
   describe("worker execution through poll", () => {

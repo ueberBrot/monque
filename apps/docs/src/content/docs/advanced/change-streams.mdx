@@ -33,14 +33,30 @@ monque.start();
 | Change Streams active      | `safetyPollInterval`, default 30 seconds | Notifications for pending jobs and scheduled wakeups |
 | Change Streams unavailable | `pollInterval`, default 1 second         | Regular polling                                      |
 
-Notifications for a job name trigger checks for its registered worker. Several notifications
-arriving together are debounced for 100 milliseconds. Future jobs schedule a wakeup for their
-run time. Dates more than approximately 25 days away are handled without timer overflow
-warnings or repeated immediate wakeups.
+Startup and periodic discovery read the earliest pending deadline for each registered job name with available
+capacity, then atomically claims due jobs. An idle collection needs one discovery read
+instead of a separate claim attempt for every name. Startup discovery also schedules
+wakeups for future jobs already stored in MongoDB.
 
-Future wakeup tracking has a fixed memory budget and prioritizes the nearest run times.
-If many scheduling or rescheduling notifications exceed that budget, later jobs are
-discovered through full polling. Discovery can then wait until the next `safetyPollInterval`
+Notifications for a job name trigger checks for its registered worker. Several notifications
+arriving together are batched for 100 milliseconds. Future jobs schedule a wakeup for their
+run time, retaining the relevant job names so unrelated workers need not be checked. Workers
+sharing an instance concurrency limit are checked in fair order across eligible names.
+Dates more than approximately 25 days away are handled without timer overflow warnings or
+repeated immediate wakeups.
+
+Runnable notifications claim jobs directly. When a claim finds no due job, discovery reads
+the next pending deadline for that name so persisted future jobs can use any remaining
+worker capacity without waiting for the safety poll.
+
+Change Stream notifications contain scheduling metadata rather than job payloads. Claims
+that only change status to processing are filtered out. Worker handlers still receive the
+full claimed job and its payload.
+
+Future wakeup tracking has a fixed memory budget for both deadlines and job names and
+prioritizes the nearest run times. A deadline with too many tracked names requests full
+discovery. If scheduling or rescheduling notifications exceed the deadline budget, later
+jobs are discovered through full polling. Discovery can then wait until the next `safetyPollInterval`
 (default 30 seconds) while Change Streams are active, or `pollInterval` while unavailable.
 
 These intervals control scheduler job discovery. They are independent of

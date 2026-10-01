@@ -37,7 +37,7 @@ describe("PendingNotificationRouter", () => {
     vi.advanceTimersByTime(3050);
 
     expect(onPoll).toHaveBeenCalledTimes(2);
-    expect(onPoll).toHaveBeenLastCalledWith();
+    expect(onPoll).toHaveBeenLastCalledWith(new Set(["early"]));
   });
 
   it("deduplicates repeated immediate notifications for the same Job Name", () => {
@@ -50,6 +50,36 @@ describe("PendingNotificationRouter", () => {
 
     expect(onPoll).toHaveBeenCalledOnce();
     expect(onPoll).toHaveBeenCalledWith(new Set(["email"]));
+  });
+
+  it("collects names across due deadlines without checking unrelated workers", () => {
+    router.notifyPendingJob("email", new Date(Date.now() + 1000));
+    router.notifyPendingJob("email", new Date(Date.now() + 1000));
+    router.notifyPendingJob("sms", new Date(Date.now() + 1100));
+    router.notifyPendingJob("later", new Date(Date.now() + 5000));
+
+    vi.advanceTimersByTime(1200);
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email", "sms"]));
+    vi.advanceTimersByTime(4000);
+    expect(onPoll).toHaveBeenLastCalledWith(new Set(["later"]));
+  });
+
+  it.each([false, true])("preserves unknown future names, unknown first: %s", (unknownFirst) => {
+    const names = unknownFirst ? [undefined, "email"] : ["email", undefined];
+    for (const name of names) router.notifyPendingJob(name, new Date(Date.now() + 1000));
+    vi.advanceTimersByTime(1200);
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("keeps a wakeup when too many names share one deadline, then restores targeting", () => {
+    const runAt = new Date(Date.now() + 1000);
+    for (let i = 0; i < 2000; i++) router.notifyPendingJob(`worker-${i}`, runAt);
+    vi.advanceTimersByTime(1200);
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+
+    router.notifyPendingJob("email", new Date(Date.now() + 1000));
+    vi.advanceTimersByTime(1200);
+    expect(onPoll).toHaveBeenLastCalledWith(new Set(["email"]));
   });
 
   it("polls within a bounded window while notifications keep arriving", () => {
@@ -167,7 +197,7 @@ describe("PendingNotificationRouter", () => {
     vi.advanceTimersByTime(1250);
 
     expect(onPoll).toHaveBeenCalledOnce();
-    expect(onPoll).toHaveBeenCalledWith();
+    expect(onPoll).toHaveBeenCalledWith(new Set(["early"]));
   });
 
   it.each([false, true])(
@@ -199,7 +229,7 @@ describe("PendingNotificationRouter", () => {
     expect(onPoll).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(201);
-    expect(onPoll).toHaveBeenCalledOnce();
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["annual-report"]));
   });
 
   it.each([false, true])(
