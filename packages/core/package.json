@@ -67,7 +67,7 @@
     "zod": "^4.6.5"
   },
   "peerDependencies": {
-    "mongodb": "^7.6.0"
+    "mongodb": "^7.7.0"
   },
   "engines": {
     "node": ">=22.12.0"
