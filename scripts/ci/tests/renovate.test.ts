@@ -80,7 +80,7 @@ test("generates a changeset commit from pinned PR manifests without executing or
     /^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/,
   );
   expect(git("show", `${generated}:${git("diff", "--name-only", head, `${generated}`)}`)).toBe(
-    '---\n"@monque/core": minor\n---\n\nUpdate mongodb from 6.0.0 to 7.0.0.',
+    '---\n"@monque/core": minor\n---\n\nUpdate runtime dependencies.',
   );
   expect(git("show", `${generated}:scripts/renovate-generate-changeset.ts`)).toBe(
     JSON.stringify("throw new Error('untrusted')"),
@@ -90,7 +90,7 @@ test("generates a changeset commit from pinned PR manifests without executing or
   expect(git("status", "--porcelain")).toBe("");
 });
 
-test("includes optional and peer dependency updates with named catalogs but excludes development dependencies", () => {
+test("groups optional and peer dependency updates with named catalogs into one changeset", () => {
   const { git, write, commit, generate } = repository();
   write("package.json", { catalogs: { runtime: { express: "4.0.0" } } });
   write("packages/adapter/package.json", {
@@ -111,11 +111,159 @@ test("includes optional and peer dependency updates with named catalogs but excl
   const { result, generated } = generate(base, head);
   expect(result.status, result.stderr).toBe(0);
   const paths = git("diff", "--name-only", head, `${generated}`).split("\n");
-  expect(paths).toHaveLength(2);
-  expect(paths.map((path) => git("show", `${generated}:${path}`)).sort()).toEqual([
-    '---\n"@monque/adapter": minor\n---\n\nUpdate express from 4.0.0 to 5.0.0.',
-    '---\n"@monque/adapter": minor\n---\n\nUpdate monque from 1.0.0 to 2.0.0.',
-  ]);
+  expect(paths).toHaveLength(1);
+  expect(paths[0]).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/);
+  expect(git("show", `${generated}:${paths[0]}`)).toBe(
+    '---\n"@monque/adapter": minor\n---\n\nUpdate runtime dependencies.',
+  );
+});
+
+test("lists every affected published package once in sorted order and excludes other packages", () => {
+  const { git, write, commit, generate } = repository();
+  write("packages/zeta/package.json", {
+    name: "@monque/zeta",
+    dependencies: { mongodb: "6.0.0", zod: "3.0.0" },
+    optionalDependencies: { express: "4.0.0" },
+  });
+  write("packages/alpha/package.json", {
+    name: "@monque/alpha",
+    dependencies: { mongodb: "6.0.0" },
+    peerDependencies: { express: "4.0.0" },
+  });
+  write("packages/unchanged/package.json", {
+    name: "@monque/unchanged",
+    dependencies: { mongodb: "6.0.0" },
+  });
+  write("packages/dev-only/package.json", {
+    name: "@monque/dev-only",
+    dependencies: { mongodb: "6.0.0" },
+    devDependencies: { tooling: "1.0.0" },
+  });
+  write("packages/private/package.json", {
+    name: "@monque/private",
+    private: true,
+    dependencies: { mongodb: "6.0.0" },
+  });
+  write("apps/demo/package.json", {
+    name: "@monque/demo",
+    dependencies: { mongodb: "6.0.0" },
+  });
+  const base = commit();
+  write("packages/zeta/package.json", {
+    name: "@monque/zeta",
+    dependencies: { mongodb: "7.0.0", zod: "4.0.0" },
+    optionalDependencies: { express: "5.0.0" },
+  });
+  write("packages/alpha/package.json", {
+    name: "@monque/alpha",
+    dependencies: { mongodb: "7.0.0" },
+    peerDependencies: { express: "5.0.0" },
+  });
+  write("packages/dev-only/package.json", {
+    name: "@monque/dev-only",
+    dependencies: { mongodb: "6.0.0" },
+    devDependencies: { tooling: "2.0.0" },
+  });
+  write("packages/private/package.json", {
+    name: "@monque/private",
+    private: true,
+    dependencies: { mongodb: "7.0.0" },
+  });
+  write("apps/demo/package.json", {
+    name: "@monque/demo",
+    dependencies: { mongodb: "7.0.0" },
+  });
+  const head = commit();
+  const { result, generated } = generate(base, head);
+  expect(result.status, result.stderr).toBe(0);
+  const path = git("diff", "--name-only", head, `${generated}`);
+  expect(path).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/);
+  expect(git("show", `${generated}:${path}`)).toBe(
+    '---\n"@monque/alpha": minor\n"@monque/zeta": minor\n---\n\nUpdate runtime dependencies.',
+  );
+});
+
+test.each(["dependencies", "optionalDependencies", "peerDependencies"])(
+  "generates a changeset for a standalone %s update",
+  (section) => {
+    const { git, write, commit, generate } = repository();
+    write("packages/core/package.json", {
+      name: "@monque/core",
+      [section]: { mongodb: "6.0.0" },
+    });
+    const base = commit();
+    write("packages/core/package.json", {
+      name: "@monque/core",
+      [section]: { mongodb: "7.0.0" },
+    });
+    const head = commit();
+    const { result, generated } = generate(base, head);
+    expect(result.status, result.stderr).toBe(0);
+    const path = git("diff", "--name-only", head, `${generated}`);
+    expect(path).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/);
+    expect(git("show", `${generated}:${path}`)).toBe(
+      '---\n"@monque/core": minor\n---\n\nUpdate runtime dependencies.',
+    );
+  },
+);
+
+test.each(["dependencies", "peerDependencies"])(
+  "includes @monque dependency updates in %s",
+  (section) => {
+    const { git, write, commit, generate } = repository();
+    write("packages/core/package.json", { name: "@monque/core" });
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      [section]: { "@monque/core": "^0.1.0" },
+    });
+    const base = commit();
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      [section]: { "@monque/core": "^0.2.0" },
+    });
+    const head = commit();
+    const { result, generated } = generate(base, head);
+    expect(result.status, result.stderr).toBe(0);
+    const path = git("diff", "--name-only", head, `${generated}`);
+    expect(path).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/);
+    expect(git("show", `${generated}:${path}`)).toBe(
+      '---\n"@monque/adapter": minor\n---\n\nUpdate runtime dependencies.',
+    );
+  },
+);
+
+test("does not generate a changeset for development-only dependency updates", () => {
+  const { write, commit, generate } = repository();
+  write("package.json", { catalog: { tooling: "1.0.0" } });
+  write("packages/core/package.json", {
+    name: "@monque/core",
+    dependencies: { mongodb: "6.0.0" },
+    devDependencies: { tooling: "catalog:", "@monque/adapter": "^0.1.0" },
+  });
+  const base = commit();
+  write("package.json", { catalog: { tooling: "2.0.0" } });
+  write("packages/core/package.json", {
+    name: "@monque/core",
+    dependencies: { mongodb: "6.0.0" },
+    devDependencies: { tooling: "catalog:", "@monque/adapter": "^0.2.0" },
+  });
+  const { result, generated } = generate(base, commit());
+  expect(result.status, result.stderr).toBe(0);
+  expect(generated).toBeNull();
+});
+
+test("does not generate a changeset for lockfile-only updates", () => {
+  const { write, commit, generate } = repository();
+  write("packages/core/package.json", {
+    name: "@monque/core",
+    dependencies: { mongodb: "^6.0.0" },
+  });
+  write("bun.lock", { packages: { mongodb: "6.0.0" } });
+  const base = commit();
+  write("bun.lock", { packages: { mongodb: "6.1.0" } });
+  const { result, generated } = generate(base, commit());
+  expect(result.status, result.stderr).toBe(0);
+  expect(generated).toBeNull();
 });
 
 test("leaves a PR that already provides a changeset unchanged", () => {
