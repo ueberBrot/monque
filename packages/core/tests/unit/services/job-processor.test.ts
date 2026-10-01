@@ -63,15 +63,23 @@ describe("JobProcessor", () => {
       expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    it("probes a notified name without a preliminary discovery read", async () => {
-      ctx.workers.set("work", createWorker());
-      vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+    it.each([undefined, "simple"])(
+      "keeps binary notifications targeted without a preliminary discovery read, locale: %s",
+      async (locale) => {
+        for (const name of ["work", "unrelated"]) ctx.workers.set(name, createWorker());
+        vi.mocked(ctx.mockCollection.options).mockResolvedValue(
+          locale ? { collation: { locale } } : {},
+        );
+        const claim = vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
 
-      await processor.poll(new Set(["work"]));
+        await processor.poll(new Set(["work"]));
+        await processor.poll(new Set(["work"]));
 
-      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
-      expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
-    });
+        expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+        expect(ctx.mockCollection.options).toHaveBeenCalledOnce();
+        expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual(["work", "work"]);
+      },
+    );
 
     it.each([false, true])(
       "does not retry jobs already claimed on the primary, targeted poll: %s",
@@ -156,6 +164,52 @@ describe("JobProcessor", () => {
         );
       },
     );
+
+    it.each(["collation", "metadata unavailable"])(
+      "discovers registered names from case-variant notifications with %s",
+      async (reason) => {
+        for (const name of ["email", "unrelated"]) ctx.workers.set(name, createWorker());
+        const metadata = vi.mocked(ctx.mockCollection.options);
+        if (reason === "collation") {
+          metadata.mockResolvedValue({ collation: { locale: "en", strength: 2 } });
+        } else {
+          metadata.mockRejectedValue(new Error("Collection metadata access denied"));
+        }
+        const claim = vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+
+        await processor.poll(new Set(["EMAIL"]));
+        await processor.poll(new Set(["EMAIL"]));
+
+        expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual([
+          "email",
+          "unrelated",
+          "email",
+          "unrelated",
+        ]);
+        expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+        expect(metadata).toHaveBeenCalledOnce();
+        expect(ctx.emitHistory.filter(({ event }) => event === "job:error")).toHaveLength(
+          reason === "collation" ? 0 : 1,
+        );
+      },
+    );
+
+    it("uses an available collation-equivalent worker when the notified worker is full", async () => {
+      const job = JobFactoryHelpers.processing({ name: "EMAIL" });
+      ctx.workers.set(
+        "EMAIL",
+        createWorker({ activeJobs: new Map([[job._id.toHexString(), job]]) }),
+      );
+      ctx.workers.set("email", createWorker());
+      vi.mocked(ctx.mockCollection.options).mockResolvedValue({
+        collation: { locale: "en", strength: 2 },
+      });
+      const claim = vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
+
+      await processor.poll(new Set(["EMAIL"]));
+
+      expect(claim.mock.calls.map(([filter]) => filter["name"])).toEqual(["email"]);
+    });
 
     it.each(["stop", "pause"])("does not claim after %s during discovery", async (action) => {
       ctx.workers.set("work", createWorker());
@@ -259,6 +313,8 @@ describe("JobProcessor", () => {
       await processor.poll();
 
       expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.options).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
     });
 
     it("should exit early when instanceConcurrency is reached", async () => {
