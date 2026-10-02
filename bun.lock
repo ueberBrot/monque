@@ -90,7 +90,7 @@
     },
     "packages/core": {
       "name": "@monque/core",
-      "version": "1.16.0",
+      "version": "1.16.1",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
         "cron-parser": "^5.10.1",
