@@ -3,6 +3,18 @@ import { describe, expect, it } from "vite-plus/test";
 import { createDashboardManagementApi } from "@/management-client";
 
 describe("createDashboardManagementApi", () => {
+  it("rejects an invalid URL before obtaining the fetch implementation", () => {
+    expect(() =>
+      createDashboardManagementApi({
+        apiBaseUrl: "http://[",
+        origin: "https://dashboard.example",
+        get fetch(): typeof fetch {
+          throw new Error("Fetch is unavailable");
+        },
+      }),
+    ).toThrow(TypeError);
+  });
+
   it("preserves the Management error message and HTTP status for action feedback", async () => {
     const managementApi = createDashboardManagementApi({
       apiBaseUrl: "/",

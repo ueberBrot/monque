@@ -15,7 +15,7 @@ import {
   static as serveStatic,
 } from "express";
 
-import type { DashboardExpressApiBaseUrlValue, DashboardExpressRouterOptions } from "./types.js";
+import type { DashboardExpressRouterOptions } from "./types.js";
 
 type RuntimeConfigInjectionOptions = {
   readonly runtimeConfig: DashboardRuntimeConfig;
@@ -44,7 +44,12 @@ export function createDashboardExpressRouter(options: DashboardExpressRouterOpti
     }
 
     try {
-      const runtimeConfig = await createRuntimeConfig(options, req, res);
+      const apiBaseUrl = options.apiBaseUrl;
+      const runtimeConfig = parseDashboardRuntimeConfig({
+        apiBaseUrl: await (typeof apiBaseUrl === "string" ? apiBaseUrl : apiBaseUrl({ req, res })),
+        basePath: req.baseUrl || "/",
+        pollingIntervalMs: options.pollingIntervalMs,
+      });
 
       res.setHeader("Cache-Control", "no-store");
       res.type("html").send(
@@ -60,18 +65,6 @@ export function createDashboardExpressRouter(options: DashboardExpressRouterOpti
   });
 
   return router;
-}
-
-async function createRuntimeConfig(
-  options: DashboardExpressRouterOptions,
-  req: Request,
-  res: Response,
-): Promise<DashboardRuntimeConfig> {
-  return parseDashboardRuntimeConfig({
-    apiBaseUrl: await resolveApiBaseUrl(options.apiBaseUrl, req, res),
-    basePath: req.baseUrl || "/",
-    pollingIntervalMs: options.pollingIntervalMs,
-  });
 }
 
 function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjectionOptions): string {
@@ -124,18 +117,6 @@ function shouldServeDashboardHtml(req: Request): boolean {
   }
 
   return !req.path.includes(".");
-}
-
-async function resolveApiBaseUrl(
-  apiBaseUrl: DashboardExpressApiBaseUrlValue,
-  req: Request,
-  res: Response,
-): Promise<string> {
-  if (typeof apiBaseUrl === "string") {
-    return apiBaseUrl;
-  }
-
-  return apiBaseUrl({ req, res });
 }
 
 function escapeRegularExpression(value: string): string {

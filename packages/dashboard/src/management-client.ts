@@ -23,27 +23,18 @@ type CreateDashboardManagementClientOptions = Pick<DashboardRuntimeConfig, "apiB
   readonly origin?: string;
 };
 
-function resolveDashboardManagementApiBaseUrl(
-  apiBaseUrl: string,
-  origin = window.location.origin,
-): string {
-  return new URL(apiBaseUrl, origin).toString();
-}
-
-function fetchWithBrowserCredentials(fetchImplementation: typeof fetch): typeof fetch {
-  return (request, init) =>
-    fetchImplementation(request, {
-      ...init,
-      credentials: "include",
-    });
-}
-
-function createDashboardManagementClient(
+function createDashboardManagementApi(
   options: CreateDashboardManagementClientOptions,
-): DashboardManagementClient {
+): DashboardManagementApi {
+  const { apiBaseUrl, origin } = options;
+  const url = new URL(
+    apiBaseUrl,
+    origin === undefined ? window.location.origin : origin,
+  ).toString();
+  const fetchImplementation = options.fetch ?? globalThis.fetch.bind(globalThis);
   const link = new OpenAPILink(managementContract, {
-    url: resolveDashboardManagementApiBaseUrl(options.apiBaseUrl, options.origin),
-    fetch: fetchWithBrowserCredentials(options.fetch ?? globalThis.fetch.bind(globalThis)),
+    url,
+    fetch: (request, init) => fetchImplementation(request, { ...init, credentials: "include" }),
     customErrorResponseBodyDecoder: (body, response) => {
       if (typeof body !== "object" || body === null || !("error" in body)) return undefined;
       if (typeof body.error !== "string") return undefined;
@@ -55,13 +46,7 @@ function createDashboardManagementClient(
     },
   });
 
-  return createORPCClient<DashboardManagementClient>(link);
-}
-
-function createDashboardManagementApi(
-  options: CreateDashboardManagementClientOptions,
-): DashboardManagementApi {
-  const client = createDashboardManagementClient(options);
+  const client = createORPCClient<DashboardManagementClient>(link);
   const orpc = createTanstackQueryUtils(client);
 
   return { client, orpc };

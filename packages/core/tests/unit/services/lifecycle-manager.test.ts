@@ -8,18 +8,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { JobStatus } from "@/jobs";
 import { LifecycleManager } from "@/scheduler/services/lifecycle-manager.js";
-import { createMockContext } from "@tests/factories";
+import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
+
+const writeResult = {
+  acknowledged: true,
+  matchedCount: 1,
+  modifiedCount: 0,
+  upsertedCount: 0,
+  upsertedId: null,
+};
 
 describe("LifecycleManager", () => {
   let ctx: ReturnType<typeof createMockContext>;
   let manager: LifecycleManager;
-  let heartbeatFn: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
     ctx = createMockContext();
     manager = new LifecycleManager(ctx);
-    heartbeatFn = vi.fn().mockResolvedValue(undefined);
+    const job = JobFactoryHelpers.processing({ claimId: "owned-claim" });
+    ctx.workers.set(job.name, createWorker({ activeJobs: new Map([["owned-claim", job]]) }));
+    vi.mocked(ctx.collection.updateMany).mockResolvedValue(writeResult);
   });
 
   afterEach(() => {
@@ -28,30 +37,136 @@ describe("LifecycleManager", () => {
     vi.useRealTimers();
   });
 
-  /** Helper to build typed timer callbacks from the mock fns. */
-  const callbacks = (): Parameters<typeof manager.startTimers>[0] => ({
-    updateHeartbeats: heartbeatFn as unknown as () => Promise<void>,
-  });
-
   describe("startTimers", () => {
+    it("replaces retained heartbeat and cleanup timers without duplicate writes", async () => {
+      ctx.options.jobRetention = { completed: 60000, interval: ctx.options.heartbeatInterval };
+      const cleanup = vi.spyOn(ctx.collection, "deleteMany").mockResolvedValue({
+        acknowledged: true,
+        deletedCount: 0,
+      });
+      manager.startTimers();
+      manager.stopTimers(true);
+      manager.startTimers();
+      manager.startTimers();
+      cleanup.mockClear();
+
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledOnce();
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(2);
+
+      manager.stopTimers();
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledOnce();
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it("should set up heartbeat interval", async () => {
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // Advance by one heartbeat interval
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
 
-      expect(heartbeatFn).toHaveBeenCalledOnce();
+      expect(ctx.collection.updateMany).toHaveBeenCalledExactlyOnceWith(
+        {
+          claimedBy: ctx.instanceId,
+          claimId: { $in: ["owned-claim"] },
+          status: JobStatus.PROCESSING,
+        },
+        { $set: { lastHeartbeat: expect.any(Date), updatedAt: expect.any(Date) } },
+      );
     });
 
     it("waits for in-flight heartbeat maintenance before starting another call", async () => {
-      const pending = Promise.withResolvers<void>();
-      heartbeatFn.mockReturnValueOnce(pending.promise);
-      manager.startTimers(callbacks());
+      const pending = Promise.withResolvers<typeof writeResult>();
+      vi.mocked(ctx.collection.updateMany).mockReturnValueOnce(pending.promise);
+      manager.startTimers();
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
-      expect(heartbeatFn).toHaveBeenCalledOnce();
-      pending.resolve();
+      expect(ctx.collection.updateMany).toHaveBeenCalledOnce();
+      pending.resolve(writeResult);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
-      expect(heartbeatFn).toHaveBeenCalledTimes(2);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it("renews owned leases before recovering stale jobs and waits for both operations", async () => {
+      ctx.options.leaseDuration = 3000;
+      const heartbeat = Promise.withResolvers<typeof writeResult>();
+      const recovery = Promise.withResolvers<typeof writeResult>();
+      vi.mocked(ctx.collection.updateMany)
+        .mockReturnValueOnce(heartbeat.promise)
+        .mockReturnValueOnce(recovery.promise);
+      manager.startTimers();
+
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
+      expect(ctx.collection.updateMany).toHaveBeenCalledOnce();
+      heartbeat.resolve(writeResult);
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(2);
+      expect(ctx.collection.updateMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ claimId: { $in: ["owned-claim"] } }),
+        [{ $set: expect.objectContaining({ leaseExpiresAt: { $add: ["$$NOW", 3000] } }) }],
+      );
+      expect(ctx.collection.updateMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ $or: expect.any(Array) }),
+        expect.objectContaining({ $set: expect.objectContaining({ status: JobStatus.PENDING }) }),
+      );
+
+      recovery.resolve({ ...writeResult, modifiedCount: 2 });
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(4);
+      expect(ctx.emitHistory).toContainEqual({ event: "stale:recovered", payload: { count: 2 } });
+      expect(ctx.notifyPendingJob).toHaveBeenCalledWith(undefined, expect.any(Date));
+    });
+
+    it("keeps renewing leases after stopping during a heartbeat without recovering stale jobs", async () => {
+      ctx.options.leaseDuration = 3000;
+      const heartbeat = Promise.withResolvers<typeof writeResult>();
+      vi.mocked(ctx.collection.updateMany).mockReturnValueOnce(heartbeat.promise);
+      manager.startTimers();
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      manager.stopTimers(true);
+      vi.mocked(ctx.isRunning).mockReturnValue(false);
+
+      heartbeat.resolve(writeResult);
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(2);
+      expect(ctx.collection.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ claimId: { $in: ["owned-claim"] } }),
+        expect.any(Array),
+      );
+      expect(ctx.collection.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ $or: expect.any(Array) }),
+        expect.anything(),
+      );
+    });
+
+    it("skips stale recovery when recovery is disabled", async () => {
+      ctx.options.leaseDuration = 3000;
+      ctx.options.recoverStaleJobs = false;
+      manager.startTimers();
+
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledOnce();
+    });
+
+    it("emits recovery errors and allows the next maintenance interval to run", async () => {
+      ctx.options.leaseDuration = 3000;
+      const recoveryError = new Error("Recovery failed");
+      vi.mocked(ctx.collection.updateMany)
+        .mockResolvedValueOnce(writeResult)
+        .mockRejectedValueOnce(recoveryError);
+      manager.startTimers();
+
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.emitHistory).toContainEqual({
+        event: "job:error",
+        payload: { error: recoveryError },
+      });
+      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(4);
     });
 
     it("should set up cleanup interval when jobRetention is configured", async () => {
@@ -63,7 +178,7 @@ describe("LifecycleManager", () => {
         deletedCount: 0,
       });
 
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // cleanupJobs should run immediately on start
       expect(ctx.collection.deleteMany).toHaveBeenCalled();
@@ -83,7 +198,7 @@ describe("LifecycleManager", () => {
         deletedCount: 0,
       });
 
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // Clear the immediate call
       vi.mocked(ctx.collection.deleteMany).mockClear();
@@ -99,7 +214,7 @@ describe("LifecycleManager", () => {
       // startTimers so any immediate cleanup call would be observed.
       vi.spyOn(ctx.collection, "deleteMany");
 
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       await vi.advanceTimersByTimeAsync(10000);
 
@@ -107,15 +222,11 @@ describe("LifecycleManager", () => {
       expect(ctx.collection.deleteMany).not.toHaveBeenCalled();
     });
 
-    it("should emit job:error when heartbeat callback rejects", async () => {
+    it("emits job:error and retries on the next interval when heartbeat updates reject", async () => {
       const heartbeatError = new Error("Heartbeat failed");
-      const failingHeartbeat = vi
-        .fn()
-        .mockRejectedValue(heartbeatError) as unknown as () => Promise<void>;
+      vi.mocked(ctx.collection.updateMany).mockRejectedValueOnce(heartbeatError);
 
-      manager.startTimers({
-        updateHeartbeats: failingHeartbeat,
-      });
+      manager.startTimers();
 
       // Advance past one heartbeat interval
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
@@ -127,7 +238,7 @@ describe("LifecycleManager", () => {
         }),
       );
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
-      expect(failingHeartbeat).toHaveBeenCalledTimes(2);
+      expect(ctx.collection.updateMany).toHaveBeenCalledTimes(2);
     });
 
     it("should emit job:error when initial cleanupJobs rejects", async () => {
@@ -137,7 +248,7 @@ describe("LifecycleManager", () => {
       const cleanupError = new Error("Cleanup failed");
       vi.spyOn(ctx.collection, "deleteMany").mockRejectedValue(cleanupError);
 
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // Wait for the initial cleanupJobs rejection to be handled
       await vi.advanceTimersByTimeAsync(0);
@@ -164,7 +275,7 @@ describe("LifecycleManager", () => {
         .mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 })
         .mockRejectedValueOnce(cleanupError);
 
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // Advance by the retention interval to trigger the failing cleanup
       await vi.advanceTimersByTimeAsync(retentionInterval);
@@ -180,10 +291,10 @@ describe("LifecycleManager", () => {
 
   describe("stopTimers", () => {
     it("should clear all intervals so callbacks stop firing", async () => {
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       // Clear initial call counts
-      heartbeatFn.mockClear();
+      vi.mocked(ctx.collection.updateMany).mockClear();
 
       manager.stopTimers();
 
@@ -191,11 +302,11 @@ describe("LifecycleManager", () => {
       await vi.advanceTimersByTimeAsync(ctx.options.pollInterval * 5);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
 
-      expect(heartbeatFn).not.toHaveBeenCalled();
+      expect(ctx.collection.updateMany).not.toHaveBeenCalled();
     });
 
     it("should be safe to call multiple times", () => {
-      manager.startTimers(callbacks());
+      manager.startTimers();
 
       expect(() => {
         manager.stopTimers();

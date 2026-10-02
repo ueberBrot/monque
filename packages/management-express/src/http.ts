@@ -1,11 +1,8 @@
 import type { Request, Response } from "express";
 
-type ParsedRequestBody = NonNullable<RequestInit["body"]>;
-type RequestWithParsedBody = Request & { body: unknown };
-
 export function createRequest(req: Request): globalThis.Request {
   const url = new URL(req.url, `${req.protocol}://${req.get("host") ?? "localhost"}`);
-  const parsedBody = getParsedBody(req);
+  const parsedBody: unknown = req.body;
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
     headers: createHeaders(req, parsedBody !== undefined),
@@ -13,7 +10,12 @@ export function createRequest(req: Request): globalThis.Request {
 
   if (req.method !== "GET" && req.method !== "HEAD") {
     if (parsedBody !== undefined) {
-      init.body = createParsedBody(parsedBody);
+      init.body =
+        typeof parsedBody === "string" ||
+        Buffer.isBuffer(parsedBody) ||
+        parsedBody instanceof URLSearchParams
+          ? parsedBody
+          : JSON.stringify(parsedBody);
     } else {
       init.body = req;
       // Node fetch requires this flag when a request body is a stream.
@@ -56,24 +58,4 @@ function createHeaders(req: Request, omitContentLength: boolean): Headers {
   }
 
   return headers;
-}
-
-function getParsedBody(req: Request): unknown {
-  return (req as RequestWithParsedBody).body;
-}
-
-function createParsedBody(body: unknown): ParsedRequestBody {
-  if (typeof body === "string") {
-    return body;
-  }
-
-  if (Buffer.isBuffer(body)) {
-    return body;
-  }
-
-  if (body instanceof URLSearchParams) {
-    return body;
-  }
-
-  return JSON.stringify(body);
 }

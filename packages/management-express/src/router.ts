@@ -1,7 +1,6 @@
 import { createManagementSurface } from "@monque/management";
 import { type NextFunction, type Request, type Response, Router } from "express";
 
-import { createOpenApiContext } from "./context.js";
 import { createRequest, sendResponse } from "./http.js";
 import { mountOpenApiRoute } from "./openapi.js";
 import type { ManagementExpressRouterOptions } from "./types.js";
@@ -79,7 +78,7 @@ export function createManagementExpressRouter<TContext = unknown>(
   router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await surface.openApiHandler.handle(createRequest(req), {
-        context: await createOpenApiContext(req, res, context),
+        context: context === undefined ? {} : { managementContext: await context({ req, res }) },
       });
 
       if (!result.matched) {

@@ -1,9 +1,9 @@
-import type { Db } from "mongodb";
+import { EventEmitter } from "node:events";
+import { Collection, type Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { type Job, JobStatus } from "@/jobs";
 import { Monque } from "@/scheduler";
-import { ChangeStreamHandler } from "@/scheduler/services/change-stream-handler.js";
 import {
   cleanupTestDb,
   clearCollection,
@@ -37,7 +37,12 @@ describe("local retry wakeups", () => {
     async (terminalStatus) => {
       // A cursor can be opening while the initial poll processes the first attempt.
       // Keep the stream active, but suppress delivery to reproduce missed notifications.
-      vi.spyOn(ChangeStreamHandler.prototype, "handleEvent").mockImplementation(() => {});
+      vi.spyOn(Collection.prototype, "watch").mockImplementation(
+        () =>
+          Object.assign(new EventEmitter(), {
+            close: async () => {},
+          }) as unknown as ReturnType<Collection["watch"]>,
+      );
       collectionName = uniqueCollectionName("retry_wakeup");
       const monque = new Monque(db, {
         collectionName,

@@ -16,8 +16,6 @@ import { createScenarioHeaderFetch } from "./scenario-header-fetch.js";
 
 const LOCAL_STORAGE_SCENARIO_KEY = "monque-dashboard-dev-scenario";
 
-type DashboardDevManagementApiOptions = Parameters<typeof createDashboardManagementApi>[0];
-
 function DashboardDevShellApp({
   environment,
 }: {
@@ -60,9 +58,11 @@ function DashboardDevRuntime({
 }): ReactElement {
   const [{ router, queryClient }] = useState(() => {
     const runtimeConfig = createDashboardRuntimeConfig(environment);
-    const managementApi = createDashboardManagementApi(
-      createDashboardDevManagementApiOptions(environment, scenarioId, runtimeConfig.apiBaseUrl),
-    );
+    const managementApi = createDashboardManagementApi({
+      apiBaseUrl: runtimeConfig.apiBaseUrl,
+      origin: window.location.origin,
+      ...(environment.mode === "mock" ? { fetch: createScenarioHeaderFetch(scenarioId) } : {}),
+    });
     const queryClient = createDashboardQueryClient();
     const router = getRouter({ managementApi, queryClient, runtimeConfig });
     return { router, queryClient };
@@ -143,26 +143,6 @@ function DashboardDevOverlay({
       </CollapsibleContent>
     </Collapsible>
   );
-}
-
-function createDashboardDevManagementApiOptions(
-  environment: DashboardDevEnvironment,
-  scenarioId: DashboardDevScenarioId,
-  apiBaseUrl: string,
-): DashboardDevManagementApiOptions {
-  const baseOptions = {
-    apiBaseUrl,
-    origin: window.location.origin,
-  };
-
-  if (environment.mode === "mock") {
-    return {
-      ...baseOptions,
-      fetch: createScenarioHeaderFetch(scenarioId),
-    };
-  }
-
-  return baseOptions;
 }
 
 function getStoredScenarioId(defaultScenarioId: DashboardDevScenarioId): DashboardDevScenarioId {

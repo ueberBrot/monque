@@ -1,11 +1,9 @@
 import {
   type CursorOptions,
-  isValidJobStatus,
   type JobCursorFilter,
   JobCursorSortDirection,
   JobCursorSortField,
   type JobSelector,
-  type JobStatusType,
 } from "@monque/core";
 import { ObjectId } from "mongodb";
 
@@ -20,8 +18,6 @@ const JOB_LIST_DATE_FILTER_KEYS = [
   "nextRunAtTo",
 ] as const;
 
-type JobListDateFilterKey = (typeof JOB_LIST_DATE_FILTER_KEYS)[number];
-
 export function parseObjectId(value: string | undefined): { value: ObjectId } | { error: string } {
   if (!value || !ObjectId.isValid(value)) {
     return { error: "Invalid job id" };
@@ -31,34 +27,34 @@ export function parseObjectId(value: string | undefined): { value: ObjectId } | 
 }
 
 export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { error: string } {
-  const limitResult = parseLimit(query.limit);
-
-  if ("error" in limitResult) {
-    return limitResult;
-  }
-
-  const statusesResult = parseStatuses(query.status);
-
-  if ("error" in statusesResult) {
-    return statusesResult;
+  const limitInput = query.limit;
+  let limit = 50;
+  if (limitInput !== undefined) {
+    limit = Number(limitInput);
+    if (!Number.isInteger(limit) || limit < 1) {
+      return { error: "Invalid limit" };
+    }
+    limit = Math.min(limit, 100);
   }
 
   const filter: JobCursorFilter = {};
+  const status =
+    Array.isArray(query.status) && query.status.length === 1 ? query.status[0] : query.status;
 
   if (query.name !== undefined) {
     filter.name = query.name;
   }
 
-  if (statusesResult.status !== undefined) {
-    filter.status = statusesResult.status;
+  if (status !== undefined) {
+    filter.status = status;
   }
 
   for (const key of JOB_LIST_DATE_FILTER_KEYS) {
-    applyDateFilter(filter, key, query[key]);
+    if (query[key] !== undefined) filter[key] = new Date(query[key]);
   }
 
   const options: CursorOptions = {
-    limit: limitResult.limit,
+    limit,
     sort: {
       by: query.sortBy ?? JobCursorSortField.CREATED_AT,
       direction: query.sortDirection ?? JobCursorSortDirection.DESC,
@@ -74,16 +70,6 @@ export function toJobCursorOptions(query: JobListQueryDto): CursorOptions | { er
   }
 
   return options;
-}
-
-export function toQueueStatsFilter(input: {
-  name?: string | undefined;
-}): { name: string } | undefined {
-  if (input.name === undefined) {
-    return undefined;
-  }
-
-  return { name: input.name };
 }
 
 export function toJobSelector(input: JobSelectorDto): JobSelector {
@@ -106,60 +92,4 @@ export function toJobSelector(input: JobSelectorDto): JobSelector {
   }
 
   return selector;
-}
-
-function parseLimit(value: string | undefined): { limit: number } | { error: string } {
-  if (value === undefined) {
-    return { limit: 50 };
-  }
-
-  const limit = Number(value);
-
-  if (!Number.isInteger(limit) || limit < 1) {
-    return { error: "Invalid limit" };
-  }
-
-  return {
-    limit: Math.min(limit, 100),
-  };
-}
-
-function parseStatuses(
-  value: JobListQueryDto["status"],
-): { status: JobStatusType | JobStatusType[] | undefined } | { error: string } {
-  if (value === undefined) {
-    return { status: undefined };
-  }
-
-  const requestedStatuses = Array.isArray(value) ? value : [value];
-
-  if (requestedStatuses.length === 0) {
-    return { error: "Invalid status" };
-  }
-
-  const statuses: JobStatusType[] = [];
-
-  for (const status of requestedStatuses) {
-    if (!isValidJobStatus(status)) {
-      return { error: "Invalid status" };
-    }
-
-    statuses.push(status);
-  }
-
-  return {
-    status: statuses.length > 1 ? statuses : statuses[0],
-  };
-}
-
-function applyDateFilter(
-  filter: JobCursorFilter,
-  key: JobListDateFilterKey,
-  value: string | undefined,
-): void {
-  if (value === undefined) {
-    return;
-  }
-
-  filter[key] = new Date(value);
 }

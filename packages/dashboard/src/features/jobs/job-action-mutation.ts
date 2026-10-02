@@ -12,29 +12,17 @@ export function jobActionMutationOptions(api: DashboardManagementApi, queryClien
       for (const job of result?.jobs ?? []) {
         queryClient.setQueryData(api.orpc.job.queryKey({ input: { params: { id: job.id } } }), job);
       }
-      await invalidateJobQueries(
-        queryClient,
-        api,
-        input.jobIds,
-        result?.authorizationChanged || readManagementError(error).status === 403,
-      );
+      const ids = input.jobIds;
+      const authorizationChanged =
+        result?.authorizationChanged || readManagementError(error).status === 403;
+      const keys: QueryKey[] = [
+        api.orpc.jobs.key(),
+        api.orpc.jobStats.key(),
+        api.orpc.queueViews.key(),
+        ...ids.map((id) => api.orpc.job.key({ input: { params: { id } } })),
+      ];
+      if (authorizationChanged) keys.push(api.orpc.capabilities.key());
+      await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
     },
   });
-}
-
-/** Refresh job-dependent views without refetching unrelated health or permissions. */
-async function invalidateJobQueries(
-  queryClient: QueryClient,
-  api: DashboardManagementApi,
-  ids: readonly string[],
-  authorizationChanged = false,
-): Promise<void> {
-  const keys: QueryKey[] = [
-    api.orpc.jobs.key(),
-    api.orpc.jobStats.key(),
-    api.orpc.queueViews.key(),
-    ...ids.map((id) => api.orpc.job.key({ input: { params: { id } } })),
-  ];
-  if (authorizationChanged) keys.push(api.orpc.capabilities.key());
-  await Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 }

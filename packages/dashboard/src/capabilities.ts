@@ -36,46 +36,22 @@ const AVAILABLE_CAPABILITY_REASON = "Available to you.";
 const READ_ONLY_CAPABILITY_REASON = "This dashboard is read-only.";
 const UNAVAILABLE_CAPABILITY_REASON = "Your host application has not enabled this action for you.";
 
-function getDashboardCapabilityState(
+function listDashboardCapabilityStates(
   capabilities: CapabilitiesDto,
-  action: DashboardCapabilityAction,
-): DashboardCapabilityState {
-  const available = capabilities.actions[action];
-
-  if (available) {
+): readonly DashboardCapabilityState[] {
+  return dashboardCapabilityActions.map((action) => {
+    const available = capabilities.actions[action];
     return {
       action,
       available,
       label: dashboardCapabilityActionLabels[action],
-      reason: AVAILABLE_CAPABILITY_REASON,
+      reason: available
+        ? AVAILABLE_CAPABILITY_REASON
+        : capabilities.readOnly && action !== "read"
+          ? READ_ONLY_CAPABILITY_REASON
+          : UNAVAILABLE_CAPABILITY_REASON,
     };
-  }
-
-  return {
-    action,
-    available,
-    label: dashboardCapabilityActionLabels[action],
-    reason: getUnavailableCapabilityReason(capabilities, action),
-  };
-}
-
-function getUnavailableCapabilityReason(
-  capabilities: CapabilitiesDto,
-  action: DashboardCapabilityAction,
-): string {
-  if (capabilities.readOnly && action !== "read") {
-    return READ_ONLY_CAPABILITY_REASON;
-  }
-
-  return UNAVAILABLE_CAPABILITY_REASON;
-}
-
-function listDashboardCapabilityStates(
-  capabilities: CapabilitiesDto,
-): readonly DashboardCapabilityState[] {
-  return dashboardCapabilityActions.map((action) =>
-    getDashboardCapabilityState(capabilities, action),
-  );
+  });
 }
 
 export {

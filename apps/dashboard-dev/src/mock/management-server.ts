@@ -263,12 +263,17 @@ function listJobs(input: JobListQueryDto, scenario: DashboardDevScenario): JobCu
   const sortBy = input.sortBy ?? "createdAt";
   const sortDirection = input.sortDirection ?? "desc";
   const anchor = decodeCursor(input.cursor, sortBy, sortDirection);
-  const accessor = getSortAccessor(sortBy);
+  const sortField =
+    sortBy === "identifier"
+      ? "id"
+      : sortBy === "updatedAt" || sortBy === "nextRunAt"
+        ? sortBy
+        : "createdAt";
   const compare = (
     left: Pick<MockCursor, "id" | "value">,
     right: Pick<MockCursor, "id" | "value">,
   ) => comparePositions(left, right) * (sortDirection === "asc" ? 1 : -1);
-  const position = (job: JobDto) => ({ id: job.id, value: accessor(job) });
+  const position = (job: JobDto) => ({ id: job.id, value: job[sortField] });
   const jobs = applyJobFilters(scenario.jobs, input)
     .filter((job) => !anchor || compare(position(job), anchor) > 0)
     .sort((left, right) => compare(position(left), position(right)));
@@ -396,18 +401,7 @@ function matchesJobName(job: JobDto, name: string | undefined): boolean {
 }
 
 function matchesJobStatus(job: JobDto, status: JobListQueryDto["status"]): boolean {
-  const statuses = normalizeStatusFilter(status);
-  return !statuses || statuses.includes(job.status);
-}
-
-function normalizeStatusFilter(
-  status: JobListQueryDto["status"],
-): readonly JobDto["status"][] | undefined {
-  if (!status) {
-    return undefined;
-  }
-
-  return Array.isArray(status) ? status : [status];
+  return !status || (Array.isArray(status) ? status.includes(job.status) : status === job.status);
 }
 
 function matchesDateRange(value: string, from?: string, to?: string): boolean {
@@ -447,19 +441,6 @@ function comparePositions(
   if (left.value < right.value) return -1;
   if (left.value > right.value) return 1;
   return left.id.localeCompare(right.id);
-}
-
-function getSortAccessor(sortBy: JobListQueryDto["sortBy"]): (job: JobDto) => string {
-  switch (sortBy) {
-    case "identifier":
-      return (job) => job.id;
-    case "updatedAt":
-      return (job) => job.updatedAt;
-    case "nextRunAt":
-      return (job) => job.nextRunAt;
-    default:
-      return (job) => job.createdAt;
-  }
 }
 
 function normalizeLimit(limit?: string): number {

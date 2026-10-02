@@ -1,54 +1,31 @@
-import type { Document, Filter, ObjectId, WithId } from "mongodb";
+import type { Document, ObjectId, WithId } from "mongodb";
 
 import {
-  CursorDirection,
-  type CursorDirectionType,
   type CursorOptions,
   type CursorPage,
   type GetJobsFilter,
   isValidJobStatus,
-  type JobCursorSort,
-  JobCursorSortDirection,
-  JobCursorSortField,
   type JobSelector,
   JobStatus,
   type JobSummaryPage,
   type PersistedJob,
   type QueueStats,
   type QueueViewSummary,
-  type QueueViewWorkerSummary,
 } from "@/jobs";
 import {
   AggregationTimeoutError,
   ConnectionError,
   DEFAULT_MAX_BACKOFF_DELAY,
-  InvalidCursorError,
   InvalidJobQueryError,
   toError,
 } from "@/shared";
 
-import {
-  buildSelectorQuery,
-  type DecodedCursor,
-  decodeCursor,
-  encodeCursor,
-  normalizeCursorSort,
-  parseJobNameFilter,
-} from "../helpers.js";
+import { buildSelectorQuery, parseJobNameFilter, resolveQueryLimit } from "../helpers.js";
+import { CursorListing } from "./cursor-listing.js";
 import { QueryCache } from "./query-cache.js";
 import type { SchedulerContext } from "./types.js";
 
 const MONGO_MAX_TIME_MS_EXPIRED_CODE = 50;
-const MAX_QUERY_LIMIT = 1000;
-
-function resolveQueryLimit(limit: number | undefined, defaultLimit: number): number {
-  const value = limit === undefined ? defaultLimit : limit;
-  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_QUERY_LIMIT) {
-    throw new InvalidJobQueryError(`limit must be an integer between 1 and ${MAX_QUERY_LIMIT}`);
-  }
-  return value;
-}
-
 type QueueViewStatsDocument = {
   _id: string;
   pending?: number;
@@ -72,32 +49,12 @@ function createEmptyQueueStats(): QueueStats {
   };
 }
 
-function freezeQueueStats(stats: QueueStats): Readonly<QueueStats> {
-  return Object.freeze({ ...stats });
-}
-
-function freezeWorkerSummary(
-  worker: QueueViewWorkerSummary | null,
-): Readonly<QueueViewWorkerSummary> | null {
-  if (!worker) {
-    return null;
-  }
-
-  return Object.freeze({ ...worker });
-}
-
 type MongoErrorWithTimeoutCode = Error & {
   code?: unknown;
   writeConcernError?: {
     code?: unknown;
   };
 };
-type MongoSortDirection = 1 | -1;
-type CursorAnchor = {
-  id: ObjectId | null;
-  sortValue: Date | null;
-};
-
 function isMongoMaxTimeMSExpiredError(error: Error): boolean {
   const mongoError = error as MongoErrorWithTimeoutCode;
 
@@ -105,122 +62,6 @@ function isMongoMaxTimeMSExpiredError(error: Error): boolean {
     mongoError.code === MONGO_MAX_TIME_MS_EXPIRED_CODE ||
     mongoError.writeConcernError?.code === MONGO_MAX_TIME_MS_EXPIRED_CODE
   );
-}
-
-function buildMongoSort(
-  sort: JobCursorSort,
-  direction: CursorDirectionType,
-): Record<string, MongoSortDirection> {
-  const baseDirection = getMongoSortDirection(sort);
-  const effectiveDirection =
-    direction === CursorDirection.FORWARD ? baseDirection : reverseSortDirection(baseDirection);
-
-  if (sort.by === JobCursorSortField.IDENTIFIER) {
-    return { _id: effectiveDirection };
-  }
-
-  return {
-    [sort.by]: effectiveDirection,
-    _id: effectiveDirection,
-  };
-}
-
-function getMongoSortDirection(sort: JobCursorSort): MongoSortDirection {
-  return sort.direction === JobCursorSortDirection.ASC ? 1 : -1;
-}
-
-function reverseSortDirection(direction: MongoSortDirection): MongoSortDirection {
-  return direction === 1 ? -1 : 1;
-}
-
-function applyCursorConstraint(
-  query: Filter<Document>,
-  sort: JobCursorSort,
-  direction: CursorDirectionType,
-  anchorId: ObjectId | null,
-  anchorSortValue: Date | null,
-): void {
-  if (anchorId === null) {
-    return;
-  }
-
-  const operator = getCursorOperator(sort, direction);
-
-  if (sort.by === JobCursorSortField.IDENTIFIER) {
-    query._id = { [operator]: anchorId };
-    return;
-  }
-
-  if (anchorSortValue === null) {
-    throw new InvalidCursorError("Cursor does not match requested sort");
-  }
-
-  query.$or = [
-    { [sort.by]: { [operator]: anchorSortValue } },
-    { [sort.by]: anchorSortValue, _id: { [operator]: anchorId } },
-  ];
-}
-
-function getCursorOperator(sort: JobCursorSort, direction: CursorDirectionType): "$gt" | "$lt" {
-  const isAscending = sort.direction === JobCursorSortDirection.ASC;
-  const isForward = direction === CursorDirection.FORWARD;
-
-  if ((isAscending && isForward) || (!isAscending && !isForward)) {
-    return "$gt";
-  }
-
-  return "$lt";
-}
-
-function createPageCursor<T>(
-  jobs: PersistedJob<T>[],
-  direction: CursorDirectionType,
-  sort: JobCursorSort,
-): string | null {
-  const lastJob = direction === CursorDirection.BACKWARD ? jobs[0] : jobs[jobs.length - 1];
-
-  if (!lastJob) {
-    return null;
-  }
-
-  switch (sort.by) {
-    case JobCursorSortField.IDENTIFIER:
-      return encodeCursor(lastJob._id, direction, sort);
-    case JobCursorSortField.CREATED_AT:
-      return encodeCursor(lastJob._id, direction, sort, lastJob.createdAt);
-    case JobCursorSortField.UPDATED_AT:
-      return encodeCursor(lastJob._id, direction, sort, lastJob.updatedAt);
-    case JobCursorSortField.NEXT_RUN_AT:
-      return encodeCursor(lastJob._id, direction, sort, lastJob.nextRunAt);
-  }
-}
-
-function decodeCursorAnchor(cursor: string | undefined, sort: JobCursorSort): CursorAnchor {
-  if (!cursor) {
-    return { id: null, sortValue: null };
-  }
-
-  const decoded = decodeCursor(cursor);
-  assertCursorMatchesSort(decoded, sort);
-
-  return {
-    id: decoded.id,
-    sortValue: decoded.sort?.value ?? null,
-  };
-}
-
-function assertCursorMatchesSort(decoded: DecodedCursor, sort: JobCursorSort): void {
-  if (decoded.sort) {
-    if (decoded.sort.by !== sort.by || decoded.sort.direction !== sort.direction) {
-      throw new InvalidCursorError("Cursor does not match requested sort");
-    }
-
-    return;
-  }
-
-  if (sort.by !== JobCursorSortField.IDENTIFIER || sort.direction !== JobCursorSortDirection.ASC) {
-    throw new InvalidCursorError("Cursor does not match requested sort");
-  }
 }
 
 /**
@@ -235,7 +76,11 @@ export class JobQueryService {
   private readonly statsCache = new QueryCache<QueueStats>();
   private readonly queueViewCache = new QueryCache<ReadonlyMap<string, QueueStats>>();
 
-  constructor(private readonly ctx: SchedulerContext) {}
+  private readonly cursorListing: CursorListing;
+
+  constructor(private readonly ctx: SchedulerContext) {
+    this.cursorListing = new CursorListing(ctx);
+  }
 
   /**
    * Get a single job by its MongoDB ObjectId.
@@ -380,78 +225,14 @@ export class JobQueryService {
    */
 
   async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
-    return this.queryJobsWithCursor<T>(options, true);
+    return this.cursorListing.getJobsWithCursor<T>(options);
   }
 
   /** List job metadata using the same cursor as full listings, without reading payloads. */
-  // Called through Monque.query in the public facade.
+  // Called through Monque in the public facade.
   // fallow-ignore-next-line unused-class-member
   async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
-    const page = await this.queryJobsWithCursor(options, false);
-    return { ...page, jobs: page.jobs.map(({ data: _data, ...summary }) => summary) };
-  }
-
-  private async queryJobsWithCursor<T>(
-    options: CursorOptions,
-    includePayload: boolean,
-  ): Promise<CursorPage<T>> {
-    const limit = resolveQueryLimit(options.limit, 50);
-    const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
-    const sort = normalizeCursorSort(options.sort);
-    const anchor = decodeCursorAnchor(options.cursor, sort);
-
-    const query = buildSelectorQuery(options.filter === undefined ? {} : options.filter);
-    const mongoSort = buildMongoSort(sort, direction);
-    applyCursorConstraint(query, sort, direction, anchor.id, anchor.sortValue);
-    const fetchLimit = limit + 1;
-
-    let docs: WithId<Document>[];
-    try {
-      docs = await this.ctx.collection
-        .find(query, { maxTimeMS: 30_000, ...(includePayload ? {} : { projection: { data: 0 } }) })
-        .sort(mongoSort)
-        .limit(fetchLimit)
-        .toArray();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error during getJobsWithCursor";
-      throw new ConnectionError(
-        `Failed to query jobs with cursor: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
-    }
-
-    const hasMore = docs.length > limit;
-    if (hasMore) {
-      docs.pop();
-    }
-
-    if (direction === CursorDirection.BACKWARD) {
-      docs.reverse();
-    }
-
-    const jobs = docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc as WithId<Document>));
-
-    const nextCursor = createPageCursor(jobs, direction, sort);
-
-    let hasNextPage = false;
-    let hasPreviousPage = false;
-
-    // Determine availability of next/prev pages
-    if (direction === CursorDirection.FORWARD) {
-      hasNextPage = hasMore;
-      hasPreviousPage = anchor.id !== null;
-    } else {
-      hasNextPage = anchor.id !== null;
-      hasPreviousPage = hasMore;
-    }
-
-    return {
-      jobs,
-      cursor: nextCursor,
-      hasNextPage,
-      hasPreviousPage,
-    };
+    return this.cursorListing.getJobSummariesWithCursor(options);
   }
 
   /**
@@ -623,8 +404,8 @@ export class JobQueryService {
           name,
           hasPersistedJobs: persistedStats.has(name),
           hasRegisteredWorker: worker !== undefined,
-          stats: freezeQueueStats(persistedStats.get(name) ?? createEmptyQueueStats()),
-          worker: freezeWorkerSummary(workerSummary),
+          stats: Object.freeze({ ...(persistedStats.get(name) ?? createEmptyQueueStats()) }),
+          worker: workerSummary ? Object.freeze(workerSummary) : null,
         });
       });
 

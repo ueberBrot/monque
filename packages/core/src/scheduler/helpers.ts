@@ -1,18 +1,7 @@
-import { type Document, type Filter, ObjectId } from "mongodb";
+import type { Document, Filter } from "mongodb";
 
-import {
-  CursorDirection,
-  type CursorDirectionType,
-  isValidJobStatus,
-  type JobCursorFilter,
-  type JobCursorSort,
-  JobCursorSortDirection,
-  type JobCursorSortDirectionType,
-  JobCursorSortField,
-  type JobCursorSortFieldType,
-  type JobSelector,
-} from "@/jobs";
-import { InvalidCursorError, InvalidJobQueryError } from "@/shared";
+import { isValidJobStatus, type JobCursorFilter, type JobSelector } from "@/jobs";
+import { InvalidJobQueryError } from "@/shared";
 
 type CursorQueryFilter = JobSelector | JobCursorFilter;
 type DateRangeField = "createdAt" | "updatedAt" | "nextRunAt";
@@ -23,31 +12,15 @@ type DateRangeQuery = {
   $lte?: Date;
 };
 
-type EncodedCursorPayload = {
-  id: string;
-  sort: {
-    by: JobCursorSortFieldType;
-    direction: JobCursorSortDirectionType;
-    value: string;
-  };
-};
+const MAX_QUERY_LIMIT = 1000;
 
-export type DecodedCursor = {
-  id: ObjectId;
-  direction: CursorDirectionType;
-  sort?: {
-    by: JobCursorSortFieldType;
-    direction: JobCursorSortDirectionType;
-    value: Date;
-  };
-};
-
-const DEFAULT_CURSOR_SORT: JobCursorSort = {
-  by: JobCursorSortField.IDENTIFIER,
-  direction: JobCursorSortDirection.ASC,
-};
-const LEGACY_CURSOR_PAYLOAD_BYTES = 12;
-const STRUCTURED_CURSOR_PAYLOAD_PREFIX = "{".charCodeAt(0);
+export function resolveQueryLimit(limit: number | undefined, defaultLimit: number): number {
+  const value = limit === undefined ? defaultLimit : limit;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_QUERY_LIMIT) {
+    throw new InvalidJobQueryError(`limit must be an integer between 1 and ${MAX_QUERY_LIMIT}`);
+  }
+  return value;
+}
 
 /**
  * Build a MongoDB query filter from a selector or cursor filter.
@@ -174,168 +147,6 @@ function getDateRange(query: Filter<Document>, field: DateRangeField): DateRange
   return {};
 }
 
-/**
- * Encode cursor anchor metadata into an opaque cursor string.
- *
- * Structured cursors use `prefix` + `base64url(JSON)` where `prefix` is `F`
- * for forward cursors or `B` for backward cursors. The JSON payload contains
- * the anchor job `id`, `sort.by`, `sort.direction`, and `sort.value` metadata.
- * Default identifier/ascending cursors without an explicit sort value keep the
- * compact legacy ObjectId payload for backwards compatibility.
- *
- * @param id - The job ID to use as the cursor anchor (exclusive)
- * @param direction - Cursor traversal direction
- * @param sort - Sort metadata for the cursor anchor; defaults to DEFAULT_CURSOR_SORT
- * @param sortValue - Optional Date sort field value for non-identifier cursor anchors
- * @returns Opaque base64url-encoded cursor string
- */
-export function encodeCursor(
-  id: ObjectId,
-  direction: CursorDirectionType,
-  sort: JobCursorSort = DEFAULT_CURSOR_SORT,
-  sortValue?: Date,
-): string {
-  const prefix = direction === CursorDirection.FORWARD ? "F" : "B";
-
-  if (
-    sort.by === JobCursorSortField.IDENTIFIER &&
-    sort.direction === JobCursorSortDirection.ASC &&
-    sortValue === undefined
-  ) {
-    const buffer = Buffer.from(id.toHexString(), "hex");
-
-    return prefix + buffer.toString("base64url");
-  }
-
-  if (sort.by !== JobCursorSortField.IDENTIFIER && sortValue === undefined) {
-    throw new InvalidCursorError("Cursor sort value is required");
-  }
-
-  const payload: EncodedCursorPayload = {
-    id: id.toHexString(),
-    sort: {
-      by: sort.by,
-      direction: sort.direction,
-      value: (sortValue ?? new Date(id.getTimestamp())).toISOString(),
-    },
-  };
-  const buffer = Buffer.from(JSON.stringify(payload), "utf8");
-
-  return prefix + buffer.toString("base64url");
-}
-
-/**
- * Decode an opaque cursor string into cursor anchor metadata.
- *
- * Accepts structured JSON cursors with `id`, `sort.by`, `sort.direction`, and
- * `sort.value` metadata, plus compact legacy ObjectId cursors.
- *
- * @param cursor - The opaque cursor string
- * @returns The decoded ID, direction, and optional sort metadata with Date sort value
- * @throws {InvalidCursorError} If the cursor format, ID, or sort metadata is invalid
- */
-export function decodeCursor(cursor: string): DecodedCursor {
-  if (!cursor || cursor.length < 2) {
-    throw new InvalidCursorError("Cursor is empty or too short");
-  }
-
-  const prefix = cursor.charAt(0);
-  const payload = cursor.slice(1);
-
-  let direction: CursorDirectionType;
-
-  if (prefix === "F") {
-    direction = CursorDirection.FORWARD;
-  } else if (prefix === "B") {
-    direction = CursorDirection.BACKWARD;
-  } else {
-    throw new InvalidCursorError(`Invalid cursor prefix: ${prefix}`);
-  }
-
-  try {
-    const buffer = Buffer.from(payload, "base64url");
-
-    if (buffer.byteLength === LEGACY_CURSOR_PAYLOAD_BYTES) {
-      return {
-        id: new ObjectId(buffer.toString("hex")),
-        direction,
-      };
-    }
-
-    if (buffer[0] === STRUCTURED_CURSOR_PAYLOAD_PREFIX) {
-      return decodeStructuredCursor(buffer.toString("utf8"), direction);
-    }
-
-    throw new InvalidCursorError("Invalid length");
-  } catch (error) {
-    if (error instanceof InvalidCursorError) {
-      throw error;
-    }
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-}
-
-export function normalizeCursorSort(sort?: JobCursorSort): JobCursorSort {
-  return sort ?? DEFAULT_CURSOR_SORT;
-}
-
-function decodeStructuredCursor(
-  jsonPayload: string,
-  direction: CursorDirectionType,
-): DecodedCursor {
-  let payload: unknown;
-
-  try {
-    payload = JSON.parse(jsonPayload);
-  } catch {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  if (!isRecord(payload) || !isRecord(payload["sort"])) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  const id = payload["id"];
-  const sort = payload["sort"];
-  const sortBy = sort["by"];
-  const sortDirection = sort["direction"];
-  const sortValueRaw = sort["value"];
-
-  if (
-    typeof id !== "string" ||
-    typeof sortValueRaw !== "string" ||
-    !ObjectId.isValid(id) ||
-    !isValidCursorSortField(sortBy) ||
-    !isValidCursorSortDirection(sortDirection)
-  ) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  const sortValue = new Date(sortValueRaw);
-
-  if (Number.isNaN(sortValue.getTime())) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  return {
-    id: new ObjectId(id),
-    direction,
-    sort: {
-      by: sortBy,
-      direction: sortDirection,
-      value: sortValue,
-    },
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isValidCursorSortField(value: unknown): value is JobCursorSortFieldType {
-  return Object.values(JobCursorSortField).includes(value as JobCursorSortFieldType);
-}
-
-function isValidCursorSortDirection(value: unknown): value is JobCursorSortDirectionType {
-  return Object.values(JobCursorSortDirection).includes(value as JobCursorSortDirectionType);
 }

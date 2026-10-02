@@ -116,7 +116,7 @@ export class ChangeStreamHandler {
       changeStream.on("error", (error: Error) => {
         if (this.changeStream !== changeStream) return;
         this.ctx.emit("changestream:error", { error });
-        this.handleError(error);
+        if (this.changeStream === changeStream) this.handleError(error);
       });
 
       // Mark as connected
@@ -150,7 +150,7 @@ export class ChangeStreamHandler {
    *
    * @param change - The change stream event document
    */
-  handleEvent(change: ChangeStreamDocument<Document>): void {
+  private handleEvent(change: ChangeStreamDocument<Document>): void {
     if (!this.ctx.isRunning()) {
       return;
     }
@@ -208,7 +208,7 @@ export class ChangeStreamHandler {
    *
    * @param error - The error that caused the change stream failure
    */
-  handleError(error: Error): void {
+  private handleError(error: Error): void {
     if (!this.ctx.isRunning()) {
       return;
     }
@@ -253,10 +253,6 @@ export class ChangeStreamHandler {
 
     this.closeChangeStream();
 
-    if (!this.ctx.isRunning()) {
-      return;
-    }
-
     this.setup();
   }
 
@@ -281,12 +277,9 @@ export class ChangeStreamHandler {
   }
 
   private closeChangeStream(): void {
-    if (!this.changeStream) {
-      return;
-    }
-
-    this.changeStream.close().catch(() => {});
+    const changeStream = this.changeStream;
     this.changeStream = null;
+    changeStream?.close().catch(() => {});
   }
 
   /**
@@ -294,31 +287,24 @@ export class ChangeStreamHandler {
    */
   async close(): Promise<void> {
     const wasActive = this.usingChangeStreams;
+    const changeStream = this.changeStream;
+    this.changeStream = null;
+    this.reconnectAttempts = 0;
 
     // Stop stream delivery and reconnection.
     this.resetActiveState();
     this.clearReconnectTimer();
 
-    if (this.changeStream) {
+    if (changeStream) {
       try {
-        await this.changeStream.close();
+        await changeStream.close();
       } catch {
         // Ignore close errors during shutdown
       }
-      this.changeStream = null;
 
       if (wasActive) {
         this.ctx.emit("changestream:closed", undefined);
       }
     }
-
-    this.reconnectAttempts = 0;
-  }
-
-  /**
-   * Check if change streams are currently active.
-   */
-  isActive(): boolean {
-    return this.usingChangeStreams;
   }
 }

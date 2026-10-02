@@ -305,40 +305,22 @@ function buildQueueViews(
 }
 
 function createQueueStats(jobs: readonly JobDto[]): QueueStatsDto {
-  let pending = 0;
-  let processing = 0;
-  let completed = 0;
-  let failed = 0;
-  let cancelled = 0;
+  const counts: Pick<QueueStatsDto, JobDto["status"]> = {
+    pending: 0,
+    processing: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+  };
 
-  for (const job of jobs) {
-    switch (job.status) {
-      case "pending":
-        pending += 1;
-        break;
-      case "processing":
-        processing += 1;
-        break;
-      case "completed":
-        completed += 1;
-        break;
-      case "failed":
-        failed += 1;
-        break;
-      case "cancelled":
-        cancelled += 1;
-        break;
-    }
+  for (const { status } of jobs) {
+    if (Object.hasOwn(counts, status)) counts[status] += 1;
   }
 
   return {
-    pending,
-    processing,
-    completed,
-    failed,
-    cancelled,
+    ...counts,
     total: jobs.length,
-    avgProcessingDurationMs: processing > 0 ? 42_000 : undefined,
+    avgProcessingDurationMs: counts.processing > 0 ? 42_000 : undefined,
   };
 }
 

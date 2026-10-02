@@ -2,6 +2,7 @@ import { JobStatus, type PersistedJob } from "@/jobs";
 import { PayloadValidationError, toError } from "@/shared";
 import type { WorkerRegistration } from "@/workers";
 
+import { JobDiscovery } from "./job-discovery.js";
 import { JobLifecycle } from "./job-lifecycle.js";
 import type { SchedulerContext } from "./types.js";
 
@@ -31,33 +32,14 @@ export class JobProcessor {
    */
   private _totalActiveJobs = 0;
   private lastServedWorker: string | undefined;
-  private binaryNameMatching: boolean | undefined;
 
-  private readonly lifecycle: JobLifecycle;
+  private readonly discovery: JobDiscovery;
 
   constructor(
     private readonly ctx: SchedulerContext,
-    lifecycle?: JobLifecycle,
+    private readonly lifecycle = new JobLifecycle(ctx),
   ) {
-    this.lifecycle = lifecycle ?? new JobLifecycle(ctx);
-  }
-
-  /**
-   * Get the number of available slots considering the global instanceConcurrency limit.
-   *
-   * @param workerAvailableSlots - Available slots for the specific worker
-   * @returns Number of slots available after applying global limit
-   */
-  private getGloballyAvailableSlots(workerAvailableSlots: number): number {
-    const { instanceConcurrency } = this.ctx.options;
-
-    if (instanceConcurrency === undefined) {
-      return workerAvailableSlots;
-    }
-
-    const globalAvailable = instanceConcurrency - this._totalActiveJobs;
-
-    return Math.min(workerAvailableSlots, globalAvailable);
+    this.discovery = new JobDiscovery(ctx);
   }
 
   /**
@@ -128,9 +110,8 @@ export class JobProcessor {
 
     let names = [...this.ctx.workers.keys()];
     if (instanceConcurrency !== undefined) {
-      const entries = [...names];
-      const next = entries.findIndex((name) => name === this.lastServedWorker) + 1;
-      names = entries.slice(next).concat(entries.slice(0, next));
+      const next = names.findIndex((name) => name === this.lastServedWorker) + 1;
+      names = names.slice(next).concat(names.slice(0, next));
       // A targeted notification must not bypass workers waiting for a shared slot.
       targetNames = undefined;
     }
@@ -146,24 +127,12 @@ export class JobProcessor {
       }),
     );
     if (eligibleNames.size === 0) return;
-    // Notification names may differ from registered names under collection collation.
-    if (!(await this.usesBinaryNameMatching())) targetNames = undefined;
-    if (targetNames) {
-      for (const name of eligibleNames) {
-        if (!targetNames.has(name)) eligibleNames.delete(name);
-      }
-    }
-    if (eligibleNames.size === 0) return;
     // Runnable notifications can claim directly; full discovery first excludes empty names.
-    const dueNames = targetNames ? eligibleNames : await this.discoverPending(eligibleNames);
+    const dueNames = await this.discovery.discoverDue(eligibleNames, targetNames);
 
     for (const name of names) {
       const worker = this.ctx.workers.get(name);
       if (!worker || this.ctx.isPaused(name)) continue;
-      // Skip workers not in the target set (if provided)
-      if (targetNames && !targetNames.has(name)) {
-        continue;
-      }
       if (!dueNames.has(name)) continue;
 
       // Check if worker has capacity
@@ -174,7 +143,10 @@ export class JobProcessor {
       }
 
       // Apply global concurrency limit
-      const availableSlots = this.getGloballyAvailableSlots(workerAvailableSlots);
+      const availableSlots =
+        instanceConcurrency === undefined
+          ? workerAvailableSlots
+          : Math.min(workerAvailableSlots, instanceConcurrency - this._totalActiveJobs);
 
       if (availableSlots <= 0) {
         // Global limit reached, stop processing all workers
@@ -212,76 +184,12 @@ export class JobProcessor {
         await Promise.allSettled(acquisitionPromises);
         if (found < size) {
           if (!acquisitionFailed && this.ctx.isRunning() && !this.ctx.isPaused(name)) {
-            await this.scheduleNextRun(name);
+            await this.discovery.notifyNextRun(name);
           }
           break;
         }
         remaining -= size;
       }
-    }
-  }
-
-  /** An empty claim can hide a persisted future job behind work just acquired elsewhere. */
-  private async scheduleNextRun(name: string): Promise<void> {
-    try {
-      const job = await this.ctx.collection.findOne<{ nextRunAt: Date }>(
-        { name, status: JobStatus.PENDING },
-        {
-          projection: { _id: 0, nextRunAt: 1 },
-          sort: { nextRunAt: 1 },
-          readPreference: "primary",
-          readConcern: { level: "local" },
-        },
-      );
-      if (job) this.ctx.notifyPendingJob(name, job.nextRunAt);
-    } catch (error) {
-      this.ctx.emit("job:error", { error: toError(error) });
-    }
-  }
-
-  /** Cache whether notification and grouped names can match registered names exactly. */
-  private async usesBinaryNameMatching(): Promise<boolean> {
-    if (this.binaryNameMatching !== undefined) return this.binaryNameMatching;
-
-    try {
-      const { collation } = await this.ctx.collection.options({ readPreference: "primary" });
-      this.binaryNameMatching = !collation || collation["locale"] === "simple";
-    } catch (error) {
-      // Metadata access is optional; retain database matching without retrying every poll.
-      this.binaryNameMatching = false;
-      this.ctx.emit("job:error", { error: toError(error) });
-    }
-    return this.binaryNameMatching;
-  }
-
-  /** Read the earliest pending deadline per eligible name using the claim index. */
-  private async discoverPending(names: ReadonlySet<string>): Promise<ReadonlySet<string>> {
-    try {
-      // Group keys only map exactly to registered names under binary comparison.
-      // Other collations retain the database's matching semantics through atomic claims.
-      if (!this.binaryNameMatching) return names;
-
-      const pending = await this.ctx.collection
-        .aggregate<{ _id: string; nextRunAt: Date }>(
-          [
-            { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
-            { $sort: { name: 1, nextRunAt: 1 } },
-            { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
-          ],
-          { readPreference: "primary", readConcern: { level: "local" } },
-        )
-        .toArray();
-      const dueNames = new Set<string>();
-      const now = Date.now();
-      for (const job of pending) {
-        if (job.nextRunAt.getTime() <= now) dueNames.add(job._id);
-        else this.ctx.notifyPendingJob(job._id, job.nextRunAt);
-      }
-      return dueNames;
-    } catch (error) {
-      // Discovery is an optimization; atomic claims remain the fallback on read failure.
-      this.ctx.emit("job:error", { error: toError(error) });
-      return names;
     }
   }
 
