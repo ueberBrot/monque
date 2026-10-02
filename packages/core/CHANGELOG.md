@@ -1,5 +1,15 @@
 # @monque/core
 
+## 1.16.1
+
+### Patch Changes
+
+- [#585](https://github.com/ueberBrot/monque/pull/585) [`d3ce835`](https://github.com/ueberBrot/monque/commit/d3ce835dec68d0ad7b99bc0529119932a086f100) - Share concurrent scheduler initialization so started timers and change streams remain owned and are released during shutdown. Failed initialization can still be retried.
+
+- [#585](https://github.com/ueberBrot/monque/pull/585) [`d3ce835`](https://github.com/ueberBrot/monque/commit/d3ce835dec68d0ad7b99bc0529119932a086f100) - Keep restarted scheduler streams and heartbeat timers active when an earlier shutdown finishes. Each shutdown waits for the jobs that were already running when it began.
+
+- [#585](https://github.com/ueberBrot/monque/pull/585) [`d3ce835`](https://github.com/ueberBrot/monque/commit/d3ce835dec68d0ad7b99bc0529119932a086f100) - Keep replacement change streams active when a change stream error listener synchronously restarts the scheduler.
+
 ## 1.16.0
 
 ### Minor Changes
