@@ -60,7 +60,7 @@
     "@tsed/mongoose": "^8.40.2",
     "@tsed/platform-http": "^8.40.2",
     "@types/node": "^22.20.4",
-    "cookie": "^1.1.1",
+    "cookie": "^2.0.1",
     "mongodb": "^7.7.0",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
