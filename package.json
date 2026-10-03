@@ -20,6 +20,8 @@
     "prepare": "vp config --no-agent",
     "build": "vp run --filter './packages/*' --filter './apps/*' build",
     "type-check": "vp run --filter './packages/*' --filter './apps/*' type-check && vp lint --type-aware --type-check -A all",
+    "lint:effect": "vp run --filter @monque/core --filter @monque/management lint:effect",
+    "skills": "intent",
     "test": "vp run --filter './packages/*' --filter './apps/*' test",
     "test:unit": "vp run --filter './packages/*' --filter './apps/*' test:unit",
     "test:integration": "vp run --filter './packages/*' --filter './apps/*' test:integration",
@@ -32,8 +34,12 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@effect/language-service": "0.87.3",
+    "@effect/tsgo": "0.48.0",
     "@shadcn/lint": "^0.2.0",
+    "@tanstack/intent": "0.5.2",
     "@types/node": "^22.20.4",
+    "@typescript/native": "npm:typescript@7.0.2",
     "fallow": "3.31.0",
     "knip": "^6.39.0",
     "publint": "^0.3.24",
@@ -56,5 +62,11 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
     "vitest": "5.0.1",
     "vite-plus": "1.0.0"
+  },
+  "intent": {
+    "skills": [
+      "@tanstack/*",
+      "fallow"
+    ]
   }
 }

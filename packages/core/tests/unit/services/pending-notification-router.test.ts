@@ -1,5 +1,9 @@
+import { it as effectIt } from "@effect/vitest";
+import { Clock, Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { fromPromise } from "@/scheduler/effects.js";
 import { PendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
 import { createMockContext } from "@tests/factories";
 
@@ -10,16 +14,19 @@ describe("PendingNotificationRouter", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(() =>
+      BigInt(Math.round(performance.now() * 1_000_000)),
+    );
     ctx = createMockContext();
     onPoll = vi.fn().mockResolvedValue(undefined) as unknown as (
       targetNames?: ReadonlySet<string>,
     ) => Promise<void>;
-    router = new PendingNotificationRouter(ctx, onPoll);
+    router = new PendingNotificationRouter(ctx, (...args) => fromPromise(() => onPoll(...args)));
   });
 
   afterEach(() => {
     router.close();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -50,6 +57,22 @@ describe("PendingNotificationRouter", () => {
 
     expect(onPoll).toHaveBeenCalledOnce();
     expect(onPoll).toHaveBeenCalledWith(new Set(["email"]));
+  });
+
+  it("routes notifications received synchronously while the previous batch starts polling", () => {
+    vi.mocked(onPoll).mockImplementationOnce(() => {
+      router.notifyRunnableJob("sms");
+      return Promise.resolve();
+    });
+
+    router.notifyRunnableJob("email");
+    vi.advanceTimersByTime(100);
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email"]));
+
+    vi.advanceTimersByTime(100);
+    expect(onPoll).toHaveBeenCalledTimes(2);
+    expect(onPoll).toHaveBeenLastCalledWith(new Set(["sms"]));
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("collects names across due deadlines without checking unrelated workers", () => {
@@ -173,7 +196,7 @@ describe("PendingNotificationRouter", () => {
       targetNames?: ReadonlySet<string>,
     ) => Promise<void>;
     router.close();
-    router = new PendingNotificationRouter(ctx, onPoll);
+    router = new PendingNotificationRouter(ctx, (...args) => fromPromise(() => onPoll(...args)));
 
     router.notifyPendingJob("email", new Date(Date.now() - 1000));
     await vi.advanceTimersByTimeAsync(150);
@@ -282,7 +305,7 @@ describe("PendingNotificationRouter", () => {
     const pollError = new Error("Wakeup poll failed");
     onPoll = vi.fn().mockResolvedValue(undefined).mockRejectedValueOnce(pollError);
     router.close();
-    router = new PendingNotificationRouter(ctx, onPoll);
+    router = new PendingNotificationRouter(ctx, (...args) => fromPromise(() => onPoll(...args)));
 
     router.notifyPendingJob("email", new Date(Date.now() + 1000));
     router.notifyPendingJob("sms", new Date(Date.now() + 2000));
@@ -361,4 +384,81 @@ describe("PendingNotificationRouter", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(onPoll).toHaveBeenCalledTimes(4);
   });
+});
+
+describe("PendingNotificationRouter Effect scheduling", () => {
+  effectIt.effect.each([false, true])(
+    "keeps full polling on elapsed time after a backward clock correction, stream active: %s",
+    (streamActive) =>
+      Effect.gen(function* () {
+        const clock = yield* Clock.Clock;
+        let wallOffset = 60_000;
+        const currentTimeMillis = () => clock.currentTimeMillisUnsafe() + wallOffset;
+        yield* Effect.gen(function* () {
+          const context = yield* Effect.context<never>();
+          const ctx = createMockContext();
+          ctx.options.pollInterval = 1000;
+          ctx.options.safetyPollInterval = 3000;
+          const interval = streamActive ? 3000 : 1000;
+          const poll = vi.fn(() => Effect.void);
+          const router = new PendingNotificationRouter(
+            ctx,
+            poll,
+            Effect.runForkWith(context),
+            yield* Clock.Clock,
+          );
+          yield* Effect.addFinalizer(() => Effect.sync(() => router.close()));
+          router.setChangeStreamActive(streamActive);
+          router.start();
+          expect(poll).toHaveBeenCalledTimes(1);
+
+          wallOffset -= 60_000;
+          yield* TestClock.adjust(interval - 1);
+          expect(poll).toHaveBeenCalledTimes(1);
+          yield* TestClock.adjust(1);
+          expect(poll).toHaveBeenCalledTimes(2);
+          yield* TestClock.adjust(interval);
+          expect(poll).toHaveBeenCalledTimes(3);
+        }).pipe(
+          Effect.provideService(Clock.Clock, {
+            ...clock,
+            currentTimeMillis: Effect.sync(currentTimeMillis),
+            currentTimeMillisUnsafe: currentTimeMillis,
+          }),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect(
+    "uses Effect time for the earliest wakeup and cancels later wakeups on close",
+    () =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        const ctx = createMockContext();
+        const polls: (ReadonlySet<string> | undefined)[] = [];
+        const router = new PendingNotificationRouter(
+          ctx,
+          (names) =>
+            Effect.sync(() => {
+              polls.push(names);
+            }),
+          Effect.runForkWith(context),
+          yield* Clock.Clock,
+        );
+        yield* Effect.addFinalizer(() => Effect.sync(() => router.close()));
+        yield* TestClock.setTime(new Date("2025-06-01T12:00:00.000Z").getTime());
+
+        router.notifyPendingJob("late", new Date("2025-06-01T12:00:05.000Z"));
+        router.notifyPendingJob("early", new Date("2025-06-01T12:00:01.000Z"));
+        yield* TestClock.adjust(1199);
+        expect(polls).toEqual([]);
+        yield* TestClock.adjust(1);
+        expect(polls).toEqual([new Set(["early"])]);
+
+        router.close();
+        yield* TestClock.adjust(10000);
+        expect(polls).toEqual([new Set(["early"])]);
+        expect(ctx.emitHistory).toEqual([]);
+      }).pipe(Effect.scoped),
+  );
 });

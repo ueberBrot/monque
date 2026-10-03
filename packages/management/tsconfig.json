@@ -10,6 +10,30 @@
     // Type-check only; vite.config.ts emits declarations via dts: true.
     "noEmit": true,
     "strict": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnostics": true,
+        "diagnosticSeverity": {
+          "floatingEffect": "error",
+          "missingEffectContext": "error",
+          "missingEffectError": "error",
+          "missingStarInYieldEffectGen": "error",
+          "returnEffectInGen": "error",
+          "promiseInEffectSuccess": "error"
+        },
+        "overrides": [
+          {
+            "include": ["src/effects.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "unknownInEffectCatch": "off"
+              }
+            }
+          }
+        ]
+      }
+    ],
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,

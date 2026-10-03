@@ -1,5 +1,13 @@
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FiberHandle from "effect/FiberHandle";
+import * as Scope from "effect/Scope";
+
 import { toError } from "@/shared";
 
+import { observeBackgroundFailure, observeTimerFailure } from "../effects.js";
 import type { SchedulerContext } from "./types.js";
 
 /** Minimum poll interval floor to prevent tight loops (ms) */
@@ -19,6 +27,20 @@ interface WakeupDeadline {
   targetNames: Set<string> | undefined;
 }
 
+function makeTimers() {
+  const scope = Scope.makeUnsafe();
+  const handles = Effect.runSync(
+    Effect.gen(function* () {
+      return {
+        batch: yield* FiberHandle.make<void, never>(),
+        wakeup: yield* FiberHandle.make<void, never>(),
+        fullPoll: yield* FiberHandle.make<void, never>(),
+      };
+    }).pipe(Effect.provideService(Scope.Scope, scope)),
+  );
+  return { scope, ...handles };
+}
+
 /**
  * Owns Pending Notification scheduling, future wakeups, and full discovery deadlines.
  *
@@ -27,42 +49,46 @@ interface WakeupDeadline {
  */
 export class PendingNotificationRouter {
   /** Batch timer for immediate Pending Notifications */
-  private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private batchPending = false;
 
   /** Job names collected during the current batch window for targeted polling */
   private pendingTargetNames: Set<string> = new Set();
   private fullBatchPollRequested = false;
-
-  /** Wakeup timer for the earliest known future Job */
-  private wakeupTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Time of the currently scheduled wakeup */
   private wakeupTime: Date | null = null;
   private readonly wakeups: WakeupDeadline[] = [];
   private wakeupNameCount = 0;
 
-  private fullPollTimer: ReturnType<typeof setTimeout> | null = null;
-  private fullPollDueAt: number | null = null;
-  private changeStreamActive = false;
-  private started = false;
-  private generation = 0;
+  private fullPollDueAt: bigint | null = null;
+  private state = {
+    changeStreamActive: false,
+    started: false,
+    generation: 0,
+    timers: makeTimers(),
+  };
 
   /** Start full discovery, followed by fallback or safety polling. */
   start(): void {
-    if (this.started || !this.ctx.isRunning()) return;
-    this.started = true;
-    void this.pollAndScheduleNext(this.generation);
+    const state = this.state;
+    if (state.started || !this.ctx.isRunning()) return;
+    this.state = { ...state, started: true };
+    observeBackgroundFailure(this.runFork(this.pollAndScheduleNext(state.generation)));
   }
 
   /** Stream availability can shorten, but never postpone, full discovery. */
   setChangeStreamActive(active: boolean): void {
-    this.changeStreamActive = active;
+    this.state = { ...this.state, changeStreamActive: active };
     this.scheduleFullPoll();
   }
 
   constructor(
     private readonly ctx: SchedulerContext,
-    private readonly onPoll: (targetNames?: ReadonlySet<string>) => Promise<void>,
+    private readonly onPoll: (targetNames?: ReadonlySet<string>) => Effect.Effect<void, unknown>,
+    private readonly runFork: <A, E>(
+      effect: Effect.Effect<A, E>,
+    ) => Fiber.Fiber<A, E> = Effect.runFork,
+    private readonly clock: Clock.Clock = Effect.runSync(Clock.Clock),
   ) {}
 
   notifyPendingJob(jobName: string | undefined, nextRunAt: Date): void {
@@ -70,7 +96,7 @@ export class PendingNotificationRouter {
       return;
     }
 
-    if (nextRunAt.getTime() > Date.now()) {
+    if (nextRunAt.getTime() > this.clock.currentTimeMillisUnsafe()) {
       this.scheduleWakeup(jobName, nextRunAt);
       return;
     }
@@ -93,23 +119,22 @@ export class PendingNotificationRouter {
   }
 
   close(): void {
-    this.started = false;
-    this.generation++;
+    const state = this.state;
+    this.state = {
+      ...state,
+      started: false,
+      generation: state.generation + 1,
+      timers: makeTimers(),
+    };
     this.fullPollDueAt = null;
-    if (this.fullPollTimer) {
-      clearTimeout(this.fullPollTimer);
-      this.fullPollTimer = null;
-    }
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-      this.batchTimer = null;
-    }
+    this.batchPending = false;
+    this.wakeupTime = null;
+    this.runFork(Scope.close(state.timers.scope, Exit.void));
 
     this.pendingTargetNames.clear();
     this.fullBatchPollRequested = false;
     this.wakeups.length = 0;
     this.wakeupNameCount = 0;
-    this.clearWakeupTimer();
   }
 
   /**
@@ -119,19 +144,25 @@ export class PendingNotificationRouter {
    * window, then triggers a single targeted poll for only those Workers.
    */
   private scheduleBatchPoll(): void {
-    if (this.batchTimer) {
+    if (this.batchPending) {
       return;
     }
 
-    this.batchTimer = setTimeout(() => {
-      this.batchTimer = null;
-      const names = this.fullBatchPollRequested ? undefined : new Set(this.pendingTargetNames);
-      this.pendingTargetNames.clear();
-      this.fullBatchPollRequested = false;
-      this.onPoll(names).catch((error: unknown) => {
-        this.ctx.emit("job:error", { error: toError(error) });
-      });
-    }, 100);
+    this.batchPending = true;
+    const state = this.state;
+    const fiber = this.runFork(
+      Effect.gen({ self: this }, function* () {
+        yield* Effect.sleep(MIN_POLL_INTERVAL);
+        if (state.generation !== this.state.generation) return;
+        this.batchPending = false;
+        const names = this.fullBatchPollRequested ? undefined : new Set(this.pendingTargetNames);
+        this.pendingTargetNames.clear();
+        this.fullBatchPollRequested = false;
+        observeBackgroundFailure(this.runFork(this.poll(names)));
+      }),
+    );
+    FiberHandle.setUnsafe(state.timers.batch, fiber);
+    observeTimerFailure(fiber);
   }
 
   /**
@@ -180,17 +211,22 @@ export class PendingNotificationRouter {
     const nextRunAt = new Date(this.wakeups[0]!.time);
     this.wakeupTime = nextRunAt;
 
-    const delay = Math.max(nextRunAt.getTime() - Date.now() + POLL_GRACE_PERIOD, MIN_POLL_INTERVAL);
+    const delay = Math.max(
+      nextRunAt.getTime() - this.clock.currentTimeMillisUnsafe() + POLL_GRACE_PERIOD,
+      MIN_POLL_INTERVAL,
+    );
 
-    this.wakeupTimer = setTimeout(
-      () => {
+    const state = this.state;
+    const fiber = this.runFork(
+      Effect.gen({ self: this }, function* () {
+        yield* Effect.sleep(Math.min(delay, MAX_TIMER_DELAY));
+        if (state.generation !== this.state.generation) return;
         this.wakeupTime = null;
-        this.wakeupTimer = null;
         if (delay > MAX_TIMER_DELAY) {
           this.armWakeup();
           return;
         }
-        const now = Date.now();
+        const now = yield* Clock.currentTimeMillis;
         const names = new Set<string>();
         let fullPoll = false;
         while (this.wakeups.length > 0 && this.wakeups[0]!.time <= now) {
@@ -200,60 +236,68 @@ export class PendingNotificationRouter {
           else for (const name of deadline.targetNames) names.add(name);
         }
         if (this.wakeups.length > 0) this.armWakeup();
-        const poll = fullPoll ? this.onPoll() : this.onPoll(names);
-        poll.catch((error: unknown) => {
-          this.ctx.emit("job:error", { error: toError(error) });
-        });
-      },
-      Math.min(delay, MAX_TIMER_DELAY),
+        observeBackgroundFailure(this.runFork(fullPoll ? this.poll() : this.poll(names)));
+      }),
+    );
+    FiberHandle.setUnsafe(state.timers.wakeup, fiber);
+    observeTimerFailure(fiber);
+  }
+
+  private pollAndScheduleNext(generation: number): Effect.Effect<void> {
+    return this.poll().pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (generation === this.state.generation) this.scheduleFullPoll();
+        }),
+      ),
     );
   }
 
-  private async pollAndScheduleNext(generation: number): Promise<void> {
-    try {
-      await this.onPoll();
-    } catch (error) {
-      this.ctx.emit("job:error", { error: toError(error) });
-    } finally {
-      if (generation === this.generation) this.scheduleFullPoll();
-    }
+  private poll(...args: [] | [ReadonlySet<string> | undefined]): Effect.Effect<void> {
+    return Effect.suspend(() => this.onPoll(...args)).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          this.ctx.emit("job:error", { error: toError(error) });
+        }),
+      ),
+    );
   }
 
   private scheduleFullPoll(): void {
-    if (!this.started || !this.ctx.isRunning()) return;
+    const state = this.state;
+    if (!state.started || !this.ctx.isRunning()) return;
 
-    const interval = this.changeStreamActive
+    const interval = state.changeStreamActive
       ? this.ctx.options.safetyPollInterval
       : this.ctx.options.pollInterval;
-    const dueAt = Date.now() + interval;
+    const dueAt = this.clock.monotonicTimeNanosUnsafe() + BigInt(Math.ceil(interval * 1_000_000));
     if (this.fullPollDueAt !== null && this.fullPollDueAt <= dueAt) return;
-    if (this.fullPollTimer) clearTimeout(this.fullPollTimer);
     this.fullPollDueAt = dueAt;
     this.armFullPoll();
   }
 
   private armFullPoll(): void {
     if (this.fullPollDueAt === null) return;
-    const delay = this.fullPollDueAt - Date.now();
-    this.fullPollTimer = setTimeout(
-      () => {
-        this.fullPollTimer = null;
-        if (this.fullPollDueAt !== null && this.fullPollDueAt > Date.now()) {
+    const delay = Number(this.fullPollDueAt - this.clock.monotonicTimeNanosUnsafe()) / 1_000_000;
+    const state = this.state;
+    const fiber = this.runFork(
+      Effect.gen({ self: this }, function* () {
+        yield* Effect.sleep(Math.min(delay, MAX_TIMER_DELAY));
+        if (state.generation !== this.state.generation) return;
+        if (this.fullPollDueAt !== null && this.fullPollDueAt > (yield* Clock.monotonicTimeNanos)) {
           this.armFullPoll();
           return;
         }
         this.fullPollDueAt = null;
-        void this.pollAndScheduleNext(this.generation);
-      },
-      Math.min(delay, MAX_TIMER_DELAY),
+        observeBackgroundFailure(this.runFork(this.pollAndScheduleNext(state.generation)));
+      }),
     );
+    FiberHandle.setUnsafe(state.timers.fullPoll, fiber);
+    observeTimerFailure(fiber);
   }
 
   private clearWakeupTimer(): void {
-    if (this.wakeupTimer) {
-      clearTimeout(this.wakeupTimer);
-      this.wakeupTimer = null;
-    }
+    this.runFork(FiberHandle.clear(this.state.timers.wakeup));
     this.wakeupTime = null;
   }
 }

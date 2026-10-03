@@ -1,6 +1,8 @@
 import type { JobSelector, PersistedJob } from "@monque/core";
 import { ORPCError } from "@orpc/server";
+import * as Effect from "effect/Effect";
 
+import { concurrently, fromPromise } from "../effects.js";
 import type {
   CapabilitiesDto,
   CapabilityActionsDto,
@@ -33,77 +35,79 @@ interface ManagementActionTarget {
 
 /** Shares capability decisions and enforcement for one mounted Management Surface. */
 export function createManagementActionPolicy<TContext>(options: ManagementOptions<TContext>) {
-  return {
-    getCapabilities,
-    requireAction: async (
-      action: ManagementAction,
-      context: TContext,
-      target: ManagementActionTarget = {},
-    ): Promise<void> => {
-      requireAllowed(await getActionDenial(action, context, target));
-    },
+  const requireAction = Effect.fnUntraced(function* (
+    action: ManagementAction,
+    context: TContext,
+    target: ManagementActionTarget = {},
+  ) {
+    yield* requireAllowed(yield* getActionDenial(action, context, target));
+  });
+  const requireSupported = Effect.fnUntraced(function* (action: ManagementAction) {
     // Processing and selected actions reject missing support before checking read-only mode.
-    requireSupported: (action: ManagementAction): void => {
-      if (!isManagementActionSupported(options.monque, action))
-        throwForbidden("Unsupported action");
-    },
-    requireMutation: <TMutator>(
-      action: Exclude<ManagementAction, "read">,
-      mutate: TMutator | undefined,
-    ): TMutator => {
-      requireAllowed(getSupportDenial(action));
-      if (mutate === undefined) throwForbidden("Unsupported action");
-      return mutate;
-    },
-  };
+    if (!isManagementActionSupported(options.monque, action)) {
+      return yield* forbidden("Unsupported action");
+    }
+  });
+  const requireMutation = Effect.fnUntraced(function* <TMutator>(
+    action: Exclude<ManagementAction, "read">,
+    mutate: TMutator | undefined,
+  ): Effect.fn.Return<TMutator, ORPCError<"FORBIDDEN", unknown>> {
+    yield* requireAllowed(getSupportDenial(action));
+    if (mutate === undefined) return yield* forbidden("Unsupported action");
+    return mutate;
+  });
 
-  async function getCapabilities(
+  const getCapabilities = Effect.fnUntraced(function* (
     context: TContext,
     processingTarget: ManagementActionTarget = {},
-  ): Promise<CapabilitiesDto> {
+  ): Effect.fn.Return<CapabilitiesDto, unknown> {
     const readOnly = options.readOnly ?? false;
     const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
-    const check = async (action: ManagementAction): Promise<void> => {
+    const check = Effect.fnUntraced(function* (action: ManagementAction) {
       actions[action] =
-        (await getActionDenial(
+        (yield* getActionDenial(
           action,
           context,
           action === "pause" || action === "resume" ? processingTarget : {},
           isManagementActionSupported(options.monque, action),
         )) === undefined;
-    };
+    });
     if (options.parallelCapabilityChecks) {
-      await Promise.all(MANAGEMENT_ACTIONS.map(check));
+      yield* concurrently(MANAGEMENT_ACTIONS.map(check));
     } else {
-      for (const action of MANAGEMENT_ACTIONS) await check(action);
+      yield* Effect.forEach(MANAGEMENT_ACTIONS, check, { discard: true });
     }
     return { readOnly, actions };
-  }
+  });
 
-  async function getActionDenial(
+  const getActionDenial = Effect.fnUntraced(function* (
     action: ManagementAction,
     context: TContext,
     target: ManagementActionTarget = {},
     supported = true,
-  ): Promise<string | undefined> {
+  ) {
     const denial = getSupportDenial(action, supported);
     if (denial !== undefined) return denial;
     if (
       options.authorize &&
-      !(await options.authorize({
-        action,
-        context,
-        job: target.job,
-        selector: target.selector,
-        ids: target.ids,
-        ...(target.name === undefined ? {} : { name: target.name }),
-        ...(target.instanceId === undefined ? {} : { instanceId: target.instanceId }),
-      }))
+      !(yield* fromPromise(() =>
+        options.authorize!({
+          action,
+          context,
+          job: target.job,
+          selector: target.selector,
+          ids: target.ids,
+          ...(target.name === undefined ? {} : { name: target.name }),
+          ...(target.instanceId === undefined ? {} : { instanceId: target.instanceId }),
+        }),
+      ))
     ) {
       return action === "read" ? "Read access denied" : "Action denied";
     }
     return undefined;
-  }
+  });
+
+  return { getCapabilities, requireAction, requireSupported, requireMutation };
 
   function getSupportDenial(action: ManagementAction, supported = true): string | undefined {
     if (options.readOnly && action !== "read") return "Management surface is read-only";
@@ -135,10 +139,10 @@ function isManagementActionSupported(monque: ManagementMonque, action: Managemen
   }
 }
 
-function requireAllowed(denial: string | undefined): void {
-  if (denial !== undefined) throwForbidden(denial);
+function requireAllowed(denial: string | undefined) {
+  return denial === undefined ? Effect.void : forbidden(denial);
 }
 
-function throwForbidden(message: string): never {
-  throw new ORPCError("FORBIDDEN", { message });
+function forbidden(message: string) {
+  return Effect.fail(new ORPCError("FORBIDDEN", { message }));
 }

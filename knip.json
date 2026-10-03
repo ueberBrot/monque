@@ -2,7 +2,14 @@
   "$schema": "./node_modules/knip/schema.json",
   "ignore": ["specs/**", ".agents/**"],
   "ignoreBinaries": [],
-  "ignoreDependencies": ["@fontsource/quicksand", "sharp", "vite", "vitest", "unplugin-unused"],
+  "ignoreDependencies": [
+    "@fontsource/quicksand",
+    "@typescript/native",
+    "sharp",
+    "vite",
+    "vitest",
+    "unplugin-unused"
+  ],
   "workspaces": {
     "apps/docs": {
       "entry": [],

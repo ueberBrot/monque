@@ -33,14 +33,19 @@ export default defineConfig({
         command: "rimraf dist",
         cache: false,
       },
-      "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
+      "lint:effect": {
+        command: "effect-tsgo diagnostics --project tsconfig.json",
         dependsOn: [
           {
             task: "build",
             from: ["dependencies", "devDependencies"],
           },
         ],
+        cache: false,
+      },
+      "type-check": {
+        command: "vp lint --type-aware --type-check -A all",
+        dependsOn: ["lint:effect"],
         cache: { output: [] },
       },
       test: {

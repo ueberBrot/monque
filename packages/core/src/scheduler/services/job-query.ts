@@ -1,3 +1,5 @@
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
 import type { Document, ObjectId, WithId } from "mongodb";
 
 import {
@@ -20,6 +22,7 @@ import {
   toError,
 } from "@/shared";
 
+import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery, parseJobNameFilter, resolveQueryLimit } from "../helpers.js";
 import { CursorListing } from "./cursor-listing.js";
 import { QueryCache } from "./query-cache.js";
@@ -73,8 +76,14 @@ function isMongoMaxTimeMSExpiredError(error: Error): boolean {
  * @internal Not part of public API - use Monque class methods instead.
  */
 export class JobQueryService {
-  private readonly statsCache = new QueryCache<QueueStats>();
-  private readonly queueViewCache = new QueryCache<ReadonlyMap<string, QueueStats>>();
+  private readonly statsCache = new QueryCache<
+    QueueStats,
+    ConnectionError | AggregationTimeoutError
+  >();
+  private readonly queueViewCache = new QueryCache<
+    ReadonlyMap<string, QueueStats>,
+    ConnectionError | AggregationTimeoutError
+  >();
 
   private readonly cursorListing: CursorListing;
 
@@ -90,7 +99,6 @@ export class JobQueryService {
    *
    * @template T - The expected type of the job data payload
    * @param id - The job's ObjectId
-   * @returns Promise resolving to the job if found, null otherwise
    * @throws {ConnectionError} If scheduler not initialized
    *
    * @example Look up job from event
@@ -113,21 +121,29 @@ export class JobQueryService {
    * });
    * ```
    */
-  async getJob<T = unknown>(id: ObjectId): Promise<PersistedJob<T> | null> {
-    try {
-      const doc = await this.ctx.collection.findOne({ _id: id });
+  getJob = Effect.fnUntraced(function* <T = unknown>(
+    this: JobQueryService,
+    id: ObjectId,
+  ): Effect.fn.Return<PersistedJob<T> | null, ConnectionError> {
+    return yield* Effect.gen({ self: this }, function* () {
+      const doc = yield* fromPromise(() => this.ctx.collection.findOne({ _id: id }));
       if (!doc) {
         return null;
       }
       return this.ctx.documentToPersistedJob<T>(doc as WithId<Document>);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error during getJob";
-      throw new ConnectionError(
-        `Failed to get job: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
-    }
-  }
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        const message = error instanceof Error ? error.message : "Unknown error during getJob";
+        return Effect.fail(
+          new ConnectionError(
+            `Failed to get job: ${message}`,
+            error instanceof Error ? { cause: error } : undefined,
+          ),
+        );
+      }),
+    );
+  });
 
   /**
    * Query jobs from the queue with optional filters.
@@ -137,7 +153,6 @@ export class JobQueryService {
    *
    * @template T - The expected type of the job data payload
    * @param filter - Optional filter criteria
-   * @returns Promise resolving to array of matching jobs
    * @throws {ConnectionError} If scheduler not initialized
    *
    * @example Get all pending jobs
@@ -171,28 +186,40 @@ export class JobQueryService {
    * const pendingRecurring = jobs.filter(job => isPendingJob(job) && isRecurringJob(job));
    * ```
    */
-  async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-    const query = buildSelectorQuery(filter);
+  getJobs = Effect.fnUntraced(function* <T = unknown>(
+    this: JobQueryService,
+    filter: GetJobsFilter = {},
+  ): Effect.fn.Return<PersistedJob<T>[], unknown> {
+    const { query, limit, skip } = yield* attempt(() => {
+      const query = buildSelectorQuery(filter);
 
-    const limit = resolveQueryLimit(filter.limit, 100);
-    const skip = filter.skip === undefined ? 0 : filter.skip;
-    if (!Number.isSafeInteger(skip) || skip < 0) {
-      throw new InvalidJobQueryError("skip must be a non-negative safe integer");
-    }
+      const limit = resolveQueryLimit(filter.limit, 100);
+      const skip = filter.skip === undefined ? 0 : filter.skip;
+      if (!Number.isSafeInteger(skip) || skip < 0) {
+        throw new InvalidJobQueryError("skip must be a non-negative safe integer");
+      }
+      return { query, limit, skip };
+    });
 
-    try {
-      const cursor = this.ctx.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit);
-
-      const docs = await cursor.toArray();
-      return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error during getJobs";
-      throw new ConnectionError(
-        `Failed to query jobs: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
+    return yield* Effect.gen({ self: this }, function* () {
+      const docs = yield* fromPromise(() =>
+        this.ctx.collection.find(query).sort({ nextRunAt: 1 }).skip(skip).limit(limit).toArray(),
       );
-    }
-  }
+
+      return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        const message = error instanceof Error ? error.message : "Unknown error during getJobs";
+        return Effect.fail(
+          new ConnectionError(
+            `Failed to query jobs: ${message}`,
+            error instanceof Error ? { cause: error } : undefined,
+          ),
+        );
+      }),
+    );
+  });
 
   /**
    * Get a paginated list of jobs using opaque cursors.
@@ -224,14 +251,16 @@ export class JobQueryService {
    * ```
    */
 
-  async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+  getJobsWithCursor<T = unknown>(
+    options: CursorOptions = {},
+  ): Effect.Effect<CursorPage<T>, unknown> {
     return this.cursorListing.getJobsWithCursor<T>(options);
   }
 
   /** List job metadata using the same cursor as full listings, without reading payloads. */
   // Called through Monque in the public facade.
   // fallow-ignore-next-line unused-class-member
-  async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
+  getJobSummariesWithCursor(options: CursorOptions = {}): Effect.Effect<JobSummaryPage, unknown> {
     return this.cursorListing.getJobSummariesWithCursor(options);
   }
 
@@ -255,7 +284,6 @@ export class JobQueryService {
    * Set `statsCacheTtlMs: 0` to disable caching.
    *
    * @param filter - Optional filter to scope statistics by job name
-   * @returns Promise resolving to queue statistics
    * @throws {AggregationTimeoutError} If aggregation exceeds 30 second timeout
    * @throws {ConnectionError} If database operation fails
    *
@@ -271,15 +299,21 @@ export class JobQueryService {
    * console.log(`${emailStats.total} email jobs in queue`);
    * ```
    */
-  async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    const name = parseJobNameFilter(filter === undefined ? {} : filter);
-    const stats = await this.statsCache.get(name ?? "", this.ctx.options.statsCacheTtlMs, () =>
+  getQueueStats = Effect.fnUntraced(function* (
+    this: JobQueryService,
+    filter?: Pick<JobSelector, "name">,
+  ): Effect.fn.Return<QueueStats, unknown> {
+    const name = yield* attempt(() => parseJobNameFilter(filter === undefined ? {} : filter));
+    const stats = yield* this.statsCache.get(name ?? "", this.ctx.options.statsCacheTtlMs, () =>
       this.loadQueueStats(name),
     );
     return { ...stats };
-  }
+  });
 
-  private async loadQueueStats(name?: string): Promise<QueueStats> {
+  private loadQueueStats = Effect.fnUntraced(function* (
+    this: JobQueryService,
+    name?: string,
+  ): Effect.fn.Return<QueueStats, ConnectionError | AggregationTimeoutError> {
     const pipeline: Document[] = [
       // Optional match stage for filtering by name
       ...(name === undefined ? [] : [{ $match: { name } }]),
@@ -321,14 +355,16 @@ export class JobQueryService {
       },
     ];
 
-    try {
-      const results = await this.ctx.collection
-        .aggregate<{
-          statusCounts: Array<{ _id: string; count: number }>;
-          total: Array<{ count: number }>;
-          avgDuration: Array<{ avgMs: number | null }>;
-        }>(pipeline, { maxTimeMS: 30000 })
-        .toArray();
+    return yield* Effect.gen({ self: this }, function* () {
+      const results = yield* fromPromise(() =>
+        this.ctx.collection
+          .aggregate<{
+            statusCounts: Array<{ _id: string; count: number }>;
+            total: Array<{ count: number }>;
+            avgDuration: Array<{ avgMs: number | null }>;
+          }>(pipeline, { maxTimeMS: 30000 })
+          .toArray(),
+      );
 
       const result = results[0];
 
@@ -345,16 +381,20 @@ export class JobQueryService {
       }
 
       return stats;
-    } catch (error) {
-      const err = toError(error);
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const err = toError(Cause.squash(cause));
 
-      if (isMongoMaxTimeMSExpiredError(err)) {
-        throw new AggregationTimeoutError();
-      }
+        if (isMongoMaxTimeMSExpiredError(err)) {
+          return Effect.fail(new AggregationTimeoutError());
+        }
 
-      throw new ConnectionError(`Failed to get queue stats: ${err.message}`, { cause: err });
-    }
-  }
+        return Effect.fail(
+          new ConnectionError(`Failed to get queue stats: ${err.message}`, { cause: err }),
+        );
+      }),
+    );
+  });
 
   /**
    * Get operator-facing Queue View summaries grouped by Job Name.
@@ -363,11 +403,12 @@ export class JobQueryService {
    * Summaries are sorted by Job Name and contain immutable statistics and Worker
    * observability snapshots.
    */
-  async getQueueViewSummaries(
+  getQueueViewSummaries = Effect.fnUntraced(function* (
+    this: JobQueryService,
     filter?: Pick<JobSelector, "name">,
-  ): Promise<readonly QueueViewSummary[]> {
-    const nameFilter = parseJobNameFilter(filter === undefined ? {} : filter);
-    const persistedStats = await this.queueViewCache.get(
+  ): Effect.fn.Return<readonly QueueViewSummary[], unknown> {
+    const nameFilter = yield* attempt(() => parseJobNameFilter(filter === undefined ? {} : filter));
+    const persistedStats = yield* this.queueViewCache.get(
       JSON.stringify(nameFilter ?? null),
       this.ctx.options.statsCacheTtlMs,
       () => this.loadQueueViewStats(nameFilter),
@@ -410,52 +451,57 @@ export class JobQueryService {
       });
 
     return Object.freeze(summaries);
-  }
-  private async loadQueueViewStats(name?: string): Promise<ReadonlyMap<string, QueueStats>> {
+  });
+  private loadQueueViewStats = Effect.fnUntraced(function* (
+    this: JobQueryService,
+    name?: string,
+  ): Effect.fn.Return<ReadonlyMap<string, QueueStats>, ConnectionError | AggregationTimeoutError> {
     const persistedStats = new Map<string, QueueStats>();
 
-    try {
-      const results = await this.ctx.collection
-        .aggregate<QueueViewStatsDocument>(
-          [
-            ...(name === undefined ? [] : [{ $match: { name } }]),
-            {
-              $group: {
-                _id: "$name",
-                pending: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.PENDING] }, 1, 0] },
-                },
-                processing: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.PROCESSING] }, 1, 0] },
-                },
-                completed: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
-                },
-                failed: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.FAILED] }, 1, 0] },
-                },
-                cancelled: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.CANCELLED] }, 1, 0] },
-                },
-                total: { $sum: 1 },
-                completedDurationTotal: {
-                  $sum: {
-                    $cond: [
-                      { $eq: ["$status", JobStatus.COMPLETED] },
-                      { $subtract: ["$updatedAt", "$createdAt"] },
-                      0,
-                    ],
+    return yield* Effect.gen({ self: this }, function* () {
+      const results = yield* fromPromise(() =>
+        this.ctx.collection
+          .aggregate<QueueViewStatsDocument>(
+            [
+              ...(name === undefined ? [] : [{ $match: { name } }]),
+              {
+                $group: {
+                  _id: "$name",
+                  pending: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.PENDING] }, 1, 0] },
+                  },
+                  processing: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.PROCESSING] }, 1, 0] },
+                  },
+                  completed: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
+                  },
+                  failed: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.FAILED] }, 1, 0] },
+                  },
+                  cancelled: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.CANCELLED] }, 1, 0] },
+                  },
+                  total: { $sum: 1 },
+                  completedDurationTotal: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$status", JobStatus.COMPLETED] },
+                        { $subtract: ["$updatedAt", "$createdAt"] },
+                        0,
+                      ],
+                    },
+                  },
+                  completedDurationCount: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
                   },
                 },
-                completedDurationCount: {
-                  $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
-                },
               },
-            },
-          ],
-          { maxTimeMS: 30000 },
-        )
-        .toArray();
+            ],
+            { maxTimeMS: 30000 },
+          )
+          .toArray(),
+      );
 
       for (const result of results) {
         const stats: QueueStats = {
@@ -477,18 +523,21 @@ export class JobQueryService {
 
         persistedStats.set(result._id, stats);
       }
-    } catch (error) {
-      const err = toError(error);
+      return persistedStats;
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const err = toError(Cause.squash(cause));
 
-      if (isMongoMaxTimeMSExpiredError(err)) {
-        throw new AggregationTimeoutError();
-      }
+        if (isMongoMaxTimeMSExpiredError(err)) {
+          return Effect.fail(new AggregationTimeoutError());
+        }
 
-      throw new ConnectionError(`Failed to get queue view summaries: ${err.message}`, {
-        cause: err,
-      });
-    }
-
-    return persistedStats;
-  }
+        return Effect.fail(
+          new ConnectionError(`Failed to get queue view summaries: ${err.message}`, {
+            cause: err,
+          }),
+        );
+      }),
+    );
+  });
 }

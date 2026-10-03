@@ -1,7 +1,13 @@
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FiberHandle from "effect/FiberHandle";
+import * as Scope from "effect/Scope";
 import type { ChangeStream, ChangeStreamDocument, Document } from "mongodb";
 
 import { JobStatus } from "@/jobs";
 
+import { attempt, fromPromise, observeTimerFailure } from "../effects.js";
 import type { PendingNotificationRouter } from "./pending-notification-router.js";
 import type { SchedulerContext } from "./types.js";
 
@@ -19,7 +25,10 @@ import type { SchedulerContext } from "./types.js";
  */
 export class ChangeStreamHandler {
   /** MongoDB Change Stream for real-time job notifications */
-  private changeStream: ChangeStream | null = null;
+  private changeStream: {
+    cursor: ChangeStream;
+    scope: Scope.Closeable;
+  } | null = null;
 
   /** Number of consecutive reconnection attempts */
   private reconnectAttempts = 0;
@@ -28,7 +37,10 @@ export class ChangeStreamHandler {
   private readonly maxReconnectAttempts = 3;
 
   /** Timer ID for reconnection with exponential backoff */
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: {
+    scope: Scope.Closeable;
+    handle: FiberHandle.FiberHandle<void>;
+  } | null = null;
 
   /** Whether the scheduler is currently using change streams */
   private usingChangeStreams = false;
@@ -36,6 +48,9 @@ export class ChangeStreamHandler {
   constructor(
     private readonly ctx: SchedulerContext,
     private readonly pendingNotifications: PendingNotificationRouter,
+    private readonly runFork: <A, E>(
+      effect: Effect.Effect<A, E>,
+    ) => Fiber.Fiber<A, E> = Effect.runFork,
   ) {}
 
   /**
@@ -58,6 +73,7 @@ export class ChangeStreamHandler {
     }
 
     this.clearReconnectTimer();
+    const scope = Scope.makeUnsafe();
 
     try {
       // Create change stream with pipeline to filter relevant events
@@ -93,30 +109,33 @@ export class ChangeStreamHandler {
         },
       ];
 
-      const changeStream = this.ctx.collection.watch(pipeline, {
-        fullDocument: "updateLookup",
-      });
-      this.changeStream = changeStream;
+      const changeStream = Effect.runSync(
+        Effect.acquireRelease(
+          attempt(() => this.ctx.collection.watch(pipeline, { fullDocument: "updateLookup" })),
+          (cursor) => fromPromise(() => cursor.close()).pipe(Effect.ignore),
+        ).pipe(Effect.provideService(Scope.Scope, scope)),
+      );
+      this.changeStream = { cursor: changeStream, scope };
 
       // watch() is lazy: a token or change confirms a successful server response.
       changeStream.on("resumeTokenChanged", () => {
-        if (this.changeStream === changeStream) {
+        if (this.changeStream?.cursor === changeStream) {
           this.reconnectAttempts = 0;
         }
       });
 
       // Handle change events
       changeStream.on("change", (change) => {
-        if (this.changeStream !== changeStream) return;
+        if (this.changeStream?.cursor !== changeStream) return;
         this.reconnectAttempts = 0;
         this.handleEvent(change);
       });
 
       // Handle errors with reconnection
       changeStream.on("error", (error: Error) => {
-        if (this.changeStream !== changeStream) return;
+        if (this.changeStream?.cursor !== changeStream) return;
         this.ctx.emit("changestream:error", { error });
-        if (this.changeStream === changeStream) this.handleError(error);
+        if (this.changeStream?.cursor === changeStream) this.handleError(error);
       });
 
       // Mark as connected
@@ -125,8 +144,9 @@ export class ChangeStreamHandler {
       this.ctx.emit("changestream:connected", undefined);
     } catch (error) {
       // Change streams not available (e.g., standalone MongoDB)
-      this.usingChangeStreams = false;
-      this.pendingNotifications.setChangeStreamActive(false);
+      if (this.changeStream?.scope === scope) this.changeStream = null;
+      if (!this.changeStream) this.resetActiveState();
+      this.runFork(Scope.close(scope, Exit.void));
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.ctx.emit("changestream:fallback", { reason });
     }
@@ -240,10 +260,22 @@ export class ChangeStreamHandler {
       return;
     }
 
-    this.reconnectTimer = setTimeout(() => {
-      this.clearReconnectTimer();
-      this.reconnect();
-    }, delay);
+    const scope = Scope.makeUnsafe();
+    const handle = Effect.runSync(
+      FiberHandle.make<void>().pipe(Effect.provideService(Scope.Scope, scope)),
+    );
+    this.reconnectTimer = { scope, handle };
+    const fiber = this.runFork(
+      Effect.gen({ self: this }, function* () {
+        yield* Effect.sleep(delay);
+        if (this.reconnectTimer?.handle !== handle) return;
+        this.reconnectTimer = null;
+        this.reconnect();
+      }),
+    );
+    FiberHandle.setUnsafe(handle, fiber);
+    fiber.addObserver(() => this.runFork(Scope.close(scope, Exit.void)));
+    observeTimerFailure(fiber);
   }
 
   private reconnect(): void {
@@ -257,12 +289,13 @@ export class ChangeStreamHandler {
   }
 
   private clearReconnectTimer(): void {
-    if (!this.reconnectTimer) {
+    const timer = this.reconnectTimer;
+    if (!timer) {
       return;
     }
 
-    clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.runFork(Scope.close(timer.scope, Exit.void));
   }
 
   /**
@@ -279,13 +312,15 @@ export class ChangeStreamHandler {
   private closeChangeStream(): void {
     const changeStream = this.changeStream;
     this.changeStream = null;
-    changeStream?.close().catch(() => {});
+    if (changeStream) {
+      this.runFork(Scope.close(changeStream.scope, Exit.void));
+    }
   }
 
   /**
    * Close the change stream cursor and emit closed event.
    */
-  async close(): Promise<void> {
+  close = Effect.fnUntraced(function* (this: ChangeStreamHandler): Effect.fn.Return<void, unknown> {
     const wasActive = this.usingChangeStreams;
     const changeStream = this.changeStream;
     this.changeStream = null;
@@ -296,15 +331,12 @@ export class ChangeStreamHandler {
     this.clearReconnectTimer();
 
     if (changeStream) {
-      try {
-        await changeStream.close();
-      } catch {
-        // Ignore close errors during shutdown
-      }
+      // Ignore close errors during shutdown
+      yield* Scope.close(changeStream.scope, Exit.void);
 
       if (wasActive) {
         this.ctx.emit("changestream:closed", undefined);
       }
     }
-  }
+  });
 }

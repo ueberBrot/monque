@@ -54,6 +54,36 @@ describe("Monque", () => {
     });
   });
 
+  it.each(["cancelJobs", "retryJobs", "deleteJobs"] as const)(
+    "%s preserves an original selector name getter failure",
+    async (operation) => {
+      await monque.initialize();
+      const failure = new Error("Selector name unavailable");
+      const selector = {
+        get name(): string {
+          throw failure;
+        },
+      };
+
+      await expect(monque[operation](selector)).rejects.toBe(failure);
+    },
+  );
+
+  it.each(["cancelJobs", "retryJobs", "deleteJobs"] as const)(
+    "%s preserves an original selector status getter failure",
+    async (operation) => {
+      await monque.initialize();
+      const failure = new Error("Selector status unavailable");
+      const selector = {
+        get status(): "pending" {
+          throw failure;
+        },
+      };
+
+      await expect(monque[operation](selector)).rejects.toBe(failure);
+    },
+  );
+
   describe("initialize", () => {
     it("should initialize successfully", async () => {
       await monque.initialize();
@@ -123,6 +153,36 @@ describe("Monque", () => {
       await monque.initialize();
       await expect(monque.getJob("invalid-id")).resolves.toBeNull();
       expect(mockCollection.createIndexes).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries failed ownership recovery without publishing partially initialized modules", async () => {
+      const recovery = Promise.withResolvers<Awaited<ReturnType<Collection["updateMany"]>>>();
+      vi.mocked(mockCollection.updateMany).mockReturnValueOnce(recovery.promise);
+      const first = monque.initialize().catch((error: unknown) => error);
+      const second = monque.initialize().catch((error: unknown) => error);
+
+      expect(() => monque.start()).toThrow(ConnectionError);
+      await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
+      recovery.reject(new Error("Recovery unavailable"));
+      const failures = await Promise.all([first, second]);
+
+      expect(failures[0]).toBeInstanceOf(ConnectionError);
+      expect(failures[0]).toEqual(
+        new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
+      );
+      expect(failures[1]).toBe(failures[0]);
+      expect(mockCollection.updateMany).toHaveBeenCalledOnce();
+      expect(mockCollection.findOne).not.toHaveBeenCalled();
+
+      await monque.initialize();
+      expect(mockCollection.updateMany).toHaveBeenCalledTimes(2);
+      expect(mockCollection.findOne).toHaveBeenCalledOnce();
+      await expect(monque.getJob(new ObjectId())).resolves.toBeNull();
+      await expect(monque.enqueue("recovered", {})).resolves.toMatchObject({
+        name: "recovered",
+        status: "pending",
+      });
+      expect(monque.isHealthy()).toBe(false);
     });
 
     it("shares initialization work and keeps ownership of started resources", async () => {

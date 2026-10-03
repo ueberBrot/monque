@@ -1,3 +1,5 @@
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
 import {
   BSON,
   type BulkWriteResult,
@@ -26,6 +28,7 @@ import {
   validateUniqueKey,
 } from "@/shared";
 
+import { attempt, fromPromise } from "../effects.js";
 import type { SchedulerContext } from "./types.js";
 
 /**
@@ -76,12 +79,13 @@ export class JobIntake {
     }
   }
 
-  private async persistPendingJob<T>(
+  private persistPendingJob = Effect.fnUntraced(function* <T>(
+    this: JobIntake,
     operation: "enqueue" | "schedule",
     job: Omit<Job<T>, "_id">,
     options: EnqueueOptions | ScheduleOptions,
-  ): Promise<PersistedJob<T>> {
-    try {
+  ): Effect.fn.Return<PersistedJob<T>, unknown> {
+    return yield* Effect.gen({ self: this }, function* () {
       const { uniqueKey, session } = options;
       if (uniqueKey !== undefined) {
         const filter = {
@@ -89,112 +93,125 @@ export class JobIntake {
           uniqueKey,
           status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
         };
-        const result = await this.ctx.collection
-          .findOneAndUpdate(
+        const result = yield* fromPromise(() =>
+          this.ctx.collection.findOneAndUpdate(
             filter,
-            {
-              $setOnInsert: job,
-            },
+            { $setOnInsert: job },
             {
               upsert: true,
               returnDocument: "after",
               ...(session && { session }),
             },
-          )
-          .catch(async (error: unknown) => {
-            if (session?.inTransaction()) throw error;
-            if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
-            const pattern: unknown = error["keyPattern"];
-            if (
-              typeof pattern !== "object" ||
-              pattern === null ||
-              !("name" in pattern) ||
-              pattern.name !== 1 ||
-              !("uniqueKey" in pattern) ||
-              pattern.uniqueKey !== 1 ||
-              Object.keys(pattern).length !== 2
-            )
-              throw error;
-            const existing = await this.ctx.collection.findOne(filter, {
-              readPreference: "primary",
-              ...(session && { session }),
-            });
-            if (!existing) throw error;
-            return existing;
-          });
+          ),
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.gen({ self: this }, function* () {
+              if (session?.inTransaction()) return yield* Effect.fail(error);
+              if (!(error instanceof MongoServerError) || error.code !== 11000)
+                return yield* Effect.fail(error);
+              const pattern: unknown = error["keyPattern"];
+              if (
+                typeof pattern !== "object" ||
+                pattern === null ||
+                !("name" in pattern) ||
+                pattern.name !== 1 ||
+                !("uniqueKey" in pattern) ||
+                pattern.uniqueKey !== 1 ||
+                Object.keys(pattern).length !== 2
+              )
+                return yield* Effect.fail(error);
+              const existing = yield* fromPromise(() =>
+                this.ctx.collection.findOne(filter, {
+                  readPreference: "primary",
+                  ...(session && { session }),
+                }),
+              );
+              if (!existing) return yield* Effect.fail(error);
+              return existing;
+            }),
+          ),
+        );
 
         if (!result) {
-          throw new ConnectionError(
-            `Failed to ${operation} job: findOneAndUpdate returned no document`,
+          return yield* Effect.fail(
+            new ConnectionError(
+              `Failed to ${operation} job: findOneAndUpdate returned no document`,
+            ),
           );
         }
 
-        const persistedJob = this.ctx.documentToPersistedJob<T>(result);
+        const persistedJob = yield* attempt(() => this.ctx.documentToPersistedJob<T>(result));
         if (persistedJob.status === JobStatus.PENDING && !session?.inTransaction()) {
-          this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+          yield* attempt(() =>
+            this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt),
+          );
         }
-
         return persistedJob;
       }
 
-      const result = await this.ctx.collection.insertOne(
-        job as Document,
-        session ? { session } : undefined,
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.insertOne(job as Document, session ? { session } : undefined),
       );
-      const persistedJob = { ...job, _id: result.insertedId } as PersistedJob<T>;
-      if (!session?.inTransaction())
-        this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
-
+      const persistedJob = yield* attempt(
+        () => ({ ...job, _id: result.insertedId }) as PersistedJob<T>,
+      );
+      if (!session?.inTransaction()) {
+        yield* attempt(() => this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt));
+      }
       return persistedJob;
-    } catch (error) {
-      if (options.session?.inTransaction() || error instanceof ConnectionError) throw error;
-      const cause = toError(error);
-      throw new ConnectionError(`Failed to ${operation} job: ${cause.message}`, { cause });
-    }
-  }
+    }).pipe(
+      Effect.mapError((error) => {
+        if (options.session?.inTransaction() || error instanceof ConnectionError) return error;
+        const cause = toError(error);
+        return new ConnectionError(`Failed to ${operation} job: ${cause.message}`, { cause });
+      }),
+    );
+  });
 
-  async schedule<T>(
+  schedule = Effect.fnUntraced(function* <T>(
+    this: JobIntake,
     cron: string,
     name: string,
     data: T,
     options: ScheduleOptions = {},
-  ): Promise<PersistedJob<T>> {
-    this.validateJobIdentifiers(name, options.uniqueKey);
-    this.validatePayloadSize(data);
+  ): Effect.fn.Return<PersistedJob<T>, unknown> {
+    yield* attempt(() => {
+      this.validateJobIdentifiers(name, options.uniqueKey);
+      this.validatePayloadSize(data);
+    });
+    const referenceDate = yield* DateTime.nowAsDate;
+    const nextRunAt = yield* attempt(() => getNextCronDate(cron, referenceDate, options.timezone));
+    const now = yield* DateTime.nowAsDate;
+    const job = yield* attempt(() => {
+      const pendingJob: Omit<Job<T>, "_id"> = {
+        name,
+        data,
+        status: JobStatus.PENDING,
+        nextRunAt,
+        repeatInterval: cron,
+        failCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (options.timezone !== undefined) pendingJob.timezone = options.timezone;
+      if (options.uniqueKey !== undefined) pendingJob.uniqueKey = options.uniqueKey;
+      return pendingJob;
+    });
+    return yield* this.persistPendingJob("schedule", job, options);
+  });
 
-    const nextRunAt = getNextCronDate(cron, undefined, options.timezone);
-    const now = new Date();
-    const job: Omit<Job<T>, "_id"> = {
-      name,
-      data,
-      status: JobStatus.PENDING,
-      nextRunAt,
-      repeatInterval: cron,
-      failCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    if (options.timezone !== undefined) {
-      job.timezone = options.timezone;
-    }
-
-    if (options.uniqueKey !== undefined) {
-      job.uniqueKey = options.uniqueKey;
-    }
-
-    return this.persistPendingJob("schedule", job, options);
-  }
-
-  private createEnqueuedJob<T>(
+  private createEnqueuedJob = Effect.fnUntraced(function* <T>(
+    this: JobIntake,
     name: string,
     data: T,
     options: EnqueueOptions,
-  ): Omit<Job<T>, "_id"> {
-    this.validateJobIdentifiers(name, options.uniqueKey);
-    this.validatePayloadSize(data);
+  ): Effect.fn.Return<Omit<Job<T>, "_id">, unknown> {
+    yield* attempt(() => {
+      this.validateJobIdentifiers(name, options.uniqueKey);
+      this.validatePayloadSize(data);
+    });
 
-    const now = new Date();
+    const now = yield* DateTime.nowAsDate;
     const job: Omit<Job<T>, "_id"> = {
       name,
       data,
@@ -210,24 +227,32 @@ export class JobIntake {
     }
 
     return job;
-  }
+  });
 
-  async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-    const job = this.createEnqueuedJob(name, data, options);
-    return this.persistPendingJob("enqueue", job, options);
-  }
+  enqueue = Effect.fnUntraced(function* <T>(
+    this: JobIntake,
+    name: string,
+    data: T,
+    options: EnqueueOptions = {},
+  ): Effect.fn.Return<PersistedJob<T>, unknown> {
+    const job = yield* this.createEnqueuedJob(name, data, options);
+    return yield* this.persistPendingJob("enqueue", job, options);
+  });
 
-  async enqueueMany(
+  enqueueMany = Effect.fnUntraced(function* (
+    this: JobIntake,
     inputs: readonly EnqueueJob[],
     options: JobWriteOptions = {},
-  ): Promise<EnqueueManyResult> {
+  ): Effect.fn.Return<EnqueueManyResult, unknown> {
     const { session } = options;
-    const jobs = inputs.map((input) => this.createEnqueuedJob(input.name, input.data, input));
+    const jobs = yield* Effect.forEach(inputs, (input) =>
+      this.createEnqueuedJob(input.name, input.data, input),
+    );
     if (jobs.length === 0) return { insertedCount: 0, deduplicatedCount: 0 };
 
     let result: BulkWriteResult | undefined;
-    try {
-      result = await this.ctx.collection.bulkWrite(
+    const outcome = yield* fromPromise(() =>
+      this.ctx.collection.bulkWrite(
         jobs.map((job) => ({
           updateOne: {
             filter:
@@ -243,58 +268,76 @@ export class JobIntake {
           },
         })),
         { ordered: false, ...(session && { session }) },
-      );
-      return { insertedCount: result.upsertedCount, deduplicatedCount: result.matchedCount };
-    } catch (error) {
-      if (session?.inTransaction()) throw error;
-      if (error instanceof MongoBulkWriteError) {
-        result = error.result;
-        const reconciled = await this.reconcileBulkConflict(error, jobs, options);
-        if (reconciled) return reconciled;
-      }
-      const cause = toError(error);
-      throw new ConnectionError(`Failed to enqueue jobs: ${cause.message}`, { cause });
-    } finally {
+      ),
+    ).pipe(
+      Effect.map((written) => {
+        result = written;
+        return { insertedCount: written.upsertedCount, deduplicatedCount: written.matchedCount };
+      }),
+      Effect.catch((error) =>
+        Effect.gen({ self: this }, function* () {
+          if (session?.inTransaction()) return yield* Effect.fail(error);
+          if (error instanceof MongoBulkWriteError) {
+            result = error.result;
+            const reconciled = yield* this.reconcileBulkConflict(error, jobs, options);
+            if (reconciled) return reconciled;
+          }
+          const cause = toError(error);
+          return yield* Effect.fail(
+            new ConnectionError(`Failed to enqueue jobs: ${cause.message}`, { cause }),
+          );
+        }),
+      ),
+      Effect.exit,
+    );
+    yield* attempt(() => {
       for (const index of Object.keys(result?.upsertedIds ?? {})) {
         const job = jobs[Number(index)];
         if (job && !session?.inTransaction()) this.ctx.notifyPendingJob(job.name, job.nextRunAt);
       }
-    }
-  }
+    });
+    return yield* outcome;
+  });
 
-  private async reconcileBulkConflict(
+  private reconcileBulkConflict = Effect.fnUntraced(function* (
+    this: JobIntake,
     error: MongoBulkWriteError,
     jobs: Omit<Job, "_id">[],
     options: JobWriteOptions,
-  ): Promise<EnqueueManyResult | undefined> {
+  ): Effect.fn.Return<EnqueueManyResult | undefined, unknown> {
     const result = error.result;
-    const writeErrors = result.getWriteErrors();
-    const conflicts = writeErrors.flatMap(({ code, index }) => {
-      const job = jobs[index];
-      return code === 11000 && job?.uniqueKey !== undefined
-        ? [{ name: job.name, uniqueKey: job.uniqueKey }]
-        : [];
-    });
-    if (
-      error.code !== 11000 ||
-      conflicts.length === 0 ||
-      conflicts.length !== writeErrors.length ||
-      result.upsertedCount + result.matchedCount + conflicts.length !== jobs.length ||
-      result.getWriteConcernError()
-    )
-      return undefined;
-
-    const existing = await this.ctx.collection
-      .find(
-        { $or: conflicts, status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] } },
-        {
-          projection: { name: 1, uniqueKey: 1 },
-          readPreference: "primary",
-          ...(options.session && { session: options.session }),
-        },
+    const conflicts = yield* attempt(() => {
+      const writeErrors = result.getWriteErrors();
+      const duplicateJobs = writeErrors.flatMap(({ code, index }) => {
+        const job = jobs[index];
+        return code === 11000 && job?.uniqueKey !== undefined
+          ? [{ name: job.name, uniqueKey: job.uniqueKey }]
+          : [];
+      });
+      if (
+        error.code !== 11000 ||
+        duplicateJobs.length === 0 ||
+        duplicateJobs.length !== writeErrors.length ||
+        result.upsertedCount + result.matchedCount + duplicateJobs.length !== jobs.length ||
+        result.getWriteConcernError()
       )
-      .toArray()
-      .catch(() => []);
+        return undefined;
+      return duplicateJobs;
+    });
+    if (!conflicts) return undefined;
+
+    const existing = yield* fromPromise(() =>
+      this.ctx.collection
+        .find(
+          { $or: conflicts, status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] } },
+          {
+            projection: { name: 1, uniqueKey: 1 },
+            readPreference: "primary",
+            ...(options.session && { session: options.session }),
+          },
+        )
+        .toArray(),
+    ).pipe(Effect.orElseSucceed(() => []));
     const activeKeys = new Set(
       existing.map((job) => JSON.stringify([job["name"], job["uniqueKey"]])),
     );
@@ -304,9 +347,14 @@ export class JobIntake {
       insertedCount: result.upsertedCount,
       deduplicatedCount: result.matchedCount + conflicts.length,
     };
-  }
+  });
 
-  async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    return this.enqueue(name, data, { runAt: new Date() });
-  }
+  now = Effect.fnUntraced(function* <T>(
+    this: JobIntake,
+    name: string,
+    data: T,
+  ): Effect.fn.Return<PersistedJob<T>, unknown> {
+    const runAt = yield* DateTime.nowAsDate;
+    return yield* this.enqueue(name, data, { runAt });
+  });
 }

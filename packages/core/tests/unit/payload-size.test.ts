@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { BSON, ObjectId } from "mongodb";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -36,9 +37,13 @@ describe("payload size validation", () => {
     // Large data that will exceed 100 bytes in BSON
     const largeData = { content: "x".repeat(200) };
 
-    await expect(intake.enqueue("test-job", largeData)).rejects.toThrow(PayloadTooLargeError);
+    await expect(Effect.runPromise(intake.enqueue("test-job", largeData))).rejects.toThrow(
+      PayloadTooLargeError,
+    );
 
-    const error = await intake.enqueue("test-job", largeData).catch((e: unknown) => e);
+    const error = await Effect.runPromise(intake.enqueue("test-job", largeData)).catch(
+      (e: unknown) => e,
+    );
     expect(error).toBeInstanceOf(PayloadTooLargeError);
     expect((error as PayloadTooLargeError).actualSize).toBeGreaterThan(100);
     expect((error as PayloadTooLargeError).maxSize).toBe(100);
@@ -55,7 +60,7 @@ describe("payload size validation", () => {
       acknowledged: true,
     });
 
-    const result = await intake.enqueue("test-job", { small: "data" });
+    const result = await Effect.runPromise(intake.enqueue("test-job", { small: "data" }));
     expect(result._id).toEqual(insertedId);
   });
 
@@ -74,7 +79,7 @@ describe("payload size validation", () => {
       acknowledged: true,
     });
 
-    const result = await intake.enqueue("test-job", testData);
+    const result = await Effect.runPromise(intake.enqueue("test-job", testData));
     expect(result._id).toEqual(insertedId);
   });
 
@@ -92,7 +97,7 @@ describe("payload size validation", () => {
 
     // Even large data should be accepted when maxPayloadSize is undefined
     const largeData = { content: "x".repeat(10_000) };
-    const result = await intake.enqueue("test-job", largeData);
+    const result = await Effect.runPromise(intake.enqueue("test-job", largeData));
     expect(result._id).toEqual(insertedId);
   });
 
@@ -103,9 +108,9 @@ describe("payload size validation", () => {
 
     const largeData = { content: "x".repeat(200) };
 
-    await expect(intake.schedule("0 * * * *", "test-job", largeData)).rejects.toThrow(
-      PayloadTooLargeError,
-    );
+    await expect(
+      Effect.runPromise(intake.schedule("0 * * * *", "test-job", largeData)),
+    ).rejects.toThrow(PayloadTooLargeError);
   });
 
   it("wraps BSON calculation errors in PayloadTooLargeError", async () => {
@@ -118,7 +123,9 @@ describe("payload size validation", () => {
       throw bsonError;
     });
 
-    const error = await intake.enqueue("test-job", { x: 1 }).catch((e: unknown) => e);
+    const error = await Effect.runPromise(intake.enqueue("test-job", { x: 1 })).catch(
+      (e: unknown) => e,
+    );
 
     expect(error).toBeInstanceOf(PayloadTooLargeError);
     expect((error as PayloadTooLargeError).actualSize).toBe(-1);
@@ -136,7 +143,9 @@ describe("payload size validation", () => {
       throw "unexpected string thrown"; // eslint-disable-line no-throw-literal
     });
 
-    const error = await intake.enqueue("test-job", { x: 1 }).catch((e: unknown) => e);
+    const error = await Effect.runPromise(intake.enqueue("test-job", { x: 1 })).catch(
+      (e: unknown) => e,
+    );
 
     expect(error).toBeInstanceOf(PayloadTooLargeError);
     expect((error as PayloadTooLargeError).cause).toBeInstanceOf(Error);

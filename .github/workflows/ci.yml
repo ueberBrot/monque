@@ -52,6 +52,7 @@ jobs:
           vp run --filter @monque/docs --ignore-depends-on generate:api
           vp run --filter './packages/*' --filter './apps/*' --ignore-depends-on type-check
           vp lint --type-aware --type-check -A all
+          vp run --filter @monque/core --filter @monque/management --ignore-depends-on lint:effect
 
       - name: Upload build outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type { Collection, Db, Document, WithId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, type Mocked, vi } from "vite-plus/test";
 
@@ -72,7 +73,59 @@ describe("Monque Shutdown Race Condition", () => {
     },
   );
 
-  it("should abort polling loop immediately when stop() is called mid-loop", async () => {
+  it("drains workers and stops lease renewal when a change stream closed listener throws", async () => {
+    monque = new Monque(db, {
+      recoverStaleJobs: false,
+      workerConcurrency: 1,
+      leaseDuration: 1000,
+      heartbeatInterval: 20,
+    });
+    const stream = Object.assign(new EventEmitter(), {
+      close: vi.fn().mockResolvedValue(undefined),
+    });
+    collection.watch.mockReturnValue(stream as unknown as ReturnType<typeof collection.watch>);
+    await monque.initialize();
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const processing = JobFactoryHelpers.processing({ name: "work" });
+    const completed = JobFactoryHelpers.completed({ _id: processing._id, name: "work" });
+    collection.findOneAndUpdate
+      .mockResolvedValueOnce(processing)
+      .mockResolvedValueOnce(completed)
+      .mockResolvedValue(null);
+    const listenerError = new Error("Closed listener failed");
+    monque.on("changestream:closed", () => {
+      throw listenerError;
+    });
+    const completionEvents: string[] = [];
+    monque.on("job:complete", ({ job }) => completionEvents.push(job.name));
+    monque.register("work", async () => {
+      started.resolve();
+      await release.promise;
+    });
+    monque.start();
+    try {
+      await started.promise;
+      const stopped = monque.stop().then(
+        () => ({ status: "fulfilled" }),
+        (error: unknown) => ({ status: "rejected", error }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(monque.isHealthy()).toBe(false);
+      expect(completionEvents).toEqual([]);
+
+      release.resolve();
+      await expect(stopped).resolves.toEqual({ status: "fulfilled" });
+      expect(completionEvents).toEqual(["work"]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      release.resolve();
+      await monque.stop();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+  });
+
+  it("stops while a claim is pending and releases its late result", async () => {
     // Mock updateMany to simulate successful stale job recovery during initialization
     collection.updateMany.mockResolvedValue({
       modifiedCount: 0,
@@ -110,7 +163,8 @@ describe("Monque Shutdown Race Condition", () => {
     // Trigger stop() while acquisition is pending
     const stopPromise = monque.stop();
 
-    // Resolve the pending acquisition to simulate DB responding during shutdown
+    await expect(stopPromise).resolves.toBeUndefined();
+
     if (resolveFirstCall) {
       resolveFirstCall({
         _id: "job-1",

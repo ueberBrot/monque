@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import * as Cause from "effect/Cause";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Option from "effect/Option";
 import { type Collection, type Db, type Document, ObjectId, type WithId } from "mongodb";
 
 import type { MonqueEventMap } from "@/events";
@@ -31,19 +38,11 @@ import {
 } from "@/shared";
 import type { WorkerOptions, WorkerRegistration } from "@/workers";
 
-import {
-  ChangeStreamHandler,
-  CLEANUP_STATUSES,
-  JobIntake,
-  JobLifecycle,
-  JobManager,
-  JobProcessor,
-  JobQueryService,
-  LifecycleManager,
-  PendingNotificationRouter,
-  type ResolvedMonqueOptions,
-  type SchedulerContext,
-} from "./services/index.js";
+import { attempt, fromPromise } from "./effects.js";
+import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
+import type { JobManager } from "./services/job-manager.js";
+import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
+import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
 import {
   validateIntegerOption,
@@ -67,14 +66,7 @@ const DEFAULTS = {
   heartbeatInterval: 30000, // 30 seconds
 } as const;
 
-interface SchedulerRuntime {
-  intake: JobIntake;
-  manager: JobManager;
-  query: JobQueryService;
-  changeStreamHandler: ChangeStreamHandler;
-  lifecycleManager: LifecycleManager;
-  pendingNotificationRouter: PendingNotificationRouter;
-}
+type SchedulerRuntime = ManagedRuntime.ManagedRuntime<SchedulerServices, never>;
 
 /**
  * Monque - MongoDB-backed job scheduler
@@ -145,16 +137,18 @@ export class Monque extends EventEmitter {
   private readonly options: ResolvedMonqueOptions;
   private collection: Collection<Document> | null = null;
   private workers: Map<string, WorkerRegistration> = new Map();
-  private paused = false;
-  private readonly pausedWorkers = new Set<string>();
-  private isRunning = false;
+  readonly #state = {
+    running: false,
+    paused: false,
+    pausedWorkers: new Set<string>(),
+  };
 
   /** Each shutdown tracks its own in-progress jobs across synchronous restarts. */
   #drainChecks = new Set<() => void>();
   #runGeneration = 0;
 
   /** Published together after initialization succeeds. */
-  #initializedRuntime: SchedulerRuntime | null = null;
+  #initialized: { runtime: SchedulerRuntime; services: SchedulerServices["Service"] } | null = null;
   #initialization: Promise<void> | null = null;
 
   constructor(db: Db, options: MonqueOptions = {}) {
@@ -204,10 +198,10 @@ export class Monque extends EventEmitter {
    * @throws {ConnectionError} If collection or index creation fails
    */
   async initialize(): Promise<void> {
-    if (this.#initializedRuntime) return;
+    if (this.#initialized) return;
     if (this.#initialization) return this.#initialization;
 
-    this.#initialization = this.#initializeRuntime();
+    this.#initialization = Effect.runPromise(this.#initializeRuntime());
     try {
       await this.#initialization;
     } finally {
@@ -215,43 +209,34 @@ export class Monque extends EventEmitter {
     }
   }
 
-  async #initializeRuntime(): Promise<void> {
-    try {
-      this.collection = this.db.collection(this.options.collectionName);
+  #initializeRuntime(): Effect.Effect<void, ConnectionError> {
+    let candidate: SchedulerRuntime | null = null;
+    return Effect.gen({ self: this }, function* () {
+      this.collection = yield* attempt(() => this.db.collection(this.options.collectionName));
+      if (!this.options.skipIndexCreation) yield* this.createIndexes();
 
-      // Create indexes for efficient queries (unless externally managed)
-      if (!this.options.skipIndexCreation) {
-        await this.createIndexes();
-      }
-
-      // Initialize services with shared context
-      const ctx = this.buildContext();
-      const jobLifecycle = new JobLifecycle(ctx);
-
-      // Recover stale jobs before collision checks to avoid false positives
-      if (this.options.recoverStaleJobs) {
-        await jobLifecycle.recoverStaleJobs();
-      }
-
-      await jobLifecycle.assertNoActiveInstanceCollision();
-
-      const processor = new JobProcessor(ctx, jobLifecycle);
-      const pendingNotificationRouter = new PendingNotificationRouter(ctx, (targetNames) =>
-        processor.poll(targetNames),
+      const ctx = yield* attempt(() => this.buildContext());
+      const runtime: SchedulerRuntime = ManagedRuntime.make(
+        makeSchedulerLayer(ctx, {
+          runFork: (effect) => runtime.runFork(effect),
+        }).pipe(Layer.orDie),
       );
-      this.#initializedRuntime = {
-        intake: new JobIntake(ctx),
-        manager: new JobManager(ctx),
-        query: new JobQueryService(ctx),
-        pendingNotificationRouter,
-        changeStreamHandler: new ChangeStreamHandler(ctx, pendingNotificationRouter),
-        lifecycleManager: new LifecycleManager(ctx, jobLifecycle),
-      };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error during initialization";
-      throw new ConnectionError(`Failed to initialize Monque: ${message}`);
-    }
+      candidate = runtime;
+      const context = yield* runtime.contextEffect;
+      this.#initialized = { runtime, services: Context.get(context, SchedulerServices) };
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        const message =
+          error instanceof Error ? error.message : "Unknown error during initialization";
+        const release = candidate ? candidate.disposeEffect.pipe(Effect.ignoreCause) : Effect.void;
+        return release.pipe(
+          Effect.andThen(
+            Effect.fail(new ConnectionError(`Failed to initialize Monque: ${message}`)),
+          ),
+        );
+      }),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -260,11 +245,11 @@ export class Monque extends EventEmitter {
 
   /** @throws {ConnectionError} if not initialized */
   get #runtime(): SchedulerRuntime {
-    if (!this.#initializedRuntime) {
+    if (!this.#initialized) {
       throw new ConnectionError("Monque not initialized. Call initialize() first.");
     }
 
-    return this.#initializedRuntime;
+    return this.#initialized.runtime;
   }
 
   /**
@@ -280,16 +265,16 @@ export class Monque extends EventEmitter {
       options: this.options,
       instanceId: this.options.schedulerInstanceId,
       workers: this.workers,
-      isRunning: () => this.isRunning,
+      isRunning: () => this.#state.running,
       isPaused: (name?: string) => this.isPaused(name),
       emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
         this.emit(event, payload),
       notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
-        if (!this.isRunning) {
+        if (!this.#state.running) {
           return;
         }
 
-        this.#initializedRuntime?.pendingNotificationRouter.notifyPendingJob(name, nextRunAt);
+        this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
       },
       notifyJobFinished: (name) => this.onJobFinished(name),
       documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
@@ -310,71 +295,74 @@ export class Monque extends EventEmitter {
    * - `{name, status, nextRunAt, claimedBy}` - For atomic claim queries (find unclaimed pending jobs per worker)
    * - `{lockedAt, lastHeartbeat, status}` - Supports recovery scans and monitoring access patterns
    */
-  private async createIndexes(): Promise<void> {
-    if (!this.collection) {
-      throw new ConnectionError("Collection not initialized");
-    }
+  private readonly createIndexes = Effect.fnUntraced(function* (
+    this: Monque,
+  ): Effect.fn.Return<void, unknown> {
+    const collection = this.collection;
+    if (!collection) return yield* Effect.fail(new ConnectionError("Collection not initialized"));
 
-    await this.collection.createIndexes([
-      // Compound index for job polling - status + nextRunAt for efficient queries
-      { key: { status: 1, nextRunAt: 1 }, background: true },
-      // Partial unique index for deduplication - scoped by name + uniqueKey
-      // Only enforced where uniqueKey exists and status is pending/processing
-      {
-        key: { name: 1, uniqueKey: 1 },
-        unique: true,
-        partialFilterExpression: {
-          uniqueKey: { $exists: true },
-          status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+    yield* fromPromise(() =>
+      collection.createIndexes([
+        // Compound index for job polling - status + nextRunAt for efficient queries
+        { key: { status: 1, nextRunAt: 1 }, background: true },
+        // Partial unique index for deduplication - scoped by name + uniqueKey
+        // Only enforced where uniqueKey exists and status is pending/processing
+        {
+          key: { name: 1, uniqueKey: 1 },
+          unique: true,
+          partialFilterExpression: {
+            uniqueKey: { $exists: true },
+            status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+          },
+          background: true,
         },
-        background: true,
-      },
-      // Index for job lookup by name
-      { key: { name: 1, status: 1 }, background: true },
-      // Dashboard-grade listing indexes with a stable identifier tie-breaker.
-      { key: { createdAt: -1, _id: -1 }, background: true },
-      { key: { name: 1, createdAt: -1, _id: -1 }, background: true },
-      { key: { status: 1, createdAt: -1, _id: -1 }, background: true },
-      { key: { updatedAt: -1, _id: -1 }, background: true },
-      { key: { nextRunAt: -1, _id: -1 }, background: true },
-      // Compound index for finding jobs claimed by a specific scheduler instance.
-      // Used for heartbeat updates and cleanup on shutdown.
-      { key: { claimedBy: 1, status: 1 }, background: true },
-      // Compound index for monitoring/debugging via heartbeat timestamps.
-      // Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
-      { key: { lastHeartbeat: 1, status: 1 }, background: true },
-      // Compound index for atomic claim queries.
-      // Prefix with `name` to match the acquireJob query shape: { name, status, nextRunAt, claimedBy }.
-      // This enables per-worker index prefix scans instead of scanning across all job types.
-      { key: { name: 1, status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
-      // Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
-      { key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
-      // Index for efficient lifecycle manager cleanup when jobRetention is configured.
-      // Allows fast queries for deleteMany({ status, updatedAt: { $lt: cutoff } }).
-      ...(this.options.jobRetention
-        ? [
-            {
-              key: { status: 1, updatedAt: 1 } as const,
-              background: true,
-              partialFilterExpression: {
-                status: { $in: CLEANUP_STATUSES },
-                updatedAt: { $exists: true },
+        // Index for job lookup by name
+        { key: { name: 1, status: 1 }, background: true },
+        // Dashboard-grade listing indexes with a stable identifier tie-breaker.
+        { key: { createdAt: -1, _id: -1 }, background: true },
+        { key: { name: 1, createdAt: -1, _id: -1 }, background: true },
+        { key: { status: 1, createdAt: -1, _id: -1 }, background: true },
+        { key: { updatedAt: -1, _id: -1 }, background: true },
+        { key: { nextRunAt: -1, _id: -1 }, background: true },
+        // Compound index for finding jobs claimed by a specific scheduler instance.
+        // Used for heartbeat updates and cleanup on shutdown.
+        { key: { claimedBy: 1, status: 1 }, background: true },
+        // Compound index for monitoring/debugging via heartbeat timestamps.
+        // Note: stale recovery uses lockedAt + lockTimeout as the source of truth.
+        { key: { lastHeartbeat: 1, status: 1 }, background: true },
+        // Compound index for atomic claim queries.
+        // Prefix with `name` to match the acquireJob query shape: { name, status, nextRunAt, claimedBy }.
+        // This enables per-worker index prefix scans instead of scanning across all job types.
+        { key: { name: 1, status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
+        // Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
+        { key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
+        // Index for efficient lifecycle manager cleanup when jobRetention is configured.
+        // Allows fast queries for deleteMany({ status, updatedAt: { $lt: cutoff } }).
+        ...(this.options.jobRetention
+          ? [
+              {
+                key: { status: 1, updatedAt: 1 } as const,
+                background: true,
+                partialFilterExpression: {
+                  status: { $in: CLEANUP_STATUSES },
+                  updatedAt: { $exists: true },
+                },
               },
-            },
-          ]
-        : []),
-      ...(this.options.jobRetention?.cancelled != null
-        ? [
-            {
-              key: { updatedAt: 1 } as const,
-              name: "monque_cancelled_retention",
-              background: true,
-              partialFilterExpression: { status: JobStatus.CANCELLED },
-            },
-          ]
-        : []),
-    ]);
-  }
+            ]
+          : []),
+        ...(this.options.jobRetention?.cancelled != null
+          ? [
+              {
+                key: { updatedAt: 1 } as const,
+                name: "monque_cancelled_retention",
+                background: true,
+                partialFilterExpression: { status: JobStatus.CANCELLED },
+              },
+            ]
+          : []),
+      ]),
+    );
+  });
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Public API - Job Scheduling (delegates to JobIntake)
@@ -429,7 +417,9 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.enqueue}
    */
   async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-    return this.#runtime.intake.enqueue(name, data, options);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ intake }) => intake.enqueue(name, data, options)),
+    );
   }
 
   /**
@@ -442,7 +432,9 @@ export class Monque extends EventEmitter {
     jobs: readonly EnqueueJob[],
     options: JobWriteOptions = {},
   ): Promise<EnqueueManyResult> {
-    return this.#runtime.intake.enqueueMany(jobs, options);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ intake }) => intake.enqueueMany(jobs, options)),
+    );
   }
 
   /**
@@ -477,7 +469,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.now}
    */
   async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    return this.#runtime.intake.now(name, data);
+    return this.#runtime.runPromise(SchedulerServices.use(({ intake }) => intake.now(name, data)));
   }
 
   /**
@@ -536,7 +528,9 @@ export class Monque extends EventEmitter {
     data: T,
     options: ScheduleOptions = {},
   ): Promise<PersistedJob<T>> {
-    return this.#runtime.intake.schedule(cron, name, data, options);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ intake }) => intake.schedule(cron, name, data, options)),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -751,9 +745,11 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJob}
    */
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
-    const { query } = this.#runtime;
+    const runtime = this.#runtime;
     if (!ObjectId.isValid(id)) return null;
-    return query.getJob<T>(new ObjectId(id));
+    return runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getJob<T>(new ObjectId(id))),
+    );
   }
 
   /**
@@ -801,7 +797,9 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJobs}
    */
   async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-    return this.#runtime.query.getJobs<T>(filter);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getJobs<T>(filter)),
+    );
   }
 
   /**
@@ -837,12 +835,16 @@ export class Monque extends EventEmitter {
    */
 
   async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
-    return this.#runtime.query.getJobsWithCursor<T>(options);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getJobsWithCursor<T>(options)),
+    );
   }
 
   /** List job metadata without reading payloads; shares the full listing cursor format. */
   async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
-    return this.#runtime.query.getJobSummariesWithCursor(options);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getJobSummariesWithCursor(options)),
+    );
   }
 
   /**
@@ -874,7 +876,9 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getQueueStats}
    */
   async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    return this.#runtime.query.getQueueStats(filter);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getQueueStats(filter)),
+    );
   }
 
   /**
@@ -901,7 +905,9 @@ export class Monque extends EventEmitter {
   async getQueueViewSummaries(
     filter?: Pick<JobSelector, "name">,
   ): Promise<readonly QueueViewSummary[]> {
-    return this.#runtime.query.getQueueViewSummaries(filter);
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ queries: query }) => query.getQueueViewSummaries(filter)),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1007,27 +1013,28 @@ export class Monque extends EventEmitter {
 
   /** Pause new executions locally, optionally for one job name. Running jobs continue. */
   pause(name?: string): void {
-    if (name === undefined) this.paused = true;
+    if (name === undefined) this.#state.paused = true;
     else {
       validateJobName(name);
-      this.pausedWorkers.add(name);
+      this.#state.pausedWorkers.add(name);
     }
   }
 
   /** Resume local executions. Resuming the instance preserves individually paused workers. */
   resume(name?: string): void {
-    if (name === undefined) this.paused = false;
+    if (name === undefined) this.#state.paused = false;
     else {
       validateJobName(name);
-      this.pausedWorkers.delete(name);
+      this.#state.pausedWorkers.delete(name);
     }
-    this.#initializedRuntime?.pendingNotificationRouter.notifyRunnableJob(name);
+    this.#initialized?.services.notifications.notifyRunnableJob(name);
   }
 
   /** Whether the local instance, or the named worker, is effectively paused. */
   isPaused(name?: string): boolean {
     if (name !== undefined) validateJobName(name);
-    return this.paused || (name !== undefined && this.pausedWorkers.has(name));
+    const state = this.#state;
+    return state.paused || (name !== undefined && state.pausedWorkers.has(name));
   }
 
   /** Identify the local scheduler and inspect global or named-worker processing state. */
@@ -1036,7 +1043,7 @@ export class Monque extends EventEmitter {
       instanceId: this.options.schedulerInstanceId,
       ...(name === undefined ? {} : { name }),
       paused: this.isPaused(name),
-      globallyPaused: this.paused,
+      globallyPaused: this.#state.paused,
     };
   }
 
@@ -1084,25 +1091,25 @@ export class Monque extends EventEmitter {
    * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
    */
   start(): void {
-    if (this.isRunning) {
+    if (this.#state.running) {
       return;
     }
 
-    if (!this.#initializedRuntime) {
+    if (!this.#initialized) {
       throw new ConnectionError("Monque not initialized. Call initialize() before start().");
     }
 
-    const { changeStreamHandler, pendingNotificationRouter, lifecycleManager } = this.#runtime;
+    const { services } = this.#initialized;
     this.#runGeneration++;
-    this.isRunning = true;
+    this.#state.running = true;
 
     // Set up change streams as the primary notification mechanism
-    changeStreamHandler.setup();
+    services.streams.setup();
 
-    pendingNotificationRouter.start();
+    services.notifications.start();
 
     // Start heartbeat and retention timers
-    lifecycleManager.startTimers();
+    services.timers.startTimers();
   }
 
   /**
@@ -1141,46 +1148,45 @@ export class Monque extends EventEmitter {
    */
 
   async stop(): Promise<void> {
-    if (!this.isRunning) {
+    if (!this.#state.running) {
       return;
     }
 
-    const { lifecycleManager, pendingNotificationRouter, query, changeStreamHandler } =
-      this.#runtime;
+    await this.#runtime.runPromise(this.#stopScheduler());
+  }
+
+  readonly #stopScheduler = Effect.fnUntraced(function* (this: Monque) {
     const generation = this.#runGeneration;
     const drainingJobs = new Set(this.getActiveJobsList());
     const getIncompleteJobs = () => this.getActiveJobsList().filter((job) => drainingJobs.has(job));
+    const { timers, notifications, queries: query, streams } = yield* SchedulerServices;
 
-    // Renewable claims stay alive while handlers drain; recovery stops with polling.
-    lifecycleManager.stopTimers(this.options.leaseDuration !== undefined);
-    pendingNotificationRouter.close();
+    timers.stopTimers(this.options.leaseDuration !== undefined);
+    notifications.close();
 
-    this.isRunning = false;
+    this.#state.running = false;
 
-    // Clear stats cache for clean state on restart
     query.clearStatsCache();
-
-    // Close change stream — catch-and-ignore per shutdown cleanup guideline
-    try {
-      await changeStreamHandler.close();
-    } catch {
-      // ignore errors during shutdown cleanup
-    }
+    yield* streams.close().pipe(Effect.ignoreCause);
 
     let timedOut = false;
     if (getIncompleteJobs().length > 0) {
-      const drain = Promise.withResolvers<"timeout" | undefined>();
+      const drain = yield* Deferred.make<void>();
       const checkDrain = () => {
-        if (getIncompleteJobs().length === 0) drain.resolve(undefined);
+        if (getIncompleteJobs().length === 0) Deferred.doneUnsafe(drain, Effect.void);
       };
       this.#drainChecks.add(checkDrain);
-      const timeoutId = setTimeout(() => drain.resolve("timeout"), this.options.shutdownTimeout);
-      timedOut = (await drain.promise) === "timeout";
-      clearTimeout(timeoutId);
-      this.#drainChecks.delete(checkDrain);
+      checkDrain();
+      const result = yield* Deferred.await(drain).pipe(
+        Effect.timeoutOption(this.options.shutdownTimeout),
+        Effect.ensuring(Effect.sync(() => this.#drainChecks.delete(checkDrain))),
+      );
+      timedOut = Option.isNone(result);
     }
 
-    if (generation === this.#runGeneration) lifecycleManager.stopTimers();
+    if (generation === this.#runGeneration) {
+      timers.stopTimers();
+    }
 
     if (timedOut) {
       const incompleteJobs = getIncompleteJobs();
@@ -1191,7 +1197,7 @@ export class Monque extends EventEmitter {
       );
       this.emit("job:error", { error });
     }
-  }
+  });
 
   /**
    * Check if the scheduler is healthy (running and connected).
@@ -1240,7 +1246,7 @@ export class Monque extends EventEmitter {
    * ```
    */
   isHealthy(): boolean {
-    return this.isRunning && this.#initializedRuntime !== null && this.collection !== null;
+    return this.#state.running && this.#initialized !== null && this.collection !== null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1248,13 +1254,16 @@ export class Monque extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /** Invalidate query caches after every management mutation, including partial failures. */
-  async #runJobMutation<T>(operation: (manager: JobManager) => Promise<T>): Promise<T> {
-    const { manager, query } = this.#runtime;
-    try {
-      return await operation(manager);
-    } finally {
-      query.clearStatsCache();
-    }
+  async #runJobMutation<T>(
+    operation: (manager: JobManager) => Effect.Effect<T, unknown>,
+  ): Promise<T> {
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ manager, queries }) =>
+        Effect.suspend(() => operation(manager)).pipe(
+          Effect.ensuring(Effect.sync(() => queries.clearStatsCache())),
+        ),
+      ),
+    );
   }
 
   /**
@@ -1263,7 +1272,7 @@ export class Monque extends EventEmitter {
    * @private
    */
   private onJobFinished(name: string): void {
-    this.#initializedRuntime?.pendingNotificationRouter.notifyRunnableJob(name);
+    this.#initialized?.services.notifications.notifyRunnableJob(name);
     for (const checkDrain of this.#drainChecks) checkDrain();
   }
 
