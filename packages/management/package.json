@@ -69,7 +69,7 @@
   "devDependencies": {
     "@monque/core": "workspace:*",
     "@total-typescript/ts-reset": "^0.6.1",
-    "@types/node": "^22.20.4",
+    "@types/node": "^22.20.5",
     "mongodb": "^7.7.0",
     "vite-plus": "catalog:"
   },
