@@ -1,5 +1,27 @@
 # @monque/core
 
+## 1.17.0
+
+### Minor Changes
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Migrate MongoDB operations and scheduler coordination to the Effect v4 runtime while preserving the public synchronous and Promise APIs.
+
+### Patch Changes
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Close change-stream cursors when setup fails, including when a connected listener throws. Stop notifications from failed cursors while preserving replacement cursors opened by callbacks.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Expire cached query results using elapsed monotonic time so system clock corrections cannot prolong stale results or cause premature expiration.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Measure job duration with a monotonic clock so system clock corrections cannot produce negative or inflated durations.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Keep heartbeat and retention intervals stable through system-clock changes so clock corrections cannot delay lease renewal.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Keep fallback and safety polling intervals stable when the system clock changes.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Prevent overlapping retention cleanup batches, including across scheduler restarts and partial deletion failures.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Simplify internal concurrent result collection while preserving early failures and continued execution of already-started operations.
+
 ## 1.16.1
 
 ### Patch Changes

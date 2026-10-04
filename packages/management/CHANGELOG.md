@@ -1,5 +1,17 @@
 # @monque/management
 
+## 0.8.0
+
+### Minor Changes
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Migrate management operations and OpenAPI generation to the Effect v4 runtime while preserving the public JavaScript API and HTTP contract.
+
+### Patch Changes
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Simplify internal concurrent result collection while preserving early failures and continued execution of already-started operations.
+
+- [#587](https://github.com/ueberBrot/monque/pull/587) [`ef79f62`](https://github.com/ueberBrot/monque/commit/ef79f6235ad55b430fceb70b7354d923db5ebd2b) - Share in-flight OpenAPI document generation across concurrent requests.
+
 ## 0.7.0
 
 ### Minor Changes
