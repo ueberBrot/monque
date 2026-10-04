@@ -241,13 +241,15 @@ describe("JobIntake", () => {
         new Error("Database connection lost"),
       );
 
-      expect(yield* Effect.result(intake.enqueue("failing-job", {}))).toMatchObject({
+      const result = yield* Effect.result(intake.enqueue("failing-job", {}));
+
+      expect(result).toMatchObject({
         _tag: "Failure",
         failure: expect.any(ConnectionError),
       });
-      expect(yield* Effect.result(intake.enqueue("failing-job", {}))).toMatchObject({
+      expect(result).toMatchObject({
         _tag: "Failure",
-        failure: { message: expect.stringMatching(/Failed to enqueue job/) },
+        failure: { message: "Failed to enqueue job: Database connection lost" },
       });
     }),
   );
@@ -415,14 +417,12 @@ describe("JobIntake", () => {
         new Error("Database write failed"),
       );
 
-      expect(
-        yield* Effect.result(intake.schedule("0 * * * *", "failing-schedule", {})),
-      ).toMatchObject({ _tag: "Failure", failure: expect.any(ConnectionError) });
-      expect(
-        yield* Effect.result(intake.schedule("0 * * * *", "failing-schedule", {})),
-      ).toMatchObject({
+      const result = yield* Effect.result(intake.schedule("0 * * * *", "failing-schedule", {}));
+
+      expect(result).toMatchObject({ _tag: "Failure", failure: expect.any(ConnectionError) });
+      expect(result).toMatchObject({
         _tag: "Failure",
-        failure: { message: expect.stringMatching(/Failed to schedule job/) },
+        failure: { message: "Failed to schedule job: Database write failed" },
       });
     }),
   );
