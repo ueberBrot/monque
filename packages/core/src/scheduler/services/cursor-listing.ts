@@ -1,3 +1,6 @@
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { type Document, type Filter, ObjectId, type WithId } from "mongodb";
 
 import {
@@ -7,14 +10,13 @@ import {
   type CursorPage,
   type JobCursorSort,
   JobCursorSortDirection,
-  type JobCursorSortDirectionType,
   JobCursorSortField,
-  type JobCursorSortFieldType,
   type JobSummaryPage,
   type PersistedJob,
 } from "@/jobs";
 import { ConnectionError, InvalidCursorError } from "@/shared";
 
+import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery, resolveQueryLimit } from "../helpers.js";
 import type { SchedulerContext } from "./types.js";
 
@@ -29,6 +31,17 @@ const DEFAULT_CURSOR_SORT: JobCursorSort = {
 };
 const LEGACY_CURSOR_PAYLOAD_BYTES = 12;
 const STRUCTURED_CURSOR_PAYLOAD_PREFIX = "{".charCodeAt(0);
+const StructuredCursorPayload = Schema.fromJsonString(
+  Schema.Struct({
+    id: Schema.String.check(Schema.makeFilter((id) => ObjectId.isValid(id))),
+    sort: Schema.Struct({
+      by: Schema.Literals(Object.values(JobCursorSortField)),
+      direction: Schema.Literals(Object.values(JobCursorSortDirection)),
+      value: Schema.DateFromString,
+    }),
+  }),
+);
+const decodeStructuredCursorPayload = Schema.decodeUnknownSync(StructuredCursorPayload);
 
 type MongoSortDirection = 1 | -1;
 type CursorAnchor = {
@@ -49,48 +62,62 @@ export class CursorListing {
     private readonly ctx: Pick<SchedulerContext, "collection" | "documentToPersistedJob">,
   ) {}
 
-  async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
+  getJobsWithCursor<T = unknown>(
+    options: CursorOptions = {},
+  ): Effect.Effect<CursorPage<T>, unknown> {
     return this.queryJobsWithCursor<T>(options, true);
   }
 
   /** List job metadata using the same cursor as full listings, without reading payloads. */
-  async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
-    const page = await this.queryJobsWithCursor(options, false);
-    return { ...page, jobs: page.jobs.map(({ data: _data, ...summary }) => summary) };
+  getJobSummariesWithCursor(options: CursorOptions = {}): Effect.Effect<JobSummaryPage, unknown> {
+    return this.queryJobsWithCursor(options, false).pipe(
+      Effect.map((page) => ({
+        ...page,
+        jobs: page.jobs.map(({ data: _data, ...summary }) => summary),
+      })),
+    );
   }
 
-  private async queryJobsWithCursor<T>(
+  private queryJobsWithCursor = Effect.fnUntraced(function* <T>(
+    this: CursorListing,
     options: CursorOptions,
     includePayload: boolean,
-  ): Promise<CursorPage<T>> {
-    const limit = resolveQueryLimit(options.limit, 50);
-    const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
-    const sort = options.sort ?? DEFAULT_CURSOR_SORT;
-    const anchor = decodeCursorAnchor(options.cursor, sort);
+  ): Effect.fn.Return<CursorPage<T>, unknown> {
+    const { limit, direction, sort, anchor, query, mongoSort } = yield* attempt(() => {
+      const limit = resolveQueryLimit(options.limit, 50);
+      const direction: CursorDirectionType = options.direction ?? CursorDirection.FORWARD;
+      const sort = options.sort ?? DEFAULT_CURSOR_SORT;
+      const anchor = decodeCursorAnchor(options.cursor, sort);
 
-    const query = buildSelectorQuery(options.filter === undefined ? {} : options.filter);
-    const traversalDirection = getTraversalDirection(sort, direction);
-    const mongoSort =
-      sort.by === JobCursorSortField.IDENTIFIER
-        ? { _id: traversalDirection }
-        : { [sort.by]: traversalDirection, _id: traversalDirection };
-    applyCursorConstraint(query, sort, traversalDirection, anchor.id, anchor.sortValue);
+      const query = buildSelectorQuery(options.filter === undefined ? {} : options.filter);
+      const traversalDirection = getTraversalDirection(sort, direction);
+      const mongoSort =
+        sort.by === JobCursorSortField.IDENTIFIER
+          ? { _id: traversalDirection }
+          : { [sort.by]: traversalDirection, _id: traversalDirection };
+      applyCursorConstraint(query, sort, traversalDirection, anchor.id, anchor.sortValue);
+      return { limit, direction, sort, anchor, query, mongoSort };
+    });
 
-    let docs: WithId<Document>[];
-    try {
-      docs = await this.ctx.collection
+    const docs: WithId<Document>[] = yield* fromPromise(() =>
+      this.ctx.collection
         .find(query, { maxTimeMS: 30_000, ...(includePayload ? {} : { projection: { data: 0 } }) })
         .sort(mongoSort)
         .limit(limit + 1)
-        .toArray();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error during getJobsWithCursor";
-      throw new ConnectionError(
-        `Failed to query jobs with cursor: ${message}`,
-        error instanceof Error ? { cause: error } : undefined,
-      );
-    }
+        .toArray(),
+    ).pipe(
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        const message =
+          error instanceof Error ? error.message : "Unknown error during getJobsWithCursor";
+        return Effect.fail(
+          new ConnectionError(
+            `Failed to query jobs with cursor: ${message}`,
+            error instanceof Error ? { cause: error } : undefined,
+          ),
+        );
+      }),
+    );
 
     const hasMore = docs.length > limit;
     if (hasMore) {
@@ -109,7 +136,7 @@ export class CursorListing {
       hasNextPage: direction === CursorDirection.FORWARD ? hasMore : anchor.id !== null,
       hasPreviousPage: direction === CursorDirection.FORWARD ? anchor.id !== null : hasMore,
     };
-  }
+  });
 }
 
 function getTraversalDirection(
@@ -282,58 +309,15 @@ function decodeCursor(cursor: string): DecodedCursor {
 }
 
 function decodeStructuredCursor(jsonPayload: string): DecodedCursor {
-  let payload: unknown;
-
+  let payload: typeof StructuredCursorPayload.Type;
   try {
-    payload = JSON.parse(jsonPayload);
+    payload = decodeStructuredCursorPayload(jsonPayload);
   } catch {
     throw new InvalidCursorError("Invalid cursor payload");
   }
 
-  if (!isRecord(payload) || !isRecord(payload["sort"])) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  const id = payload["id"];
-  const sort = payload["sort"];
-  const sortBy = sort["by"];
-  const sortDirection = sort["direction"];
-  const sortValueRaw = sort["value"];
-
-  if (
-    typeof id !== "string" ||
-    typeof sortValueRaw !== "string" ||
-    !ObjectId.isValid(id) ||
-    !isValidCursorSortField(sortBy) ||
-    !isValidCursorSortDirection(sortDirection)
-  ) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
-  const sortValue = new Date(sortValueRaw);
-
-  if (Number.isNaN(sortValue.getTime())) {
-    throw new InvalidCursorError("Invalid cursor payload");
-  }
-
   return {
-    id: new ObjectId(id),
-    sort: {
-      by: sortBy,
-      direction: sortDirection,
-      value: sortValue,
-    },
+    id: new ObjectId(payload.id),
+    sort: payload.sort,
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isValidCursorSortField(value: unknown): value is JobCursorSortFieldType {
-  return Object.values(JobCursorSortField).includes(value as JobCursorSortFieldType);
-}
-
-function isValidCursorSortDirection(value: unknown): value is JobCursorSortDirectionType {
-  return Object.values(JobCursorSortDirection).includes(value as JobCursorSortDirectionType);
 }

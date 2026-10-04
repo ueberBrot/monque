@@ -249,6 +249,10 @@ describe("schedule()", () => {
         testValue: "recurring",
       });
       const originalJobId = job._id;
+      const completion = Promise.withResolvers<void>();
+      monque.on("job:complete", ({ job: completedJob }) => {
+        if (completedJob._id?.equals(originalJobId)) completion.resolve();
+      });
 
       // Update the job to run immediately for testing
       const collection = db.collection(collectionName);
@@ -258,6 +262,7 @@ describe("schedule()", () => {
 
       // Wait for the first execution
       await waitFor(async () => handlerCalls.length >= 1);
+      await completion.promise;
 
       // Check that the job was rescheduled (still exists with pending status and new nextRunAt)
       const rescheduledJob = await collection.findOne({ _id: originalJobId });

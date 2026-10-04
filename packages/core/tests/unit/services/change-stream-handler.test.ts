@@ -4,9 +4,11 @@
  */
 
 import { EventEmitter } from "node:events";
+import { Clock, Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
+import { fromPromise } from "@/scheduler/effects.js";
 import { ChangeStreamHandler } from "@/scheduler/services/change-stream-handler.js";
 import { PendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
 import { createMockContext } from "@tests/factories";
@@ -30,7 +32,9 @@ describe("ChangeStreamHandler", () => {
     onPoll = vi
       .fn<(targetNames?: ReadonlySet<string>) => Promise<void>>()
       .mockResolvedValue(undefined);
-    pendingNotifications = new PendingNotificationRouter(ctx, onPoll);
+    pendingNotifications = new PendingNotificationRouter(ctx, (...args) =>
+      fromPromise(() => onPoll(...args)),
+    );
     handler = new ChangeStreamHandler(ctx, pendingNotifications);
     streams = [];
     stream = createStream();
@@ -42,13 +46,95 @@ describe("ChangeStreamHandler", () => {
   });
 
   afterEach(async () => {
-    await handler.close();
+    await Effect.runPromise(handler.close());
     pendingNotifications.close();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
   describe("setup", () => {
+    it.each(["changestream:connected", "changestream:fallback"])(
+      "preserves a replacement opened by the %s callback after failed setup",
+      async (replacementEvent) => {
+        vi.useFakeTimers();
+        const connectedError = new Error("Connected listener failed");
+        let connected = 0;
+        vi.spyOn(ctx, "emit").mockImplementation((event, payload) => {
+          ctx.emitHistory.push({ event, payload });
+          if (event === "changestream:connected" && ++connected === 1) {
+            if (replacementEvent === event) handler.setup();
+            throw connectedError;
+          }
+          if (event === "changestream:fallback" && replacementEvent === event) handler.setup();
+          return true;
+        });
+
+        handler.setup();
+
+        const replacement = streams[1]!;
+        stream.emit("change", {
+          operationType: "insert",
+          fullDocument: { status: JobStatus.PENDING, name: "failed-stream" },
+        });
+        replacement.emit("change", {
+          operationType: "insert",
+          fullDocument: { status: JobStatus.PENDING, name: "replacement" },
+        });
+        await vi.advanceTimersByTimeAsync(150);
+        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+        expect(stream.close).toHaveBeenCalledOnce();
+        expect(replacement.close).not.toHaveBeenCalled();
+        await Effect.runPromise(handler.close());
+        expect(replacement.close).toHaveBeenCalledOnce();
+        expect(ctx.emitHistory).toContainEqual({
+          event: "changestream:closed",
+          payload: undefined,
+        });
+      },
+    );
+
+    it("closes the cursor when listener registration fails", async () => {
+      vi.spyOn(stream, "on").mockImplementation(() => {
+        throw new Error("Cannot register listener");
+      });
+      stream.close.mockRejectedValue(new Error("Cannot close cursor"));
+
+      handler.setup();
+
+      expect(ctx.emitHistory).toContainEqual({
+        event: "changestream:fallback",
+        payload: { reason: "Cannot register listener" },
+      });
+      await Effect.runPromise(handler.close());
+      expect(stream.close).toHaveBeenCalledOnce();
+    });
+
+    it("closes a cursor when its connected listener throws and stops its notifications", async () => {
+      vi.useFakeTimers();
+      const connectedError = new Error("Connected listener failed");
+      vi.spyOn(ctx, "emit").mockImplementation((event, payload) => {
+        if (event === "changestream:connected") throw connectedError;
+        ctx.emitHistory.push({ event, payload });
+        return true;
+      });
+
+      handler.setup();
+
+      expect(ctx.emitHistory).toContainEqual({
+        event: "changestream:fallback",
+        payload: { reason: connectedError.message },
+      });
+      stream.emit("change", {
+        operationType: "insert",
+        fullDocument: { status: JobStatus.PENDING, name: "failed-stream" },
+      });
+      await vi.advanceTimersByTimeAsync(150);
+      expect(onPoll).not.toHaveBeenCalled();
+      expect(stream.close).toHaveBeenCalledOnce();
+      await Effect.runPromise(handler.close());
+      expect(stream.close).toHaveBeenCalledOnce();
+    });
+
     it("should not setup if scheduler is not running", () => {
       vi.spyOn(ctx, "isRunning").mockReturnValue(false);
 
@@ -225,8 +311,39 @@ describe("ChangeStreamHandler", () => {
   });
 
   describe("cursor errors", () => {
+    it("lets a throwing fallback listener escape the reconnect timer callback", () => {
+      vi.useFakeTimers();
+      const listenerError = new Error("Fallback listener failed");
+      handler.setup();
+      vi.mocked(ctx.collection.watch).mockImplementationOnce(() => {
+        throw new Error("Reconnect failed");
+      });
+      const emit = vi.mocked(ctx.emit).getMockImplementation()!;
+      vi.spyOn(ctx, "emit").mockImplementation((event, payload) => {
+        const emitted = emit(event, payload);
+        if (event === "changestream:fallback") throw listenerError;
+        return emitted;
+      });
+
+      stream.emit("error", new Error("Disconnected"));
+
+      let escaped: unknown;
+      try {
+        vi.advanceTimersByTime(1000);
+      } catch (error) {
+        escaped = error;
+      }
+      expect(escaped).toBe(listenerError);
+      expect(ctx.emitHistory.filter(({ event }) => event === "changestream:fallback")).toHaveLength(
+        1,
+      );
+    });
+
     it("shortens the full-poll deadline on disconnect without needing a notification", async () => {
       vi.useFakeTimers();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(() =>
+        BigInt(Math.round(performance.now() * 1_000_000)),
+      );
       handler.setup();
       pendingNotifications.start();
       await vi.advanceTimersByTimeAsync(200);
@@ -237,7 +354,7 @@ describe("ChangeStreamHandler", () => {
       expect(onPoll).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
       expect(onPoll).toHaveBeenCalledExactlyOnceWith();
-      await handler.close();
+      await Effect.runPromise(handler.close());
     });
 
     it("preserves local-write wakeups across disconnect and reconnect", async () => {
@@ -249,7 +366,7 @@ describe("ChangeStreamHandler", () => {
       await vi.advanceTimersByTimeAsync(1000);
       await vi.advanceTimersByTimeAsync(700);
       expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["local"]));
-      await handler.close();
+      await Effect.runPromise(handler.close());
     });
 
     it("resets backoff only after a successful server response", async () => {
@@ -273,7 +390,7 @@ describe("ChangeStreamHandler", () => {
       streams.at(-1)?.emit("error", new Error("Failure after recovery"));
       vi.advanceTimersByTime(1000);
       expect(streams).toHaveLength(4);
-      await handler.close();
+      await Effect.runPromise(handler.close());
     });
 
     it("does not reconnect when a cursor error arrives after the scheduler stops", () => {
@@ -441,13 +558,13 @@ describe("ChangeStreamHandler", () => {
           ctx.emitHistory.push({ event, payload });
           if (event === restartEvent && !restarted) {
             restarted = true;
-            void handler.close();
+            void Effect.runPromise(handler.close());
             handler.setup();
           }
           return true;
         });
         if (restartEvent === "changestream:error") stream.emit("error", new Error("Restart"));
-        else await handler.close();
+        else await Effect.runPromise(handler.close());
         await vi.advanceTimersByTimeAsync(1000);
         expect(ctx.collection.watch).toHaveBeenCalledTimes(2);
         const replacement = streams[1]!;
@@ -474,7 +591,7 @@ describe("ChangeStreamHandler", () => {
         .mockReturnValueOnce(oldStream as unknown as ReturnType<typeof ctx.collection.watch>)
         .mockReturnValue(replacement as unknown as ReturnType<typeof ctx.collection.watch>);
       handler.setup();
-      const closing = handler.close();
+      const closing = Effect.runPromise(handler.close());
       try {
         oldStream.emit("change", {
           operationType: "insert",
@@ -500,7 +617,7 @@ describe("ChangeStreamHandler", () => {
       } finally {
         closed.resolve();
         await closing;
-        await handler.close();
+        await Effect.runPromise(handler.close());
       }
       expect(replacement.close).toHaveBeenCalledOnce();
     });
@@ -518,7 +635,7 @@ describe("ChangeStreamHandler", () => {
         watch.mockReturnValueOnce(stream as unknown as ReturnType<typeof ctx.collection.watch>);
       }
       handler.setup();
-      const closing = handler.close();
+      const closing = Effect.runPromise(handler.close());
       try {
         handler.setup();
         streams[1]!.emit("error", new Error("First replacement failure"));
@@ -547,13 +664,13 @@ describe("ChangeStreamHandler", () => {
       } finally {
         closed.resolve();
         await closing;
-        await handler.close();
+        await Effect.runPromise(handler.close());
       }
     });
 
     it("should close change stream and emit closed event", async () => {
       handler.setup();
-      await handler.close();
+      await Effect.runPromise(handler.close());
 
       expect(stream.close).toHaveBeenCalled();
       expect(ctx.emitHistory).toContainEqual(
@@ -569,7 +686,7 @@ describe("ChangeStreamHandler", () => {
         operationType: "insert",
         fullDocument: { status: JobStatus.PENDING },
       });
-      await handler.close();
+      await Effect.runPromise(handler.close());
       vi.advanceTimersByTime(150);
 
       expect(onPoll).toHaveBeenCalledOnce();
@@ -769,7 +886,7 @@ describe("ChangeStreamHandler", () => {
         },
       });
 
-      await handler.close();
+      await Effect.runPromise(handler.close());
 
       // Advance past the wakeup time
       vi.advanceTimersByTime(6000);
@@ -956,7 +1073,7 @@ describe("ChangeStreamHandler", () => {
       stream.emit("error", new Error("Connection lost"));
 
       // Close before reconnect timer fires
-      await handler.close();
+      await Effect.runPromise(handler.close());
 
       // Advance past the reconnect delay to verify timer was cleared
       vi.advanceTimersByTime(5000);

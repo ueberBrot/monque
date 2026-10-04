@@ -15,6 +15,45 @@
 
     // Best practices
     "strict": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnostics": true,
+        "diagnosticSeverity": {
+          "floatingEffect": "error",
+          "missingEffectContext": "error",
+          "missingEffectError": "error",
+          "missingStarInYieldEffectGen": "error",
+          "returnEffectInGen": "error",
+          "promiseInEffectSuccess": "error"
+        },
+        "overrides": [
+          {
+            "include": ["src/scheduler/effects.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "unknownInEffectCatch": "off"
+              }
+            }
+          },
+          {
+            "include": [
+              "src/scheduler/monque.ts",
+              "src/scheduler/services/cursor-listing.ts",
+              "src/scheduler/services/job-intake.ts",
+              "src/scheduler/services/job-lifecycle.ts",
+              "src/scheduler/services/job-query.ts",
+              "tests/unit/services/job-processor.test.ts"
+            ],
+            "options": {
+              "diagnosticSeverity": {
+                "globalErrorInEffectFailure": "off"
+              }
+            }
+          }
+        ]
+      }
+    ],
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,

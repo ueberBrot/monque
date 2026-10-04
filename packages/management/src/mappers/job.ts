@@ -1,20 +1,6 @@
 import type { CursorPage, PersistedJob } from "@monque/core";
 
 import type { JobCursorPageDto, JobDto } from "../schemas/index.js";
-import type { ManagementOptions } from "../surface/types.js";
-
-export async function toJobCursorPageDto<TContext>(
-  options: ManagementOptions<TContext>,
-  page: CursorPage,
-  context: TContext,
-): Promise<JobCursorPageDto> {
-  return {
-    jobs: await Promise.all(page.jobs.map((job) => toJobDto(options, job, context))),
-    cursor: page.cursor,
-    hasNextPage: page.hasNextPage,
-    hasPreviousPage: page.hasPreviousPage,
-  };
-}
 
 export function toJobSummaryPageDto(
   page: Omit<CursorPage, "jobs"> & { jobs: Omit<PersistedJob, "data">[] },
@@ -22,24 +8,7 @@ export function toJobSummaryPageDto(
   return { ...page, jobs: page.jobs.map(toJobSummaryDto) };
 }
 
-export async function toJobDto<TContext>(
-  options: ManagementOptions<TContext>,
-  job: PersistedJob,
-  context: TContext,
-): Promise<JobDto> {
-  const dto = toJobSummaryDto(job);
-  const jobName = job.name;
-  const serializers = options.serializePayloadByJobName;
-  const serializePayload =
-    (serializers && Object.hasOwn(serializers, jobName) ? serializers[jobName] : undefined) ??
-    options.serializePayload;
-  dto.payload = await (serializePayload
-    ? serializePayload({ job, payload: job.data, context })
-    : job.data);
-  return dto;
-}
-
-function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
+export function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
   const dto: JobDto = {
     id: job._id.toHexString(),
     name: job.name,

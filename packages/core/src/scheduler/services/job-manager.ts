@@ -1,8 +1,12 @@
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { type Document, ObjectId, type WithId } from "mongodb";
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from "@/jobs";
 import { ConnectionError, JobStateError, MonqueError, toError } from "@/shared";
 
+import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery } from "../helpers.js";
 import { CLAIM_CLEANUP_FIELDS } from "./job-lifecycle.js";
 import {
@@ -45,49 +49,56 @@ export class JobManager {
    * await monque.cancelJob(job._id.toString());
    * ```
    */
-  async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    try {
+  cancelJob = Effect.fnUntraced(
+    function* (
+      this: JobManager,
+      jobId: string,
+    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
 
       const _id = new ObjectId(jobId);
-      const result = await this.ctx.collection.findOneAndUpdate(
-        { _id, status: JobStatus.PENDING },
-        {
-          $set: {
-            status: JobStatus.CANCELLED,
-            updatedAt: new Date(),
+      const now = yield* DateTime.nowAsDate;
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.findOneAndUpdate(
+          { _id, status: JobStatus.PENDING },
+          {
+            $set: {
+              status: JobStatus.CANCELLED,
+              updatedAt: now,
+            },
           },
-        },
-        { returnDocument: "after" },
+          { returnDocument: "after" },
+        ),
       );
 
       if (result) {
-        const job = this.ctx.documentToPersistedJob(result);
-        this.ctx.emit("job:cancelled", { job });
+        const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
+        yield* attempt(() => this.ctx.emit("job:cancelled", { job }));
         return job;
       }
 
-      const jobDoc = await this.ctx.collection.findOne({ _id });
+      const jobDoc = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
       if (!jobDoc) {
         return null;
       }
 
       if (jobDoc["status"] === JobStatus.CANCELLED) {
-        return this.ctx.documentToPersistedJob(jobDoc);
+        return yield* attempt(() => this.ctx.documentToPersistedJob(jobDoc));
       }
 
-      throw new JobStateError(
-        `Cannot cancel job in status '${jobDoc["status"]}'`,
-        jobId,
-        jobDoc["status"],
-        "cancel",
+      return yield* Effect.fail(
+        new JobStateError(
+          `Cannot cancel job in status '${jobDoc["status"]}'`,
+          jobId,
+          jobDoc["status"],
+          "cancel",
+        ),
       );
-    } catch (error) {
-      throw jobMutationError(error, "cancelJob", "cancel job");
-    }
-  }
+    },
+    Effect.mapError((error) => jobMutationError(error, "cancelJob", "cancel job")),
+  );
 
   /**
    * Retry a failed or cancelled job.
@@ -107,14 +118,17 @@ export class JobManager {
    * });
    * ```
    */
-  async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    try {
+  retryJob = Effect.fnUntraced(
+    function* (
+      this: JobManager,
+      jobId: string,
+    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
 
       const _id = new ObjectId(jobId);
-      const now = new Date();
+      const now = yield* DateTime.nowAsDate;
       const update = {
         $set: {
           status: JobStatus.PENDING,
@@ -124,26 +138,30 @@ export class JobManager {
         },
         $unset: { failReason: "", ...CLAIM_CLEANUP_FIELDS },
       };
-      const result = await this.ctx.collection.findOneAndUpdate(
-        {
-          _id,
-          status: { $in: RETRYABLE_JOB_STATUSES },
-        },
-        update,
-        { returnDocument: "before" },
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.findOneAndUpdate(
+          {
+            _id,
+            status: { $in: RETRYABLE_JOB_STATUSES },
+          },
+          update,
+          { returnDocument: "before" },
+        ),
       );
 
       if (!result) {
-        const currentJob = await this.ctx.collection.findOne({ _id });
+        const currentJob = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
         if (!currentJob) {
           return null;
         }
 
-        throw new JobStateError(
-          `Cannot retry job in status '${currentJob["status"]}'`,
-          jobId,
-          currentJob["status"],
-          "retry",
+        return yield* Effect.fail(
+          new JobStateError(
+            `Cannot retry job in status '${currentJob["status"]}'`,
+            jobId,
+            currentJob["status"],
+            "retry",
+          ),
         );
       }
 
@@ -153,14 +171,13 @@ export class JobManager {
         delete updatedDoc[field];
       }
 
-      const job = this.ctx.documentToPersistedJob(updatedDoc);
-      this.ctx.notifyPendingJob(job.name, job.nextRunAt);
-      this.ctx.emit("job:retried", { job, previousStatus });
+      const job = yield* attempt(() => this.ctx.documentToPersistedJob(updatedDoc));
+      yield* attempt(() => this.ctx.notifyPendingJob(job.name, job.nextRunAt));
+      yield* attempt(() => this.ctx.emit("job:retried", { job, previousStatus }));
       return job;
-    } catch (error) {
-      throw jobMutationError(error, "retryJob", "retry job");
-    }
-  }
+    },
+    Effect.mapError((error) => jobMutationError(error, "retryJob", "retry job")),
+  );
 
   /**
    * Reschedule a pending job to run at a different time.
@@ -178,45 +195,53 @@ export class JobManager {
    * await monque.rescheduleJob(jobId, nextHour);
    * ```
    */
-  async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
-    try {
+  rescheduleJob = Effect.fnUntraced(
+    function* (
+      this: JobManager,
+      jobId: string,
+      runAt: Date,
+    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
 
       const _id = new ObjectId(jobId);
-      const result = await this.ctx.collection.findOneAndUpdate(
-        { _id, status: JobStatus.PENDING },
-        {
-          $set: {
-            nextRunAt: runAt,
-            updatedAt: new Date(),
+      const now = yield* DateTime.nowAsDate;
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.findOneAndUpdate(
+          { _id, status: JobStatus.PENDING },
+          {
+            $set: {
+              nextRunAt: runAt,
+              updatedAt: now,
+            },
           },
-        },
-        { returnDocument: "after" },
+          { returnDocument: "after" },
+        ),
       );
 
       if (result) {
-        const job = this.ctx.documentToPersistedJob(result);
-        this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+        const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
+        yield* attempt(() => this.ctx.notifyPendingJob(job.name, job.nextRunAt));
         return job;
       }
 
-      const currentJobDoc = await this.ctx.collection.findOne({ _id });
+      const currentJobDoc = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
       if (!currentJobDoc) {
         return null;
       }
 
-      throw new JobStateError(
-        `Cannot reschedule job in status '${currentJobDoc["status"]}'`,
-        jobId,
-        currentJobDoc["status"],
-        "reschedule",
+      return yield* Effect.fail(
+        new JobStateError(
+          `Cannot reschedule job in status '${currentJobDoc["status"]}'`,
+          jobId,
+          currentJobDoc["status"],
+          "reschedule",
+        ),
       );
-    } catch (error) {
-      throw jobMutationError(error, "rescheduleJob", "reschedule job");
-    }
-  }
+    },
+    Effect.mapError((error) => jobMutationError(error, "rescheduleJob", "reschedule job")),
+  );
 
   /**
    * Permanently delete a job.
@@ -235,24 +260,23 @@ export class JobManager {
    * }
    * ```
    */
-  async deleteJob(jobId: string): Promise<boolean> {
-    if (!ObjectId.isValid(jobId)) return false;
+  deleteJob = Effect.fnUntraced(
+    function* (this: JobManager, jobId: string): Effect.fn.Return<boolean, unknown> {
+      if (!ObjectId.isValid(jobId)) return false;
 
-    const _id = new ObjectId(jobId);
+      const _id = new ObjectId(jobId);
 
-    try {
-      const result = await this.ctx.collection.deleteOne({ _id });
+      const result = yield* fromPromise(() => this.ctx.collection.deleteOne({ _id }));
 
       if (result.deletedCount > 0) {
-        this.ctx.emit("job:deleted", { jobId });
+        yield* attempt(() => this.ctx.emit("job:deleted", { jobId }));
         return true;
       }
 
       return false;
-    } catch (error) {
-      throw jobMutationError(error, "deleteJob", "delete job");
-    }
-  }
+    },
+    Effect.mapError((error) => jobMutationError(error, "deleteJob", "delete job")),
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Bulk Operations
@@ -278,8 +302,11 @@ export class JobManager {
    * console.log(`Cancelled ${result.count} jobs`);
    * ```
    */
-  async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    const query = buildSelectorQuery(filter);
+  cancelJobs = Effect.fnUntraced(function* (
+    this: JobManager,
+    filter: JobSelector,
+  ): Effect.fn.Return<BulkOperationResult, unknown> {
+    const query = yield* attempt(() => buildSelectorQuery(filter));
 
     // Enforce allowed status, but respect explicit status filters
     if (filter.status !== undefined) {
@@ -290,26 +317,26 @@ export class JobManager {
     }
     query["status"] = JobStatus.PENDING;
 
-    try {
-      const now = new Date();
-      const result = await this.ctx.collection.updateMany(query, {
-        $set: {
-          status: JobStatus.CANCELLED,
-          updatedAt: now,
-        },
-      });
+    return yield* Effect.gen({ self: this }, function* () {
+      const now = yield* DateTime.nowAsDate;
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.updateMany(query, {
+          $set: {
+            status: JobStatus.CANCELLED,
+            updatedAt: now,
+          },
+        }),
+      );
 
       const count = result.modifiedCount;
 
       if (count > 0) {
-        this.ctx.emit("jobs:cancelled", { count });
+        yield* attempt(() => this.ctx.emit("jobs:cancelled", { count }));
       }
 
       return { count, errors: [] };
-    } catch (error) {
-      throw jobMutationError(error, "cancelJobs", "cancel jobs");
-    }
-  }
+    }).pipe(Effect.mapError((error) => jobMutationError(error, "cancelJobs", "cancel jobs")));
+  });
 
   /**
    * Retry multiple jobs matching the given filter via a single pipeline-style updateMany call.
@@ -330,8 +357,11 @@ export class JobManager {
    * console.log(`Retried ${result.count} jobs`);
    * ```
    */
-  async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    const query = buildSelectorQuery(filter);
+  retryJobs = Effect.fnUntraced(function* (
+    this: JobManager,
+    filter: JobSelector,
+  ): Effect.fn.Return<BulkOperationResult, unknown> {
+    const query = yield* attempt(() => buildSelectorQuery(filter));
 
     // Enforce allowed statuses, but respect explicit status filters
     if (filter.status !== undefined) {
@@ -349,39 +379,43 @@ export class JobManager {
 
     const spreadWindowMs = 30_000; // 30s max spread for staggered retry
 
-    try {
-      const now = new Date();
-      const result = await this.ctx.collection.updateMany(query, [
-        {
-          $set: {
-            status: JobStatus.PENDING,
-            failCount: 0,
-            nextRunAt: {
-              $add: [now, { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+    return yield* Effect.gen({ self: this }, function* () {
+      const now = yield* DateTime.nowAsDate;
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.updateMany(query, [
+          {
+            $set: {
+              status: JobStatus.PENDING,
+              failCount: 0,
+              nextRunAt: {
+                $add: [now, { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+              },
+              updatedAt: now,
             },
-            updatedAt: now,
           },
-        },
-        {
-          $unset: ["failReason", ...Object.keys(CLAIM_CLEANUP_FIELDS)],
-        },
-      ]);
+          {
+            $unset: ["failReason", ...Object.keys(CLAIM_CLEANUP_FIELDS)],
+          },
+        ]),
+      );
 
       const count = result.modifiedCount;
 
       if (count > 0) {
-        this.ctx.emit("jobs:retried", { count });
-        await this.notifyRetriedPendingJobs(filter, now).catch((error: unknown) => {
-          this.ctx.emit("job:error", { error: toError(error) });
-          this.ctx.notifyPendingJob(filter.name, now);
-        });
+        yield* attempt(() => this.ctx.emit("jobs:retried", { count }));
+        yield* this.notifyRetriedPendingJobs(filter, now).pipe(
+          Effect.catch((error) =>
+            attempt(() => {
+              this.ctx.emit("job:error", { error: toError(error) });
+              this.ctx.notifyPendingJob(filter.name, now);
+            }),
+          ),
+        );
       }
 
       return { count, errors: [] };
-    } catch (error) {
-      throw jobMutationError(error, "retryJobs", "retry jobs");
-    }
-  }
+    }).pipe(Effect.mapError((error) => jobMutationError(error, "retryJobs", "retry jobs")));
+  });
 
   /**
    * Emits local Pending Notifications for Jobs moved back to pending by bulk retry.
@@ -389,30 +423,41 @@ export class JobManager {
    * The bulk update uses MongoDB-side staggered `nextRunAt` values, so this reads back the
    * changed Jobs by their shared `updatedAt` timestamp to preserve precise wakeup times.
    */
-  private async notifyRetriedPendingJobs(filter: JobSelector, updatedAt: Date): Promise<void> {
+  private notifyRetriedPendingJobs = Effect.fnUntraced(function* (
+    this: JobManager,
+    filter: JobSelector,
+    updatedAt: Date,
+  ): Effect.fn.Return<void, unknown> {
     // Retried Jobs are pending; retain only the original name and creation-date scope.
-    const query = buildSelectorQuery({
-      ...(filter.name === undefined ? {} : { name: filter.name }),
-      ...(filter.olderThan === undefined ? {} : { olderThan: filter.olderThan }),
-      ...(filter.newerThan === undefined ? {} : { newerThan: filter.newerThan }),
-    });
+    const query = yield* attempt(() =>
+      buildSelectorQuery({
+        ...(filter.name === undefined ? {} : { name: filter.name }),
+        ...(filter.olderThan === undefined ? {} : { olderThan: filter.olderThan }),
+        ...(filter.newerThan === undefined ? {} : { newerThan: filter.newerThan }),
+      }),
+    );
     query["status"] = JobStatus.PENDING;
     query["updatedAt"] = updatedAt;
-    const cursor = this.ctx.collection.find<PendingNotificationDocument>(query, {
-      projection: { name: 1, nextRunAt: 1 },
-    });
+    const cursor = yield* attempt(() =>
+      this.ctx.collection.find<PendingNotificationDocument>(query, {
+        projection: { name: 1, nextRunAt: 1 },
+      }),
+    );
     let notified = false;
-    for await (const job of cursor) {
-      notified = true;
-      const name = typeof job.name === "string" ? job.name : undefined;
-      const nextRunAt = job.nextRunAt instanceof Date ? job.nextRunAt : updatedAt;
-
-      this.ctx.notifyPendingJob(name, nextRunAt);
-    }
+    yield* Stream.fromAsyncIterable(cursor, (error) => error).pipe(
+      Stream.runForEach((job) =>
+        attempt(() => {
+          notified = true;
+          const name = typeof job.name === "string" ? job.name : undefined;
+          const nextRunAt = job.nextRunAt instanceof Date ? job.nextRunAt : updatedAt;
+          this.ctx.notifyPendingJob(name, nextRunAt);
+        }),
+      ),
+    );
     if (!notified) {
-      this.ctx.notifyPendingJob(filter.name, updatedAt);
+      yield* attempt(() => this.ctx.notifyPendingJob(filter.name, updatedAt));
     }
-  }
+  });
 
   /**
    * Delete multiple jobs matching the given filter.
@@ -434,25 +479,26 @@ export class JobManager {
    * console.log(`Deleted ${result.count} jobs`);
    * ```
    */
-  async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    const query = buildSelectorQuery(filter);
+  deleteJobs = Effect.fnUntraced(function* (
+    this: JobManager,
+    filter: JobSelector,
+  ): Effect.fn.Return<BulkOperationResult, unknown> {
+    const query = yield* attempt(() => buildSelectorQuery(filter));
 
-    try {
-      // Use deleteMany for efficiency
-      const result = await this.ctx.collection.deleteMany(query);
+    // Use deleteMany for efficiency
+    return yield* Effect.gen({ self: this }, function* () {
+      const result = yield* fromPromise(() => this.ctx.collection.deleteMany(query));
 
       if (result.deletedCount > 0) {
-        this.ctx.emit("jobs:deleted", { count: result.deletedCount });
+        yield* attempt(() => this.ctx.emit("jobs:deleted", { count: result.deletedCount }));
       }
 
       return {
         count: result.deletedCount,
         errors: [],
       };
-    } catch (error) {
-      throw jobMutationError(error, "deleteJobs", "delete jobs");
-    }
-  }
+    }).pipe(Effect.mapError((error) => jobMutationError(error, "deleteJobs", "delete jobs")));
+  });
 }
 
 function jobMutationError(error: unknown, operation: string, action: string): MonqueError {

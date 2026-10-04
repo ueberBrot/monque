@@ -4,6 +4,9 @@
  * Tests timer setup/teardown, cleanup logic, and error emission.
  */
 
+import { it as effectIt } from "@effect/vitest";
+import { Clock, Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
@@ -23,7 +26,6 @@ describe("LifecycleManager", () => {
   let manager: LifecycleManager;
 
   beforeEach(() => {
-    vi.useFakeTimers();
     ctx = createMockContext();
     manager = new LifecycleManager(ctx);
     const job = JobFactoryHelpers.processing({ claimId: "owned-claim" });
@@ -33,11 +35,18 @@ describe("LifecycleManager", () => {
 
   afterEach(() => {
     manager.stopTimers();
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
   describe("startTimers", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(() =>
+        BigInt(Math.round(performance.now() * 1_000_000)),
+      );
+    });
+
     it("replaces retained heartbeat and cleanup timers without duplicate writes", async () => {
       ctx.options.jobRetention = { completed: 60000, interval: ctx.options.heartbeatInterval };
       const cleanup = vi.spyOn(ctx.collection, "deleteMany").mockResolvedValue({
@@ -290,6 +299,13 @@ describe("LifecycleManager", () => {
   });
 
   describe("stopTimers", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(() =>
+        BigInt(Math.round(performance.now() * 1_000_000)),
+      );
+    });
+
     it("should clear all intervals so callbacks stop firing", async () => {
       manager.startTimers();
 
@@ -315,66 +331,186 @@ describe("LifecycleManager", () => {
     });
   });
 
+  effectIt.effect("skips retention ticks until the previous cleanup settles across restart", () =>
+    Effect.gen(function* () {
+      const context = yield* Effect.context<never>();
+      ctx.options.jobRetention = { completed: 60000, interval: 1000 };
+      const result = { acknowledged: true, deletedCount: 0 };
+      const pending = Promise.withResolvers<typeof result>();
+      const deletion = vi
+        .mocked(ctx.collection.deleteMany)
+        .mockResolvedValue(result)
+        .mockReturnValueOnce(pending.promise);
+      manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+      try {
+        manager.startTimers();
+        yield* TestClock.adjust(5000);
+        expect(deletion).toHaveBeenCalledTimes(1);
+        manager.stopTimers();
+        manager.startTimers();
+        yield* TestClock.adjust(2000);
+        expect(deletion).toHaveBeenCalledTimes(1);
+
+        pending.resolve(result);
+        yield* TestClock.adjust(1000);
+        expect(deletion).toHaveBeenCalledTimes(2);
+        manager.stopTimers();
+        yield* TestClock.adjust(5000);
+        expect(deletion).toHaveBeenCalledTimes(2);
+      } finally {
+        pending.resolve(result);
+        manager.stopTimers();
+      }
+    }),
+  );
+
+  effectIt.effect.each([false, true])(
+    "keeps retention single-flight after an early failure until its sibling settles, sibling rejects: %s",
+    (siblingRejects) =>
+      Effect.gen(function* () {
+        const context = yield* Effect.context<never>();
+        ctx.options.jobRetention = { completed: 60000, failed: 120000, interval: 1000 };
+        const result = { acknowledged: true, deletedCount: 0 };
+        const pending = Promise.withResolvers<typeof result>();
+        const error = new Error("Completed retention failed");
+        const deletion = vi
+          .mocked(ctx.collection.deleteMany)
+          .mockResolvedValue(result)
+          .mockRejectedValueOnce(error)
+          .mockReturnValueOnce(pending.promise);
+        manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+        try {
+          manager.startTimers();
+          yield* TestClock.adjust(0);
+          expect(ctx.emitHistory).toEqual([{ event: "job:error", payload: { error } }]);
+          yield* TestClock.adjust(5000);
+          expect(deletion).toHaveBeenCalledTimes(2);
+          manager.stopTimers();
+          manager.startTimers();
+          yield* TestClock.adjust(1000);
+          expect(deletion).toHaveBeenCalledTimes(2);
+
+          if (siblingRejects) pending.reject(new Error("Failed retention failed"));
+          else pending.resolve(result);
+          yield* TestClock.adjust(1000);
+          expect(deletion).toHaveBeenCalledTimes(4);
+          expect(ctx.emitHistory).toHaveLength(1);
+        } finally {
+          pending.resolve(result);
+          manager.stopTimers();
+        }
+      }),
+  );
+
+  effectIt.effect.each([-1500, 1500])(
+    "keeps heartbeat and retention cadence when wall time shifts by %i ms",
+    (shift) =>
+      Effect.gen(function* () {
+        const clock = yield* Clock.Clock;
+        let offset = 60_000;
+        yield* Effect.gen(function* () {
+          const context = yield* Effect.context<never>();
+          ctx.options.heartbeatInterval = 1000;
+          ctx.options.leaseDuration = 1100;
+          ctx.options.recoverStaleJobs = false;
+          ctx.options.jobRetention = { completed: 10_000, interval: 1000 };
+          const deletion = vi.mocked(ctx.collection.deleteMany).mockResolvedValue({
+            acknowledged: true,
+            deletedCount: 0,
+          });
+          manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+          try {
+            manager.startTimers();
+            yield* TestClock.adjust(1000);
+            expect(ctx.collection.updateMany).toHaveBeenCalledTimes(1);
+            expect(deletion).toHaveBeenCalledTimes(2);
+
+            offset += shift;
+            for (let tick = 2; tick <= 4; tick++) {
+              yield* TestClock.adjust(999);
+              expect(ctx.collection.updateMany).toHaveBeenCalledTimes(tick - 1);
+              expect(deletion).toHaveBeenCalledTimes(tick);
+              yield* TestClock.adjust(1);
+              expect(ctx.collection.updateMany).toHaveBeenCalledTimes(tick);
+              expect(deletion).toHaveBeenCalledTimes(tick + 1);
+            }
+            expect(deletion).toHaveBeenLastCalledWith({
+              status: JobStatus.COMPLETED,
+              updatedAt: { $lt: new Date(54_000 + shift) },
+            });
+          } finally {
+            manager.stopTimers();
+          }
+        }).pipe(
+          Effect.provideService(Clock.Clock, {
+            ...clock,
+            currentTimeMillis: Effect.map(clock.currentTimeMillis, (now) => now + offset),
+            currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() + offset,
+          }),
+        );
+      }),
+  );
+
   describe("cleanupJobs", () => {
-    it("should delete completed jobs older than retention", async () => {
-      ctx.options.jobRetention = { completed: 60000 };
-      manager = new LifecycleManager(ctx);
+    effectIt.effect.each([
+      { status: JobStatus.COMPLETED, age: 60000, cutoff: "2025-06-01T11:59:00.000Z" },
+      { status: JobStatus.FAILED, age: 120000, cutoff: "2025-06-01T11:58:00.000Z" },
+      { status: JobStatus.CANCELLED, age: 180000, cutoff: "2025-06-01T11:57:00.000Z" },
+    ])("deletes $status jobs before the configured retention cutoff", ({ status, age, cutoff }) =>
+      Effect.gen(function* () {
+        ctx.options.jobRetention = { [status]: age };
+        vi.mocked(ctx.collection.deleteMany).mockResolvedValue({
+          acknowledged: true,
+          deletedCount: 3,
+        });
+        yield* TestClock.setTime(new Date("2025-06-01T12:00:00.000Z").getTime());
 
-      vi.spyOn(ctx.collection, "deleteMany").mockResolvedValue({
-        acknowledged: true,
-        deletedCount: 5,
-      });
+        yield* manager.cleanupJobs();
 
-      await manager.cleanupJobs();
+        expect(ctx.collection.deleteMany).toHaveBeenCalledExactlyOnceWith({
+          status,
+          updatedAt: { $lt: new Date(cutoff) },
+        });
+      }),
+    );
 
-      expect(ctx.collection.deleteMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: JobStatus.COMPLETED,
-          updatedAt: expect.objectContaining({ $lt: expect.any(Date) }),
+    effectIt.effect(
+      "recalculates every terminal retention cutoff from the current Effect time",
+      () =>
+        Effect.gen(function* () {
+          ctx.options.jobRetention = { completed: 60000, failed: 120000, cancelled: 180000 };
+          vi.mocked(ctx.collection.deleteMany).mockResolvedValue({
+            acknowledged: true,
+            deletedCount: 0,
+          });
+          yield* TestClock.setTime(new Date("2025-06-01T12:00:00.000Z").getTime());
+          yield* manager.cleanupJobs();
+          vi.mocked(ctx.collection.deleteMany).mockClear();
+          yield* TestClock.setTime(new Date("2025-06-01T12:05:00.000Z").getTime());
+
+          yield* manager.cleanupJobs();
+
+          expect(ctx.collection.deleteMany).toHaveBeenCalledTimes(3);
+          expect(ctx.collection.deleteMany).toHaveBeenCalledWith({
+            status: JobStatus.COMPLETED,
+            updatedAt: { $lt: new Date("2025-06-01T12:04:00.000Z") },
+          });
+          expect(ctx.collection.deleteMany).toHaveBeenCalledWith({
+            status: JobStatus.FAILED,
+            updatedAt: { $lt: new Date("2025-06-01T12:03:00.000Z") },
+          });
+          expect(ctx.collection.deleteMany).toHaveBeenCalledWith({
+            status: JobStatus.CANCELLED,
+            updatedAt: { $lt: new Date("2025-06-01T12:02:00.000Z") },
+          });
         }),
-      );
-    });
+    );
 
-    it("should delete failed jobs older than retention", async () => {
-      ctx.options.jobRetention = { failed: 120000 };
-      manager = new LifecycleManager(ctx);
-
-      vi.spyOn(ctx.collection, "deleteMany").mockResolvedValue({
-        acknowledged: true,
-        deletedCount: 3,
-      });
-
-      await manager.cleanupJobs();
-
-      expect(ctx.collection.deleteMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: JobStatus.FAILED,
-          updatedAt: expect.objectContaining({ $lt: expect.any(Date) }),
-        }),
-      );
-    });
-
-    it("should delete both completed and failed when both configured", async () => {
-      ctx.options.jobRetention = { completed: 60000, failed: 120000 };
-      manager = new LifecycleManager(ctx);
-
-      vi.spyOn(ctx.collection, "deleteMany").mockResolvedValue({
-        acknowledged: true,
-        deletedCount: 0,
-      });
-
-      await manager.cleanupJobs();
-
-      expect(ctx.collection.deleteMany).toHaveBeenCalledTimes(2);
-    });
-
-    it("should be a no-op when jobRetention is not configured", async () => {
-      // Default ctx has no jobRetention
-      vi.spyOn(ctx.collection, "deleteMany");
-
-      await manager.cleanupJobs();
-
-      expect(ctx.collection.deleteMany).not.toHaveBeenCalled();
-    });
+    effectIt.effect("does not delete jobs when retention is not configured", () =>
+      Effect.gen(function* () {
+        yield* manager.cleanupJobs();
+        expect(ctx.collection.deleteMany).not.toHaveBeenCalled();
+      }),
+    );
   });
 });
