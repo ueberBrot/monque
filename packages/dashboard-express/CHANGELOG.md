@@ -1,5 +1,12 @@
 # @monque/dashboard-express
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [[`3fd5079`](https://github.com/ueberBrot/monque/commit/3fd50796372adf61d1b60ea3eb6b56ebe14212bd)]:
+  - @monque/dashboard@0.5.0
+
 ## 0.3.0
 
 ### Minor Changes

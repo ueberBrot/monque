@@ -1,6 +1,6 @@
 {
   "name": "@monque/management-express",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Express adapter for the Monque management surface",
   "keywords": [
     "express",
@@ -61,7 +61,7 @@
   },
   "peerDependencies": {
     "@monque/core": "^1.15.1",
-    "@monque/management": ">=0.7.0 <0.8.0",
+    "@monque/management": ">=0.8.0 <0.9.0",
     "express": "^5.2.1",
     "mongodb": "^7.7.0"
   },

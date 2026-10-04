@@ -1,5 +1,11 @@
 # @monque/docs
 
+## 1.4.0
+
+### Minor Changes
+
+- [#589](https://github.com/ueberBrot/monque/pull/589) [`3fd5079`](https://github.com/ueberBrot/monque/commit/3fd50796372adf61d1b60ea3eb6b56ebe14212bd) - Update runtime dependencies.
+
 ## 1.3.0
 
 ### Minor Changes

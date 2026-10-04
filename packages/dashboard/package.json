@@ -1,6 +1,6 @@
 {
   "name": "@monque/dashboard",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Asset-only operator Dashboard for Monque",
   "keywords": [
     "dashboard",
