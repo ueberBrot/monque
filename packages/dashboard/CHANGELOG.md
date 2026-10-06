@@ -1,5 +1,11 @@
 # @monque/dashboard
 
+## 0.5.1
+
+### Patch Changes
+
+- [#590](https://github.com/ueberBrot/monque/pull/590) [`96c48a5`](https://github.com/ueberBrot/monque/commit/96c48a5917aa6bba37b585f8aace74fa298d43d0) - Keep loaded Job details and open action confirmations available when background refreshes fail. Authentication, permission, and missing-Job errors continue to block the detail view.
+
 ## 0.5.0
 
 ### Minor Changes
