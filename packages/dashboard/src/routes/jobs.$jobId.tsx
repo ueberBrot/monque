@@ -83,25 +83,33 @@ function JobDetail({ jobId }: { readonly jobId: string }) {
     return <JobDetailPending />;
   }
 
-  if (jobQuery.isError) {
-    const state = resolveDashboardApiErrorState(jobQuery.error, "job");
-    return (
-      <DashboardState {...state}>
-        <RetryButton
-          fetching={jobQuery.isFetching || capabilitiesQuery.isFetching}
-          onRetry={() => {
-            void jobQuery.refetch();
-            void capabilitiesQuery.refetch();
-          }}
-        />
-        <Link
-          {...backLink}
-          className="inline-flex items-center px-3 text-sm underline underline-offset-4"
-        >
-          Back to {search.queueView || "jobs"}
-        </Link>
-      </DashboardState>
-    );
+  const readError = jobQuery.isError
+    ? resolveDashboardApiErrorState(
+        jobQuery.error,
+        "job",
+        jobQuery.data ? "Job detail could not be refreshed" : undefined,
+      )
+    : null;
+  const errorPanel = readError ? (
+    <DashboardState {...readError}>
+      <RetryButton
+        fetching={jobQuery.isFetching || capabilitiesQuery.isFetching}
+        onRetry={() => {
+          void jobQuery.refetch();
+          void capabilitiesQuery.refetch();
+        }}
+      />
+      <Link
+        {...backLink}
+        className="inline-flex items-center px-3 text-sm underline underline-offset-4"
+      >
+        Back to {search.queueView || "jobs"}
+      </Link>
+    </DashboardState>
+  ) : null;
+
+  if (!jobQuery.data || (readError && readError.code !== "error")) {
+    return errorPanel;
   }
 
   const job = jobQuery.data;
@@ -112,6 +120,7 @@ function JobDetail({ jobId }: { readonly jobId: string }) {
       <Link {...backLink} className="w-fit text-sm text-muted-foreground hover:text-primary">
         ← Back to {search.queueView || "jobs"}
       </Link>
+      {errorPanel}
       {feedback ? (
         <JobActionFeedbackPanel
           feedback={feedback}
