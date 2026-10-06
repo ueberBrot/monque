@@ -217,6 +217,71 @@ describe("Job detail route", () => {
     },
   );
 
+  it.each(["Delete job", "Reschedule"])(
+    "keeps an open %s confirmation available when a background read fails",
+    async (action) => {
+      const job = createJobDetail();
+      const queryClient = createDashboardQueryClient();
+      let failReads = false;
+      await renderJobDetailRoute({
+        jobId: job.id,
+        queryClient,
+        fetch: async (input, init) => {
+          const request = new Request(input, init);
+          if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
+            throw new TypeError("Failed to fetch");
+          }
+          return createJobDetailFetch(job)(request);
+        },
+      });
+      await screen.findByRole("heading", { name: job.name });
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      await screen.findByRole("dialog");
+
+      failReads = true;
+      await act(async () => queryClient.refetchQueries());
+      await screen.findByText("Failed to fetch");
+      expect(
+        screen.getByRole("button", {
+          name: action === "Delete job" ? "Confirm delete job" : "Confirm reschedule job",
+        }),
+      ).toBeTruthy();
+    },
+  );
+
+  it.each([
+    ["UNAUTHORIZED", 401, "Sign in required"],
+    ["FORBIDDEN", 403, "Job detail is forbidden"],
+    ["NOT_FOUND", 404, "Job not found"],
+  ] satisfies ReadonlyArray<readonly [string, number, string]>)(
+    "hides the cached job and confirmation after a %s refresh",
+    async (code, status, heading) => {
+      const job = createJobDetail();
+      const queryClient = createDashboardQueryClient();
+      let failReads = false;
+      await renderJobDetailRoute({
+        jobId: job.id,
+        queryClient,
+        fetch: async (input, init) => {
+          const request = new Request(input, init);
+          if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
+            return createOrpcErrorResponse(code, status, "Host rejected the request.");
+          }
+          return createJobDetailFetch(job)(request);
+        },
+      });
+      await screen.findByRole("heading", { name: job.name });
+      fireEvent.click(screen.getByRole("button", { name: "Delete job" }));
+      await screen.findByRole("dialog");
+
+      failReads = true;
+      await act(async () => queryClient.refetchQueries());
+      await screen.findByRole("heading", { name: heading });
+      expect(screen.queryByRole("heading", { name: job.name })).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+
   it.each([
     [
       "unauthorized",
@@ -280,6 +345,7 @@ describe("Job detail route", () => {
 async function renderJobDetailRoute(options: {
   readonly fetch: typeof fetch;
   readonly jobId: string;
+  readonly queryClient?: ReturnType<typeof createDashboardQueryClient>;
 }): Promise<ReturnType<typeof getRouter>> {
   Object.defineProperty(window, "scrollTo", {
     configurable: true,
@@ -297,7 +363,7 @@ async function renderJobDetailRoute(options: {
     fetch: options.fetch,
     origin: window.location.origin,
   });
-  const queryClient = createDashboardQueryClient();
+  const queryClient = options.queryClient ?? createDashboardQueryClient();
   const router = getRouter({ managementApi, queryClient, runtimeConfig });
 
   await router.load();

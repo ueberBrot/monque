@@ -117,11 +117,34 @@ for (const view of ["detail", "list"] as const) {
       }
     };
     await openDelete();
+    let failedRead: Promise<unknown> | undefined;
+    const releaseRead = Promise.withResolvers<void>();
+    if (view === "detail") {
+      const receivedRead = Promise.withResolvers<void>();
+      await page.route(`**/api/v1/jobs/${job._id}`, async (route) => {
+        if (route.request().method() === "GET") {
+          receivedRead.resolve();
+          await releaseRead.promise;
+        }
+        await route.continue();
+      });
+      await receivedRead.promise;
+      failedRead = page.waitForEvent(
+        "requestfailed",
+        (request) =>
+          request.method() === "GET" &&
+          new URL(request.url()).pathname.endsWith(`/api/v1/jobs/${job._id}`),
+      );
+    }
     await context.setOffline(true);
     try {
+      // An in-flight poll must fail before confirming, matching the CI race.
+      releaseRead.resolve();
+      await failedRead;
       await page.getByRole("button", { name: "Confirm delete job", exact: true }).click();
       await expect(page.getByText("Action failed", { exact: true })).toBeVisible();
     } finally {
+      releaseRead.resolve();
       await context.setOffline(false);
     }
     await expect(
