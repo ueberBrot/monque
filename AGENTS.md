@@ -4,9 +4,9 @@
 
 ### Dependency skills
 
-Before changing code that uses a dependency, run `bun run skills list` from the
+Before changing code that uses a dependency, run `vp run skills list` from the
 repository root and load the most specific matching skill with
-`bun run skills load <package>#<skill>`. The root `package.json` defines the
+`vp run skills load <package>#<skill>`. The root `package.json` defines the
 permitted package sources. Apply the installed skill before editing. If no skill
 matches, use the installed source and first-party documentation.
 
