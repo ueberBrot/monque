@@ -112,6 +112,17 @@ vp run test
 vp run build
 ```
 
+`vp run test` runs the workspace unit and integration tests. To also run the CI-script
+tests and all Dashboard browser tests, complete the [browser-test setup](./apps/dashboard-dev/README.md#tests),
+then run this from the repository root:
+
+```bash
+vp run test:all
+```
+
+The full suite requires Docker, a running MongoDB instance, and Chromium as described
+in the setup guide. A failed suite stops the command with an error.
+
 The documentation site lives in [apps/docs](./apps/docs). Run `vp run @monque/docs#dev` to work on it locally.
 
 ## Inspired by
