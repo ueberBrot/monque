@@ -15,12 +15,14 @@ documentation for usage examples and detailed upgrade instructions.
 - Documentation, tests, development tooling, and behavior-preserving internal refactors
   do not need a changeset.
 
-Renovate PRs use one generated changeset covering all affected published packages, each
-with a **minor** bump and the summary "Update runtime dependencies." This includes
-`dependencies`, `optionalDependencies`, and `peerDependencies`, including `@monque/*`
-dependencies, and excludes `devDependencies`. Provide a manual changeset with specific
-notes when an update changes compatibility or requires consumer action; the generator
-preserves PRs that already include a changeset.
+Group routine dependency updates in one changeset covering all affected published
+packages, each with a **minor** bump and the summary "Update runtime dependencies."
+This includes `dependencies`, `optionalDependencies`, and `peerDependencies`, including
+`@monque/*` dependencies, and excludes `devDependencies`. Add specific notes when an update drops
+support for an existing version or requires consumer action. If a feature changeset
+already covers that requirement, no separate dependency changeset is needed.
+
+Renovate generates this changeset automatically for PRs without an existing changeset.
 
 Run `bunx changeset` from the repository root to create one. Run `bunx changeset status`
 to inspect the release plan and dependent package updates.
