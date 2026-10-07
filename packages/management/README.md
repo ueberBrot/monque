@@ -17,8 +17,9 @@ bun add @monque/management @monque/core mongodb
 `@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
 the scheduler you want to expose.
 
-Requires `@monque/core` 1.15.0 or newer within version 1. Upgrade core alongside Management
-to expose effective worker policies and renewable lease deadlines.
+Requires `@monque/core` 1.15.1 or newer within version 1. Use core 1.18.0 or newer
+to change Job priorities. Older supported core versions expose effective worker policies
+and renewable lease deadlines; the priority action is unavailable.
 
 ## Usage
 
@@ -77,6 +78,7 @@ The API uses the `/api/v1` prefix:
 | `POST`   | `/jobs/{id}/actions/cancel`                          | `cancelJob`          |
 | `POST`   | `/jobs/{id}/actions/retry`                           | `retryJob`           |
 | `POST`   | `/jobs/{id}/actions/reschedule`                      | `rescheduleJob`      |
+| `POST`   | `/jobs/{id}/actions/priority`                        | `setJobPriority`     |
 | `DELETE` | `/jobs/{id}`                                         | `deleteJob`          |
 | `POST`   | `/jobs/actions/cancel`                               | `cancelJobs`         |
 | `POST`   | `/jobs/actions/retry`                                | `retryJobs`          |
@@ -91,13 +93,25 @@ from MongoDB when supported by the scheduler. The default `view=full` and job de
 payload serialization and redaction.
 
 For selected jobs, post `{ action: 'retry', ids: ['<MongoDB ObjectId>', ...] }` to
-`/jobs/actions/selected`. Supports cancel, retry, delete and reschedule; reschedule also requires
-`nextRunAt` as an ISO timestamp. At most 100 IDs are accepted. Duplicate IDs are handled once,
-with up to five actions at a time. The API checks the bulk permission and then each job's individual
-permission. The bulk authorization input includes `ids`; per-job checks include `job`.
-The response contains `{ count, errors }`, with a status for every failed ID. Reschedule uses
-its individual permission for both checks. To act on jobs matching a filter, use the
-selector-based bulk routes.
+`/jobs/actions/selected`. Supports cancel, retry, delete, reschedule, and priority changes.
+Reschedule requires `nextRunAt` as an ISO timestamp. For priority, send
+`{ action: 'priority', ids: [...], priority: 10 }` to apply one signed safe integer to
+every selected pending Job. At most 100 IDs are accepted before deduplication. Duplicate
+IDs are handled once, with up to five actions at a time.
+
+The API checks the bulk permission and then each Job's individual permission. The bulk
+authorization input includes `ids`; per-Job checks include `job`. Reschedule and priority
+changes use their individual permissions (`reschedule` and `setJobPriority`) for both checks.
+The response contains `{ count, errors }`, with a status for every failed ID.
+Successful changes remain even when another selected Job fails. Priority changes target
+only the supplied IDs; filters and other pages never widen the selection.
+
+Send `{ priority: 10 }` to `/jobs/{id}/actions/priority` to change one pending Job.
+The operation keeps its scheduled time and returns the updated Job. Processing and
+terminal Jobs return `409`; read-only mode, denied permission, or an unsupported scheduler
+returns `403`. Check `actions.setJobPriority` in the capabilities response. See
+[priority actions](https://ueberBrot.github.io/monque/management/surface/#change-one-jobs-priority)
+for request examples, authorization, and partial results.
 
 ## Local processing controls
 

@@ -110,15 +110,16 @@ await monque.setJobPriority(id, 10); // Promote pending work
 await monque.setJobPriority(id, -3); // Demote pending work
 ```
 
-The priority must be a signed JavaScript safe integer. Invalid values, including a missing
-value, reject with `InvalidJobPriorityError` before any write. Missing or malformed Job IDs
-return `null`. Only pending Jobs can change priority, including those scheduled for the future.
+The priority must be a signed JavaScript safe integer. `setJobPriority()` rejects invalid
+or missing values with `InvalidJobPriorityError` before any write. With a valid priority,
+missing or malformed Job IDs return `null`. Only pending Jobs can change priority, including
+those scheduled for the future.
 If another Scheduler Instance claims the Job first, the change rejects with `JobStateError`.
 Running handlers are not interrupted.
 
 The operation changes priority and `updatedAt`. It preserves the payload, schedule, identity,
-retry metadata, and ownership. The new priority survives retries, rescheduling, recovery,
-and subsequent runs of a recurring Job.
+retry metadata, and ownership. The new priority stays in effect through retries, rescheduling,
+recovery, and later runs of a recurring Job.
 
 ## Bulk Operations
 
