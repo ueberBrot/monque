@@ -60,7 +60,7 @@ function JobActionDialogForm({
         if (!nextRunAt) return;
         onConfirm({ action: "reschedule", jobIds: state.jobIds, nextRunAt });
       } else if (state.action === "priority") {
-        const priority = parsePriority(value.priority);
+        const { priority } = parsePriority(value.priority);
         if (priority === undefined) return;
         onConfirm({ action: "priority", jobIds: state.jobIds, priority });
       } else {
@@ -71,7 +71,7 @@ function JobActionDialogForm({
   const date = useSelector(form.store, (state) => state.values.nextRunAt);
   const priorityValue = useSelector(form.store, (state) => state.values.priority);
   const requiresPriority = state.action === "priority";
-  const priority = parsePriority(priorityValue);
+  const { priority } = parsePriority(priorityValue);
   const requiresDate = state.action === "reschedule";
   const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
   const { actionLabel, confirmationLabel } = getJobActionLabels(state.action, state.scope);
@@ -111,7 +111,7 @@ function JobActionDialogForm({
         <form.AppField
           name="priority"
           validators={{
-            onChange: ({ value }) => getPriorityError(value),
+            onChange: ({ value }) => parsePriority(value).error,
           }}
           listeners={{
             onBlur: ({ fieldApi }) => {
@@ -181,19 +181,21 @@ function getDialogDescription(state: JobActionDialogState, priority?: number): s
   }
 }
 
-function parsePriority(value: string): number | undefined {
-  if (!value.trim()) return undefined;
-  const priority = Number(value);
-  return Number.isSafeInteger(priority) ? priority : undefined;
-}
-
-function getPriorityError(value: string): string | undefined {
-  if (!value.trim()) return "Enter a priority, such as 0, 10, or -10.";
-  if (!Number.isInteger(Number(value))) return "Use a whole number, such as 0, 10, or -10.";
-  if (!Number.isSafeInteger(Number(value))) {
-    return "That number is too large. Use a value closer to 0, such as 10 or -10.";
+function parsePriority(value: string): { priority: number | undefined; error: string | undefined } {
+  if (!value.trim()) {
+    return { priority: undefined, error: "Enter a priority, such as 0, 10, or -10." };
   }
-  return undefined;
+  const priority = Number(value);
+  if (!Number.isInteger(priority)) {
+    return { priority: undefined, error: "Use a whole number, such as 0, 10, or -10." };
+  }
+  if (!Number.isSafeInteger(priority)) {
+    return {
+      priority: undefined,
+      error: "That number is too large. Use a value closer to 0, such as 10 or -10.",
+    };
+  }
+  return { priority, error: undefined };
 }
 
 export { JobActionDialog, type JobActionDialogState };

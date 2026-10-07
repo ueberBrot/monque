@@ -207,20 +207,31 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
     return yield* attempt(() => id.toHexString());
   });
 
+  function resolveJobMutator(input: SingleJobMutationInput): SingleJobMutator | undefined {
+    switch (input.action) {
+      case "cancel":
+        return options.monque.cancelJob?.bind(options.monque);
+      case "retry":
+        return options.monque.retryJob?.bind(options.monque);
+      case "reschedule": {
+        const runAt = new Date(input.nextRunAt);
+        const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+        return rescheduleJob === undefined ? undefined : (id) => rescheduleJob(id, runAt);
+      }
+      case "setJobPriority": {
+        const { priority } = input;
+        const setJobPriority = options.monque.setJobPriority?.bind(options.monque);
+        return setJobPriority === undefined ? undefined : (id) => setJobPriority(id, priority);
+      }
+    }
+  }
+
   const executeJobMutation = Effect.fnUntraced(function* (
     input: SingleJobMutationInput,
     idInput: string,
     context: TContext,
   ) {
-    const mutate = yield* attempt(() =>
-      input.action === "reschedule"
-        ? toRescheduleJobMutator(new Date(input.nextRunAt))
-        : input.action === "setJobPriority"
-          ? toSetJobPriorityMutator(input.priority)
-          : input.action === "retry"
-            ? options.monque.retryJob?.bind(options.monque)
-            : options.monque.cancelJob?.bind(options.monque),
-    );
+    const mutate = yield* attempt(() => resolveJobMutator(input));
     const supportedMutate = yield* policy.requireMutation(input.action, mutate);
     const id = yield* resolveSingleJobTarget(input.action, idInput, context);
     const job = yield* mapJobStateConflict(fromPromise(() => supportedMutate(id)));
@@ -333,16 +344,6 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
     selectedJobActions,
     health: () => toSchedulerHealthDto(options.monque.isHealthy()),
   };
-
-  function toSetJobPriorityMutator(priority: number): SingleJobMutator | undefined {
-    const setJobPriority = options.monque.setJobPriority?.bind(options.monque);
-    return setJobPriority === undefined ? undefined : (id) => setJobPriority(id, priority);
-  }
-
-  function toRescheduleJobMutator(runAt: Date): SingleJobMutator | undefined {
-    const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
-    return rescheduleJob === undefined ? undefined : (id) => rescheduleJob(id, runAt);
-  }
 }
 
 function managementError(
