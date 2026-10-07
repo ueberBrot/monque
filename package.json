@@ -23,6 +23,7 @@
     "lint:effect": "vp run --filter @monque/core --filter @monque/management lint:effect",
     "skills": "intent",
     "test": "vp run --filter './packages/*' --filter './apps/*' test",
+    "test:all": "vp test run --project ci && vp run test && vp run @monque/dashboard-dev#test:e2e",
     "test:unit": "vp run --filter './packages/*' --filter './apps/*' test:unit",
     "test:integration": "vp run --filter './packages/*' --filter './apps/*' test:integration",
     "check": "vp run type-check && vp check --fix",
