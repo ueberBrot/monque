@@ -12,9 +12,10 @@ To add the browser dashboard, use [@monque/dashboard-express](../dashboard-expre
 bun add @monque/management-express @monque/management @monque/core express mongodb
 ```
 
-These four dependencies are peers. Requires core 1.15 or newer within version 1,
-Management 0.6.x, and the Express and MongoDB versions listed in
-[package.json](./package.json).
+These four dependencies are peers. Requires core 1.15.1 or newer within version 1,
+Management 0.8.x or 0.9.x, and the Express and MongoDB versions listed in
+[package.json](./package.json). To change Job priorities, use core 1.18.0 or newer
+and Management 0.9.x.
 
 ## Mount the API
 

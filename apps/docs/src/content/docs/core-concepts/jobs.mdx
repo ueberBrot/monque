@@ -29,6 +29,7 @@ Each job has:
 - **Data**: The payload containing information needed to complete the work
 - **Status**: Current state in the lifecycle (`pending`, `processing`, `completed`, `failed`). Can be referenced via the [`JobStatus`](/monque/api/variables/jobstatus/) Object from `@monque/core`.
 - **Scheduling**: When the job should run (`nextRunAt`)
+- **Priority**: Which due Job is claimed next within its Job Name (`priority`, default `0`)
 
 ## Job Interface
 
@@ -62,7 +63,8 @@ stateDiagram-v2
 
 ### Immediate Execution
 
-Use [`now()`](/monque/api/classes/monque/#now) for jobs that should run immediately. This is sugar for `enqueue()` without scheduling options:
+Use [`now()`](/monque/api/classes/monque/#now) to create a Job that is due immediately.
+It accepts optional `priority` and `session` options:
 
 ```typescript
 import { Monque } from "@monque/core";
@@ -91,7 +93,7 @@ Use `enqueueMany()` when submitting several jobs together:
 
 ```typescript
 const result = await monque.enqueueMany([
-  { name: "send-email", data: { userId: "123" }, uniqueKey: "welcome-123" },
+  { name: "send-email", data: { userId: "123" }, priority: 10, uniqueKey: "welcome-123" },
   {
     name: "send-reminder",
     data: { userId: "123" },
@@ -102,14 +104,14 @@ const result = await monque.enqueueMany([
 console.log(result.insertedCount, result.deduplicatedCount);
 ```
 
-Each item accepts `name`, `data`, `runAt`, and `uniqueKey`. An empty batch returns
-zero counts. Names, unique keys, and configured payload size limits are validated
+Each item accepts `name`, `data`, `priority`, `runAt`, and `uniqueKey`. An empty batch returns
+zero counts. Priorities, names, unique keys, and configured payload size limits are validated
 for every item before any writes. Standard Schema validation still runs when a
 worker claims each job.
 
 Deduplication uses the same rules as `enqueue()`: an existing pending or processing
-job with the same name and unique key keeps its payload and schedule. Writes are
-unordered; when new items share a key, do not rely on which payload wins. Completed,
+job with the same name and unique key keeps its priority, payload, and schedule. Writes are
+unordered; when new items share a key, do not rely on which payload or priority wins. Completed,
 failed, and cancelled jobs do not block a new job with that key.
 
 The result contains counts, not job documents. Without a transaction, a database
@@ -119,7 +121,7 @@ that deduplication lasts only while a job is pending or processing.
 
 ### Enqueue in a Transaction
 
-Pass a MongoDB `ClientSession` to `enqueue()`, `enqueueMany()`, or `schedule()` to
+Pass a MongoDB `ClientSession` to `enqueue()`, `now()`, `enqueueMany()`, or `schedule()` to
 commit business data and jobs together. Use the same `MongoClient` that created
 Monque's database, and initialize Monque before starting the transaction.
 
@@ -133,9 +135,24 @@ await client.withSession(async (session) => {
       {
         session,
         uniqueKey: order._id.toString(),
+        priority: 10,
       },
     );
-    await monque.enqueueMany([{ name: "update-stock", data: { orderId: order._id } }], { session });
+    await monque.enqueueMany(
+      [{ name: "update-stock", data: { orderId: order._id }, priority: -5 }],
+      { session },
+    );
+    await monque.schedule(
+      "0 9 * * *",
+      "daily-report",
+      {},
+      {
+        session,
+        priority: 5,
+        timezone: "UTC",
+        uniqueKey: "daily-report",
+      },
+    );
   });
 });
 ```
@@ -179,10 +196,19 @@ Use [`schedule()`](/monque/api/classes/monque/#schedule) for cron-based recurrin
 
 ```typescript
 // Every day at midnight
-const job = await monque.schedule("0 0 * * *", "daily-report", {
-  reportType: "sales",
-});
+const job = await monque.schedule(
+  "0 0 * * *",
+  "daily-report",
+  { reportType: "sales" },
+  { priority: 5, timezone: "UTC" },
+);
 ```
+
+Recurring schedules accept the same signed safe-integer `priority` as single and batch
+Jobs. The default is `0`. Automatic and manual retries, rescheduling, stale recovery,
+and later recurring runs retain the Job's priority. The saved timezone and cron schedule
+determine when it becomes due. Returned Jobs, lifecycle events, Management responses,
+and the Dashboard all show priority.
 
 ## Preventing Duplicates
 
@@ -382,7 +408,8 @@ During `initialize()`, Monque creates indexes for job discovery, deduplication, 
 recovery, and pagination.
 
 <Aside type="note">
-  The MongoDB user used by Monque must have permission to create indexes during initialization.
+  Grant Monque permission to create indexes, or set `skipIndexCreation: true` and manage the full
+  index set yourself.
 </Aside>
 
 Listing indexes include:
@@ -397,7 +424,10 @@ The `_id` field breaks ties for stable ordering. Name and status indexes support
 creation-time listings. A cleanup index is also created when `jobRetention` is configured.
 Enabling `jobRetention.cancelled` adds a partial `updatedAt` index for cancelled jobs;
 existing retention indexes remain valid when upgrading.
-Initialization still requires index permissions even if indexes already exist.
+Without `skipIndexCreation: true`, initialization requires index permissions even if indexes
+already exist. Priority claims and deadline discovery use separate indexes. Keep both when
+managing indexes yourself; see the
+[production index guidance](/monque/advanced/production-checklist/#10-ensure-index-permissions).
 
 ### Deleting Jobs
 

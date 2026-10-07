@@ -38,7 +38,7 @@ export class JobLifecycle {
   constructor(private readonly ctx: SchedulerContext) {}
 
   /**
-   * Atomically claim the earliest due pending job for a Worker.
+   * Atomically claim the highest-priority due pending Job for a Worker.
    */
   claimNext = Effect.fnUntraced(function* (
     this: JobLifecycle,
@@ -81,7 +81,7 @@ export class JobLifecycle {
               },
             ],
         {
-          sort: { nextRunAt: 1 },
+          sort: { priority: -1, nextRunAt: 1, _id: 1 },
           returnDocument: "after",
         },
       ),

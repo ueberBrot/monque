@@ -30,7 +30,8 @@ const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = "pending-jobs";
 
 type JobMutation =
   | { readonly action: "cancel" | "retry" }
-  | { readonly action: "reschedule"; readonly nextRunAt: string };
+  | { readonly action: "reschedule"; readonly nextRunAt: string }
+  | { readonly action: "priority"; readonly priority: number };
 
 type MutationCapability = Exclude<keyof DashboardDevScenario["capabilities"]["actions"], "read">;
 
@@ -109,7 +110,11 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
     selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) => {
       const scenario = getReadableScenario(context);
       const capability =
-        input.action === "reschedule" ? "reschedule" : (`${input.action}Bulk` as const);
+        input.action === "priority"
+          ? "setJobPriority"
+          : input.action === "reschedule"
+            ? "reschedule"
+            : (`${input.action}Bulk` as const);
       assertMutationAllowed(scenario, capability);
       const result: BulkActionResultDto = { count: 0, errors: [] };
       for (const id of new Set(input.ids)) {
@@ -119,7 +124,9 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
             mutateSingleJob(
               id,
               scenario,
-              input.action === "reschedule" ? input : { action: input.action },
+              input.action === "reschedule" || input.action === "priority"
+                ? input
+                : { action: input.action },
             );
           }
           result.count++;
@@ -178,6 +185,12 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
       mutateSingleJob(input.params.id, getReadableScenario(context), {
         action: "reschedule",
         nextRunAt: input.body.nextRunAt,
+      }),
+    ),
+    setJobPriority: managementImplementer.setJobPriority.handler(({ input, context }) =>
+      mutateSingleJob(input.params.id, getReadableScenario(context), {
+        action: "priority",
+        priority: input.body.priority,
       }),
     ),
     deleteJob: managementImplementer.deleteJob.handler(({ input, context }) =>
@@ -304,7 +317,7 @@ function getJobById(id: string, scenario: DashboardDevScenario): JobDto {
 
 function mutateSingleJob(id: string, scenario: MutableScenario, mutation: JobMutation): JobDto {
   const { action } = mutation;
-  assertMutationAllowed(scenario, action);
+  assertMutationAllowed(scenario, action === "priority" ? "setJobPriority" : action);
   const job = getJobById(id, scenario);
   if (action === "cancel" && job.status === "cancelled") return job;
   if (
@@ -358,6 +371,8 @@ function deleteSingleJob(id: string, scenario: MutableScenario): { deleted: true
 }
 
 function applyJobMutation(job: JobDto, mutation: JobMutation, now: string): JobDto {
+  if (mutation.action === "priority")
+    return { ...job, priority: mutation.priority, updatedAt: now };
   const updated: JobDto = {
     ...job,
     status: mutation.action === "cancel" ? "cancelled" : "pending",

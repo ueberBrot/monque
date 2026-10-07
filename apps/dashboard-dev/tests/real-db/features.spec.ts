@@ -39,14 +39,15 @@ test("health follows scheduler start/stop and shows actual permissions", async (
   await app.seedScenario("mutations");
   await page.goto(`${app.base}/dashboard/health`);
   await expect(page.getByRole("heading", { name: "Scheduler unavailable" })).toBeVisible();
-  await expect(page.getByText("8 of 8 available")).toBeVisible();
+  await expect(page.getByText("9 of 9 available")).toBeVisible();
+  await expect(page.getByText("Change job priority", { exact: true })).toBeVisible();
   app.monque.start();
   await expect(page.getByRole("heading", { name: "Scheduler healthy" })).toBeVisible();
   await app.monque.stop();
   await expect(page.getByRole("heading", { name: "Scheduler unavailable" })).toBeVisible();
   await page.goto(`${app.origin}/readonly/dashboard/health`);
   await expect(page.getByRole("heading", { name: "Read-only access" })).toBeVisible();
-  await expect(page.getByText("1 of 8 available")).toBeVisible();
+  await expect(page.getByText("1 of 9 available")).toBeVisible();
 });
 
 for (const field of ["Created", "Updated", "Next run"]) {
@@ -266,13 +267,13 @@ for (const clipboardState of ["unavailable", "denied"] as const) {
     await page.getByRole("button", { name: "Copy job ID", exact: true }).click();
     await expect(page.getByText("Copy failed", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Close toast", exact: true }).click();
-    await page.keyboard.press("Control+k");
+    await page.keyboard.press("ControlOrMeta+k");
     await page.getByRole("combobox", { name: "Search commands" }).fill("Copy page URL");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Commands", exact: true })).toHaveCount(0);
     await expect(page.getByText("Copy failed", { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
-    await page.keyboard.press("Control+k");
+    await page.keyboard.press("ControlOrMeta+k");
     await page.getByRole("combobox", { name: "Search commands" }).fill("Health");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
@@ -287,7 +288,7 @@ test("commands, shortcuts, navigation and themes persist on the real server", as
   await app.seedScenario("mixed");
   await page.goto(`${app.base}/dashboard/jobs`);
   await expect(page.getByRole("heading", { name: "Jobs", exact: true })).toBeVisible();
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("ControlOrMeta+k");
   await page.getByRole("combobox", { name: "Search commands" }).fill("Health");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
@@ -301,20 +302,20 @@ test("commands, shortcuts, navigation and themes persist on the real server", as
   await page.reload();
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("ControlOrMeta+k");
   const commandSearch = page.getByRole("combobox", { name: "Search commands" });
   await expect(commandSearch).toHaveValue("");
   await commandSearch.fill("no matching command");
   await expect(page.getByText("No commands found.")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Commands", exact: true })).toHaveCount(0);
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("ControlOrMeta+k");
   await expect(commandSearch).toHaveValue("");
   await commandSearch.fill("Toggle theme");
   await page.keyboard.press("Enter");
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await app.seed({ name: "new-queue" });
-  await page.keyboard.press("Control+Shift+r");
+  await page.keyboard.press("ControlOrMeta+Shift+r");
   await expect(page.getByRole("link", { name: /^new-queue/ })).toBeVisible();
 });
 

@@ -40,6 +40,7 @@ describe("documentToPersistedJob", () => {
       name: "test-job",
       data,
       status: JobStatus.PROCESSING,
+      priority: 0,
       nextRunAt: now,
       failCount: 3,
       createdAt: now,

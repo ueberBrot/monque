@@ -21,24 +21,34 @@ describe("transactional intake", () => {
   });
 
   it("publishes business data, a batch, and a recurring job only after commit", async () => {
-    const processed: unknown[] = [];
+    const processed: Array<[unknown, number | undefined]> = [];
     monque.register("work", async (job) => {
-      processed.push(job.data);
+      processed.push([job.data, job.priority]);
     });
     monque.start();
     const client = await getMongoClient();
     await client.withSession(async (session) => {
       await session.withTransaction(async () => {
         await db.collection("orders").insertOne({ reference: "order-1" }, { session });
-        const first = await monque.enqueue("work", { id: 1 }, { session, uniqueKey: "order-1" });
+        const first = await monque.enqueue(
+          "work",
+          { id: 1 },
+          { session, uniqueKey: "order-1", priority: 8 },
+        );
         expect(
-          (await monque.enqueue("work", { id: 99 }, { session, uniqueKey: "order-1" }))._id,
+          (
+            await monque.enqueue(
+              "work",
+              { id: 99 },
+              { session, uniqueKey: "order-1", priority: 99 },
+            )
+          )._id,
         ).toEqual(first._id);
         expect(
           await monque.enqueueMany(
             [
-              { name: "work", data: { id: 99 }, uniqueKey: "order-1" },
-              { name: "work", data: { id: 2 } },
+              { name: "work", data: { id: 99 }, uniqueKey: "order-1", priority: 99 },
+              { name: "work", data: { id: 2 }, priority: -3 },
             ],
             { session },
           ),
@@ -47,7 +57,7 @@ describe("transactional intake", () => {
           "0 0 1 1 *",
           "annual",
           {},
-          { session, timezone: "UTC", uniqueKey: "annual" },
+          { session, timezone: "UTC", uniqueKey: "annual", priority: 12 },
         );
         expect(await db.collection("monque_jobs").countDocuments({}, { session })).toBe(3);
         expect(await db.collection("monque_jobs").countDocuments()).toBe(0);
@@ -57,8 +67,17 @@ describe("transactional intake", () => {
       expect(session.hasEnded).toBe(false);
     });
     await waitFor(async () => processed.length === 2, { timeout: 5000 });
-    expect(processed).toEqual(expect.arrayContaining([{ id: 1 }, { id: 2 }]));
+    expect(processed).toEqual(
+      expect.arrayContaining([
+        [{ id: 1 }, 8],
+        [{ id: 2 }, -3],
+      ]),
+    );
     expect(await db.collection("orders").countDocuments()).toBe(1);
+    expect((await monque.getJobs({ name: "annual" }))[0]).toMatchObject({
+      priority: 12,
+      timezone: "UTC",
+    });
     expect(await db.collection("monque_jobs").countDocuments({ session: { $exists: true } })).toBe(
       0,
     );
@@ -71,10 +90,16 @@ describe("transactional intake", () => {
       client.withSession((session) =>
         session.withTransaction(async () => {
           await db.collection("orders").insertOne({ reference: "abort" }, { session });
-          await monque.enqueue("work", { id: 1 }, { session });
+          await monque.enqueue("work", { id: 1 }, { session, priority: 7 });
+          await monque.schedule(
+            "0 9 * * *",
+            "aborted-report",
+            {},
+            { session, priority: -8, timezone: "UTC" },
+          );
           await monque.enqueueMany(
             [
-              { name: "work", data: { id: 2 } },
+              { name: "work", data: { id: 2 }, priority: -3 },
               { name: "work", data: { reject: true } },
             ],
             { session },
@@ -83,7 +108,7 @@ describe("transactional intake", () => {
       ),
     ).rejects.toMatchObject({ code: 121 });
     expect(await db.collection("orders").countDocuments()).toBe(0);
-    expect(await db.collection("monque_jobs").countDocuments()).toBe(0);
+    expect(await monque.getJobs()).toEqual([]);
   });
 
   it("preserves native error labels so withTransaction can retry the whole transaction", async () => {
@@ -111,11 +136,49 @@ describe("transactional intake", () => {
       session.withTransaction(async () => {
         attempts++;
         await db.collection("orders").insertOne({ reference: "retry" }, { session });
-        await monque.enqueue("work", {}, { session });
+        await monque.enqueue("work", {}, { session, priority: 9 });
       }),
     );
     expect(attempts).toBe(2);
     expect(await db.collection("orders").countDocuments()).toBe(1);
-    expect(await db.collection("monque_jobs").countDocuments()).toBe(1);
+    expect(await monque.getJobs()).toMatchObject([{ priority: 9 }]);
   });
+
+  it.each(["batch", "recurring"] as const)(
+    "preserves native transaction retry labels for prioritized %s writes",
+    async (kind) => {
+      const transient = new MongoServerError({
+        message: "Write conflict",
+        code: 112,
+        errorLabels: ["TransientTransactionError"],
+      });
+      if (kind === "batch")
+        vi.spyOn(Collection.prototype, "bulkWrite").mockRejectedValueOnce(transient);
+      else vi.spyOn(Collection.prototype, "findOneAndUpdate").mockRejectedValueOnce(transient);
+      let attempts = 0;
+      const client = await getMongoClient();
+      await client.withSession((session) =>
+        session.withTransaction(async () => {
+          attempts++;
+          await monque.now("transaction-companion", {}, { session, priority: -1 });
+          try {
+            if (kind === "batch")
+              await monque.enqueueMany([{ name: "work", data: {}, priority: 17 }], { session });
+            else
+              await monque.schedule(
+                "0 9 * * *",
+                "work",
+                {},
+                { session, priority: 17, uniqueKey: "recurring" },
+              );
+          } catch (error) {
+            expect(error).toBe(transient);
+            throw error;
+          }
+        }),
+      );
+      expect(attempts).toBe(2);
+      expect(await monque.getJobs()).toMatchObject([{ priority: -1 }, { priority: 17 }]);
+    },
+  );
 });

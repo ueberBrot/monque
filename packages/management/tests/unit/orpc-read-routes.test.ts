@@ -18,6 +18,43 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("oRPC Management read routes", () => {
+  test.each([
+    [12, 12],
+    [0, 0],
+    [-7, -7],
+    [undefined, 0],
+  ])(
+    "exposes effective priority %s in detail, full lists, and metadata summaries",
+    async (priority, expected) => {
+      const job = { ...createManagementJob(), ...(priority === undefined ? {} : { priority }) };
+      const surface = createManagementSurface({
+        monque: createManagementMonque({
+          getJob: getManagementJobById(job),
+          getJobsWithCursor: async () => ({
+            jobs: [job],
+            cursor: null,
+            hasNextPage: false,
+            hasPreviousPage: false,
+          }),
+        }),
+      });
+      for (const path of [
+        `/api/v1/jobs/${job._id.toHexString()}`,
+        "/api/v1/jobs",
+        "/api/v1/jobs?view=summary",
+      ]) {
+        const response = await handleManagementGet(surface, path);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const dto = path.includes(job._id.toHexString())
+          ? JobDtoSchema.parse(body)
+          : JobCursorPageDtoSchema.parse(body).jobs[0];
+        expect(dto).toMatchObject({ priority: expected });
+        if (path.endsWith("view=summary")) expect(dto).toMatchObject({ payload: null });
+      }
+    },
+  );
+
   test.each([new Date("2026-09-27T12:00:00Z"), undefined])(
     "serializes renewable lease deadlines in detail and both listing views: %s",
     async (leaseExpiresAt) => {
@@ -195,6 +232,7 @@ describe("oRPC Management read routes", () => {
             visibleTo: "operator-1",
             jobName: "send-email",
           },
+          priority: 0,
           nextRunAt: "2026-01-01T00:00:00.000Z",
           lockedAt: null,
           claimedBy: null,
@@ -236,6 +274,7 @@ describe("oRPC Management read routes", () => {
       name: "send-email",
       status: "completed",
       payload: { visible: true },
+      priority: 0,
       nextRunAt: "2026-01-01T00:00:00.000Z",
       lockedAt: null,
       claimedBy: null,
@@ -335,6 +374,7 @@ describe("oRPC Management read routes", () => {
               source: "job",
               role: "admin",
             },
+            priority: 0,
             nextRunAt: "2026-01-01T00:00:00.000Z",
             lockedAt: "2026-01-01T00:00:01.000Z",
             claimedBy: "scheduler-1",

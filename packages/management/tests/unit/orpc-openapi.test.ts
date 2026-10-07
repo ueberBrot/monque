@@ -32,6 +32,55 @@ describe("oRPC Management OpenAPI contract", () => {
     expect(document.info.version).toMatch(/^\d+\.\d+\.\d+(?:[-+].+)?$/);
   });
 
+  test("publishes effective priority as required signed safe integer Job metadata", () => {
+    expect(document.components?.schemas?.["Job"]).toMatchObject({
+      properties: {
+        priority: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991 },
+      },
+      required: expect.arrayContaining(["priority"]),
+    });
+  });
+
+  test("publishes selected priority input limits and per-Job outcome responses", () => {
+    const route = document.paths?.["/api/v1/jobs/actions/selected"]?.post;
+    expect(route).toMatchObject({
+      operationId: "selectedJobActions",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              anyOf: expect.arrayContaining([
+                expect.objectContaining({
+                  properties: {
+                    action: { const: "priority" },
+                    ids: { type: "array", minItems: 1, maxItems: 100, items: { type: "string" } },
+                    priority: expect.objectContaining({
+                      type: "integer",
+                      minimum: -9007199254740991,
+                      maximum: 9007199254740991,
+                    }),
+                  },
+                  required: ["action", "ids", "priority"],
+                  additionalProperties: false,
+                }),
+              ]),
+            },
+          },
+        },
+      },
+      responses: {
+        "200": {
+          content: {
+            "application/json": { schema: { $ref: "#/components/schemas/BulkActionResult" } },
+          },
+        },
+      },
+    });
+    expect(route?.responses).toHaveProperty("400");
+    expect(route?.responses).toHaveProperty("403");
+  });
+
   test("publishes schedule timezone as optional Job metadata", () => {
     const job = document.components?.schemas?.["Job"];
     expect(job).toMatchObject({ properties: { timezone: { type: "string" } } });
@@ -280,6 +329,7 @@ describe("oRPC Management OpenAPI contract", () => {
         "id",
         "name",
         "status",
+        "priority",
         "payload",
         "nextRunAt",
         "lockedAt",

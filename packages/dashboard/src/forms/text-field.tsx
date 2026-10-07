@@ -11,7 +11,7 @@ type TextFieldProps = {
   description?: string;
   placeholder?: string;
   id?: string;
-  type?: "email" | "password" | "search" | "text" | "url";
+  type?: "email" | "number" | "password" | "search" | "text" | "url";
   invalid?: boolean;
 };
 
@@ -27,6 +27,8 @@ export function TextField({
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const error = getFieldErrors(field.state.meta.errors);
+  const descriptionId = description ? `${fieldId}-description` : undefined;
+  const errorId = error ? `${fieldId}-error` : undefined;
 
   return (
     <Field data-invalid={Boolean(error)}>
@@ -34,6 +36,7 @@ export function TextField({
       <Input
         id={fieldId}
         aria-invalid={invalid || Boolean(error)}
+        aria-describedby={[descriptionId, errorId].filter(Boolean).join(" ") || undefined}
         name={field.name}
         type={type}
         value={field.state.value}
@@ -41,8 +44,8 @@ export function TextField({
         onBlur={field.handleBlur}
         onChange={(event) => field.handleChange(event.currentTarget.value)}
       />
-      {description ? <FieldDescription>{description}</FieldDescription> : null}
-      {error ? <FieldError>{error}</FieldError> : null}
+      {description ? <FieldDescription id={descriptionId}>{description}</FieldDescription> : null}
+      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
     </Field>
   );
 }

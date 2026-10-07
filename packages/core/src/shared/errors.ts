@@ -160,7 +160,7 @@ export class JobStateError extends MonqueError {
     message: string,
     public readonly jobId: string,
     public readonly currentStatus: string,
-    public readonly attemptedAction: "cancel" | "retry" | "reschedule",
+    public readonly attemptedAction: "cancel" | "retry" | "reschedule" | "setJobPriority",
   ) {
     super(message);
     this.name = "JobStateError";
@@ -305,5 +305,13 @@ export class PayloadValidationError extends NonRetryableError {
       `Invalid payload for job "${jobName}": ${issues.map((issue) => issue.message).join("; ")}`,
     );
     this.name = "PayloadValidationError";
+  }
+}
+
+/** A priority supplied at runtime is not a signed JavaScript safe integer. */
+export class InvalidJobPriorityError extends MonqueError {
+  constructor() {
+    super("Priority must be a signed safe integer");
+    this.name = "InvalidJobPriorityError";
   }
 }

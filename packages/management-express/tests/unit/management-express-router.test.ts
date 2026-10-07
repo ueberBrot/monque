@@ -316,6 +316,7 @@ describe("Express Management Adapter", () => {
           retry: false,
           retryBulk: false,
           reschedule: false,
+          setJobPriority: false,
           delete: false,
           deleteBulk: false,
           pause: false,

@@ -91,6 +91,7 @@ export class ChangeStreamHandler {
                     },
                   },
                   { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
+                  { "updateDescription.updatedFields.priority": { $exists: true } },
                 ],
               },
             ],

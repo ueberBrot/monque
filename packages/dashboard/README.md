@@ -1,12 +1,26 @@
 # @monque/dashboard
 
 Inspect Monque jobs and scheduler health in your browser. Filter a job list, share its URL,
-or open a job to view its payload and failures. You can retry, cancel, reschedule, or delete
-jobs when your API permissions allow it. Queue Views show local worker policies and
-pause controls; Health provides whole-instance pause and resume. Running jobs continue
+or open a job to view its payload and failures. You can retry, cancel, reschedule, change
+priority, or delete jobs when your API permissions allow it. Queue Views show local worker
+policies and pause controls; Health provides whole-instance pause and resume. Running jobs continue
 while paused, and other scheduler instances are unaffected.
 
 The dashboard supports light and dark themes and mobile layouts.
+
+Job tables and details show priority. Use **Change priority** on a pending Job, or select
+up to 100 pending Jobs and choose the bulk action. Enter one signed safe integer and
+review the selected count and value before confirming. Higher values are claimed first among due
+Jobs with the same Job Name; `0` is the default. Recurring Jobs keep the new priority in
+future runs.
+
+The control requires the host's `setJobPriority` capability and is unavailable in read-only
+mode. Bulk changes require every selected Job to be pending and affect only those IDs.
+The API checks each Job's permission and state when applying the change. Valid changes
+can succeed while other selected Jobs fail. The Dashboard refreshes successful values,
+reports failures, and clears successful IDs from the selection. Failed IDs and unrelated
+selections remain selected while their rows are still in view. Polling preserves these
+selections and removes IDs whose rows disappear from the view.
 
 ## Installation
 

@@ -37,6 +37,12 @@ function JobDetailView({ actions, job }: JobDetailViewProps): ReactElement {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="break-all text-2xl font-semibold text-balance">{job.name}</h1>
           <JobStatusBadge status={job.status} withIcon />
+          <dl className="text-sm">
+            <div className="flex items-center gap-2">
+              <dt className="text-muted-foreground">Priority</dt>
+              <dd className="font-mono tabular-nums">{job.priority ?? 0}</dd>
+            </div>
+          </dl>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <p className="break-all font-mono text-xs text-muted-foreground">{job.id}</p>

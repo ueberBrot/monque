@@ -88,3 +88,88 @@ describe("Job action confirmation", () => {
     },
   );
 });
+
+it("requires confirmation with a signed safe-integer priority and retains the original target", async () => {
+  const onConfirm = vi.fn();
+  render(
+    <JobActionDialog
+      state={{
+        action: "priority",
+        scope: "single",
+        jobIds: ["job-a"],
+        nextRunAt: "",
+        priority: "7",
+      }}
+      busy={false}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  const input = screen.getByRole("spinbutton", { name: "Priority" });
+  expect(input.getAttribute("value")).toBe("7");
+  expect(screen.getByText(/Current priority:/).textContent).toBe("Current priority: 7");
+  const descriptionId = input.getAttribute("aria-describedby");
+  expect(document.getElementById(descriptionId ?? "")?.textContent).toContain("The default is 0");
+  const confirm = screen.getByRole("button", { name: "Confirm priority change" });
+  expect(onConfirm).not.toHaveBeenCalled();
+  for (const [priority, message] of [
+    ["", "Enter a priority, such as 0, 10, or -10."],
+    ["1.5", "Use a whole number, such as 0, 10, or -10."],
+    ["9007199254740992", "That number is too large. Use a value closer to 0, such as 10 or -10."],
+  ] as const) {
+    fireEvent.change(input, { target: { value: priority } });
+    const error = await screen.findByText(message);
+    expect(input.getAttribute("aria-describedby")?.split(" ")).toContain(error.id);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  }
+  fireEvent.change(input, { target: { value: "-12" } });
+  await waitFor(() => expect(input.getAttribute("aria-invalid")).toBe("false"));
+  expect(input.getAttribute("aria-describedby")).toBe(descriptionId);
+  expect(screen.getByText(/Current priority:/).textContent).toBe("Current priority: 7");
+  expect(confirm.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({
+      action: "priority",
+      jobIds: ["job-a"],
+      priority: -12,
+    }),
+  );
+});
+
+it("confirms one shared priority for the explicit selected scope", async () => {
+  const onConfirm = vi.fn();
+  render(
+    <JobActionDialog
+      state={{ action: "priority", scope: "bulk", jobIds: ["job-a", "job-b"], nextRunAt: "" }}
+      busy={false}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  const confirm = screen.getByRole("button", { name: "Confirm priority changes" });
+  const input = screen.getByRole("spinbutton", { name: "Priority" });
+  expect(input.getAttribute("aria-invalid")).toBe("false");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  fireEvent.blur(input);
+  expect(await screen.findByText("Enter a priority, such as 0, 10, or -10.")).toBeTruthy();
+  fireEvent.change(input, {
+    target: { value: "-12" },
+  });
+  expect(screen.getByRole("dialog").textContent).toContain(
+    "Set priority to -12 for 2 selected jobs.",
+  );
+  expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({
+      action: "priority",
+      jobIds: ["job-a", "job-b"],
+      priority: -12,
+    }),
+  );
+});

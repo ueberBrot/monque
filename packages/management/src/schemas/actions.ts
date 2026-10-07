@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { JobDetailParamsDtoSchema, JobStatusDtoSchema } from "./job.js";
+import { JobDetailParamsDtoSchema, JobDtoSchema, JobStatusDtoSchema } from "./job.js";
 
 /**
  * Bulk job selector accepted by management mutation endpoints.
@@ -75,6 +75,21 @@ export const RescheduleJobInputDtoSchema = z
 /** Detailed oRPC input shape for the reschedule route. */
 export type RescheduleJobInputDto = z.infer<typeof RescheduleJobInputDtoSchema>;
 
+/** Request body for changing a pending Job's priority. */
+export const SetJobPriorityRequestDtoSchema = z.strictObject({
+  priority: JobDtoSchema.shape.priority,
+});
+export type SetJobPriorityRequestDto = z.infer<typeof SetJobPriorityRequestDtoSchema>;
+
+/** Detailed oRPC input shape for the priority action. */
+export const SetJobPriorityInputDtoSchema = z.strictObject({
+  params: JobDetailParamsDtoSchema,
+  query: z.object({}).strict().optional(),
+  headers: z.looseObject({}).optional(),
+  body: SetJobPriorityRequestDtoSchema,
+});
+export type SetJobPriorityInputDto = z.infer<typeof SetJobPriorityInputDtoSchema>;
+
 /** Standard management error response body. */
 export const ManagementErrorDtoSchema = z
   .object({
@@ -94,6 +109,11 @@ export const SelectedJobActionsDtoSchema = z.discriminatedUnion("action", [
     action: z.literal("reschedule"),
     ids: SelectedJobIdsSchema,
     nextRunAt: z.iso.datetime(),
+  }),
+  z.strictObject({
+    action: z.literal("priority"),
+    ids: SelectedJobIdsSchema,
+    priority: SetJobPriorityRequestDtoSchema.shape.priority,
   }),
 ]);
 export type SelectedJobActionsDto = z.infer<typeof SelectedJobActionsDtoSchema>;

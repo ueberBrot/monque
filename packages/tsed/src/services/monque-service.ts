@@ -31,6 +31,7 @@ import type {
   JobSelector,
   JobWriteOptions,
   Monque,
+  NowOptions,
   PersistedJob,
   ProcessingState,
   QueueStats,
@@ -108,8 +109,8 @@ export class MonqueService {
    * @param data - Job payload
    * @returns The created job document
    */
-  async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    return this.monque.now(name, data);
+  async now<T>(name: string, data: T, options?: NowOptions): Promise<PersistedJob<T>> {
+    return this.monque.now(name, data, options);
   }
 
   /**
@@ -163,6 +164,17 @@ export class MonqueService {
    */
   async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
     return this.monque.rescheduleJob(jobId, runAt);
+  }
+
+  /**
+   * Change a pending Job's priority, including subsequent recurring runs.
+   *
+   * @param jobId - The ID of the pending Job
+   * @param priority - The new signed safe integer priority
+   * @returns The updated Job, or null for a missing or invalid identifier
+   */
+  async setJobPriority(jobId: string, priority: number): Promise<PersistedJob<unknown> | null> {
+    return this.monque.setJobPriority(jobId, priority);
   }
 
   /**

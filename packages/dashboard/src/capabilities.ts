@@ -7,6 +7,7 @@ const dashboardCapabilityActionLabels = {
   retry: "Retry job",
   retryBulk: "Retry selected jobs",
   reschedule: "Reschedule job",
+  setJobPriority: "Change job priority",
   delete: "Delete job",
   deleteBulk: "Delete selected jobs",
   pause: "Pause processing",
@@ -20,6 +21,7 @@ const dashboardCapabilityActions = [
   "retry",
   "retryBulk",
   "reschedule",
+  "setJobPriority",
   "delete",
   "deleteBulk",
 ] as const satisfies readonly (keyof CapabilityActionsDto)[];
@@ -40,7 +42,7 @@ function listDashboardCapabilityStates(
   capabilities: CapabilitiesDto,
 ): readonly DashboardCapabilityState[] {
   return dashboardCapabilityActions.map((action) => {
-    const available = capabilities.actions[action];
+    const available = Boolean(capabilities.actions[action]);
     return {
       action,
       available,

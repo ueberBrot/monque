@@ -6,7 +6,7 @@ import { useAppForm } from "@/forms";
 import { fromDateTimeLocalValue } from "@/lib/dates";
 
 import {
-  JOB_ACTION_DEFINITIONS,
+  getJobActionLabels,
   type JobActionDialogState,
   type RunJobActionsInput,
 } from "./job-actions.js";
@@ -26,7 +26,13 @@ function JobActionDialog({ state, ...props }: JobActionDialogProps) {
         if (!open) props.onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent
+        className={
+          state?.action === "priority"
+            ? "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
+            : undefined
+        }
+      >
         {state ? (
           <JobActionDialogForm
             key={`${state.action}:${state.scope}:${state.jobIds.join(",")}`}
@@ -46,37 +52,48 @@ function JobActionDialogForm({
   onConfirm,
 }: Omit<JobActionDialogProps, "state"> & { readonly state: JobActionDialogState }) {
   const form = useAppForm({
-    defaultValues: { nextRunAt: state.nextRunAt },
+    defaultValues: { nextRunAt: state.nextRunAt, priority: state.priority ?? "" },
     onSubmit: ({ value }) => {
       if (busy) return;
       if (state.action === "reschedule") {
         const nextRunAt = fromDateTimeLocalValue(value.nextRunAt);
         if (!nextRunAt) return;
         onConfirm({ action: "reschedule", jobIds: state.jobIds, nextRunAt });
+      } else if (state.action === "priority") {
+        const { priority } = parsePriority(value.priority);
+        if (priority === undefined) return;
+        onConfirm({ action: "priority", jobIds: state.jobIds, priority });
       } else {
         onConfirm({ action: state.action, jobIds: state.jobIds });
       }
     },
   });
   const date = useSelector(form.store, (state) => state.values.nextRunAt);
+  const priorityValue = useSelector(form.store, (state) => state.values.priority);
+  const requiresPriority = state.action === "priority";
+  const { priority } = parsePriority(priorityValue);
   const requiresDate = state.action === "reschedule";
   const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
-  const noun = state.scope === "single" ? "job" : "selected jobs";
-  const label = JOB_ACTION_DEFINITIONS[state.action].label;
+  const { actionLabel, confirmationLabel } = getJobActionLabels(state.action, state.scope);
 
   return (
     <form.AppForm>
       <DialogTitle>
-        {label} {noun}
+        {actionLabel}
         {state.scope === "single" && requiresDate ? "" : "?"}
       </DialogTitle>
-      <DialogDescription>{getDialogDescription(state)}</DialogDescription>
+      <DialogDescription>{getDialogDescription(state, priority)}</DialogDescription>
       {state.scope === "single" ? (
         <div className="min-w-0 rounded-lg border border-border p-3">
           <p className="break-all text-sm font-medium">{state.jobName}</p>
           <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
             {state.jobIds[0]}
           </p>
+          {requiresPriority ? (
+            <p className="mt-2 text-sm">
+              Current priority: <span className="font-mono tabular-nums">{state.priority}</span>
+            </p>
+          ) : null}
         </div>
       ) : null}
       {requiresDate ? (
@@ -90,6 +107,40 @@ function JobActionDialogForm({
           )}
         </form.AppField>
       ) : null}
+      {requiresPriority ? (
+        <form.AppField
+          name="priority"
+          validators={{
+            onChange: ({ value }) => parsePriority(value).error,
+          }}
+          listeners={{
+            onBlur: ({ fieldApi }) => {
+              void fieldApi.validate("change");
+            },
+          }}
+        >
+          {(field) => (
+            <field.TextField
+              id="job-action-priority"
+              label="Priority"
+              type="number"
+              description="Use a whole number. The default is 0; positive values have higher priority and negative values have lower priority."
+            />
+          )}
+        </form.AppField>
+      ) : null}
+      {requiresPriority ? (
+        <div className="grid gap-2 text-sm text-muted-foreground">
+          <p>
+            Among due jobs with the same name, higher values are picked first. For example, 10 comes
+            before 0, and 0 before -10.
+          </p>
+          <p>
+            Scheduled times stay the same, and running jobs continue. Recurring jobs keep this
+            priority for future runs.
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" onClick={onClose}>
           Keep current state
@@ -100,16 +151,18 @@ function JobActionDialogForm({
           onClick={() => {
             void form.handleSubmit();
           }}
-          disabled={busy || (requiresDate && !nextRunAt)}
+          disabled={
+            busy || (requiresDate && !nextRunAt) || (requiresPriority && priority === undefined)
+          }
         >
-          Confirm {state.action} {noun}
+          {confirmationLabel}
         </Button>
       </div>
     </form.AppForm>
   );
 }
 
-function getDialogDescription(state: JobActionDialogState): string {
+function getDialogDescription(state: JobActionDialogState, priority?: number): string {
   const scopeText = state.scope === "single" ? "this job" : `${state.jobIds.length} selected jobs`;
 
   switch (state.action) {
@@ -119,9 +172,30 @@ function getDialogDescription(state: JobActionDialogState): string {
       return `Confirm retry for ${scopeText}.`;
     case "reschedule":
       return `Choose a new run time for ${scopeText}.`;
+    case "priority":
+      return priority === undefined
+        ? `Choose a new priority for ${scopeText}. Only pending jobs can be changed.`
+        : `Set priority to ${priority} for ${scopeText}. Only pending jobs can be changed.`;
     case "delete":
       return `Delete is permanent. Confirm deletion for ${scopeText}.`;
   }
+}
+
+function parsePriority(value: string): { priority: number | undefined; error: string | undefined } {
+  if (!value.trim()) {
+    return { priority: undefined, error: "Enter a priority, such as 0, 10, or -10." };
+  }
+  const priority = Number(value);
+  if (!Number.isInteger(priority)) {
+    return { priority: undefined, error: "Use a whole number, such as 0, 10, or -10." };
+  }
+  if (!Number.isSafeInteger(priority)) {
+    return {
+      priority: undefined,
+      error: "That number is too large. Use a value closer to 0, such as 10 or -10.",
+    };
+  }
+  return { priority, error: undefined };
 }
 
 export { JobActionDialog, type JobActionDialogState };

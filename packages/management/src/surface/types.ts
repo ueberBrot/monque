@@ -26,6 +26,7 @@ export type ManagementAction =
   | "retry"
   | "retryBulk"
   | "reschedule"
+  | "setJobPriority"
   | "delete"
   | "deleteBulk";
 
@@ -51,6 +52,7 @@ export interface ManagementMonque {
   cancelJob?(id: string): Promise<PersistedJob | null>;
   retryJob?(id: string): Promise<PersistedJob | null>;
   rescheduleJob?(id: string, runAt: Date): Promise<PersistedJob | null>;
+  setJobPriority?(id: string, priority: number): Promise<PersistedJob | null>;
   deleteJob?(id: string): Promise<boolean>;
   cancelJobs?(selector: JobSelector): Promise<BulkOperationResult>;
   retryJobs?(selector: JobSelector): Promise<BulkOperationResult>;

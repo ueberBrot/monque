@@ -43,8 +43,9 @@ it.each(["heartbeat", "worker", "cleanup", "poll"])(
       deleteMany: async () => {
         throw sourceError;
       },
-      updateMany: async () => {
-        if (++heartbeats === 1 && mode === "heartbeat") throw sourceError;
+      updateMany: async (filter: Record<string, unknown>) => {
+        if (!("priority" in filter) && ++heartbeats === 1 && mode === "heartbeat")
+          throw sourceError;
         return { acknowledged: true, matchedCount: 1, modifiedCount: 0 };
       },
     };

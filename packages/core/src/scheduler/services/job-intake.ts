@@ -16,6 +16,7 @@ import {
   type Job,
   JobStatus,
   type JobWriteOptions,
+  type NowOptions,
   type PersistedJob,
   type ScheduleOptions,
 } from "@/jobs";
@@ -28,6 +29,7 @@ import {
   validateUniqueKey,
 } from "@/shared";
 
+import { validateJobPriority } from "../../shared/utils/job-priority.js";
 import { attempt, fromPromise } from "../effects.js";
 import type { SchedulerContext } from "./types.js";
 
@@ -178,6 +180,7 @@ export class JobIntake {
     yield* attempt(() => {
       this.validateJobIdentifiers(name, options.uniqueKey);
       this.validatePayloadSize(data);
+      validateJobPriority(options.priority);
     });
     const referenceDate = yield* DateTime.nowAsDate;
     const nextRunAt = yield* attempt(() => getNextCronDate(cron, referenceDate, options.timezone));
@@ -188,6 +191,7 @@ export class JobIntake {
         data,
         status: JobStatus.PENDING,
         nextRunAt,
+        priority: options.priority ?? 0,
         repeatInterval: cron,
         failCount: 0,
         createdAt: now,
@@ -209,6 +213,7 @@ export class JobIntake {
     yield* attempt(() => {
       this.validateJobIdentifiers(name, options.uniqueKey);
       this.validatePayloadSize(data);
+      validateJobPriority(options.priority);
     });
 
     const now = yield* DateTime.nowAsDate;
@@ -217,6 +222,7 @@ export class JobIntake {
       data,
       status: JobStatus.PENDING,
       nextRunAt: options.runAt ?? now,
+      priority: options.priority ?? 0,
       failCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -353,8 +359,9 @@ export class JobIntake {
     this: JobIntake,
     name: string,
     data: T,
+    options: NowOptions = {},
   ): Effect.fn.Return<PersistedJob<T>, unknown> {
     const runAt = yield* DateTime.nowAsDate;
-    return yield* this.enqueue(name, data, { runAt });
+    return yield* this.enqueue(name, data, { ...options, runAt });
   });
 }

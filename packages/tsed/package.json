@@ -67,7 +67,7 @@
     "zod": "^4.6.5"
   },
   "peerDependencies": {
-    "@monque/core": "^1.15.1",
+    "@monque/core": "^1.18.0",
     "@tsed/core": "^8.41.2",
     "@tsed/di": "^8.41.2",
     "@tsed/mongoose": "^8.41.2",

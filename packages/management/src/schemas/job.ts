@@ -23,6 +23,11 @@ export const JobDtoSchema = z
     id: z.string(),
     name: z.string(),
     status: JobStatusDtoSchema,
+    priority: z
+      .int()
+      .describe(
+        "Effective Job priority; higher values run first among due Jobs with the same name. Defaults to 0.",
+      ),
     payload: z.unknown().nonoptional(),
     nextRunAt: z.iso.datetime(),
     lockedAt: z.iso.datetime().nullable(),

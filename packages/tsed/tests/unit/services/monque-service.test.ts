@@ -99,7 +99,7 @@ describe("MonqueService", () => {
       it("should delegate now to monque", async () => {
         const result = await service.now("test", { data: "value" });
 
-        expect(mockMonque.now).toHaveBeenCalledWith("test", { data: "value" });
+        expect(mockMonque.now).toHaveBeenCalledWith("test", { data: "value" }, undefined);
         expect(result).toEqual({ _id: "job-2" });
       });
 

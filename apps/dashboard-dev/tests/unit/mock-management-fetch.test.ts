@@ -256,3 +256,55 @@ it.each(["delete", "deleteBulk"] as const)(
     expect(await api.job({ params: { id: job.id } })).toEqual(job);
   },
 );
+
+it("changes mock Job priority without modifying other fields and rejects stale or invalid requests", async () => {
+  const api = createDashboardManagementApi({
+    apiBaseUrl: "/",
+    origin: "https://dashboard.test",
+    fetch: createMockManagementFetch(),
+  }).client;
+  const job = (await api.jobs({ status: "pending", limit: "1" })).jobs[0];
+  if (!job) throw new Error("Expected pending job");
+  const params = { id: job.id };
+  expect((await api.capabilities()).actions.setJobPriority).toBe(true);
+  const changed = await api.setJobPriority({ params, body: { priority: -7 } });
+  expect(changed).toEqual({ ...job, priority: -7, updatedAt: changed.updatedAt });
+  expect(await api.job({ params })).toEqual(changed);
+  await expect(api.setJobPriority({ params, body: { priority: 0.5 } })).rejects.toMatchObject({
+    status: 400,
+  });
+  expect(await api.job({ params })).toEqual(changed);
+  await api.cancelJob({ params });
+  await expect(api.setJobPriority({ params, body: { priority: 8 } })).rejects.toMatchObject({
+    status: 409,
+  });
+  expect((await api.job({ params })).priority).toBe(-7);
+  await api.deleteJob({ params });
+  await expect(api.setJobPriority({ params, body: { priority: 8 } })).rejects.toMatchObject({
+    status: 404,
+  });
+});
+
+it("sets one priority on selected mock Jobs and reports stale Jobs without widening scope", async () => {
+  const api = createDashboardManagementApi({
+    apiBaseUrl: "/",
+    origin: "https://dashboard.test",
+    fetch: createMockManagementFetch(),
+  }).client;
+  const [first, stale, untouched] = (await api.jobs({ status: "pending", limit: "3" })).jobs;
+  if (!first || !stale || !untouched) throw new Error("Expected three pending Jobs");
+  await api.cancelJob({ params: { id: stale.id } });
+  expect(
+    await api.selectedJobActions({
+      action: "priority",
+      ids: [first.id, stale.id, first.id],
+      priority: -17,
+    }),
+  ).toEqual({
+    count: 1,
+    errors: [expect.objectContaining({ jobId: stale.id, status: 409 })],
+  });
+  expect((await api.job({ params: { id: first.id } })).priority).toBe(-17);
+  expect((await api.job({ params: { id: stale.id } })).priority).toBe(0);
+  expect(await api.job({ params: { id: untouched.id } })).toEqual(untouched);
+});

@@ -12,7 +12,7 @@ In an existing Ts.ED application:
 bun add @monque/tsed @monque/core mongodb
 ```
 
-Requires `@monque/core` 1.15 or newer within version 1, plus the Ts.ED and MongoDB peers
+Requires `@monque/core` 1.18.0 or newer within version 1, plus the Ts.ED and MongoDB peers
 listed in [package.json](./package.json). Mongoose is optional.
 
 ## Configure the database
@@ -72,7 +72,7 @@ export class LogJobs {
 
 The registered job names are `logs.message` and `logs.daily`. `@Job()` accepts worker
 concurrency, retry settings, and a Standard Schema compatible `schema`. `@Cron()`
-accepts schedule options such as `timezone` and `uniqueKey`, plus a job-name override.
+accepts schedule options such as `priority`, `timezone`, and `uniqueKey`, plus a job-name override.
 Scheduler settings such as `lockTimeout` and `leaseDuration` belong in `monque` configuration.
 
 ## Submit and inspect jobs
@@ -93,9 +93,17 @@ export class LogService {
 }
 ```
 
+`MonqueService.now(name, data, { priority, session })` accepts immediate creation options.
+`enqueue()` and `schedule()` accept `priority` in their options, and `enqueueMany()` accepts
+it per Job. Priorities are signed safe integers (default `0`) and survive retries,
+rescheduling, recovery, and recurring runs. Submitting an active unique key again keeps
+the Job's original priority, payload, and schedule. Upgrade core on all producers and Scheduler Instances
+for consistent priority ordering. Use `MonqueService.setJobPriority(id, priority)` to change
+the priority of a pending Job.
+
 `MonqueService` also exposes batch submission, recurring schedules, cursor queries,
 queue statistics, job actions, and local pause/resume controls. Pass `{ session }` to
-`enqueue()`, `enqueueMany()`, or `schedule()` to join a transaction owned by your application.
+`enqueue()`, `now()`, `enqueueMany()`, or `schedule()` to join a transaction owned by your application.
 The session must come from the same MongoDB client as the configured database.
 
 Set `disableJobProcessing: true` in the `monque` configuration for a producer-only

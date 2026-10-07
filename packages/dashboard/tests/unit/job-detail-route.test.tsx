@@ -457,6 +457,7 @@ function createJobDetail(overrides: Partial<JobDto> = {}): JobDto {
     id: "job-123",
     name: "send-email",
     status: "pending",
+    priority: 0,
     payload: {
       recipient: "person@example.test",
     },

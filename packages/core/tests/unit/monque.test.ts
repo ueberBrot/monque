@@ -157,7 +157,17 @@ describe("Monque", () => {
 
     it("retries failed ownership recovery without publishing partially initialized modules", async () => {
       const recovery = Promise.withResolvers<Awaited<ReturnType<Collection["updateMany"]>>>();
-      vi.mocked(mockCollection.updateMany).mockReturnValueOnce(recovery.promise);
+      let recoveryAttempts = 0;
+      vi.mocked(mockCollection.updateMany).mockImplementation(async (filter) => {
+        if (filter["status"] === "processing" && recoveryAttempts++ === 0) return recovery.promise;
+        return {
+          acknowledged: true,
+          matchedCount: 0,
+          modifiedCount: 0,
+          upsertedCount: 0,
+          upsertedId: null,
+        };
+      });
       const first = monque.initialize().catch((error: unknown) => error);
       const second = monque.initialize().catch((error: unknown) => error);
 
@@ -171,11 +181,11 @@ describe("Monque", () => {
         new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
       );
       expect(failures[1]).toBe(failures[0]);
-      expect(mockCollection.updateMany).toHaveBeenCalledOnce();
+      expect(recoveryAttempts).toBe(1);
       expect(mockCollection.findOne).not.toHaveBeenCalled();
 
       await monque.initialize();
-      expect(mockCollection.updateMany).toHaveBeenCalledTimes(2);
+      expect(recoveryAttempts).toBe(2);
       expect(mockCollection.findOne).toHaveBeenCalledOnce();
       await expect(monque.getJob(new ObjectId())).resolves.toBeNull();
       await expect(monque.enqueue("recovered", {})).resolves.toMatchObject({
@@ -300,6 +310,8 @@ describe("Monque", () => {
       });
       monque.register("work", async () => {});
       await monque.initialize();
+      // Count only runtime renewals, excluding initialization normalization/recovery.
+      vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       await vi.advanceTimersByTimeAsync(0);
       const stopping = Promise.withResolvers<void>();
@@ -333,6 +345,8 @@ describe("Monque", () => {
       const onStreamError = vi.fn();
       monque.on("changestream:error", onStreamError);
       await monque.initialize();
+      // Count only runtime renewals, excluding initialization normalization/recovery.
+      vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       const stopping = monque.stop();
 
@@ -360,6 +374,8 @@ describe("Monque", () => {
         });
         monque.register("work", async () => {});
         await monque.initialize();
+        // Count only runtime renewals, excluding initialization normalization/recovery.
+        vi.mocked(mockCollection.updateMany).mockClear();
         monque.start();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -419,6 +435,8 @@ describe("Monque", () => {
         }
       });
       await monque.initialize();
+      // Count only runtime renewals, excluding initialization normalization/recovery.
+      vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       await oldStarted.promise;
       await vi.advanceTimersByTimeAsync(0);
@@ -472,6 +490,8 @@ describe("Monque", () => {
         watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValueOnce(newStream),
       });
       await monque.initialize();
+      // Count only runtime renewals, excluding initialization normalization/recovery.
+      vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       let firstStopped = false;
       const firstStopping = monque.stop().then(() => {
@@ -546,6 +566,8 @@ describe("Monque", () => {
         }
       });
       await monque.initialize();
+      // Count only runtime renewals, excluding initialization normalization/recovery.
+      vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       await oldStarted.promise;
       await vi.advanceTimersByTimeAsync(0);
@@ -600,6 +622,8 @@ describe("Monque", () => {
           await handler.promise;
         });
         await monque.initialize();
+        // Count only runtime renewals, excluding initialization normalization/recovery.
+        vi.mocked(mockCollection.updateMany).mockClear();
         monque.start();
         await started.promise;
 

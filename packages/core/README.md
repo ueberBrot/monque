@@ -58,16 +58,17 @@ Register a worker for each job name you submit. `stop()` waits for running handl
 
 ## Scheduling and execution
 
-| Need                              | Use                                                                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey? })`                                                       |
-| Recurring work                    | `schedule(cron, name, data, { timezone?, uniqueKey? })`                                             |
-| Batch submission                  | `enqueueMany(jobs)` with per-job scheduling and unique keys                                         |
-| Jobs committed with business data | Pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
-| Payload validation                | Pass a Standard Schema compatible `schema` to `register()`                                          |
-| Retry policy                      | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker                 |
-| Concurrency limits                | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency`                         |
-| Local processing control          | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)`                                    |
+| Need                              | Use                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey?, priority? })`                                                     |
+| Immediate prioritized work        | `now(name, data, { priority?, session? })`                                                                   |
+| Recurring work                    | `schedule(cron, name, data, { priority?, timezone?, uniqueKey? })`                                           |
+| Batch submission                  | `enqueueMany(jobs)` with per-job priority, scheduling, and unique keys                                       |
+| Jobs committed with business data | Pass `{ session }` to `enqueue()`, `now()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
+| Payload validation                | Pass a Standard Schema compatible `schema` to `register()`                                                   |
+| Retry policy                      | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker                          |
+| Concurrency limits                | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency`                                  |
+| Local processing control          | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)`                                             |
 
 A unique key prevents duplicate pending or processing jobs with the same name. Once a
 job is terminal, that key can be used again. Batch submission returns inserted and
@@ -78,6 +79,35 @@ the handler; transformed output is passed to the handler while stored input stay
 
 Retries and recovery can repeat a job. Handlers must tolerate repeated external side effects.
 A pause prevents new local executions; running handlers and other scheduler instances continue.
+
+### Job priority
+
+Set `priority` with `enqueue()`, `now()`, or `schedule()`, or on each `enqueueMany()` item.
+Values must be signed JavaScript safe integers. The default is `0`; negative values put
+work below the default priority.
+
+Within a Job Name, Monque claims due pending Jobs by priority from highest to lowest.
+Ties use scheduled time, then identifier, both in ascending order. Future Jobs wait until
+their scheduled time. Job Names still share processing capacity fairly. Priority does
+not interrupt running handlers or guarantee start or completion order across instances.
+A steady supply of higher-priority work can leave lower-priority Jobs waiting indefinitely.
+
+```typescript
+await monque.enqueue("send-email", { kind: "digest" }, { priority: -10 });
+await monque.now("send-email", { kind: "password-reset" }, { priority: 10 });
+```
+
+Duplicate submissions with an active unique key keep the existing Job's priority, payload,
+and schedule. Retries, rescheduling, stale recovery, and later recurring runs retain that
+priority. Public reads and lifecycle events include its numeric value. Use
+`setJobPriority(id, priority)` to change a pending Job's priority without changing its
+scheduled time.
+
+Initialization sets missing priorities to `0`, even with `skipIndexCreation: true`.
+It preserves existing priorities, timestamps, lifecycle state, and ownership metadata.
+Upgrade all producers and claiming schedulers for consistent ordering. If you manage
+indexes yourself, keep both the priority claim index and the deadline index. See
+[priority and index deployment guidance](https://ueberBrot.github.io/monque/advanced/production-checklist/#10-ensure-index-permissions).
 
 ## Recovering interrupted work
 

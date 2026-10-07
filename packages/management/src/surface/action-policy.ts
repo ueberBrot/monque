@@ -18,6 +18,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
   retry: false,
   retryBulk: false,
   reschedule: false,
+  setJobPriority: false,
   delete: false,
   deleteBulk: false,
   pause: false,
@@ -130,6 +131,8 @@ function isManagementActionSupported(monque: ManagementMonque, action: Managemen
       return Boolean(monque.retryJob);
     case "retryBulk":
       return Boolean(monque.retryJobs);
+    case "setJobPriority":
+      return Boolean(monque.setJobPriority);
     case "reschedule":
       return Boolean(monque.rescheduleJob);
     case "delete":

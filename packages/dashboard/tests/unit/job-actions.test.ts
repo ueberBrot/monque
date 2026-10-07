@@ -12,6 +12,7 @@ describe("runJobActions", () => {
       id: "000000000000000000000001",
       name: "email",
       status: "pending",
+      priority: 0,
       payload: { recipient: "person@example.test" },
       nextRunAt: "2026-09-19T12:00:00.000Z",
       createdAt: "2026-09-19T11:00:00.000Z",
@@ -78,6 +79,30 @@ describe("runJobActions", () => {
     expect(client.getQueryState(capabilities.queryKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(health.queryKey)?.isInvalidated).toBe(false);
     client.clear();
+  });
+
+  it("changes selected priorities in one request and preserves failed IDs", async () => {
+    const ids = ["000000000000000000000001", "000000000000000000000002"];
+    const api = createDashboardManagementApi({
+      apiBaseUrl: "/",
+      origin: "https://dashboard.test",
+      fetch: async (input) => {
+        const request = input instanceof Request ? input : new Request(input);
+        expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
+        expect(await request.json()).toEqual({ action: "priority", ids, priority: -8 });
+        return Response.json({
+          count: 1,
+          errors: [{ jobId: ids[1], error: "Job is processing", status: 409 }],
+        });
+      },
+    });
+    expect(
+      await runJobActions(api, { action: "priority", jobIds: ids, priority: -8 }),
+    ).toMatchObject({
+      count: 1,
+      failed: [ids[1]],
+      firstError: { status: 409, message: "Job is processing" },
+    });
   });
 
   it("returns an empty result without issuing requests when nothing is selected", async () => {
