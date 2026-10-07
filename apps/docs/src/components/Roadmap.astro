@@ -2,7 +2,7 @@
 interface RoadmapItem {
 	title: string;
 	version?: string;
-	status: 'completed' | 'current' | 'planned';
+	status: 'completed' | 'available' | 'planned';
 	date?: string;
 	description?: string;
 	features?: string[];
@@ -13,6 +13,11 @@ interface Props {
 }
 
 const { items } = Astro.props as Props;
+const statusLabels = {
+	completed: 'Completed',
+	available: 'Available',
+	planned: 'Planned',
+};
 void items;
 ---
 
@@ -31,6 +36,7 @@ void items;
 							<h3 class="roadmap-title">{item.title}</h3>
 							{item.date && <span class="roadmap-date">{item.date}</span>}
 						</div>
+						<span class="roadmap-status">{statusLabels[item.status]}</span>
 					</div>
 					
 					{item.description && <p class="roadmap-desc">{item.description}</p>}
@@ -116,13 +122,13 @@ void items;
          background: var(--monque-primary);
     }
 
-	/* Current (In Progress) */
-	.status-current .roadmap-marker {
+	/* Available */
+	.status-available .roadmap-marker {
 		background-color: var(--monque-secondary);
 		box-shadow: 0 0 0 4px var(--monque-secondary-low);
 		transform: scale(1.1);
 	}
-	.status-current .roadmap-title {
+	.status-available .roadmap-title {
 		color: var(--monque-secondary);
 	}
 
@@ -164,6 +170,15 @@ void items;
 		color: var(--sl-color-gray-2);
 		border: 1px solid var(--sl-color-hairline);
 	}
+
+	.roadmap-status {
+		border: 1px solid var(--sl-color-hairline);
+		border-radius: 999px;
+		padding: 0.125rem 0.625rem;
+		color: var(--sl-color-gray-2);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
 	
 	.status-completed .roadmap-version {
 		background-color: var(--monque-primary-low);
@@ -171,7 +186,7 @@ void items;
 		border-color: transparent;
 	}
 
-	.status-current .roadmap-version {
+	.status-available .roadmap-version {
 		background-color: var(--monque-secondary-low);
 		color: var(--monque-secondary);
 		border-color: transparent;
