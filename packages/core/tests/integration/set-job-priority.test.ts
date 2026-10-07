@@ -81,7 +81,7 @@ describe("Changing a pending Job priority", () => {
     expect(await monque.setJobPriority("000000000000000000000000", 2)).toBeNull();
   });
 
-  it("wins before a competing Scheduler Instance claims and rejects edits after claim", async () => {
+  it("uses edited priorities for selection and rejects edits after claim", async () => {
     const collectionName = uniqueCollectionName("priority-race");
     const producer = new Monque(db, { collectionName });
     const consumer = new Monque(db, { collectionName, workerConcurrency: 1 });
