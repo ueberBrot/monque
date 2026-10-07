@@ -6,7 +6,7 @@ import { useAppForm } from "@/forms";
 import { fromDateTimeLocalValue } from "@/lib/dates";
 
 import {
-  JOB_ACTION_DEFINITIONS,
+  getJobActionLabels,
   type JobActionDialogState,
   type RunJobActionsInput,
 } from "./job-actions.js";
@@ -68,13 +68,12 @@ function JobActionDialogForm({
   const priority = parsePriority(priorityValue);
   const requiresDate = state.action === "reschedule";
   const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
-  const noun = state.scope === "single" ? "job" : "selected jobs";
-  const label = JOB_ACTION_DEFINITIONS[state.action].label;
+  const { actionLabel, confirmationLabel } = getJobActionLabels(state.action, state.scope);
 
   return (
     <form.AppForm>
       <DialogTitle>
-        {label} {noun}
+        {actionLabel}
         {state.scope === "single" && requiresDate ? "" : "?"}
       </DialogTitle>
       <DialogDescription>{getDialogDescription(state, priority)}</DialogDescription>
@@ -124,7 +123,7 @@ function JobActionDialogForm({
             busy || (requiresDate && !nextRunAt) || (requiresPriority && priority === undefined)
           }
         >
-          Confirm {state.action} {noun}
+          {confirmationLabel}
         </Button>
       </div>
     </form.AppForm>

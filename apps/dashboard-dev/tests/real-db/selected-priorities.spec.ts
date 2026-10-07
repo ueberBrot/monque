@@ -11,8 +11,10 @@ test("selected priority confirmation changes only the selected pending Jobs", as
   await page.goto(`${app.base}/dashboard/jobs`);
   for (const job of [first, second])
     await page.getByRole("checkbox", { name: `Select job row ${job.name} ${job._id}` }).check();
-  await page.getByRole("button", { name: "Change priority selected jobs", exact: true }).click();
-  const confirm = page.getByRole("button", { name: "Confirm priority selected jobs", exact: true });
+  await page
+    .getByRole("button", { name: "Change priority for selected jobs", exact: true })
+    .click();
+  const confirm = page.getByRole("button", { name: "Confirm priority changes", exact: true });
   const input = page.getByRole("spinbutton", { name: "Priority", exact: true });
   for (const value of ["", "0.5", "9007199254740992"]) {
     await input.fill(value);
@@ -58,7 +60,9 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
   await page.goto(`${app.origin}/private/dashboard/jobs`);
   for (const job of [valid, stale, missing, denied])
     await page.getByRole("checkbox", { name: `Select job row ${job.name} ${job._id}` }).check();
-  await page.getByRole("button", { name: "Change priority selected jobs", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Change priority for selected jobs", exact: true })
+    .click();
   await page.getByRole("spinbutton", { name: "Priority", exact: true }).fill("23");
   await expect(page.getByRole("dialog")).toContainText("Set priority to 23 for 4 selected jobs.");
   const resumeReads = Promise.withResolvers<void>();
@@ -80,7 +84,7 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
     const response = page.waitForResponse((response) =>
       response.url().endsWith("/jobs/actions/selected"),
     );
-    await page.getByRole("button", { name: "Confirm priority selected jobs", exact: true }).click();
+    await page.getByRole("button", { name: "Confirm priority changes", exact: true }).click();
     await received.promise;
     await page.getByRole("checkbox", { name: `Select job row untouched ${untouched._id}` }).check();
     release.resolve();
@@ -116,11 +120,11 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
   expect((await app.monque.getJob(denied._id))?.priority).toBe(6);
   expect((await app.monque.getJob(untouched._id))?.priority).toBe(7);
   await expect(
-    page.getByRole("button", { name: "Change priority selected jobs", exact: true }),
+    page.getByRole("button", { name: "Change priority for selected jobs", exact: true }),
   ).toBeDisabled();
   await page.getByRole("checkbox", { name: `Select job row stale ${stale._id}` }).uncheck();
   await expect(
-    page.getByRole("button", { name: "Change priority selected jobs", exact: true }),
+    page.getByRole("button", { name: "Change priority for selected jobs", exact: true }),
   ).toBeEnabled();
   await page.waitForResponse(
     (response) =>
@@ -143,7 +147,10 @@ test("selected priority requires all pending Jobs and an enabled host capability
     ),
   );
   await page.goto(`${app.base}/dashboard/jobs`);
-  const priority = page.getByRole("button", { name: "Change priority selected jobs", exact: true });
+  const priority = page.getByRole("button", {
+    name: "Change priority for selected jobs",
+    exact: true,
+  });
   await page.getByRole("checkbox", { name: `Select job row pending ${pending._id}` }).check();
   await expect(priority).toBeEnabled();
   for (const job of others) {
@@ -171,16 +178,18 @@ test("selected priority reports a revoked operator session and leaves Jobs uncha
   await page.goto(`${app.origin}/private/dashboard/jobs`);
   for (const job of [first, second])
     await page.getByRole("checkbox", { name: `Select job row ${job.name} ${job._id}` }).check();
-  await page.getByRole("button", { name: "Change priority selected jobs", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Change priority for selected jobs", exact: true })
+    .click();
   await page.getByRole("spinbutton", { name: "Priority", exact: true }).fill("12");
   const cookie = (await context.cookies()).find((cookie) => cookie.name === "session");
   const session = app.sessions.get(cookie?.value ?? "");
   if (!session) throw new Error("Missing operator session");
   session.role = "viewer";
-  await page.getByRole("button", { name: "Confirm priority selected jobs", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm priority changes", exact: true }).click();
   await expect(page.getByText("Action unavailable", { exact: true }).first()).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Change priority selected jobs", exact: true }),
+    page.getByRole("button", { name: "Change priority for selected jobs", exact: true }),
   ).toBeDisabled();
   for (const [job, priority] of [
     [first, 1],

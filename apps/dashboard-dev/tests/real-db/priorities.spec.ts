@@ -79,13 +79,13 @@ test("single priority confirmation refreshes the Job and preserves unrelated sel
   });
   await selected.check();
   await page.getByRole("button", { name: `Actions for ${first._id}` }).click();
-  await page.getByRole("menuitem", { name: "Change priority job", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Change job priority", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText(first._id.toHexString());
   const input = page.getByRole("spinbutton", { name: "Priority", exact: true });
   await expect(input).toHaveValue("2");
   await input.fill("14");
   expect((await app.monque.getJob(first._id))?.priority).toBe(2);
-  await page.getByRole("button", { name: "Confirm priority job", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm priority change", exact: true }).click();
   await expect(page.getByText("Job priority changed", { exact: true })).toBeVisible();
   const row = page
     .getByRole("row")
@@ -97,7 +97,7 @@ test("single priority confirmation refreshes the Job and preserves unrelated sel
   await page.getByRole("link", { name: "first-priority", exact: true }).click();
   await page.getByRole("button", { name: "Change priority", exact: true }).click();
   await input.fill("-9");
-  await page.getByRole("button", { name: "Confirm priority job", exact: true }).click();
+  await page.getByRole("button", { name: "Confirm priority change", exact: true }).click();
   await expect(
     page
       .getByRole("term")
@@ -141,7 +141,7 @@ for (const change of ["cancelled", "missing", "denied"] as const) {
           response.request().method() === "POST" &&
           response.url().endsWith(`/jobs/${job._id}/actions/priority`),
       );
-      await page.getByRole("button", { name: "Confirm priority job", exact: true }).click();
+      await page.getByRole("button", { name: "Confirm priority change", exact: true }).click();
       expect((await response).status()).toBe(
         change === "cancelled" ? 409 : change === "missing" ? 404 : 403,
       );

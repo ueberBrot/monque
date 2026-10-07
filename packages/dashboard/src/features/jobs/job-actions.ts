@@ -155,6 +155,21 @@ const JOB_ACTION_DEFINITIONS = {
   }
 >;
 
+function getJobActionLabels(action: JobActionKey, scope: "bulk" | "single") {
+  if (action === "priority") {
+    return {
+      actionLabel: scope === "single" ? "Change job priority" : "Change priority for selected jobs",
+      confirmationLabel:
+        scope === "single" ? "Confirm priority change" : "Confirm priority changes",
+    };
+  }
+  const noun = scope === "single" ? "job" : "selected jobs";
+  return {
+    actionLabel: `${JOB_ACTION_DEFINITIONS[action].label} ${noun}`,
+    confirmationLabel: `Confirm ${action} ${noun}`,
+  };
+}
+
 function getJobActionAvailability(
   job: JobDto,
   capabilities: CapabilitiesDto | undefined,
@@ -294,6 +309,7 @@ export {
   getActionSuccessFeedback,
   getBulkJobActionAvailability,
   getJobActionAvailability,
+  getJobActionLabels,
   JOB_ACTION_DEFINITIONS,
   JOB_ACTION_ORDER,
   type JobActionDialogState,

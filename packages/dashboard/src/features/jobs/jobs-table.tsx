@@ -40,7 +40,7 @@ import { useMediaQuery } from "@/lib/use-media-query";
 
 import {
   getJobActionAvailability,
-  JOB_ACTION_DEFINITIONS,
+  getJobActionLabels,
   JOB_ACTION_ORDER,
   type JobActionKey,
 } from "./job-actions.js";
@@ -298,7 +298,7 @@ function JobActionsCell({ row }: JobCellProps) {
       <DropdownMenuContent className="w-64" align="end">
         {JOB_ACTION_ORDER.map((action) => {
           const { disabled, reason } = getJobActionAvailability(job, capabilities, action);
-          const label = `${JOB_ACTION_DEFINITIONS[action].label} job`;
+          const { actionLabel: label } = getJobActionLabels(action, "single");
           const reasonId = `${job.id}-${action}-reason`;
           return (
             <DropdownMenuItem

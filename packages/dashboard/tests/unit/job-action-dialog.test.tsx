@@ -107,7 +107,7 @@ it("requires confirmation with a signed safe-integer priority and retains the or
   );
   const input = screen.getByRole("spinbutton", { name: "Priority" });
   expect(input.getAttribute("value")).toBe("7");
-  const confirm = screen.getByRole("button", { name: "Confirm priority job" });
+  const confirm = screen.getByRole("button", { name: "Confirm priority change" });
   expect(onConfirm).not.toHaveBeenCalled();
   for (const priority of ["", "1.5", "9007199254740992"]) {
     fireEvent.change(input, { target: { value: priority } });
@@ -137,7 +137,7 @@ it("confirms one shared priority for the explicit selected scope", async () => {
       onConfirm={onConfirm}
     />,
   );
-  const confirm = screen.getByRole("button", { name: "Confirm priority selected jobs" });
+  const confirm = screen.getByRole("button", { name: "Confirm priority changes" });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
     target: { value: "-12" },
