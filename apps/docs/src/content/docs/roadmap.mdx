@@ -3,56 +3,64 @@ title: Project Direction
 description: High-level direction for Monque core and ecosystem.
 ---
 
-import Roadmap from "../../components/Roadmap.astro";
+What you can use today and where Monque is heading. Planned work has no release date.
 
-These are the current features and planned additions. Planned work has no release date.
+## Available today
 
-See [Dashboard setup](/monque/dashboard/express/) for the available integration.
+### Job priorities
 
-## Direction
+Choose which due Jobs are claimed first within each Job Name.
 
-<Roadmap
-  items={[
-    {
-      title: "Management Ecosystem",
-      status: "current",
-      description: "Use the Management API with your HTTP framework through an adapter.",
-      features: [
-        "Describe the HTTP API with OpenAPI",
-        "Use application authentication and permissions for each action",
-        "Add framework adapters only when there is clear demand",
-      ],
-    },
-    {
-      title: "Dashboard",
-      status: "current",
-      description: "Inspect and manage jobs through a dashboard served from your application.",
-      features: [
-        "Serve prebuilt assets with the Express dashboard adapter",
-        "Inspect Queue Views, jobs, payloads, and scheduler health",
-        "Share filtered job lists and run individual or bulk actions",
-        "Use application authentication and API-enforced permissions",
-      ],
-    },
-    {
-      title: "Orchestration And Pipelines",
-      status: "planned",
-      description: "Define how related jobs run in sequence or depend on each other.",
-      features: [
-        "Coordinate related jobs in application code",
-        "Define pipelines through configuration",
-        "Track progress through job events and the Management API",
-      ],
-    },
-    {
-      title: "Operational Scale",
-      status: "planned",
-      description: "Add controls for applications with larger queues or multiple tenants.",
-      features: [
-        "Group jobs by namespace or tenant",
-        "Set rate limits, job priorities, and processing policies",
-        "Standalone dashboard deployment and Docker packaging",
-      ],
-    },
-  ]}
-/>
+- Use signed numeric priorities, with higher numbers claimed first.
+- Keep priorities through retries, rescheduling, and recurring runs.
+- Inspect priorities and change pending Jobs individually or in a selection through Management and Dashboard.
+
+See [priority changes](/monque/core-concepts/management/#change-priority).
+
+### Management API
+
+Use the Management API with your HTTP framework through an adapter.
+
+- Describe the HTTP API with OpenAPI.
+- Use application authentication and permissions for each action.
+- Integrate with Express through the Management Adapter.
+
+See [Management API setup](/monque/management/surface/).
+
+### Dashboard
+
+Inspect and manage Jobs through a Dashboard served from your application.
+
+- Serve prebuilt assets with the Express Dashboard Adapter.
+- Inspect Queue Views, Jobs, payloads, and scheduler health.
+- Share filtered Job lists and run individual or bulk actions.
+- Use application authentication and API-enforced permissions.
+
+See [Dashboard setup](/monque/dashboard/express/).
+
+## Planned
+
+### Shared rate limits
+
+Control how quickly Jobs start across Scheduler Instances.
+
+- Share a start-rate budget per Job Name across instances.
+- Keep due Jobs pending while the shared budget is exhausted.
+- Expose rate policies and throttling through Management and Dashboard.
+
+### Orchestration and pipelines
+
+Define how related Jobs run in sequence or depend on each other.
+
+- Add APIs for coordinating dependent Jobs.
+- Define pipelines through configuration.
+- Track progress through Job events and the Management API.
+
+### Operational scale
+
+Add controls for applications with larger Job backlogs or multiple tenants.
+
+- Group Jobs by namespace or tenant.
+- Support standalone Dashboard deployment and Docker packaging.
+
+Additional processing policies and Management Adapters will be considered when there is clear demand.
