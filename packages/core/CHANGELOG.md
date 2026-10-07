@@ -1,5 +1,13 @@
 # @monque/core
 
+## 1.18.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Add `setJobPriority(id, priority)` to promote or demote pending Jobs without changing their schedule. Changes persist across recurring runs and are rejected after a Job is claimed.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Add signed `priority` values to `enqueue()`, `now()`, `enqueueMany()`, and `schedule()`; higher values run first among due Jobs with the same Job Name, with `0` as the default. Follow the [upgrade requirements](https://ueberbrot.github.io/monque/advanced/production-checklist/#10-ensure-index-permissions) for shared collections and indexes.
+
 ## 1.17.0
 
 ### Minor Changes

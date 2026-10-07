@@ -1,5 +1,15 @@
 # @monque/management
 
+## 0.9.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Set one priority for up to 100 explicitly selected pending Jobs through the selected-action endpoint, with per-Job errors.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Include Job priority in list, summary, and detail responses and their OpenAPI schemas.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Add an authorized priority action for pending Jobs, with capability discovery and read-only enforcement.
+
 ## 0.8.0
 
 ### Minor Changes

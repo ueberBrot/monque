@@ -1,5 +1,11 @@
 # @monque/management-express
 
+## 0.7.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Update runtime dependencies.
+
 ## 0.6.1
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @monque/tsed
 
+## 1.17.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Add `MonqueService.setJobPriority(id, priority)` to change pending Job priorities.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Support priority options in `MonqueService` and `@Cron`, including `priority` and `session` in `now()`. Requires `@monque/core` `^1.18.0`.
+
 ## 1.16.0
 
 ### Minor Changes
