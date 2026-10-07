@@ -235,8 +235,11 @@ Post a JSON body to `/api/v1/jobs/actions/selected`:
 }
 ```
 
-Supported actions are `cancel`, `retry`, `delete`, and `reschedule`. Rescheduling also
-requires `nextRunAt`. Requests accept 1 to 100 IDs; duplicate IDs are processed once.
+Supported actions are `cancel`, `retry`, `delete`, `reschedule`, and `priority`. Rescheduling
+requires `nextRunAt`; a priority change requires `priority`. Requests accept 1 to 100 IDs
+before deduplication. Duplicate IDs are processed and counted once, including IDs that
+differ only in letter case. Only the supplied IDs are targets; filters and cursor pages
+never widen the selection.
 
 The response reports successful changes and individual failures:
 
@@ -255,6 +258,40 @@ The response reports successful changes and individual failures:
 
 A response can contain both successes and failures. Successful changes are not rolled back
 when another job fails. Check `errors` even when the request returns HTTP 200.
+
+### Change selected priorities
+
+Send `POST /api/v1/jobs/actions/selected` with one priority for the selected Jobs:
+
+```json
+{
+  "action": "priority",
+  "ids": ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"],
+  "priority": 10
+}
+```
+
+The priority must be a signed JavaScript safe integer. Invalid input returns `400` before
+any Job changes. Each target must still be pending when the API applies the change;
+future Jobs are eligible too. The operation keeps each Job's scheduled time and uses the
+same `setJobPriority` permission and capability as a single-Job change. Read-only mode
+and schedulers without that method reject the action with `403`.
+
+Authorization first checks `setJobPriority` with the selected `ids`, then checks the same
+action with each current `job` and request `context`. A missing Job returns a per-Job `404`,
+a denied Job returns `403`, and a processing or terminal Job returns `409`. A Job claimed
+before its update also returns `409`. Other selected Jobs can succeed; failed and unselected
+Jobs keep their values. There is no selector-wide priority action.
+
+In the Dashboard, select pending Jobs and choose **Change priority**. The bulk control is
+available only when every selected Job is pending and the action is enabled. Enter one
+priority, then review the selected count and value before confirming. The server rechecks
+state and permissions, so changes after selection can produce partial results.
+
+After the response, the Dashboard refreshes priorities, clears successful IDs from the
+selection, and reports success and failure counts with the first error. Failed IDs and unrelated selections
+remain selected while their rows are still in the current view. Polling preserves those
+selections and removes IDs whose rows disappear from the view.
 
 ## Selector-based bulk actions
 
@@ -298,7 +335,8 @@ Available action names are `read`, `cancel`, `cancelBulk`, `retry`, `retryBulk`,
 Capabilities checks do not include a job, selector, or IDs. Handle those inputs as optional.
 Selected cancel, retry, and delete requests first check the corresponding bulk permission,
 then the individual permission for each job. Selected rescheduling checks `reschedule` at
-both stages. Selector-based bulk actions check the selector once, without per-job checks.
+both stages; selected priority changes check `setJobPriority` at both stages. Selector-based
+bulk actions check the selector once, without per-job checks.
 
 Set `readOnly: true` to reject all mutations with HTTP 403. It does not bypass read
 authorization. Without `authorize`, supported operations are allowed unless read-only mode

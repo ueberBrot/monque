@@ -402,25 +402,26 @@ one priority, but many distinct future priorities increase the index work. Mongo
 instead scan the due range through a deadline index and sort its candidates by priority.
 No one plan is cheapest for every distribution.
 
-The focused MongoDB 8 integration test records execution statistics from actual scheduler
-commands. After claiming an urgent Job, 100 overdue Jobs at priority `-1` remained beside
-1,000 far-future Jobs. When the future Jobs shared priority `100`, the next claim examined
-2 keys and 1 document. With 1,000 distinct future priorities, MongoDB chose a top-one sort
-and examined 100 keys and 100 documents. The same distinct-priority fixture with
-`skipIndexCreation: true` and only the existing deadline index also selected the correct
-due Job, examining 100 keys and 100 documents for the next claim. Deadline discovery
-examined 1 key and no documents in all three cases. These are fixture observations,
-not workload-independent bounds; inspect
-execution statistics on your own distributions. Reproduce them from `packages/core` with:
+The MongoDB 8 integration test measures scheduler queries. After an urgent Job was claimed,
+the test collection held 100 overdue Jobs at priority `-1` and 1,000 Jobs due far in the future.
+
+When the future Jobs shared priority `100`, the next claim examined 2 keys and 1 document.
+With 1,000 distinct future priorities, MongoDB sorted the due Jobs to select the first one,
+examining 100 keys and 100 documents. With `skipIndexCreation: true` and only the existing
+deadline index, that same distinct-priority case also selected the correct due Job, examining
+100 keys and 100 documents. Deadline discovery examined 1 key and no documents in all three cases.
+
+These results describe the test data; costs vary with your backlog. Inspect execution
+statistics on your own data. To reproduce the test, run this from `packages/core`:
 
 ```bash
 vp test run tests/integration/priority-query.test.ts --reporter verbose --silent false
 ```
 
-Initialization also normalizes missing Job priorities to `0`, even when index creation is
-disabled. Allow writes for that automatic upgrade. It preserves existing timestamps,
-lifecycle and ownership metadata, and explicit priorities. Upgrade all producers and
-claiming Scheduler Instances before relying on consistent priority guarantees.
+Initialization also sets missing Job priorities to `0`, even when index creation is disabled.
+Grant write access for this automatic upgrade. It preserves existing priorities, timestamps,
+lifecycle state, and ownership metadata. Upgrade all producers and claiming Scheduler Instances
+before relying on consistent priority ordering.
 
 ## 11. Configure Management and Dashboard Access
 

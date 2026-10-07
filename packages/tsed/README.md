@@ -12,7 +12,7 @@ In an existing Ts.ED application:
 bun add @monque/tsed @monque/core mongodb
 ```
 
-Requires `@monque/core` 1.15 or newer within version 1, plus the Ts.ED and MongoDB peers
+Requires `@monque/core` 1.18.0 or newer within version 1, plus the Ts.ED and MongoDB peers
 listed in [package.json](./package.json). Mongoose is optional.
 
 ## Configure the database
@@ -96,8 +96,10 @@ export class LogService {
 `MonqueService.now(name, data, { priority, session })` accepts immediate creation options.
 `enqueue()` and `schedule()` accept `priority` in their options, and `enqueueMany()` accepts
 it per Job. Priorities are signed safe integers (default `0`) and survive retries,
-rescheduling, recovery, and recurring runs. An active duplicate retains its original
-priority, payload, and schedule. Upgrade core on all producers and Workers for priority support.
+rescheduling, recovery, and recurring runs. Submitting an active unique key again keeps
+the Job's original priority, payload, and schedule. Upgrade core on all producers and Scheduler Instances
+for consistent priority ordering. Use `MonqueService.setJobPriority(id, priority)` to change
+the priority of a pending Job.
 
 `MonqueService` also exposes batch submission, recurring schedules, cursor queries,
 queue statistics, job actions, and local pause/resume controls. Pass `{ session }` to

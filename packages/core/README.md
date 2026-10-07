@@ -82,26 +82,31 @@ A pause prevents new local executions; running handlers and other scheduler inst
 
 ### Job priority
 
-`enqueue()`, `now()`, `schedule()`, and each `enqueueMany()` item accept signed safe-integer priorities. Omission means `0`, higher
-numbers run first, and negative values mean below-normal work. Among due pending Jobs with
-the same name, claims order by priority descending, then scheduled time and identifier
-ascending. Future Jobs remain ineligible until their scheduled time. Priority preserves
-fairness between Job Names and never interrupts running handlers; it does not guarantee
-global start or completion order across instances. A continuous urgent backlog can starve
-lower-priority work.
+Set `priority` with `enqueue()`, `now()`, or `schedule()`, or on each `enqueueMany()` item.
+Values must be signed JavaScript safe integers. The default is `0`; negative values put
+work below the default priority.
+
+Within a Job Name, Monque claims due pending Jobs by priority from highest to lowest.
+Ties use scheduled time, then identifier, both in ascending order. Future Jobs wait until
+their scheduled time. Job Names still share processing capacity fairly. Priority does
+not interrupt running handlers or guarantee start or completion order across instances.
+A steady supply of higher-priority work can leave lower-priority Jobs waiting indefinitely.
 
 ```typescript
 await monque.enqueue("send-email", { kind: "digest" }, { priority: -10 });
 await monque.now("send-email", { kind: "password-reset" }, { priority: 10 });
 ```
 
-Duplicate submissions with an active unique key return the existing Job without changing
-its priority, payload, and schedule. Retries, rescheduling, stale recovery, and subsequent
-recurring runs retain that priority. Public reads and lifecycle events expose effective numeric priority.
-Initialization automatically sets missing priorities to `0`, preserving explicit values,
-timestamps, lifecycle state, and ownership metadata, including with `skipIndexCreation`.
-Upgrade all producers and claiming schedulers for uniform guarantees. Managed indexes need
-both the priority claim index and the separate deadline index; see the
+Duplicate submissions with an active unique key keep the existing Job's priority, payload,
+and schedule. Retries, rescheduling, stale recovery, and later recurring runs retain that
+priority. Public reads and lifecycle events include its numeric value. Use
+`setJobPriority(id, priority)` to change a pending Job's priority without changing its
+scheduled time.
+
+Initialization sets missing priorities to `0`, even with `skipIndexCreation: true`.
+It preserves existing priorities, timestamps, lifecycle state, and ownership metadata.
+Upgrade all producers and claiming schedulers for consistent ordering. If you manage
+indexes yourself, keep both the priority claim index and the deadline index. See
 [priority and index deployment guidance](https://ueberBrot.github.io/monque/advanced/production-checklist/#10-ensure-index-permissions).
 
 ## Recovering interrupted work

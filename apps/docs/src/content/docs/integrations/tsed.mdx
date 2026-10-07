@@ -56,11 +56,11 @@ Install these peer dependencies alongside the integration:
 
 | Package          | Version   | Required                      |
 | ---------------- | --------- | ----------------------------- |
-| `@monque/core`   | `^1.15.0` | Yes                           |
-| `mongodb`        | `^7.6.0`  | Yes                           |
-| `@tsed/core`     | `^8.38.7` | Yes                           |
-| `@tsed/di`       | `^8.38.7` | Yes                           |
-| `@tsed/mongoose` | `^8.38.7` | Only for Mongoose integration |
+| `@monque/core`   | `^1.18.0` | Yes                           |
+| `mongodb`        | `^7.7.0`  | Yes                           |
+| `@tsed/core`     | `^8.41.2` | Yes                           |
+| `@tsed/di`       | `^8.41.2` | Yes                           |
+| `@tsed/mongoose` | `^8.41.2` | Only for Mongoose integration |
 
 ## Configuration
 
@@ -221,7 +221,7 @@ export class ReportJobs {
 }
 ```
 
-Both `@Cron` and `MonqueService.schedule()` forward core `priority`, `timezone`, and `uniqueKey` options:
+Set `priority`, `timezone`, and `uniqueKey` with either `@Cron` or `MonqueService.schedule()`:
 
 ```typescript
 await monqueService.schedule(
@@ -243,10 +243,11 @@ unchanged. See [timezone scheduling](/monque/core-concepts/scheduling/#timezone-
 for daylight saving behavior and rollout guidance.
 
 Priority belongs to each Job, not its Worker. `MonqueService.now(name, data, { priority, session })`
-also forwards immediate creation options; existing two-argument calls still work. Omitted
+accepts options for immediate Jobs; existing two-argument calls still work. The default
 priority is `0`, and supplied values must be signed safe integers. Recurring runs and
-retries retain priority; submitting an active Unique Key again keeps the original Job.
-Use a core version with priority support on every producer and Worker.
+retries retain priority. Submitting an active Unique Key again keeps the original Job.
+Use `@monque/core` 1.18.0 or newer on every producer and Scheduler Instance for consistent
+priority ordering. To change a pending Job's priority, call `MonqueService.setJobPriority(id, priority)`.
 
 ### 3. Enqueue Jobs
 

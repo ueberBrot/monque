@@ -6,6 +6,8 @@
 "@monque/dashboard-express": minor
 ---
 
-Add `setJobPriority(id, priority)` to promote or demote pending Jobs without changing their schedule. Priority changes apply to future recurring runs and reject if another scheduler has already claimed the Job.
+Promote or demote pending Jobs with `setJobPriority(id, priority)`, through the Management API, or with **Change priority** in the Dashboard. In the Dashboard, review the value before confirming. The change keeps the scheduled time and applies to later recurring runs. If another scheduler has already claimed the Job, the change is rejected.
 
-Add the Management priority action, authorization capability, and Dashboard confirmation control. Update the Express adapters for the compatible Management and Dashboard releases.
+Control access with the `setJobPriority` authorization action. Read-only mode and schedulers without this method disable the action.
+
+The Management Express adapter accepts Management 0.8.x and 0.9.x; use 0.9.x with core 1.18.0 or newer for priority changes. The Dashboard Express adapter includes the updated Dashboard.
