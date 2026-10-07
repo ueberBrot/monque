@@ -11,7 +11,7 @@ type TextFieldProps = {
   description?: string;
   placeholder?: string;
   id?: string;
-  type?: "email" | "password" | "search" | "text" | "url";
+  type?: "email" | "number" | "password" | "search" | "text" | "url";
   invalid?: boolean;
 };
 

@@ -46,19 +46,26 @@ function JobActionDialogForm({
   onConfirm,
 }: Omit<JobActionDialogProps, "state"> & { readonly state: JobActionDialogState }) {
   const form = useAppForm({
-    defaultValues: { nextRunAt: state.nextRunAt },
+    defaultValues: { nextRunAt: state.nextRunAt, priority: state.priority ?? "" },
     onSubmit: ({ value }) => {
       if (busy) return;
       if (state.action === "reschedule") {
         const nextRunAt = fromDateTimeLocalValue(value.nextRunAt);
         if (!nextRunAt) return;
         onConfirm({ action: "reschedule", jobIds: state.jobIds, nextRunAt });
+      } else if (state.action === "priority") {
+        const priority = parsePriority(value.priority);
+        if (priority === undefined) return;
+        onConfirm({ action: "priority", jobIds: state.jobIds, priority });
       } else {
         onConfirm({ action: state.action, jobIds: state.jobIds });
       }
     },
   });
   const date = useSelector(form.store, (state) => state.values.nextRunAt);
+  const priorityValue = useSelector(form.store, (state) => state.values.priority);
+  const requiresPriority = state.action === "priority";
+  const priority = parsePriority(priorityValue);
   const requiresDate = state.action === "reschedule";
   const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
   const noun = state.scope === "single" ? "job" : "selected jobs";
@@ -90,6 +97,19 @@ function JobActionDialogForm({
           )}
         </form.AppField>
       ) : null}
+      {requiresPriority ? (
+        <form.AppField name="priority">
+          {(field) => (
+            <field.TextField
+              id="job-action-priority"
+              label="Priority"
+              type="number"
+              invalid={priority === undefined}
+              description="Enter a whole number from -9007199254740991 to 9007199254740991. Higher values run first; 0 is normal."
+            />
+          )}
+        </form.AppField>
+      ) : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" onClick={onClose}>
           Keep current state
@@ -100,7 +120,9 @@ function JobActionDialogForm({
           onClick={() => {
             void form.handleSubmit();
           }}
-          disabled={busy || (requiresDate && !nextRunAt)}
+          disabled={
+            busy || (requiresDate && !nextRunAt) || (requiresPriority && priority === undefined)
+          }
         >
           Confirm {state.action} {noun}
         </Button>
@@ -119,9 +141,17 @@ function getDialogDescription(state: JobActionDialogState): string {
       return `Confirm retry for ${scopeText}.`;
     case "reschedule":
       return `Choose a new run time for ${scopeText}.`;
+    case "priority":
+      return `Choose a new priority for ${scopeText}. Only pending jobs can be changed.`;
     case "delete":
       return `Delete is permanent. Confirm deletion for ${scopeText}.`;
   }
+}
+
+function parsePriority(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+  const priority = Number(value);
+  return Number.isSafeInteger(priority) ? priority : undefined;
 }
 
 export { JobActionDialog, type JobActionDialogState };

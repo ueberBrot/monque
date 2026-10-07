@@ -18,6 +18,7 @@ import {
   QueueViewQueryDtoSchema,
   QueueViewSummaryListDtoSchema,
   RescheduleJobInputDtoSchema,
+  SetJobPriorityInputDtoSchema,
   SchedulerHealthDtoSchema,
   SelectedJobActionsDtoSchema,
 } from "../schemas/index.js";
@@ -192,6 +193,18 @@ export const managementContract = {
       inputStructure: "detailed",
     })
     .input(RescheduleJobInputDtoSchema)
+    .errors(SingleJobActionErrors)
+    .output(JobDtoSchema),
+  setJobPriority: oc
+    .route({
+      method: "POST",
+      path: "/api/v1/jobs/{id}/actions/priority",
+      operationId: "setJobPriority",
+      successStatus: 200,
+      successDescription: "Successful response",
+      inputStructure: "detailed",
+    })
+    .input(SetJobPriorityInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(JobDtoSchema),
   deleteJob: oc

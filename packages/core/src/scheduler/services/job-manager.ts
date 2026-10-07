@@ -4,7 +4,14 @@ import * as Stream from "effect/Stream";
 import { type Document, ObjectId, type WithId } from "mongodb";
 
 import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from "@/jobs";
-import { ConnectionError, JobStateError, MonqueError, toError } from "@/shared";
+import {
+  ConnectionError,
+  InvalidJobPriorityError,
+  JobStateError,
+  MonqueError,
+  toError,
+} from "@/shared";
+import { validateJobPriority } from "@/shared/utils/job-priority.js";
 
 import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery } from "../helpers.js";
@@ -241,6 +248,46 @@ export class JobManager {
       );
     },
     Effect.mapError((error) => jobMutationError(error, "rescheduleJob", "reschedule job")),
+  );
+
+  /** Atomically change priority on a pending Job, preserving schedule and ownership. */
+  setJobPriority = Effect.fnUntraced(
+    function* (
+      this: JobManager,
+      jobId: string,
+      priority: number,
+    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
+      yield* attempt(() => {
+        if (priority === undefined) throw new InvalidJobPriorityError();
+        validateJobPriority(priority);
+      });
+      if (!ObjectId.isValid(jobId)) return null;
+      const _id = new ObjectId(jobId);
+      const now = yield* DateTime.nowAsDate;
+      const result = yield* fromPromise(() =>
+        this.ctx.collection.findOneAndUpdate(
+          { _id, status: JobStatus.PENDING },
+          { $set: { priority, updatedAt: now } },
+          { returnDocument: "after" },
+        ),
+      );
+      if (result) {
+        const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
+        yield* attempt(() => this.ctx.notifyPendingJob(job.name, job.nextRunAt));
+        return job;
+      }
+      const currentJob = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
+      if (!currentJob) return null;
+      return yield* Effect.fail(
+        new JobStateError(
+          `Cannot change priority of job in status '${currentJob["status"]}'`,
+          jobId,
+          currentJob["status"],
+          "setJobPriority",
+        ),
+      );
+    },
+    Effect.mapError((error) => jobMutationError(error, "setJobPriority", "change job priority")),
   );
 
   /**

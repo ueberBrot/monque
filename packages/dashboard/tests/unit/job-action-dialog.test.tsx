@@ -88,3 +88,41 @@ describe("Job action confirmation", () => {
     },
   );
 });
+
+it("requires confirmation with a signed safe-integer priority and retains the original target", async () => {
+  const onConfirm = vi.fn();
+  render(
+    <JobActionDialog
+      state={{
+        action: "priority",
+        scope: "single",
+        jobIds: ["job-a"],
+        nextRunAt: "",
+        priority: "7",
+      }}
+      busy={false}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  const input = screen.getByRole("spinbutton", { name: "Priority" });
+  expect(input.getAttribute("value")).toBe("7");
+  const confirm = screen.getByRole("button", { name: "Confirm priority job" });
+  expect(onConfirm).not.toHaveBeenCalled();
+  for (const priority of ["", "1.5", "9007199254740992"]) {
+    fireEvent.change(input, { target: { value: priority } });
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  }
+  fireEvent.change(input, { target: { value: "-12" } });
+  expect(confirm.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({
+      action: "priority",
+      jobIds: ["job-a"],
+      priority: -12,
+    }),
+  );
+});

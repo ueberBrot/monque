@@ -48,4 +48,24 @@ describe("prioritized intake through Ts.ED", () => {
     });
     expect(await service.getJobs()).toMatchObject([{ name: "committed", priority: 11 }]);
   });
+  it("changes a pending Job priority through the public service", async () => {
+    await bootstrapMonque({ connectionStrategy: "dbFactory" });
+    const service = PlatformTest.get<MonqueService>(MonqueService);
+    const job = await service.enqueue(
+      "pending-priority",
+      { preserved: true },
+      { runAt: new Date(Date.now() + 60_000) },
+    );
+    const updated = await service.setJobPriority(job._id.toHexString(), -8);
+    expect(updated).toMatchObject({
+      priority: -8,
+      data: { preserved: true },
+      nextRunAt: job.nextRunAt,
+    });
+    expect((await service.getJob(job._id))?.priority).toBe(-8);
+    await service.cancelJob(job._id.toHexString());
+    await expect(service.setJobPriority(job._id.toHexString(), 8)).rejects.toThrow(
+      "Cannot change priority",
+    );
+  });
 });

@@ -256,3 +256,31 @@ it.each(["delete", "deleteBulk"] as const)(
     expect(await api.job({ params: { id: job.id } })).toEqual(job);
   },
 );
+
+it("changes mock Job priority without modifying other fields and rejects stale or invalid requests", async () => {
+  const api = createDashboardManagementApi({
+    apiBaseUrl: "/",
+    origin: "https://dashboard.test",
+    fetch: createMockManagementFetch(),
+  }).client;
+  const job = (await api.jobs({ status: "pending", limit: "1" })).jobs[0];
+  if (!job) throw new Error("Expected pending job");
+  const params = { id: job.id };
+  expect((await api.capabilities()).actions.setJobPriority).toBe(true);
+  const changed = await api.setJobPriority({ params, body: { priority: -7 } });
+  expect(changed).toEqual({ ...job, priority: -7, updatedAt: changed.updatedAt });
+  expect(await api.job({ params })).toEqual(changed);
+  await expect(api.setJobPriority({ params, body: { priority: 0.5 } })).rejects.toMatchObject({
+    status: 400,
+  });
+  expect(await api.job({ params })).toEqual(changed);
+  await api.cancelJob({ params });
+  await expect(api.setJobPriority({ params, body: { priority: 8 } })).rejects.toMatchObject({
+    status: 409,
+  });
+  expect((await api.job({ params })).priority).toBe(-7);
+  await api.deleteJob({ params });
+  await expect(api.setJobPriority({ params, body: { priority: 8 } })).rejects.toMatchObject({
+    status: 404,
+  });
+});

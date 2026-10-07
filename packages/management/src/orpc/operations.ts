@@ -38,7 +38,8 @@ type BulkManagementAction = "cancelBulk" | "retryBulk" | "deleteBulk";
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
 type SingleJobMutationInput =
   | { action: "cancel" | "retry" }
-  | { action: "reschedule"; nextRunAt: string };
+  | { action: "reschedule"; nextRunAt: string }
+  | { action: "setJobPriority"; priority: number };
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 
 export function createManagementOperations<TContext>(options: ManagementOptions<TContext>) {
@@ -214,9 +215,11 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
     const mutate = yield* attempt(() =>
       input.action === "reschedule"
         ? toRescheduleJobMutator(new Date(input.nextRunAt))
-        : input.action === "retry"
-          ? options.monque.retryJob?.bind(options.monque)
-          : options.monque.cancelJob?.bind(options.monque),
+        : input.action === "setJobPriority"
+          ? toSetJobPriorityMutator(input.priority)
+          : input.action === "retry"
+            ? options.monque.retryJob?.bind(options.monque)
+            : options.monque.cancelJob?.bind(options.monque),
     );
     const supportedMutate = yield* policy.requireMutation(input.action, mutate);
     const id = yield* resolveSingleJobTarget(input.action, idInput, context);
@@ -322,6 +325,11 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
     selectedJobActions,
     health: () => toSchedulerHealthDto(options.monque.isHealthy()),
   };
+
+  function toSetJobPriorityMutator(priority: number): SingleJobMutator | undefined {
+    const setJobPriority = options.monque.setJobPriority?.bind(options.monque);
+    return setJobPriority === undefined ? undefined : (id) => setJobPriority(id, priority);
+  }
 
   function toRescheduleJobMutator(runAt: Date): SingleJobMutator | undefined {
     const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);

@@ -167,6 +167,17 @@ export class MonqueService {
   }
 
   /**
+   * Change a pending Job's priority, including subsequent recurring runs.
+   *
+   * @param jobId - The ID of the pending Job
+   * @param priority - The new signed safe integer priority
+   * @returns The updated Job, or null for a missing or invalid identifier
+   */
+  async setJobPriority(jobId: string, priority: number): Promise<PersistedJob<unknown> | null> {
+    return this.monque.setJobPriority(jobId, priority);
+  }
+
+  /**
    * Permanently delete a job.
    *
    * @param jobId - The ID of the job to delete

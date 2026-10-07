@@ -4,7 +4,7 @@ import { toDateTimeLocalValue } from "@/lib/dates";
 import type { DashboardManagementApi } from "@/management-client";
 import { readManagementError } from "@/management-errors";
 
-const JOB_ACTION_ORDER = ["cancel", "retry", "reschedule", "delete"] as const;
+const JOB_ACTION_ORDER = ["cancel", "retry", "reschedule", "priority", "delete"] as const;
 type JobActionKey = (typeof JOB_ACTION_ORDER)[number];
 type JobActionAvailability = {
   readonly disabled: boolean;
@@ -17,8 +17,9 @@ type JobActionFeedback = {
 };
 type JobActionFeedbackTone = "danger" | "success" | "warning";
 type JobActionRequest =
-  | { readonly action: Exclude<JobActionKey, "reschedule"> }
-  | { readonly action: "reschedule"; readonly nextRunAt: string };
+  | { readonly action: Exclude<JobActionKey, "reschedule" | "priority"> }
+  | { readonly action: "reschedule"; readonly nextRunAt: string }
+  | { readonly action: "priority"; readonly priority: number };
 type RunJobActionInput = JobActionRequest & { readonly jobId: string };
 type RunJobActionsInput = JobActionRequest & { readonly jobIds: readonly string[] };
 type JobActionsResult = {
@@ -35,16 +36,17 @@ type JobActionDialogState = {
   readonly jobIds: readonly string[];
   readonly jobName?: string;
   readonly nextRunAt: string;
+  readonly priority?: string;
   readonly scope: "bulk" | "single";
 };
 
 function prepareSingleJobAction(
   action: JobActionKey,
-  job: Pick<JobDto, "id" | "name" | "nextRunAt">,
+  job: Pick<JobDto, "id" | "name" | "nextRunAt" | "priority">,
 ):
   | { readonly type: "confirm"; readonly state: JobActionDialogState }
   | { readonly type: "run"; readonly input: RunJobActionsInput } {
-  if (action === "delete" || action === "reschedule") {
+  if (action === "delete" || action === "reschedule" || action === "priority") {
     return {
       type: "confirm",
       state: {
@@ -52,6 +54,7 @@ function prepareSingleJobAction(
         jobIds: [job.id],
         jobName: job.name,
         nextRunAt: action === "reschedule" ? toDateTimeLocalValue(job.nextRunAt) : "",
+        priority: action === "priority" ? String(job.priority) : "",
         scope: "single",
       },
     };
@@ -85,6 +88,7 @@ async function runJobActions(
       authorizationChanged: false,
     };
   }
+  if (input.action === "priority") throw new Error("Select one job to change its priority.");
   const result = await managementApi.client.selectedJobActions(
     input.action === "reschedule"
       ? { action: input.action, ids: [...input.jobIds], nextRunAt: input.nextRunAt }
@@ -124,6 +128,13 @@ const JOB_ACTION_DEFINITIONS = {
     statuses: new Set<JobDto["status"]>(["pending"]),
     reason: "Only pending jobs can be rescheduled.",
     bulkReason: "Bulk reschedule requires every selected job to be pending.",
+  },
+  priority: {
+    label: "Change priority",
+    bulkCapability: "setJobPriority",
+    statuses: new Set<JobDto["status"]>(["pending"]),
+    reason: "Only pending jobs can have their priority changed.",
+    bulkReason: "Select one job to change its priority.",
   },
   delete: {
     label: "Delete",
@@ -168,7 +179,7 @@ function getActionAvailability(
   if (!jobs.length) return { disabled: true, reason: "Select at least one job on this page." };
   const definition = JOB_ACTION_DEFINITIONS[action];
   if (
-    !capabilities?.actions[action] ||
+    !capabilities?.actions[action === "priority" ? "setJobPriority" : action] ||
     (bulk && !capabilities.actions[definition.bulkCapability])
   ) {
     return {
@@ -178,6 +189,7 @@ function getActionAvailability(
         : "Your host application has not enabled this action for you.",
     };
   }
+  if (bulk && action === "priority") return { disabled: true, reason: definition.bulkReason };
   const statuses = definition.statuses;
   const enabled = action === "delete" || jobs.every((job) => statuses.has(job.status));
   return {
@@ -207,6 +219,12 @@ function getActionSuccessFeedback(action: JobActionKey, count = 1): JobActionFee
         tone: "success",
         title: count === 1 ? "Job rescheduled" : "Jobs rescheduled",
         description: `${count} ${noun} received the new run time.`,
+      };
+    case "priority":
+      return {
+        tone: "success",
+        title: "Job priority changed",
+        description: `${count} ${noun} received the new priority.`,
       };
     case "delete":
       return {
@@ -263,6 +281,8 @@ async function runJobAction(
       return managementApi.client.retryJob({ params });
     case "reschedule":
       return managementApi.client.rescheduleJob({ params, body: { nextRunAt: input.nextRunAt } });
+    case "priority":
+      return managementApi.client.setJobPriority({ params, body: { priority: input.priority } });
     case "delete":
       await managementApi.client.deleteJob({ params });
       return undefined;

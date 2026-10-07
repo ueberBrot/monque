@@ -211,6 +211,7 @@ function createScenarioCapabilities({ readOnly }: { readonly readOnly: boolean }
       retry: !readOnly,
       retryBulk: !readOnly,
       reschedule: !readOnly,
+      setJobPriority: !readOnly,
       delete: !readOnly,
       deleteBulk: !readOnly,
       pause: !readOnly,

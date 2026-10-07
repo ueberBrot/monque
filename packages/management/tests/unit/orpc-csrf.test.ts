@@ -39,6 +39,7 @@ describe("Management HTTP mutation origins", () => {
     ["POST", "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel"],
     ["POST", "/api/v1/jobs/507f1f77bcf86cd799439011/actions/retry"],
     ["POST", "/api/v1/jobs/507f1f77bcf86cd799439011/actions/reschedule"],
+    ["POST", "/api/v1/jobs/507f1f77bcf86cd799439011/actions/priority"],
     ["DELETE", "/api/v1/jobs/507f1f77bcf86cd799439011"],
     ["POST", "/api/v1/jobs/actions/cancel"],
     ["POST", "/api/v1/jobs/actions/retry"],

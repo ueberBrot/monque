@@ -621,6 +621,22 @@ export class Monque extends EventEmitter {
   }
 
   /**
+   * Change a pending Job's priority without changing its scheduled time.
+   *
+   * Higher signed safe integers run first among due Jobs with the same name.
+   * The new priority also applies to subsequent runs of a recurring Job.
+   *
+   * @param jobId - The ID of the pending Job
+   * @param priority - The new signed safe integer priority
+   * @returns The updated Job, or null for missing or invalid identifiers
+   * @throws {InvalidJobPriorityError} If priority is not a signed safe integer
+   * @throws {JobStateError} If the Job is no longer pending, including a lost claim race
+   */
+  async setJobPriority(jobId: string, priority: number): Promise<PersistedJob<unknown> | null> {
+    return this.#runJobMutation((manager) => manager.setJobPriority(jobId, priority));
+  }
+
+  /**
    * Permanently delete a job.
    *
    * This action is irreversible. Emits a 'job:deleted' event upon success.

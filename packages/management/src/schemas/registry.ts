@@ -4,6 +4,7 @@ import {
   JobSelectorDtoSchema,
   ManagementErrorDtoSchema,
   RescheduleJobRequestDtoSchema,
+  SetJobPriorityRequestDtoSchema,
 } from "./actions.js";
 import { CapabilitiesDtoSchema } from "./capabilities.js";
 import { JobCursorPageDtoSchema, JobDtoSchema } from "./job.js";
@@ -23,5 +24,6 @@ export const ManagementOpenApiComponentSchemas = {
   QueueStats: { schema: QueueStatsDtoSchema },
   QueueViewSummaryList: { schema: QueueViewSummaryListDtoSchema },
   RescheduleJobRequest: { schema: RescheduleJobRequestDtoSchema },
+  SetJobPriorityRequest: { schema: SetJobPriorityRequestDtoSchema },
   SchedulerHealth: { schema: SchedulerHealthDtoSchema },
 } as const;

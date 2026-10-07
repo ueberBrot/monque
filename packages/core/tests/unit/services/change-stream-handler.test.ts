@@ -170,6 +170,7 @@ describe("ChangeStreamHandler", () => {
                       },
                     },
                     { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
+                    { "updateDescription.updatedFields.priority": { $exists: true } },
                   ],
                 },
               ],

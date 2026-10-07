@@ -96,6 +96,15 @@ export function createManagementRouter<TContext = unknown>(
         ),
       ),
     ),
+    setJobPriority: managementImplementer.setJobPriority.handler(({ input, context }) =>
+      Effect.runPromise(
+        operations.mutateJob(
+          { action: "setJobPriority", priority: input.body.priority },
+          input.params.id,
+          getOpenApiManagementContext(context),
+        ),
+      ),
+    ),
     deleteJob: managementImplementer.deleteJob.handler(({ input, context }) =>
       Effect.runPromise(
         operations.deleteJob(input.params.id, getOpenApiManagementContext(context)),

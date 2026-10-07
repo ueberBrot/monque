@@ -24,6 +24,7 @@ it.each([false, true])("explains action availability when readOnly is %s", (read
     "Retry job",
     "Retry selected jobs",
     "Reschedule job",
+    "Change job priority",
     "Delete job",
     "Delete selected jobs",
   ]);

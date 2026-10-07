@@ -109,6 +109,7 @@ Paths are relative to the Management router's mount URL:
 | `POST`   | `/api/v1/jobs/{id}/actions/cancel`     | Cancel a pending job                                      |
 | `POST`   | `/api/v1/jobs/{id}/actions/retry`      | Retry a failed or cancelled job                           |
 | `POST`   | `/api/v1/jobs/{id}/actions/reschedule` | Change a pending job's run time                           |
+| `POST`   | `/api/v1/jobs/{id}/actions/priority`   | Change a pending Job's priority                           |
 | `DELETE` | `/api/v1/jobs/{id}`                    | Delete a job                                              |
 | `POST`   | `/api/v1/jobs/actions/cancel`          | Cancel jobs matching a selector                           |
 | `POST`   | `/api/v1/jobs/actions/retry`           | Retry jobs matching a selector                            |
@@ -199,6 +200,30 @@ a scheduler that supports summary queries, it also avoids loading payloads from 
 Use the job detail endpoint when you need the payload. Full listings retain payload
 serialization and redaction.
 
+## Change one Job's priority
+
+Send `POST /api/v1/jobs/{id}/actions/priority` with a signed safe integer:
+
+```json
+{ "priority": -3 }
+```
+
+Success returns the updated Job. The operation applies only to pending Jobs and leaves their
+scheduled time unchanged. For a recurring Job, the new priority also applies to future runs.
+Invalid input returns `400`, a missing Job returns `404`, and a Job claimed before the update
+returns `409`. Processing and terminal Jobs also return `409`.
+
+The `setJobPriority` authorization action receives the target `job` and request `context`.
+The matching capability, `actions.setJobPriority`, reflects method support, read-only mode,
+and authorization for the request. A scheduler without `setJobPriority`, a denied action,
+or a read-only surface returns `403`. Capability checks have no target Job; the mutation
+checks authorization again with the current Job.
+
+The Dashboard shows **Change priority** with its other Job actions. Enter a signed safe
+integer and confirm before applying it. Only pending Jobs with an available capability can
+be changed. After success, the table and detail refresh; unrelated valid selections remain.
+A stale state or authorization change shows the server error instead of a success message.
+
 ## Selected job actions
 
 Post a JSON body to `/api/v1/jobs/actions/selected`:
@@ -261,7 +286,7 @@ const management = createManagementSurface<{ canManageJobs: boolean }>({
 ```
 
 Available action names are `read`, `cancel`, `cancelBulk`, `retry`, `retryBulk`, `reschedule`,
-`delete`, and `deleteBulk`. The callback receives:
+`setJobPriority`, `delete`, and `deleteBulk`. The callback receives:
 
 | Input      | Available when                               |
 | ---------- | -------------------------------------------- |

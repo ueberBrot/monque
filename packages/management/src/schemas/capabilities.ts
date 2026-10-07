@@ -9,6 +9,7 @@ export const CapabilityActionsDtoSchema = z
     retry: z.boolean(),
     retryBulk: z.boolean(),
     reschedule: z.boolean(),
+    setJobPriority: z.boolean().optional(),
     delete: z.boolean(),
     deleteBulk: z.boolean(),
     pause: z.boolean().optional(),

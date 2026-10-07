@@ -13,6 +13,10 @@ export {
   RescheduleJobInputDtoSchema,
   type RescheduleJobRequestDto,
   RescheduleJobRequestDtoSchema,
+  type SetJobPriorityInputDto,
+  SetJobPriorityInputDtoSchema,
+  type SetJobPriorityRequestDto,
+  SetJobPriorityRequestDtoSchema,
   type SelectedJobActionsDto,
   SelectedJobActionsDtoSchema,
 } from "./actions.js";

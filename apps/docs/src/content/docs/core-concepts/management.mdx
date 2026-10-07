@@ -85,14 +85,15 @@ const id = "507f1f77bcf86cd799439011";
 const cancelled = await monque.cancelJob(id);
 ```
 
-| Method                                                                 | Eligible jobs            | Result                                                                             |
-| ---------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
-| [`cancelJob(id)`](/monque/api/classes/monque/#canceljob)               | Pending jobs             | Sets status to `cancelled`.                                                        |
-| [`retryJob(id)`](/monque/api/classes/monque/#retryjob)                 | Failed or cancelled jobs | Sets status to `pending`, clears failure state, and makes the job due immediately. |
-| [`rescheduleJob(id, date)`](/monque/api/classes/monque/#reschedulejob) | Pending jobs             | Changes `nextRunAt`.                                                               |
-| [`deleteJob(id)`](/monque/api/classes/monque/#deletejob)               | Any status               | Permanently removes the document.                                                  |
+| Method                                                                       | Eligible jobs            | Result                                                                             |
+| ---------------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------- |
+| [`cancelJob(id)`](/monque/api/classes/monque/#canceljob)                     | Pending jobs             | Sets status to `cancelled`.                                                        |
+| [`retryJob(id)`](/monque/api/classes/monque/#retryjob)                       | Failed or cancelled jobs | Sets status to `pending`, clears failure state, and makes the job due immediately. |
+| [`rescheduleJob(id, date)`](/monque/api/classes/monque/#reschedulejob)       | Pending jobs             | Changes `nextRunAt`.                                                               |
+| [`setJobPriority(id, priority)`](/monque/api/classes/monque/#setjobpriority) | Pending jobs             | Changes priority without changing the scheduled time.                              |
+| [`deleteJob(id)`](/monque/api/classes/monque/#deletejob)                     | Any status               | Permanently removes the document.                                                  |
 
-Cancel, retry, and reschedule return the updated job or `null` if it is missing. An
+Cancel, retry, reschedule, and priority changes return the updated job or `null` if it is missing. An
 incompatible state raises `JobStateError`. Repeated cancellation does not emit a second
 `job:cancelled` event. Deletion returns `true` when a document was removed, otherwise `false`.
 Deleting a processing job does not interrupt a handler that is already running.
@@ -101,6 +102,23 @@ Deleting a processing job does not interrupt a handler that is already running.
 const nextHour = new Date(Date.now() + 60 * 60 * 1000);
 await monque.rescheduleJob(id, nextHour);
 ```
+
+### Change priority
+
+```typescript
+await monque.setJobPriority(id, 10); // Promote pending work
+await monque.setJobPriority(id, -3); // Demote pending work
+```
+
+The priority must be a signed JavaScript safe integer. Invalid values, including a missing
+value, reject with `InvalidJobPriorityError` before any write. Missing or malformed Job IDs
+return `null`. Only pending Jobs can change priority, including those scheduled for the future.
+If another Scheduler Instance claims the Job first, the change rejects with `JobStateError`.
+Running handlers are not interrupted.
+
+The operation changes priority and `updatedAt`. It preserves the payload, schedule, identity,
+retry metadata, and ownership. The new priority survives retries, rescheduling, recovery,
+and subsequent runs of a recurring Job.
 
 ## Bulk Operations
 
