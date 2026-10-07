@@ -1,6 +1,6 @@
 {
   "name": "@monque/management",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Framework-neutral management surface for Monque",
   "keywords": [
     "jobs",

@@ -1,5 +1,19 @@
 # @monque/dashboard
 
+## 0.6.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Display Job priority in Job lists, Queue Views, and Job details.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Change a pending Job's priority from its row menu or detail view, with confirmation.
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Set one priority for up to 100 selected pending Jobs, with scope confirmation and feedback for partial failures.
+
+### Patch Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Show keyboard shortcuts for the operator's platform: Command on macOS and Ctrl on Windows and Linux.
+
 ## 0.5.1
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @monque/dashboard-express
 
+## 0.4.0
+
+### Minor Changes
+
+- [#597](https://github.com/ueberBrot/monque/pull/597) [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186) - Update runtime dependencies.
+
+### Patch Changes
+
+- Updated dependencies [[`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186), [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186), [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186), [`8f5c671`](https://github.com/ueberBrot/monque/commit/8f5c671d76f4510a3564adb4ef58282812da8186)]:
+  - @monque/dashboard@0.6.0
+
 ## 0.3.1
 
 ### Patch Changes
