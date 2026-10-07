@@ -12,6 +12,7 @@ describe("runJobActions", () => {
       id: "000000000000000000000001",
       name: "email",
       status: "pending",
+      priority: 0,
       payload: { recipient: "person@example.test" },
       nextRunAt: "2026-09-19T12:00:00.000Z",
       createdAt: "2026-09-19T11:00:00.000Z",

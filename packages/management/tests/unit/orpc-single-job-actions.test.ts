@@ -54,6 +54,7 @@ describe("oRPC Management single Job action routes", () => {
       id: jobId.toHexString(),
       name: "send-email",
       status: "cancelled",
+      priority: 0,
       payload: { to: "person@example.test" },
       nextRunAt: "2026-01-01T00:00:00.000Z",
       lockedAt: null,

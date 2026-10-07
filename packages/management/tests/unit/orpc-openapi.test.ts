@@ -32,6 +32,15 @@ describe("oRPC Management OpenAPI contract", () => {
     expect(document.info.version).toMatch(/^\d+\.\d+\.\d+(?:[-+].+)?$/);
   });
 
+  test("publishes effective priority as required signed safe integer Job metadata", () => {
+    expect(document.components?.schemas?.["Job"]).toMatchObject({
+      properties: {
+        priority: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991 },
+      },
+      required: expect.arrayContaining(["priority"]),
+    });
+  });
+
   test("publishes schedule timezone as optional Job metadata", () => {
     const job = document.components?.schemas?.["Job"];
     expect(job).toMatchObject({ properties: { timezone: { type: "string" } } });
@@ -280,6 +289,7 @@ describe("oRPC Management OpenAPI contract", () => {
         "id",
         "name",
         "status",
+        "priority",
         "payload",
         "nextRunAt",
         "lockedAt",

@@ -5,6 +5,7 @@ export {
   InvalidCursorError,
   InvalidJobIdentifierError,
   InvalidJobQueryError,
+  InvalidJobPriorityError,
   JobStateError,
   MonqueError,
   NonRetryableError,

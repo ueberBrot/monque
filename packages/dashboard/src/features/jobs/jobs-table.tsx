@@ -105,6 +105,7 @@ function JobsTable({
         createdAt: !compact,
         updatedAt: !compact,
         identifier: !compact,
+        priority: !compact,
         nextRunAt: !narrow,
       },
     },
@@ -194,6 +195,13 @@ function createJobsColumns(): ColumnDef<typeof features, JobDto>[] {
       header: "Status",
       cell: ({ row }) => <JobStatusBadge status={row.original.status} />,
     },
+    {
+      accessorKey: "priority",
+      header: "Priority",
+      cell: ({ row }) => (
+        <span className="font-mono tabular-nums">{row.original.priority ?? 0}</span>
+      ),
+    },
     ...SORTABLE_DATE_COLUMNS.map((column): ColumnDef<typeof features, JobDto> => ({
       accessorKey: column.accessorKey,
       header: () => <JobColumnSortHeader columnId={column.accessorKey} label={column.label} />,
@@ -225,6 +233,7 @@ function JobNameCell({ row }: JobCellProps) {
           <span className="font-mono" title={row.original.id}>
             …{row.original.id.slice(-8)}
           </span>
+          <span>Priority {row.original.priority ?? 0}</span>
           <span title="Created">
             · <RelativeTimestamp value={row.original.createdAt} />
           </span>
@@ -343,6 +352,7 @@ function getColumnVisibilityClass(id: string): string {
   if (id === "name") return "md:w-48";
   if (id === "select") return "w-10";
   if (id === "status") return "w-28";
+  if (id === "priority") return "w-24";
   if (id === "actions") return "w-18";
   if (id === "createdAt" || id === "updatedAt") return "w-48";
   if (id === "identifier") return "w-52";

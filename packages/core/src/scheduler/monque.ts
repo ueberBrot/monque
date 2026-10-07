@@ -25,6 +25,7 @@ import {
   JobStatus,
   type JobSummaryPage,
   type JobWriteOptions,
+  type NowOptions,
   type PersistedJob,
   type QueueStats,
   type QueueViewSummary,
@@ -212,8 +213,14 @@ export class Monque extends EventEmitter {
   #initializeRuntime(): Effect.Effect<void, ConnectionError> {
     let candidate: SchedulerRuntime | null = null;
     return Effect.gen({ self: this }, function* () {
-      this.collection = yield* attempt(() => this.db.collection(this.options.collectionName));
+      const collection = yield* attempt(() => this.db.collection(this.options.collectionName));
+      this.collection = collection;
       if (!this.options.skipIndexCreation) yield* this.createIndexes();
+      // Missing MongoDB sort keys are not numeric zero (notably against negatives).
+      // Normalize before any claims, including when applications manage indexes.
+      yield* fromPromise(() =>
+        collection.updateMany({ priority: { $exists: false } }, { $set: { priority: 0 } }),
+      );
 
       const ctx = yield* attempt(() => this.buildContext());
       const runtime: SchedulerRuntime = ManagedRuntime.make(
@@ -334,6 +341,9 @@ export class Monque extends EventEmitter {
         // Prefix with `name` to match the acquireJob query shape: { name, status, nextRunAt, claimedBy }.
         // This enables per-worker index prefix scans instead of scanning across all job types.
         { key: { name: 1, status: 1, nextRunAt: 1, claimedBy: 1 }, background: true },
+        // Ordered claims need their own index; retain the deadline-first index above
+        // for discovery and future wakeups independently of priority.
+        { key: { name: 1, status: 1, priority: -1, nextRunAt: 1, _id: 1 }, background: true },
         // Expanded index that supports recovery scans (status + lockedAt) plus heartbeat monitoring patterns.
         { key: { status: 1, lockedAt: 1, lastHeartbeat: 1 }, background: true },
         // Index for efficient lifecycle manager cleanup when jobRetention is configured.
@@ -388,6 +398,7 @@ export class Monque extends EventEmitter {
    * @throws {InvalidJobIdentifierError} If `name` or `uniqueKey` fails public identifier validation
    * @throws {ConnectionError} If database operation fails or scheduler not initialized
    * @throws {PayloadTooLargeError} If payload exceeds configured `maxPayloadSize`
+   * @throws {InvalidJobPriorityError} If priority is not a signed safe integer
    *
    * @example Basic job enqueueing
    * ```typescript
@@ -468,8 +479,10 @@ export class Monque extends EventEmitter {
    *
    * @see {@link JobIntake.now}
    */
-  async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    return this.#runtime.runPromise(SchedulerServices.use(({ intake }) => intake.now(name, data)));
+  async now<T>(name: string, data: T, options: NowOptions = {}): Promise<PersistedJob<T>> {
+    return this.#runtime.runPromise(
+      SchedulerServices.use(({ intake }) => intake.now(name, data, options)),
+    );
   }
 
   /**

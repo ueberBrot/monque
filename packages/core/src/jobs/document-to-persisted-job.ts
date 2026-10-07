@@ -32,6 +32,7 @@ export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): Pers
     name: doc["name"],
     data: doc["data"],
     status: doc["status"],
+    priority: doc["priority"] ?? 0,
     nextRunAt: doc["nextRunAt"],
     failCount: doc["failCount"],
     createdAt: doc["createdAt"],

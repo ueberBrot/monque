@@ -378,9 +378,49 @@ const monque = new Monque(db, {
 ## 10. Ensure Index Permissions
 
 Monque creates MongoDB indexes during [`initialize()`](/monque/api/classes/monque/#initialize).
-Grant index creation permissions to that connection. Precreating
-indexes does not skip that initialization step. See [Indexes](/monque/core-concepts/jobs/#indexes)
-for listing and retention indexes.
+Grant index creation permissions to that connection, or use `skipIndexCreation: true` and
+manage the full index set yourself. Precreating indexes alone does not skip index creation.
+See [Indexes](/monque/core-concepts/jobs/#indexes) for listing and retention indexes.
+
+Priority claims and deadline discovery need separate compound indexes. Keep both when
+managing indexes yourself, in addition to the other Monque indexes:
+
+```javascript
+// Next due Job by priority, scheduled time, and identifier.
+db.jobs.createIndex({ name: 1, status: 1, priority: -1, nextRunAt: 1, _id: 1 });
+// Earliest deadline per Job Name and future wakeups.
+db.jobs.createIndex({ name: 1, status: 1, nextRunAt: 1, claimedBy: 1 });
+```
+
+Use your configured collection name and preserve its collation. The priority index does
+not replace the deadline index. Existing deadline indexes remain usable; upgrading with
+automatic index creation adds the priority index without dropping them. With managed
+indexes, install the new index as part of the upgrade.
+
+Index cost depends on the backlog. A priority scan can skip a group of future Jobs sharing
+one priority, but many distinct future priorities increase the index work. MongoDB may
+instead scan the due range through a deadline index and sort its candidates by priority.
+No one plan is cheapest for every distribution.
+
+The focused MongoDB 8 integration test records execution statistics from actual scheduler
+commands. After claiming an urgent Job, 100 overdue Jobs at priority `-1` remained beside
+1,000 far-future Jobs. When the future Jobs shared priority `100`, the next claim examined
+2 keys and 1 document. With 1,000 distinct future priorities, MongoDB chose a top-one sort
+and examined 100 keys and 100 documents. The same distinct-priority fixture with
+`skipIndexCreation: true` and only the existing deadline index also selected the correct
+due Job, examining 100 keys and 100 documents for the next claim. Deadline discovery
+examined 1 key and no documents in all three cases. These are fixture observations,
+not workload-independent bounds; inspect
+execution statistics on your own distributions. Reproduce them from `packages/core` with:
+
+```bash
+vp test run tests/integration/priority-query.test.ts --reporter verbose --silent false
+```
+
+Initialization also normalizes missing Job priorities to `0`, even when index creation is
+disabled. Allow writes for that automatic upgrade. It preserves existing timestamps,
+lifecycle and ownership metadata, and explicit priorities. Upgrade all producers and
+claiming Scheduler Instances before relying on consistent priority guarantees.
 
 ## 11. Configure Management and Dashboard Access
 
@@ -405,6 +445,8 @@ for direct links. See [Dashboard configuration](/monque/dashboard/configuration/
 - [ ] Event handlers for `job:fail` and `stale:recovered`
 - [ ] Job retention is configured
 - [ ] Database user has index creation permissions
+- [ ] Managed indexes include both priority claiming and deadline discovery coverage
+- [ ] All producers and claiming Scheduler Instances support Job priority
 - [ ] Dashboard, Management API, and OpenAPI routes require the intended authentication
 - [ ] Payload redaction and action permissions are configured for operators
 

@@ -72,6 +72,9 @@ export interface Job<T = unknown> {
   /** Current lifecycle state */
   status: JobStatusType;
 
+  /** Higher safe integers run first among due Jobs with the same name. Defaults to 0. */
+  priority?: number;
+
   /** When the job should be processed */
   nextRunAt: Date;
 
@@ -146,6 +149,9 @@ export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
  * ```
  */
 export interface EnqueueOptions extends JobWriteOptions {
+  /** Signed safe integer; higher values run first among due Jobs. Defaults to 0. */
+  priority?: number;
+
   /**
    * Deduplication key. If a job with this key is already pending or processing,
    * the enqueue operation will not create a duplicate.
@@ -158,8 +164,11 @@ export interface EnqueueOptions extends JobWriteOptions {
   runAt?: Date;
 }
 
+/** Options for immediate enqueueing, preserving caller-owned sessions. */
+export type NowOptions = Pick<EnqueueOptions, "priority" | "session">;
+
 /** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
-export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session"> {
+export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session" | "priority"> {
   name: string;
   data: T;
 }

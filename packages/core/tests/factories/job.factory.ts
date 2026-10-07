@@ -45,6 +45,7 @@ export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientPara
       name: TEST_CONSTANTS.JOB_NAME,
       data,
       status: JobStatus.PENDING,
+      priority: 0,
       failCount: 0,
       createdAt: new Date(),
       updatedAt: new Date(),

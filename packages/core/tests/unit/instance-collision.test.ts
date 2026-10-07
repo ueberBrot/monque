@@ -161,9 +161,15 @@ describe("Instance Collision Detection", () => {
 
     const callOrder: string[] = [];
 
-    (mockCollection.updateMany as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-      callOrder.push("updateMany");
-      return { modifiedCount: 0 };
+    vi.mocked(mockCollection.updateMany).mockImplementation(async (filter) => {
+      if (filter["status"] === "processing") callOrder.push("recoverStaleJobs");
+      return {
+        acknowledged: true,
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      };
     });
 
     findOneSpy.mockImplementation(async () => {
@@ -173,8 +179,8 @@ describe("Instance Collision Detection", () => {
 
     await monque.initialize();
 
-    // updateMany (stale recovery) should be called before findOne (collision check)
-    expect(callOrder).toEqual(["updateMany", "findOne"]);
+    // Recovery must finish before checking whether another instance is active.
+    expect(callOrder).toEqual(["recoverStaleJobs", "findOne"]);
   });
 
   it("default randomUUID instances never collide with each other", async () => {

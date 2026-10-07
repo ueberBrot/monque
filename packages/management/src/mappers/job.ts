@@ -13,6 +13,7 @@ export function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
     id: job._id.toHexString(),
     name: job.name,
     status: job.status,
+    priority: job.priority ?? 0,
     payload: null,
     nextRunAt: job.nextRunAt.toISOString(),
     lockedAt: toIsoStringOrNull(job.lockedAt),

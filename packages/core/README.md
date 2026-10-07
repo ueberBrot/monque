@@ -60,7 +60,8 @@ Register a worker for each job name you submit. `stop()` waits for running handl
 
 | Need                              | Use                                                                                                 |
 | --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey? })`                                                       |
+| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey?, priority? })`                                            |
+| Immediate prioritized work        | `now(name, data, { priority?, session? })`                                                          |
 | Recurring work                    | `schedule(cron, name, data, { timezone?, uniqueKey? })`                                             |
 | Batch submission                  | `enqueueMany(jobs)` with per-job scheduling and unique keys                                         |
 | Jobs committed with business data | Pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
@@ -78,6 +79,29 @@ the handler; transformed output is passed to the handler while stored input stay
 
 Retries and recovery can repeat a job. Handlers must tolerate repeated external side effects.
 A pause prevents new local executions; running handlers and other scheduler instances continue.
+
+### Job priority
+
+`enqueue()` and `now()` accept signed safe-integer priorities. Omission means `0`, higher
+numbers run first, and negative values mean below-normal work. Among due pending Jobs with
+the same name, claims order by priority descending, then scheduled time and identifier
+ascending. Future Jobs remain ineligible until their scheduled time. Priority preserves
+fairness between Job Names and never interrupts running handlers; it does not guarantee
+global start or completion order across instances. A continuous urgent backlog can starve
+lower-priority work.
+
+```typescript
+await monque.enqueue("send-email", { kind: "digest" }, { priority: -10 });
+await monque.now("send-email", { kind: "password-reset" }, { priority: 10 });
+```
+
+Duplicate submissions with an active unique key return the existing Job without changing
+its priority. Public reads and lifecycle events expose effective numeric priority.
+Initialization automatically sets missing priorities to `0`, preserving explicit values,
+timestamps, lifecycle state, and ownership metadata, including with `skipIndexCreation`.
+Upgrade all producers and claiming schedulers for uniform guarantees. Managed indexes need
+both the priority claim index and the separate deadline index; see the
+[priority and index deployment guidance](https://ueberBrot.github.io/monque/advanced/production-checklist/#10-ensure-index-permissions).
 
 ## Recovering interrupted work
 

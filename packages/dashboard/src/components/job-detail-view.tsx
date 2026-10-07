@@ -230,6 +230,7 @@ function getLifecycleMetadataItems(job: JobDto): readonly MetadataItem[] {
 
 function getSchedulingMetadataItems(job: JobDto): readonly MetadataItem[] {
   return [
+    ["Priority", job.priority ?? 0],
     ["Claimed by", job.claimedBy ?? "Unclaimed"],
     ["Repeat interval", job.repeatInterval ?? "One-time job"],
     ...(job.repeatInterval

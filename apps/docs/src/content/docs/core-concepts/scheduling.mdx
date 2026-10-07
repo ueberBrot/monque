@@ -1,11 +1,64 @@
 ---
 title: Scheduling
-description: Schedule recurring jobs using cron expressions.
+description: Choose Job priorities and schedule recurring jobs using cron expressions.
 ---
 
 import { Aside, Tabs, TabItem } from "@astrojs/starlight/components";
 
-Monque supports recurring job scheduling using standard 5-field cron expressions.
+Monque selects due Jobs by priority and supports recurring scheduling using standard
+5-field cron expressions.
+
+## Job Priority
+
+Pass `priority` when creating one-off work:
+
+```typescript
+await monque.enqueue("send-email", { kind: "digest" }, { priority: -10 });
+await monque.now("send-email", { kind: "password-reset" }, { priority: 10 });
+await monque.enqueue(
+  "send-email",
+  { kind: "reminder" },
+  {
+    priority: 20,
+    runAt: new Date(Date.now() + 60_000),
+  },
+);
+```
+
+Higher numbers run first among due pending Jobs with the same Job Name. Omitted priority
+means `0`; negative numbers represent below-normal work. Values must be signed JavaScript
+safe integers. Non-number, fractional, non-finite, and unsafe values reject before writing.
+The `now()` shortcut schedules immediately and accepts `{ priority, session }` options.
+
+Equal priorities are ordered by `nextRunAt` ascending, then `_id` ascending. A future Job
+remains ineligible until `nextRunAt`, regardless of priority. Deadline discovery and future
+wakeups still follow scheduled time, so future urgent Jobs cannot hide due routine work.
+Priority compares Jobs within one Job Name; the existing rotation between Job Names still
+shares instance capacity.
+
+<Aside type="caution" title="Strict priority can starve routine work">
+  A continuous higher-priority backlog can leave lower-priority Jobs waiting indefinitely. Priority
+  selects the next claim. It does not interrupt running handlers or guarantee global handler-start
+  or completion order across concurrent Scheduler Instances.
+</Aside>
+
+An enqueue using an active `uniqueKey` returns the existing Job unchanged, including its
+priority, payload, and scheduled time. Public Job reads, metadata summaries, lifecycle
+events, and the Dashboard expose effective numeric priority, including default `0`.
+
+### Existing Jobs and Upgrades
+
+During `initialize()`, Monque automatically writes `priority: 0` only to Jobs missing the
+field. This idempotent normalization makes legacy Jobs compete as numeric zero, including
+against negative priorities. It preserves explicit priorities, timestamps, lifecycle state,
+and ownership metadata. It runs even with `skipIndexCreation: true`; no application-managed
+offline rewrite is required.
+
+Upgrade every claiming Scheduler Instance and every producer sharing the collection before
+relying on uniform priority ordering. Older claimers ignore priority, and older producers can
+create missing-field Jobs after normalization. See the
+[production index guidance](/monque/advanced/production-checklist/#10-ensure-index-permissions)
+for the separate claim and deadline indexes.
 
 ## Quick Reference
 

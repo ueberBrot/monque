@@ -241,6 +241,7 @@ function createGeneratedJobs(options: {
       id: `scenario-${options.seed}-${String(index + 1).padStart(4, "0")}`,
       name,
       status,
+      priority: 0,
       payload: {
         attempt: failCount + 1,
         queue: name,

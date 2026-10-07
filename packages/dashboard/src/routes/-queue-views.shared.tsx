@@ -354,6 +354,7 @@ function QueueViewJobsTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="w-28">Status</TableHead>
+                <TableHead className="w-24">Priority</TableHead>
                 <TableHead className="w-56">Job ID</TableHead>
                 <TableHead className="w-56">Next run</TableHead>
                 <TableHead className="w-56">Updated</TableHead>
@@ -407,6 +408,7 @@ function QueueViewJobRow({
       <TableCell>
         <JobStatusBadge status={job.status} />
       </TableCell>
+      <TableCell className="font-mono text-xs tabular-nums">{job.priority ?? 0}</TableCell>
       <TableCell className="font-mono text-xs">
         <Link
           to="/jobs/$jobId"
