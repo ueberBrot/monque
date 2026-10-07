@@ -16,11 +16,19 @@ test("selected priority confirmation changes only the selected pending Jobs", as
     .click();
   const confirm = page.getByRole("button", { name: "Confirm priority changes", exact: true });
   const input = page.getByRole("spinbutton", { name: "Priority", exact: true });
-  for (const value of ["", "0.5", "9007199254740992"]) {
+  await expect(input).toHaveAttribute("aria-invalid", "false");
+  for (const [value, message] of [
+    ["", "Enter a priority"],
+    ["0.5", "Use a whole number"],
+    ["9007199254740992", "Use a value closer to 0"],
+  ] as const) {
     await input.fill(value);
+    await input.blur();
+    await expect(input).toHaveAccessibleDescription(new RegExp(message));
     await expect(confirm).toBeDisabled();
   }
   await input.fill("-18");
+  await expect(input).toHaveAttribute("aria-invalid", "false");
   await expect(page.getByRole("dialog")).toContainText("Set priority to -18 for 2 selected jobs.");
   expect((await app.monque.getJob(first._id))?.priority).toBe(2);
   const response = page.waitForResponse(

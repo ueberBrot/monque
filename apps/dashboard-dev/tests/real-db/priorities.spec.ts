@@ -48,6 +48,7 @@ test("Job tables and details display signed and legacy priorities without list p
     [legacy, 0],
   ] as const) {
     await page.goto(`${app.base}/dashboard/jobs/${job._id}`);
+    await expect(page.getByRole("term").filter({ hasText: /^Priority$/ })).toBeInViewport();
     await expect(
       page
         .getByRole("term")
@@ -83,7 +84,10 @@ test("single priority confirmation refreshes the Job and preserves unrelated sel
   await expect(page.getByRole("dialog")).toContainText(first._id.toHexString());
   const input = page.getByRole("spinbutton", { name: "Priority", exact: true });
   await expect(input).toHaveValue("2");
+  await expect(input).toHaveAccessibleDescription(/The default is 0/);
+  await expect(page.getByRole("dialog")).toContainText("Among due jobs with the same name");
   await input.fill("14");
+  await expect(page.getByRole("dialog")).toContainText("Current priority: 2");
   expect((await app.monque.getJob(first._id))?.priority).toBe(2);
   await page.getByRole("button", { name: "Confirm priority change", exact: true }).click();
   await expect(page.getByText("Job priority changed", { exact: true })).toBeVisible();

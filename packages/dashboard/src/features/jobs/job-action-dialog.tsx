@@ -26,7 +26,13 @@ function JobActionDialog({ state, ...props }: JobActionDialogProps) {
         if (!open) props.onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent
+        className={
+          state?.action === "priority"
+            ? "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
+            : undefined
+        }
+      >
         {state ? (
           <JobActionDialogForm
             key={`${state.action}:${state.scope}:${state.jobIds.join(",")}`}
@@ -83,6 +89,11 @@ function JobActionDialogForm({
           <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
             {state.jobIds[0]}
           </p>
+          {requiresPriority ? (
+            <p className="mt-2 text-sm">
+              Current priority: <span className="font-mono tabular-nums">{state.priority}</span>
+            </p>
+          ) : null}
         </div>
       ) : null}
       {requiresDate ? (
@@ -97,17 +108,38 @@ function JobActionDialogForm({
         </form.AppField>
       ) : null}
       {requiresPriority ? (
-        <form.AppField name="priority">
+        <form.AppField
+          name="priority"
+          validators={{
+            onChange: ({ value }) => getPriorityError(value),
+          }}
+          listeners={{
+            onBlur: ({ fieldApi }) => {
+              void fieldApi.validate("change");
+            },
+          }}
+        >
           {(field) => (
             <field.TextField
               id="job-action-priority"
               label="Priority"
               type="number"
-              invalid={priority === undefined}
-              description="Enter a whole number from -9007199254740991 to 9007199254740991. Higher values run first; 0 is normal."
+              description="Use a whole number. The default is 0; positive values have higher priority and negative values have lower priority."
             />
           )}
         </form.AppField>
+      ) : null}
+      {requiresPriority ? (
+        <div className="grid gap-2 text-sm text-muted-foreground">
+          <p>
+            Among due jobs with the same name, higher values are picked first. For example, 10 comes
+            before 0, and 0 before -10.
+          </p>
+          <p>
+            Scheduled times stay the same, and running jobs continue. Recurring jobs keep this
+            priority for future runs.
+          </p>
+        </div>
       ) : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" onClick={onClose}>
@@ -153,6 +185,15 @@ function parsePriority(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const priority = Number(value);
   return Number.isSafeInteger(priority) ? priority : undefined;
+}
+
+function getPriorityError(value: string): string | undefined {
+  if (!value.trim()) return "Enter a priority, such as 0, 10, or -10.";
+  if (!Number.isInteger(Number(value))) return "Use a whole number, such as 0, 10, or -10.";
+  if (!Number.isSafeInteger(Number(value))) {
+    return "That number is too large. Use a value closer to 0, such as 10 or -10.";
+  }
+  return undefined;
 }
 
 export { JobActionDialog, type JobActionDialogState };
