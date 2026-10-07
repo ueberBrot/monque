@@ -31,6 +31,7 @@ import type {
   JobSelector,
   JobWriteOptions,
   Monque,
+  NowOptions,
   PersistedJob,
   ProcessingState,
   QueueStats,
@@ -108,8 +109,8 @@ export class MonqueService {
    * @param data - Job payload
    * @returns The created job document
    */
-  async now<T>(name: string, data: T): Promise<PersistedJob<T>> {
-    return this.monque.now(name, data);
+  async now<T>(name: string, data: T, options?: NowOptions): Promise<PersistedJob<T>> {
+    return this.monque.now(name, data, options);
   }
 
   /**

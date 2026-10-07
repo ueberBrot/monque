@@ -214,14 +214,14 @@ import { JobController, Cron } from "@monque/tsed";
 
 @JobController()
 export class ReportJobs {
-  @Cron("0 9 * * *", { name: "daily-report", timezone: "Europe/Berlin" })
+  @Cron("0 9 * * *", { name: "daily-report", timezone: "Europe/Berlin", priority: 10 })
   async generateDailyReport() {
     console.log("Generating report...");
   }
 }
 ```
 
-Both `@Cron` and `MonqueService.schedule()` forward the core `timezone` option:
+Both `@Cron` and `MonqueService.schedule()` forward core `priority`, `timezone`, and `uniqueKey` options:
 
 ```typescript
 await monqueService.schedule(
@@ -230,6 +230,7 @@ await monqueService.schedule(
   {},
   {
     timezone: "Europe/Berlin",
+    priority: 10,
     uniqueKey: "daily-report",
   },
 );
@@ -240,6 +241,12 @@ the option. Ts.ED uses the application's installed core peer dependency; upgradi
 alone does not upgrade core. Without `timezone`, existing server-local scheduling remains
 unchanged. See [timezone scheduling](/monque/core-concepts/scheduling/#timezone-considerations)
 for daylight saving behavior and rollout guidance.
+
+Priority belongs to each Job, not its Worker. `MonqueService.now(name, data, { priority, session })`
+also forwards immediate creation options; existing two-argument calls still work. Omitted
+priority is `0`, and supplied values must be signed safe integers. Recurring runs and
+retries retain priority; submitting an active Unique Key again keeps the original Job.
+Use a core version with priority support on every producer and Worker.
 
 ### 3. Enqueue Jobs
 
@@ -344,12 +351,12 @@ attached to the same scheduler.
 Commonly used methods:
 
 - [`enqueue()`](/monque/api-tsed/classes/monqueservice/#enqueue) - Add a job to the queue.
-- [`enqueueMany()`](/monque/api-tsed/classes/monqueservice/#enqueuemany) - Submit a batch with per-job scheduling and unique keys, including in producer-only applications. Returns inserted and deduplicated counts; see [batch submission](/monque/core-concepts/jobs/#enqueue-a-batch) for partial-failure behavior.
+- [`enqueueMany()`](/monque/api-tsed/classes/monqueservice/#enqueuemany) - Submit a batch with per-job priorities, scheduling, and unique keys, including in producer-only applications. Returns inserted and deduplicated counts; see [batch submission](/monque/core-concepts/jobs/#enqueue-a-batch) for partial-failure behavior.
 - [`schedule()`](/monque/api-tsed/classes/monqueservice/#schedule) - Schedule a recurring job.
 - [`now()`](/monque/api-tsed/classes/monqueservice/#now) - Run a job immediately.
 
 For [transactional submission](/monque/core-concepts/jobs/#enqueue-in-a-transaction),
-pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()`. Create the session
+pass `{ session }` to `enqueue()`, `now()`, `enqueueMany()`, or `schedule()`. Create the session
 from the same `MongoClient` used by your configured database connection. Your
 application owns the transaction and session lifetime.
 

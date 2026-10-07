@@ -58,17 +58,17 @@ Register a worker for each job name you submit. `stop()` waits for running handl
 
 ## Scheduling and execution
 
-| Need                              | Use                                                                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey?, priority? })`                                            |
-| Immediate prioritized work        | `now(name, data, { priority?, session? })`                                                          |
-| Recurring work                    | `schedule(cron, name, data, { timezone?, uniqueKey? })`                                             |
-| Batch submission                  | `enqueueMany(jobs)` with per-job scheduling and unique keys                                         |
-| Jobs committed with business data | Pass `{ session }` to `enqueue()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
-| Payload validation                | Pass a Standard Schema compatible `schema` to `register()`                                          |
-| Retry policy                      | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker                 |
-| Concurrency limits                | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency`                         |
-| Local processing control          | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)`                                    |
+| Need                              | Use                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Immediate or delayed work         | `enqueue(name, data, { runAt?, uniqueKey?, priority? })`                                                     |
+| Immediate prioritized work        | `now(name, data, { priority?, session? })`                                                                   |
+| Recurring work                    | `schedule(cron, name, data, { priority?, timezone?, uniqueKey? })`                                           |
+| Batch submission                  | `enqueueMany(jobs)` with per-job priority, scheduling, and unique keys                                       |
+| Jobs committed with business data | Pass `{ session }` to `enqueue()`, `now()`, `enqueueMany()`, or `schedule()` inside your MongoDB transaction |
+| Payload validation                | Pass a Standard Schema compatible `schema` to `register()`                                                   |
+| Retry policy                      | Set `maxRetries`, `baseRetryInterval`, and `maxBackoffDelay` globally or per worker                          |
+| Concurrency limits                | Set `workerConcurrency`, `instanceConcurrency`, or a worker's `concurrency`                                  |
+| Local processing control          | `pause(name?)`, `resume(name?)`, and `getProcessingState(name?)`                                             |
 
 A unique key prevents duplicate pending or processing jobs with the same name. Once a
 job is terminal, that key can be used again. Batch submission returns inserted and
@@ -82,7 +82,7 @@ A pause prevents new local executions; running handlers and other scheduler inst
 
 ### Job priority
 
-`enqueue()` and `now()` accept signed safe-integer priorities. Omission means `0`, higher
+`enqueue()`, `now()`, `schedule()`, and each `enqueueMany()` item accept signed safe-integer priorities. Omission means `0`, higher
 numbers run first, and negative values mean below-normal work. Among due pending Jobs with
 the same name, claims order by priority descending, then scheduled time and identifier
 ascending. Future Jobs remain ineligible until their scheduled time. Priority preserves
@@ -96,7 +96,8 @@ await monque.now("send-email", { kind: "password-reset" }, { priority: 10 });
 ```
 
 Duplicate submissions with an active unique key return the existing Job without changing
-its priority. Public reads and lifecycle events expose effective numeric priority.
+its priority, payload, and schedule. Retries, rescheduling, stale recovery, and subsequent
+recurring runs retain that priority. Public reads and lifecycle events expose effective numeric priority.
 Initialization automatically sets missing priorities to `0`, preserving explicit values,
 timestamps, lifecycle state, and ownership metadata, including with `skipIndexCreation`.
 Upgrade all producers and claiming schedulers for uniform guarantees. Managed indexes need

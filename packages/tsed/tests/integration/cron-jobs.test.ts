@@ -20,7 +20,7 @@ class CronTestJobs {
 
 @JobController("timezone-test")
 class TimezoneTestJobs {
-  @Cron("0 9 * * *", { timezone: "Asia/Kathmandu", uniqueKey: "daily-report" })
+  @Cron("0 9 * * *", { timezone: "Asia/Kathmandu", uniqueKey: "daily-report", priority: 17 })
   async dailyReport(): Promise<void> {}
 }
 
@@ -45,6 +45,7 @@ describe("Timezone scheduling through Ts.ED", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
       timezone: "Asia/Kathmandu",
+      priority: 17,
       uniqueKey: "daily-report",
       nextRunAt: new Date("2026-01-15T03:15:00Z"),
     });
@@ -56,10 +57,11 @@ describe("Timezone scheduling through Ts.ED", () => {
       "0 9 * * *",
       "service-report",
       {},
-      { timezone: "Europe/Berlin" },
+      { timezone: "Europe/Berlin", priority: -9 },
     );
     expect(await service.getJob(job._id)).toMatchObject({
       timezone: "Europe/Berlin",
+      priority: -9,
       nextRunAt: new Date("2026-01-15T08:00:00Z"),
     });
   });

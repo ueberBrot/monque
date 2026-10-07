@@ -180,6 +180,7 @@ export class JobIntake {
     yield* attempt(() => {
       this.validateJobIdentifiers(name, options.uniqueKey);
       this.validatePayloadSize(data);
+      validateJobPriority(options.priority);
     });
     const referenceDate = yield* DateTime.nowAsDate;
     const nextRunAt = yield* attempt(() => getNextCronDate(cron, referenceDate, options.timezone));
@@ -190,7 +191,7 @@ export class JobIntake {
         data,
         status: JobStatus.PENDING,
         nextRunAt,
-        priority: 0,
+        priority: options.priority ?? 0,
         repeatInterval: cron,
         failCount: 0,
         createdAt: now,

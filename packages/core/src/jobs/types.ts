@@ -168,7 +168,7 @@ export interface EnqueueOptions extends JobWriteOptions {
 export type NowOptions = Pick<EnqueueOptions, "priority" | "session">;
 
 /** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
-export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session" | "priority"> {
+export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session"> {
   name: string;
   data: T;
 }
@@ -199,6 +199,9 @@ export interface JobWriteOptions {
  * ```
  */
 export interface ScheduleOptions extends JobWriteOptions {
+  /** Signed safe integer retained across recurring runs. Defaults to 0. */
+  priority?: number;
+
   /**
    * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
    * When omitted, cron evaluation uses the server's local timezone.

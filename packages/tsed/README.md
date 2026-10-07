@@ -72,7 +72,7 @@ export class LogJobs {
 
 The registered job names are `logs.message` and `logs.daily`. `@Job()` accepts worker
 concurrency, retry settings, and a Standard Schema compatible `schema`. `@Cron()`
-accepts schedule options such as `timezone` and `uniqueKey`, plus a job-name override.
+accepts schedule options such as `priority`, `timezone`, and `uniqueKey`, plus a job-name override.
 Scheduler settings such as `lockTimeout` and `leaseDuration` belong in `monque` configuration.
 
 ## Submit and inspect jobs
@@ -93,9 +93,15 @@ export class LogService {
 }
 ```
 
+`MonqueService.now(name, data, { priority, session })` accepts immediate creation options.
+`enqueue()` and `schedule()` accept `priority` in their options, and `enqueueMany()` accepts
+it per Job. Priorities are signed safe integers (default `0`) and survive retries,
+rescheduling, recovery, and recurring runs. An active duplicate retains its original
+priority, payload, and schedule. Upgrade core on all producers and Workers for priority support.
+
 `MonqueService` also exposes batch submission, recurring schedules, cursor queries,
 queue statistics, job actions, and local pause/resume controls. Pass `{ session }` to
-`enqueue()`, `enqueueMany()`, or `schedule()` to join a transaction owned by your application.
+`enqueue()`, `now()`, `enqueueMany()`, or `schedule()` to join a transaction owned by your application.
 The session must come from the same MongoDB client as the configured database.
 
 Set `disableJobProcessing: true` in the `monque` configuration for a producer-only
