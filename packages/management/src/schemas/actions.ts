@@ -110,5 +110,10 @@ export const SelectedJobActionsDtoSchema = z.discriminatedUnion("action", [
     ids: SelectedJobIdsSchema,
     nextRunAt: z.iso.datetime(),
   }),
+  z.strictObject({
+    action: z.literal("priority"),
+    ids: SelectedJobIdsSchema,
+    priority: SetJobPriorityRequestDtoSchema.shape.priority,
+  }),
 ]);
 export type SelectedJobActionsDto = z.infer<typeof SelectedJobActionsDtoSchema>;

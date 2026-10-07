@@ -39,14 +39,15 @@ test("health follows scheduler start/stop and shows actual permissions", async (
   await app.seedScenario("mutations");
   await page.goto(`${app.base}/dashboard/health`);
   await expect(page.getByRole("heading", { name: "Scheduler unavailable" })).toBeVisible();
-  await expect(page.getByText("8 of 8 available")).toBeVisible();
+  await expect(page.getByText("9 of 9 available")).toBeVisible();
+  await expect(page.getByText("Change job priority", { exact: true })).toBeVisible();
   app.monque.start();
   await expect(page.getByRole("heading", { name: "Scheduler healthy" })).toBeVisible();
   await app.monque.stop();
   await expect(page.getByRole("heading", { name: "Scheduler unavailable" })).toBeVisible();
   await page.goto(`${app.origin}/readonly/dashboard/health`);
   await expect(page.getByRole("heading", { name: "Read-only access" })).toBeVisible();
-  await expect(page.getByText("1 of 8 available")).toBeVisible();
+  await expect(page.getByText("1 of 9 available")).toBeVisible();
 });
 
 for (const field of ["Created", "Updated", "Next run"]) {

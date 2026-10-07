@@ -26,6 +26,7 @@ const EXPECTED_CONTRACT_PACKAGE_JSON = {
 } as const;
 
 const BROWSER_SAFE_RUNTIME_EXPORTS = [
+  "SelectedJobActionsDtoSchema",
   "SetJobPriorityInputDtoSchema",
   "SetJobPriorityRequestDtoSchema",
   "managementContract",

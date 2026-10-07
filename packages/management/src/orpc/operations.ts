@@ -270,7 +270,11 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
     context: TContext,
   ): Effect.fn.Return<BulkActionResultDto, unknown> {
     const capability =
-      input.action === "reschedule" ? "reschedule" : (`${input.action}Bulk` as const);
+      input.action === "priority"
+        ? "setJobPriority"
+        : input.action === "reschedule"
+          ? "reschedule"
+          : (`${input.action}Bulk` as const);
     yield* policy.requireSupported(capability);
     const ids = [
       ...new Set(input.ids.map((id) => (/^[a-fA-F0-9]{24}$/.test(id) ? id.toLowerCase() : id))),
@@ -284,7 +288,11 @@ export function createManagementOperations<TContext>(options: ManagementOptions<
           input.action === "delete"
             ? executeJobDeletion(id, context)
             : executeJobMutation(
-                input.action === "reschedule" ? input : { action: input.action },
+                input.action === "priority"
+                  ? { action: "setJobPriority", priority: input.priority }
+                  : input.action === "reschedule"
+                    ? input
+                    : { action: input.action },
                 id,
                 context,
               );

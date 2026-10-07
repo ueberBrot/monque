@@ -126,3 +126,32 @@ it("requires confirmation with a signed safe-integer priority and retains the or
     }),
   );
 });
+
+it("confirms one shared priority for the explicit selected scope", async () => {
+  const onConfirm = vi.fn();
+  render(
+    <JobActionDialog
+      state={{ action: "priority", scope: "bulk", jobIds: ["job-a", "job-b"], nextRunAt: "" }}
+      busy={false}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  const confirm = screen.getByRole("button", { name: "Confirm priority selected jobs" });
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
+    target: { value: "-12" },
+  });
+  expect(screen.getByRole("dialog").textContent).toContain(
+    "Set priority to -12 for 2 selected jobs.",
+  );
+  expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() =>
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({
+      action: "priority",
+      jobIds: ["job-a", "job-b"],
+      priority: -12,
+    }),
+  );
+});

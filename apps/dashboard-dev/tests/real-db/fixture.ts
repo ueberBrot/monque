@@ -37,6 +37,7 @@ async function createApp() {
   type Role = "operator" | "viewer" | "blocked";
   type Session = { role: Role; expiresAt: number };
   const sessions = new Map<string, Session>();
+  const deniedPriorityJobIds = new Set<string>();
   const operator = randomUUID();
   const viewer = randomUUID();
   sessions.set(operator, { role: "operator", expiresAt: Date.now() + 60_000 });
@@ -106,8 +107,9 @@ async function createApp() {
     createManagementExpressRouter({
       monque,
       context: ({ req }) => sessionFor(req)?.role,
-      authorize: ({ action, context }) =>
-        context === "operator" || (context === "viewer" && action === "read"),
+      authorize: ({ action, context, job }) =>
+        (context === "operator" || (context === "viewer" && action === "read")) &&
+        !(action === "setJobPriority" && job && deniedPriorityJobIds.has(job._id.toHexString())),
     }),
   );
   app.use(
@@ -126,6 +128,7 @@ async function createApp() {
     jobs,
     monque,
     sessions,
+    deniedPriorityJobIds,
     operator,
     viewer,
     development,
@@ -138,6 +141,7 @@ async function createApp() {
       await db.collection("effects").deleteMany({});
       await db.collection("attempts").deleteMany({});
       sessions.clear();
+      deniedPriorityJobIds.clear();
       sessions.set(operator, { role: "operator", expiresAt: Date.now() + 60_000 });
       sessions.set(viewer, { role: "viewer", expiresAt: Date.now() + 60_000 });
     },

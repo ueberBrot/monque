@@ -110,7 +110,11 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
     selectedJobActions: managementImplementer.selectedJobActions.handler(({ input, context }) => {
       const scenario = getReadableScenario(context);
       const capability =
-        input.action === "reschedule" ? "reschedule" : (`${input.action}Bulk` as const);
+        input.action === "priority"
+          ? "setJobPriority"
+          : input.action === "reschedule"
+            ? "reschedule"
+            : (`${input.action}Bulk` as const);
       assertMutationAllowed(scenario, capability);
       const result: BulkActionResultDto = { count: 0, errors: [] };
       for (const id of new Set(input.ids)) {
@@ -120,7 +124,9 @@ function createMockManagementOpenApiHandler(): OpenAPIHandler<MockManagementCont
             mutateSingleJob(
               id,
               scenario,
-              input.action === "reschedule" ? input : { action: input.action },
+              input.action === "reschedule" || input.action === "priority"
+                ? input
+                : { action: input.action },
             );
           }
           result.count++;

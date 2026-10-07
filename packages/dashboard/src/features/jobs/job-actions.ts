@@ -88,11 +88,12 @@ async function runJobActions(
       authorizationChanged: false,
     };
   }
-  if (input.action === "priority") throw new Error("Select one job to change its priority.");
   const result = await managementApi.client.selectedJobActions(
     input.action === "reschedule"
       ? { action: input.action, ids: [...input.jobIds], nextRunAt: input.nextRunAt }
-      : { action: input.action, ids: [...input.jobIds] },
+      : input.action === "priority"
+        ? { action: input.action, ids: [...input.jobIds], priority: input.priority }
+        : { action: input.action, ids: [...input.jobIds] },
   );
   const errors = new Map(result.errors.map((error) => [error.jobId, error]));
   const failed = input.jobIds.filter((id) => errors.has(id));
@@ -134,7 +135,7 @@ const JOB_ACTION_DEFINITIONS = {
     bulkCapability: "setJobPriority",
     statuses: new Set<JobDto["status"]>(["pending"]),
     reason: "Only pending jobs can have their priority changed.",
-    bulkReason: "Select one job to change its priority.",
+    bulkReason: "Changing priority requires every selected job to be pending.",
   },
   delete: {
     label: "Delete",
@@ -189,7 +190,6 @@ function getActionAvailability(
         : "Your host application has not enabled this action for you.",
     };
   }
-  if (bulk && action === "priority") return { disabled: true, reason: definition.bulkReason };
   const statuses = definition.statuses;
   const enabled = action === "delete" || jobs.every((job) => statuses.has(job.status));
   return {
@@ -223,7 +223,7 @@ function getActionSuccessFeedback(action: JobActionKey, count = 1): JobActionFee
     case "priority":
       return {
         tone: "success",
-        title: "Job priority changed",
+        title: count === 1 ? "Job priority changed" : "Job priorities changed",
         description: `${count} ${noun} received the new priority.`,
       };
     case "delete":

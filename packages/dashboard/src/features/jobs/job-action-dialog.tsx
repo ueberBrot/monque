@@ -77,7 +77,7 @@ function JobActionDialogForm({
         {label} {noun}
         {state.scope === "single" && requiresDate ? "" : "?"}
       </DialogTitle>
-      <DialogDescription>{getDialogDescription(state)}</DialogDescription>
+      <DialogDescription>{getDialogDescription(state, priority)}</DialogDescription>
       {state.scope === "single" ? (
         <div className="min-w-0 rounded-lg border border-border p-3">
           <p className="break-all text-sm font-medium">{state.jobName}</p>
@@ -131,7 +131,7 @@ function JobActionDialogForm({
   );
 }
 
-function getDialogDescription(state: JobActionDialogState): string {
+function getDialogDescription(state: JobActionDialogState, priority?: number): string {
   const scopeText = state.scope === "single" ? "this job" : `${state.jobIds.length} selected jobs`;
 
   switch (state.action) {
@@ -142,7 +142,9 @@ function getDialogDescription(state: JobActionDialogState): string {
     case "reschedule":
       return `Choose a new run time for ${scopeText}.`;
     case "priority":
-      return `Choose a new priority for ${scopeText}. Only pending jobs can be changed.`;
+      return priority === undefined
+        ? `Choose a new priority for ${scopeText}. Only pending jobs can be changed.`
+        : `Set priority to ${priority} for ${scopeText}. Only pending jobs can be changed.`;
     case "delete":
       return `Delete is permanent. Confirm deletion for ${scopeText}.`;
   }

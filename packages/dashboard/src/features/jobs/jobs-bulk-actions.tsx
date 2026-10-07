@@ -22,7 +22,7 @@ function JobsBulkActions({
   readonly openBulkDialog: (action: JobActionKey) => void;
 }) {
   if (!selectedJobs.length) return null;
-  const actions = JOB_ACTION_ORDER.filter((action) => action !== "priority").map((action) => ({
+  const actions = JOB_ACTION_ORDER.map((action) => ({
     action,
     label: JOB_ACTION_DEFINITIONS[action].label,
     ...getBulkJobActionAvailability(selectedJobs, capabilities, action),

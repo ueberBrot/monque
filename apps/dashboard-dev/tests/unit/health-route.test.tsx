@@ -13,8 +13,9 @@ describe("Health route", () => {
     expect(await screen.findByRole("heading", { name: "Health" })).toBeTruthy();
     expect(await screen.findByText("Scheduler healthy")).toBeTruthy();
     expect(await screen.findByText("Management API reachable")).toBeTruthy();
-    expect(await screen.findByText("8 of 8 available")).toBeTruthy();
+    expect(await screen.findByText("9 of 9 available")).toBeTruthy();
     expect(await screen.findByText("Cancel job")).toBeTruthy();
+    expect(await screen.findByText("Change job priority")).toBeTruthy();
   });
 
   it("shows a distinct unauthorized state without a Dashboard login screen", async () => {
@@ -38,8 +39,8 @@ describe("Health route", () => {
     renderHealthRoute("read-only");
 
     expect(await screen.findByText("Read-only access")).toBeTruthy();
-    expect(await screen.findByText("1 of 8 available")).toBeTruthy();
-    expect((await screen.findAllByText("This dashboard is read-only.")).length).toBe(8);
+    expect(await screen.findByText("1 of 9 available")).toBeTruthy();
+    expect((await screen.findAllByText("This dashboard is read-only.")).length).toBe(9);
     expect((await screen.findAllByText("Retry selected jobs")).length).toBeGreaterThan(0);
   });
 

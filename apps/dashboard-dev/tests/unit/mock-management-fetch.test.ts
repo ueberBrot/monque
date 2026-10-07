@@ -284,3 +284,27 @@ it("changes mock Job priority without modifying other fields and rejects stale o
     status: 404,
   });
 });
+
+it("sets one priority on selected mock Jobs and reports stale Jobs without widening scope", async () => {
+  const api = createDashboardManagementApi({
+    apiBaseUrl: "/",
+    origin: "https://dashboard.test",
+    fetch: createMockManagementFetch(),
+  }).client;
+  const [first, stale, untouched] = (await api.jobs({ status: "pending", limit: "3" })).jobs;
+  if (!first || !stale || !untouched) throw new Error("Expected three pending Jobs");
+  await api.cancelJob({ params: { id: stale.id } });
+  expect(
+    await api.selectedJobActions({
+      action: "priority",
+      ids: [first.id, stale.id, first.id],
+      priority: -17,
+    }),
+  ).toEqual({
+    count: 1,
+    errors: [expect.objectContaining({ jobId: stale.id, status: 409 })],
+  });
+  expect((await api.job({ params: { id: first.id } })).priority).toBe(-17);
+  expect((await api.job({ params: { id: stale.id } })).priority).toBe(0);
+  expect(await api.job({ params: { id: untouched.id } })).toEqual(untouched);
+});
