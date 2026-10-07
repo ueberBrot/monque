@@ -1,4 +1,4 @@
-import { useHotkey } from "@tanstack/react-hotkeys";
+import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -18,6 +18,8 @@ import { copyToClipboard } from "@/lib/clipboard";
 const CommandSearch = lazy(() =>
   import("./command-search.js").then((module) => ({ default: module.CommandSearch })),
 );
+const COMMAND_HOTKEY = "Mod+K";
+const REFRESH_HOTKEY = "Mod+Shift+R";
 
 function CommandMenu() {
   const [open, setOpen] = useState(false);
@@ -26,8 +28,8 @@ function CommandMenu() {
   const refresh = () => {
     void queryClient.invalidateQueries();
   };
-  useHotkey("Mod+K", () => setOpen((current) => !current));
-  useHotkey("Mod+Shift+R", refresh);
+  useHotkey(COMMAND_HOTKEY, () => setOpen((current) => !current));
+  useHotkey(REFRESH_HOTKEY, refresh);
   useHotkey({ key: "/", shift: true }, () => {
     setOpen(true);
   });
@@ -73,8 +75,11 @@ function CommandMenu() {
             <Button variant="ghost" size="sm" className="text-muted-foreground">
               <Search className="size-4" />
               Commands{" "}
-              <kbd className="ml-2 hidden rounded border border-border px-1 text-xs sm:inline">
-                Ctrl / ⌘ K
+              <kbd
+                className="ml-2 hidden rounded border border-border px-1 text-xs sm:inline"
+                aria-label={formatForDisplay(COMMAND_HOTKEY, { useSymbols: false })}
+              >
+                {formatForDisplay(COMMAND_HOTKEY)}
               </kbd>
             </Button>
           }
@@ -82,7 +87,8 @@ function CommandMenu() {
         <DialogContent>
           <DialogTitle>Commands</DialogTitle>
           <DialogDescription>
-            Navigate or update your view. Ctrl / ⌘ Shift R refreshes; ? opens this menu.
+            Navigate or update your view. {formatForDisplay(REFRESH_HOTKEY)} refreshes; ? opens this
+            menu.
           </DialogDescription>
           {open ? (
             <Suspense fallback={<p role="status">Loading commands…</p>}>
