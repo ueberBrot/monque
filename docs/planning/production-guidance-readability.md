@@ -64,7 +64,10 @@ upgrade procedure is complete.
   claim that illustrative application adapters were executed or type-checked.
 - All relative source and ADR links in the specification resolve. The new documentation
   links point to existing pages and the existing idempotency-patterns heading.
-- `vp run @monque/docs#build` stalled in the core package build before page generation.
-  A retry with `RAYON_NUM_THREADS=1` also stalled. A process sample showed native library
-  loading blocked in macOS `dyld`/`fcntl`; those worktree-local build processes were stopped.
-  Full Astro rendering and the site's link-validator pass remain unverified here.
+- `vp run @monque/docs#build` passed: 208 pages built with the site's link validator
+  enabled. Initial attempts stalled during native library loading in macOS; the final
+  attempt completed after that delay cleared. Existing TypeDoc decorator-tag and bundle
+  size warnings do not concern the changed pages.
+- The repository commit hook also ran `vp run type-check` and `vp staged` successfully.
+  Astro reported zero errors, warnings, or hints across eight files. The hook's broader
+  checks were required by the repository; no runtime test suite was run in this pass.
