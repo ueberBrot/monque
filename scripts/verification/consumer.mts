@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MongoDBContainer } from "@testcontainers/mongodb";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const requireCore = createRequire(join(root, "packages/core/package.json"));
-const { MongoDBContainer } = requireCore("@testcontainers/mongodb");
 const packageNames = [
   "core",
   "management",
@@ -20,7 +18,7 @@ const packageNames = [
 const args = process.argv.slice(2);
 assert(
   args.every((arg) => arg === "--skip-build"),
-  "Usage: node scripts/verification/consumer.mjs [--skip-build]",
+  "Usage: bun scripts/verification/consumer.mts [--skip-build]",
 );
 
 const cancellation = new AbortController();
@@ -28,9 +26,14 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
   process.once(signal, () => cancellation.abort(new Error(`Received ${signal}`)));
 }
 
-async function run(command, commandArgs, cwd, env = {}) {
+async function run(
+  command: string,
+  commandArgs: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = {},
+) {
   cancellation.signal.throwIfAborted();
-  await new Promise((resolveRun, reject) => {
+  await new Promise<void>((resolveRun, reject) => {
     const useProcessGroup = process.platform !== "win32";
     const child = spawn(command, commandArgs, {
       cwd,
@@ -38,18 +41,19 @@ async function run(command, commandArgs, cwd, env = {}) {
       stdio: "inherit",
       detached: useProcessGroup,
     });
-    let failure;
-    let escalation;
-    function kill(signal) {
+    let failure: unknown;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    function kill(signal: NodeJS.Signals) {
       if (!child.pid) return;
       try {
         if (useProcessGroup) process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch (error) {
-        if (error.code !== "ESRCH") failure ??= error;
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH"))
+          failure ??= error;
       }
     }
-    function stop(reason) {
+    function stop(reason: unknown) {
       failure ??= reason;
       kill("SIGTERM");
       escalation ??= setTimeout(() => kill("SIGKILL"), 2_000);
@@ -81,8 +85,8 @@ let container;
 try {
   if (!args.includes("--skip-build"))
     await run("vp", ["run", "--filter", "./packages/*", "build"], root);
-  const tarballs = {};
-  const versions = {};
+  const tarballs: Record<string, string> = {};
+  const versions: Record<string, string> = {};
   for (const name of packageNames) {
     const directory = join(root, "packages", name);
     const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
@@ -107,7 +111,7 @@ try {
   for (const scenario of cases) {
     const directory = join(scratch, scenario.name);
     await mkdir(directory);
-    const dependencies = {
+    const dependencies: Record<string, string> = {
       ...tarballs,
       "@monque/core": scenario.core,
       "@monque/management": scenario.management,
@@ -127,7 +131,7 @@ try {
       join(directory, "package.json"),
       JSON.stringify({ private: true, type: "module", dependencies }, null, 2),
     );
-    await copyFile(join(root, "scripts/verification/consumer-app.mjs"), join(directory, "app.mjs"));
+    await copyFile(join(root, "scripts/verification/consumer-app.mts"), join(directory, "app.mts"));
     await run("bun", ["install", "--ignore-scripts"], directory);
     // Every Monque package must come from this install, even when a workspace is nearby.
     for (const name of Object.keys(dependencies).filter((name) => name.startsWith("@monque/"))) {
@@ -137,7 +141,7 @@ try {
         `${name} escaped the consumer install`,
       );
     }
-    await run(process.execPath, ["app.mjs"], directory, {
+    await run(process.execPath, ["app.mts"], directory, {
       MONQUE_VERIFY_CASE: scenario.name,
       MONQUE_VERIFY_URI: container.getConnectionString(),
       MONQUE_VERIFY_SCRATCH: scratch,
@@ -146,7 +150,7 @@ try {
   }
   const report = {
     checkedAt: new Date().toISOString(),
-    node: process.version,
+    runtime: { node: process.version, bun: process.versions.bun },
     packages: versions,
     results,
   };

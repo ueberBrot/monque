@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
+import type { Server } from "node:http";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { Monque } from "@monque/core";
@@ -12,17 +13,21 @@ import { BSON, MongoClient } from "mongodb";
 
 const scenario = process.env.MONQUE_VERIFY_CASE;
 const current = scenario === "current";
+assert(process.env.MONQUE_VERIFY_URI, "Missing MongoDB URI");
+assert(process.env.MONQUE_VERIFY_SCRATCH, "Missing scratch directory");
 const client = new MongoClient(process.env.MONQUE_VERIFY_URI, { directConnection: true });
 const db = client.db(scenario === "minimum-management" ? "management_compatibility" : "upgrade");
 const jobs = db.collection("monque_jobs");
 const snapshotPath = join(process.env.MONQUE_VERIFY_SCRATCH, "legacy.json");
 const checks = [];
 let monque;
-let server;
+let server: Server | undefined;
 let resetTsed;
 
-async function request(path, options = {}) {
-  const response = await fetch(`http://127.0.0.1:${server.address().port}/ops${path}`, {
+async function request(path: string, options: RequestInit = {}) {
+  const address = server?.address();
+  assert(address && typeof address === "object", "HTTP server is not listening");
+  const response = await fetch(`http://127.0.0.1:${address.port}/ops${path}`, {
     ...options,
     headers: { "x-verification-user": "operator", ...options.headers },
     signal: AbortSignal.timeout(15_000),
@@ -40,6 +45,7 @@ try {
   if (current) {
     for (const before of snapshot.jobs) {
       const after = await jobs.findOne({ _id: before._id });
+      assert(after, "Upgrade removed a Job");
       assert.equal(after.priority, 0);
       delete after.priority;
       assert.deepEqual(after, before, "Backfill changed fields besides priority");
@@ -83,7 +89,7 @@ try {
     const managedIndexes = await db.collection("managed_jobs").indexes();
     try {
       await managed.initialize();
-      assert.equal((await db.collection("managed_jobs").findOne({})).priority, 0);
+      assert.equal((await db.collection("managed_jobs").findOne({}))?.priority, 0);
       assert.deepEqual(await db.collection("managed_jobs").indexes(), managedIndexes);
       checks.push("Managed indexes stay unchanged while missing priorities are backfilled");
     } finally {
@@ -106,7 +112,9 @@ try {
   }
   const listing = await request("/api/v1/jobs?view=summary");
   assert.equal(listing.status, 200);
-  const listed = (await listing.json()).jobs.find((value) => value.id === job._id.toHexString());
+  const listed = (await listing.json()).jobs.find(
+    (value: { id: string; priority?: number }) => value.id === job._id.toHexString(),
+  );
   assert(listed, "Installed packages could not list their own Job");
   const capabilities = await (await request("/api/v1/capabilities")).json();
   if (scenario === "minimum-core") assert.equal(capabilities.actions.setJobPriority, false);
@@ -120,7 +128,7 @@ try {
       body: JSON.stringify({ priority: -5 }),
     });
     assert.equal(changed.status, 200, await changed.text());
-    assert.equal((await monque.getJob(job._id)).priority, -5);
+    assert.equal((await monque.getJob(job._id))?.priority, -5);
   }
   if (scenario === "minimum-core") {
     const denied = await request(`/api/v1/jobs/${job._id}/actions/priority`, {
@@ -145,7 +153,7 @@ try {
   for (const path of assets) {
     const asset = await request(path.slice(4));
     assert.equal(asset.status, 200, path);
-    assert.match(asset.headers.get("cache-control"), /immutable/);
+    assert.match(asset.headers.get("cache-control") ?? "", /immutable/);
     assert((await asset.arrayBuffer()).byteLength > 0);
   }
   checks.push(
@@ -215,7 +223,7 @@ try {
       "Installed Ts.ED module bootstraps through DI and forwards priority intake and changes",
     );
   }
-  const versions = {};
+  const versions: Record<string, string> = {};
   for (const name of [
     "core",
     "management",
@@ -235,8 +243,8 @@ try {
       resetTsed?.(),
       monque?.stop(),
       server &&
-        new Promise((resolve, reject) =>
-          server.close((error) => (error ? reject(error) : resolve())),
+        new Promise<void>((resolve, reject) =>
+          server!.close((error) => (error ? reject(error) : resolve())),
         ),
     ]);
   } finally {

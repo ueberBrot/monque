@@ -7,7 +7,17 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@monque/*": ["./packages/*/dist/index.d.mts"],
+      "express": ["./packages/management-express/node_modules/@types/express"],
+      "mongodb": ["./packages/core/node_modules/mongodb"],
+      "@tsed/di": ["./packages/tsed/node_modules/@tsed/di"],
+      "@tsed/platform-http/testing": [
+        "./packages/tsed/node_modules/@tsed/platform-http/lib/types/testing/index.d.ts"
+      ],
+      "@testcontainers/mongodb": ["./packages/core/node_modules/@testcontainers/mongodb"]
+    }
   },
-  "include": ["vite.config.ts", "scripts/**/*.ts"]
+  "include": ["vite.config.ts", "scripts/**/*.ts", "scripts/**/*.mts"]
 }
