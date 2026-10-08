@@ -1,0 +1,15 @@
+{
+  "source": "docs/verification/baseline.md",
+  "method": "Heuristic English vowel-group syllables and punctuation sentence splitting; headings, code blocks and inline literals excluded. Scores are estimates, not comprehension tests.",
+  "words": 442,
+  "sentences": 38,
+  "averageSentenceWords": 11.63,
+  "averageWordCharacters": 5.89,
+  "complexWords": 114,
+  "complexWordPercent": 25.79,
+  "estimatedPassiveSentences": 4,
+  "fleschReadingEase": 32.53,
+  "fleschKincaidGrade": 11.61,
+  "gunningFog": 14.97,
+  "smog": 13.02
+}

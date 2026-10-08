@@ -1,0 +1,311 @@
+{
+  "status": "passed",
+  "timestamp": "2026-10-08T09:51:58.555Z",
+  "node": "v24.18.0",
+  "mongodb": "8.0.9",
+  "sourceCommit": "468c5306bdca3c312d8daa801b7d0c28bdc0152d",
+  "host": {
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "coreVersion": "1.18.0",
+  "settings": {
+    "jobs": 240,
+    "workers": 3,
+    "duration-ms": 15000,
+    "job-ms": 80,
+    "future-jobs": 1000,
+    "outage-ms": 1800,
+    "timeout-ms": 120000
+  },
+  "finiteJobsCompleted": 240,
+  "elapsedMs": 15128,
+  "throughputJobsPerSecond": 15.864621893178212,
+  "pickupLatencyByPriority": {
+    "0": {
+      "attempts": 88,
+      "p50Ms": 2733,
+      "p95Ms": 4492,
+      "maxMs": 4603
+    },
+    "10": {
+      "attempts": 90,
+      "p50Ms": 964,
+      "p95Ms": 2911,
+      "maxMs": 3237
+    },
+    "-10": {
+      "attempts": 88,
+      "p50Ms": 4590,
+      "p95Ms": 6440,
+      "maxMs": 6546
+    }
+  },
+  "recurringCompletions": 14,
+  "persistedRetriedJobs": 24,
+  "observedRetryFailureEvents": 24,
+  "faultRecovery": {
+    "interruptionMs": 1841,
+    "commandFailuresDuringPause": 4,
+    "firstCompletionAfterResumeMs": 88,
+    "killedJobCompletionMs": 3237
+  },
+  "workerPeakRssBytes": {
+    "0": 105512960,
+    "1": 134561792,
+    "2": 133857280
+  },
+  "workerCommands": {
+    "0": {
+      "createIndexes": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 2
+      },
+      "update": {
+        "succeeded": 4,
+        "failed": 0,
+        "totalMs": 12
+      },
+      "find": {
+        "succeeded": 2,
+        "failed": 0,
+        "totalMs": 9
+      },
+      "listCollections": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 2
+      },
+      "aggregate": {
+        "succeeded": 3,
+        "failed": 1,
+        "totalMs": 12
+      },
+      "findAndModify": {
+        "succeeded": 2,
+        "failed": 0,
+        "totalMs": 12
+      }
+    },
+    "1": {
+      "createIndexes": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 4
+      },
+      "update": {
+        "succeeded": 105,
+        "failed": 1,
+        "totalMs": 1101
+      },
+      "find": {
+        "succeeded": 44,
+        "failed": 0,
+        "totalMs": 133
+      },
+      "listCollections": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 5
+      },
+      "aggregate": {
+        "succeeded": 214,
+        "failed": 5,
+        "totalMs": 1478
+      },
+      "findAndModify": {
+        "succeeded": 317,
+        "failed": 0,
+        "totalMs": 1011
+      }
+    },
+    "2": {
+      "createIndexes": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 5
+      },
+      "update": {
+        "succeeded": 110,
+        "failed": 1,
+        "totalMs": 1057
+      },
+      "find": {
+        "succeeded": 47,
+        "failed": 0,
+        "totalMs": 129
+      },
+      "listCollections": {
+        "succeeded": 1,
+        "failed": 0,
+        "totalMs": 4
+      },
+      "aggregate": {
+        "succeeded": 222,
+        "failed": 5,
+        "totalMs": 1507
+      },
+      "findAndModify": {
+        "succeeded": 330,
+        "failed": 0,
+        "totalMs": 963
+      }
+    }
+  },
+  "observedClaimExplain": {
+    "nReturned": 1,
+    "totalKeysExamined": 2,
+    "totalDocsExamined": 1,
+    "executionTimeMillis": 1,
+    "plan": {
+      "isCached": true,
+      "stage": "UPDATE",
+      "inputStage": {
+        "stage": "LIMIT",
+        "limitAmount": 1,
+        "inputStage": {
+          "stage": "FETCH",
+          "inputStage": {
+            "stage": "IXSCAN",
+            "keyPattern": {
+              "name": 1,
+              "status": 1,
+              "priority": -1,
+              "nextRunAt": 1,
+              "_id": 1
+            },
+            "indexName": "name_1_status_1_priority_-1_nextRunAt_1__id_1",
+            "isMultiKey": false,
+            "multiKeyPaths": {
+              "name": [],
+              "status": [],
+              "priority": [],
+              "nextRunAt": [],
+              "_id": []
+            },
+            "isUnique": false,
+            "isSparse": false,
+            "isPartial": false,
+            "indexVersion": 2,
+            "direction": "forward",
+            "indexBounds": {
+              "name": ["[\"work\", \"work\"]"],
+              "status": ["[\"pending\", \"pending\"]"],
+              "priority": ["[MaxKey, MinKey]"],
+              "nextRunAt": ["[new Date(-9223372036854775808), new Date(1791453105312)]"],
+              "_id": ["[MinKey, MaxKey]"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "schedulerErrors": [
+    {
+      "type": "error",
+      "error": "connection 1 to 127.0.0.1:57042 timed out",
+      "workerId": 2,
+      "at": 1791453104249
+    },
+    {
+      "type": "error",
+      "error": "connection 1 to 127.0.0.1:57042 timed out",
+      "workerId": 1,
+      "at": 1791453104259
+    }
+  ],
+  "commandFailures": [
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 0,
+      "at": 1791453102963
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 2,
+      "at": 1791453103350
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 1,
+      "at": 1791453103364
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "connection 2 to 127.0.0.1:57042 timed out",
+      "workerId": 2,
+      "at": 1791453104162
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "connection 2 to 127.0.0.1:57042 timed out",
+      "workerId": 1,
+      "at": 1791453104170
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "update",
+      "error": "connection 1 to 127.0.0.1:57042 timed out",
+      "workerId": 2,
+      "at": 1791453104249
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "update",
+      "error": "connection 1 to 127.0.0.1:57042 timed out",
+      "workerId": 1,
+      "at": 1791453104259
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 2,
+      "at": 1791453105319
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 1,
+      "at": 1791453105319
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 1,
+      "at": 1791453107325
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 2,
+      "at": 1791453107325
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 1,
+      "at": 1791453111330
+    },
+    {
+      "type": "commandFailure",
+      "commandName": "aggregate",
+      "error": "The $changeStream stage is only supported on replica sets",
+      "workerId": 2,
+      "at": 1791453111334
+    }
+  ]
+}

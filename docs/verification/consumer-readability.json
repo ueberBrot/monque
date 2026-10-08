@@ -1,0 +1,15 @@
+{
+  "source": "docs/verification/consumer.md",
+  "method": "Heuristic English vowel-group syllables and punctuation sentence splitting; headings, code blocks and inline literals excluded. Scores are estimates, not comprehension tests.",
+  "words": 395,
+  "sentences": 31,
+  "averageSentenceWords": 12.74,
+  "averageWordCharacters": 5.48,
+  "complexWords": 79,
+  "complexWordPercent": 20.0,
+  "estimatedPassiveSentences": 1,
+  "fleschReadingEase": 44.19,
+  "fleschKincaidGrade": 10.26,
+  "gunningFog": 13.1,
+  "smog": 12.25
+}
