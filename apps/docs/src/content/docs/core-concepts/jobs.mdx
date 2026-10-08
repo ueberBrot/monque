@@ -353,28 +353,30 @@ monque.register<ProcessOrderJob>("process-order", async (job) => {
 
 ### Idempotent Operations
 
-Design workers to handle duplicate execution safely:
+Design workers to handle concurrent duplicates and retries after partial failure.
+Atomic claims prevent two workers from claiming the same pending Job at once. Recovery
+can expire a claim while its original handler still runs; claim ownership protects
+Monque's state, but cannot cancel an external side effect.
 
-<Aside type="note">
-  Atomic claims prevent two workers from claiming the same pending job at once. A job can still run
-  again after a [retry](/monque/core-concepts/retry/) or after startup recovery resets an expired
-  lock. Make handlers safe to repeat, including after a partially completed run.
-</Aside>
+For external calls, reuse a stable business-operation key with a provider that supports
+idempotency. This application adapter must forward the key and handle the provider's
+response to concurrent requests with that key:
 
 ```typescript
 monque.register("charge-payment", async (job) => {
-  const { paymentId } = job.data;
-
-  // Check if already processed
-  const payment = await db.payments.findOne({ _id: paymentId });
-  if (payment.status === "charged") {
-    return; // Already done, safe to skip
-  }
-
-  // Process payment
-  await chargePayment(payment);
+  const { paymentId, amount, currency } = job.data;
+  await paymentProvider.charge(
+    { paymentId, amount, currency },
+    { idempotencyKey: `charge:${paymentId}` },
+  );
 });
 ```
+
+Keep the request details fixed and respect the provider's key-retention period. Checking
+a local payment status before making a call cannot prevent concurrent charges or recover
+a lost response safely. For MongoDB-only effects, use a transaction with a unique
+operation identifier. See [Idempotency patterns](/monque/advanced/production-checklist/#idempotency-patterns)
+for both approaches and their prerequisites.
 
 ## Job Retention
 

@@ -378,7 +378,7 @@ monque.register("process-order", async (job) => {
 
 ### 2. Handle Partial Failures
 
-Design for idempotency:
+Track progress so retries can resume unfinished work:
 
 ```typescript
 monque.register("sync-data", async (job) => {
@@ -394,6 +394,11 @@ monque.register("sync-data", async (job) => {
   }
 });
 ```
+
+A crash can occur between `processItem` and `updateProgress`, and concurrent executions
+can read the same progress. Each item operation must itself be idempotent, or its effect
+and progress update must commit in one transaction. See
+[Idempotency patterns](/monque/advanced/production-checklist/#idempotency-patterns).
 
 ### 3. Log Strategically
 
