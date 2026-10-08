@@ -25,57 +25,112 @@ and a retention age of zero makes terminal jobs eligible at the next cleanup.
 | Deduplication | Use [`uniqueKey`](/monque/api/interfaces/enqueueoptions/#uniquekey) to prevent duplicate jobs      |
 | Replica Set   | Required for [Change Streams](/monque/advanced/change-streams/)                                    |
 | Shutdown      | Configure [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout) appropriately |
-| Lock Timeout  | Set [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) to 2× longest job duration  |
+| Recovery      | Choose absolute locks or renewable leases; allow for slow runs and renewal delays                  |
 
 ---
 
 ## 1. Design for Idempotency
 
 <Aside type="caution">
-  A job may run more than once. Make workers idempotent so repeating an input does not repeat an
-  unwanted side effect.
+  A job may run more than once, including overlapping executions after recovery. Make workers safe
+  for concurrent duplicates as well as retries after a partial failure.
 </Aside>
 
 Jobs may be executed more than once due to:
 
 - Failed attempts retry with [exponential backoff](/monque/core-concepts/retry/).
-- After a crash, [startup recovery](/monque/advanced/heartbeat/) can return jobs with expired locks to pending.
+- [Recovery](/monque/advanced/heartbeat/) can return jobs with expired claims to pending, even while the original handler is still running.
 - A network failure can prevent Monque from recording a completed run.
 
 ### Idempotency Patterns
 
+For an external side effect, pass a stable business-operation key to a provider that
+supports idempotency. The following `paymentProvider` is an application adapter: it must
+forward the key to the provider and handle its response when an identical request is
+already in flight. A local status check before calling the provider cannot prevent two
+handlers from charging at once, or a second charge after a lost response.
+
 ```typescript
-import { Monque } from "@monque/core";
-
-// ✅ Good: Check state before mutating
 monque.register("charge-payment", async (job) => {
-  const { paymentId } = job.data;
+  const { paymentId, amount, currency } = job.data;
 
-  const payment = await db.payments.findOne({ _id: paymentId });
-  if (payment.status === "charged") {
-    return; // Already processed, skip safely
-  }
-
-  await chargePayment(payment);
-  await db.payments.updateOne({ _id: paymentId }, { $set: { status: "charged" } });
-});
-
-// ✅ Good: Use database transactions for atomic operations
-monque.register("transfer-funds", async (job) => {
-  const { fromAccount, toAccount, amount, transferId } = job.data;
-
-  // Use transferId as idempotency key
-  const existing = await db.transfers.findOne({ transferId });
-  if (existing) return;
-
-  const session = client.startSession();
-  await session.withTransaction(async () => {
-    await db.accounts.updateOne({ _id: fromAccount }, { $inc: { balance: -amount } }, { session });
-    await db.accounts.updateOne({ _id: toAccount }, { $inc: { balance: amount } }, { session });
-    await db.transfers.insertOne({ transferId, status: "completed" }, { session });
-  });
+  await paymentProvider.charge(
+    { paymentId, amount, currency },
+    { idempotencyKey: `charge:${paymentId}` },
+  );
 });
 ```
+
+Reuse the same key and immutable payment details on every attempt. Keep retries within
+the provider's key-retention period; after it expires, reconcile the payment before
+sending another charge. A new Job ID or `claimId` is not a stable payment key.
+
+For MongoDB-only effects, commit the deduplication record and the mutations in one
+transaction. This example assumes validated string account and transfer identifiers, plus a positive
+amount in integer minor units. Use collections from the same `MongoClient` that owns the session.
+Create the collections and unique indexes before starting workers:
+
+```typescript
+const transfers = db.collection("transfers");
+const accounts = db.collection("accounts");
+await transfers.createIndex({ transferId: 1 }, { unique: true });
+await accounts.createIndex({ accountId: 1 }, { unique: true });
+
+monque.register("transfer-funds", async (job) => {
+  const { fromAccount, toAccount, amount, transferId } = job.data;
+  const session = client.startSession();
+
+  try {
+    await session.withTransaction(
+      async () => {
+        const existing = await transfers.findOne({ transferId }, { session });
+        if (existing) {
+          if (
+            existing.fromAccount !== fromAccount ||
+            existing.toAccount !== toAccount ||
+            existing.amount !== amount
+          ) {
+            throw new Error("Transfer identifier reused with different details");
+          }
+          return;
+        }
+
+        // The unique index prevents concurrent transactions from applying this twice.
+        await transfers.insertOne(
+          { transferId, fromAccount, toAccount, amount, status: "completed" },
+          { session },
+        );
+        const debit = await accounts.updateOne(
+          { accountId: fromAccount, balance: { $gte: amount } },
+          { $inc: { balance: -amount } },
+          { session },
+        );
+        const credit = await accounts.updateOne(
+          { accountId: toAccount },
+          { $inc: { balance: amount } },
+          { session },
+        );
+        if (debit.matchedCount !== 1 || credit.matchedCount !== 1) {
+          throw new Error("Account missing or insufficient funds");
+        }
+      },
+      { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } },
+    );
+  } finally {
+    await session.endSession();
+  }
+});
+```
+
+Account identifiers must also be unique. Keep completed transfer records for as long as
+the same transfer can be submitted again. If concurrent attempts race to insert the
+record, a duplicate-key error can escape the transaction; let the Job retry and read the
+committed record. Do not treat every duplicate-key error as a successful transfer.
+The record and both balance changes either commit together or roll back together.
+
+MongoDB transactions require a replica set or sharded cluster. The driver can rerun the
+transaction callback, so keep external calls outside it and pass `session` to every
+operation. See the [Node.js transaction guide](https://www.mongodb.com/docs/drivers/node/current/crud/transactions/).
 
 See [Idempotent Operations](/monque/core-concepts/jobs/#idempotent-operations) for more patterns.
 
@@ -177,9 +232,11 @@ process.on("SIGTERM", async () => {
 
 <Aside type="note">
   If [`stop()`](/monque/api/classes/monque/#stop) hits the configured
-  [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout), in-progress jobs
-  remain in `processing` status. [Startup recovery](/monque/advanced/heartbeat/) can reclaim them
-  once their locks expire.
+  [`shutdownTimeout`](/monque/api/interfaces/monqueoptions/#shutdowntimeout), in-progress jobs can
+  remain in `processing` status. [Recovery](/monque/advanced/heartbeat/) can reclaim them after
+  their claim expires: during initialization by default, or during heartbeat maintenance when a
+  surviving scheduler has renewable leases and recovery enabled. The timeout does not forcibly stop
+  application code.
 </Aside>
 
 ### Kubernetes Considerations
@@ -201,28 +258,54 @@ spec:
 
 ## 5. Tune `lockTimeout` for Your Workload
 
-The [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) sets the lock age
-at which a processing job becomes eligible for recovery during initialization.
+By default, [`lockTimeout`](/monque/api/interfaces/monqueoptions/#locktimeout) is an
+absolute limit measured from `lockedAt`. With `recoverStaleJobs: true`, initialization
+returns expired processing jobs to pending. Heartbeats update liveness information but
+do not extend an absolute lock. Expiry alone does not trigger recovery on a running
+scheduler that has leases disabled.
 
-<Aside type="tip">
-  Set `lockTimeout` to at least **2× your longest expected job duration**. This prevents
-  false-positive stale recovery for legitimately long-running jobs.
-</Aside>
+Set the timeout above your longest expected run, with headroom for delays. Twice that
+duration can be a starting point, but it cannot guarantee that a slow handler will finish
+before recovery. Another initializing scheduler can recover an expired claim while its
+original handler still runs.
 
 ```typescript
 const monque = new Monque(db, {
-  lockTimeout: 3600000, // 1 hour (for jobs up to 30 min)
-  heartbeatInterval: 30000, // Update heartbeat every 30s
+  lockTimeout: 3600000, // Absolute timeout: 1 hour
+  heartbeatInterval: 30000, // Liveness update; does not extend lockTimeout
 });
 ```
 
-### Symptoms of Incorrect `lockTimeout`
+### Renewable leases
 
-| Symptom                    | Likely Cause                              |
-| -------------------------- | ----------------------------------------- |
-| Jobs running twice         | `lockTimeout` too short                   |
-| Jobs stuck in `processing` | Worker crashed, `recoverStaleJobs: false` |
-| Slow failure detection     | `lockTimeout` too long                    |
+Enable `leaseDuration` for jobs with variable runtimes or recovery without restarting a
+surviving scheduler. Upgrade every scheduler sharing the collection before enabling it.
+Older versions do not recognize renewed leases.
+
+```typescript
+const monque = new Monque(db, {
+  heartbeatInterval: 30000,
+  leaseDuration: 90000, // Allow several heartbeats of renewal headroom
+  recoverStaleJobs: true,
+});
+```
+
+Heartbeats renew `leaseExpiresAt` using MongoDB's clock. An expired lease cannot renew or
+record a late result. A running scheduler with leases and recovery enabled checks for
+expired claims after each heartbeat, including legacy absolute locks. Existing claims
+keep their original mode, so retain a suitable `lockTimeout` during migration.
+
+Allow for renewal delays, database outages, and event-loop pauses when sizing leases.
+Recovery does not cancel the original handler or undo its side effects. See
+[Heartbeat Mechanism](/monque/advanced/heartbeat/) for recovery and shutdown details.
+
+### Diagnose delayed or duplicate execution
+
+| Symptom                                   | Check                                                                                     |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Overlapping executions                    | Absolute lock expired during a slow run, or a lease could not renew                       |
+| Jobs remain in `processing` after a crash | Recovery disabled, claim not expired, or no initialization or lease-enabled recovery pass |
+| Slow recovery                             | Claim deadline, heartbeat interval, database availability, and event-loop delays          |
 
 ---
 
@@ -241,9 +324,15 @@ monque.register("video-transcode", handler, { concurrency: 2 });
 // I/O-bound: higher concurrency
 monque.register("api-sync", handler, { concurrency: 10 });
 
-// External API with rate limits: match the limit
+// Cap simultaneous requests; enforce the provider's time-based quota separately
 monque.register("stripe-webhook", handler, { concurrency: 5 });
 ```
+
+Concurrency limits in-flight work in one Scheduler Instance. It does not enforce a
+requests-per-second or requests-per-minute limit: fast jobs can start many times per
+second, and each additional instance has its own concurrency allowance. Monque has no
+built-in shared rate limit. Use a limiter shared by all callers before each external
+request, including retries inside a handler.
 
 ### Instance-level Throttling
 
@@ -439,7 +528,9 @@ for direct links. See [Dashboard configuration](/monque/dashboard/configuration/
 - [ ] Scheduled jobs use `uniqueKey`
 - [ ] MongoDB is a replica set (for Change Streams)
 - [ ] `SIGTERM` handler calls `monque.stop()`
-- [ ] `lockTimeout` is 2× longest job duration
+- [ ] Absolute locks allow for slow runs, or renewable leases have enough renewal headroom
+- [ ] Every scheduler sharing the collection supports leases before they are enabled
+- [ ] External API rate limits are enforced across all callers separately from concurrency
 - [ ] Concurrency matches workload characteristics
 - [ ] `instanceConcurrency` configured if running multiple workers
 - [ ] Producer-consumer separation considered for high-scale deployments
