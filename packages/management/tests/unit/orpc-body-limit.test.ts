@@ -1,11 +1,13 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import type { UnderlyingSource } from "node:stream/web";
+import { describe, expect, vi, it } from "vite-plus/test";
 
 import { createManagementSurface } from "@/index";
+import type { ManagementMonque } from "@/surface";
 import { createManagementMonque } from "@tests/unit/management-test-utils";
 
 const path = "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel";
 
-function streamedRequest(
+const streamedRequest = function streamedRequest(
   body: ReadableStream<Uint8Array>,
   headers: Record<string, string> = {},
 ): Request {
@@ -16,15 +18,15 @@ function streamedRequest(
     duplex: "half",
   };
   return new Request(`https://management.example${path}`, init);
-}
+};
 
 describe("Management request body limits", () => {
-  test("stops oversized chunked bodies before authorization or job access", async () => {
+  it("stops oversized chunked bodies before authorization or job access", async () => {
     let bytesRead = 0;
-    const cancel = vi.fn();
-    const getJob = vi.fn(async () => null);
-    const cancelJob = vi.fn(async () => null);
-    const authorize = vi.fn(() => false);
+    const cancel = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["cancel"]>>();
+    const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
+    const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
+    const authorize = vi.fn<() => boolean>(() => false);
     const body = new ReadableStream<Uint8Array>(
       {
         pull(controller) {
@@ -48,21 +50,30 @@ describe("Management request body limits", () => {
       context: { managementContext: {} },
     });
 
-    expect(result.matched).toBe(true);
-    expect(result.response?.status).toBe(413);
+    expect({ matched: result.matched, status: result.response?.status }).toStrictEqual({
+      matched: true,
+      status: 413,
+    });
     expect(bytesRead).toBe(65 * 1024);
     expect(cancel).toHaveBeenCalledOnce();
     expect(body.locked).toBe(false);
-    expect(getJob).not.toHaveBeenCalled();
-    expect(cancelJob).not.toHaveBeenCalled();
-    expect(authorize).not.toHaveBeenCalled();
+    expect({
+      getJob: getJob.mock.calls,
+      cancelJob: cancelJob.mock.calls,
+      authorize: authorize.mock.calls,
+    }).toStrictEqual({ getJob: [], cancelJob: [], authorize: [] });
   });
 
-  test("cancels a stalled body when the request is aborted", async () => {
+  it("cancels a stalled body when the request is aborted", async () => {
     const controller = new AbortController();
-    const cancel = vi.fn();
+    const cancel = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["cancel"]>>();
     const body = new ReadableStream<Uint8Array>(
-      { pull: () => controller.abort(), cancel },
+      {
+        pull: () => {
+          controller.abort();
+        },
+        cancel,
+      },
       { highWaterMark: 0 },
     );
     const surface = createManagementSurface({ monque: createManagementMonque() });
@@ -77,16 +88,16 @@ describe("Management request body limits", () => {
     expect(body.locked).toBe(false);
   }, 1000);
 
-  test.each(["70000", "1", "invalid"])(
+  it.each(["70000", "1", "invalid"])(
     "enforces bytes independently of Content-Length %s",
     async (contentLength) => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(new Uint8Array(70000));
+          controller.enqueue(new Uint8Array(70_000));
           controller.close();
         },
       });
-      const getJob = vi.fn(async () => null);
+      const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
       const surface = createManagementSurface({ monque: createManagementMonque({ getJob }) });
 
       const result = await surface.openApiHandler.handle(
@@ -99,9 +110,9 @@ describe("Management request body limits", () => {
     },
   );
 
-  test("rejects an oversized declared body without pulling it", async () => {
-    const pull = vi.fn();
-    const cancel = vi.fn();
+  it("rejects an oversized declared body without pulling it", async () => {
+    const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>();
+    const cancel = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["cancel"]>>();
     const body = new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 });
     const surface = createManagementSurface({ monque: createManagementMonque() });
 
@@ -116,20 +127,22 @@ describe("Management request body limits", () => {
     expect(body.locked).toBe(false);
   });
 
-  test.each([undefined, "100000"])(
+  it.each([undefined, "100000"])(
     "leaves unmatched request bodies available with declared length %s",
     async (contentLength) => {
-      const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
-        controller.enqueue(new TextEncoder().encode("body for the next handler"));
-        controller.close();
-      });
+      const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>(
+        (controller: ReadableStreamDefaultController<Uint8Array>) => {
+          controller.enqueue(new TextEncoder().encode("body for the next handler"));
+          controller.close();
+        },
+      );
       const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
       const init: RequestInit & { duplex: "half" } = {
         method: "POST",
         body,
         duplex: "half",
       };
-      if (contentLength) {
+      if (contentLength !== undefined) {
         init.headers = { "content-length": contentLength };
       }
       const request = new Request("https://management.example/other", init);
@@ -143,13 +156,15 @@ describe("Management request body limits", () => {
       expect(pull).not.toHaveBeenCalled();
       expect(body.locked).toBe(false);
       expect(request.bodyUsed).toBe(false);
-      expect(await request.text()).toBe("body for the next handler");
+      await expect(request.text()).resolves.toBe("body for the next handler");
     },
   );
 
-  test("accepts an approved small mutation at the configured byte limit", async () => {
-    const deleteJobs = vi.fn(async () => ({ count: 1, errors: [] }));
-    const authorize = vi.fn(() => true);
+  it("accepts an approved small mutation at the configured byte limit", async () => {
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 1, errors: [] });
+    const authorize = vi.fn<() => boolean>(() => true);
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       maxBodySize: 2,
@@ -171,7 +186,7 @@ describe("Management request body limits", () => {
     expect(authorize).toHaveBeenCalledOnce();
   });
 
-  test("counts UTF-8 bytes rather than characters", async () => {
+  it("counts UTF-8 bytes rather than characters", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque(), maxBodySize: 6 });
     const result = await surface.openApiHandler.handle(
       new Request(`https://management.example${path}`, {
@@ -185,8 +200,8 @@ describe("Management request body limits", () => {
     expect(result.response?.status).toBe(413);
   });
 
-  test("does not let oversized untrusted mutations bypass origin rejection", async () => {
-    const pull = vi.fn();
+  it("does not let oversized untrusted mutations bypass origin rejection", async () => {
+    const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>();
     const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
     const surface = createManagementSurface({ monque: createManagementMonque() });
     const result = await surface.openApiHandler.handle(
@@ -199,11 +214,11 @@ describe("Management request body limits", () => {
     expect(body.locked).toBe(false);
   });
 
-  test("retains the size error when source cancellation fails", async () => {
+  it("retains the size error when source cancellation fails", async () => {
     const body = new ReadableStream<Uint8Array>(
       {
         pull(controller) {
-          controller.enqueue(new Uint8Array(65537));
+          controller.enqueue(new Uint8Array(65_537));
         },
         cancel() {
           throw new Error("source cancellation failed");
@@ -220,7 +235,7 @@ describe("Management request body limits", () => {
     expect(body.locked).toBe(false);
   });
 
-  test("handles source read failures without retaining its reader", async () => {
+  it("handles source read failures without retaining its reader", async () => {
     const body = new ReadableStream<Uint8Array>(
       {
         pull(controller) {
@@ -238,7 +253,7 @@ describe("Management request body limits", () => {
     expect(body.locked).toBe(false);
   });
 
-  test.each([-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+  it.each([-1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
     "rejects invalid byte limits %s at construction",
     (maxBodySize) => {
       expect(() =>

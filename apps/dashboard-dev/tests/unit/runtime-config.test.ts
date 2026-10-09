@@ -9,13 +9,13 @@ import { createDashboardRuntimeConfig } from "../../src/runtime-config.js";
 describe("dashboard dev configuration", () => {
   it("starts without environment overrides using the documented defaults", () => {
     const config = readDashboardDevServerEnvironment({});
-    expect(config).toEqual({
+    expect(config).toStrictEqual({
       environment: { mode: "mock", scenarioId: "pending-jobs" },
       mongoUri: "mongodb://127.0.0.1:27018/?directConnection=true",
       databaseName: "monque_dashboard_dev",
       liveApiBaseUrl: undefined,
     });
-    expect(createDashboardRuntimeConfig(config.environment)).toEqual({
+    expect(createDashboardRuntimeConfig(config.environment)).toStrictEqual({
       apiBaseUrl: "/",
       basePath: "/",
       pollingIntervalMs: 10_000,
@@ -31,11 +31,11 @@ describe("dashboard dev configuration", () => {
     });
     expect(config.mongoUri).toBe("mongodb://operator:secret@localhost:27018");
     expect(config.databaseName).toBe("custom_dashboard");
-    expect(config.environment).toEqual({ mode: "db", scenarioId: "failed-jobs" });
-    expect(createDashboardRuntimeConfig(config.environment)).toEqual({
+    expect(config.environment).toStrictEqual({ mode: "db", scenarioId: "failed-jobs" });
+    expect(createDashboardRuntimeConfig(config.environment)).toStrictEqual({
       apiBaseUrl: "/",
       basePath: "/",
-      pollingIntervalMs: 1_000,
+      pollingIntervalMs: 1000,
     });
   });
 
@@ -47,8 +47,10 @@ describe("dashboard dev configuration", () => {
         MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL: liveApiBaseUrl,
       });
       expect(config.liveApiBaseUrl).toBe(liveApiBaseUrl);
-      expect(config.environment).toEqual({ mode: "live", scenarioId: "pending-jobs" });
-      expect(DashboardDevEnvironmentSchema.parse(config.environment)).toEqual(config.environment);
+      expect(config.environment).toStrictEqual({ mode: "live", scenarioId: "pending-jobs" });
+      expect(DashboardDevEnvironmentSchema.parse(config.environment)).toStrictEqual(
+        config.environment,
+      );
       expect(createDashboardRuntimeConfig(config.environment).apiBaseUrl).toBe("/");
     },
   );
@@ -73,14 +75,14 @@ describe("dashboard dev configuration", () => {
           MONQUE_DASHBOARD_DEV_MODE: "live",
           MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL: url,
         }),
-      ).toThrow();
+      ).toThrow(/Invalid/u);
     },
   );
 
   it.each([{ MONQUE_DASHBOARD_DEV_MODE: "typo" }, { MONQUE_DASHBOARD_DEV_SCENARIO: "typo" }])(
     "rejects invalid mode or scenario before starting a development adapter",
     (env) => {
-      expect(() => readDashboardDevServerEnvironment(env)).toThrow();
+      expect(() => readDashboardDevServerEnvironment(env)).toThrow(/Invalid option/u);
     },
   );
 });

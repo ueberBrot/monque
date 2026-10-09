@@ -7,7 +7,6 @@ export type RetryOptions = Pick<
   MonqueOptions,
   "maxRetries" | "baseRetryInterval" | "maxBackoffDelay"
 >;
-
 /**
  * Options for registering a worker. Retry options override scheduler defaults
  * for this job name; omitted values inherit those defaults.
@@ -22,13 +21,11 @@ export type RetryOptions = Pick<
 export interface WorkerOptions<T = unknown> extends RetryOptions {
   /** Validate persisted input before handling it; the handler receives the schema output. */
   schema?: StandardSchemaV1<unknown, T>;
-
   /**
    * Number of concurrent jobs this worker can process.
    * @default 5 (uses defaultConcurrency from MonqueOptions)
    */
   concurrency?: number;
-
   /**
    * Allow replacing an existing worker for the same job name.
    * If false (default) and a worker already exists, throws WorkerRegistrationError.
@@ -36,7 +33,6 @@ export interface WorkerOptions<T = unknown> extends RetryOptions {
    */
   replace?: boolean;
 }
-
 /**
  * Internal worker registration with handler and options.
  * Tracks the handler, concurrency limit, and currently active jobs.

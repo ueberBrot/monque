@@ -1,4 +1,4 @@
-import { describe, test } from "vite-plus/test";
+import { describe, it } from "vite-plus/test";
 
 import { createManagementSurface } from "@/index";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("oRPC Management health route", () => {
-  test("serves scheduler health through the OpenAPI handler", async () => {
+  it("serves scheduler health through the OpenAPI handler", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({ isHealthy: () => false }),
     });
@@ -23,7 +23,7 @@ describe("oRPC Management health route", () => {
     });
   });
 
-  test("serves scheduler health without read authorization", async () => {
+  it("serves scheduler health without read authorization", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({ isHealthy: () => true }),
       authorize: () => false,

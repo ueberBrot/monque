@@ -1,12 +1,6 @@
-import type {
-  BulkOperationResult,
-  CursorOptions,
-  PersistedJob,
-  QueueStats,
-  QueueViewSummary,
-} from "@monque/core";
+import type { PersistedJob } from "@monque/core";
 import { ObjectId } from "mongodb";
-import { expect } from "vite-plus/test";
+import { vi, expect } from "vite-plus/test";
 
 import type { ManagementMonque, ManagementOpenApiContext, ManagementSurface } from "@/surface";
 import { parseObjectId } from "@/surface/request-mapping";
@@ -15,33 +9,44 @@ interface CreateManagementMonqueOptions {
   mutations?: boolean;
 }
 
-export function createManagementMonque(
+export const createManagementMonque = function createManagementMonque(
   overrides: Partial<ManagementMonque> = {},
   options: CreateManagementMonqueOptions = {},
 ): ManagementMonque {
-  const mutationStubs: Partial<ManagementMonque> = options.mutations
-    ? {
-        cancelJob: async () => null,
-        retryJob: async () => null,
-        rescheduleJob: async () => null,
-        deleteJob: async () => false,
-        cancelJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
-        retryJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
-        deleteJobs: async (): Promise<BulkOperationResult> => ({ count: 0, errors: [] }),
-      }
-    : {};
+  const mutationStubs: Partial<ManagementMonque> =
+    options.mutations === true
+      ? {
+          cancelJob: vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null),
+          retryJob: vi.fn<NonNullable<ManagementMonque["retryJob"]>>().mockResolvedValue(null),
+          rescheduleJob: vi
+            .fn<NonNullable<ManagementMonque["rescheduleJob"]>>()
+            .mockResolvedValue(null),
+          deleteJob: vi.fn<NonNullable<ManagementMonque["deleteJob"]>>().mockResolvedValue(false),
+          cancelJobs: vi
+            .fn<NonNullable<ManagementMonque["cancelJobs"]>>()
+            .mockResolvedValue({ count: 0, errors: [] }),
+          retryJobs: vi
+            .fn<NonNullable<ManagementMonque["retryJobs"]>>()
+            .mockResolvedValue({ count: 0, errors: [] }),
+          deleteJobs: vi
+            .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+            .mockResolvedValue({ count: 0, errors: [] }),
+        }
+      : {};
 
   return {
     isHealthy: () => true,
-    getQueueViewSummaries: async (): Promise<QueueViewSummary[]> => [],
-    getJobsWithCursor: async (_options?: CursorOptions) => ({
+    getQueueViewSummaries: vi
+      .fn<NonNullable<ManagementMonque["getQueueViewSummaries"]>>()
+      .mockResolvedValue([]),
+    getJobsWithCursor: vi.fn<ManagementMonque["getJobsWithCursor"]>().mockResolvedValue({
       jobs: [],
       cursor: null,
       hasNextPage: false,
       hasPreviousPage: false,
     }),
-    getJob: async (_id) => null,
-    getQueueStats: async (_filter?: { name?: string }): Promise<QueueStats> => ({
+    getJob: vi.fn<ManagementMonque["getJob"]>().mockResolvedValue(null),
+    getQueueStats: vi.fn<ManagementMonque["getQueueStats"]>().mockResolvedValue({
       pending: 0,
       processing: 0,
       completed: 0,
@@ -52,9 +57,11 @@ export function createManagementMonque(
     ...mutationStubs,
     ...overrides,
   };
-}
+};
 
-export function createManagementJob(overrides: Partial<PersistedJob> = {}): PersistedJob {
+export const createManagementJob = function createManagementJob(
+  overrides: Partial<PersistedJob> = {},
+): PersistedJob {
   return {
     _id: new ObjectId(),
     name: "send-email",
@@ -66,55 +73,33 @@ export function createManagementJob(overrides: Partial<PersistedJob> = {}): Pers
     updatedAt: new Date("2026-01-01T00:01:00.000Z"),
     ...overrides,
   };
-}
+};
 
-export function getManagementJobById(job: PersistedJob): ManagementMonque["getJob"] {
+export const getManagementJobById = function getManagementJobById(
+  job: PersistedJob,
+): ManagementMonque["getJob"] {
   return async (id) => {
     const parsed = parseObjectId(id);
 
     if ("error" in parsed) {
-      return null;
+      return await Promise.resolve(null);
     }
 
-    return parsed.value.equals(job._id) ? job : null;
+    return await Promise.resolve(parsed.value.equals(job._id) ? job : null);
   };
-}
+};
 
-export async function expectJsonResponse(
+export const expectJsonResponse = async function expectJsonResponse(
   response: Response,
   status: number,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Assertion helpers accept arbitrary expected values, including asymmetric Vitest matchers.
   expectedBody: unknown,
 ): Promise<void> {
   expect(response.status).toBe(status);
-  expect(await response.json()).toEqual(expectedBody);
-}
+  expect(await response.json()).toStrictEqual(expectedBody);
+};
 
-export async function handleManagementGet(
-  surface: ManagementSurface,
-  path: string,
-  context?: ManagementOpenApiContext,
-): Promise<Response> {
-  return handleManagementRequest(surface, path, { method: "GET", context });
-}
-
-export async function handleManagementPost(
-  surface: ManagementSurface,
-  path: string,
-  body?: unknown,
-  context?: ManagementOpenApiContext,
-): Promise<Response> {
-  return handleManagementRequest(surface, path, { method: "POST", body, context });
-}
-
-export async function handleManagementDelete(
-  surface: ManagementSurface,
-  path: string,
-  context?: ManagementOpenApiContext,
-): Promise<Response> {
-  return handleManagementRequest(surface, path, { method: "DELETE", context });
-}
-
-async function handleManagementRequest(
+const handleManagementRequest = async function handleManagementRequest(
   surface: ManagementSurface,
   path: string,
   options: {
@@ -133,7 +118,7 @@ async function handleManagementRequest(
   const result = await surface.openApiHandler.handle(
     new Request(`https://management.example${path}`, init),
     {
-      context: options.context === undefined ? { managementContext: {} } : options.context,
+      context: options.context ?? { managementContext: {} },
     },
   );
 
@@ -142,4 +127,30 @@ async function handleManagementRequest(
   }
 
   return result.response;
-}
+};
+
+export const handleManagementGet = async function handleManagementGet(
+  surface: ManagementSurface,
+  path: string,
+  context?: ManagementOpenApiContext,
+): Promise<Response> {
+  return await handleManagementRequest(surface, path, { method: "GET", context });
+};
+
+export const handleManagementPost = async function handleManagementPost(
+  surface: ManagementSurface,
+  path: string,
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- HTTP fixtures deliberately include malformed request values to exercise validation.
+  body?: unknown,
+  context?: ManagementOpenApiContext,
+): Promise<Response> {
+  return await handleManagementRequest(surface, path, { method: "POST", body, context });
+};
+
+export const handleManagementDelete = async function handleManagementDelete(
+  surface: ManagementSurface,
+  path: string,
+  context?: ManagementOpenApiContext,
+): Promise<Response> {
+  return await handleManagementRequest(surface, path, { method: "DELETE", context });
+};

@@ -57,18 +57,19 @@ export interface CollectedJobMetadata {
  * // ]
  * ```
  */
-export function collectJobMetadata(
+/* oxlint-disable anti-slop/no-unknown-returns -- The public constructor parameter accepts arbitrary controller instances; metadata has a concrete return type. */
+export const collectJobMetadata = function collectJobMetadata(
   target: new (...args: unknown[]) => unknown,
 ): CollectedJobMetadata[] {
   const store = Store.from(target);
-  const jobStore = store.get<JobStore>(MONQUE);
+  const jobStore = store.get<JobStore | undefined>(MONQUE);
 
   if (!jobStore) {
     return [];
   }
 
   const results: CollectedJobMetadata[] = [];
-  const namespace = jobStore.namespace;
+  const { namespace } = jobStore;
 
   // Collect regular jobs
   for (const job of jobStore.jobs) {
@@ -92,4 +93,6 @@ export function collectJobMetadata(
   }
 
   return results;
-}
+};
+
+/* oxlint-enable anti-slop/no-unknown-returns */

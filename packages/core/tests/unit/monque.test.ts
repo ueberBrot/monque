@@ -3,12 +3,16 @@
  *
  * Tests initialization and public operations with the real internal modules.
  */
-
 import { EventEmitter } from "node:events";
-import { type Collection, type Db, ObjectId } from "mongodb";
+import { fromPartial } from "@total-typescript/shoehorn";
+import type { ChangeStream, FindCursor, Collection, Db } from "mongodb";
+import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { MonqueEventMap } from "@/events";
+import type { BulkOperationResult, JobHandler } from "@/jobs";
 import { Monque } from "@/scheduler/monque.js";
+import type { MonqueOptions } from "@/scheduler/types.js";
 import {
   ConnectionError,
   InvalidJobIdentifierError,
@@ -16,38 +20,62 @@ import {
   WorkerRegistrationError,
 } from "@/shared";
 import { JobFactoryHelpers } from "@tests/factories";
+import {
+  anyMatcher,
+  objectContainingMatcher,
+  arrayContainingMatcher,
+} from "@tests/setup/matchers.js";
+import type { MockFunction, NativeMock } from "@tests/setup/mock-function.js";
 
-function createStream(closing = Promise.resolve()) {
-  return Object.assign(new EventEmitter(), { close: vi.fn(() => closing) });
-}
-
-describe("Monque", () => {
-  let mockDb: Db;
-  let mockCollection: Collection;
-  let monque: Monque;
-
-  beforeEach(() => {
-    mockCollection = {
-      createIndexes: vi.fn().mockResolvedValue(["index_name"]),
-      updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
-      deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
-      findOne: vi.fn().mockResolvedValue(null),
-      insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
-      findOneAndUpdate: vi.fn().mockResolvedValue(null),
-      aggregate: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
-    } as unknown as Collection;
-
-    mockDb = {
-      collection: vi.fn().mockReturnValue(mockCollection),
-    } as unknown as Db;
-
-    monque = new Monque(mockDb);
+const createStream = (closing = Promise.resolve()) =>
+  // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB cursors use Node EventEmitter delivery and error-listener semantics.
+  Object.assign(new EventEmitter(), {
+    close: vi.fn<MockFunction<ChangeStream["close"]>>(async () => {
+      await closing;
+    }),
   });
-
+describe(Monque, () => {
+  let mockDb: NativeMock<Db>;
+  let mockCollection: NativeMock<Collection>;
+  let monque: Monque;
+  beforeEach(() => {
+    mockCollection = fromPartial<NativeMock<Collection>>({
+      createIndexes: vi
+        .fn<MockFunction<Collection["createIndexes"]>>()
+        .mockResolvedValue(["index_name"]),
+      updateMany: vi.fn<MockFunction<Collection["updateMany"]>>().mockResolvedValue({
+        acknowledged: true,
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      }),
+      deleteMany: vi
+        .fn<MockFunction<Collection["deleteMany"]>>()
+        .mockResolvedValue({ acknowledged: true, deletedCount: 0 }),
+      findOne: vi.fn<MockFunction<Collection["findOne"]>>().mockResolvedValue(null),
+      insertOne: vi
+        .fn<MockFunction<Collection["insertOne"]>>()
+        .mockResolvedValue({ acknowledged: true, insertedId: new ObjectId() }),
+      findOneAndUpdate: vi
+        .fn<MockFunction<Collection["findOneAndUpdate"]>>()
+        .mockResolvedValue(null),
+      aggregate: vi.fn<MockFunction<Collection["aggregate"]>>().mockReturnValue(
+        fromPartial<ReturnType<Collection["aggregate"]>>({
+          toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValue([]),
+        }),
+      ),
+    });
+    mockDb = fromPartial<NativeMock<Db>>({
+      collection: vi
+        .fn<MockFunction<Db["collection"]>>()
+        .mockReturnValue(fromPartial<Collection>(mockCollection)),
+    });
+    monque = new Monque(fromPartial<Db>(mockDb));
+  });
   afterEach(() => {
     vi.clearAllMocks();
   });
-
   describe("constructor", () => {
     it("should set maxListeners to 20", () => {
       expect(monque.getMaxListeners()).toBe(20);
@@ -64,7 +92,6 @@ describe("Monque", () => {
           throw failure;
         },
       };
-
       await expect(monque[operation](selector)).rejects.toBe(failure);
     },
   );
@@ -79,15 +106,12 @@ describe("Monque", () => {
           throw failure;
         },
       };
-
       await expect(monque[operation](selector)).rejects.toBe(failure);
     },
   );
-
   describe("initialize", () => {
     it("should initialize successfully", async () => {
       await monque.initialize();
-
       expect(mockDb.collection).toHaveBeenCalledWith("monque_jobs");
       expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
     });
@@ -96,23 +120,25 @@ describe("Monque", () => {
       await monque.initialize();
       // Clear mocks to verify second call triggers nothing
       vi.clearAllMocks();
-
       await monque.initialize();
-
-      expect(mockDb.collection).not.toHaveBeenCalled();
-      expect(mockCollection.createIndexes).not.toHaveBeenCalled();
+      expect({
+        mockDbCollectionMockCallsLength: mockDb.collection.mock.calls.length,
+        mockCollectionCreateIndexesMockCallsLength: mockCollection.createIndexes.mock.calls.length,
+      }).toStrictEqual({
+        mockDbCollectionMockCallsLength: 0,
+        mockCollectionCreateIndexesMockCallsLength: 0,
+      });
     });
 
     it("should throw ConnectionError if initialization fails", async () => {
       vi.spyOn(mockDb, "collection").mockImplementationOnce(() => {
         throw new Error("DB Connection Failed");
       });
-
       await expect(monque.initialize()).rejects.toThrow(ConnectionError);
     });
 
     it("keeps public operations unavailable until initialization finishes", async () => {
-      const recovery = Promise.withResolvers<void>();
+      const recovery: PromiseWithResolvers<void> = Promise.withResolvers();
       vi.mocked(mockCollection.updateMany).mockImplementationOnce(async () => {
         await recovery.promise;
         return {
@@ -123,12 +149,12 @@ describe("Monque", () => {
           upsertedId: null,
         };
       });
-
       const initializing = monque.initialize();
       await expect(monque.enqueue("test-job", {})).rejects.toThrow(ConnectionError);
-      expect(() => monque.start()).toThrow(ConnectionError);
+      expect(() => {
+        monque.start();
+      }).toThrow(ConnectionError);
       expect(mockCollection.insertOne).not.toHaveBeenCalled();
-
       recovery.resolve();
       await initializing;
       await expect(monque.enqueue("test-job", {})).resolves.toMatchObject({ name: "test-job" });
@@ -137,19 +163,20 @@ describe("Monque", () => {
     it("shares initialization failures and allows a later retry", async () => {
       const indexes = Promise.withResolvers<string[]>();
       vi.mocked(mockCollection.createIndexes).mockReturnValueOnce(indexes.promise);
-      const first = expect(monque.initialize()).rejects.toThrow(
-        new ConnectionError("Failed to initialize Monque: DB unavailable"),
-      );
-      const second = expect(monque.initialize()).rejects.toThrow(
-        new ConnectionError("Failed to initialize Monque: DB unavailable"),
+      const failedInitializations = Promise.all(
+        [monque.initialize(), monque.initialize()].map(async (initialization) => {
+          await expect(initialization).rejects.toThrow(
+            new ConnectionError("Failed to initialize Monque: DB unavailable"),
+          );
+        }),
       );
       indexes.reject(new Error("DB unavailable"));
-      await Promise.all([first, second]);
-
+      await failedInitializations;
       expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
       await expect(monque.getJob("invalid-id")).rejects.toThrow(ConnectionError);
-      expect(() => monque.start()).toThrow(ConnectionError);
-
+      expect(() => {
+        monque.start();
+      }).toThrow(ConnectionError);
       await monque.initialize();
       await expect(monque.getJob("invalid-id")).resolves.toBeNull();
       expect(mockCollection.createIndexes).toHaveBeenCalledTimes(2);
@@ -159,7 +186,13 @@ describe("Monque", () => {
       const recovery = Promise.withResolvers<Awaited<ReturnType<Collection["updateMany"]>>>();
       let recoveryAttempts = 0;
       vi.mocked(mockCollection.updateMany).mockImplementation(async (filter) => {
-        if (filter["status"] === "processing" && recoveryAttempts++ === 0) return recovery.promise;
+        if (filter["status"] === "processing") {
+          const attempt = recoveryAttempts;
+          recoveryAttempts += 1;
+          if (attempt === 0) {
+            return await recovery.promise;
+          }
+        }
         return {
           acknowledged: true,
           matchedCount: 0,
@@ -168,31 +201,51 @@ describe("Monque", () => {
           upsertedId: null,
         };
       });
-      const first = monque.initialize().catch((error: unknown) => error);
-      const second = monque.initialize().catch((error: unknown) => error);
-
-      expect(() => monque.start()).toThrow(ConnectionError);
+      const initializing = Promise.allSettled([monque.initialize(), monque.initialize()]);
+      expect(() => {
+        monque.start();
+      }).toThrow(ConnectionError);
       await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
       recovery.reject(new Error("Recovery unavailable"));
-      const failures = await Promise.all([first, second]);
-
-      expect(failures[0]).toBeInstanceOf(ConnectionError);
-      expect(failures[0]).toEqual(
-        new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
-      );
-      expect(failures[1]).toBe(failures[0]);
-      expect(recoveryAttempts).toBe(1);
-      expect(mockCollection.findOne).not.toHaveBeenCalled();
-
-      await monque.initialize();
-      expect(recoveryAttempts).toBe(2);
-      expect(mockCollection.findOne).toHaveBeenCalledOnce();
-      await expect(monque.getJob(new ObjectId())).resolves.toBeNull();
-      await expect(monque.enqueue("recovered", {})).resolves.toMatchObject({
-        name: "recovered",
-        status: "pending",
+      const [first, second] = await initializing;
+      if (first?.status !== "rejected" || second?.status !== "rejected") {
+        throw new Error("Expected both initializations to reject");
+      }
+      const firstFailure: unknown = first.reason;
+      const secondFailure: unknown = second.reason;
+      expect(firstFailure).toBeInstanceOf(ConnectionError);
+      expect({
+        failures0: firstFailure,
+        failures1: Object.is(secondFailure, firstFailure),
+        recoveryAttempts: Object.is(recoveryAttempts, 1),
+        mockCollectionFindOneMockCallsLength: mockCollection.findOne.mock.calls.length,
+      }).toStrictEqual({
+        failures0: new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
+        failures1: true,
+        recoveryAttempts: true,
+        mockCollectionFindOneMockCallsLength: 0,
       });
-      expect(monque.isHealthy()).toBe(false);
+      await monque.initialize();
+      const recoveredState = {
+        recoveryAttempts,
+        findOneCalls: mockCollection.findOne.mock.calls.length,
+      };
+      const missingJob = await monque.getJob(new ObjectId());
+      const recoveredJob = await monque.enqueue("recovered", {});
+      expect({
+        ...recoveredState,
+        missingJob,
+        recoveredName: recoveredJob.name,
+        recoveredStatus: recoveredJob.status,
+        healthy: monque.isHealthy(),
+      }).toStrictEqual({
+        recoveryAttempts: 2,
+        findOneCalls: 1,
+        missingJob: null,
+        recoveredName: "recovered",
+        recoveredStatus: "pending",
+        healthy: false,
+      });
     });
 
     it("shares initialization work and keeps ownership of started resources", async () => {
@@ -202,7 +255,9 @@ describe("Monque", () => {
         .mockResolvedValueOnce(null)
         .mockReturnValueOnce(initialization.promise);
       const stream = createStream();
-      const watch = vi.fn().mockReturnValue(stream);
+      const watch = vi
+        .fn<MockFunction<Collection["watch"]>>()
+        .mockReturnValue(fromPartial<ChangeStream>(stream));
       Object.assign(mockCollection, { watch });
       try {
         const first = monque.initialize();
@@ -211,15 +266,27 @@ describe("Monque", () => {
         monque.start();
         initialization.resolve(null);
         await second;
-        expect(monque.isHealthy()).toBe(true);
-        expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
-        expect(mockCollection.findOne).toHaveBeenCalledOnce();
-
+        expect({
+          monqueIsHealthy: Object.is(monque.isHealthy(), true),
+          mockCollectionCreateIndexesMockCallsLength:
+            mockCollection.createIndexes.mock.calls.length,
+          mockCollectionFindOneMockCallsLength: mockCollection.findOne.mock.calls.length,
+        }).toStrictEqual({
+          monqueIsHealthy: true,
+          mockCollectionCreateIndexesMockCallsLength: 1,
+          mockCollectionFindOneMockCallsLength: 1,
+        });
         await monque.initialize();
         await monque.stop();
-        expect(watch).toHaveBeenCalledOnce();
-        expect(stream.close).toHaveBeenCalledOnce();
-        expect(vi.getTimerCount()).toBe(0);
+        expect({
+          watchMockCallsLength: watch.mock.calls.length,
+          streamCloseMockCallsLength: stream.close.mock.calls.length,
+          getTimerCount: Object.is(vi.getTimerCount(), 0),
+        }).toStrictEqual({
+          watchMockCallsLength: 1,
+          streamCloseMockCallsLength: 1,
+          getTimerCount: true,
+        });
       } finally {
         vi.clearAllTimers();
         vi.useRealTimers();
@@ -227,43 +294,41 @@ describe("Monque", () => {
     });
 
     it("should skip index creation when skipIndexCreation is true", async () => {
-      const skipMonque = new Monque(mockDb, { skipIndexCreation: true });
+      const skipMonque = new Monque(fromPartial<Db>(mockDb), { skipIndexCreation: true });
       await skipMonque.initialize();
-
       expect(mockDb.collection).toHaveBeenCalledWith("monque_jobs");
       expect(mockCollection.createIndexes).not.toHaveBeenCalled();
     });
 
     it("should create compound index for job retention when configured", async () => {
-      const retentionMonque = new Monque(mockDb, { jobRetention: { completed: 10000 } });
+      const retentionMonque = new Monque(fromPartial<Db>(mockDb), {
+        jobRetention: { completed: 10_000 },
+      });
       await retentionMonque.initialize();
-
-      const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
+      const { calls } = vi.mocked(mockCollection.createIndexes).mock;
       expect(calls[0]?.[0]).toContainEqual(
-        expect.objectContaining({
+        objectContainingMatcher({
           key: { status: 1, updatedAt: 1 },
           background: true,
-          partialFilterExpression: expect.objectContaining({
+          partialFilterExpression: objectContainingMatcher({
             updatedAt: { $exists: true },
-            status: { $in: expect.arrayContaining(["completed", "failed"]) },
+            status: { $in: arrayContainingMatcher(["completed", "failed"]) },
           }),
         }),
       );
     });
 
     it("should not create index for job retention when omitted", async () => {
-      const MonqueInstance = new Monque(mockDb, {});
+      const MonqueInstance = new Monque(fromPartial<Db>(mockDb), {});
       await MonqueInstance.initialize();
-
-      const calls = vi.mocked(mockCollection.createIndexes).mock.calls;
+      const { calls } = vi.mocked(mockCollection.createIndexes).mock;
       expect(calls[0]?.[0]).not.toContainEqual(
-        expect.objectContaining({
+        objectContainingMatcher({
           key: { status: 1, updatedAt: 1 },
         }),
       );
     });
   });
-
   describe("uninitialized state", () => {
     it("should throw ConnectionError when calling public methods before initialize", async () => {
       // Enqueue
@@ -281,32 +346,36 @@ describe("Monque", () => {
     it("rejects invalid identifiers before initialization with the initialization error", async () => {
       await expect(monque.enqueue("invalid job", {})).rejects.toThrow(ConnectionError);
       await expect(monque.getJob("invalid-id")).rejects.toThrow(ConnectionError);
-      expect(() => monque.start()).toThrow(ConnectionError);
-      expect(mockCollection.insertOne).not.toHaveBeenCalled();
-      expect(mockCollection.findOne).not.toHaveBeenCalled();
+      expect(() => {
+        monque.start();
+      }).toThrow(ConnectionError);
+      expect({
+        mockCollectionInsertOneMockCallsLength: mockCollection.insertOne.mock.calls.length,
+        mockCollectionFindOneMockCallsLength: mockCollection.findOne.mock.calls.length,
+      }).toStrictEqual({
+        mockCollectionInsertOneMockCallsLength: 0,
+        mockCollectionFindOneMockCallsLength: 0,
+      });
     });
   });
-
   describe("restart during shutdown", () => {
     beforeEach(() => {
       vi.useFakeTimers();
     });
-
     afterEach(() => {
       vi.clearAllTimers();
       vi.useRealTimers();
     });
 
     it("keeps a replacement stream active when an error listener restarts synchronously", async () => {
-      const oldStream = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
-      const replacement = Object.assign(new EventEmitter(), {
-        close: vi.fn().mockResolvedValue(undefined),
-      });
+      const oldStream = createStream();
+      const replacement = createStream();
       Object.assign(mockCollection, {
-        options: vi.fn().mockResolvedValue({}),
-        watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValue(replacement),
+        options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement)),
       });
       monque.register("work", async () => {});
       await monque.initialize();
@@ -314,12 +383,12 @@ describe("Monque", () => {
       vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       await vi.advanceTimersByTimeAsync(0);
-      const stopping = Promise.withResolvers<void>();
+      const stopping: PromiseWithResolvers<void> = Promise.withResolvers();
       monque.once("changestream:error", () => {
+        // oxlint-disable-next-line promise/prefer-catch -- Settle either outcome in the same Promise reaction before the restart assertions.
         monque.stop().then(stopping.resolve, stopping.reject);
         monque.start();
       });
-
       try {
         oldStream.emit("error", new Error("Restart from the error listener"));
         await stopping.promise;
@@ -333,44 +402,63 @@ describe("Monque", () => {
       } finally {
         await monque.stop();
       }
-      expect(oldStream.close).toHaveBeenCalledOnce();
-      expect(replacement.close).toHaveBeenCalledOnce();
-      expect(vi.getTimerCount()).toBe(0);
+      expect({
+        oldStreamCloseMockCallsLength: oldStream.close.mock.calls.length,
+        replacementCloseMockCallsLength: replacement.close.mock.calls.length,
+        getTimerCount: Object.is(vi.getTimerCount(), 0),
+      }).toStrictEqual({
+        oldStreamCloseMockCallsLength: 1,
+        replacementCloseMockCallsLength: 1,
+        getTimerCount: true,
+      });
     });
 
     it("ignores errors from the stream being closed", async () => {
-      const closing = Promise.withResolvers<void>();
+      const closing: PromiseWithResolvers<void> = Promise.withResolvers();
       const stream = createStream(closing.promise);
-      Object.assign(mockCollection, { watch: vi.fn().mockReturnValue(stream) });
-      const onStreamError = vi.fn();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValue(fromPartial<ChangeStream>(stream)),
+      });
+      const onStreamError = vi.fn<(payload: MonqueEventMap["changestream:error"]) => void>();
       monque.on("changestream:error", onStreamError);
       await monque.initialize();
       // Count only runtime renewals, excluding initialization normalization/recovery.
       vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       const stopping = monque.stop();
-
       stream.emit("error", new Error("The old cursor is closing"));
       closing.resolve();
       await stopping;
-
-      expect(onStreamError).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
+      expect({
+        onStreamErrorMockCallsLength: onStreamError.mock.calls.length,
+        getTimerCount: Object.is(vi.getTimerCount(), 0),
+      }).toStrictEqual({
+        onStreamErrorMockCallsLength: 0,
+        getTimerCount: true,
+      });
     });
 
     it.each([undefined, 3000])(
       "keeps restarted timers and stream delivery when the previous stream finishes closing (lease: %s)",
       async (leaseDuration) => {
-        monque = new Monque(mockDb, {
+        const options: MonqueOptions = {
           heartbeatInterval: 1000,
-          ...(leaseDuration === undefined ? {} : { leaseDuration }),
-        });
-        const closing = Promise.withResolvers<void>();
+        };
+        if (leaseDuration !== undefined) {
+          options.leaseDuration = leaseDuration;
+        }
+        monque = new Monque(fromPartial<Db>(mockDb), options);
+        const closing: PromiseWithResolvers<void> = Promise.withResolvers();
         const oldStream = createStream(closing.promise);
         const newStream = createStream();
         Object.assign(mockCollection, {
-          options: vi.fn().mockResolvedValue({}),
-          watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValueOnce(newStream),
+          options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+            .mockReturnValueOnce(fromPartial<ChangeStream>(newStream)),
         });
         monque.register("work", async () => {});
         await monque.initialize();
@@ -378,13 +466,11 @@ describe("Monque", () => {
         vi.mocked(mockCollection.updateMany).mockClear();
         monque.start();
         await vi.advanceTimersByTimeAsync(0);
-
         const stopping = monque.stop();
         monque.start();
         closing.resolve();
         await stopping;
         await vi.advanceTimersByTimeAsync(0);
-
         expect(monque.isHealthy()).toBe(true);
         expect.soft(vi.getTimerCount()).toBe(2);
         newStream.emit("change", {
@@ -393,7 +479,6 @@ describe("Monque", () => {
         });
         await vi.advanceTimersByTimeAsync(100);
         expect.soft(mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
-
         await monque.stop();
         expect.soft(oldStream.close).toHaveBeenCalledOnce();
         expect.soft(newStream.close).toHaveBeenCalledOnce();
@@ -402,23 +487,26 @@ describe("Monque", () => {
     );
 
     it("drains only the jobs active when stop was called and keeps restarted leases alive", async () => {
-      monque = new Monque(mockDb, {
+      monque = new Monque(fromPartial<Db>(mockDb), {
         workerConcurrency: 2,
         heartbeatInterval: 1000,
         leaseDuration: 3000,
         recoverStaleJobs: false,
-        shutdownTimeout: 10000,
+        shutdownTimeout: 10_000,
       });
-      const closing = Promise.withResolvers<void>();
+      const closing: PromiseWithResolvers<void> = Promise.withResolvers();
       const oldStream = createStream(closing.promise);
       const newStream = createStream();
       Object.assign(mockCollection, {
-        watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValueOnce(newStream),
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValueOnce(fromPartial<ChangeStream>(newStream)),
       });
-      const oldStarted = Promise.withResolvers<void>();
-      const newStarted = Promise.withResolvers<void>();
-      const oldHandler = Promise.withResolvers<void>();
-      const newHandler = Promise.withResolvers<void>();
+      const oldStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+      const newStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+      const oldHandler: PromiseWithResolvers<void> = Promise.withResolvers();
+      const newHandler: PromiseWithResolvers<void> = Promise.withResolvers();
       const oldJob = JobFactoryHelpers.processing({ name: "work", claimId: "old-claim" });
       const newJob = JobFactoryHelpers.processing({ name: "work", claimId: "new-claim" });
       vi.mocked(mockCollection.findOneAndUpdate)
@@ -440,7 +528,6 @@ describe("Monque", () => {
       monque.start();
       await oldStarted.promise;
       await vi.advanceTimersByTimeAsync(0);
-
       let stopped = false;
       const stopping = monque.stop().then(() => {
         stopped = true;
@@ -449,7 +536,6 @@ describe("Monque", () => {
       await newStarted.promise;
       await vi.advanceTimersByTimeAsync(1000);
       expect.soft(mockCollection.updateMany).toHaveBeenCalledOnce();
-
       oldHandler.resolve();
       await vi.advanceTimersByTimeAsync(0);
       closing.resolve();
@@ -461,33 +547,35 @@ describe("Monque", () => {
       expect
         .soft(mockCollection.updateMany)
         .toHaveBeenLastCalledWith(
-          expect.objectContaining({ claimId: { $in: ["new-claim"] } }),
-          expect.any(Array),
+          objectContainingMatcher({ claimId: { $in: ["new-claim"] } }),
+          anyMatcher(Array),
         );
-
       const nextStopping = monque.stop();
       await vi.advanceTimersByTimeAsync(1000);
       expect.soft(mockCollection.updateMany).toHaveBeenCalledTimes(3);
       newHandler.resolve();
-      await vi.advanceTimersByTimeAsync(10000);
+      await vi.advanceTimersByTimeAsync(10_000);
       await Promise.all([stopping, nextStopping]);
       expect.soft(newStream.close).toHaveBeenCalledOnce();
       expect(vi.getTimerCount()).toBe(0);
     });
 
     it("keeps lease renewal for a restarted run that has already begun draining", async () => {
-      monque = new Monque(mockDb, {
+      monque = new Monque(fromPartial<Db>(mockDb), {
         workerConcurrency: 1,
         heartbeatInterval: 1000,
         leaseDuration: 3000,
         recoverStaleJobs: false,
-        shutdownTimeout: 10000,
+        shutdownTimeout: 10_000,
       });
-      const closing = Promise.withResolvers<void>();
+      const closing: PromiseWithResolvers<void> = Promise.withResolvers();
       const oldStream = createStream(closing.promise);
       const newStream = createStream();
       Object.assign(mockCollection, {
-        watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValueOnce(newStream),
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValueOnce(fromPartial<ChangeStream>(newStream)),
       });
       await monque.initialize();
       // Count only runtime renewals, excluding initialization normalization/recovery.
@@ -497,9 +585,8 @@ describe("Monque", () => {
       const firstStopping = monque.stop().then(() => {
         firstStopped = true;
       });
-
-      const started = Promise.withResolvers<void>();
-      const handler = Promise.withResolvers<void>();
+      const started: PromiseWithResolvers<void> = Promise.withResolvers();
+      const handler: PromiseWithResolvers<void> = Promise.withResolvers();
       vi.mocked(mockCollection.findOneAndUpdate).mockResolvedValueOnce(
         JobFactoryHelpers.processing({ name: "work", claimId: "new-claim" }),
       );
@@ -515,41 +602,56 @@ describe("Monque", () => {
       });
       closing.resolve();
       await vi.advanceTimersByTimeAsync(1000);
-
       expect.soft(firstStopped).toBe(true);
-      expect(secondStopped).toBe(false);
-      expect(monque.isHealthy()).toBe(false);
+      expect({
+        secondStopped: Object.is(secondStopped, false),
+        monqueIsHealthy: Object.is(monque.isHealthy(), false),
+      }).toStrictEqual({
+        secondStopped: true,
+        monqueIsHealthy: true,
+      });
       expect.soft(mockCollection.updateMany).toHaveBeenCalledOnce();
       handler.resolve();
-      await vi.advanceTimersByTimeAsync(10000);
+      await vi.advanceTimersByTimeAsync(10_000);
       await Promise.all([firstStopping, secondStopping]);
-      expect(oldStream.close).toHaveBeenCalledOnce();
-      expect(newStream.close).toHaveBeenCalledOnce();
-      expect(vi.getTimerCount()).toBe(0);
+      expect({
+        oldStreamCloseMockCallsLength: oldStream.close.mock.calls.length,
+        newStreamCloseMockCallsLength: newStream.close.mock.calls.length,
+        getTimerCount: Object.is(vi.getTimerCount(), 0),
+      }).toStrictEqual({
+        oldStreamCloseMockCallsLength: 1,
+        newStreamCloseMockCallsLength: 1,
+        getTimerCount: true,
+      });
     });
 
     it("reports only original incomplete jobs when shutdown times out after a restart", async () => {
-      monque = new Monque(mockDb, {
+      monque = new Monque(fromPartial<Db>(mockDb), {
         workerConcurrency: 2,
         heartbeatInterval: 1000,
         leaseDuration: 3000,
         recoverStaleJobs: false,
         shutdownTimeout: 2000,
       });
-      const closing = Promise.withResolvers<void>();
+      const closing: PromiseWithResolvers<void> = Promise.withResolvers();
       const oldStream = createStream(closing.promise);
       const newStream = createStream();
       Object.assign(mockCollection, {
-        watch: vi.fn().mockReturnValueOnce(oldStream).mockReturnValueOnce(newStream),
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValueOnce(fromPartial<ChangeStream>(newStream)),
       });
       const shutdownErrors: ShutdownTimeoutError[] = [];
       monque.on("job:error", ({ error }) => {
-        if (error instanceof ShutdownTimeoutError) shutdownErrors.push(error);
+        if (error instanceof ShutdownTimeoutError) {
+          shutdownErrors.push(error);
+        }
       });
-      const oldStarted = Promise.withResolvers<void>();
-      const newStarted = Promise.withResolvers<void>();
-      const oldHandler = Promise.withResolvers<void>();
-      const newHandler = Promise.withResolvers<void>();
+      const oldStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+      const newStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+      const oldHandler: PromiseWithResolvers<void> = Promise.withResolvers();
+      const newHandler: PromiseWithResolvers<void> = Promise.withResolvers();
       const oldJob = JobFactoryHelpers.processing({ name: "work", claimId: "old-claim" });
       const newJob = JobFactoryHelpers.processing({ name: "work", claimId: "new-claim" });
       vi.mocked(mockCollection.findOneAndUpdate)
@@ -577,43 +679,62 @@ describe("Monque", () => {
       closing.resolve();
       await vi.advanceTimersByTimeAsync(3000);
       await stopping;
-
-      expect(shutdownErrors).toHaveLength(1);
-      expect(shutdownErrors[0]?.incompleteJobs).toEqual([oldJob]);
-      expect(monque.isHealthy()).toBe(true);
-      expect(newStream.close).not.toHaveBeenCalled();
-      expect(mockCollection.updateMany).toHaveBeenCalledTimes(3);
-
+      expect({
+        shutdownErrorsLength: shutdownErrors.length,
+        shutdownErrors0IncompleteJobs: shutdownErrors[0]?.incompleteJobs,
+        monqueIsHealthy: Object.is(monque.isHealthy(), true),
+        newStreamCloseMockCallsLength: newStream.close.mock.calls.length,
+        mockCollectionUpdateManyMockCallsLength: mockCollection.updateMany.mock.calls.length,
+      }).toStrictEqual({
+        shutdownErrorsLength: 1,
+        shutdownErrors0IncompleteJobs: [oldJob],
+        monqueIsHealthy: true,
+        newStreamCloseMockCallsLength: 0,
+        mockCollectionUpdateManyMockCallsLength: 3,
+      });
       const nextStopping = monque.stop();
       oldHandler.resolve();
       newHandler.resolve();
       await vi.advanceTimersByTimeAsync(0);
       await nextStopping;
-      expect(shutdownErrors).toHaveLength(1);
-      expect(oldStream.close).toHaveBeenCalledOnce();
-      expect(newStream.close).toHaveBeenCalledOnce();
-      expect(vi.getTimerCount()).toBe(0);
+      expect({
+        shutdownErrorsLength: shutdownErrors.length,
+        oldStreamCloseMockCallsLength: oldStream.close.mock.calls.length,
+        newStreamCloseMockCallsLength: newStream.close.mock.calls.length,
+        getTimerCount: Object.is(vi.getTimerCount(), 0),
+      }).toStrictEqual({
+        shutdownErrorsLength: 1,
+        oldStreamCloseMockCallsLength: 1,
+        newStreamCloseMockCallsLength: 1,
+        getTimerCount: true,
+      });
     });
 
     it.each([undefined, 3000])(
       "resolves overlapping stops when their shared active handler finishes (lease: %s)",
       async (leaseDuration) => {
-        monque = new Monque(mockDb, {
+        const options: MonqueOptions = {
           workerConcurrency: 1,
           heartbeatInterval: 1000,
-          ...(leaseDuration === undefined ? {} : { leaseDuration }),
           recoverStaleJobs: false,
-          shutdownTimeout: 10000,
-        });
-        const firstClosing = Promise.withResolvers<void>();
-        const secondClosing = Promise.withResolvers<void>();
+          shutdownTimeout: 10_000,
+        };
+        if (leaseDuration !== undefined) {
+          options.leaseDuration = leaseDuration;
+        }
+        monque = new Monque(fromPartial<Db>(mockDb), options);
+        const firstClosing: PromiseWithResolvers<void> = Promise.withResolvers();
+        const secondClosing: PromiseWithResolvers<void> = Promise.withResolvers();
         const firstStream = createStream(firstClosing.promise);
         const secondStream = createStream(secondClosing.promise);
         Object.assign(mockCollection, {
-          watch: vi.fn().mockReturnValueOnce(firstStream).mockReturnValueOnce(secondStream),
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValueOnce(fromPartial<ChangeStream>(firstStream))
+            .mockReturnValueOnce(fromPartial<ChangeStream>(secondStream)),
         });
-        const started = Promise.withResolvers<void>();
-        const handler = Promise.withResolvers<void>();
+        const started: PromiseWithResolvers<void> = Promise.withResolvers();
+        const handler: PromiseWithResolvers<void> = Promise.withResolvers();
         vi.mocked(mockCollection.findOneAndUpdate).mockResolvedValueOnce(
           JobFactoryHelpers.processing({ name: "work", claimId: "shared-claim" }),
         );
@@ -626,7 +747,6 @@ describe("Monque", () => {
         vi.mocked(mockCollection.updateMany).mockClear();
         monque.start();
         await started.promise;
-
         let firstStopped = false;
         let secondStopped = false;
         const firstStopping = monque.stop().then(() => {
@@ -639,62 +759,65 @@ describe("Monque", () => {
         firstClosing.resolve();
         secondClosing.resolve();
         await vi.advanceTimersByTimeAsync(1000);
-        expect(firstStopped).toBe(false);
-        expect(secondStopped).toBe(false);
+        expect({
+          firstStopped: Object.is(firstStopped, false),
+          secondStopped: Object.is(secondStopped, false),
+        }).toStrictEqual({
+          firstStopped: true,
+          secondStopped: true,
+        });
         expect
           .soft(mockCollection.updateMany)
           .toHaveBeenCalledTimes(leaseDuration === undefined ? 0 : 1);
-
         handler.resolve();
         await vi.advanceTimersByTimeAsync(0);
         expect.soft(firstStopped).toBe(true);
         expect.soft(secondStopped).toBe(true);
         expect.soft(vi.getTimerCount()).toBe(0);
-        await vi.advanceTimersByTimeAsync(10000);
+        await vi.advanceTimersByTimeAsync(10_000);
         await Promise.all([firstStopping, secondStopping]);
-        expect(firstStream.close).toHaveBeenCalledOnce();
-        expect(secondStream.close).toHaveBeenCalledOnce();
-        expect(vi.getTimerCount()).toBe(0);
+        expect({
+          firstStreamCloseMockCallsLength: firstStream.close.mock.calls.length,
+          secondStreamCloseMockCallsLength: secondStream.close.mock.calls.length,
+          getTimerCount: Object.is(vi.getTimerCount(), 0),
+        }).toStrictEqual({
+          firstStreamCloseMockCallsLength: 1,
+          secondStreamCloseMockCallsLength: 1,
+          getTimerCount: true,
+        });
       },
     );
   });
-
   describe("worker registration", () => {
     it("should throw WorkerRegistrationError on duplicate registration", () => {
-      const handler = async () => {};
+      const handler = vi.fn<JobHandler>().mockResolvedValue(undefined);
       monque.register("test-job", handler);
-
       expect(() => {
         monque.register("test-job", handler);
       }).toThrow(WorkerRegistrationError);
     });
 
     it("exposes replacement concurrency in the Queue View", async () => {
-      const handler1 = async () => {};
-      const handler2 = async () => {};
-
+      const handler1 = vi.fn<JobHandler>().mockResolvedValue(undefined);
+      const handler2 = vi.fn<JobHandler>().mockResolvedValue(undefined);
       monque.register("test-job", handler1);
       monque.register("test-job", handler2, { replace: true, concurrency: 3 });
       await monque.initialize();
-
-      expect(await monque.getQueueViewSummaries()).toMatchObject([
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
         { name: "test-job", worker: { concurrency: 3, activeCount: 0 } },
       ]);
     });
 
     it("should reject invalid worker names", () => {
-      const handler = async () => {};
-
+      const handler = vi.fn<JobHandler>().mockResolvedValue(undefined);
       expect(() => {
         monque.register("invalid worker", handler);
       }).toThrow(InvalidJobIdentifierError);
-
       expect(() => {
         monque.register("\u0000", handler);
       }).toThrow(InvalidJobIdentifierError);
     });
   });
-
   describe("public operations", () => {
     beforeEach(async () => {
       await monque.initialize();
@@ -730,13 +853,12 @@ describe("Monque", () => {
     it("converts Management string IDs before querying MongoDB", async () => {
       const job = JobFactoryHelpers.pending();
       vi.mocked(mockCollection.findOne).mockResolvedValue(job);
-
-      expect(await monque.getJob(job._id.toHexString())).toEqual(job);
+      await expect(monque.getJob(job._id.toHexString())).resolves.toStrictEqual(job);
       expect(mockCollection.findOne).toHaveBeenCalledWith({ _id: job._id });
     });
 
     it("returns null for invalid string IDs without querying MongoDB", async () => {
-      expect(await monque.getJob("invalid-id")).toBeNull();
+      await expect(monque.getJob("invalid-id")).resolves.toBeNull();
       expect(mockCollection.findOne).not.toHaveBeenCalled();
     });
 
@@ -744,23 +866,32 @@ describe("Monque", () => {
       "refreshes cached statistics after a mutation (failed: %s)",
       async (fail) => {
         const toArray = vi
-          .fn()
+          .fn<MockFunction<FindCursor["toArray"]>>()
           .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 1 }] }])
           .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
-        vi.mocked(mockCollection.aggregate).mockReturnValue({ toArray } as unknown as ReturnType<
-          typeof mockCollection.aggregate
-        >);
-        expect((await monque.getQueueStats()).total).toBe(1);
-        expect((await monque.getQueueStats()).total).toBe(1);
-
+        vi.mocked(mockCollection.aggregate).mockReturnValue(
+          fromPartial<ReturnType<typeof mockCollection.aggregate>>({ toArray }),
+        );
+        const awaitedResult1 = await monque.getQueueStats();
+        expect(awaitedResult1.total).toBe(1);
+        const awaitedResult2 = await monque.getQueueStats();
+        expect(awaitedResult2.total).toBe(1);
         if (fail) {
           vi.mocked(mockCollection.updateMany).mockRejectedValueOnce(new Error("Partial write"));
-          await expect(monque.cancelJobs({})).rejects.toThrow(ConnectionError);
-        } else {
-          await expect(monque.cancelJobs({})).resolves.toMatchObject({ count: 0 });
         }
-
-        expect((await monque.getQueueStats()).total).toBe(2);
+        let result: BulkOperationResult | undefined;
+        let mutationError: unknown;
+        try {
+          result = await monque.cancelJobs({});
+        } catch (error) {
+          mutationError = error;
+        }
+        expect({
+          failed: mutationError instanceof ConnectionError,
+          count: result?.count,
+        }).toStrictEqual({ failed: fail, count: fail ? undefined : 0 });
+        const awaitedResult3 = await monque.getQueueStats();
+        expect(awaitedResult3.total).toBe(2);
       },
     );
   });

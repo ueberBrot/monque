@@ -8,10 +8,10 @@ import {
   getJobActionLabels,
   JOB_ACTION_DEFINITIONS,
   JOB_ACTION_ORDER,
-  type JobActionKey,
 } from "./job-actions.js";
+import type { JobActionKey } from "./job-actions.js";
 
-function JobsBulkActions({
+const JobsBulkActions = ({
   selectedJobs,
   capabilities,
   busy,
@@ -21,8 +21,10 @@ function JobsBulkActions({
   readonly capabilities: CapabilitiesDto | undefined;
   readonly busy: boolean;
   readonly openBulkDialog: (action: JobActionKey) => void;
-}) {
-  if (!selectedJobs.length) return null;
+}) => {
+  if (!selectedJobs.length) {
+    return null;
+  }
   const actions = JOB_ACTION_ORDER.map((action) => ({
     action,
     label: JOB_ACTION_DEFINITIONS[action].label,
@@ -38,7 +40,9 @@ function JobsBulkActions({
           type="button"
           size="sm"
           variant={action === "delete" ? "destructive" : "outline"}
-          onClick={() => openBulkDialog(action)}
+          onClick={() => {
+            openBulkDialog(action);
+          }}
           disabled={disabled || busy}
           title={reason ?? undefined}
         >
@@ -48,6 +52,5 @@ function JobsBulkActions({
       <JobActionHelp actions={actions} />
     </div>
   );
-}
-
+};
 export { JobsBulkActions };

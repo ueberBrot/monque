@@ -66,7 +66,7 @@ export class MonqueService {
 
   /**
    * Access the underlying Monque instance.
-   * @throws Error if MonqueModule is not initialized
+   * @throws {MonqueError} if MonqueModule is not initialized
    */
   get monque(): Monque {
     if (!this._monque) {
@@ -91,7 +91,7 @@ export class MonqueService {
    * @returns The created or existing job document
    */
   async enqueue<T>(name: string, data: T, options?: EnqueueOptions): Promise<PersistedJob<T>> {
-    return this.monque.enqueue(name, data, options);
+    return await this.monque.enqueue(name, data, options);
   }
 
   /** Enqueue a batch using full namespaced job names and per-job scheduling options. */
@@ -99,7 +99,7 @@ export class MonqueService {
     jobs: readonly EnqueueJob[],
     options?: JobWriteOptions,
   ): Promise<EnqueueManyResult> {
-    return this.monque.enqueueMany(jobs, options);
+    return await this.monque.enqueueMany(jobs, options);
   }
 
   /**
@@ -110,7 +110,7 @@ export class MonqueService {
    * @returns The created job document
    */
   async now<T>(name: string, data: T, options?: NowOptions): Promise<PersistedJob<T>> {
-    return this.monque.now(name, data, options);
+    return await this.monque.now(name, data, options);
   }
 
   /**
@@ -128,7 +128,7 @@ export class MonqueService {
     data: T,
     options?: ScheduleOptions,
   ): Promise<PersistedJob<T>> {
-    return this.monque.schedule(cron, name, data, options);
+    return await this.monque.schedule(cron, name, data, options);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -141,8 +141,8 @@ export class MonqueService {
    * @param jobId - The ID of the job to cancel
    * @returns The cancelled job, or null if not found
    */
-  async cancelJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    return this.monque.cancelJob(jobId);
+  async cancelJob(jobId: string): Promise<PersistedJob | null> {
+    return await this.monque.cancelJob(jobId);
   }
 
   /**
@@ -151,8 +151,8 @@ export class MonqueService {
    * @param jobId - The ID of the job to retry
    * @returns The updated job, or null if not found
    */
-  async retryJob(jobId: string): Promise<PersistedJob<unknown> | null> {
-    return this.monque.retryJob(jobId);
+  async retryJob(jobId: string): Promise<PersistedJob | null> {
+    return await this.monque.retryJob(jobId);
   }
 
   /**
@@ -162,8 +162,8 @@ export class MonqueService {
    * @param runAt - The new Date when the job should run
    * @returns The updated job, or null if not found
    */
-  async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob<unknown> | null> {
-    return this.monque.rescheduleJob(jobId, runAt);
+  async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob | null> {
+    return await this.monque.rescheduleJob(jobId, runAt);
   }
 
   /**
@@ -173,8 +173,8 @@ export class MonqueService {
    * @param priority - The new signed safe integer priority
    * @returns The updated Job, or null for a missing or invalid identifier
    */
-  async setJobPriority(jobId: string, priority: number): Promise<PersistedJob<unknown> | null> {
-    return this.monque.setJobPriority(jobId, priority);
+  async setJobPriority(jobId: string, priority: number): Promise<PersistedJob | null> {
+    return await this.monque.setJobPriority(jobId, priority);
   }
 
   /**
@@ -184,7 +184,7 @@ export class MonqueService {
    * @returns true if deleted, false if job not found
    */
   async deleteJob(jobId: string): Promise<boolean> {
-    return this.monque.deleteJob(jobId);
+    return await this.monque.deleteJob(jobId);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ export class MonqueService {
    * @returns Result with count of cancelled jobs
    */
   async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    return this.monque.cancelJobs(filter);
+    return await this.monque.cancelJobs(filter);
   }
 
   /**
@@ -208,7 +208,7 @@ export class MonqueService {
    * @returns Result with count of retried jobs
    */
   async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    return this.monque.retryJobs(filter);
+    return await this.monque.retryJobs(filter);
   }
 
   /**
@@ -218,7 +218,7 @@ export class MonqueService {
    * @returns Result with count of deleted jobs
    */
   async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
-    return this.monque.deleteJobs(filter);
+    return await this.monque.deleteJobs(filter);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -230,11 +230,12 @@ export class MonqueService {
    *
    * @param jobId - The job's ObjectId (as string or ObjectId)
    * @returns The job document, or null if not found
-   * @throws MonqueError if jobId is an invalid hex string
+   * @throws {MonqueError} if jobId is an invalid hex string
    */
   async getJob<T>(jobId: string | ObjectId): Promise<PersistedJob<T> | null> {
     let id: ObjectId;
 
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The public adapter distinguishes string IDs from existing ObjectId values and preserves their identity.
     if (typeof jobId === "string") {
       if (!ObjectId.isValid(jobId)) {
         throw new MonqueError(`Invalid job ID format: ${jobId}`);
@@ -244,7 +245,7 @@ export class MonqueService {
       id = jobId;
     }
 
-    return this.monque.getJob(id);
+    return await this.monque.getJob(id);
   }
 
   /**
@@ -254,7 +255,7 @@ export class MonqueService {
    * @returns Array of matching jobs
    */
   async getJobs<T>(filter?: GetJobsFilter): Promise<PersistedJob<T>[]> {
-    return this.monque.getJobs(filter);
+    return await this.monque.getJobs(filter);
   }
 
   /**
@@ -264,7 +265,7 @@ export class MonqueService {
    * @returns Page of jobs with next/prev cursors
    */
   async getJobsWithCursor<T>(options?: CursorOptions): Promise<CursorPage<T>> {
-    return this.monque.getJobsWithCursor(options);
+    return await this.monque.getJobsWithCursor(options);
   }
 
   /**
@@ -274,14 +275,14 @@ export class MonqueService {
    * @returns Queue statistics
    */
   async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    return this.monque.getQueueStats(filter);
+    return await this.monque.getQueueStats(filter);
   }
 
   /** Read persisted queue counts and fresh local worker policies. */
   async getQueueViewSummaries(
     filter?: Pick<JobSelector, "name">,
   ): Promise<readonly QueueViewSummary[]> {
-    return this.monque.getQueueViewSummaries(filter);
+    return await this.monque.getQueueViewSummaries(filter);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

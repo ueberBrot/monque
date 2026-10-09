@@ -1,6 +1,9 @@
 import { ORPCError } from "@orpc/server";
 
-export function createLimitedRequest(request: Request, maxBodySize: number): Request {
+export const createLimitedRequest = function createLimitedRequest(
+  request: Request,
+  maxBodySize: number,
+): Request {
   const source = request.body;
   if (source === null) {
     return request;
@@ -10,6 +13,21 @@ export function createLimitedRequest(request: Request, maxBodySize: number): Req
   let size = 0;
   let stopped = false;
   let abort: (() => void) | undefined;
+
+  const releaseReader = function releaseReader(): void {
+    if (abort) {
+      request.signal.removeEventListener("abort", abort);
+    }
+    reader?.releaseLock();
+  };
+
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- ReadableStream cancellation reasons are arbitrary values and must reach the original reader unchanged.
+  const cancelReader = async function cancelReader(reason: unknown): Promise<void> {
+    await reader?.cancel(reason).catch(() => {
+      // Cancellation failure must not prevent releasing the stream reader lock.
+    });
+    releaseReader();
+  };
   const body = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
@@ -50,26 +68,14 @@ export function createLimitedRequest(request: Request, maxBodySize: number): Req
           }
         }
       },
-      cancel(reason) {
+      async cancel(reason) {
         stopped = true;
-        return cancelReader(reason);
+        await cancelReader(reason);
       },
     },
     { highWaterMark: 0 },
   );
 
-  function releaseReader(): void {
-    if (abort) {
-      request.signal.removeEventListener("abort", abort);
-    }
-    reader?.releaseLock();
-  }
-
-  async function cancelReader(reason: unknown): Promise<void> {
-    await reader?.cancel(reason).catch(() => undefined);
-    releaseReader();
-  }
-
   const init: RequestInit & { duplex: "half" } = { body, duplex: "half" };
   return new Request(request, init);
-}
+};

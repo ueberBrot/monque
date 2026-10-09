@@ -1,8 +1,9 @@
 import { InvalidCursorError } from "@monque/core";
 import { createRouterClient, ORPCError } from "@orpc/server";
-import { describe, expect, test } from "vite-plus/test";
+import { vi, describe, expect, it } from "vite-plus/test";
 
 import { createManagementRouter, createManagementSurface } from "@/index";
+import type { ManagementMonque } from "@/surface";
 import {
   createManagementJob,
   createManagementMonque,
@@ -13,18 +14,20 @@ import {
 
 describe("management Effect compatibility", () => {
   describe.each(["authorization", "facade", "serializer"] as const)("%s failures", (seam) => {
-    test.each([undefined, null, "External failure", { reason: "External failure" }])(
+    it.each([undefined, null, "External failure", { reason: "External failure" }])(
       "preserves an arbitrary rejection value %j",
       async (failure) => {
         const job = createManagementJob();
+        const rejectFailure = vi.fn<() => Promise<never>>().mockRejectedValue(failure);
         const client = createRouterClient(
           createManagementRouter({
             monque: createManagementMonque({
-              getJob: () => (seam === "facade" ? Promise.reject(failure) : Promise.resolve(job)),
+              getJob: async () =>
+                seam === "facade" ? await rejectFailure() : await Promise.resolve(job),
             }),
-            authorize: () => (seam === "authorization" ? Promise.reject(failure) : true),
-            serializePayload: ({ payload }) =>
-              seam === "serializer" ? Promise.reject(failure) : Promise.resolve(payload),
+            authorize: seam === "authorization" ? rejectFailure : () => true,
+            serializePayload: async ({ payload }) =>
+              seam === "serializer" ? await rejectFailure() : await Promise.resolve(payload),
           }),
           { context: { managementContext: {} } },
         );
@@ -33,24 +36,37 @@ describe("management Effect compatibility", () => {
       },
     );
 
-    test.each([undefined, null, "External failure", { reason: "External failure" }])(
+    it.each([undefined, null, "External failure", { reason: "External failure" }])(
       "preserves an arbitrary synchronous failure %j",
       async (failure) => {
         const job = createManagementJob();
         const client = createRouterClient(
           createManagementRouter({
             monque: createManagementMonque({
+              // oxlint-disable-next-line typescript/promise-function-async -- This fixture must throw synchronously before returning a Promise.
               getJob: () => {
-                if (seam === "facade") throw failure;
+                if (seam === "facade") {
+                  // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
+                  throw failure;
+                }
+                // oxlint-disable-next-line unicorn/no-useless-promise-resolve-reject -- The facade's success contract returns a native Promise.
                 return Promise.resolve(job);
               },
             }),
             authorize: () => {
-              if (seam === "authorization") throw failure;
+              if (seam === "authorization") {
+                // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
+                throw failure;
+              }
               return true;
             },
+            // oxlint-disable-next-line typescript/promise-function-async -- This fixture must throw synchronously before returning a Promise.
             serializePayload: ({ payload }) => {
-              if (seam === "serializer") throw failure;
+              if (seam === "serializer") {
+                // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
+                throw failure;
+              }
+              // oxlint-disable-next-line unicorn/no-useless-promise-resolve-reject -- The serializer's success contract returns a native Promise.
               return Promise.resolve(payload);
             },
           }),
@@ -62,23 +78,26 @@ describe("management Effect compatibility", () => {
     );
   });
 
-  test("starts every parallel authorization check and returns failures without waiting for the others", async () => {
-    const gate = Promise.withResolvers<void>();
+  it("starts every parallel authorization check and returns failures without waiting for the others", async () => {
+    const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const checks: string[] = [];
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
       parallelCapabilityChecks: true,
-      authorize: ({ action }) => {
+      authorize: async ({ action }) => {
         checks.push(action);
-        if (action === "read") throw new ORPCError("FORBIDDEN", { message: "Access revoked" });
-        return gate.promise.then(() => true);
+        if (action === "read") {
+          throw new ORPCError("FORBIDDEN", { message: "Access revoked" });
+        }
+        await gate.promise;
+        return true;
       },
     });
     try {
       await expectJsonResponse(await handleManagementGet(surface, "/api/v1/capabilities"), 403, {
         error: "Access revoked",
       });
-      expect(checks).toEqual([
+      expect(checks).toStrictEqual([
         "read",
         "cancel",
         "cancelBulk",
@@ -93,7 +112,7 @@ describe("management Effect compatibility", () => {
     }
   });
 
-  test("preserves original authorization failures for direct oRPC consumers", async () => {
+  it("preserves original authorization failures for direct oRPC consumers", async () => {
     const failure = new ORPCError("FORBIDDEN", { message: "Access revoked" });
     const client = createRouterClient(
       createManagementRouter({
@@ -108,16 +127,21 @@ describe("management Effect compatibility", () => {
     await expect(client.jobs({})).rejects.toBe(failure);
   });
 
-  test.each(["synchronous", "Promise"])(
+  it.each(["synchronous", "Promise"])(
     "preserves original %s serializer failures for direct oRPC consumers",
     async (mode) => {
       const job = createManagementJob();
       const failure = new Error("Serializer failed");
       const options = {
-        monque: createManagementMonque({ getJob: async () => job }),
+        monque: createManagementMonque({
+          getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
+        }),
+        // oxlint-disable-next-line typescript/promise-function-async -- Compare synchronous throws with asynchronous Promise rejections.
         serializePayload: () => {
-          if (mode === "synchronous") throw failure;
-          return Promise.reject(failure);
+          if (mode === "synchronous") {
+            throw failure;
+          }
+          return vi.fn<() => Promise<never>>().mockRejectedValue(failure)();
         },
       };
       const client = createRouterClient(createManagementRouter(options), {
@@ -128,7 +152,7 @@ describe("management Effect compatibility", () => {
     },
   );
 
-  test("maps cursor failures from facade Job metadata to bad requests", async () => {
+  it("maps cursor failures from facade Job metadata to bad requests", async () => {
     const job = createManagementJob();
     Object.defineProperty(job, "updatedAt", {
       get: () => {
@@ -138,12 +162,14 @@ describe("management Effect compatibility", () => {
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
-          getJobsWithCursor: async () => ({
-            jobs: [job],
-            cursor: null,
-            hasNextPage: false,
-            hasPreviousPage: false,
-          }),
+          getJobsWithCursor: vi
+            .fn<NonNullable<ManagementMonque["getJobsWithCursor"]>>()
+            .mockResolvedValue({
+              jobs: [job],
+              cursor: null,
+              hasNextPage: false,
+              hasPreviousPage: false,
+            }),
         }),
       }),
       { context: { managementContext: {} } },
@@ -155,7 +181,7 @@ describe("management Effect compatibility", () => {
     });
   });
 
-  test.each(["jobs", "cursor", "hasNextPage", "hasPreviousPage"])(
+  it.each(["jobs", "cursor", "hasNextPage", "hasPreviousPage"])(
     "maps cursor failures from the page's %s property to bad requests",
     async (property) => {
       const page = {
@@ -171,7 +197,11 @@ describe("management Effect compatibility", () => {
       });
       const client = createRouterClient(
         createManagementRouter({
-          monque: createManagementMonque({ getJobsWithCursor: async () => page }),
+          monque: createManagementMonque({
+            getJobsWithCursor: vi
+              .fn<NonNullable<ManagementMonque["getJobsWithCursor"]>>()
+              .mockResolvedValue(page),
+          }),
         }),
         { context: { managementContext: {} } },
       );
@@ -183,29 +213,33 @@ describe("management Effect compatibility", () => {
     },
   );
 
-  test("starts every page serializer and rejects without waiting for pending serializers", async () => {
+  it("starts every page serializer and rejects without waiting for pending serializers", async () => {
     const jobs = [
       createManagementJob({ name: "pending-first" }),
       createManagementJob({ name: "failing" }),
       createManagementJob({ name: "pending-last" }),
     ];
     const failure = new Error("Serializer failed");
-    const gate = Promise.withResolvers<void>();
+    const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const serialized: string[] = [];
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
-          getJobsWithCursor: async () => ({
-            jobs,
-            cursor: null,
-            hasNextPage: false,
-            hasPreviousPage: false,
-          }),
+          getJobsWithCursor: vi
+            .fn<NonNullable<ManagementMonque["getJobsWithCursor"]>>()
+            .mockResolvedValue({
+              jobs,
+              cursor: null,
+              hasNextPage: false,
+              hasPreviousPage: false,
+            }),
         }),
-        serializePayload: ({ job, payload }) => {
+        serializePayload: async ({ job, payload }) => {
           serialized.push(job.name);
-          if (job.name === "failing") throw failure;
-          return gate.promise.then(() => payload);
+          if (job.name === "failing") {
+            throw failure;
+          }
+          return await gate.promise.then(() => payload);
         },
       }),
       { context: { managementContext: {} } },
@@ -213,34 +247,38 @@ describe("management Effect compatibility", () => {
 
     try {
       await expect(client.jobs({})).rejects.toBe(failure);
-      expect(serialized).toEqual(["pending-first", "failing", "pending-last"]);
+      expect(serialized).toStrictEqual(["pending-first", "failing", "pending-last"]);
     } finally {
       gate.resolve();
     }
   });
 
-  test("observes pending serializer completion and rejection after the page has already failed", async () => {
+  it("observes pending serializer completion and rejection after the page has already failed", async () => {
     const jobs = [
       createManagementJob({ name: "failing" }),
       createManagementJob({ name: "pending" }),
     ];
     const failure = new Error("First serializer failed");
     const laterFailure = new Error("Pending serializer failed later");
-    const gate = Promise.withResolvers<void>();
-    const completed = Promise.withResolvers<void>();
+    const gate: PromiseWithResolvers<void> = Promise.withResolvers();
+    const completed: PromiseWithResolvers<void> = Promise.withResolvers();
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
-          getJobsWithCursor: async () => ({
-            jobs,
-            cursor: null,
-            hasNextPage: false,
-            hasPreviousPage: false,
-          }),
+          getJobsWithCursor: vi
+            .fn<NonNullable<ManagementMonque["getJobsWithCursor"]>>()
+            .mockResolvedValue({
+              jobs,
+              cursor: null,
+              hasNextPage: false,
+              hasPreviousPage: false,
+            }),
         }),
-        serializePayload: ({ job }) => {
-          if (job.name === "failing") throw failure;
-          return gate.promise.then(() => {
+        serializePayload: async ({ job }) => {
+          if (job.name === "failing") {
+            throw failure;
+          }
+          return await gate.promise.then(() => {
             completed.resolve();
             throw laterFailure;
           });
@@ -257,7 +295,7 @@ describe("management Effect compatibility", () => {
     }
   });
 
-  test("reports selected action facade errors independently for every job", async () => {
+  it("reports selected action facade errors independently for every job", async () => {
     const jobs = [createManagementJob(), createManagementJob()];
     const monque = createManagementMonque({}, { mutations: true });
     Object.defineProperty(monque, "deleteJob", {
@@ -281,21 +319,27 @@ describe("management Effect compatibility", () => {
     );
   });
 
-  test.each([undefined, null, "External failure", { reason: "External failure" }])(
+  it.each([undefined, null, "External failure", { reason: "External failure" }])(
     "isolates arbitrary selected action facade failures %j while other jobs succeed",
     async (failure) => {
       const jobs = [createManagementJob(), createManagementJob()];
       const monque = createManagementMonque(
         {
-          getJob: async (id) => jobs.find((job) => job._id.toHexString() === id) ?? null,
+          getJob: async (id) =>
+            await Promise.resolve(jobs.find((job) => job._id.toHexString() === id) ?? null),
         },
         { mutations: true },
       );
       let reads = 0;
       Object.defineProperty(monque, "deleteJob", {
         get: () => {
-          if (reads++ === 0) throw failure;
-          return () => Promise.resolve(true);
+          const previousReads = reads;
+          reads += 1;
+          if (previousReads === 0) {
+            // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous getter failure contract.
+            throw failure;
+          }
+          return async () => await Promise.resolve(true);
         },
       });
       const surface = createManagementSurface({ monque });

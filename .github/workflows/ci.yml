@@ -37,8 +37,8 @@ jobs:
       - name: Format
         run: vp fmt --check
 
-      - name: Lint
-        run: vp lint --deny-warnings
+      - name: Fast lint
+        run: vp run lint:fast
 
       - name: Test CI selection and gate
         run: vp test run --project ci
@@ -46,13 +46,11 @@ jobs:
       - name: Build packages
         run: vp run --filter './packages/*' build
 
-      # Workspace type checks consume the packages' generated declarations.
-      - name: Type check
+      # Typed lint and TypeScript share one analysis of the built declarations.
+      - name: Type check and typed lint
         run: |
-          vp run --filter @monque/docs --ignore-depends-on generate:api
-          vp run --filter './packages/*' --filter './apps/*' --ignore-depends-on type-check
-          vp lint --type-aware --type-check -A all
-          vp run --filter @monque/core --filter @monque/management --ignore-depends-on lint:effect
+          vp lint --type-aware --type-check --deny-warnings
+          vp run --filter @monque/docs type-check
 
       - name: Upload build outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

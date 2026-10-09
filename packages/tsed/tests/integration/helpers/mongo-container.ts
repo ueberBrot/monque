@@ -6,8 +6,10 @@ declare module "vitest" {
   }
 }
 
-export function getMongoUrl(): string {
+export const getMongoUrl = function getMongoUrl(): string {
   const uri = inject("tsedMongoUri");
-  if (!uri) throw new Error("MongoDB global setup has not provided tsedMongoUri");
+  if (!uri) {
+    throw new Error("MongoDB global setup has not provided tsedMongoUri");
+  }
   return uri;
-}
+};

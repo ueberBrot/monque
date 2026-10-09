@@ -1,19 +1,75 @@
+import { fromAny } from "@total-typescript/shoehorn";
 import type { Db, ObjectId } from "mongodb";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { InvalidJobQueryError, type JobCursorFilter, type JobSelector, Monque } from "@/index";
+import { InvalidJobQueryError, Monque } from "@/index";
+import type { JobCursorFilter, JobSelector } from "@/index";
 import { cleanupTestDb, getTestDb, uniqueCollectionName } from "@test-utils/test-utils";
+
+interface QueryValidationOperation {
+  name: string;
+  run: (scheduler: Monque, filter: JobSelector) => Promise<void>;
+}
+
+const queryOperations = [
+  {
+    name: "getJobs",
+    run: async (scheduler, filter) => {
+      await scheduler.getJobs(filter);
+    },
+  },
+  {
+    name: "getJobsWithCursor",
+    run: async (scheduler, filter) => {
+      await scheduler.getJobsWithCursor({ filter });
+    },
+  },
+  {
+    name: "getJobSummariesWithCursor",
+    run: async (scheduler, filter) => {
+      await scheduler.getJobSummariesWithCursor({ filter });
+    },
+  },
+  {
+    name: "getQueueStats",
+    run: async (scheduler, filter) => {
+      await scheduler.getQueueStats(filter);
+    },
+  },
+  {
+    name: "getQueueViewSummaries",
+    run: async (scheduler, filter) => {
+      await scheduler.getQueueViewSummaries(filter);
+    },
+  },
+  {
+    name: "cancelJobs",
+    run: async (scheduler, filter) => {
+      await scheduler.cancelJobs(filter);
+    },
+  },
+  {
+    name: "retryJobs",
+    run: async (scheduler, filter) => {
+      await scheduler.retryJobs(filter);
+    },
+  },
+  {
+    name: "deleteJobs",
+    run: async (scheduler, filter) => {
+      await scheduler.deleteJobs(filter);
+    },
+  },
+] satisfies QueryValidationOperation[];
 
 describe("Public query input validation", () => {
   let db: Db;
   let monque: Monque;
-
   beforeAll(async () => {
     db = await getTestDb("query-validation");
     monque = new Monque(db, { collectionName: uniqueCollectionName("query_validation") });
     await monque.initialize();
   });
-
   beforeEach(async () => {
     await monque.deleteJobs({});
     await monque.enqueue("alpha", {});
@@ -26,25 +82,25 @@ describe("Public query input validation", () => {
 
   it("rejects an empty name without broadening deletion to other Job Names", async () => {
     await expect(monque.deleteJobs({ name: "" })).rejects.toThrow(InvalidJobQueryError);
-    expect((await monque.getJobs()).map((job) => job.name).sort()).toEqual(["alpha", "beta"]);
-    expect(await monque.deleteJobs({ name: "alpha" })).toEqual({ count: 1, errors: [] });
-    expect((await monque.getJobs()).map((job) => job.name)).toEqual(["beta"]);
+    const awaitedResult1 = await monque.getJobs();
+    expect(awaitedResult1.map((job) => job.name).toSorted()).toStrictEqual(["alpha", "beta"]);
+    await expect(monque.deleteJobs({ name: "alpha" })).resolves.toStrictEqual({
+      count: 1,
+      errors: [],
+    });
+    const awaitedResult2 = await monque.getJobs();
+    expect(awaitedResult2.map((job) => job.name)).toStrictEqual(["beta"]);
   });
 
-  it("rejects operator-valued selectors across reads, statistics, and bulk mutations", async () => {
-    const filter = JSON.parse('{"name":{"$ne":null}}') as JobSelector;
-    await expect(monque.getJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.getJobsWithCursor({ filter })).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.getJobSummariesWithCursor({ filter })).rejects.toThrow(
-      InvalidJobQueryError,
-    );
-    await expect(monque.getQueueStats(filter)).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.getQueueViewSummaries(filter)).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.cancelJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.retryJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-    await expect(monque.deleteJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-    expect((await monque.getJobs()).map((job) => job.status)).toEqual(["pending", "pending"]);
-  });
+  it.each(queryOperations)(
+    "rejects operator-valued selectors in $name without changing jobs",
+    async ({ run }) => {
+      const filter = fromAny<JobSelector, { name: { $ne: null } }>({ name: { $ne: null } });
+      await expect(run(monque, filter)).rejects.toThrow(InvalidJobQueryError);
+      const remainingJobs = await monque.getJobs();
+      expect(remainingJobs.map((job) => job.status)).toStrictEqual(["pending", "pending"]);
+    },
+  );
 
   it.each([
     { status: { $ne: "processing" } },
@@ -57,23 +113,32 @@ describe("Public query input validation", () => {
     { newerThan: new Date(Number.NaN) },
   ])("rejects invalid status or date selectors %j without changing jobs", async (input) => {
     // Deliberately cross the TypeScript boundary, as a JavaScript/JSON caller can.
-    const filter = input as unknown as JobSelector;
+    const filter = fromAny<JobSelector, unknown>(input);
     await expect(monque.getJobs(filter)).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.cancelJobs(filter)).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.retryJobs(filter)).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.deleteJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-    expect((await monque.getJobs()).map((job) => job.status)).toEqual(["pending", "pending"]);
+    const awaitedResult4 = await monque.getJobs();
+    expect(awaitedResult4.map((job) => job.status)).toStrictEqual(["pending", "pending"]);
   });
 
-  it("preserves exact names, status arrays, date bounds, and intentional empty selectors", async () => {
-    expect(await monque.getJobs({ name: "alpha", status: ["pending", "failed"] })).toHaveLength(1);
-    expect(await monque.getJobs({ status: [] })).toHaveLength(0);
-    expect(await monque.deleteJobs({ status: [] })).toEqual({ count: 0, errors: [] });
-    expect(
-      await monque.cancelJobs({ name: "alpha", olderThan: new Date(Date.now() + 1000) }),
-    ).toEqual({ count: 1, errors: [] });
-    expect(await monque.getJobs({ name: "beta", status: "pending" })).toHaveLength(1);
-    expect(await monque.deleteJobs({})).toEqual({ count: 2, errors: [] });
+  it("preserves exact names, status arrays, and date bounds", async () => {
+    await expect(
+      monque.getJobs({ name: "alpha", status: ["pending", "failed"] }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      monque.cancelJobs({ name: "alpha", olderThan: new Date(Date.now() + 1000) }),
+    ).resolves.toStrictEqual({ count: 1, errors: [] });
+    await expect(monque.getJobs({ name: "beta", status: "pending" })).resolves.toHaveLength(1);
+  });
+
+  it("distinguishes an empty status selection from an intentional empty selector", async () => {
+    await expect(monque.getJobs({ status: [] })).resolves.toHaveLength(0);
+    await expect(monque.deleteJobs({ status: [] })).resolves.toStrictEqual({
+      count: 0,
+      errors: [],
+    });
+    await expect(monque.deleteJobs({})).resolves.toStrictEqual({ count: 2, errors: [] });
   });
 
   it.each([
@@ -87,7 +152,7 @@ describe("Public query input validation", () => {
     null,
     "10",
   ])("rejects unsafe page size %s for every listing API", async (input) => {
-    const options = { limit: input as number };
+    const options = { limit: fromAny<number, unknown>(input) };
     await expect(monque.getJobs(options)).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.getJobsWithCursor(options)).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.getJobSummariesWithCursor(options)).rejects.toThrow(InvalidJobQueryError);
@@ -101,53 +166,56 @@ describe("Public query input validation", () => {
   );
 
   it("preserves pagination defaults and supports the maximum bounded page size", async () => {
-    await Promise.all(Array.from({ length: 103 }, () => monque.enqueue("alpha", {})));
-    expect(await monque.getJobs()).toHaveLength(100);
-    expect((await monque.getJobsWithCursor()).jobs).toHaveLength(50);
-    expect(await monque.getJobs({ limit: 1000 })).toHaveLength(105);
-    expect((await monque.getJobsWithCursor({ limit: 1000 })).jobs).toHaveLength(105);
-    expect((await monque.getJobSummariesWithCursor({ limit: 1000 })).jobs).toHaveLength(105);
-    expect(await monque.getJobs({ limit: 1, skip: 104 })).toHaveLength(1);
+    await Promise.all(Array.from({ length: 103 }, async () => await monque.enqueue("alpha", {})));
+    const defaultJobs = await monque.getJobs();
+    const defaultCursorPage = await monque.getJobsWithCursor();
+    expect({
+      jobCount: defaultJobs.length,
+      cursorJobCount: defaultCursorPage.jobs.length,
+    }).toStrictEqual({ jobCount: 100, cursorJobCount: 50 });
+    await expect(monque.getJobs({ limit: 1000 })).resolves.toHaveLength(105);
+    const awaitedResult6 = await monque.getJobsWithCursor({ limit: 1000 });
+    expect(awaitedResult6.jobs).toHaveLength(105);
+    const awaitedResult7 = await monque.getJobSummariesWithCursor({ limit: 1000 });
+    expect(awaitedResult7.jobs).toHaveLength(105);
+    await expect(monque.getJobs({ limit: 1, skip: 104 })).resolves.toHaveLength(1);
   });
 
-  it.each([null, false, 0, "", []])(
-    "rejects a malformed filter %j instead of reading all jobs",
-    async (input) => {
-      const filter = input as unknown as JobSelector;
-      await expect(monque.getJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getJobsWithCursor({ filter })).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getJobSummariesWithCursor({ filter })).rejects.toThrow(
-        InvalidJobQueryError,
-      );
-      await expect(monque.getQueueStats(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getQueueViewSummaries(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.deleteJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-      expect(await monque.getJobs()).toHaveLength(2);
-    },
-  );
+  describe.each([null, false, 0, "", []])("malformed filter %j", (input) => {
+    it.each(queryOperations.filter(({ name }) => name !== "cancelJobs" && name !== "retryJobs"))(
+      "rejects $name instead of reading or changing all jobs",
+      async ({ run }) => {
+        const filter = fromAny<JobSelector, unknown>(input);
+        await expect(run(monque, filter)).rejects.toThrow(InvalidJobQueryError);
+        await expect(monque.getJobs()).resolves.toHaveLength(2);
+      },
+    );
+  });
 
   it("does not interpret an operator object as a single-job ID", async () => {
-    const input = JSON.parse('{"$ne":null}') as ObjectId;
-    expect(await monque.getJob(input)).toBeNull();
+    const input = fromAny<ObjectId, unknown>(JSON.parse('{"$ne":null}'));
+    await expect(monque.getJob(input)).resolves.toBeNull();
     const job = await monque.enqueue("gamma", {});
-    expect((await monque.getJob(job._id))?._id).toEqual(job._id);
-    expect((await monque.getJob(job._id.toHexString()))?._id).toEqual(job._id);
+    const awaitedResult8 = await monque.getJob(job._id);
+    expect(awaitedResult8?._id).toStrictEqual(job._id);
+    const awaitedResult9 = await monque.getJob(job._id.toHexString());
+    expect(awaitedResult9?._id).toStrictEqual(job._id);
   });
 
-  it.each(["", null, 0, [], /alpha/])(
-    "rejects an invalid name %j even with cached statistics",
-    async (input) => {
+  describe.each(["", null, 0, [], /alpha/u])("invalid cached-statistics name %j", (input) => {
+    it.each(
+      queryOperations.filter(
+        ({ name }) =>
+          name !== "getJobSummariesWithCursor" && name !== "cancelJobs" && name !== "retryJobs",
+      ),
+    )("rejects $name without broadening the filter", async ({ run }) => {
       await monque.getQueueStats();
       await monque.getQueueViewSummaries();
-      const filter = { name: input } as unknown as JobSelector;
-      await expect(monque.getJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getJobsWithCursor({ filter })).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getQueueStats(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.getQueueViewSummaries(filter)).rejects.toThrow(InvalidJobQueryError);
-      await expect(monque.deleteJobs(filter)).rejects.toThrow(InvalidJobQueryError);
-      expect(await monque.getJobs()).toHaveLength(2);
-    },
-  );
+      const filter = fromAny<JobSelector, unknown>({ name: input });
+      await expect(run(monque, filter)).rejects.toThrow(InvalidJobQueryError);
+      await expect(monque.getJobs()).resolves.toHaveLength(2);
+    });
+  });
 
   it.each([
     { createdAtFrom: null },
@@ -157,7 +225,7 @@ describe("Public query input validation", () => {
     { nextRunAtFrom: 0 },
     { nextRunAtTo: [] },
   ])("rejects invalid cursor date ranges %j", async (input) => {
-    const filter = input as unknown as JobCursorFilter;
+    const filter = fromAny<JobCursorFilter, unknown>(input);
     await expect(monque.getJobsWithCursor({ filter })).rejects.toThrow(InvalidJobQueryError);
     await expect(monque.getJobSummariesWithCursor({ filter })).rejects.toThrow(
       InvalidJobQueryError,

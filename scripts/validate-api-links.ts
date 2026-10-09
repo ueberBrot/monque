@@ -39,7 +39,7 @@ const docsDir = path.join(rootDir, "apps/docs/src/content/docs");
 /**
  * Recursively find all files matching extensions in a directory.
  */
-function findFiles(dir: string, extensions: string[], ignore: string[] = []): string[] {
+const findFiles = (dir: string, extensions: string[], ignore: string[] = []): string[] => {
   const results: string[] = [];
 
   if (!fs.existsSync(dir)) {
@@ -68,7 +68,7 @@ function findFiles(dir: string, extensions: string[], ignore: string[] = []): st
   }
 
   return results;
-}
+};
 
 /**
  * Build a map of valid API paths from the generated API docs.
@@ -77,7 +77,7 @@ function findFiles(dir: string, extensions: string[], ignore: string[] = []): st
  *   /monque/api/interfaces/job/
  *   /monque/api/classes/monque/#enqueue (with anchors)
  */
-function buildApiPathMap(): Set<string> {
+const buildApiPathMap = (): Set<string> => {
   const apiDir = path.join(docsDir, "api");
   const validPaths = new Set<string>();
 
@@ -87,7 +87,7 @@ function buildApiPathMap(): Set<string> {
   for (const file of apiFiles) {
     // Convert file path to URL path
     // e.g., "classes/Monque.md" -> "/monque/api/classes/monque/"
-    const relativePath = path.relative(apiDir, file).replace(/\.md$/, "").toLowerCase();
+    const relativePath = path.relative(apiDir, file).replace(/\.md$/u, "").toLowerCase();
     const urlPath = `/monque/api/${relativePath}/`;
 
     validPaths.add(urlPath);
@@ -97,32 +97,34 @@ function buildApiPathMap(): Set<string> {
   }
 
   return validPaths;
-}
+};
 
 /**
  * Extract all /monque/api/ links from a markdown/MDX file.
  * Returns array of { link, line, column } objects.
  */
-function extractApiLinks(content: string, filePath: string): ApiLink[] {
+const extractApiLinks = (content: string, filePath: string): ApiLink[] => {
   const links: ApiLink[] = [];
 
   // Match markdown links: [text](/monque/api/...)
   // and bare URLs in href attributes or similar
-  const linkRegex = /\[([^\]]*)\]\((\/monque\/api\/[^)#\s]+)(#[^)\s]*)?\)/g;
+  const linkRegex = /\[(?<text>[^\]]*)\]\((?<path>\/monque\/api\/[^)#\s]+)(?<anchor>#[^)\s]*)?\)/gu;
   const lines = content.split("\n");
 
-  for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+  for (let lineNum = 0; lineNum < lines.length; lineNum += 1) {
     const line = lines[lineNum];
     const matches = line.matchAll(linkRegex);
 
     for (const match of matches) {
-      const fullPath = match[2]; // Path without anchor
-      const anchor = match[3] || ""; // Anchor if present
+      const { path: fullPath, anchor = "" } = match.groups ?? {};
+      if (fullPath === undefined) {
+        continue;
+      }
 
       links.push({
         fullLink: match[0],
         path: fullPath,
-        anchor: anchor,
+        anchor,
         line: lineNum + 1,
         column: match.index + 1,
         file: filePath,
@@ -131,7 +133,7 @@ function extractApiLinks(content: string, filePath: string): ApiLink[] {
   }
 
   return links;
-}
+};
 
 /**
  * Check if an anchor exists in the target API file.
@@ -139,12 +141,14 @@ function extractApiLinks(content: string, filePath: string): ApiLink[] {
  *   ### enqueue()  ->  #enqueue
  *   ### getJob()   ->  #getjob
  */
-function validateAnchor(apiPath: string, anchor: string): boolean {
-  if (!anchor) return true;
+const validateAnchor = (apiPath: string, anchor: string): boolean => {
+  if (!anchor) {
+    return true;
+  }
 
   // Convert URL path back to file path
   // /monque/api/classes/monque/ -> api/classes/Monque.md
-  const relativePath = apiPath.replace("/monque/api/", "").replace(/\/$/, "");
+  const relativePath = apiPath.replace("/monque/api/", "").replace(/\/$/u, "");
 
   // Find the actual file (case-insensitive match)
   const apiDir = path.join(docsDir, "api");
@@ -152,10 +156,12 @@ function validateAnchor(apiPath: string, anchor: string): boolean {
 
   const matchingFile = possiblePaths.find(
     (p) =>
-      path.relative(apiDir, p).toLowerCase().replace(/\.md$/, "") === relativePath.toLowerCase(),
+      path.relative(apiDir, p).toLowerCase().replace(/\.md$/u, "") === relativePath.toLowerCase(),
   );
 
-  if (!matchingFile) return false;
+  if (matchingFile === undefined) {
+    return false;
+  }
 
   const content = fs.readFileSync(matchingFile, "utf-8");
 
@@ -164,19 +170,19 @@ function validateAnchor(apiPath: string, anchor: string): boolean {
   const anchorName = anchor.replace("#", "").toLowerCase();
 
   // Match headings like: ### methodName() or ## PropertyName
-  const headingRegex = /^#{1,6}\s+([^\n]+)/gm;
+  const headingRegex = /^#{1,6}\s+(?<heading>[^\n]+)/gmu;
   const matches = content.matchAll(headingRegex);
 
   for (const match of matches) {
-    const headingText = match[1];
+    const [, headingText] = match;
     // Generate anchor from heading (simplified - matches common patterns)
     const generatedAnchor = headingText
       .toLowerCase()
-      .replace(/[()[\]]/g, "") // Remove parentheses and brackets
-      .replace(/\s+/g, "-") // Replace spaces with dashes
-      .replace(/[^a-z0-9-]/g, "") // Remove special chars
-      .replace(/-+/g, "-") // Collapse multiple dashes
-      .replace(/^-|-$/g, ""); // Trim dashes
+      .replaceAll(/[()[\]]/gu, "")
+      .replaceAll(/\s+/gu, "-")
+      .replaceAll(/[^a-z0-9-]/gu, "")
+      .replaceAll(/-+/gu, "-")
+      .replaceAll(/^-|-$/gu, "");
 
     if (generatedAnchor === anchorName || headingText.toLowerCase().includes(anchorName)) {
       return true;
@@ -184,12 +190,12 @@ function validateAnchor(apiPath: string, anchor: string): boolean {
   }
 
   return false;
-}
+};
 
 /**
  * Main validation logic
  */
-function main(): void {
+const main = (): void => {
   console.log("🔍 Validating API links in documentation...\n");
 
   const validPaths = buildApiPathMap();
@@ -207,7 +213,7 @@ function main(): void {
     const links = extractApiLinks(content, relativeFile);
 
     for (const link of links) {
-      totalLinks++;
+      totalLinks += 1;
 
       // Normalize path (ensure trailing slash for comparison)
       let normalizedPath = link.path.toLowerCase();
@@ -254,10 +260,7 @@ function main(): void {
   // Group by file for cleaner output
   const byFile: Record<string, InvalidLink[]> = {};
   for (const link of invalidLinks) {
-    if (!byFile[link.file]) {
-      byFile[link.file] = [];
-    }
-    byFile[link.file].push(link);
+    (byFile[link.file] ??= []).push(link);
   }
 
   for (const [file, links] of Object.entries(byFile)) {
@@ -270,6 +273,6 @@ function main(): void {
   }
 
   process.exit(1);
-}
+};
 
 main();

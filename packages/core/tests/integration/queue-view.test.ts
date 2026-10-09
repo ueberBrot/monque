@@ -1,5 +1,5 @@
 import type { Db } from "mongodb";
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import { z } from "zod";
 
 import type { QueueStats } from "@/jobs";
@@ -12,7 +12,6 @@ import {
 } from "@test-utils/test-utils";
 
 type QueueStatsCounts = Omit<QueueStats, "avgProcessingDurationMs">;
-
 const zeroQueueStats: QueueStatsCounts = {
   pending: 0,
   processing: 0,
@@ -21,21 +20,22 @@ const zeroQueueStats: QueueStatsCounts = {
   cancelled: 0,
   total: 0,
 };
-
-function queueStats(overrides: Partial<QueueStatsCounts> = {}): QueueStats {
-  return { ...zeroQueueStats, ...overrides };
-}
-
+const queueStats = (overrides: Partial<QueueStatsCounts> = {}): QueueStats => ({
+  ...zeroQueueStats,
+  ...overrides,
+});
 describe("Management APIs: Queue View Summaries", () => {
   let db: Db;
   const monqueInstances: Monque[] = [];
-
+  const createInitializedMonque = async (collectionNamePrefix: string): Promise<Monque> => {
+    const collectionName = uniqueCollectionName(collectionNamePrefix);
+    const monque = new Monque(db, { collectionName, statsCacheTtlMs: 0 });
+    monqueInstances.push(monque);
+    await monque.initialize();
+    return monque;
+  };
   beforeAll(async () => {
     db = await getTestDb("queue-view-api");
-  });
-
-  afterAll(async () => {
-    await cleanupTestDb(db);
   });
 
   afterEach(async () => {
@@ -43,17 +43,11 @@ describe("Management APIs: Queue View Summaries", () => {
     monqueInstances.length = 0;
   });
 
-  async function createInitializedMonque(collectionNamePrefix: string): Promise<Monque> {
-    const collectionName = uniqueCollectionName(collectionNamePrefix);
-    const monque = new Monque(db, { collectionName, statsCacheTtlMs: 0 });
-    monqueInstances.push(monque);
-    await monque.initialize();
-
-    return monque;
-  }
-
+  afterAll(async () => {
+    await cleanupTestDb(db);
+  });
   describe("getQueueViewSummaries", () => {
-    test("refreshes effective worker policies and pause state even while counts are cached", async () => {
+    it("refreshes effective worker policies and pause state even while counts are cached", async () => {
       const monque = new Monque(db, {
         collectionName: uniqueCollectionName("worker_policies"),
         statsCacheTtlMs: 60_000,
@@ -62,8 +56,8 @@ describe("Management APIs: Queue View Summaries", () => {
       });
       monqueInstances.push(monque);
       await monque.initialize();
-      monque.register("default", async () => {});
-      monque.register("custom", async () => {}, {
+      monque.register("default", () => {});
+      monque.register("custom", () => {}, {
         maxRetries: 4,
         baseRetryInterval: 0,
         maxBackoffDelay: 100,
@@ -93,13 +87,12 @@ describe("Management APIs: Queue View Summaries", () => {
         },
       ]);
       monque.pause();
-      expect((await monque.getQueueViewSummaries()).every((view) => view.worker?.paused)).toBe(
-        true,
-      );
+      const awaitedResult1 = await monque.getQueueViewSummaries();
+      expect(awaitedResult1.every((view) => view.worker?.paused === true)).toBe(true);
       monque.resume();
       monque.pause("custom");
-      monque.register("custom", async () => {}, { replace: true, maxRetries: 1 });
-      expect(await monque.getQueueViewSummaries()).toMatchObject([
+      monque.register("custom", () => {}, { replace: true, maxRetries: 1 });
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
         {
           name: "custom",
           worker: { paused: true, hasSchema: false, maxRetries: 1, baseRetryInterval: 25 },
@@ -109,7 +102,7 @@ describe("Management APIs: Queue View Summaries", () => {
       expect(before[0]?.worker).toMatchObject({ paused: false, hasSchema: true, maxRetries: 4 });
     });
 
-    test("filters persisted and worker-only names with isolated caches and mutation invalidation", async () => {
+    it("filters persisted and worker-only names with isolated caches and mutation invalidation", async () => {
       const monque = new Monque(db, {
         collectionName: uniqueCollectionName("filtered_views"),
         statsCacheTtlMs: 60_000,
@@ -118,36 +111,40 @@ describe("Management APIs: Queue View Summaries", () => {
       await monque.initialize();
       const job = await monque.enqueue("alpha", {});
       await monque.enqueue("beta", {});
-      monque.register("worker-only", async () => undefined);
-      expect(await monque.getQueueViewSummaries()).toHaveLength(3);
-      expect(await monque.getQueueViewSummaries({ name: "alpha" })).toMatchObject([
-        {
-          name: "alpha",
-          hasPersistedJobs: true,
-          hasRegisteredWorker: false,
-          stats: { pending: 1 },
-        },
-      ]);
-      expect(await monque.getQueueViewSummaries({ name: "beta" })).toMatchObject([
-        { name: "beta" },
-      ]);
-      expect(await monque.getQueueViewSummaries({ name: "worker-only" })).toMatchObject([
-        {
-          name: "worker-only",
-          hasPersistedJobs: false,
-          hasRegisteredWorker: true,
-          stats: { total: 0 },
-        },
-      ]);
-      expect(await monque.getQueueViewSummaries({ name: "missing" })).toEqual([]);
+      monque.register("worker-only", () => {});
+      await expect(monque.getQueueViewSummaries()).resolves.toHaveLength(3);
+      expect({
+        alpha: await monque.getQueueViewSummaries({ name: "alpha" }),
+        beta: await monque.getQueueViewSummaries({ name: "beta" }),
+        workerOnly: await monque.getQueueViewSummaries({ name: "worker-only" }),
+      }).toMatchObject({
+        alpha: [
+          {
+            name: "alpha",
+            hasPersistedJobs: true,
+            hasRegisteredWorker: false,
+            stats: { pending: 1 },
+          },
+        ],
+        beta: [{ name: "beta" }],
+        workerOnly: [
+          {
+            name: "worker-only",
+            hasPersistedJobs: false,
+            hasRegisteredWorker: true,
+            stats: { total: 0 },
+          },
+        ],
+      });
+      await expect(monque.getQueueViewSummaries({ name: "missing" })).resolves.toStrictEqual([]);
       await monque.cancelJob(job._id.toHexString());
-      expect(await monque.getQueueViewSummaries({ name: "alpha" })).toMatchObject([
+      await expect(monque.getQueueViewSummaries({ name: "alpha" })).resolves.toMatchObject([
         { name: "alpha", stats: { pending: 0, cancelled: 1 } },
       ]);
-      expect(await monque.getQueueViewSummaries()).toHaveLength(3);
+      await expect(monque.getQueueViewSummaries()).resolves.toHaveLength(3);
     });
 
-    test("cached counts remain isolated, workers stay fresh, and mutations invalidate snapshots", async () => {
+    it("cached counts remain isolated, workers stay fresh, and mutations invalidate snapshots", async () => {
       const monque = new Monque(db, {
         collectionName: uniqueCollectionName("cached_views"),
         statsCacheTtlMs: 60_000,
@@ -156,38 +153,36 @@ describe("Management APIs: Queue View Summaries", () => {
       await monque.initialize();
       const job = await monque.enqueue("email", {});
       const views = await monque.getQueueViewSummaries();
-      const first = views[0];
-      if (!first) throw new Error("Expected queue");
+      const [first] = views;
+      if (!first) {
+        throw new Error("Expected queue");
+      }
       expect(Object.isFrozen(first.stats)).toBe(true);
-      monque.register("new-worker", async () => undefined);
-      expect(await monque.getQueueViewSummaries()).toMatchObject([
+      monque.register("new-worker", () => {});
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
         { name: "email", stats: { pending: 1 } },
         { name: "new-worker", hasRegisteredWorker: true },
       ]);
       await monque.getQueueStats();
       await monque.cancelJob(job._id.toHexString());
-      expect(await monque.getQueueViewSummaries()).toMatchObject([
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
         { name: "email", stats: { pending: 0, cancelled: 1 } },
         { name: "new-worker" },
       ]);
-      expect(await monque.getQueueStats()).toMatchObject({ pending: 0, cancelled: 1 });
+      await expect(monque.getQueueStats()).resolves.toMatchObject({ pending: 0, cancelled: 1 });
     });
 
-    test("returns an empty list when no persisted jobs or workers exist", async () => {
+    it("returns an empty list when no persisted jobs or workers exist", async () => {
       const monque = await createInitializedMonque("queue_view_empty");
-
-      await expect(monque.getQueueViewSummaries()).resolves.toEqual([]);
+      await expect(monque.getQueueViewSummaries()).resolves.toStrictEqual([]);
     });
 
-    test("returns persisted job names sorted by name with statistics", async () => {
+    it("returns persisted job names sorted by name with statistics", async () => {
       const monque = await createInitializedMonque("queue_view_persisted");
-
       await monque.enqueue("report-daily", { reportId: 1 });
       await monque.enqueue("email-send", { emailId: 1 });
       await monque.enqueue("email-send", { emailId: 2 });
-
       const summaries = await monque.getQueueViewSummaries();
-
       expect(summaries).toMatchObject([
         {
           name: "email-send",
@@ -206,18 +201,14 @@ describe("Management APIs: Queue View Summaries", () => {
       ]);
     });
 
-    test("includes historical-only, worker-only, and mixed queue views sorted by name", async () => {
+    it("includes historical-only, worker-only, and mixed queue views sorted by name", async () => {
       const monque = await createInitializedMonque("queue_view_mixed");
-
-      monque.register("billing-sync", async () => undefined, { concurrency: 4 });
-      monque.register("zeta-worker-only", async () => undefined, { concurrency: 2 });
-
+      monque.register("billing-sync", () => {}, { concurrency: 4 });
+      monque.register("zeta-worker-only", () => {}, { concurrency: 2 });
       await monque.enqueue("alpha-history-only", { reportId: 1 });
       await monque.enqueue("billing-sync", { accountId: 1 });
       await monque.enqueue("billing-sync", { accountId: 2 });
-
       const summaries = await monque.getQueueViewSummaries();
-
       expect(summaries).toMatchObject([
         {
           name: "alpha-history-only",

@@ -1,5 +1,5 @@
 /**
- * @monque/tsed - Decorator Types
+ * `@monque/tsed` - Decorator Types
  */
 
 import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from "@monque/core";
@@ -14,6 +14,7 @@ import type { WorkerOptions as CoreWorkerOptions, ScheduleOptions } from "@monqu
  * Maps to @monque/core WorkerOptions. All standard Monque worker options
  * are exposed here for decorator-based configuration.
  */
+// oxlint-disable-next-line typescript/no-empty-interface, typescript/no-empty-object-type -- This public interface supports declaration merging.
 export interface JobDecoratorOptions extends CoreWorkerOptions {}
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,4 +129,8 @@ export interface JobStore {
    * Cron job registrations from @Cron decorators.
    */
   cronJobs: CronMetadata[];
+}
+
+export interface JobDecoratorTarget {
+  readonly constructor: object;
 }

@@ -3,42 +3,49 @@ import { expect, test } from "./fixture.js";
 for (const view of ["queue-views", "queue-views/email", "jobs", "job-detail", "health"]) {
   test(`${view} shows its own skeleton without blocking navigation`, async ({ page, app }) => {
     const job = await app.seed();
-    let release = () => {};
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: pending, resolve: release }: PromiseWithResolvers<void> =
+      Promise.withResolvers();
     await page.route("**/api/v1/**", async (request) => {
       await pending;
       await request.continue();
     });
-    const path = view === "job-detail" ? `jobs/${job._id}` : view;
+    const path = view === "job-detail" ? `jobs/${String(job._id)}` : view;
     await page.goto(`${app.base}/dashboard/${path}`);
-    const label =
-      view === "queue-views"
-        ? "Loading Queue Views…"
-        : view === "queue-views/email"
-          ? "Loading Queue View…"
-          : view === "jobs"
-            ? "Loading jobs…"
-            : view === "job-detail"
-              ? "Loading job details…"
-              : "Loading Health…";
+    const label = (() => {
+      if (view === "queue-views") {
+        return "Loading Queue Views…";
+      }
+      if (view === "queue-views/email") {
+        return "Loading Queue View…";
+      }
+      if (view === "jobs") {
+        return "Loading jobs…";
+      }
+      if (view === "job-detail") {
+        return "Loading job details…";
+      }
+      return "Loading Health…";
+    })();
     const loading = page.getByRole("status", { name: label });
     await expect(loading).toBeVisible();
-    await expect(page.getByRole("button", { name: /Commands/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /Commands/u })).toBeEnabled();
     expect(await loading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
     release();
     await expect(loading).toHaveCount(0);
-    const heading =
-      view === "queue-views"
-        ? "Queue Views"
-        : view === "jobs"
-          ? "Jobs"
-          : view === "health"
-            ? "Health"
-            : "email";
+    const heading = (() => {
+      if (view === "queue-views") {
+        return "Queue Views";
+      }
+      if (view === "jobs") {
+        return "Jobs";
+      }
+      if (view === "health") {
+        return "Health";
+      }
+      return "email";
+    })();
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
   });
 }

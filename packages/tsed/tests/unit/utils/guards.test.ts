@@ -1,25 +1,22 @@
+import { fromPartial } from "@total-typescript/shoehorn";
 import type { Db } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  isMongooseConnection,
-  isMongooseService,
-  type MongooseConnection,
-  type MongooseService,
-} from "@/utils";
+import { isMongooseConnection, isMongooseService } from "@/utils";
+import type { MongooseConnection, MongooseService } from "@/utils";
+
+// Mock Db instance
+const createMockDb = (): Db =>
+  fromPartial<Db>({
+    databaseName: "test-db",
+    collection: vi.fn<Db["collection"]>(),
+  });
 
 describe("Type Guards", () => {
-  // Mock Db instance
-  const createMockDb = (): Db =>
-    ({
-      databaseName: "test-db",
-      collection: vi.fn(),
-    }) as unknown as Db;
-
-  describe("isMongooseService", () => {
+  describe(isMongooseService, () => {
     it("should return true for valid MongooseService", () => {
       const service: MongooseService = {
-        get: vi.fn(),
+        get: vi.fn<MongooseService["get"]>(),
       };
       expect(isMongooseService(service)).toBe(true);
     });
@@ -44,7 +41,7 @@ describe("Type Guards", () => {
     });
   });
 
-  describe("isMongooseConnection", () => {
+  describe(isMongooseConnection, () => {
     it("should return true for valid MongooseConnection", () => {
       const connection: MongooseConnection = {
         db: createMockDb(),

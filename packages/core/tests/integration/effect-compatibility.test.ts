@@ -1,13 +1,9 @@
 import type { Db } from "mongodb";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { z } from "zod";
 
-import {
-  JobStatus,
-  Monque,
-  type MonqueEventMap,
-  NonRetryableError,
-  ShutdownTimeoutError,
-} from "@/index";
+import { JobStatus, Monque, NonRetryableError, ShutdownTimeoutError } from "@/index";
+import type { MonqueEventMap } from "@/index";
 import {
   cleanupTestDb,
   getTestDb,
@@ -17,17 +13,15 @@ import {
 } from "@test-utils/test-utils";
 
 class DeliveryError extends Error {
+  override name = "DeliveryError";
   readonly code = "DELIVERY_REJECTED";
 }
-
 describe("Promise worker compatibility", () => {
   let db: Db;
   const instances: Monque[] = [];
-
   beforeAll(async () => {
     db = await getTestDb("effect-compatibility");
   });
-
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
@@ -55,25 +49,29 @@ describe("Promise worker compatibility", () => {
       instances.push(monque);
       await monque.initialize();
       const failures: MonqueEventMap["job:fail"][] = [];
-      monque.on("job:fail", (event) => failures.push(event));
-      monque.register("delivery", async () => {
-        throw error;
+      monque.on("job:fail", (event) => {
+        failures.push(event);
       });
-
+      monque.register("delivery", vi.fn<() => Promise<void>>().mockRejectedValue(error));
       const job = await monque.enqueue("delivery", {});
       monque.start();
-      await waitFor(async () => failures.length === 1);
+      await waitFor(() => failures.length === 1);
       await monque.stop();
-
-      expect(failures).toHaveLength(1);
-      expect(failures[0]?.error).toBe(error);
-      expect(failures[0]?.willRetry).toBe(false);
-      expect(await monque.getJob(job._id)).toMatchObject({
+      expect({
+        failures: failures.length,
+        originalError: failures[0]?.error === error,
+        failures0WillRetry: failures[0]?.willRetry,
+      }).toStrictEqual({
+        failures: 1,
+        originalError: true,
+        failures0WillRetry: false,
+      });
+      await expect(monque.getJob(job._id)).resolves.toMatchObject({
         status: JobStatus.FAILED,
         failCount: 1,
         failReason: error.message,
       });
-      expect(await monque.getQueueViewSummaries({ name: "delivery" })).toMatchObject([
+      await expect(monque.getQueueViewSummaries({ name: "delivery" })).resolves.toMatchObject([
         { stats: { pending: 0, processing: 0, failed: 1 }, worker: { activeCount: 0 } },
       ]);
     },
@@ -90,24 +88,29 @@ describe("Promise worker compatibility", () => {
     });
     instances.push(monque);
     await monque.initialize();
-    const releaseFirst = Promise.withResolvers<void>();
-    const releaseSecond = Promise.withResolvers<void>();
+    const releaseFirst: PromiseWithResolvers<void> = Promise.withResolvers();
+    const releaseSecond: PromiseWithResolvers<void> = Promise.withResolvers();
     const started: number[] = [];
     const completed: number[] = [];
     const shutdownErrors: ShutdownTimeoutError[] = [];
     let active = 0;
     let peakActive = 0;
     let firstFinished = false;
-
     monque.on("job:error", ({ error }) => {
-      if (error instanceof ShutdownTimeoutError) shutdownErrors.push(error);
+      if (error instanceof ShutdownTimeoutError) {
+        shutdownErrors.push(error);
+      }
     });
     monque.on("job:complete", ({ job }) => {
-      if (job.name === "delivery") completed.push((job.data as { sequence: number }).sequence);
+      if (job.name === "delivery") {
+        completed.push(z.object({ sequence: z.number() }).parse(job.data).sequence);
+      }
     });
-    monque.register<{ sequence: number }>("delivery", async (job) => {
+    monque.register<{
+      sequence: number;
+    }>("delivery", async (job) => {
       started.push(job.data.sequence);
-      active++;
+      active += 1;
       peakActive = Math.max(peakActive, active);
       try {
         if (job.data.sequence === 1) {
@@ -117,66 +120,89 @@ describe("Promise worker compatibility", () => {
           await releaseSecond.promise;
         }
       } finally {
-        active--;
+        active -= 1;
       }
     });
-    monque.register("checkpoint", async () => {});
-
+    monque.register("checkpoint", vi.fn<() => Promise<void>>().mockResolvedValue(undefined));
     const first = await monque.enqueue("delivery", { sequence: 1 });
     monque.start();
     try {
-      await waitFor(async () => started.length === 1);
+      await waitFor(() => started.length === 1);
       await expect(monque.stop()).resolves.toBeUndefined();
-
-      expect(shutdownErrors).toHaveLength(1);
-      expect(shutdownErrors[0]?.incompleteJobs.map((job) => job._id?.toString())).toEqual([
-        first._id.toString(),
-      ]);
-      expect(firstFinished).toBe(false);
-      expect(completed).toEqual([]);
-      expect(await monque.getJob(first._id)).toMatchObject({ status: JobStatus.PROCESSING });
-      expect(await monque.getQueueViewSummaries({ name: "delivery" })).toMatchObject([
-        { worker: { concurrency: 1, activeCount: 1 } },
-      ]);
-
+      const stoppedJob = await monque.getJob(first._id);
+      const stoppedQueues = await monque.getQueueViewSummaries({ name: "delivery" });
+      expect({
+        shutdownErrors: shutdownErrors.length,
+        incompleteJobIds: shutdownErrors[0]?.incompleteJobs.map((job) => job._id?.toString()),
+        firstFinished,
+        completed,
+        job: stoppedJob,
+        queueViews: stoppedQueues,
+      }).toMatchObject({
+        shutdownErrors: 1,
+        incompleteJobIds: [first._id.toString()],
+        firstFinished: false,
+        completed: [],
+        job: { status: JobStatus.PROCESSING },
+        queueViews: [{ worker: { concurrency: 1, activeCount: 1 } }],
+      });
       const second = await monque.enqueue("delivery", { sequence: 2 });
       const checkpoint = await monque.enqueue("checkpoint", {});
       monque.start();
-      await waitFor(
-        async () => (await monque.getJob(checkpoint._id))?.status === JobStatus.COMPLETED,
-      );
-
-      expect(started).toEqual([1]);
-      expect(await monque.getJob(second._id)).toMatchObject({ status: JobStatus.PENDING });
-      expect(await monque.getQueueViewSummaries({ name: "delivery" })).toMatchObject([
-        { stats: { pending: 1, processing: 1 }, worker: { activeCount: 1 } },
-      ]);
-
+      await waitFor(async () => {
+        const awaitedResult1 = await monque.getJob(checkpoint._id);
+        return awaitedResult1?.status === JobStatus.COMPLETED;
+      });
+      const waitingJob = await monque.getJob(second._id);
+      const restartedQueues = await monque.getQueueViewSummaries({ name: "delivery" });
+      expect({ started, job: waitingJob, queueViews: restartedQueues }).toMatchObject({
+        started: [1],
+        job: { status: JobStatus.PENDING },
+        queueViews: [{ stats: { pending: 1, processing: 1 }, worker: { activeCount: 1 } }],
+      });
       releaseFirst.resolve();
-      await waitFor(async () => started.length === 2 && completed.includes(1));
-      expect(firstFinished).toBe(true);
-      expect(started).toEqual([1, 2]);
-      expect(peakActive).toBe(1);
-      expect(await monque.getJob(first._id)).toMatchObject({ status: JobStatus.COMPLETED });
-      expect(await monque.getQueueViewSummaries({ name: "delivery" })).toMatchObject([
-        { stats: { pending: 0, processing: 1, completed: 1 }, worker: { activeCount: 1 } },
-      ]);
-
+      await waitFor(() => started.length === 2 && completed.includes(1));
+      const completedFirstJob = await monque.getJob(first._id);
+      const releasedQueues = await monque.getQueueViewSummaries({ name: "delivery" });
+      expect({
+        firstFinished,
+        started,
+        peakActive,
+        job: completedFirstJob,
+        queueViews: releasedQueues,
+      }).toMatchObject({
+        firstFinished: true,
+        started: [1, 2],
+        peakActive: 1,
+        job: { status: JobStatus.COMPLETED },
+        queueViews: [
+          { stats: { pending: 0, processing: 1, completed: 1 }, worker: { activeCount: 1 } },
+        ],
+      });
       releaseSecond.resolve();
       await waitFor(async () => {
-        const summary = (await monque.getQueueViewSummaries({ name: "delivery" }))[0];
+        const awaitedResult2 = await monque.getQueueViewSummaries({ name: "delivery" });
+        const [summary] = awaitedResult2;
         return summary?.stats.completed === 2 && summary.worker?.activeCount === 0;
       });
-      expect(completed).toEqual([1, 2]);
-      expect(peakActive).toBe(1);
-      expect(active).toBe(0);
-      expect(shutdownErrors).toHaveLength(1);
+      expect({
+        completed,
+        peakActive,
+        active,
+        shutdownErrors: shutdownErrors.length,
+      }).toStrictEqual({
+        completed: [1, 2],
+        peakActive: 1,
+        active: 0,
+        shutdownErrors: 1,
+      });
     } finally {
       releaseFirst.resolve();
       releaseSecond.resolve();
       await monque.stop();
       await waitFor(async () => {
-        const summary = (await monque.getQueueViewSummaries({ name: "delivery" }))[0];
+        const awaitedResult3 = await monque.getQueueViewSummaries({ name: "delivery" });
+        const [summary] = awaitedResult3;
         return active === 0 && summary?.worker?.activeCount === 0;
       });
     }

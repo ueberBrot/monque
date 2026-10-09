@@ -1,7 +1,6 @@
 /**
  * Shared constants for test files to reduce duplication.
  */
-
 export const TEST_CONSTANTS = {
   /** Default collection name for tests */
   COLLECTION_NAME: "monque_jobs",

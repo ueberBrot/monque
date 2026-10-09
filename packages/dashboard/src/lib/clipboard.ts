@@ -1,9 +1,9 @@
 import { toast } from "sonner";
 
-async function copyToClipboard(
+const copyToClipboard = async (
   value: string,
   successMessage = "Copied to clipboard",
-): Promise<void> {
+): Promise<void> => {
   try {
     await navigator.clipboard.writeText(value);
     toast.success(successMessage);
@@ -13,6 +13,5 @@ async function copyToClipboard(
       duration: Number.POSITIVE_INFINITY,
     });
   }
-}
-
+};
 export { copyToClipboard };

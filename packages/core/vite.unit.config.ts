@@ -4,9 +4,9 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
-      "@test-utils": fileURLToPath(new URL("./tests/setup", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
+      "@tests": fileURLToPath(new URL("tests", import.meta.url)),
+      "@test-utils": fileURLToPath(new URL("tests/setup", import.meta.url)),
     },
   },
   test: {
@@ -17,6 +17,6 @@ export default defineConfig({
     setupFiles: ["./tests/setup/seed.ts"],
     // Shorter timeouts for unit tests
     testTimeout: 5000,
-    hookTimeout: 10000,
+    hookTimeout: 10_000,
   },
 });

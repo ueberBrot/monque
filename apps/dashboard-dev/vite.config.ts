@@ -50,7 +50,7 @@ const config = defineConfig(({ mode }) => {
           cache: false,
         },
         "type-check": {
-          command: "vp lint --type-aware --type-check -A all",
+          command: "vp lint --type-aware --type-check --deny-warnings",
           dependsOn: [
             {
               task: "build",
@@ -96,7 +96,7 @@ const config = defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("../../packages/dashboard/src", import.meta.url)),
-        "@dashboard-dev": fileURLToPath(new URL("./src", import.meta.url)),
+        "@dashboard-dev": fileURLToPath(new URL("src", import.meta.url)),
         "@monque/management/contract": fileURLToPath(
           new URL("../../packages/management/src/contract.ts", import.meta.url),
         ),
@@ -107,7 +107,7 @@ const config = defineConfig(({ mode }) => {
       emptyOutDir: true,
     },
     server:
-      devMode === "live" && liveApiBaseUrl
+      devMode === "live" && liveApiBaseUrl !== undefined && liveApiBaseUrl.length > 0
         ? {
             port: 3400,
             proxy: {
@@ -120,13 +120,17 @@ const config = defineConfig(({ mode }) => {
         : { port: 3400 },
     plugins:
       lazyPlugins(async () => {
-        if (process.env["VITEST"]) return [viteReact()];
+        if (process.env["VITEST"] !== undefined && process.env["VITEST"].length > 0) {
+          return [viteReact()];
+        }
         // Defer workspace runtime imports until builds have produced their entrypoints.
         const loaded = await loadConfigFromFile(
           { command: "serve", mode },
-          fileURLToPath(new URL("./vite.plugins.config.ts", import.meta.url)),
+          fileURLToPath(new URL("vite.plugins.config.ts", import.meta.url)),
         );
-        if (!loaded) throw new Error("Could not load dashboard development plugins");
+        if (!loaded) {
+          throw new Error("Could not load dashboard development plugins");
+        }
         return loaded.config.plugins ?? [];
       }) ?? [],
   };

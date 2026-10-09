@@ -14,6 +14,15 @@ const OPTIONAL_JOB_FIELDS = [
   "timezone",
   "uniqueKey",
 ] as const satisfies readonly (keyof PersistedJob)[];
+type OptionalJobField = (typeof OPTIONAL_JOB_FIELDS)[number];
+
+const copyOptionalField = <T, K extends OptionalJobField>(
+  target: PersistedJob<T>,
+  field: K,
+  value: PersistedJob<T>[K],
+): void => {
+  target[field] = value;
+};
 
 /**
  * Convert a raw MongoDB document to a strongly-typed {@link PersistedJob}.
@@ -21,29 +30,33 @@ const OPTIONAL_JOB_FIELDS = [
  * Maps required fields directly and conditionally includes optional fields
  * only when they are present in the document (`!== undefined`).
  *
- * @internal Not part of the public API.
+ * Not part of the public API.
+ * @internal
  * @template T - The job data payload type
  * @param doc - The raw MongoDB document with `_id`
  * @returns A strongly-typed PersistedJob object with guaranteed `_id`
  */
-export function documentToPersistedJob<T = unknown>(doc: WithId<Document>): PersistedJob<T> {
+export const documentToPersistedJob = <T = unknown>(doc: WithId<Document>): PersistedJob<T> => {
+  // SAFETY: Monque writes the metadata shape; payload T remains the caller's contract.
+  // This projection preserves legacy stored values instead of adding validation here.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The MongoDB Document boundary erases the persisted job and generic payload types.
+  const source = doc as PersistedJob<T>;
   const job: PersistedJob<T> = {
-    _id: doc._id,
-    name: doc["name"],
-    data: doc["data"],
-    status: doc["status"],
-    priority: doc["priority"] ?? 0,
-    nextRunAt: doc["nextRunAt"],
-    failCount: doc["failCount"],
-    createdAt: doc["createdAt"],
-    updatedAt: doc["updatedAt"],
+    _id: source._id,
+    name: source.name,
+    data: source.data,
+    status: source.status,
+    priority: source.priority ?? 0,
+    nextRunAt: source.nextRunAt,
+    failCount: source.failCount,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
   };
-
   // Only set optional properties if they exist
-  const optionalFields: Partial<Record<(typeof OPTIONAL_JOB_FIELDS)[number], unknown>> = job;
   for (const field of OPTIONAL_JOB_FIELDS) {
-    if (doc[field] !== undefined) optionalFields[field] = doc[field];
+    if (source[field] !== undefined) {
+      copyOptionalField(job, field, source[field]);
+    }
   }
-
   return job;
-}
+};

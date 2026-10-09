@@ -6,7 +6,7 @@ import { runJobActions } from "@/features/jobs/job-actions";
 import { createDashboardManagementApi } from "@/management-client";
 import { createDashboardQueryClient } from "@/query-client";
 
-describe("runJobActions", () => {
+describe(runJobActions, () => {
   it("stores the returned job after a single selected job is retried", async () => {
     const job: JobDto = {
       id: "000000000000000000000001",
@@ -26,17 +26,17 @@ describe("runJobActions", () => {
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
-      fetch: async () => Response.json(job),
+      fetch: async () => await Promise.resolve(Response.json(job)),
     });
     const client = createDashboardQueryClient();
     const mutation = client.getMutationCache().build(client, jobActionMutationOptions(api, client));
-    expect(await mutation.execute({ action: "retry", jobIds: [job.id] })).toMatchObject({
+    await expect(mutation.execute({ action: "retry", jobIds: [job.id] })).resolves.toMatchObject({
       count: 1,
       jobs: [job],
     });
     expect(
       client.getQueryData(api.orpc.job.queryKey({ input: { params: { id: job.id } } })),
-    ).toEqual(job);
+    ).toStrictEqual(job);
     client.clear();
   });
 
@@ -49,7 +49,7 @@ describe("runJobActions", () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
-      expect(await request.json()).toEqual({ action: "retry", ids });
+      await expect(request.json()).resolves.toStrictEqual({ action: "retry", ids });
       return Response.json({
         count: 1,
         errors: [
@@ -69,13 +69,13 @@ describe("runJobActions", () => {
     client.getQueryCache().build(client, capabilities);
     client.getQueryCache().build(client, health);
     const mutation = client.getMutationCache().build(client, jobActionMutationOptions(api, client));
-    expect(await mutation.execute({ action: "retry", jobIds: ids })).toMatchObject({
+    await expect(mutation.execute({ action: "retry", jobIds: ids })).resolves.toMatchObject({
       count: 1,
       failed: [ids[1], ids[2]],
       firstError: { status: 409 },
       authorizationChanged: true,
     });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledOnce();
     expect(client.getQueryState(capabilities.queryKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(health.queryKey)?.isInvalidated).toBe(false);
     client.clear();
@@ -89,16 +89,20 @@ describe("runJobActions", () => {
       fetch: async (input) => {
         const request = input instanceof Request ? input : new Request(input);
         expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
-        expect(await request.json()).toEqual({ action: "priority", ids, priority: -8 });
+        await expect(request.json()).resolves.toStrictEqual({
+          action: "priority",
+          ids,
+          priority: -8,
+        });
         return Response.json({
           count: 1,
           errors: [{ jobId: ids[1], error: "Job is processing", status: 409 }],
         });
       },
     });
-    expect(
-      await runJobActions(api, { action: "priority", jobIds: ids, priority: -8 }),
-    ).toMatchObject({
+    await expect(
+      runJobActions(api, { action: "priority", jobIds: ids, priority: -8 }),
+    ).resolves.toMatchObject({
       count: 1,
       failed: [ids[1]],
       firstError: { status: 409, message: "Job is processing" },
@@ -112,7 +116,7 @@ describe("runJobActions", () => {
       origin: "https://dashboard.test",
       fetch,
     });
-    expect(await runJobActions(api, { action: "delete", jobIds: [] })).toEqual({
+    await expect(runJobActions(api, { action: "delete", jobIds: [] })).resolves.toStrictEqual({
       action: "delete",
       count: 0,
       jobs: [],

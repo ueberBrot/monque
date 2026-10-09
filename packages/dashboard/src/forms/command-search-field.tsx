@@ -4,13 +4,13 @@ import { CommandInput } from "@/components/ui/command";
 
 import { useFieldContext } from "./context.js";
 
-export function CommandSearchField({
+export const CommandSearchField = ({
   label,
   placeholder,
 }: {
   label: string;
   placeholder?: string;
-}) {
+}) => {
   const field = useFieldContext<string>();
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -27,4 +27,4 @@ export function CommandSearchField({
       onBlur={field.handleBlur}
     />
   );
-}
+};

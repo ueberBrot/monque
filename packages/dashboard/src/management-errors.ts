@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// oxlint-disable promise/prefer-await-to-then -- Zod.catch defines a synchronous parse fallback, not a Promise handler.
 const ErrorMessageSchema = z.string().min(1).optional().catch(undefined);
 const ManagementErrorSchema = z.object({
   status: z.number().int().optional().catch(undefined),
@@ -12,31 +13,28 @@ const ManagementErrorSchema = z.object({
     .optional()
     .catch(undefined),
 });
+const ReadManagementErrorSchema = ManagementErrorSchema.transform(({ status, message, data }) => ({
+  status,
+  message: data?.error ?? data?.body?.error ?? message,
+})).catch(() => ({ status: undefined, message: undefined }));
+const readManagementError = ReadManagementErrorSchema.parse.bind(ReadManagementErrorSchema);
 
-function readManagementError(error: unknown): {
-  status: number | undefined;
-  message: string | undefined;
-} {
-  const parsed = ManagementErrorSchema.safeParse(error);
-  if (!parsed.success) return { status: undefined, message: undefined };
-  const { status, message, data } = parsed.data;
-  return { status, message: data?.error ?? data?.body?.error ?? message };
-}
-
+// oxlint-enable promise/prefer-await-to-then
 type DashboardErrorCode = "unauthorized" | "forbidden" | "not-found" | "error";
 type DashboardErrorResource = "health" | "jobs" | "job" | "queue-views";
-type ErrorPresentation = {
+interface ErrorPresentation {
   readonly title: string;
   readonly description: string;
   readonly tone: "default" | "danger" | "warning";
-};
-
+}
 /** Keep read-error classification and recovery copy together. */
-function resolveDashboardApiErrorState(
-  error: unknown,
+const resolveDashboardApiErrorState = (
+  error: Parameters<typeof readManagementError>[0],
   resource: DashboardErrorResource = "health",
   failureTitle?: string,
-): ErrorPresentation & { readonly code: DashboardErrorCode } {
+): ErrorPresentation & {
+  readonly code: DashboardErrorCode;
+} => {
   const { status, message } = readManagementError(error);
   if (status === 401) {
     return {
@@ -76,6 +74,5 @@ function resolveDashboardApiErrorState(
       message ?? "Dashboard data could not be loaded. Check your connection, then retry.",
     tone: "danger",
   };
-}
-
+};
 export { readManagementError, resolveDashboardApiErrorState };

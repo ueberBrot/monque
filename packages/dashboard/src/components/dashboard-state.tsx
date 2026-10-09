@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type DashboardStateTone = "default" | "danger" | "warning";
-
-function DashboardState({
+const DashboardState = ({
   title,
   description,
   tone = "default",
@@ -16,16 +15,21 @@ function DashboardState({
   readonly description: string;
   readonly tone?: DashboardStateTone;
   readonly children?: ReactNode;
-}) {
+}) => {
+  const hasChildren = Boolean(children);
   return (
     <section
       className={cn(
         "grid min-w-0 gap-4 rounded-xl border p-6",
-        tone === "danger"
-          ? "border-destructive/30 bg-destructive/10 text-destructive"
-          : tone === "warning"
-            ? "border-warning/30 bg-warning/10 text-warning-foreground"
-            : "border-border bg-card text-foreground",
+        (() => {
+          if (tone === "danger") {
+            return "border-destructive/30 bg-destructive/10 text-destructive";
+          }
+          if (tone === "warning") {
+            return "border-warning/30 bg-warning/10 text-warning-foreground";
+          }
+          return "border-border bg-card text-foreground";
+        })(),
       )}
     >
       <div className="grid min-w-0 gap-2" role={tone === "default" ? undefined : "alert"}>
@@ -39,30 +43,26 @@ function DashboardState({
           {description}
         </p>
       </div>
-      {children ? <div className="flex flex-wrap gap-2">{children}</div> : null}
+      {hasChildren ? <div className="flex flex-wrap gap-2">{children}</div> : null}
     </section>
   );
-}
-
-function RetryButton({
+};
+const RetryButton = ({
   onRetry,
   fetching = false,
 }: {
   readonly onRetry: () => void;
   readonly fetching?: boolean;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      onClick={onRetry}
-      disabled={fetching}
-      aria-busy={fetching}
-    >
-      <RefreshCw className="size-4" aria-hidden="true" />
-      {fetching ? "Retrying…" : "Retry"}
-    </Button>
-  );
-}
-
+}) => (
+  <Button
+    type="button"
+    variant="outline"
+    onClick={onRetry}
+    disabled={fetching}
+    aria-busy={fetching}
+  >
+    <RefreshCw className="size-4" aria-hidden="true" />
+    {fetching ? "Retrying…" : "Retry"}
+  </Button>
+);
 export { DashboardState, RetryButton };

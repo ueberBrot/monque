@@ -14,10 +14,9 @@ import { LifecycleManager } from "./services/lifecycle-manager.js";
 import { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
 
-type SchedulerExecution = {
+interface SchedulerExecution {
   readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
-};
-
+}
 export class SchedulerServices extends Context.Service<
   SchedulerServices,
   {
@@ -30,17 +29,18 @@ export class SchedulerServices extends Context.Service<
   }
 >()("@monque/core/scheduler/Services") {}
 
-export function makeSchedulerLayer(
+export const makeSchedulerLayer = (
   environment: SchedulerContext,
   execution: SchedulerExecution,
-): Layer.Layer<SchedulerServices, unknown> {
-  return Layer.effect(
+): Layer.Layer<SchedulerServices, unknown> =>
+  Layer.effect(
     SchedulerServices,
-    Effect.gen(function* () {
+    Effect.gen(function* constructSchedulerServices() {
       const lifecycle = new JobLifecycle(environment);
-      if (environment.options.recoverStaleJobs) yield* lifecycle.recoverStaleJobs();
+      if (environment.options.recoverStaleJobs) {
+        yield* lifecycle.recoverStaleJobs();
+      }
       yield* lifecycle.assertNoActiveInstanceCollision();
-
       const clock = yield* Clock.Clock;
       const processing = new JobProcessor(environment, lifecycle);
       const notifications = new PendingNotificationRouter(
@@ -49,7 +49,6 @@ export function makeSchedulerLayer(
         execution.runFork,
         clock,
       );
-
       return {
         intake: new JobIntake(environment),
         manager: new JobManager(environment),
@@ -60,4 +59,3 @@ export function makeSchedulerLayer(
       };
     }),
   );
-}

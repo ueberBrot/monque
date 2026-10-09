@@ -29,7 +29,7 @@ export default defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
+        command: "vp lint --type-aware --type-check --deny-warnings",
         dependsOn: [
           {
             task: "build",
@@ -86,8 +86,8 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
+      "@tests": fileURLToPath(new URL("tests", import.meta.url)),
     },
   },
   test: {
@@ -95,6 +95,6 @@ export default defineConfig({
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
     testTimeout: 5000,
-    hookTimeout: 10000,
+    hookTimeout: 10_000,
   },
 });

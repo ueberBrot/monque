@@ -22,7 +22,7 @@ export interface ManagementExpressContextInput {
  * Management authorization hooks and payload serializers receive that same value as their
  * `context` input. If omitted, the Management Surface receives no application context.
  *
- * @typeParam TContext - Application-specific context exposed to management hooks.
+ * @template TContext - Application-specific context exposed to management hooks.
  *
  * @example Derive context from host authentication middleware.
  * ```typescript
@@ -52,7 +52,7 @@ export type ManagementExpressContextFactory<TContext = unknown> = (
  * current request, for example forwarded headers, tenant routing, or an Express mount path.
  * Empty strings are normalized to `/`.
  *
- * @defaultValue The Express mount path, based on `req.baseUrl`.
+ * @default The Express mount path, based on `req.baseUrl`.
  *
  * @example Dynamic server URL.
  * ```typescript
@@ -85,7 +85,7 @@ export interface ManagementExpressOpenApiOptions {
    * A leading slash is optional. For example, both `openapi.json` and `/openapi.json`
    * serve the document at the same router-relative path.
    *
-   * @defaultValue `/openapi.json`
+   * @default `/openapi.json`
    */
   path?: string;
   /**
@@ -94,7 +94,7 @@ export interface ManagementExpressOpenApiOptions {
    * This value is written to `document.servers` on the response. It does not change which
    * routes the adapter serves.
    *
-   * @defaultValue The Express mount path, based on `req.baseUrl`.
+   * @default The Express mount path, based on `req.baseUrl`.
    */
   serverUrl?: ManagementExpressOpenApiServerUrl;
 }
@@ -109,7 +109,7 @@ export interface ManagementExpressOpenApiOptions {
  * before the router, then use `context` and `authorize` for action-grained management
  * authorization when needed.
  *
- * @typeParam TContext - Application-specific context exposed to management hooks.
+ * @template TContext - Application-specific context exposed to management hooks.
  *
  * @example Mount the adapter under /monque.
  * ```typescript
@@ -153,7 +153,7 @@ export interface ManagementExpressRouterOptions<
    * Pass `false` when the host application serves the generated OpenAPI document itself.
    * Pass an object to customize the router-relative path or OpenAPI server URL.
    *
-   * @defaultValue `{ path: '/openapi.json', serverUrl: req.baseUrl }`
+   * @default `{ path: '/openapi.json', serverUrl: req.baseUrl }`
    */
   openApi?: false | ManagementExpressOpenApiOptions;
 }

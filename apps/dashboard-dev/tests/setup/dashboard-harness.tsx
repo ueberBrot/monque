@@ -8,7 +8,7 @@ import { DashboardProviders } from "@/providers";
 import { createDashboardQueryClient } from "@/query-client";
 import { getRouter } from "@/router";
 
-function createDashboardHarness(
+const createDashboardHarness = (
   pathname: string,
   options: {
     readonly fetch?: typeof globalThis.fetch;
@@ -17,15 +17,17 @@ function createDashboardHarness(
     readonly origin?: string;
     readonly history?: "browser" | "memory";
   } = {},
-) {
-  if (options.history !== "memory") window.history.replaceState({}, "", pathname);
-  const runtimeConfig = {
+) => {
+  if (options.history !== "memory") {
+    window.history.replaceState({}, "", pathname);
+  }
+  const runtimeConfig: Parameters<typeof getRouter>[0]["runtimeConfig"] = {
     apiBaseUrl: "/",
     basePath: "/",
-    ...(options.pollingIntervalMs === undefined
-      ? {}
-      : { pollingIntervalMs: options.pollingIntervalMs }),
   };
+  if (options.pollingIntervalMs !== undefined) {
+    runtimeConfig.pollingIntervalMs = options.pollingIntervalMs;
+  }
   const managementApi = createDashboardManagementApi({
     apiBaseUrl: runtimeConfig.apiBaseUrl,
     fetch:
@@ -40,11 +42,9 @@ function createDashboardHarness(
       ? { history: createMemoryHistory({ initialEntries: [pathname] }) }
       : undefined,
   );
-
   return {
     router,
     render: () => render(<DashboardProviders queryClient={queryClient} router={router} />),
   };
-}
-
+};
 export { createDashboardHarness };

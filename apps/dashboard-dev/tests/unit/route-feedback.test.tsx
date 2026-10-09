@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-
 import {
   createMemoryHistory,
   createRootRoute,
@@ -25,10 +24,14 @@ describe("Router feedback", () => {
         getParentRoute: () => root,
         path: "/queue-views",
         loader: () => {
-          if (failed && failure === "loader") throw new Error("Temporary loader failure");
+          if (failed && failure === "loader") {
+            throw new Error("Temporary loader failure");
+          }
         },
         component: () => {
-          if (failed && failure === "render") throw new Error("Temporary render failure");
+          if (failed && failure === "render") {
+            throw new Error("Temporary render failure");
+          }
           return <h1>Recovered page</h1>;
         },
       });
@@ -42,7 +45,9 @@ describe("Router feedback", () => {
         await screen.findByRole("heading", { name: "Dashboard route failed" });
         failed = false;
         fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-        expect(await screen.findByRole("heading", { name: "Recovered page" })).toBeTruthy();
+        await expect(
+          screen.findByRole("heading", { name: "Recovered page" }),
+        ).resolves.toBeInstanceOf(HTMLElement);
         expect(router.state.location.pathname).toBe("/queue-views");
       } finally {
         warn.mockRestore();
@@ -52,15 +57,15 @@ describe("Router feedback", () => {
   );
 
   it("uses the shared pending component while a route loader is unresolved", async () => {
-    let release = () => {};
-    const pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: pending, resolve: release }: PromiseWithResolvers<void> =
+      Promise.withResolvers();
     const root = createRootRoute({ component: Outlet });
     const route = createRoute({
       getParentRoute: () => root,
       path: "/",
-      loader: () => pending,
+      loader: async () => {
+        await Promise.resolve(pending);
+      },
       component: () => <h1>Loaded page</h1>,
     });
     const router = createRouter({
@@ -71,8 +76,12 @@ describe("Router feedback", () => {
       defaultPendingMinMs: 0,
     });
     render(<RouterProvider router={router} />);
-    expect(await screen.findByText("Loading dashboard route…")).toBeTruthy();
+    await expect(screen.findByText("Loading dashboard route…")).resolves.toBeInstanceOf(
+      HTMLElement,
+    );
     release();
-    expect(await screen.findByRole("heading", { name: "Loaded page" })).toBeTruthy();
+    await expect(screen.findByRole("heading", { name: "Loaded page" })).resolves.toBeInstanceOf(
+      HTMLElement,
+    );
   });
 });

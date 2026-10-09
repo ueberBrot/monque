@@ -9,7 +9,9 @@ import { createDashboardQueryClient } from "./query-client.js";
 import { getRouter } from "./router.js";
 import { parseDashboardRuntimeConfig } from "./runtime-config.js";
 
-function createDashboardContent(config: unknown): ReactElement {
+const createDashboardContent = (
+  config: Parameters<typeof parseDashboardRuntimeConfig>[0],
+): ReactElement => {
   try {
     const runtimeConfig = parseDashboardRuntimeConfig(config);
     const managementApi = createDashboardManagementApi(runtimeConfig);
@@ -24,13 +26,18 @@ function createDashboardContent(config: unknown): ReactElement {
           description="The dashboard could not start. Ask your host application administrator to check its dashboard configuration, then reload this page."
           tone="danger"
         >
-          <Button type="button" variant="outline" onClick={() => window.location.reload()}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
             Reload page
           </Button>
         </DashboardState>
       </main>
     );
   }
-}
-
+};
 export { createDashboardContent };

@@ -60,6 +60,7 @@
     "@effect/vitest": "4.0.0",
     "@faker-js/faker": "^10.6.0",
     "@testcontainers/mongodb": "^12.2.0",
+    "@total-typescript/shoehorn": "0.1.2",
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/node": "^22.20.5",
     "fishery": "^2.4.0",

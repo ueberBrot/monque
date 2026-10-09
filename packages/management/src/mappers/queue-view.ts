@@ -6,15 +6,7 @@ import type {
   QueueViewSummaryListDto,
 } from "../schemas/index.js";
 
-export function toQueueViewSummaryListDto(
-  queueViews: readonly QueueViewSummary[],
-): QueueViewSummaryListDto {
-  return {
-    queueViews: queueViews.map(toQueueViewSummaryDto),
-  };
-}
-
-export function toQueueStatsDto(stats: QueueStats): QueueStatsDto {
+export const toQueueStatsDto = function toQueueStatsDto(stats: QueueStats): QueueStatsDto {
   const dto: QueueStatsDto = {
     pending: stats.pending,
     processing: stats.processing,
@@ -29,9 +21,11 @@ export function toQueueStatsDto(stats: QueueStats): QueueStatsDto {
   }
 
   return dto;
-}
+};
 
-function toQueueViewSummaryDto(queueView: QueueViewSummary): QueueViewSummaryDto {
+const toQueueViewSummaryDto = function toQueueViewSummaryDto(
+  queueView: QueueViewSummary,
+): QueueViewSummaryDto {
   return {
     name: queueView.name,
     hasPersistedJobs: queueView.hasPersistedJobs,
@@ -49,4 +43,12 @@ function toQueueViewSummaryDto(queueView: QueueViewSummary): QueueViewSummaryDto
         }
       : null,
   };
-}
+};
+
+export const toQueueViewSummaryListDto = function toQueueViewSummaryListDto(
+  queueViews: readonly QueueViewSummary[],
+): QueueViewSummaryListDto {
+  return {
+    queueViews: queueViews.map(toQueueViewSummaryDto),
+  };
+};

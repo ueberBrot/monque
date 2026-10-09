@@ -1,8 +1,8 @@
 import { Monque } from "@monque/core";
 import type { ManagementSurface } from "@monque/management";
 import { createManagementSurface } from "@monque/management";
-import { type Collection, type Document, MongoClient, type WithId } from "mongodb";
-import type { Connect } from "vite";
+import { MongoClient } from "mongodb";
+import type { Collection, Document, WithId } from "mongodb";
 
 import { DEFAULT_DATABASE_NAME, DEFAULT_MONGO_URI } from "../environment.js";
 import { createManagementMiddleware } from "../management-middleware.js";
@@ -12,8 +12,7 @@ import { createScenario, registerScenarioWorkers } from "./scenarios.js";
 const COLLECTION_NAME = "monque_dashboard_jobs";
 const SEED_MARKER_COLLECTION = "monque_dashboard_seed";
 const SEED_VERSION = "2026-06-04-atlas-local-v1";
-const MONGO_CONNECT_TIMEOUT_MS = 3_000;
-
+const MONGO_CONNECT_TIMEOUT_MS = 3000;
 class LocalDbConnectionError extends Error {
   constructor(options: { readonly cause: unknown }) {
     super(
@@ -26,41 +25,123 @@ class LocalDbConnectionError extends Error {
     this.name = "LocalDbConnectionError";
   }
 }
-
-type LocalDbManagementServer = {
-  readonly middleware: Connect.NextHandleFunction;
+interface LocalDbManagementServer {
+  readonly middleware: ReturnType<typeof createManagementMiddleware>;
   readonly start: () => Promise<void>;
   readonly close: () => Promise<void>;
-};
-
-type LocalDbRuntime = {
+}
+interface LocalDbRuntime {
   readonly client: MongoClient;
   readonly monque: Monque;
   readonly management: ManagementSurface;
-};
-
+}
 type DashboardSeedJob = WithId<Document> & {
   readonly name: string;
   readonly uniqueKey: string;
 };
-
-function createLocalDbManagementServer(options?: {
+const createSeedJobs = (): DashboardSeedJob[] =>
+  [...createScenario("mixed"), ...createScenario("pagination")].map((job, index) => ({
+    ...job,
+    uniqueKey: `dashboard-dev-seed-${SEED_VERSION}-${index + 1}`,
+  }));
+const seedDashboardJobs = async (
+  collection: Collection,
+  markerCollection: Collection,
+): Promise<void> => {
+  const marker = await markerCollection.findOne({ version: SEED_VERSION });
+  if (marker) {
+    return;
+  }
+  const seedJobs = createSeedJobs();
+  await collection.bulkWrite(
+    seedJobs.map((job) => ({
+      updateOne: {
+        filter: {
+          name: job.name,
+          uniqueKey: job.uniqueKey,
+        },
+        update: {
+          $setOnInsert: job,
+        },
+        upsert: true,
+      },
+    })),
+    { ordered: false },
+  );
+  await markerCollection.updateOne(
+    { version: SEED_VERSION },
+    { $set: { seededAt: new Date(), version: SEED_VERSION } },
+    { upsert: true },
+  );
+};
+const createLocalDbRuntime = async (options: {
+  readonly mongoUri: string;
+  readonly databaseName: string;
+}): Promise<LocalDbRuntime> => {
+  const client = new MongoClient(options.mongoUri, {
+    connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+    serverSelectionTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
+  });
+  try {
+    await client.connect();
+  } catch (error) {
+    await client.close();
+    throw new LocalDbConnectionError({ cause: error });
+  }
+  const db = client.db(options.databaseName);
+  const monque = new Monque(db, {
+    collectionName: COLLECTION_NAME,
+    workerConcurrency: 2,
+    statsCacheTtlMs: 0,
+    pollInterval: 250,
+    safetyPollInterval: 1000,
+    maxRetries: 2,
+    baseRetryInterval: 1000,
+  });
+  try {
+    await monque.initialize();
+    registerScenarioWorkers(monque, db);
+    await seedDashboardJobs(db.collection(COLLECTION_NAME), db.collection(SEED_MARKER_COLLECTION));
+    await startDemoWorkload(monque);
+  } catch (error) {
+    try {
+      await monque.stop();
+    } finally {
+      await client.close();
+    }
+    throw error;
+  }
+  return {
+    client,
+    monque,
+    management: createManagementSurface({
+      monque,
+    }),
+  };
+};
+const createLocalDbManagementServer = (options?: {
   readonly mongoUri?: string;
   readonly databaseName?: string;
-}): LocalDbManagementServer {
+}): LocalDbManagementServer => {
   const mongoUri = options?.mongoUri ?? DEFAULT_MONGO_URI;
   const databaseName = options?.databaseName ?? DEFAULT_DATABASE_NAME;
   let runtimePromise: Promise<LocalDbRuntime> | null = null;
   let closing: Promise<void> | null = null;
-  async function getRuntime(): Promise<LocalDbRuntime> {
-    if (closing) await closing;
-    runtimePromise ??= createLocalDbRuntime({ mongoUri, databaseName }).catch((error: unknown) => {
-      runtimePromise = null;
-      throw error;
-    });
-    return runtimePromise;
-  }
-
+  const getRuntime = async (): Promise<LocalDbRuntime> => {
+    if (closing) {
+      await closing;
+    }
+    const createRuntime = async (): Promise<LocalDbRuntime> => {
+      try {
+        return await createLocalDbRuntime({ mongoUri, databaseName });
+      } catch (error) {
+        runtimePromise = null;
+        throw error;
+      }
+    };
+    runtimePromise ??= createRuntime();
+    return await runtimePromise;
+  };
   return {
     start: async () => {
       await getRuntime();
@@ -107,95 +188,5 @@ function createLocalDbManagementServer(options?: {
       }
     },
   };
-}
-
-async function createLocalDbRuntime(options: {
-  readonly mongoUri: string;
-  readonly databaseName: string;
-}): Promise<LocalDbRuntime> {
-  const client = new MongoClient(options.mongoUri, {
-    connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
-    serverSelectionTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
-  });
-
-  try {
-    await client.connect();
-  } catch (error) {
-    await client.close();
-    throw new LocalDbConnectionError({ cause: error });
-  }
-
-  const db = client.db(options.databaseName);
-  const monque = new Monque(db, {
-    collectionName: COLLECTION_NAME,
-    workerConcurrency: 2,
-    statsCacheTtlMs: 0,
-    pollInterval: 250,
-    safetyPollInterval: 1_000,
-    maxRetries: 2,
-    baseRetryInterval: 1_000,
-  });
-  try {
-    await monque.initialize();
-    registerScenarioWorkers(monque, db);
-    await seedDashboardJobs(db.collection(COLLECTION_NAME), db.collection(SEED_MARKER_COLLECTION));
-    await startDemoWorkload(monque);
-  } catch (error) {
-    try {
-      await monque.stop();
-    } finally {
-      await client.close();
-    }
-    throw error;
-  }
-
-  return {
-    client,
-    monque,
-    management: createManagementSurface({
-      monque,
-    }),
-  };
-}
-
-async function seedDashboardJobs(
-  collection: Collection<Document>,
-  markerCollection: Collection<Document>,
-): Promise<void> {
-  const marker = await markerCollection.findOne({ version: SEED_VERSION });
-  if (marker) {
-    return;
-  }
-
-  const seedJobs = createSeedJobs();
-
-  await collection.bulkWrite(
-    seedJobs.map((job) => ({
-      updateOne: {
-        filter: {
-          name: job.name,
-          uniqueKey: job.uniqueKey,
-        },
-        update: {
-          $setOnInsert: job,
-        },
-        upsert: true,
-      },
-    })),
-    { ordered: false },
-  );
-  await markerCollection.updateOne(
-    { version: SEED_VERSION },
-    { $set: { seededAt: new Date(), version: SEED_VERSION } },
-    { upsert: true },
-  );
-}
-
-function createSeedJobs(): DashboardSeedJob[] {
-  return [...createScenario("mixed"), ...createScenario("pagination")].map((job, index) => ({
-    ...job,
-    uniqueKey: `dashboard-dev-seed-${SEED_VERSION}-${index + 1}`,
-  }));
-}
-
+};
 export { createLocalDbManagementServer, createSeedJobs };

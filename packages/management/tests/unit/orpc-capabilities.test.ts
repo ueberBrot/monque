@@ -1,6 +1,7 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, vi, it } from "vite-plus/test";
 
 import { createManagementSurface } from "@/index";
+import type { ManagementMonque } from "@/surface";
 import {
   createManagementMonque,
   expectJsonResponse,
@@ -9,7 +10,7 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("oRPC Management capabilities route", () => {
-  test("evaluates authorization checks sequentially by default", async () => {
+  it("evaluates authorization checks sequentially by default", async () => {
     const checks: string[] = [];
     let active = 0;
     let maximum = 0;
@@ -17,10 +18,10 @@ describe("oRPC Management capabilities route", () => {
       monque: createManagementMonque({}, { mutations: true }),
       authorize: async ({ action }) => {
         checks.push(action);
-        active++;
+        active += 1;
         maximum = Math.max(maximum, active);
         await Promise.resolve();
-        active--;
+        active -= 1;
         return true;
       },
     });
@@ -29,7 +30,7 @@ describe("oRPC Management capabilities route", () => {
 
     expect(response.status).toBe(200);
     expect(maximum).toBe(1);
-    expect(checks).toEqual([
+    expect(checks).toStrictEqual([
       "read",
       "cancel",
       "cancelBulk",
@@ -41,8 +42,8 @@ describe("oRPC Management capabilities route", () => {
     ]);
   });
 
-  test("can evaluate independent capability checks concurrently without sharing request context", async () => {
-    const gate = Promise.withResolvers<void>();
+  it("can evaluate independent capability checks concurrently without sharing request context", async () => {
+    const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const checks: string[] = [];
     const surface = createManagementSurface<{ user: string }>({
       monque: createManagementMonque({}, { mutations: true }),
@@ -62,24 +63,28 @@ describe("oRPC Management capabilities route", () => {
       }),
     ]);
     try {
-      await vi.waitFor(() => expect(checks).toHaveLength(16));
+      await vi.waitFor(() => {
+        expect(checks).toHaveLength(16);
+      });
     } finally {
       gate.resolve();
     }
     const [aliceResponse, bobResponse] = await pending;
     expect(aliceResponse.status).toBe(200);
     expect(bobResponse.status).toBe(200);
-    expect(await aliceResponse.json()).toMatchObject({
+    await expect(aliceResponse.json()).resolves.toMatchObject({
       actions: { read: true, retry: false, delete: false },
     });
-    expect(await bobResponse.json()).toMatchObject({
+    await expect(bobResponse.json()).resolves.toMatchObject({
       actions: { read: false, retry: true, delete: false },
     });
-    expect(checks.filter((check) => check.startsWith("alice:"))).toHaveLength(8);
-    expect(checks.filter((check) => check.startsWith("bob:"))).toHaveLength(8);
+    expect({
+      alice: checks.filter((check) => check.startsWith("alice:")).length,
+      bob: checks.filter((check) => check.startsWith("bob:")).length,
+    }).toStrictEqual({ alice: 8, bob: 8 });
   });
 
-  test("returns identical capabilities on repeated requests", async () => {
+  it("returns identical capabilities on repeated requests", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
     });
@@ -107,12 +112,12 @@ describe("oRPC Management capabilities route", () => {
     await expectJsonResponse(second, 200, expectedBody);
   });
 
-  test("uses adapter-provided request context for action authorization", async () => {
+  it("uses adapter-provided request context for action authorization", async () => {
     const authorizedActions = new Set(["read", "retry"]);
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({}, { mutations: true }),
       authorize: ({ action, context }) => {
-        expect(context).toEqual({ role: "viewer" });
+        expect(context).toStrictEqual({ role: "viewer" });
         return authorizedActions.has(action);
       },
     });
@@ -139,7 +144,7 @@ describe("oRPC Management capabilities route", () => {
     });
   });
 
-  test("does not require managementContext when no hooks need it", async () => {
+  it("does not require managementContext when no hooks need it", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
     });
@@ -171,7 +176,7 @@ describe("oRPC Management capabilities route", () => {
     });
   });
 
-  test("returns a clear handler error when managementContext is missing", async () => {
+  it("returns a clear handler error when managementContext is missing", async () => {
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({}, { mutations: true }),
       authorize: () => true,
@@ -192,7 +197,7 @@ describe("oRPC Management capabilities route", () => {
     });
   });
 
-  test("reports writable actions unavailable in read-only mode", async () => {
+  it("reports writable actions unavailable in read-only mode", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
       readOnly: true,
@@ -218,11 +223,13 @@ describe("oRPC Management capabilities route", () => {
     });
   });
 
-  test("keeps unsupported actions visible as unavailable capabilities", async () => {
+  it("keeps unsupported actions visible as unavailable capabilities", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({
-        retryJob: async () => null,
-        retryJobs: async () => ({ count: 0, errors: [] }),
+        retryJob: vi.fn<NonNullable<ManagementMonque["retryJob"]>>().mockResolvedValue(null),
+        retryJobs: vi
+          .fn<NonNullable<ManagementMonque["retryJobs"]>>()
+          .mockResolvedValue({ count: 0, errors: [] }),
       }),
     });
 
@@ -246,10 +253,12 @@ describe("oRPC Management capabilities route", () => {
     });
   });
 
-  test("keeps action capabilities separate from route-level scheduler support", async () => {
+  it("keeps action capabilities separate from route-level scheduler support", async () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({
-        cancelJobs: async () => ({ count: 0, errors: [] }),
+        cancelJobs: vi
+          .fn<NonNullable<ManagementMonque["cancelJobs"]>>()
+          .mockResolvedValue({ count: 0, errors: [] }),
       }),
     });
 
@@ -260,21 +269,13 @@ describe("oRPC Management capabilities route", () => {
     );
     const bulkCancel = await handleManagementPost(surface, "/api/v1/jobs/actions/cancel", {});
 
-    await expectJsonResponse(
-      capabilities,
-      200,
-      expect.objectContaining({
-        actions: expect.objectContaining({
-          cancel: false,
-          cancelBulk: true,
-        }),
-      }),
-    );
+    const actions: unknown = expect.objectContaining({ cancel: false, cancelBulk: true });
+    await expectJsonResponse(capabilities, 200, expect.objectContaining({ actions }));
     await expectJsonResponse(singleCancel, 403, { error: "Unsupported action" });
     await expectJsonResponse(bulkCancel, 200, { count: 0, errors: [] });
   });
 
-  test.each([
+  it.each([
     {
       path: "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
       body: undefined,
@@ -298,8 +299,8 @@ describe("oRPC Management capabilities route", () => {
   ])(
     "preserves denial precedence for $path before resolving targets",
     async ({ path, body, error }) => {
-      const authorize = vi.fn(() => true);
-      const getJob = vi.fn(async () => null);
+      const authorize = vi.fn<() => boolean>(() => true);
+      const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
       const surface = createManagementSurface({
         monque: createManagementMonque({ getJob }),
         readOnly: true,

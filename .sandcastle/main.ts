@@ -78,7 +78,10 @@ const copyToWorktree = ["node_modules"];
 // Main loop
 // ---------------------------------------------------------------------------
 
-for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
+const runIteration = async (iteration: number): Promise<void> => {
+  if (iteration > MAX_ITERATIONS) {
+    return;
+  }
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
 
   // -------------------------------------------------------------------------
@@ -106,12 +109,12 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     output: sandcastle.Output.object({ tag: "plan", schema: planSchema }),
   });
 
-  const issues = plan.output.issues;
+  const { issues } = plan.output;
 
   if (issues.length === 0) {
     // No unblocked work — either everything is done or everything is blocked.
     console.log("No unblocked issues to work on. Exiting.");
-    break;
+    return;
   }
 
   console.log(`Planning complete. ${issues.length} issue(s) to work in parallel:`);
@@ -183,7 +186,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   for (const [i, outcome] of settled.entries()) {
     if (outcome.status === "rejected") {
       const issue = issues[i];
-      const label = issue ? `${issue.id} (${issue.branch})` : `issue index ${i}`;
+      const label = issue === undefined ? `issue index ${i}` : `${issue.id} (${issue.branch})`;
       console.error(`  ✗ ${label} failed: ${outcome.reason}`);
     }
   }
@@ -193,7 +196,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   const completedIssues = settled
     .flatMap((outcome, i) => {
       const issue = issues[i];
-      return issue ? [{ outcome, issue }] : [];
+      return issue === undefined ? [] : [{ outcome, issue }];
     })
     .filter(
       (entry) => entry.outcome.status === "fulfilled" && entry.outcome.value.commits.length > 0,
@@ -210,7 +213,8 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   if (completedBranches.length === 0) {
     // All agents ran but none made commits — nothing to merge this cycle.
     console.log("No commits produced. Nothing to merge.");
-    continue;
+    await runIteration(iteration + 1);
+    return;
   }
 
   // -------------------------------------------------------------------------
@@ -238,6 +242,9 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   });
 
   console.log("\nBranches merged.");
-}
+  await runIteration(iteration + 1);
+};
+
+await runIteration(1);
 
 console.log("\nAll done.");

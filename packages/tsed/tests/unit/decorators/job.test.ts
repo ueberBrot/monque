@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
 /**
  * Unit tests for @Job decorator (T021)
  */
@@ -5,8 +6,8 @@ import { Store } from "@tsed/core";
 import { describe, expect, it } from "vite-plus/test";
 
 import { MONQUE } from "@/constants";
-import type { JobStore } from "@/decorators";
 import { Job, JobController } from "@/decorators";
+import type { JobStore } from "@/decorators";
 
 describe("@Job", () => {
   describe("basic decoration", () => {
@@ -14,14 +15,15 @@ describe("@Job", () => {
       @JobController("email")
       class EmailJob {
         @Job("send")
-        async sendEmail() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        sendEmail() {}
       }
 
       const store = Store.from(EmailJob);
       const monqueStore = store.get<JobStore>(MONQUE);
 
       expect(monqueStore?.jobs).toHaveLength(1);
-      expect(monqueStore?.jobs[0]).toEqual({
+      expect(monqueStore?.jobs[0]).toStrictEqual({
         name: "send",
         method: "sendEmail",
         opts: {},
@@ -32,20 +34,23 @@ describe("@Job", () => {
       @JobController("notifications")
       class NotificationJob {
         @Job("email")
-        async sendEmail() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        sendEmail() {}
 
         @Job("sms")
-        async sendSms() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        sendSms() {}
 
         @Job("push")
-        async sendPush() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        sendPush() {}
       }
 
       const store = Store.from(NotificationJob);
       const monqueStore = store.get<JobStore>(MONQUE);
 
       expect(monqueStore?.jobs).toHaveLength(3);
-      expect(monqueStore?.jobs.map((job) => job.name)).toEqual(["email", "sms", "push"]);
+      expect(monqueStore?.jobs.map((job) => job.name)).toStrictEqual(["email", "sms", "push"]);
     });
   });
 
@@ -54,14 +59,15 @@ describe("@Job", () => {
       @JobController("test")
       class TestJob {
         @Job("process", { concurrency: 10 })
-        async process() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        process() {}
       }
 
       const store = Store.from(TestJob);
       const monqueStore = store.get<JobStore>(MONQUE);
       const jobs = monqueStore?.jobs;
 
-      expect(jobs?.[0]?.opts).toEqual({
+      expect(jobs?.[0]?.opts).toStrictEqual({
         concurrency: 10,
       });
     });
@@ -70,14 +76,15 @@ describe("@Job", () => {
       @JobController("test")
       class TestJob {
         @Job("unique", { replace: true })
-        async unique() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        unique() {}
       }
 
       const store = Store.from(TestJob);
       const monqueStore = store.get<JobStore>(MONQUE);
       const jobs = monqueStore?.jobs;
 
-      expect(jobs?.[0]?.opts).toEqual({
+      expect(jobs?.[0]?.opts).toStrictEqual({
         replace: true,
       });
     });
@@ -86,14 +93,15 @@ describe("@Job", () => {
       @JobController("test")
       class TestJob {
         @Job("multi", { concurrency: 5, replace: false })
-        async multi() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        multi() {}
       }
 
       const store = Store.from(TestJob);
       const monqueStore = store.get<JobStore>(MONQUE);
       const jobs = monqueStore?.jobs;
 
-      expect(jobs?.[0]?.opts).toEqual({
+      expect(jobs?.[0]?.opts).toStrictEqual({
         concurrency: 5,
         replace: false,
       });
@@ -106,7 +114,8 @@ describe("@Job", () => {
       // (decorators are applied bottom-up)
       class PlainClass {
         @Job("test")
-        async test() {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        test() {}
       }
 
       const store = Store.from(PlainClass);
@@ -117,14 +126,15 @@ describe("@Job", () => {
     });
 
     it("should handle missing jobs array in existing store", () => {
+      // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
       class TestClass {}
       const store = Store.from(TestClass);
-      // Seed store with partial object missing 'jobs'
-      store.set(MONQUE, { type: "controller" }); // no jobs array
+      // Seed store with a partial object missing the jobs array.
+      store.set(MONQUE, { type: "controller" });
 
       // Apply decorator manually
       const decorator = Job("test");
-      decorator(TestClass.prototype, "method", {} as TypedPropertyDescriptor<unknown>);
+      decorator(TestClass.prototype, "method", {});
 
       const res = store.get<JobStore>(MONQUE);
       expect(res.jobs).toHaveLength(1);

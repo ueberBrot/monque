@@ -1,8 +1,9 @@
 import { JobStateError } from "@monque/core";
 import { ObjectId } from "mongodb";
-import { describe, expect, test } from "vite-plus/test";
+import { vi, describe, expect, it } from "vite-plus/test";
 
 import { createManagementSurface, generateManagementOpenApiDocument } from "@/index";
+import type { ManagementMonque } from "@/surface";
 import {
   createManagementJob,
   createManagementMonque,
@@ -13,7 +14,7 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("single Job priority action", () => {
-  test("sets signed priority with target authorization and payload serialization", async () => {
+  it("sets signed priority with target authorization and payload serialization", async () => {
     const target = createManagementJob({ _id: new ObjectId(), priority: 0 });
     const coreCalls: unknown[] = [];
     const authorization: unknown[] = [];
@@ -22,19 +23,19 @@ describe("single Job priority action", () => {
         getJob: getManagementJobById(target),
         setJobPriority: async (id, priority) => {
           coreCalls.push({ id, priority });
-          return { ...target, priority };
+          return await Promise.resolve({ ...target, priority });
         },
       }),
       authorize: ({ action, context, job }) => {
         authorization.push({ action, context, job });
         return true;
       },
-      serializePayload: async () => ({ redacted: true }),
+      serializePayload: async () => await Promise.resolve({ redacted: true }),
     });
     await expectJsonResponse(
       await handleManagementPost(
         surface,
-        `/api/v1/jobs/${target._id}/actions/priority`,
+        `/api/v1/jobs/${target._id.toHexString()}/actions/priority`,
         { priority: -7 },
         { managementContext: { user: "operator" } },
       ),
@@ -45,18 +46,19 @@ describe("single Job priority action", () => {
         payload: { redacted: true },
       }),
     );
-    expect(coreCalls).toEqual([{ id: target._id.toHexString(), priority: -7 }]);
-    expect(authorization).toEqual([
+    expect(coreCalls).toStrictEqual([{ id: target._id.toHexString(), priority: -7 }]);
+    expect(authorization).toStrictEqual([
       { action: "setJobPriority", context: { user: "operator" }, job: target },
     ]);
   });
-  test.each([
+
+  it.each([
     {},
     { priority: null },
     { priority: "2" },
     { priority: true },
     { priority: 0.5 },
-    { priority: 9007199254740992 },
+    { priority: 9_007_199_254_740_992 },
     { priority: 1, extra: true },
   ])("rejects malformed body %j before authorization or mutation", async (body) => {
     let called = false;
@@ -64,7 +66,7 @@ describe("single Job priority action", () => {
       monque: createManagementMonque({
         setJobPriority: async () => {
           called = true;
-          return null;
+          return await Promise.resolve(null);
         },
       }),
       authorize: () => {
@@ -74,94 +76,109 @@ describe("single Job priority action", () => {
     });
     const response = await handleManagementPost(
       surface,
-      `/api/v1/jobs/${new ObjectId()}/actions/priority`,
+      `/api/v1/jobs/${new ObjectId().toHexString()}/actions/priority`,
       body,
     );
     expect(response.status).toBe(400);
     expect(called).toBe(false);
   });
 
-  test.each(["missing", "lost", "state"] as const)("maps %s core outcomes", async (outcome) => {
+  it.each(["missing", "lost", "state"] as const)("maps %s core outcomes", async (outcome) => {
     const target = createManagementJob();
     const surface = createManagementSurface({
       monque: createManagementMonque({
-        getJob: outcome === "missing" ? async () => null : getManagementJobById(target),
+        getJob:
+          outcome === "missing"
+            ? async () => await Promise.resolve(null)
+            : getManagementJobById(target),
         setJobPriority: async () => {
-          if (outcome === "state")
-            throw new JobStateError(
-              "Job was claimed",
-              target._id.toHexString(),
-              "processing",
-              "setJobPriority",
-            );
-          return null;
+          if (outcome === "state") {
+            return await vi
+              .fn<() => Promise<never>>()
+              .mockRejectedValue(
+                new JobStateError(
+                  "Job was claimed",
+                  target._id.toHexString(),
+                  "processing",
+                  "setJobPriority",
+                ),
+              )();
+          }
+          return await Promise.resolve(null);
         },
       }),
     });
-    expect(
-      (
-        await handleManagementPost(surface, `/api/v1/jobs/${target._id}/actions/priority`, {
-          priority: 3,
-        })
-      ).status,
-    ).toBe(outcome === "state" ? 409 : 404);
+    const response1 = await handleManagementPost(
+      surface,
+      `/api/v1/jobs/${target._id.toHexString()}/actions/priority`,
+      {
+        priority: 3,
+      },
+    );
+    expect(response1.status).toBe(outcome === "state" ? 409 : 404);
   });
 
-  test.each(["unsupported", "readonly", "denied", "allowed"] as const)(
-    "enforces %s policy in discovery and mutation",
-    async (policy) => {
+  it.each(
+    (["unsupported", "readonly", "denied", "allowed"] as const).flatMap((policy) =>
+      [false, true].map((allowed) => ({ policy, allowed })),
+    ),
+  )(
+    "enforces $policy policy in discovery and mutation when allowed=$allowed",
+    async ({ policy, allowed }) => {
       const target = createManagementJob();
       let mutated = false;
+      const methods: Partial<ManagementMonque> = { getJob: getManagementJobById(target) };
+      if (policy !== "unsupported") {
+        methods.setJobPriority = async (_id, priority) => {
+          mutated = true;
+          return await Promise.resolve({ ...target, priority });
+        };
+      }
       const surface = createManagementSurface<{ allowed: boolean }>({
-        monque: createManagementMonque({
-          getJob: getManagementJobById(target),
-          ...(policy === "unsupported"
-            ? {}
-            : {
-                setJobPriority: async (_id: string, priority: number) => {
-                  mutated = true;
-                  return { ...target, priority };
-                },
-              }),
-        }),
+        monque: createManagementMonque(methods),
         readOnly: policy === "readonly",
         authorize: ({ action, context }) =>
           action !== "setJobPriority" || (policy !== "denied" && context.allowed),
       });
-      for (const allowed of [false, true]) {
-        const context = { managementContext: { allowed } };
-        const expected = allowed && policy === "allowed";
-        const capabilities = await handleManagementGet(surface, "/api/v1/capabilities", context);
-        expect(await capabilities.json()).toMatchObject({ actions: { setJobPriority: expected } });
-        const response = await handleManagementPost(
-          surface,
-          `/api/v1/jobs/${target._id}/actions/priority`,
-          { priority: 3 },
-          context,
-        );
-        expect(response.status).toBe(expected ? 200 : 403);
-        expect(mutated).toBe(expected);
-      }
+
+      const context = { managementContext: { allowed } };
+      const expected = allowed && policy === "allowed";
+      const capabilities = await handleManagementGet(surface, "/api/v1/capabilities", context);
+      await expect(capabilities.json()).resolves.toMatchObject({
+        actions: { setJobPriority: expected },
+      });
+      const response = await handleManagementPost(
+        surface,
+        `/api/v1/jobs/${target._id.toHexString()}/actions/priority`,
+        { priority: 3 },
+        context,
+      );
+      expect(response.status).toBe(expected ? 200 : 403);
+      expect(mutated).toBe(expected);
     },
   );
 
-  test("publishes reusable signed-safe-integer request schema and status responses in OpenAPI", async () => {
+  it("publishes reusable signed-safe-integer request schema and status responses in OpenAPI", async () => {
     const document = await generateManagementOpenApiDocument();
     const route = document.paths?.["/api/v1/jobs/{id}/actions/priority"]?.post;
     expect(route?.operationId).toBe("setJobPriority");
-    expect(route?.responses).toHaveProperty("400");
-    expect(route?.responses).toHaveProperty("403");
-    expect(route?.responses).toHaveProperty("404");
-    expect(route?.responses).toHaveProperty("409");
+    expect(Object.keys(route?.responses ?? {})).toStrictEqual(
+      expect.arrayContaining(["400", "403", "404", "409"]),
+    );
     expect(document.components?.schemas?.["SetJobPriorityRequest"]).toMatchObject({
       properties: {
-        priority: { type: "integer", minimum: -9007199254740991, maximum: 9007199254740991 },
+        priority: {
+          type: "integer",
+          minimum: -9_007_199_254_740_991,
+          maximum: 9_007_199_254_740_991,
+        },
       },
       required: ["priority"],
       additionalProperties: false,
     });
   });
-  test("rejects oversized priority request bodies before authorization", async () => {
+
+  it("rejects oversized priority request bodies before authorization", async () => {
     let authorized = false;
     const surface = createManagementSurface({
       monque: createManagementMonque(),
@@ -171,7 +188,7 @@ describe("single Job priority action", () => {
       },
     });
     const request = new Request(
-      `https://management.example/api/v1/jobs/${new ObjectId()}/actions/priority`,
+      `https://management.example/api/v1/jobs/${new ObjectId().toHexString()}/actions/priority`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },

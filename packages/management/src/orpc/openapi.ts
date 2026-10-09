@@ -1,4 +1,5 @@
-import { type OpenAPI, OpenAPIGenerator } from "@orpc/openapi";
+import { OpenAPIGenerator } from "@orpc/openapi";
+import type { OpenAPI } from "@orpc/openapi";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -11,11 +12,12 @@ import { managementContract } from "./contract.js";
 declare const __MONQUE_MANAGEMENT_PACKAGE_VERSION__: string;
 
 const MANAGEMENT_OPENAPI_VERSION =
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- The build injects this constant; typeof also supports source use where the identifier is absent.
   typeof __MONQUE_MANAGEMENT_PACKAGE_VERSION__ === "string"
     ? __MONQUE_MANAGEMENT_PACKAGE_VERSION__
     : "0.0.0";
 
-const generateManagementOpenApi = Effect.fnUntraced(function* () {
+const generateManagementOpenApi = Effect.fnUntraced(function* generateManagementOpenApi() {
   const generator = yield* attempt(
     () =>
       new OpenAPIGenerator({
@@ -23,15 +25,16 @@ const generateManagementOpenApi = Effect.fnUntraced(function* () {
       }),
   );
 
-  return yield* fromPromise(() =>
-    generator.generate(managementContract, {
-      info: {
-        title: "Monque Management API",
-        version: MANAGEMENT_OPENAPI_VERSION,
-      },
-      customErrorResponseBodySchema: () => ({ $ref: "#/components/schemas/ManagementError" }),
-      commonSchemas: ManagementOpenApiComponentSchemas,
-    }),
+  return yield* fromPromise(
+    async () =>
+      await generator.generate(managementContract, {
+        info: {
+          title: "Monque Management API",
+          version: MANAGEMENT_OPENAPI_VERSION,
+        },
+        customErrorResponseBodySchema: () => ({ $ref: "#/components/schemas/ManagementError" }),
+        commonSchemas: ManagementOpenApiComponentSchemas,
+      }),
   );
 });
 
@@ -47,6 +50,7 @@ const cachedManagementOpenApi = Effect.runSync(
  * The document includes every v1 route, including mutation routes that may return `403`
  * at runtime when the configured scheduler facade does not support them.
  */
-export function generateManagementOpenApiDocument(): Promise<OpenAPI.Document> {
-  return Effect.runPromise(cachedManagementOpenApi);
-}
+export const generateManagementOpenApiDocument =
+  async function generateManagementOpenApiDocument(): Promise<OpenAPI.Document> {
+    return await Effect.runPromise(cachedManagementOpenApi);
+  };

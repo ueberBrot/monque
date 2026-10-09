@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
+import { z } from "zod";
 
-const packageJson = JSON.parse(
-  readFileSync(new URL("./package.json", import.meta.url), "utf8"),
-) as { version: string };
+const packageJson = z
+  .object({ version: z.string() })
+  .parse(JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf-8")));
 
 export default defineConfig({
   run: {
@@ -44,8 +45,13 @@ export default defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
-        dependsOn: ["lint:effect"],
+        command: "vp lint --type-aware --type-check --deny-warnings",
+        dependsOn: [
+          {
+            task: "build",
+            from: ["dependencies", "devDependencies"],
+          },
+        ],
         cache: { output: [] },
       },
       test: {
@@ -99,9 +105,9 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@monque/management/contract": fileURLToPath(new URL("./src/contract.ts", import.meta.url)),
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
+      "@monque/management/contract": fileURLToPath(new URL("src/contract.ts", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
+      "@tests": fileURLToPath(new URL("tests", import.meta.url)),
     },
   },
   test: {
@@ -109,6 +115,6 @@ export default defineConfig({
     environment: "node",
     include: ["tests/unit/**/*.test.ts"],
     testTimeout: 5000,
-    hookTimeout: 10000,
+    hookTimeout: 10_000,
   },
 });

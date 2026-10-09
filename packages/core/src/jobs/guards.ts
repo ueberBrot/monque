@@ -1,6 +1,5 @@
 import type { Job, JobStatusType, PersistedJob } from "./types.js";
 import { JobStatus } from "./types.js";
-
 /**
  * Type guard to check if a job has been persisted to MongoDB.
  *
@@ -34,10 +33,8 @@ import { JobStatus } from "./types.js";
  * }
  * ```
  */
-export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
-  return "_id" in job && job._id !== undefined && job._id !== null;
-}
-
+export const isPersistedJob = <T>(job: Job<T>): job is PersistedJob<T> =>
+  "_id" in job && job._id !== undefined && job._id !== null;
 /**
  * Type guard to check if a value is a valid job status.
  *
@@ -70,10 +67,8 @@ export function isPersistedJob<T>(job: Job<T>): job is PersistedJob<T> {
  * }
  * ```
  */
-export function isValidJobStatus(value: unknown): value is JobStatusType {
-  return typeof value === "string" && Object.values(JobStatus).includes(value as JobStatusType);
-}
-
+export const isValidJobStatus = (value: unknown): value is JobStatusType =>
+  typeof value === "string" && Object.values(JobStatus).some((status) => status === value);
 /**
  * Type guard to check if a job is in pending status.
  *
@@ -98,10 +93,7 @@ export function isValidJobStatus(value: unknown): value is JobStatusType {
  * }
  * ```
  */
-export function isPendingJob<T>(job: Job<T>): boolean {
-  return job.status === JobStatus.PENDING;
-}
-
+export const isPendingJob = <T>(job: Job<T>): boolean => job.status === JobStatus.PENDING;
 /**
  * Type guard to check if a job is currently being processed.
  *
@@ -119,10 +111,7 @@ export function isPendingJob<T>(job: Job<T>): boolean {
  * console.log(`${activeJobs.length} jobs currently running`);
  * ```
  */
-export function isProcessingJob<T>(job: Job<T>): boolean {
-  return job.status === JobStatus.PROCESSING;
-}
-
+export const isProcessingJob = <T>(job: Job<T>): boolean => job.status === JobStatus.PROCESSING;
 /**
  * Type guard to check if a job has completed successfully.
  *
@@ -140,10 +129,7 @@ export function isProcessingJob<T>(job: Job<T>): boolean {
  * console.log(`${completedJobs.length} jobs completed successfully`);
  * ```
  */
-export function isCompletedJob<T>(job: Job<T>): boolean {
-  return job.status === JobStatus.COMPLETED;
-}
-
+export const isCompletedJob = <T>(job: Job<T>): boolean => job.status === JobStatus.COMPLETED;
 /**
  * Type guard to check if a job has permanently failed.
  *
@@ -165,10 +151,7 @@ export function isCompletedJob<T>(job: Job<T>): boolean {
  * }
  * ```
  */
-export function isFailedJob<T>(job: Job<T>): boolean {
-  return job.status === JobStatus.FAILED;
-}
-
+export const isFailedJob = <T>(job: Job<T>): boolean => job.status === JobStatus.FAILED;
 /**
  * Type guard to check if a job has been manually cancelled.
  *
@@ -186,10 +169,7 @@ export function isFailedJob<T>(job: Job<T>): boolean {
  * console.log(`${cancelledJobs.length} jobs were cancelled`);
  * ```
  */
-export function isCancelledJob<T>(job: Job<T>): boolean {
-  return job.status === JobStatus.CANCELLED;
-}
-
+export const isCancelledJob = <T>(job: Job<T>): boolean => job.status === JobStatus.CANCELLED;
 /**
  * Type guard to check if a job is a recurring scheduled job.
  *
@@ -215,6 +195,5 @@ export function isCancelledJob<T>(job: Job<T>): boolean {
  * }
  * ```
  */
-export function isRecurringJob<T>(job: Job<T>): boolean {
-  return job.repeatInterval !== undefined && job.repeatInterval !== null;
-}
+export const isRecurringJob = <T>(job: Job<T>): boolean =>
+  job.repeatInterval !== undefined && job.repeatInterval !== null;

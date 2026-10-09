@@ -3,13 +3,16 @@ import { Suspense } from "react";
 import { Command, CommandEmpty, CommandItem, CommandList } from "@/components/ui/command";
 import { useAppForm } from "@/forms";
 
-function CommandSearch({
+const CommandSearch = ({
   commands,
   onClose,
 }: {
-  readonly commands: readonly { label: string; run: () => void }[];
+  readonly commands: readonly {
+    label: string;
+    run: () => void;
+  }[];
   readonly onClose: () => void;
-}) {
+}) => {
   const form = useAppForm({ defaultValues: { query: "" } });
   return (
     <Command>
@@ -36,6 +39,5 @@ function CommandSearch({
       </CommandList>
     </Command>
   );
-}
-
+};
 export { CommandSearch };

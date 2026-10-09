@@ -5,15 +5,8 @@
  * Handles lifecycle hooks, configuration resolution, and job registration.
  */
 
-import {
-  type Job,
-  Monque,
-  MonqueError,
-  type MonqueOptions,
-  type ScheduleOptions,
-  type WorkerOptions,
-  WorkerRegistrationError,
-} from "@monque/core";
+import { Monque, MonqueError, WorkerRegistrationError } from "@monque/core";
+import type { Job, MonqueOptions, ScheduleOptions, WorkerOptions } from "@monque/core";
 import {
   Configuration,
   DIContext,
@@ -21,14 +14,13 @@ import {
   InjectorService,
   LOGGER,
   Module,
-  type OnDestroy,
-  type OnInit,
   ProviderScope,
   runInContext,
-  type TokenProvider,
 } from "@tsed/di";
+import type { OnDestroy, OnInit, Provider } from "@tsed/di";
 
-import { type MonqueTsedConfig, validateDatabaseConfig } from "@/config";
+import { validateDatabaseConfig } from "@/config";
+import type { MonqueTsedConfig } from "@/config";
 import { ProviderTypes } from "@/constants";
 import { MonqueService } from "@/services";
 import { collectJobMetadata, resolveDatabase } from "@/utils";
@@ -53,7 +45,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     this.injector = injector;
     this.monqueService = monqueService;
     this.logger = logger;
-    this.monqueConfig = configuration.get<MonqueTsedConfig>("monque") || {};
+    this.monqueConfig = configuration.get<MonqueTsedConfig | undefined>("monque") ?? {};
   }
 
   async $onInit(): Promise<void> {
@@ -68,9 +60,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     validateDatabaseConfig(config);
 
     try {
-      const db = await resolveDatabase(config, (token) =>
-        this.injector.get(token as TokenProvider),
-      );
+      const db = await resolveDatabase(config, (token) => this.injector.get(token));
 
       // We construct the options object carefully to match MonqueOptions
       const { db: _db, ...restConfig } = config;
@@ -82,11 +72,11 @@ export class MonqueModule implements OnInit, OnDestroy {
       this.logger.info("Monque: Connecting to MongoDB...");
       await this.monque.initialize();
 
-      if (config.disableJobProcessing) {
+      if (config.disableJobProcessing === true) {
         this.logger.info("Monque: Job processing is disabled for this instance");
       } else {
         await this.registerJobs();
-        await this.monque.start();
+        this.monque.start();
         this.logger.info("Monque: Started successfully");
       }
     } catch (error) {
@@ -118,19 +108,25 @@ export class MonqueModule implements OnInit, OnDestroy {
       throw new MonqueError("Monque instance not initialized");
     }
 
-    const monque = this.monque;
-    const jobControllers = this.injector.getProviders(ProviderTypes.JOB_CONTROLLER);
+    const { monque } = this;
+    const jobControllers: Provider<unknown>[] = this.injector.providers.getMany(
+      ProviderTypes.JOB_CONTROLLER,
+    );
     const registeredJobs = new Set<string>();
 
     this.logger.info(`Monque: Found ${jobControllers.length} job controllers`);
 
     for (const provider of jobControllers) {
-      const useClass = provider.useClass;
+      const { useClass } = provider;
       const jobs = collectJobMetadata(useClass);
       // Try to resolve singleton instance immediately
-      const instance = this.injector.get(provider.token);
+      // oxlint-disable-next-line typescript/no-unsafe-argument -- TsED types Provider.token as any; forward the same registered DI token unchanged.
+      const instance: unknown = this.injector.get<unknown>(provider.token);
 
-      if (!instance && provider.scope !== ProviderScope.REQUEST) {
+      if (
+        (instance === null || instance === undefined) &&
+        provider.scope !== ProviderScope.REQUEST
+      ) {
         this.logger.warn(
           `Monque: Could not resolve instance for controller ${provider.name}. Skipping.`,
         );
@@ -138,8 +134,8 @@ export class MonqueModule implements OnInit, OnDestroy {
         continue;
       }
 
-      for (const job of jobs) {
-        const { fullName, method, opts, isCron, cronPattern } = job;
+      for (const metadata of jobs) {
+        const { fullName, method, opts, isCron, cronPattern } = metadata;
 
         if (registeredJobs.has(fullName)) {
           throw new WorkerRegistrationError(
@@ -153,25 +149,36 @@ export class MonqueModule implements OnInit, OnDestroy {
         const handler = async (job: Job) => {
           const $ctx = new DIContext({
             injector: this.injector,
-            id: job._id?.toString() || "unknown",
+            id: job._id?.toString() ?? "unknown",
           });
           $ctx.set("MONQUE_JOB", job);
           $ctx.container.set(DIContext, $ctx);
 
           await runInContext($ctx, async () => {
             try {
-              let targetInstance = instance;
-              if (provider.scope === ProviderScope.REQUEST || !targetInstance) {
-                targetInstance = await this.injector.invoke(provider.token, {
+              let targetInstance: unknown = instance;
+              if (
+                provider.scope === ProviderScope.REQUEST ||
+                targetInstance === null ||
+                targetInstance === undefined
+              ) {
+                // oxlint-disable-next-line typescript/no-unsafe-argument -- TsED types Provider.token as any; forward the same registered DI token unchanged.
+                targetInstance = await this.injector.invoke<unknown>(provider.token, {
                   locals: $ctx.container,
                 });
               }
 
-              const typedInstance = targetInstance as Record<string, (job: Job) => unknown>;
-
-              if (typedInstance && typeof typedInstance[method] === "function") {
-                await typedInstance[method](job);
+              /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-get -- Runtime DI instances and decorator method names form this dynamic invocation boundary; preserve the method receiver. */
+              if (
+                targetInstance !== null &&
+                (typeof targetInstance === "object" || typeof targetInstance === "function")
+              ) {
+                const jobMethod: unknown = Reflect.get(targetInstance, method);
+                if (typeof jobMethod === "function") {
+                  await jobMethod.call(targetInstance, job);
+                }
               }
+              /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-reflect-get */
             } catch (error) {
               this.logger.error({
                 event: "MONQUE_JOB_ERROR",
@@ -187,13 +194,16 @@ export class MonqueModule implements OnInit, OnDestroy {
           });
         };
 
-        if (isCron && cronPattern) {
+        if (isCron && cronPattern !== undefined && cronPattern !== "") {
           this.logger.debug(`Monque: Registering cron job "${fullName}" (${cronPattern})`);
 
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preserve the public mergeable metadata interface and forward its original options object.
           monque.register(fullName, handler, opts as WorkerOptions);
+          // oxlint-disable-next-line eslint/no-await-in-loop, typescript/no-unsafe-type-assertion -- SAFETY: Register cron jobs sequentially; isCron identifies the schedule metadata while its public interface remains mergeable.
           await monque.schedule(cronPattern, fullName, {}, opts as ScheduleOptions);
         } else {
           this.logger.debug(`Monque: Registering job "${fullName}"`);
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preserve the public mergeable metadata interface and forward its original options object.
           monque.register(fullName, handler, opts as WorkerOptions);
         }
       }

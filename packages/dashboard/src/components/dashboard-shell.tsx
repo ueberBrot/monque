@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Activity, LaptopMinimal, Layers, ListTodo, Menu, Moon, Sun } from "lucide-react";
-import { type ReactElement, type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import monqueLogo from "@/assets/monque.svg";
 import { Button } from "@/components/ui/button";
@@ -20,14 +21,14 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
-const THEME_STORAGE_KEY = "monque-dashboard-theme";
+import { isFunction } from "../lib/type-guards.js";
 
+const THEME_STORAGE_KEY = "monque-dashboard-theme";
 const dashboardNavItems = [
   { href: "/queue-views", label: "Queue Views", icon: Layers },
   { href: "/jobs", label: "Jobs", icon: ListTodo },
   { href: "/health", label: "Health", icon: Activity },
 ] as const;
-
 const themeModes = {
   light: { label: "Light", icon: Sun },
   dark: { label: "Dark", icon: Moon },
@@ -35,85 +36,149 @@ const themeModes = {
 } as const;
 const dashboardThemeModes = ["light", "dark", "system"] as const;
 type DashboardThemeMode = (typeof dashboardThemeModes)[number];
-
-function getStoredThemeMode(): DashboardThemeMode {
-  if (typeof window === "undefined") {
+const isDashboardThemeMode = (value: string | null): value is DashboardThemeMode =>
+  dashboardThemeModes.some((mode) => mode === value);
+const getStoredThemeMode = (): DashboardThemeMode => {
+  if (globalThis.window === undefined) {
     return "system";
   }
-
   try {
     const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (isDashboardThemeMode(storedThemeMode)) return storedThemeMode;
+    if (isDashboardThemeMode(storedThemeMode)) {
+      return storedThemeMode;
+    }
   } catch {
-    // Storage can be unavailable in embedded dashboards or restricted browser sessions.
+    // A disabled storage backend does not prevent navigation.
   }
-
   return "system";
-}
-
-function getSystemPrefersDark(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
-}
-
-function applyThemeMode(themeMode: DashboardThemeMode): void {
-  if (typeof document === "undefined") {
+};
+const getSystemPrefersDark = (): boolean =>
+  globalThis.window !== undefined &&
+  isFunction(window.matchMedia) &&
+  window.matchMedia("(prefers-color-scheme: dark)").matches;
+const applyThemeMode = (themeMode: DashboardThemeMode): void => {
+  if (globalThis.document === undefined) {
     return;
   }
-
   const rootElement = document.documentElement;
   const resolvedDarkMode =
     themeMode === "dark" || (themeMode === "system" && getSystemPrefersDark());
-
   rootElement.classList.toggle("dark", resolvedDarkMode);
   rootElement.dataset["theme"] = themeMode;
-}
-
-function DashboardShell({ children }: { readonly children: ReactNode }): ReactElement {
+};
+const DashboardNavigation = ({
+  ariaLabel,
+  className,
+  onNavigate,
+}: {
+  readonly ariaLabel: string;
+  readonly className?: string;
+  readonly onNavigate?: () => void;
+}): ReactElement => (
+  <nav className={cn("grid gap-1", className)} aria-label={ariaLabel}>
+    {dashboardNavItems.map((item) => (
+      <Link
+        key={item.href}
+        to={item.href}
+        onClick={onNavigate}
+        className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        activeProps={{
+          className: "bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary",
+        }}
+      >
+        <item.icon className="size-4" />
+        {item.label}
+      </Link>
+    ))}
+  </nav>
+);
+const ThemeModeMenu = ({
+  themeMode,
+  onThemeModeChange,
+}: {
+  readonly themeMode: DashboardThemeMode;
+  readonly onThemeModeChange: (themeMode: DashboardThemeMode) => void;
+}): ReactElement => {
+  const Icon = themeModes[themeMode].icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-start"
+            aria-label="Change theme"
+          >
+            <Icon />
+            <span>{themeModes[themeMode].label} mode</span>
+          </Button>
+        }
+      />
+      <DropdownMenuContent className="w-44">
+        {dashboardThemeModes.map((mode) => {
+          const { icon: ModeIcon, label } = themeModes[mode];
+          return (
+            <DropdownMenuItem
+              key={mode}
+              onClick={() => {
+                onThemeModeChange(mode);
+              }}
+            >
+              <ModeIcon />
+              <span>{label} theme</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+const DashboardShell = ({ children }: { readonly children: ReactNode }): ReactElement => {
   const [themeMode, setThemeMode] = useState<DashboardThemeMode>(() => getStoredThemeMode());
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-
   useEffect(() => {
     applyThemeMode(themeMode);
-
-    if (typeof window === "undefined") {
-      return;
+    if (globalThis.window === undefined) {
+      return () => {
+        // Server rendering creates no browser subscription.
+      };
     }
-
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
-      // Theme changes still apply for this session when persistence is unavailable.
+      // A disabled storage backend does not prevent navigation.
     }
-
-    if (themeMode !== "system" || typeof window.matchMedia !== "function") {
-      return;
+    if (themeMode !== "system" || !isFunction(window.matchMedia)) {
+      return () => {
+        // This theme mode creates no media subscription to clean up.
+      };
     }
-
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => applyThemeMode("system");
-
+    const handleChange = () => {
+      applyThemeMode("system");
+    };
     mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
   }, [themeMode]);
-
   useEffect(() => {
-    const toggle = () =>
+    const toggle = () => {
       setThemeMode(document.documentElement.classList.contains("dark") ? "light" : "dark");
+    };
     window.addEventListener("monque:toggle-theme", toggle);
-    return () => window.removeEventListener("monque:toggle-theme", toggle);
+    return () => {
+      window.removeEventListener("monque:toggle-theme", toggle);
+    };
   }, []);
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
       <Toaster
         className="group z-40!"
         theme={themeMode}
         closeButton
-        duration={5_000}
+        duration={5000}
         position="bottom-right"
       />
       <a
@@ -172,7 +237,9 @@ function DashboardShell({ children }: { readonly children: ReactNode }): ReactEl
                     <DashboardNavigation
                       ariaLabel="Mobile primary"
                       className="px-3 py-4"
-                      onNavigate={() => setMobileNavigationOpen(false)}
+                      onNavigate={() => {
+                        setMobileNavigationOpen(false);
+                      }}
                     />
                     <div className="mt-auto border-t border-border px-5 py-4">
                       <ThemeModeMenu themeMode={themeMode} onThemeModeChange={setThemeMode} />
@@ -202,77 +269,5 @@ function DashboardShell({ children }: { readonly children: ReactNode }): ReactEl
       </div>
     </div>
   );
-}
-
-function DashboardNavigation({
-  ariaLabel,
-  className,
-  onNavigate,
-}: {
-  readonly ariaLabel: string;
-  readonly className?: string;
-  readonly onNavigate?: () => void;
-}): ReactElement {
-  return (
-    <nav className={cn("grid gap-1", className)} aria-label={ariaLabel}>
-      {dashboardNavItems.map((item) => (
-        <Link
-          key={item.href}
-          to={item.href}
-          onClick={onNavigate}
-          className="flex h-10 items-center gap-2.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-          activeProps={{
-            className: "bg-primary/12 text-primary hover:bg-primary/12 hover:text-primary",
-          }}
-        >
-          <item.icon className="size-4" />
-          {item.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
-
-function ThemeModeMenu({
-  themeMode,
-  onThemeModeChange,
-}: {
-  readonly themeMode: DashboardThemeMode;
-  readonly onThemeModeChange: (themeMode: DashboardThemeMode) => void;
-}): ReactElement {
-  const Icon = themeModes[themeMode].icon;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full justify-start"
-            aria-label="Change theme"
-          >
-            <Icon />
-            <span>{themeModes[themeMode].label} mode</span>
-          </Button>
-        }
-      />
-      <DropdownMenuContent className="w-44">
-        {dashboardThemeModes.map((mode) => {
-          const { icon: ModeIcon, label } = themeModes[mode];
-          return (
-            <DropdownMenuItem key={mode} onClick={() => onThemeModeChange(mode)}>
-              <ModeIcon />
-              <span>{label} theme</span>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function isDashboardThemeMode(value: string | null): value is DashboardThemeMode {
-  return dashboardThemeModes.some((mode) => mode === value);
-}
-
+};
 export { DashboardShell };

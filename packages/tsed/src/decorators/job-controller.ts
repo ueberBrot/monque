@@ -1,5 +1,5 @@
 /**
- * @JobController class decorator
+ * `@JobController` class decorator
  *
  * Marks a class as containing job methods and registers it with the Ts.ED DI container.
  * Jobs in the class will have their job names prefixed with the namespace.
@@ -16,7 +16,7 @@
  * }
  * ```
  */
-import { Store, useDecorators } from "@tsed/core";
+import { Store } from "@tsed/core";
 import { Injectable } from "@tsed/di";
 
 import { MONQUE, ProviderTypes } from "@/constants";
@@ -28,28 +28,23 @@ import type { JobStore } from "./types.js";
  *
  * @param namespace - Optional namespace prefix for job names
  */
-export function JobController(namespace?: string): ClassDecorator {
-  return useDecorators(
-    // Register as injectable with custom provider type
-    Injectable({
-      type: ProviderTypes.JOB_CONTROLLER,
-    }),
-    // Apply custom decorator to store metadata
-    (target: object) => {
-      const store = Store.from(target);
+export const JobController = function JobController(namespace?: string): ClassDecorator {
+  const registerProvider = Injectable({ type: ProviderTypes.JOB_CONTROLLER });
+  return (target) => {
+    registerProvider(target);
+    const store = Store.from(target);
 
-      // Get existing store or create new one
-      const existing = store.get<Partial<JobStore>>(MONQUE) || {};
+    // Get existing store or create new one
+    const existing = store.get<Partial<JobStore> | undefined>(MONQUE) ?? {};
 
-      // Merge with new metadata, only include namespace if defined
-      const jobStore: JobStore = {
-        type: "controller",
-        ...(namespace !== undefined && { namespace }),
-        jobs: existing.jobs || [],
-        cronJobs: existing.cronJobs || [],
-      };
+    // Merge with new metadata, only include namespace if defined
+    const jobStore: JobStore = {
+      type: "controller",
+      ...(namespace !== undefined && { namespace }),
+      jobs: existing.jobs ?? [],
+      cronJobs: existing.cronJobs ?? [],
+    };
 
-      store.set(MONQUE, jobStore);
-    },
-  );
-}
+    store.set(MONQUE, jobStore);
+  };
+};

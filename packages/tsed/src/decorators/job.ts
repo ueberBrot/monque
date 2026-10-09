@@ -1,5 +1,5 @@
 /**
- * @Job method decorator
+ * `@Job` method decorator
  *
  * Registers a method as a job handler. The method will be called when a job
  * with the matching name is picked up for processing.
@@ -19,7 +19,7 @@
  * ```
  */
 import { appendJobMetadata } from "./append-job-metadata.js";
-import type { JobDecoratorOptions, JobMetadata } from "./types.js";
+import type { JobDecoratorOptions, JobDecoratorTarget, JobMetadata } from "./types.js";
 
 /**
  * Method decorator that registers a method as a job handler.
@@ -27,9 +27,9 @@ import type { JobDecoratorOptions, JobMetadata } from "./types.js";
  * @param name - The job name (will be prefixed with controller namespace if present)
  * @param options - Optional job configuration (concurrency, replace, etc.)
  */
-export function Job(name: string, options?: JobDecoratorOptions): MethodDecorator {
+export const Job = function Job(name: string, options?: JobDecoratorOptions): MethodDecorator {
   return <T>(
-    target: object,
+    target: JobDecoratorTarget,
     propertyKey: string | symbol,
     _descriptor: TypedPropertyDescriptor<T>,
   ): void => {
@@ -38,9 +38,9 @@ export function Job(name: string, options?: JobDecoratorOptions): MethodDecorato
     const jobMetadata: JobMetadata = {
       name,
       method: methodName,
-      opts: options || {},
+      opts: options ?? {},
     };
 
     appendJobMetadata(target, jobMetadata);
   };
-}
+};

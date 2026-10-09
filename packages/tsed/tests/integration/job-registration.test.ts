@@ -1,5 +1,7 @@
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
 import { setImmediate } from "node:timers/promises";
-import { type Job, JobStatus } from "@monque/core";
+import { JobStatus } from "@monque/core";
+import type { Job } from "@monque/core";
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -14,13 +16,13 @@ class EmailJobs {
   public processed: string[] = [];
 
   @MonqueJob("send")
-  async sendEmail(job: Job<{ to: string }>) {
+  sendEmail(job: Job<{ to: string }>) {
     this.processed.push(job.data.to);
     return { sent: true };
   }
 
   @MonqueJob("welcome", { concurrency: 5 })
-  async sendWelcome(job: Job<{ userId: string }>) {
+  sendWelcome(job: Job<{ userId: string }>) {
     this.processed.push(`welcome:${job.data.userId}`);
     return "welcome";
   }
@@ -31,7 +33,7 @@ class SystemJobs {
   public executed = false;
 
   @MonqueJob("cleanup")
-  async cleanup() {
+  cleanup() {
     this.executed = true;
   }
 }
@@ -56,7 +58,7 @@ describe("Job Registration Integration", () => {
 
       await waitFor(() => emailJobs.processed.length === 2);
 
-      expect(emailJobs.processed).toEqual(
+      expect(emailJobs.processed).toStrictEqual(
         expect.arrayContaining(["test@example.com", "welcome:user-1"]),
       );
     });
@@ -79,8 +81,9 @@ describe("Job Registration Integration", () => {
       class ResilienceJob {
         static failCount = 0;
         @MonqueJob("fail")
-        async fail() {
-          ResilienceJob.failCount++;
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        fail() {
+          ResilienceJob.failCount += 1;
           throw new Error("Persistent failure");
         }
       }
@@ -103,7 +106,7 @@ describe("Job Registration Integration", () => {
           const persistedJob = await monqueService.getJob(job._id.toString());
           return persistedJob?.status === JobStatus.FAILED;
         },
-        { timeout: 10000 },
+        { timeout: 10_000 },
       );
 
       const failedJob = await monqueService.getJob(job._id.toString());
@@ -115,13 +118,14 @@ describe("Job Registration Integration", () => {
 
   describe("Lifecycle Integration", () => {
     it("should wait for active jobs during stop()", async () => {
-      const release = Promise.withResolvers<void>();
+      const release: PromiseWithResolvers<void> = Promise.withResolvers();
       try {
         @JobController("lifecycle")
         class LifecycleJob {
           static started = false;
           static completed = false;
           @MonqueJob("long-running")
+          // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
           async longRunning() {
             LifecycleJob.started = true;
             await release.promise;
@@ -144,7 +148,7 @@ describe("Job Registration Integration", () => {
         await waitFor(() => LifecycleJob.started);
 
         // Stop while it's running
-        const streamClosed = Promise.withResolvers<void>();
+        const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monqueService.monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
         const stopping = monqueService.monque.stop().then(() => {

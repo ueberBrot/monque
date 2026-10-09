@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 
+// oxlint-disable-next-line typescript/consistent-type-definitions -- Preserve the public alias and its implicit index-signature assignability.
 type DashboardExpressApiBaseUrlResolverContext = {
   readonly req: Request;
   readonly res: Response;
@@ -11,6 +12,7 @@ type DashboardExpressApiBaseUrlResolver = (
 
 type DashboardExpressApiBaseUrlValue = DashboardExpressApiBaseUrlResolver | string;
 
+// oxlint-disable-next-line typescript/consistent-type-definitions -- Preserve the public alias and its implicit index-signature assignability.
 type DashboardExpressRouterOptions = {
   /**
    * Management API base URL exposed to the Dashboard runtime config.

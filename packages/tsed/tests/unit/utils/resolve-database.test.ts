@@ -1,18 +1,20 @@
 import { ConnectionError } from "@monque/core";
+import { fromPartial, fromAny } from "@total-typescript/shoehorn";
 import type { Db } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { MonqueTsedConfig } from "@/config";
-import { type InjectorFn, resolveDatabase } from "@/utils";
+import { resolveDatabase } from "@/utils";
+import type { MongooseService, InjectorFn } from "@/utils";
 
-describe("resolveDatabase", () => {
-  // Mock Db instance
-  const createMockDb = (): Db =>
-    ({
-      databaseName: "test-db",
-      collection: vi.fn(),
-    }) as unknown as Db;
+// Mock Db instance
+const createMockDb = (): Db =>
+  fromPartial<Db>({
+    databaseName: "test-db",
+    collection: vi.fn<Db["collection"]>(),
+  });
 
+describe(resolveDatabase, () => {
   describe("direct db strategy", () => {
     it("should return the db instance directly", async () => {
       const mockDb = createMockDb();
@@ -40,7 +42,7 @@ describe("resolveDatabase", () => {
   describe("dbFactory strategy", () => {
     it("should call sync factory and return result", async () => {
       const mockDb = createMockDb();
-      const factory = vi.fn().mockReturnValue(mockDb);
+      const factory = vi.fn<() => Db | Promise<Db>>().mockReturnValue(mockDb);
       const config: MonqueTsedConfig = { dbFactory: factory };
 
       const result = await resolveDatabase(config);
@@ -51,7 +53,7 @@ describe("resolveDatabase", () => {
 
     it("should call async factory and return result", async () => {
       const mockDb = createMockDb();
-      const factory = vi.fn().mockResolvedValue(mockDb);
+      const factory = vi.fn<() => Db | Promise<Db>>().mockResolvedValue(mockDb);
       const config: MonqueTsedConfig = { dbFactory: factory };
 
       const result = await resolveDatabase(config);
@@ -61,7 +63,9 @@ describe("resolveDatabase", () => {
     });
 
     it("should propagate factory errors", async () => {
-      const factory = vi.fn().mockRejectedValue(new Error("Connection failed"));
+      const factory = vi
+        .fn<() => Db | Promise<Db>>()
+        .mockRejectedValue(new Error("Connection failed"));
       const config: MonqueTsedConfig = { dbFactory: factory };
 
       await expect(resolveDatabase(config)).rejects.toThrow("Connection failed");
@@ -71,7 +75,7 @@ describe("resolveDatabase", () => {
   describe("dbToken strategy", () => {
     it("should resolve db from DI token", async () => {
       const mockDb = createMockDb();
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockDb);
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(mockDb));
       const config: MonqueTsedConfig = { dbToken: "MONGODB_DATABASE" };
 
       const result = await resolveDatabase(config, injectorFn);
@@ -90,30 +94,30 @@ describe("resolveDatabase", () => {
     });
 
     it("should throw ConnectionError if DI resolution returns undefined", async () => {
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(undefined);
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(undefined));
       const config: MonqueTsedConfig = { dbToken: "MONGODB_DATABASE" };
 
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(ConnectionError);
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
-        /Could not resolve database from token.*MONGODB_DATABASE/,
+        /Could not resolve database from token.*MONGODB_DATABASE/u,
       );
     });
 
     it("should throw ConnectionError if DI resolution returns null", async () => {
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(null);
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(null));
       const config: MonqueTsedConfig = { dbToken: "MONGODB_DATABASE" };
 
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(ConnectionError);
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
-        /Could not resolve database from token.*MONGODB_DATABASE/,
+        /Could not resolve database from token.*MONGODB_DATABASE/u,
       );
     });
 
     it("should work with Symbol tokens", async () => {
       const mockDb = createMockDb();
       const TOKEN = Symbol("MONGODB");
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockDb);
-      const config: MonqueTsedConfig = { dbToken: TOKEN as unknown as string };
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(mockDb));
+      const config: MonqueTsedConfig = { dbToken: TOKEN };
 
       const result = await resolveDatabase(config, injectorFn);
 
@@ -125,11 +129,13 @@ describe("resolveDatabase", () => {
       const mockDb = createMockDb();
       // Mock Mongoose Service structure
       const mockMongooseService = {
-        get: vi.fn().mockReturnValue({
+        get: vi.fn<MongooseService["get"]>().mockReturnValue({
           db: mockDb,
         }),
       };
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+      const injectorFn: InjectorFn = fromPartial(
+        vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
+      );
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_SERVICE" };
 
       const result = await resolveDatabase(config, injectorFn);
@@ -142,12 +148,16 @@ describe("resolveDatabase", () => {
     it("should resolve from Mongoose Service with custom connection ID", async () => {
       const mockDb = createMockDb();
       const mockMongooseService = {
-        get: vi.fn().mockImplementation((id) => {
-          if (id === "custom-conn") return { db: mockDb };
-          return null;
+        get: vi.fn<MongooseService["get"]>().mockImplementation((id) => {
+          if (id === "custom-conn") {
+            return { db: mockDb };
+          }
+          return fromAny(null);
         }),
       };
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+      const injectorFn: InjectorFn = fromPartial(
+        vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
+      );
       const config: MonqueTsedConfig = {
         dbToken: "MONGOOSE_SERVICE",
         mongooseConnectionId: "custom-conn",
@@ -165,7 +175,9 @@ describe("resolveDatabase", () => {
       const mockMongooseConnection = {
         db: mockDb,
       };
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseConnection);
+      const injectorFn: InjectorFn = fromPartial(
+        vi.fn<InjectorFn>().mockReturnValue(mockMongooseConnection),
+      );
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_CONNECTION" };
 
       const result = await resolveDatabase(config, injectorFn);
@@ -176,25 +188,29 @@ describe("resolveDatabase", () => {
 
     it("should throw ConnectionError if mongoose service returns invalid connection", async () => {
       const mockMongooseService = {
-        get: vi.fn().mockReturnValue(null), // returns null connection
+        // Deliberately return a malformed connection.
+        get: vi.fn<MongooseService["get"]>().mockReturnValue(fromAny(null)),
       };
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(mockMongooseService);
+      const injectorFn: InjectorFn = fromPartial(
+        vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
+      );
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_SERVICE" };
 
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(ConnectionError);
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
-        /MongooseService resolved from token.*MONGOOSE_SERVICE.*returned no connection/,
+        /MongooseService resolved from token.*MONGOOSE_SERVICE.*returned no connection/u,
       );
     });
 
     it("should throw ConnectionError if resolved value is not a valid Db instance", async () => {
-      const invalidDb = { foo: "bar" }; // No collection method
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(invalidDb);
+      // No collection method.
+      const invalidDb = { foo: "bar" };
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(invalidDb));
       const config: MonqueTsedConfig = { dbToken: "INVALID_DB" };
 
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(ConnectionError);
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(
-        /Resolved value from token.*INVALID_DB.*does not appear to be a valid MongoDB Db instance/,
+        /Resolved value from token.*INVALID_DB.*does not appear to be a valid MongoDB Db instance/u,
       );
     });
   });
@@ -216,7 +232,7 @@ describe("resolveDatabase", () => {
       const factoryDb = createMockDb();
       const tokenDb = createMockDb();
 
-      const injectorFn: InjectorFn = vi.fn().mockReturnValue(tokenDb);
+      const injectorFn: InjectorFn = fromPartial(vi.fn<InjectorFn>().mockReturnValue(tokenDb));
 
       // All three provided - should use db
       const config1: MonqueTsedConfig = {
@@ -224,14 +240,14 @@ describe("resolveDatabase", () => {
         dbFactory: () => factoryDb,
         dbToken: "TOKEN",
       };
-      expect(await resolveDatabase(config1, injectorFn)).toBe(directDb);
+      await expect(resolveDatabase(config1, injectorFn)).resolves.toBe(directDb);
 
       // Factory and token - should use factory
       const config2: MonqueTsedConfig = {
         dbFactory: () => factoryDb,
         dbToken: "TOKEN",
       };
-      expect(await resolveDatabase(config2, injectorFn)).toBe(factoryDb);
+      await expect(resolveDatabase(config2, injectorFn)).resolves.toBe(factoryDb);
     });
   });
 });

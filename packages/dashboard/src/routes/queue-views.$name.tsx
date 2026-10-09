@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi, Link } from "@tanstack/react-router";
 import { useCallback } from "react";
 import { z } from "zod";
 
@@ -16,22 +16,15 @@ import {
 } from "./-queue-views.shared.js";
 
 const DEFAULT_QUEUE_VIEW_JOBS_LIMIT = 50;
-
 const QueueViewDetailSearchSchema = z.strictObject({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
-
-export const Route = createFileRoute("/queue-views/$name")({
-  validateSearch: (search) => QueueViewDetailSearchSchema.parse(search),
-  component: QueueViewDetailRoute,
-  pendingComponent: QueueViewDetailLoadingState,
-});
-
-function QueueViewDetailRoute() {
-  const { managementApi, runtimeConfig } = Route.useRouteContext();
-  const { name } = Route.useParams();
-  const search = Route.useSearch();
+const routeApi = getRouteApi("/queue-views/$name");
+const QueueViewDetailRoute = () => {
+  const { managementApi, runtimeConfig } = routeApi.useRouteContext();
+  const { name } = routeApi.useParams();
+  const search = routeApi.useSearch();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
   const statsInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
   const queueViewsQuery = useQuery({
@@ -54,13 +47,10 @@ function QueueViewDetailRoute() {
   const refetchQueueViewDetail = useCallback((): void => {
     void Promise.all([queueViewsQueryRefetch(), jobsQueryRefetch()]);
   }, [jobsQueryRefetch, queueViewsQueryRefetch]);
-
   if (queueViewsQuery.isPending || jobsQuery.isPending) {
     return <QueueViewDetailLoadingState />;
   }
-
   const firstError = queueViewsQuery.error ?? jobsQuery.error;
-
   if (firstError) {
     return (
       <QueueViewsErrorState
@@ -71,14 +61,11 @@ function QueueViewDetailRoute() {
       />
     );
   }
-
   const queueViews = queueViewsQuery.data?.queueViews;
   const jobsPage = jobsQuery.data;
-
   if (!queueViews || !jobsPage) {
     return <QueueViewDetailLoadingState />;
   }
-
   const queueView = queueViews.find((candidate) => candidate.name === name);
   const stats = queueView?.stats ?? {
     pending: 0,
@@ -88,11 +75,10 @@ function QueueViewDetailRoute() {
     cancelled: 0,
     total: 0,
   };
-
   return (
     <div className="grid gap-4">
       <QueueViewDetailHeader name={name} queueView={queueView} stats={stats} />
-      {queueView?.hasRegisteredWorker ? (
+      {queueView?.hasRegisteredWorker === true ? (
         <ProcessingControls
           managementApi={managementApi}
           name={name}
@@ -122,4 +108,9 @@ function QueueViewDetailRoute() {
       />
     </div>
   );
-}
+};
+export const Route = createFileRoute("/queue-views/$name")({
+  validateSearch: (search) => QueueViewDetailSearchSchema.parse(search),
+  component: QueueViewDetailRoute,
+  pendingComponent: QueueViewDetailLoadingState,
+});

@@ -1,5 +1,6 @@
 import { createManagementSurface } from "@monque/management";
-import { type NextFunction, type Request, type Response, Router } from "express";
+import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
 
 import { createRequest, sendResponse } from "./http.js";
 import { mountOpenApiRoute } from "./openapi.js";
@@ -21,7 +22,7 @@ import type { ManagementExpressRouterOptions } from "./types.js";
  * this router, then use `context` and the framework-neutral `authorize` hook for
  * action-grained Management Surface authorization.
  *
- * @typeParam TContext - Application-specific context exposed to management hooks.
+ * @template TContext - Application-specific context exposed to management hooks.
  * @param options - Monque Management Surface options plus Express adapter options.
  * @returns An Express router that can be mounted with `app.use()`.
  *
@@ -67,14 +68,15 @@ import type { ManagementExpressRouterOptions } from "./types.js";
  * );
  * ```
  */
-export function createManagementExpressRouter<TContext = unknown>(
-  options: ManagementExpressRouterOptions<TContext>,
-): Router {
+export const createManagementExpressRouter = function createManagementExpressRouter<
+  TContext = unknown,
+>(options: ManagementExpressRouterOptions<TContext>): Router {
   const router = Router();
   const { context, openApi, ...managementOptions } = options;
   const surface = createManagementSurface(managementOptions);
   mountOpenApiRoute(router, openApi);
 
+  // oxlint-disable-next-line oxc/no-async-endpoint-handlers -- Express 5 supports Promise-returning handlers.
   router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const result = await surface.openApiHandler.handle(createRequest(req), {
@@ -88,9 +90,11 @@ export function createManagementExpressRouter<TContext = unknown>(
 
       await sendResponse(res, result.response);
     } catch (error) {
+      /* oxlint-disable node/callback-return -- The terminal Express error callback ends the handler. */
       next(error);
+      /* oxlint-enable node/callback-return */
     }
   });
 
   return router;
-}
+};

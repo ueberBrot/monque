@@ -1,4 +1,14 @@
-export function parseTrustedOrigins(origins: readonly string[]): ReadonlySet<string> {
+const isCanonicalOrigin = function isCanonicalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return (url.protocol === "https:" || url.protocol === "http:") && url.origin === origin;
+  } catch {
+    return false;
+  }
+};
+export const parseTrustedOrigins = function parseTrustedOrigins(
+  origins: readonly string[],
+): ReadonlySet<string> {
   for (const origin of origins) {
     if (!isCanonicalOrigin(origin)) {
       throw new TypeError(`Invalid trusted origin: ${origin}`);
@@ -6,7 +16,7 @@ export function parseTrustedOrigins(origins: readonly string[]): ReadonlySet<str
   }
 
   return new Set(origins);
-}
+};
 
 interface MutationRequest {
   method: string;
@@ -14,7 +24,7 @@ interface MutationRequest {
   headers: Record<string, string | string[] | undefined>;
 }
 
-export function isTrustedMutationRequest(
+export const isTrustedMutationRequest = function isTrustedMutationRequest(
   request: MutationRequest,
   trustedOrigins: ReadonlySet<string>,
 ): boolean {
@@ -22,11 +32,11 @@ export function isTrustedMutationRequest(
     return true;
   }
 
-  const origin = request.headers["origin"];
+  const { origin } = request.headers;
 
   if (origin !== undefined) {
     return (
-      typeof origin === "string" &&
+      !Array.isArray(origin) &&
       isCanonicalOrigin(origin) &&
       (origin === request.url.origin || trustedOrigins.has(origin))
     );
@@ -34,13 +44,4 @@ export function isTrustedMutationRequest(
 
   const fetchSite = request.headers["sec-fetch-site"];
   return fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "none";
-}
-
-function isCanonicalOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    return (url.protocol === "https:" || url.protocol === "http:") && url.origin === origin;
-  } catch {
-    return false;
-  }
-}
+};

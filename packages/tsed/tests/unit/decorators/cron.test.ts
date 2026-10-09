@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
 import { Store } from "@tsed/core";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -11,6 +12,7 @@ describe("@Cron", () => {
     @JobController("test")
     class TestController {
       @Cron("* * * * *")
+      // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
       testMethod() {}
     }
 
@@ -18,7 +20,7 @@ describe("@Cron", () => {
 
     expect(store).toBeDefined();
     expect(store.cronJobs).toHaveLength(1);
-    expect(store.cronJobs[0]).toEqual({
+    expect(store.cronJobs[0]).toStrictEqual({
       pattern: "* * * * *",
       name: "testMethod",
       method: "testMethod",
@@ -30,13 +32,14 @@ describe("@Cron", () => {
     @JobController("test")
     class TestController {
       @Cron("0 0 * * *", { name: "custom-name" })
+      // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
       dailyJob() {}
     }
 
     const store = Store.from(TestController).get<JobStore>(MONQUE);
 
     expect(store.cronJobs).toHaveLength(1);
-    expect(store.cronJobs[0]).toEqual({
+    expect(store.cronJobs[0]).toStrictEqual({
       pattern: "0 0 * * *",
       name: "custom-name",
       method: "dailyJob",
@@ -50,9 +53,11 @@ describe("@Cron", () => {
     @JobController("test")
     class TestController {
       @Cron("* * * * *")
+      // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
       job1() {}
 
       @Cron("@daily")
+      // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
       job2() {}
     }
 
@@ -65,6 +70,7 @@ describe("@Cron", () => {
 
   it("should preserve existing jobs in the store", () => {
     // Mock existing store
+    // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class TestTarget {}
     const store = Store.from(TestTarget);
     store.set(MONQUE, {
@@ -77,7 +83,7 @@ describe("@Cron", () => {
     const decorator = Cron("* * * * *");
     decorator(TestTarget.prototype, "newJob", {
       value: () => {},
-    } as TypedPropertyDescriptor<unknown>);
+    });
 
     const updatedStore = store.get<JobStore>(MONQUE);
 
@@ -86,6 +92,7 @@ describe("@Cron", () => {
   });
 
   it("should handle missing cronJobs array in existing store", () => {
+    // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class TestClass {}
     const store = Store.from(TestClass);
     // Seed store with partial object missing 'cronJobs'
@@ -93,7 +100,7 @@ describe("@Cron", () => {
 
     // Apply decorator manually
     const decorator = Cron("* * * * *");
-    decorator(TestClass.prototype, "cronMethod", {} as TypedPropertyDescriptor<unknown>);
+    decorator(TestClass.prototype, "cronMethod", {});
 
     const res = store.get<JobStore>(MONQUE);
     expect(res.cronJobs).toHaveLength(1);

@@ -1,23 +1,26 @@
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
-export function attempt<A>(operation: () => A): Effect.Effect<A, unknown> {
+export const attempt = function attempt<A>(operation: () => A): Effect.Effect<A, unknown> {
   return Effect.try({
     try: operation,
     catch: (error) => error,
   });
-}
+};
 
-export function fromPromise<A>(operation: () => A | PromiseLike<A>): Effect.Effect<A, unknown> {
+export const fromPromise = function fromPromise<A>(
+  operation: () => A | PromiseLike<A>,
+): Effect.Effect<A, unknown> {
   return Effect.tryPromise({
-    try: () => Promise.resolve(operation()),
+    try: async () => await operation(),
     catch: (error) => error,
   });
-}
+};
 
-export const concurrently = Effect.fnUntraced(function* <A, E>(
+export const concurrently = Effect.fnUntraced(function* concurrently<A, E>(
   operations: Iterable<Effect.Effect<A, E>>,
 ) {
+  // oxlint-disable-next-line unicorn/no-array-for-each, unicorn/no-array-method-this-argument -- Effect.forEach traverses Effects, not an Array callback.
   const fibers = yield* Effect.forEach(operations, (operation) =>
     Effect.forkDetach(operation, { startImmediately: true }),
   );

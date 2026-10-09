@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { dirname } from "node:path";
+import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
@@ -7,29 +7,26 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
-const dashboardPackageDirectory = dirname(fileURLToPath(import.meta.url));
+const dashboardPackageDirectory = import.meta.dirname;
 
 let dashboardClientBuild: Promise<void> | undefined;
 
-function buildDashboardClient(): Promise<void> {
-  dashboardClientBuild ??= new Promise((resolve, reject) => {
+const buildDashboardClient = async (): Promise<void> => {
+  dashboardClientBuild ??= (async () => {
     const child = spawn("vp", ["build"], {
       cwd: dashboardPackageDirectory,
       stdio: "inherit",
     });
-
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`Dashboard client build failed with code ${code} and signal ${signal}.`));
-    });
-  });
-  return dashboardClientBuild;
-}
+    const exit: unknown[] = await once(child, "exit");
+    const [code, signal] = exit;
+    if (code !== 0) {
+      throw new Error(
+        `Dashboard client build failed with code ${String(code)} and signal ${String(signal)}.`,
+      );
+    }
+  })();
+  await dashboardClientBuild;
+};
 
 const config = defineConfig({
   run: {
@@ -73,7 +70,7 @@ const config = defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
+        command: "vp lint --type-aware --type-check --deny-warnings",
         dependsOn: [
           {
             task: "build",
@@ -159,7 +156,7 @@ const config = defineConfig({
         injectSource: {
           enabled: true,
           ignore: {
-            files: [/.*\.test\.(ts|tsx)$/],
+            files: [/.*\.test\.(?:ts|tsx)$/u],
           },
         },
         logging: true,

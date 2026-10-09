@@ -1,100 +1,24 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import path from "node:path";
 import {
-  type DashboardRuntimeConfig,
   getDashboardAssetDirectory,
   getDashboardAssetMetadata,
   getDashboardHtmlEntrypointPath,
   parseDashboardRuntimeConfig,
 } from "@monque/dashboard";
-import {
-  type NextFunction,
-  type Request,
-  type Response,
-  Router,
-  static as serveStatic,
-} from "express";
+import type { DashboardRuntimeConfig } from "@monque/dashboard";
+import { Router, static as serveStatic } from "express";
+import type { NextFunction, Request, Response } from "express";
 
 import type { DashboardExpressRouterOptions } from "./types.js";
 
-type RuntimeConfigInjectionOptions = {
+interface RuntimeConfigInjectionOptions {
   readonly runtimeConfig: DashboardRuntimeConfig;
   readonly runtimeConfigGlobal: string;
   readonly runtimeConfigScriptId: string;
-};
-
-export function createDashboardExpressRouter(options: DashboardExpressRouterOptions): Router {
-  const router = Router();
-  const assetDirectory = getDashboardAssetDirectory();
-  const htmlTemplate = readFileSync(getDashboardHtmlEntrypointPath(), "utf8");
-  const { runtimeConfigGlobal, runtimeConfigScriptId } = getDashboardAssetMetadata();
-
-  router.use(
-    "/assets",
-    serveStatic(join(assetDirectory, "assets"), {
-      immutable: true,
-      index: false,
-      maxAge: "1y",
-    }),
-  );
-  router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!shouldServeDashboardHtml(req)) {
-      next();
-      return;
-    }
-
-    try {
-      const apiBaseUrl = options.apiBaseUrl;
-      const runtimeConfig = parseDashboardRuntimeConfig({
-        apiBaseUrl: await (typeof apiBaseUrl === "string" ? apiBaseUrl : apiBaseUrl({ req, res })),
-        basePath: req.baseUrl || "/",
-        pollingIntervalMs: options.pollingIntervalMs,
-      });
-
-      res.setHeader("Cache-Control", "no-store");
-      res.type("html").send(
-        injectRuntimeConfig(htmlTemplate, {
-          runtimeConfig,
-          runtimeConfigGlobal,
-          runtimeConfigScriptId,
-        }),
-      );
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  return router;
 }
 
-function injectRuntimeConfig(htmlTemplate: string, options: RuntimeConfigInjectionOptions): string {
-  const assetBasePath = `${options.runtimeConfig.basePath.replace(/\/$/, "")}/assets/`
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-  // Relative Vite assets otherwise resolve below a deep-link route (for example /jobs/:id).
-  const mountAwareHtml = htmlTemplate.replace(
-    /\b(src|href)=(['"])\.\/assets\//g,
-    (_match, attribute: string, quote: string) => `${attribute}=${quote}${assetBasePath}`,
-  );
-  const runtimeConfigJson = JSON.stringify(options.runtimeConfig).replaceAll("<", "\\u003c");
-  const runtimeConfigScript = [
-    `<script id="${options.runtimeConfigScriptId}">`,
-    `window.${options.runtimeConfigGlobal} = ${runtimeConfigJson};`,
-    "</script>",
-  ].join("");
-
-  return mountAwareHtml.replace(
-    new RegExp(
-      `<script\\s+id=["']${escapeRegularExpression(options.runtimeConfigScriptId)}["'][^>]*>[\\s\\S]*?<\\/script>`,
-    ),
-    () => runtimeConfigScript,
-  );
-}
-
-function shouldServeDashboardHtml(req: Request): boolean {
+const shouldServeDashboardHtml = function shouldServeDashboardHtml(req: Request): boolean {
   if (req.method !== "GET" && req.method !== "HEAD") {
     return false;
   }
@@ -117,8 +41,89 @@ function shouldServeDashboardHtml(req: Request): boolean {
   }
 
   return !req.path.includes(".");
-}
+};
 
-function escapeRegularExpression(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const escapeRegularExpression = function escapeRegularExpression(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+};
+
+const injectRuntimeConfig = function injectRuntimeConfig(
+  htmlTemplate: string,
+  options: RuntimeConfigInjectionOptions,
+): string {
+  const assetBasePath = `${options.runtimeConfig.basePath.replace(/\/$/u, "")}/assets/`
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  // Relative Vite assets otherwise resolve below a deep-link route (for example /jobs/:id).
+  const mountAwareHtml = htmlTemplate.replaceAll(
+    /\b(?<attribute>src|href)=(?<quote>['"])\.\/assets\//gu,
+    (_match, attribute: string, quote: string) => `${attribute}=${quote}${assetBasePath}`,
+  );
+  const runtimeConfigJson = JSON.stringify(options.runtimeConfig).replaceAll("<", "\\u003c");
+  const runtimeConfigScript = [
+    `<script id="${options.runtimeConfigScriptId}">`,
+    `window.${options.runtimeConfigGlobal} = ${runtimeConfigJson};`,
+    "</script>",
+  ].join("");
+
+  return mountAwareHtml.replace(
+    new RegExp(
+      `<script\\s+id=["']${escapeRegularExpression(options.runtimeConfigScriptId)}["'][^>]*>[\\s\\S]*?<\\/script>`,
+      "u",
+    ),
+    () => runtimeConfigScript,
+  );
+};
+
+export const createDashboardExpressRouter = function createDashboardExpressRouter(
+  options: DashboardExpressRouterOptions,
+): Router {
+  const router = Router();
+  const assetDirectory = getDashboardAssetDirectory();
+  const htmlTemplate = readFileSync(getDashboardHtmlEntrypointPath(), "utf-8");
+  const { runtimeConfigGlobal, runtimeConfigScriptId } = getDashboardAssetMetadata();
+
+  router.use(
+    "/assets",
+    serveStatic(path.join(assetDirectory, "assets"), {
+      immutable: true,
+      index: false,
+      maxAge: "1y",
+    }),
+  );
+  // oxlint-disable-next-line oxc/no-async-endpoint-handlers -- Express 5 supports Promise-returning handlers.
+  router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!shouldServeDashboardHtml(req)) {
+      next();
+      return;
+    }
+
+    try {
+      const { apiBaseUrl } = options;
+      const runtimeConfig = parseDashboardRuntimeConfig({
+        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Dispatch the documented string-or-resolver adapter option.
+        apiBaseUrl: await (typeof apiBaseUrl === "string" ? apiBaseUrl : apiBaseUrl({ req, res })),
+        basePath: req.baseUrl || "/",
+        pollingIntervalMs: options.pollingIntervalMs,
+      });
+
+      res.setHeader("Cache-Control", "no-store");
+      res.type("html").send(
+        injectRuntimeConfig(htmlTemplate, {
+          runtimeConfig,
+          runtimeConfigGlobal,
+          runtimeConfigScriptId,
+        }),
+      );
+    } catch (error) {
+      /* oxlint-disable node/callback-return -- The terminal Express error callback ends the handler. */
+      next(error);
+      /* oxlint-enable node/callback-return */
+    }
+  });
+
+  return router;
+};

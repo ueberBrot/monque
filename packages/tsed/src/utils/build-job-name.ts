@@ -12,6 +12,9 @@
  * buildJobName("", "send"); // "send"
  * ```
  */
-export function buildJobName(namespace: string | undefined, name: string): string {
-  return namespace ? `${namespace}.${name}` : name;
-}
+export const buildJobName = function buildJobName(
+  namespace: string | undefined,
+  name: string,
+): string {
+  return namespace !== undefined && namespace !== "" ? `${namespace}.${name}` : name;
+};

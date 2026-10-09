@@ -1,4 +1,4 @@
-import type { CronDecoratorOptions, CronMetadata } from "@/decorators/types.js";
+import type { CronDecoratorOptions, CronMetadata, JobDecoratorTarget } from "@/decorators/types.js";
 
 import { appendJobMetadata } from "./append-job-metadata.js";
 
@@ -19,9 +19,12 @@ import { appendJobMetadata } from "./append-job-metadata.js";
  * }
  * ```
  */
-export function Cron(pattern: string, options?: CronDecoratorOptions): MethodDecorator {
+export const Cron = function Cron(
+  pattern: string,
+  options?: CronDecoratorOptions,
+): MethodDecorator {
   return <T>(
-    target: object,
+    target: JobDecoratorTarget,
     propertyKey: string | symbol,
     _descriptor: TypedPropertyDescriptor<T>,
   ): void => {
@@ -30,11 +33,11 @@ export function Cron(pattern: string, options?: CronDecoratorOptions): MethodDec
     const cronMetadata: CronMetadata = {
       pattern,
       // Default name to method name if not provided
-      name: options?.name || methodName,
+      name: options?.name === undefined || options.name === "" ? methodName : options.name,
       method: methodName,
-      opts: options || {},
+      opts: options ?? {},
     };
 
     appendJobMetadata(target, cronMetadata);
   };
-}
+};

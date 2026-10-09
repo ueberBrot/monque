@@ -1,21 +1,19 @@
 import { randomUUID } from "node:crypto";
-import {
-  type CommandStartedEvent,
-  type CommandSucceededEvent,
-  type Document,
-  type FindOneAndUpdateOptions,
-  MongoClient,
+import { setTimeout as pauseFor } from "node:timers/promises";
+import { MongoClient } from "mongodb";
+import type {
+  CommandStartedEvent,
+  CommandSucceededEvent,
+  Document,
+  FindOneAndUpdateOptions,
 } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, inject, it, vi } from "vite-plus/test";
 
 import { Monque } from "@/scheduler";
 import { stopMonqueInstances, waitFor } from "@test-utils/test-utils.js";
 
-interface StreamNotification {
-  operationType?: string;
-  fullDocument?: { name?: string; status?: string; nextRunAt?: Date; data?: unknown };
-  updateDescription?: { updatedFields?: { status?: string } };
-}
+import { readCommand, readExplanation, readStreamReply } from "./mongo-observations";
+import type { StreamNotification } from "./mongo-observations";
 
 describe("job discovery", () => {
   const client = new MongoClient(inject("coreMongoUri"), {
@@ -24,11 +22,9 @@ describe("job discovery", () => {
   });
   const db = client.db(`monque_discovery_${randomUUID().replaceAll("-", "")}`);
   const instances: Monque[] = [];
-
   beforeAll(async () => {
     await client.connect();
   });
-
   afterEach(async () => {
     vi.restoreAllMocks();
     await stopMonqueInstances(instances);
@@ -46,28 +42,38 @@ describe("job discovery", () => {
     const monque = new Monque(db, { collectionName, safetyPollInterval: 60_000 });
     instances.push(monque);
     await monque.initialize();
-    for (let i = 0; i < 100; i++) monque.register(`worker-${i}`, async () => {});
-
+    for (let i = 0; i < 100; i += 1) {
+      monque.register(`worker-${i}`, () => {});
+    }
     const discoveryRequests = new Set<number>();
     let discoveries = 0;
     let claims = 0;
     client.on("commandStarted", (event: CommandStartedEvent) => {
-      if (event.command["findAndModify"] === collectionName) claims++;
+      const command = readCommand(event.command);
+      if (command.findAndModify === collectionName) {
+        claims += 1;
+      }
       if (
-        event.command["aggregate"] === collectionName &&
-        !event.command["pipeline"][0]?.["$changeStream"]
+        command.aggregate === collectionName &&
+        command.pipeline?.[0]?.["$changeStream"] === undefined
       ) {
         discoveryRequests.add(event.requestId);
       }
     });
     client.on("commandSucceeded", (event: CommandSucceededEvent) => {
-      if (discoveryRequests.has(event.requestId)) discoveries++;
+      if (discoveryRequests.has(event.requestId)) {
+        discoveries += 1;
+      }
     });
-
     monque.start();
-    await waitFor(async () => discoveries > 0, { timeout: 2000, interval: 10 });
-    expect(discoveries).toBe(1);
-    expect(claims).toBe(0);
+    await waitFor(() => discoveries > 0, { timeout: 2000, interval: 10 });
+    expect({
+      discoveries,
+      claims,
+    }).toStrictEqual({
+      discoveries: 1,
+      claims: 0,
+    });
   });
 
   it("runs persisted future jobs before the safety interval, including after draining due work", async () => {
@@ -77,26 +83,29 @@ describe("job discovery", () => {
       collectionName,
       pollInterval: 60_000,
       safetyPollInterval: 60_000,
-      defaultConcurrency: 1,
+      workerConcurrency: 1,
     });
     instances.push(producer, consumer);
     await producer.initialize();
     await consumer.initialize();
     const handled: string[] = [];
-    consumer.register<{ value: string }>("work", async (job) => {
+    consumer.register<{
+      value: string;
+    }>("work", (job) => {
       handled.push(job.data.value);
     });
-    consumer.register<{ value: string }>("future-only", async (job) => {
+    consumer.register<{
+      value: string;
+    }>("future-only", (job) => {
       handled.push(job.data.value);
     });
     const runAt = new Date(Date.now() + 700);
     await producer.enqueue("work", { value: "due" });
     await producer.enqueue("work", { value: "future" }, { runAt });
     await producer.enqueue("future-only", { value: "other" }, { runAt });
-
     consumer.start();
-    await waitFor(async () => handled.length === 3, { timeout: 3000, interval: 10 });
-    expect(handled).toEqual(expect.arrayContaining(["due", "future", "other"]));
+    await waitFor(() => handled.length === 3, { timeout: 3000, interval: 10 });
+    expect(handled).toStrictEqual(expect.arrayContaining(["due", "future", "other"]));
   });
 
   it("runs a case-variant future job enqueued after startup discovery", async () => {
@@ -112,34 +121,38 @@ describe("job discovery", () => {
     await producer.initialize();
     await consumer.initialize();
     const handled: string[] = [];
-    consumer.register("email", async (job) => {
+    consumer.register("email", (job) => {
       handled.push(job.name);
     });
-
     const startupReads = new Set<number>();
     const subscriptions = new Set<number>();
     let startupFinished = false;
     let subscribed = false;
     client.on("commandStarted", (event: CommandStartedEvent) => {
-      if (event.command["find"] === collectionName) startupReads.add(event.requestId);
+      const command = readCommand(event.command);
+      if (command.find === collectionName) {
+        startupReads.add(event.requestId);
+      }
       if (
-        event.command["aggregate"] === collectionName &&
-        event.command["pipeline"][0]?.["$changeStream"]
+        command.aggregate === collectionName &&
+        command.pipeline?.[0]?.["$changeStream"] !== undefined
       ) {
         subscriptions.add(event.requestId);
       }
     });
     client.on("commandSucceeded", (event: CommandSucceededEvent) => {
-      if (startupReads.has(event.requestId)) startupFinished = true;
-      if (subscriptions.has(event.requestId)) subscribed = true;
+      if (startupReads.has(event.requestId)) {
+        startupFinished = true;
+      }
+      if (subscriptions.has(event.requestId)) {
+        subscribed = true;
+      }
     });
-
     consumer.start();
-    await waitFor(async () => startupFinished && subscribed, { timeout: 3000, interval: 10 });
+    await waitFor(() => startupFinished && subscribed, { timeout: 3000, interval: 10 });
     await producer.enqueue("EMAIL", {}, { runAt: new Date(Date.now() + 700) });
-
-    await waitFor(async () => handled.length === 1, { timeout: 3000, interval: 10 });
-    expect(handled).toEqual(["EMAIL"]);
+    await waitFor(() => handled.length === 1, { timeout: 3000, interval: 10 });
+    expect(handled).toStrictEqual(["EMAIL"]);
   });
 
   it("reads deadlines without scanning every pending job in each name", async () => {
@@ -151,30 +164,34 @@ describe("job discovery", () => {
     await consumer.initialize();
     const names = Array.from({ length: 10 }, (_, i) => `worker-${i}`);
     const runAt = new Date(Date.now() + 3_600_000);
-    for (const name of names) consumer.register(name, async () => {});
+    for (const name of names) {
+      consumer.register(name, () => {});
+    }
     await producer.enqueueMany(
       names.flatMap((name) => Array.from({ length: 100 }, () => ({ name, data: {}, runAt }))),
     );
     let pipeline: Document[] | undefined;
     client.on("commandStarted", (event: CommandStartedEvent) => {
+      const command = readCommand(event.command);
       if (
-        event.command["aggregate"] === collectionName &&
-        !event.command["pipeline"][0]?.["$changeStream"]
+        command.aggregate === collectionName &&
+        command.pipeline?.[0]?.["$changeStream"] === undefined
       ) {
-        pipeline = event.command["pipeline"];
+        ({ pipeline } = command);
       }
     });
     consumer.start();
-    await waitFor(async () => pipeline !== undefined, { timeout: 2000, interval: 10 });
-    if (!pipeline) throw new Error("Discovery did not issue its read");
+    await waitFor(() => pipeline !== undefined, { timeout: 2000, interval: 10 });
+    if (!pipeline) {
+      throw new Error("Discovery did not issue its read");
+    }
     const explanation = await db
       .collection(collectionName)
       .aggregate(pipeline)
       .explain("executionStats");
-    const stats =
-      explanation["executionStats"] ?? explanation["stages"]?.[0]?.["$cursor"]?.["executionStats"];
-    expect(stats["totalKeysExamined"]).toBeLessThan(100);
-    expect(stats["totalDocsExamined"]).toBe(0);
+    const { stats } = readExplanation(explanation);
+    expect(stats.totalKeysExamined).toBeLessThan(100);
+    expect(stats.totalDocsExamined).toBe(0);
   });
 
   it.each([false, true])(
@@ -194,11 +211,16 @@ describe("job discovery", () => {
       const getCollection = vi.spyOn(db, "collection").mockReturnValue(collection);
       await consumer.initialize();
       getCollection.mockRestore();
-      const release = Promise.withResolvers<void>();
+      const release: PromiseWithResolvers<void> = Promise.withResolvers();
       let futureStarted = false;
-      consumer.register<{ hold: boolean }>("work", async (job) => {
-        if (job.data.hold) await release.promise;
-        else futureStarted = true;
+      consumer.register<{
+        hold: boolean;
+      }>("work", async (job) => {
+        if (job.data.hold) {
+          await release.promise;
+        } else {
+          futureStarted = true;
+        }
       });
       const runAt = new Date(Date.now() + 700);
       await producer.enqueue("work", { hold: true });
@@ -212,15 +234,14 @@ describe("job discovery", () => {
             includeResultMetadata: false,
           });
           if (!result && crossesDeadline) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, Math.max(0, runAt.getTime() - Date.now() + 50)),
-            );
+            await pauseFor(Math.max(0, runAt.getTime() - Date.now() + 50));
           }
           return result;
         });
       try {
         consumer.start();
-        await waitFor(async () => futureStarted, { timeout: 3000, interval: 10 });
+        await waitFor(() => futureStarted, { timeout: 3000, interval: 10 });
+        expect(futureStarted).toBe(true);
       } finally {
         release.resolve();
         claim.mockRestore();
@@ -239,68 +260,69 @@ describe("job discovery", () => {
     instances.push(producer, consumer);
     await producer.initialize();
     await consumer.initialize();
-    const release = Promise.withResolvers<void>();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     let handledPayload: unknown;
     consumer.register("work", async (job) => {
       handledPayload = job.data;
       await release.promise;
     });
-
     const events: StreamNotification[] = [];
     const watchRequests = new Set<number>();
     let subscribed = false;
     client.on("commandStarted", (event: CommandStartedEvent) => {
+      const command = readCommand(event.command);
       if (
-        event.command["aggregate"] === collectionName &&
-        event.command["pipeline"][0]?.["$changeStream"]
+        command.aggregate === collectionName &&
+        command.pipeline?.[0]?.["$changeStream"] !== undefined
       ) {
         watchRequests.add(event.requestId);
       }
     });
     client.on("commandSucceeded", (event: CommandSucceededEvent) => {
-      if (watchRequests.has(event.requestId)) subscribed = true;
-      const reply = event.reply as {
-        cursor?: {
-          ns?: string;
-          firstBatch?: StreamNotification[];
-          nextBatch?: StreamNotification[];
-        };
-      };
-      if (reply.cursor?.ns !== `${db.databaseName}.${collectionName}`) return;
+      if (watchRequests.has(event.requestId)) {
+        subscribed = true;
+      }
+      const reply = readStreamReply(event.reply);
+      if (reply.cursor?.ns !== `${db.databaseName}.${collectionName}`) {
+        return;
+      }
       const batch = reply.cursor.firstBatch ?? reply.cursor.nextBatch ?? [];
       events.push(...batch.filter((notification) => notification.operationType !== undefined));
     });
-
     try {
       consumer.start();
-      await waitFor(async () => subscribed, { timeout: 3000, interval: 10 });
+      await waitFor(() => subscribed, { timeout: 3000, interval: 10 });
       const payload = { message: "preserved", large: "x".repeat(10_000) };
       const job = await producer.enqueue("work", payload, {
         runAt: new Date(Date.now() + 60_000),
       });
-      await waitFor(async () => events.some((event) => event.fullDocument?.name === "work"), {
+      await waitFor(() => events.some((event) => event.fullDocument?.name === "work"), {
         timeout: 3000,
         interval: 10,
       });
       await producer.rescheduleJob(job._id.toHexString(), new Date());
-      await waitFor(async () => handledPayload !== undefined, { timeout: 3000, interval: 10 });
+      await waitFor(() => handledPayload !== undefined, { timeout: 3000, interval: 10 });
       await producer.enqueue("barrier", {}, { runAt: new Date(Date.now() + 60_000) });
-      await waitFor(async () => events.some((event) => event.fullDocument?.name === "barrier"), {
+      await waitFor(() => events.some((event) => event.fullDocument?.name === "barrier"), {
         timeout: 3000,
         interval: 10,
       });
-
-      expect(handledPayload).toEqual(payload);
-      expect(
-        events.some((event) => event.updateDescription?.updatedFields?.status === "processing"),
-      ).toBe(false);
-      expect(events.every((event) => event.fullDocument?.data === undefined)).toBe(true);
-
+      expect({
+        handledPayload,
+        observed: events.some(
+          (event) => event.updateDescription?.updatedFields?.status === "processing",
+        ),
+        payloadsOmitted: events.every((event) => event.fullDocument?.data === undefined),
+      }).toStrictEqual({
+        handledPayload: payload,
+        observed: false,
+        payloadsOmitted: true,
+      });
       release.resolve();
-      await waitFor(
-        async () => events.some((event) => event.fullDocument?.status === "completed"),
-        { timeout: 3000, interval: 10 },
-      );
+      await waitFor(() => events.some((event) => event.fullDocument?.status === "completed"), {
+        timeout: 3000,
+        interval: 10,
+      });
     } finally {
       release.resolve();
     }

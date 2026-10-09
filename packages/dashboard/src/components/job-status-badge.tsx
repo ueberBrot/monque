@@ -11,14 +11,13 @@ const STATUS_ICONS = {
   failed: AlertTriangle,
   cancelled: CircleX,
 };
-
-export function JobStatusBadge({
+export const JobStatusBadge = ({
   status,
   withIcon = false,
 }: {
   readonly status: JobDto["status"];
   readonly withIcon?: boolean;
-}) {
+}) => {
   const meta = JOB_STATUS_META[status];
   const Icon = STATUS_ICONS[status];
   return (
@@ -27,4 +26,4 @@ export function JobStatusBadge({
       {meta.label}
     </Badge>
   );
-}
+};

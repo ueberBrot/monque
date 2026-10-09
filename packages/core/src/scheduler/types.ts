@@ -20,26 +20,22 @@ export interface MonqueOptions {
    * @default 'monque_jobs'
    */
   collectionName?: string;
-
   /**
    * Interval in milliseconds between polling for new jobs.
    * @default 1000
    */
   pollInterval?: number;
-
   /**
    * Maximum number of retry attempts before marking a job as permanently failed.
    * @default 10
    */
   maxRetries?: number;
-
   /**
    * Base interval in milliseconds for exponential backoff calculation.
    * Actual delay = 2^failCount * baseRetryInterval
    * @default 1000
    */
   baseRetryInterval?: number;
-
   /**
    * Maximum delay in milliseconds for exponential backoff.
    * If calculated delay exceeds this value, it will be capped.
@@ -48,13 +44,11 @@ export interface MonqueOptions {
    * @default 86400000 (24 hours)
    */
   maxBackoffDelay?: number | undefined;
-
   /**
    * Timeout in milliseconds for graceful shutdown.
    * @default 30000
    */
   shutdownTimeout?: number;
-
   /**
    * Default number of concurrent jobs per worker.
    *
@@ -64,7 +58,6 @@ export interface MonqueOptions {
    * @default 5
    */
   workerConcurrency?: number;
-
   /**
    * Default number of concurrent jobs per worker.
    *
@@ -72,7 +65,6 @@ export interface MonqueOptions {
    * @deprecated Use `workerConcurrency` instead. Will be removed in a future major version.
    */
   defaultConcurrency?: number;
-
   /**
    * Maximum time in milliseconds a job can be in 'processing' status before
    * being considered stale and eligible for recovery.
@@ -82,14 +74,12 @@ export interface MonqueOptions {
    * @default 1800000 (30 minutes)
    */
   lockTimeout?: number;
-
   /**
    * Opt into renewable claims and periodic stale recovery, in milliseconds.
    * Must exceed heartbeatInterval. Upgrade all schedulers sharing the collection
    * before enabling this option. Omit to keep absolute lockTimeout behavior.
    */
   leaseDuration?: number;
-
   /**
    * Unique identifier for this scheduler instance.
    * Used for atomic job claiming - each instance uses this ID to claim jobs.
@@ -97,7 +87,6 @@ export interface MonqueOptions {
    * @default crypto.randomUUID()
    */
   schedulerInstanceId?: string;
-
   /**
    * Interval in milliseconds for heartbeat updates during job processing.
    * The scheduler periodically updates `lastHeartbeat` for all jobs it is processing
@@ -108,7 +97,6 @@ export interface MonqueOptions {
    * @default 30000 (30 seconds)
    */
   heartbeatInterval?: number;
-
   /**
    * Whether to recover stale processing jobs on startup and, with `leaseDuration`,
    * after each heartbeat. Expired leases and unleased claims older than
@@ -116,7 +104,6 @@ export interface MonqueOptions {
    * @default true
    */
   recoverStaleJobs?: boolean;
-
   /**
    * Configuration for automatic cleanup of completed, failed, and cancelled jobs.
    * If undefined, no cleanup is performed.
@@ -128,19 +115,16 @@ export interface MonqueOptions {
          * Cleaned up based on 'updatedAt' timestamp.
          */
         completed?: number;
-
         /**
          * Age in milliseconds after which failed jobs are deleted.
          * Cleaned up based on 'updatedAt' timestamp.
          */
         failed?: number;
-
         /**
          * Age in milliseconds after which cancelled jobs are deleted.
          * Based on 'updatedAt'. Omit to retain cancelled jobs indefinitely.
          */
         cancelled?: number;
-
         /**
          * Interval in milliseconds for running the cleanup job.
          * @default 3600000 (1 hour)
@@ -148,7 +132,6 @@ export interface MonqueOptions {
         interval?: number;
       }
     | undefined;
-
   /**
    * Maximum number of concurrent jobs processed by this instance across all registered workers.
    *
@@ -170,14 +153,12 @@ export interface MonqueOptions {
    * ```
    */
   instanceConcurrency?: number | undefined;
-
   /**
    * Maximum number of concurrent jobs processed by this instance across all registered workers.
    *
    * @deprecated Use `instanceConcurrency` instead. Will be removed in a future major version.
    */
   maxConcurrency?: number | undefined;
-
   /**
    * Skip automatic index creation during initialization.
    *
@@ -188,7 +169,6 @@ export interface MonqueOptions {
    * @default false
    */
   skipIndexCreation?: boolean;
-
   /**
    * Maximum allowed BSON byte size for job data payloads.
    *
@@ -199,7 +179,6 @@ export interface MonqueOptions {
    * When undefined, no size validation occurs.
    */
   maxPayloadSize?: number | undefined;
-
   /**
    * TTL in milliseconds for getQueueStats() and getQueueViewSummaries() counts.
    *
@@ -211,7 +190,6 @@ export interface MonqueOptions {
    * @default 5000
    */
   statsCacheTtlMs?: number;
-
   /**
    * Interval in milliseconds between safety polls when change streams are active.
    *
@@ -226,7 +204,6 @@ export interface MonqueOptions {
    */
   safetyPollInterval?: number;
 }
-
 /** Processing state on one scheduler instance, optionally scoped to one job name. */
 export interface ProcessingState {
   readonly instanceId: string;

@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
 import type { PersistedJob } from "@monque/core";
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -13,7 +14,8 @@ class CronTestJobs {
   public static handledIds: string[] = [];
 
   @Cron("* * * * *", { name: "minutely-job" })
-  async runEveryMinute(job: PersistedJob) {
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  runEveryMinute(job: PersistedJob) {
     CronTestJobs.handledIds.push(job._id.toString());
   }
 }
@@ -21,7 +23,8 @@ class CronTestJobs {
 @JobController("timezone-test")
 class TimezoneTestJobs {
   @Cron("0 9 * * *", { timezone: "Asia/Kathmandu", uniqueKey: "daily-report", priority: 17 })
-  async dailyReport(): Promise<void> {}
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  dailyReport(): void {}
 }
 
 describe("Timezone scheduling through Ts.ED", () => {
@@ -59,7 +62,7 @@ describe("Timezone scheduling through Ts.ED", () => {
       {},
       { timezone: "Europe/Berlin", priority: -9 },
     );
-    expect(await service.getJob(job._id)).toMatchObject({
+    await expect(service.getJob(job._id)).resolves.toMatchObject({
       timezone: "Europe/Berlin",
       priority: -9,
       nextRunAt: new Date("2026-01-15T08:00:00Z"),
@@ -87,7 +90,7 @@ describe("Cron Job Integration", () => {
       const jobs = await monqueService.getJobs({ name: "cron-test.minutely-job" });
       // Monque.schedule ensures a single job for the schedule signature
       expect(jobs.length).toBeGreaterThan(0);
-      const scheduleJob = jobs.find((j: PersistedJob<unknown>) => j.repeatInterval === "* * * * *");
+      const scheduleJob = jobs.find((j: PersistedJob) => j.repeatInterval === "* * * * *");
       expect(scheduleJob).toBeDefined();
     });
 

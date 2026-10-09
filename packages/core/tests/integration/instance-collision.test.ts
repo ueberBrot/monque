@@ -6,10 +6,10 @@
  * - Second instance allowed after first stops (no false positive)
  * - Second instance allowed after crash recovery (stale heartbeat)
  */
-
 import type { Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 
+import type { Job } from "@/jobs";
 import { Monque } from "@/scheduler";
 import { ConnectionError } from "@/shared";
 import { TEST_CONSTANTS } from "@test-utils/constants.js";
@@ -27,13 +27,8 @@ describe("Instance Collision Detection", () => {
   let db: Db;
   let collectionName: string;
   const monqueInstances: Monque[] = [];
-
   beforeAll(async () => {
     db = await getTestDb("instance-collision");
-  });
-
-  afterAll(async () => {
-    await cleanupTestDb(db);
   });
 
   afterEach(async () => {
@@ -43,12 +38,15 @@ describe("Instance Collision Detection", () => {
     }
   });
 
+  afterAll(async () => {
+    await cleanupTestDb(db);
+  });
+
   it("throws when second instance initializes with same schedulerInstanceId while first is active", async () => {
-    const release = Promise.withResolvers<void>();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     try {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const sharedId = "shared-collision-id";
-
       const monque1 = new Monque(db, {
         collectionName,
         schedulerInstanceId: sharedId,
@@ -58,7 +56,6 @@ describe("Instance Collision Detection", () => {
       });
       monqueInstances.push(monque1);
       await monque1.initialize();
-
       // Register a long-running worker and start processing
       let jobStarted = false;
       monque1.register(TEST_CONSTANTS.JOB_NAME, async () => {
@@ -66,13 +63,10 @@ describe("Instance Collision Detection", () => {
         // Hold the job long enough for the test
         await release.promise;
       });
-
       await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { value: "collision-test" });
       monque1.start();
-
       // Wait for the job to start processing and heartbeat to be written
-      await waitFor(async () => jobStarted, { timeout: 5000 });
-
+      await waitFor(() => jobStarted, { timeout: 5000 });
       // Create second instance with same ID — should fail
       const monque2 = new Monque(db, {
         collectionName,
@@ -82,7 +76,6 @@ describe("Instance Collision Detection", () => {
         lockTimeout: 60_000,
       });
       monqueInstances.push(monque2);
-
       await expect(monque2.initialize()).rejects.toThrow(ConnectionError);
       await expect(
         // Need fresh instance since initialize() may have partially set state
@@ -93,7 +86,7 @@ describe("Instance Collision Detection", () => {
           heartbeatInterval: 200,
           lockTimeout: 60_000,
         }).initialize(),
-      ).rejects.toThrow(/schedulerInstanceId/);
+      ).rejects.toThrow(/schedulerInstanceId/u);
     } finally {
       release.resolve();
     }
@@ -102,7 +95,6 @@ describe("Instance Collision Detection", () => {
   it("allows second instance after first stops (no false positive)", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
     const sharedId = "stop-then-start-id";
-
     const monque1 = new Monque(db, {
       collectionName,
       schedulerInstanceId: sharedId,
@@ -112,22 +104,16 @@ describe("Instance Collision Detection", () => {
     });
     monqueInstances.push(monque1);
     await monque1.initialize();
-
     // Register worker, process a job, then stop
     let completed = false;
     monque1.on("job:complete", () => {
       completed = true;
     });
-    monque1.register(TEST_CONSTANTS.JOB_NAME, async () => {
-      // Quick job
-    });
-
+    monque1.register(TEST_CONSTANTS.JOB_NAME, () => {});
     await monque1.enqueue(TEST_CONSTANTS.JOB_NAME, { value: "will-complete" });
     monque1.start();
-
-    await waitFor(async () => completed, { timeout: 5000 });
+    await waitFor(() => completed, { timeout: 5000 });
     await monque1.stop();
-
     // Second instance with same ID should succeed (job is completed, not processing)
     const monque2 = new Monque(db, {
       collectionName,
@@ -137,7 +123,6 @@ describe("Instance Collision Detection", () => {
       lockTimeout: 60_000,
     });
     monqueInstances.push(monque2);
-
     await expect(monque2.initialize()).resolves.toBeUndefined();
   });
 
@@ -145,12 +130,11 @@ describe("Instance Collision Detection", () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
     const sharedId = "crashed-instance-id";
     const lockTimeout = 1000;
-
     // Insert a fake processing document with an old heartbeat directly into the collection
     // This simulates a crashed instance that left a processing job behind
-    const collection = db.collection(collectionName);
-    const staleTime = new Date(Date.now() - 60_000); // 60 seconds ago
-
+    const collection = db.collection<Job>(collectionName);
+    // 60 seconds ago
+    const staleTime = new Date(Date.now() - 60_000);
     const staleJob = JobFactoryHelpers.processing({
       name: "stale-crash-job",
       data: { value: "from-crashed-instance" },
@@ -163,7 +147,6 @@ describe("Instance Collision Detection", () => {
       updatedAt: staleTime,
     });
     await collection.insertOne(staleJob);
-
     // Create monque2 with stale recovery enabled (default)
     // Stale recovery runs first (resets the old doc to pending),
     // then collision check finds no active processing jobs → success
@@ -176,12 +159,15 @@ describe("Instance Collision Detection", () => {
       recoverStaleJobs: true,
     });
     monqueInstances.push(monque2);
-
     await expect(monque2.initialize()).resolves.toBeUndefined();
-
     // Verify the stale job was recovered to pending
     const doc = await collection.findOne({ name: "stale-crash-job" });
-    expect(doc?.["status"]).toBe("pending");
-    expect(doc?.["claimedBy"]).toBeUndefined();
+    expect({
+      docStatus: doc?.status,
+      docClaimedBy: doc?.claimedBy,
+    }).toStrictEqual({
+      docStatus: "pending",
+      docClaimedBy: undefined,
+    });
   });
 });

@@ -5,7 +5,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 
 import { useFieldContext } from "./context.js";
 
-export function DateTimeField({
+export const DateTimeField = ({
   id,
   label,
   allowClear = true,
@@ -13,7 +13,7 @@ export function DateTimeField({
   id?: string;
   label: string;
   allowClear?: boolean;
-}) {
+}) => {
   const field = useFieldContext<string>();
   const generatedId = useId();
   const fieldId = id ?? generatedId;
@@ -29,4 +29,4 @@ export function DateTimeField({
       />
     </Field>
   );
-}
+};

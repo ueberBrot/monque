@@ -1,18 +1,39 @@
+import { fromPartial } from "@total-typescript/shoehorn";
 /**
  * Factory for creating mock SchedulerContext and WorkerRegistration for service unit tests.
  *
  * Provides a reusable mock context with vi.fn() stubs for all methods,
  * allowing tests to verify internal service behavior without MongoDB.
  */
-
-import type { Collection, Document } from "mongodb";
+import type { Collection } from "mongodb";
 import { vi } from "vite-plus/test";
 
 import type { MonqueEventMap } from "@/events";
-import { documentToPersistedJob, type JobHandler, type PersistedJob } from "@/jobs";
+import { documentToPersistedJob } from "@/jobs";
+import type { PersistedJob } from "@/jobs";
 import type { ResolvedMonqueOptions, SchedulerContext } from "@/scheduler/services/types.js";
 import type { WorkerRegistration } from "@/workers";
-
+import type { MockFunction } from "@tests/setup/mock-function.js";
+/**
+ * Create a mock MongoDB collection with vi.fn() stubs.
+ */
+const createMockCollection = () => ({
+  insertOne: vi.fn<MockFunction<Collection["insertOne"]>>(),
+  insertMany: vi.fn<MockFunction<Collection["insertMany"]>>(),
+  bulkWrite: vi.fn<MockFunction<Collection["bulkWrite"]>>(),
+  findOne: vi.fn<MockFunction<Collection["findOne"]>>(),
+  find: vi.fn<MockFunction<Collection["find"]>>(),
+  findOneAndUpdate: vi.fn<MockFunction<Collection["findOneAndUpdate"]>>(),
+  updateOne: vi.fn<MockFunction<Collection["updateOne"]>>(),
+  updateMany: vi.fn<MockFunction<Collection["updateMany"]>>(),
+  deleteOne: vi.fn<MockFunction<Collection["deleteOne"]>>(),
+  deleteMany: vi.fn<MockFunction<Collection["deleteMany"]>>(),
+  countDocuments: vi.fn<MockFunction<Collection["countDocuments"]>>(),
+  options: vi.fn<MockFunction<Collection["options"]>>().mockResolvedValue({}),
+  aggregate: vi.fn<MockFunction<Collection["aggregate"]>>(),
+  watch: vi.fn<MockFunction<Collection["watch"]>>(),
+  createIndexes: vi.fn<MockFunction<Collection["createIndexes"]>>(),
+});
 /**
  * Default resolved options for tests.
  */
@@ -24,7 +45,7 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
   baseRetryInterval: 100,
   shutdownTimeout: 5000,
   workerConcurrency: 5,
-  lockTimeout: 30000,
+  lockTimeout: 30_000,
   recoverStaleJobs: true,
   schedulerInstanceId: "test-instance-id",
   heartbeatInterval: 1000,
@@ -35,30 +56,6 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
   maxPayloadSize: undefined,
   statsCacheTtlMs: 5000,
 };
-
-/**
- * Create a mock MongoDB collection with vi.fn() stubs.
- */
-function createMockCollection(): Collection<Document> {
-  return {
-    insertOne: vi.fn(),
-    insertMany: vi.fn(),
-    bulkWrite: vi.fn(),
-    findOne: vi.fn(),
-    find: vi.fn(),
-    findOneAndUpdate: vi.fn(),
-    updateOne: vi.fn(),
-    updateMany: vi.fn(),
-    deleteOne: vi.fn(),
-    deleteMany: vi.fn(),
-    countDocuments: vi.fn(),
-    options: vi.fn().mockResolvedValue({}),
-    aggregate: vi.fn(),
-    watch: vi.fn(),
-    createIndexes: vi.fn(),
-  } as unknown as Collection<Document>;
-}
-
 /**
  * Create a mock SchedulerContext for testing internal services.
  *
@@ -74,34 +71,43 @@ function createMockCollection(): Collection<Document> {
  * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });
  * ```
  */
-export function createMockContext(overrides: Partial<SchedulerContext> = {}): SchedulerContext & {
-  mockCollection: Collection<Document>;
-  emitHistory: Array<{ event: string; payload: unknown }>;
-} {
+export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => {
   const mockCollection = createMockCollection();
-  const emitHistory: Array<{ event: string; payload: unknown }> = [];
+  const emitHistory: {
+    event: string;
+    payload: unknown;
+  }[] = [];
   const workers = new Map<string, WorkerRegistration>();
-
-  const ctx: SchedulerContext = {
-    collection: mockCollection,
+  const ctx = {
+    collection: fromPartial<Collection>(mockCollection),
     options: { ...DEFAULT_TEST_OPTIONS },
     instanceId: "test-instance-id",
     workers,
-    isRunning: vi.fn(() => true),
-    isPaused: vi.fn(() => false),
-    emit: vi.fn(<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
-      emitHistory.push({ event, payload });
-      return true;
-    }),
-    notifyPendingJob: vi.fn(),
-    notifyJobFinished: vi.fn(),
-    documentToPersistedJob: documentToPersistedJob,
+
+    documentToPersistedJob,
     ...overrides,
+    isRunning: vi.fn<MockFunction<SchedulerContext["isRunning"]>>(
+      overrides.isRunning ?? (() => true),
+    ),
+    isPaused: vi.fn<MockFunction<SchedulerContext["isPaused"]>>(
+      overrides.isPaused ?? (() => false),
+    ),
+    emit: vi.fn<MockFunction<SchedulerContext["emit"]>>(
+      overrides.emit ??
+        (<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
+          emitHistory.push({ event, payload });
+          return true;
+        }),
+    ),
+    notifyPendingJob: vi.fn<MockFunction<SchedulerContext["notifyPendingJob"]>>(
+      overrides.notifyPendingJob,
+    ),
+    notifyJobFinished: vi.fn<MockFunction<SchedulerContext["notifyJobFinished"]>>(
+      overrides.notifyJobFinished,
+    ),
   };
-
   return { ...ctx, mockCollection, emitHistory };
-}
-
+};
 /**
  * Create a mock WorkerRegistration for testing.
  *
@@ -117,10 +123,10 @@ export function createMockContext(overrides: Partial<SchedulerContext> = {}): Sc
  * const worker = createWorker({ activeJobs: new Map([['id', job]]) });
  * ```
  */
-export function createWorker(overrides: Partial<WorkerRegistration> = {}): WorkerRegistration {
-  return {
-    handler: (overrides.handler as JobHandler) ?? vi.fn().mockResolvedValue(undefined),
-    concurrency: overrides.concurrency ?? 1,
-    activeJobs: overrides.activeJobs ?? new Map<string, PersistedJob>(),
-  };
-}
+export const createWorker = (overrides: Partial<WorkerRegistration> = {}): WorkerRegistration => ({
+  handler:
+    overrides.handler ??
+    vi.fn<MockFunction<WorkerRegistration["handler"]>>().mockResolvedValue(undefined),
+  concurrency: overrides.concurrency ?? 1,
+  activeJobs: overrides.activeJobs ?? new Map<string, PersistedJob>(),
+});

@@ -14,7 +14,25 @@ import { Badge } from "./ui/badge.js";
 import { Button } from "./ui/button.js";
 import { Skeleton } from "./ui/skeleton.js";
 
-export function ProcessingControls({
+const processingControlState = (
+  state: ProcessingStateDto,
+  capabilities: CapabilitiesDto,
+  name: string | undefined,
+) => {
+  const action = state.paused ? "resume" : "pause";
+  const globalPause = name !== undefined && state.globallyPaused;
+  const allowed = capabilities.actions[action] ?? false;
+  let reason: string | undefined;
+  if (capabilities.readOnly) {
+    reason = "This dashboard is read-only.";
+  } else if (globalPause) {
+    reason = "Instance paused. Resume it from Health.";
+  } else if (!allowed) {
+    reason = `${state.paused ? "Resuming" : "Pausing"} is not allowed.`;
+  }
+  return { action, disabled: !allowed || globalPause, reason } as const;
+};
+export const ProcessingControls = ({
   managementApi,
   name,
   pollingIntervalMs,
@@ -22,7 +40,7 @@ export function ProcessingControls({
   readonly managementApi: DashboardManagementApi;
   readonly name?: string;
   readonly pollingIntervalMs?: number | undefined;
-}) {
+}) => {
   const descriptionId = useId();
   const queryClient = useQueryClient();
   const refetchInterval = useDocumentVisiblePollingInterval(pollingIntervalMs, 3);
@@ -38,16 +56,18 @@ export function ProcessingControls({
     ],
   });
   const mutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       action,
       input: target,
     }: {
       action: "pause" | "resume";
       input: ProcessingActionDto;
     }) =>
-      action === "pause"
-        ? managementApi.client.pauseProcessing(target)
-        : managementApi.client.resumeProcessing(target),
+      await Promise.resolve(
+        action === "pause"
+          ? managementApi.client.pauseProcessing(target)
+          : managementApi.client.resumeProcessing(target),
+      ),
     onSuccess: async () => {
       await queryClient.invalidateQueries();
     },
@@ -57,7 +77,7 @@ export function ProcessingControls({
     },
   });
   const error = stateQuery.error ?? capabilitiesQuery.error;
-  if (error)
+  if (error) {
     return (
       <section className="grid gap-2 rounded-lg border border-border p-4">
         <h2 className="text-sm font-semibold">Processing</h2>
@@ -76,10 +96,12 @@ export function ProcessingControls({
         </Button>
       </section>
     );
+  }
   const state = stateQuery.data;
   const capabilities = capabilitiesQuery.data;
-  if (!state || !capabilities)
+  if (!state || !capabilities) {
     return <Skeleton className="h-28 w-full" aria-label="Loading processing state" />;
+  }
   const { action, disabled, reason } = processingControlState(state, capabilities, name);
   const scope = name === undefined ? "instance" : "worker";
   return (
@@ -95,9 +117,9 @@ export function ProcessingControls({
           variant="outline"
           disabled={disabled || mutation.isPending}
           aria-describedby={descriptionId}
-          onClick={() =>
-            mutation.mutate({ action, input: { ...input, instanceId: state.instanceId } })
-          }
+          onClick={() => {
+            mutation.mutate({ action, input: { ...input, instanceId: state.instanceId } });
+          }}
         >
           {state.paused ? <Play /> : <Pause />}
           {mutation.isPending ? "Saving…" : `${state.paused ? "Resume" : "Pause"} ${scope}`}
@@ -117,19 +139,4 @@ export function ProcessingControls({
       ) : null}
     </section>
   );
-}
-
-function processingControlState(
-  state: ProcessingStateDto,
-  capabilities: CapabilitiesDto,
-  name: string | undefined,
-) {
-  const action = state.paused ? "resume" : "pause";
-  const globalPause = name !== undefined && state.globallyPaused;
-  const allowed = capabilities.actions[action] ?? false;
-  let reason: string | undefined;
-  if (capabilities.readOnly) reason = "This dashboard is read-only.";
-  else if (globalPause) reason = "Instance paused. Resume it from Health.";
-  else if (!allowed) reason = `${state.paused ? "Resuming" : "Pausing"} is not allowed.`;
-  return { action, disabled: !allowed || globalPause, reason } as const;
-}
+};

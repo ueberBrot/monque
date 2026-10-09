@@ -8,7 +8,7 @@ import { parseDateTime } from "@/lib/dates";
 
 import { CalendarInput } from "./calendar-field.js";
 
-export function DateTimeEditor({
+export const DateTimeEditor = ({
   id,
   value,
   allowClear,
@@ -18,14 +18,16 @@ export function DateTimeEditor({
   value: string;
   allowClear: boolean;
   onApply: (value: string) => void;
-}) {
+}) => {
   const [date, setDate] = useState(value.slice(0, 10));
   const [time, setTime] = useState(value.slice(11, 16) || "00:00");
   const [month, setMonth] = useState(() => parseDateTime(date, time) ?? new Date());
-  const changeDate = useCallback((value: string) => {
-    setDate(value);
-    const parsed = parseDateTime(value, "12:00");
-    if (parsed) setMonth(parsed);
+  const changeDate = useCallback((nextDate: string) => {
+    setDate(nextDate);
+    const parsed = parseDateTime(nextDate, "12:00");
+    if (parsed) {
+      setMonth(parsed);
+    }
   }, []);
   const draft = parseDateTime(date, time);
   return (
@@ -40,7 +42,9 @@ export function DateTimeEditor({
             value={date}
             placeholder="YYYY-MM-DD"
             aria-invalid={date.length > 0 && !parseDateTime(date, "12:00")}
-            onChange={(event) => changeDate(event.currentTarget.value)}
+            onChange={(event) => {
+              changeDate(event.currentTarget.value);
+            }}
           />
         </Field>
         <Field>
@@ -51,18 +55,26 @@ export function DateTimeEditor({
             value={time}
             placeholder="HH:mm"
             aria-invalid={date.length > 0 && !draft}
-            onChange={(event) => setTime(event.currentTarget.value)}
+            onChange={(event) => {
+              setTime(event.currentTarget.value);
+            }}
           />
         </Field>
       </div>
       {date.length > 0 && !draft ? (
-        <p role="status" className="text-xs text-destructive">
+        <output className="text-xs text-destructive">
           Enter a valid local date (YYYY-MM-DD) and time (HH:mm).
-        </p>
+        </output>
       ) : null}
       <div className="flex justify-between gap-2">
         {allowClear ? (
-          <Button type="button" variant="ghost" onClick={() => onApply("")}>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              onApply("");
+            }}
+          >
             Clear
           </Button>
         ) : null}
@@ -71,7 +83,9 @@ export function DateTimeEditor({
           className="ml-auto"
           disabled={!draft}
           onClick={() => {
-            if (draft) onApply(format(draft, "yyyy-MM-dd'T'HH:mm"));
+            if (draft) {
+              onApply(format(draft, "yyyy-MM-dd'T'HH:mm"));
+            }
           }}
         >
           Apply
@@ -79,4 +93,4 @@ export function DateTimeEditor({
       </div>
     </>
   );
-}
+};

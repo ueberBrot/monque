@@ -9,6 +9,7 @@ describe("worker fairness", () => {
   beforeAll(async () => {
     db = await getTestDb("worker-fairness");
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -22,10 +23,10 @@ describe("worker fairness", () => {
     const handled: string[] = [];
     monque.register(
       "first",
-      async () => {
+      () => {
         monque.register(
           "second",
-          async () => {
+          () => {
             handled.push("new");
           },
           { replace: true },
@@ -33,15 +34,15 @@ describe("worker fairness", () => {
       },
       { concurrency: 1 },
     );
-    monque.register("second", async () => {
+    monque.register("second", () => {
       handled.push("old");
     });
     await monque.enqueue("first", {});
     await monque.enqueue("second", {});
     monque.start();
     try {
-      await waitFor(async () => handled.length > 0);
-      expect(handled).toEqual(["new"]);
+      await waitFor(() => handled.length > 0);
+      expect(handled).toStrictEqual(["new"]);
     } finally {
       await monque.stop();
     }
@@ -59,12 +60,14 @@ describe("worker fairness", () => {
       await monque.initialize();
       const started: string[] = [];
       const releases: (() => void)[] = [];
-      monque.register("empty", async () => {});
+      monque.register("empty", () => {});
       monque.register("busy", async () => {
         started.push("busy");
-        await new Promise<void>((resolve) => releases.push(resolve));
+        const release: PromiseWithResolvers<void> = Promise.withResolvers();
+        releases.push(release.resolve);
+        await release.promise;
       });
-      monque.register("waiting", async () => {
+      monque.register("waiting", () => {
         started.push("waiting");
       });
       await monque.enqueue("busy", {});
@@ -72,19 +75,22 @@ describe("worker fairness", () => {
       await monque.enqueue("waiting", {});
       monque.start();
       try {
-        await waitFor(async () => started.length === 1);
+        await waitFor(() => started.length === 1);
         releases[0]?.();
         if (targeted) {
-          await waitFor(async () =>
-            (await monque.getQueueViewSummaries()).every((view) => view.worker?.activeCount === 0),
-          );
+          await waitFor(async () => {
+            const awaitedResult1 = await monque.getQueueViewSummaries();
+            return awaitedResult1.every((view) => view.worker?.activeCount === 0);
+          });
           await monque.enqueue("busy", {});
         }
-        await waitFor(async () => started.length >= 2);
-        expect(started.slice(0, 2)).toEqual(["busy", "waiting"]);
+        await waitFor(() => started.length >= 2);
+        expect(started.slice(0, 2)).toStrictEqual(["busy", "waiting"]);
       } finally {
         const stopping = monque.stop();
-        for (const release of releases) release();
+        for (const release of releases) {
+          release();
+        }
         await stopping;
       }
     },
