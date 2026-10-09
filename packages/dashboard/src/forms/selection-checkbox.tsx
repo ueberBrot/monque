@@ -2,7 +2,7 @@ import { useContext } from "react";
 
 import { SelectionFormContext } from "./selection-form.js";
 
-export function SelectionCheckbox({
+export const SelectionCheckbox = ({
   name,
   label,
   indeterminate = false,
@@ -12,12 +12,21 @@ export function SelectionCheckbox({
   label: string;
   indeterminate?: boolean;
   onChange: (checked: boolean) => void;
-}) {
+}) => {
   const form = useContext(SelectionFormContext);
-  if (!form) throw new Error("Selection checkboxes require a selection form.");
+  if (!form) {
+    throw new Error("Selection checkboxes require a selection form.");
+  }
   return (
-    <form.AppField name={name} listeners={{ onChange: ({ value }) => onChange(value) }}>
+    <form.AppField
+      name={name}
+      listeners={{
+        onChange: ({ value }) => {
+          onChange(value);
+        },
+      }}
+    >
       {(field) => <field.CheckboxField bare label={label} indeterminate={indeterminate} />}
     </form.AppField>
   );
-}
+};

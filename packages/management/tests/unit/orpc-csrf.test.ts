@@ -1,13 +1,16 @@
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, vi, it } from "vite-plus/test";
 
 import { createManagementSurface } from "@/surface";
+import type { ManagementMonque } from "@/surface";
 
 import { createManagementMonque } from "./management-test-utils.js";
 
 describe("Management HTTP mutation origins", () => {
-  test("rejects a cookie-authenticated form from a sibling origin before deleting jobs", async () => {
-    const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
-    const authorize = vi.fn(() => true);
+  it("rejects a cookie-authenticated form from a sibling origin before deleting jobs", async () => {
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 3, errors: [] });
+    const authorize = vi.fn<() => boolean>(() => true);
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       authorize,
@@ -28,12 +31,14 @@ describe("Management HTTP mutation origins", () => {
 
     expect(result.matched).toBe(true);
     expect(result.response?.status).toBe(403);
-    expect(await result.response?.json()).toEqual({ error: "Untrusted request origin" });
+    await expect(result.response?.json()).resolves.toStrictEqual({
+      error: "Untrusted request origin",
+    });
     expect(authorize).not.toHaveBeenCalled();
     expect(deleteJobs).not.toHaveBeenCalled();
   });
 
-  test.each([
+  it.each([
     ["POST", "/api/v1/processing/actions/pause"],
     ["POST", "/api/v1/processing/actions/resume"],
     ["POST", "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel"],
@@ -46,8 +51,8 @@ describe("Management HTTP mutation origins", () => {
     ["POST", "/api/v1/jobs/actions/delete"],
     ["POST", "/api/v1/jobs/actions/selected"],
   ])("rejects an untrusted origin for %s %s before body decoding", async (method, path) => {
-    const getJob = vi.fn(async () => null);
-    const authorize = vi.fn(() => true);
+    const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
+    const authorize = vi.fn<() => boolean>(() => true);
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob }, { mutations: true }),
       authorize,
@@ -66,7 +71,7 @@ describe("Management HTTP mutation origins", () => {
     expect(getJob).not.toHaveBeenCalled();
   });
 
-  test.each([
+  it.each([
     "null",
     "https://ops.example.com/",
     "https://ops.example.com/path",
@@ -80,7 +85,9 @@ describe("Management HTTP mutation origins", () => {
     "file://ops.example.com",
     "",
   ])("rejects origin %j even with same-origin Fetch Metadata", async (origin) => {
-    const deleteJobs = vi.fn(async () => ({ count: 0, errors: [] }));
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 0, errors: [] });
     const surface = createManagementSurface({ monque: createManagementMonque({ deleteJobs }) });
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
@@ -94,10 +101,12 @@ describe("Management HTTP mutation origins", () => {
     expect(deleteJobs).not.toHaveBeenCalled();
   });
 
-  test.each(["same-site", "cross-site", "invalid"])(
+  it.each(["same-site", "cross-site", "invalid"])(
     "rejects originless browser mutations with %s Fetch Metadata",
     async (fetchSite) => {
-      const deleteJobs = vi.fn(async () => ({ count: 0, errors: [] }));
+      const deleteJobs = vi
+        .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+        .mockResolvedValue({ count: 0, errors: [] });
       const surface = createManagementSurface({ monque: createManagementMonque({ deleteJobs }) });
       const result = await surface.openApiHandler.handle(
         new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
@@ -112,7 +121,7 @@ describe("Management HTTP mutation origins", () => {
     },
   );
 
-  test.each([
+  it.each([
     { origin: "https://ops.example.com", "sec-fetch-site": "same-origin" },
     { origin: "https://dashboard.example.com", "sec-fetch-site": "same-site" },
     { origin: "https://dashboard.example.com", "sec-fetch-site": "cross-site" },
@@ -120,7 +129,9 @@ describe("Management HTTP mutation origins", () => {
     { "sec-fetch-site": "same-origin" },
     { "sec-fetch-site": "none" },
   ])("allows approved browser and server mutations with %j", async (headers) => {
-    const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 3, errors: [] });
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       trustedOrigins: ["https://dashboard.example.com"],
@@ -135,11 +146,11 @@ describe("Management HTTP mutation origins", () => {
     );
 
     expect(result.response?.status).toBe(200);
-    expect(await result.response?.json()).toEqual({ count: 3, errors: [] });
+    await expect(result.response?.json()).resolves.toStrictEqual({ count: 3, errors: [] });
     expect(deleteJobs).toHaveBeenCalledWith({});
   });
 
-  test("allows read routes from untrusted origins", async () => {
+  it("allows read routes from untrusted origins", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque() });
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/health", {
@@ -151,7 +162,7 @@ describe("Management HTTP mutation origins", () => {
     expect(result.response?.status).toBe(200);
   });
 
-  test("leaves unmatched unsafe requests to the host without decoding their bodies", async () => {
+  it("leaves unmatched unsafe requests to the host without decoding their bodies", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque() });
     const mutation = new Request("https://ops.example.com/other-host-feature", {
       method: "POST",
@@ -160,11 +171,11 @@ describe("Management HTTP mutation origins", () => {
     });
     const result = await surface.openApiHandler.handle(mutation, { context: {} });
 
-    expect(result).toEqual({ matched: false, response: undefined });
+    expect(result).toStrictEqual({ matched: false, response: undefined });
     expect(mutation.bodyUsed).toBe(false);
   });
 
-  test.each(["null", "*", "https://dashboard.example.com/", "https://user@dashboard.example.com"])(
+  it.each(["null", "*", "https://dashboard.example.com/", "https://user@dashboard.example.com"])(
     "rejects invalid trusted origin configuration %j",
     (trustedOrigin) => {
       expect(() =>

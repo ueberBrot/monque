@@ -1,30 +1,4 @@
 /**
- * Default base interval for exponential backoff in milliseconds.
- * @default 1000
- */
-export const DEFAULT_BASE_INTERVAL = 1000;
-
-/**
- * Default maximum delay cap for exponential backoff in milliseconds.
- *
- * This prevents unbounded delays (e.g. failCount=20 is >11 days at 1s base)
- * and avoids precision/overflow issues for very large fail counts.
- * @default 86400000 (24 hours)
- */
-export const DEFAULT_MAX_BACKOFF_DELAY = 24 * 60 * 60 * 1_000;
-
-/**
- * Default jitter factor applied to backoff delays.
- *
- * A factor of 0.25 means the delay is randomly spread ±25% around the
- * calculated value. This prevents thundering-herd retries when many jobs
- * fail simultaneously with the same `failCount`.
- *
- * @default 0.25
- */
-export const DEFAULT_JITTER_FACTOR = 0.25;
-
-/**
  * Apply random jitter to a delay value.
  *
  * Spreads the delay uniformly within `[delay × (1 - factor), delay × (1 + factor)]`.
@@ -41,17 +15,58 @@ export const DEFAULT_JITTER_FACTOR = 0.25;
  * const jittered = applyJitter(4000, 0.25);
  * ```
  */
-export function applyJitter(delay: number, factor: number): number {
+export const applyJitter = (delay: number, factor: number): number => {
   if (factor <= 0 || delay <= 0) {
     return delay;
   }
-
   const spread = delay * factor;
   // Uniform random in [-spread, +spread]
   const jitter = (Math.random() * 2 - 1) * spread;
   return Math.max(0, Math.round(delay + jitter));
-}
-
+};
+/**
+ * Default base interval for exponential backoff in milliseconds.
+ * @default 1000
+ */
+export const DEFAULT_BASE_INTERVAL = 1000;
+/**
+ * Default jitter factor applied to backoff delays.
+ *
+ * A factor of 0.25 means the delay is randomly spread ±25% around the
+ * calculated value. This prevents thundering-herd retries when many jobs
+ * fail simultaneously with the same `failCount`.
+ *
+ * @default 0.25
+ */
+export const DEFAULT_JITTER_FACTOR = 0.25;
+/**
+ * Default maximum delay cap for exponential backoff in milliseconds.
+ *
+ * This prevents unbounded delays (e.g. failCount=20 is >11 days at 1s base)
+ * and avoids precision/overflow issues for very large fail counts.
+ * @default 86400000 (24 hours)
+ */
+export const DEFAULT_MAX_BACKOFF_DELAY = 24 * 60 * 60 * 1000;
+/**
+ * Calculate just the delay in milliseconds for a given fail count, with jitter.
+ *
+ * @param failCount - Number of previous failed attempts
+ * @param baseInterval - Base interval in milliseconds (default: 1000ms)
+ * @param maxDelay - Maximum delay in milliseconds (optional)
+ * @param jitterFactor - Jitter spread factor, 0–1 (default: 0.25 = ±25%). Set to 0 to disable.
+ * @returns The delay in milliseconds
+ */
+export const calculateBackoffDelay = (
+  failCount: number,
+  baseInterval: number = DEFAULT_BASE_INTERVAL,
+  maxDelay?: number,
+  jitterFactor: number = DEFAULT_JITTER_FACTOR,
+): number => {
+  const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
+  const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
+  const jittered = applyJitter(baseDelay, jitterFactor);
+  return Math.min(jittered, effectiveMaxDelay);
+};
 /**
  * Calculate the next run time using exponential backoff with jitter.
  *
@@ -75,33 +90,12 @@ export function applyJitter(delay: number, factor: number): number {
  * const nextRun = calculateBackoff(1, 1000, undefined, 0);
  * ```
  */
-export function calculateBackoff(
+export const calculateBackoff = (
   failCount: number,
   baseInterval: number = DEFAULT_BASE_INTERVAL,
   maxDelay?: number,
   jitterFactor: number = DEFAULT_JITTER_FACTOR,
-): Date {
+): Date => {
   const delay = calculateBackoffDelay(failCount, baseInterval, maxDelay, jitterFactor);
   return new Date(Date.now() + delay);
-}
-
-/**
- * Calculate just the delay in milliseconds for a given fail count, with jitter.
- *
- * @param failCount - Number of previous failed attempts
- * @param baseInterval - Base interval in milliseconds (default: 1000ms)
- * @param maxDelay - Maximum delay in milliseconds (optional)
- * @param jitterFactor - Jitter spread factor, 0–1 (default: 0.25 = ±25%). Set to 0 to disable.
- * @returns The delay in milliseconds
- */
-export function calculateBackoffDelay(
-  failCount: number,
-  baseInterval: number = DEFAULT_BASE_INTERVAL,
-  maxDelay?: number,
-  jitterFactor: number = DEFAULT_JITTER_FACTOR,
-): number {
-  const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
-  const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
-  const jittered = applyJitter(baseDelay, jitterFactor);
-  return Math.min(jittered, effectiveMaxDelay);
-}
+};

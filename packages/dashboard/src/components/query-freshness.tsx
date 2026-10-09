@@ -6,7 +6,7 @@ import { formatDashboardDate } from "@/lib/dates";
 import { useDocumentVisible } from "@/lib/document-visibility";
 import { useNow } from "@/lib/use-now";
 
-function QueryFreshness({
+const QueryFreshness = ({
   updatedAt,
   fetching,
   pollingIntervalMs,
@@ -16,7 +16,7 @@ function QueryFreshness({
   readonly fetching: boolean;
   readonly pollingIntervalMs: number | undefined;
   readonly paused?: boolean;
-}) {
+}) => {
   const now = useNow();
   const visible = useDocumentVisible();
   const updated = new Date(updatedAt);
@@ -34,30 +34,35 @@ function QueryFreshness({
       ) : (
         "Waiting for an update"
       )}
-      {paused
-        ? " · Updates paused while offline"
-        : !visible
-          ? " · Updates paused while hidden"
-          : !pollingIntervalMs
-            ? " · Auto-refresh off"
-            : ""}
+      {(() => {
+        if (paused) {
+          return " · Updates paused while offline";
+        }
+        if (visible) {
+          if (
+            pollingIntervalMs !== undefined &&
+            pollingIntervalMs !== 0 &&
+            !Number.isNaN(pollingIntervalMs)
+          ) {
+            return "";
+          }
+          return " · Auto-refresh off";
+        }
+        return " · Updates paused while hidden";
+      })()}
     </p>
   );
-}
-
-function RefreshButton({
+};
+const RefreshButton = ({
   onRefresh,
   fetching,
 }: {
   readonly onRefresh: () => void;
   readonly fetching?: boolean;
-}) {
-  return (
-    <Button type="button" variant="outline" onClick={onRefresh} aria-busy={fetching}>
-      <RefreshCw className="size-4" />
-      Refresh
-    </Button>
-  );
-}
-
+}) => (
+  <Button type="button" variant="outline" onClick={onRefresh} aria-busy={fetching}>
+    <RefreshCw className="size-4" />
+    Refresh
+  </Button>
+);
 export { QueryFreshness, RefreshButton };

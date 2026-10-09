@@ -18,7 +18,10 @@
  */
 import { MonqueError } from "@monque/core";
 
-export function getJobToken(target: new (...args: unknown[]) => unknown): symbol {
+/* oxlint-disable anti-slop/no-unknown-returns -- The public constructor parameter accepts arbitrary controller instances; this function returns a symbol. */
+export const getJobToken = function getJobToken(
+  target: new (...args: unknown[]) => unknown,
+): symbol {
   const name = target.name?.trim();
 
   if (!name) {
@@ -26,4 +29,5 @@ export function getJobToken(target: new (...args: unknown[]) => unknown): symbol
   }
 
   return Symbol.for(`monque:job:${name}`);
-}
+};
+/* oxlint-enable anti-slop/no-unknown-returns */

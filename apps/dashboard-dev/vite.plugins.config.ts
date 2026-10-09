@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type ViteDevServer } from "vite-plus";
+import { defineConfig, loadEnv } from "vite-plus";
+import type { ViteDevServer } from "vite-plus";
 
 import { readDashboardDevServerEnvironment } from "./src/environment.js";
 import { isDashboardDevScenarioId } from "./src/mock/scenario-catalog.js";
@@ -17,6 +18,16 @@ export default defineConfig(async ({ mode }) => {
   const { createMockManagementOpenApiHandler } = await import("./src/mock/management-server.js");
   const mockHandler = createMockManagementOpenApiHandler();
   let localDbServer: ReturnType<typeof createLocalDbManagementServer> | undefined;
+  const startLocalDbServer = async (
+    server: ViteDevServer,
+    localServer: ReturnType<typeof createLocalDbManagementServer>,
+  ) => {
+    try {
+      await localServer.start();
+    } catch (error) {
+      server.config.logger.error(error instanceof Error ? error.message : String(error));
+    }
+  };
   return {
     plugins: [
       tailwindcss(),
@@ -28,17 +39,17 @@ export default defineConfig(async ({ mode }) => {
             return;
           }
 
-          server.middlewares.use(
-            MANAGEMENT_MOUNT_PATH,
-            createManagementMiddleware(async (request) => {
-              const scenarioHeader = request.headers.get("x-monque-dev-scenario");
-              const scenarioId = isDashboardDevScenarioId(scenarioHeader)
-                ? scenarioHeader
-                : environment.scenarioId;
-              const result = await mockHandler.handle(request, { context: { scenarioId } });
-              return result.matched ? result.response : undefined;
-            }),
-          );
+          const middleware = createManagementMiddleware(async (request) => {
+            const scenarioHeader = request.headers.get("x-monque-dev-scenario");
+            const scenarioId = isDashboardDevScenarioId(scenarioHeader)
+              ? scenarioHeader
+              : environment.scenarioId;
+            const result = await mockHandler.handle(request, { context: { scenarioId } });
+            return result.matched ? result.response : undefined;
+          });
+          server.middlewares.use(MANAGEMENT_MOUNT_PATH, (request, response, next) => {
+            void middleware(request, response, next);
+          });
         },
       },
       {
@@ -53,10 +64,11 @@ export default defineConfig(async ({ mode }) => {
             databaseName,
           });
 
-          server.middlewares.use(MANAGEMENT_MOUNT_PATH, localDbServer.middleware);
-          void localDbServer.start().catch((error: unknown) => {
-            server.config.logger.error(error instanceof Error ? error.message : String(error));
+          const { middleware } = localDbServer;
+          server.middlewares.use(MANAGEMENT_MOUNT_PATH, (request, response, next) => {
+            void middleware(request, response, next);
           });
+          void startLocalDbServer(server, localDbServer);
         },
         async closeBundle() {
           await localDbServer?.close();

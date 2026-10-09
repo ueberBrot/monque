@@ -1,19 +1,19 @@
 import { faker } from "@faker-js/faker";
+import { fromAny } from "@total-typescript/shoehorn";
 import { Factory } from "fishery";
 import { ObjectId } from "mongodb";
 
-import { JobStatus, type PersistedJob } from "@/jobs";
+import { JobStatus } from "@/jobs";
+import type { PersistedJob } from "@/jobs";
 import { TEST_CONSTANTS } from "@tests/setup/constants.js";
-
 /**
  * Transient parameters for JobFactory.
  * These don't end up in the built object but control factory behavior.
  */
 interface JobTransientParams {
   /** Generate custom data shape instead of default email/userId */
-  withData?: Record<string, unknown>;
+  withData?: object;
 }
-
 /**
  * Factory for creating test Job objects with realistic fake data.
  *
@@ -33,13 +33,12 @@ interface JobTransientParams {
  * const processing = JobFactoryHelpers.processing();
  * ```
  */
-export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientParams>(
+export const JobFactory = Factory.define<PersistedJob, JobTransientParams>(
   ({ transientParams }) => {
     const data = transientParams.withData ?? {
       email: faker.internet.email(),
       userId: faker.string.uuid(),
     };
-
     return {
       _id: new ObjectId(faker.database.mongodbObjectId()),
       name: TEST_CONSTANTS.JOB_NAME,
@@ -53,18 +52,16 @@ export const JobFactory = Factory.define<PersistedJob<unknown>, JobTransientPara
     };
   },
 );
-
 /** Convenience builders for common job states */
 export const JobFactoryHelpers = {
   /** Build a job in PENDING state */
-  pending: (overrides?: Partial<PersistedJob<unknown>>) =>
+  pending: (overrides?: Partial<PersistedJob>) =>
     JobFactory.build({
       status: JobStatus.PENDING,
       ...overrides,
     }),
-
   /** Build a job in PROCESSING state with lockedAt set */
-  processing: (overrides?: Partial<PersistedJob<unknown>>) =>
+  processing: (overrides?: Partial<PersistedJob>) =>
     JobFactory.build({
       status: JobStatus.PROCESSING,
       lockedAt: new Date(),
@@ -72,33 +69,31 @@ export const JobFactoryHelpers = {
       lastHeartbeat: overrides?.lastHeartbeat ?? new Date(),
       ...overrides,
     }),
-
   /** Build a job in COMPLETED state */
-  completed: (overrides?: Partial<PersistedJob<unknown>>) =>
+  completed: (overrides?: Partial<PersistedJob>) =>
     JobFactory.build({
       status: JobStatus.COMPLETED,
       ...overrides,
     }),
-
   /** Build a job in FAILED state with failCount and failReason */
-  failed: (overrides?: Partial<PersistedJob<unknown>>) =>
+  failed: (overrides?: Partial<PersistedJob>) =>
     JobFactory.build({
       status: JobStatus.FAILED,
       failCount: 10,
       failReason: "Max retries exceeded",
       ...overrides,
     }),
-
   /** Build a job in CANCELLED state */
-  cancelled: (overrides?: Partial<PersistedJob<unknown>>) =>
+  cancelled: (overrides?: Partial<PersistedJob>) =>
     JobFactory.build({
       status: JobStatus.CANCELLED,
       ...overrides,
     }),
-
   /** Build a job with custom data payload */
-  withData: <T extends Record<string, unknown>>(data: T, overrides?: Partial<PersistedJob<T>>) =>
-    JobFactory.build(overrides as Partial<PersistedJob<unknown>>, {
-      transient: { withData: data },
-    }) as PersistedJob<T>,
+  withData: <T extends object>(data: T, overrides?: Partial<PersistedJob<T>>) =>
+    fromAny<PersistedJob<T>, unknown>(
+      JobFactory.build(overrides, {
+        transient: { withData: data },
+      }),
+    ),
 };

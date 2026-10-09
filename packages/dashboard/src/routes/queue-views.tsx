@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Outlet, useMatchRoute } from "@tanstack/react-router";
+import { createFileRoute, getRouteApi, Outlet, useMatchRoute } from "@tanstack/react-router";
 
 import { QueryFreshness, RefreshButton } from "@/components/query-freshness";
 import { useDocumentVisiblePollingInterval } from "@/lib/document-visibility";
@@ -11,28 +11,17 @@ import {
   QueueViewsOverview,
 } from "./-queue-views.shared.js";
 
-export const Route = createFileRoute("/queue-views")({
-  component: QueueViewsRoute,
-  pendingComponent: QueueViewsLoadingState,
-});
-
-function QueueViewsRoute() {
-  const matchRoute = useMatchRoute();
-  return matchRoute({ to: "/queue-views/$name" }) ? <Outlet /> : <QueueViewsListRoute />;
-}
-
-function QueueViewsListRoute() {
-  const { managementApi, runtimeConfig } = Route.useRouteContext();
+const routeApi = getRouteApi("/queue-views");
+const QueueViewsListRoute = () => {
+  const { managementApi, runtimeConfig } = routeApi.useRouteContext();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
   const queueViewsQuery = useQuery({
     ...managementApi.orpc.queueViews.queryOptions(),
     refetchInterval,
   });
-
   if (queueViewsQuery.isPending) {
     return <QueueViewsLoadingState />;
   }
-
   if (queueViewsQuery.isError) {
     return (
       <QueueViewsErrorState
@@ -45,11 +34,9 @@ function QueueViewsListRoute() {
       />
     );
   }
-
   if (queueViewsQuery.data.queueViews.length === 0) {
     return <QueueViewsEmptyState />;
   }
-
   return (
     <QueueViewsOverview
       queueViews={queueViewsQuery.data.queueViews}
@@ -62,11 +49,21 @@ function QueueViewsListRoute() {
             pollingIntervalMs={runtimeConfig.pollingIntervalMs}
           />
           <RefreshButton
-            onRefresh={() => void queueViewsQuery.refetch()}
+            onRefresh={() => {
+              void queueViewsQuery.refetch();
+            }}
             fetching={queueViewsQuery.isFetching}
           />
         </div>
       }
     />
   );
-}
+};
+const QueueViewsRoute = () => {
+  const matchRoute = useMatchRoute();
+  return matchRoute({ to: "/queue-views/$name" }) === false ? <QueueViewsListRoute /> : <Outlet />;
+};
+export const Route = createFileRoute("/queue-views")({
+  component: QueueViewsRoute,
+  pendingComponent: QueueViewsLoadingState,
+});

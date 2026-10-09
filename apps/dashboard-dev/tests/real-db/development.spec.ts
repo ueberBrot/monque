@@ -1,12 +1,14 @@
 import { expect, test } from "./fixture.js";
 
 test.afterEach(async ({ app }, testInfo) => {
-  if (testInfo.status === testInfo.expectedStatus) return;
+  if (testInfo.status === testInfo.expectedStatus) {
+    return;
+  }
   await testInfo.attach("development-jobs", {
     body: JSON.stringify(
       await app.db
         .collection("monque_dashboard_jobs")
-        .find({ name: /^demo-/ })
+        .find({ name: /^demo-/u })
         .toArray(),
       null,
       2,
@@ -14,7 +16,6 @@ test.afterEach(async ({ app }, testInfo) => {
     contentType: "application/json",
   });
 });
-
 test("development MongoDB mode starts its scheduler and processes live demo jobs", async ({
   page,
   app,
@@ -26,7 +27,9 @@ test("development MongoDB mode starts its scheduler and processes live demo jobs
   await page.goto(`${base}/jobs?name=demo-report&sortBy=createdAt&sortDirection=desc`);
   await expect(page.locator("tbody tr").first()).toContainText("Processing", { timeout: 15_000 });
   const reportLink = await page.locator("tbody tr").first().getByRole("link").getAttribute("href");
-  if (!reportLink) throw new Error("Missing report job link");
+  if (reportLink === undefined || reportLink === null || reportLink === "") {
+    throw new Error("Missing report job link");
+  }
   const reportRow = page
     .locator("tbody tr")
     .filter({ has: page.locator(`a[href="${reportLink}"]`) });
@@ -40,7 +43,9 @@ test("development MongoDB mode starts its scheduler and processes live demo jobs
     await jobs.countDocuments({ name: "demo-webhook", status: "completed", failCount: 1 }),
   ).toBeGreaterThan(0);
   await expect
-    .poll(() => jobs.countDocuments({ name: "demo-report" }), { timeout: 20_000 })
+    .poll(async () => await Promise.resolve(jobs.countDocuments({ name: "demo-report" })), {
+      timeout: 20_000,
+    })
     .toBeGreaterThan(1);
   const recurring = await jobs.findOne({ name: "demo-batch", repeatInterval: { $exists: true } });
   expect(recurring?.["nextRunAt"]).toBeInstanceOf(Date);

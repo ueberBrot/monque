@@ -1,26 +1,35 @@
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { type Job, Monque } from "@monque/core";
+import { Monque } from "@monque/core";
+import type { Job } from "@monque/core";
 import { createDashboardExpressRouter } from "@monque/dashboard-express";
 import { createManagementExpressRouter } from "@monque/management-express";
 import { test as base, expect } from "@playwright/test";
-import express, { type Request } from "express";
+import express from "express";
+import type { Request } from "express";
 import { MongoClient } from "mongodb";
 import { z } from "zod";
 
+import { isString } from "../../../../packages/dashboard/src/lib/type-guards.js";
 import { createLocalDbManagementServer } from "../../src/local-db/management-server.js";
 import {
   createJob,
   createScenario,
   registerScenarioWorkers,
-  type ScenarioName,
 } from "../../src/local-db/scenarios.js";
+import type { ScenarioName } from "../../src/local-db/scenarios.js";
 
-async function createApp() {
+const sessionToken = (req: Request) =>
+  req.headers.cookie
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("session="))
+    ?.slice(8);
+const createApp = async () => {
   const client = new MongoClient(
     process.env["MONQUE_DASHBOARD_TEST_MONGO_URI"] ??
       "mongodb://127.0.0.1:27018/?directConnection=true",
-    { serverSelectionTimeoutMS: 3_000 },
+    { serverSelectionTimeoutMS: 3000 },
   );
   await client.connect();
   const db = client.db(`monque_dashboard_e2e_${randomUUID().replaceAll("-", "")}`);
@@ -35,19 +44,17 @@ async function createApp() {
   await monque.initialize();
   registerScenarioWorkers(monque, db);
   type Role = "operator" | "viewer" | "blocked";
-  type Session = { role: Role; expiresAt: number };
+  interface Session {
+    role: Role;
+    expiresAt: number;
+  }
   const sessions = new Map<string, Session>();
   const deniedPriorityJobIds = new Set<string>();
   const operator = randomUUID();
   const viewer = randomUUID();
   sessions.set(operator, { role: "operator", expiresAt: Date.now() + 60_000 });
   sessions.set(viewer, { role: "viewer", expiresAt: Date.now() + 60_000 });
-  const sessionToken = (req: Request) =>
-    req.headers.cookie
-      ?.split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith("session="))
-      ?.slice(8);
+
   const sessionFor = (req: Request) => {
     const session = sessions.get(sessionToken(req) ?? "");
     return session && session.expiresAt > Date.now() ? session : undefined;
@@ -64,7 +71,7 @@ async function createApp() {
     "/development/dashboard",
     createDashboardExpressRouter({
       apiBaseUrl: "/development",
-      pollingIntervalMs: 1_000,
+      pollingIntervalMs: 1000,
     }),
   );
   // Test-only host login: the dashboard delegates authentication to its host.
@@ -119,7 +126,9 @@ async function createApp() {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Missing test server address");
+  if (address === null || isString(address)) {
+    throw new Error("Missing test server address");
+  }
   const origin = `http://127.0.0.1:${address.port}`;
   return {
     origin,
@@ -159,36 +168,49 @@ async function createApp() {
       await development.close();
       await monque.stop();
       server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      const closed: PromiseWithResolvers<void> = Promise.withResolvers();
+      server.close((failure) => {
+        if (failure) {
+          closed.reject(failure);
+        } else {
+          closed.resolve();
+        }
+      });
+      await closed.promise;
       // This fixture owns this randomly named database, never the development database.
       await client.connect();
       await db.dropDatabase();
       await client.close();
     },
   };
-}
-
+};
 type RealApp = Awaited<ReturnType<typeof createApp>>;
 const test = base.extend<
-  { app: RealApp & { base: string }; authenticated: boolean; pageErrors: undefined },
-  { server: RealApp }
+  {
+    app: RealApp & {
+      base: string;
+    };
+    authenticated: boolean;
+    pageErrors: undefined;
+  },
+  {
+    server: RealApp;
+  }
 >({
   authenticated: [false, { option: true }],
   server: [
     // oxlint-disable-next-line no-empty-pattern -- Playwright requires destructuring fixture dependencies.
-    async ({}, use) => {
+    async ({}, provide) => {
       const server = await createApp();
       try {
-        await use(server);
+        await provide(server);
       } finally {
         await server.close();
       }
     },
     { scope: "worker" },
   ],
-  app: async ({ server, context, authenticated }, use) => {
+  app: async ({ server, context, authenticated }, provide) => {
     await server.reset();
     if (authenticated) {
       const response = await context.request.post(`${server.origin}/auth/login`, {
@@ -196,17 +218,17 @@ const test = base.extend<
       });
       expect(response.status()).toBe(204);
     }
-    await use({ ...server, base: `${server.origin}/${authenticated ? "private" : "open"}` });
+    await provide({ ...server, base: `${server.origin}/${authenticated ? "private" : "open"}` });
   },
   pageErrors: [
-    async ({ page }, use) => {
+    async ({ page }, provide) => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
-      await use(undefined);
+      await provide(undefined);
       expect(errors).toEqual([]);
     },
     { auto: true },
   ],
 });
-
-export { expect, test };
+export { test };
+export { expect } from "@playwright/test";

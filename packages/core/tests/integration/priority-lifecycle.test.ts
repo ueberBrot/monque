@@ -1,4 +1,6 @@
-import { type Db, MongoBulkWriteError, ObjectId } from "mongodb";
+import { fromAny } from "@total-typescript/shoehorn";
+import { MongoBulkWriteError, ObjectId } from "mongodb";
+import type { Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { ConnectionError, InvalidJobPriorityError, JobStatus, Monque } from "@/index";
@@ -10,6 +12,8 @@ import {
   waitFor,
 } from "@test-utils/test-utils";
 
+import { requireValue, forEachSequential } from "./helpers";
+
 describe("priority across Job intake and lifecycle", () => {
   let db: Db;
   const instances: Monque[] = [];
@@ -20,6 +24,7 @@ describe("priority across Job intake and lifecycle", () => {
     await stopMonqueInstances(instances);
     vi.useRealTimers();
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -28,22 +33,20 @@ describe("priority across Job intake and lifecycle", () => {
     const monque = new Monque(db, { collectionName: uniqueCollectionName("recurring") });
     instances.push(monque);
     await monque.initialize();
-    for (const priority of [
-      "1",
-      null,
-      true,
-      {},
-      0.5,
-      NaN,
-      Infinity,
-      -Infinity,
-      Number.MAX_SAFE_INTEGER + 1,
-    ]) {
-      await expect(
-        monque.schedule("0 9 * * *", "report", {}, { priority: priority as number }),
-      ).rejects.toBeInstanceOf(InvalidJobPriorityError);
-    }
-    expect(await monque.getJobs()).toEqual([]);
+    await forEachSequential(
+      ["1", null, true, {}, 0.5, Number.NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1],
+      async (priority) => {
+        await expect(
+          monque.schedule(
+            "0 9 * * *",
+            "report",
+            {},
+            { priority: fromAny<number, unknown>(priority) },
+          ),
+        ).rejects.toBeInstanceOf(InvalidJobPriorityError);
+      },
+    );
+    await expect(monque.getJobs()).resolves.toStrictEqual([]);
     const job = await monque.schedule(
       "0 9 * * *",
       "report",
@@ -51,7 +54,10 @@ describe("priority across Job intake and lifecycle", () => {
       { priority: -7, timezone: "Europe/Berlin" },
     );
     expect(job.priority).toBe(-7);
-    expect(await monque.getJob(job._id)).toMatchObject({ priority: -7, timezone: "Europe/Berlin" });
+    await expect(monque.getJob(job._id)).resolves.toMatchObject({
+      priority: -7,
+      timezone: "Europe/Berlin",
+    });
   });
 
   it("validates the whole batch before writing and claims mixed priorities in order", async () => {
@@ -61,36 +67,29 @@ describe("priority across Job intake and lifecycle", () => {
     });
     instances.push(monque);
     await monque.initialize();
-    for (const priority of [
-      "1",
-      null,
-      true,
-      {},
-      0.5,
-      NaN,
-      Infinity,
-      -Infinity,
-      Number.MIN_SAFE_INTEGER - 1,
-    ]) {
-      await expect(
-        monque.enqueueMany([
-          { name: "work", data: "valid", priority: 10 },
-          { name: "work", data: "invalid", priority: priority as number },
-        ]),
-      ).rejects.toBeInstanceOf(InvalidJobPriorityError);
-      expect(await monque.getJobs()).toEqual([]);
-    }
+    await forEachSequential(
+      ["1", null, true, {}, 0.5, Number.NaN, Infinity, -Infinity, Number.MIN_SAFE_INTEGER - 1],
+      async (priority) => {
+        await expect(
+          monque.enqueueMany([
+            { name: "work", data: "valid", priority: 10 },
+            { name: "work", data: "invalid", priority: fromAny<number, unknown>(priority) },
+          ]),
+        ).rejects.toBeInstanceOf(InvalidJobPriorityError);
+        await expect(monque.getJobs()).resolves.toStrictEqual([]);
+      },
+    );
     const runAt = new Date(0);
-    expect(
-      await monque.enqueueMany([
+    await expect(
+      monque.enqueueMany([
         { name: "work", data: "background", priority: -4, runAt },
         { name: "work", data: "zero", priority: 0, runAt },
         { name: "work", data: "urgent", priority: 12, runAt },
         { name: "work", data: "default", runAt },
       ]),
-    ).toEqual({ insertedCount: 4, deduplicatedCount: 0 });
-    const seen: Array<[unknown, number | undefined]> = [];
-    const events: Array<number | undefined> = [];
+    ).resolves.toStrictEqual({ insertedCount: 4, deduplicatedCount: 0 });
+    const seen: [unknown, number | undefined][] = [];
+    const events: (number | undefined)[] = [];
     monque.on("job:complete", ({ job }) => {
       events.push(job.priority);
     });
@@ -98,14 +97,19 @@ describe("priority across Job intake and lifecycle", () => {
       seen.push([job.data, job.priority]);
     });
     monque.start();
-    await waitFor(async () => events.length === 4);
-    expect(seen).toEqual([
-      ["urgent", 12],
-      ["zero", 0],
-      ["default", 0],
-      ["background", -4],
-    ]);
-    expect(events).toEqual([12, 0, 0, -4]);
+    await waitFor(() => events.length === 4);
+    expect({
+      seen,
+      events,
+    }).toStrictEqual({
+      seen: [
+        ["urgent", 12],
+        ["zero", 0],
+        ["default", 0],
+        ["background", -4],
+      ],
+      events: [12, 0, 0, -4],
+    });
   });
 
   it("retains the active Job's payload, schedule and priority for single, batch and recurring duplicates", async () => {
@@ -122,8 +126,8 @@ describe("priority across Job intake and lifecycle", () => {
         uniqueKey: "active",
       },
     );
-    expect(
-      await monque.schedule(
+    await expect(
+      monque.schedule(
         "0 10 * * *",
         "work",
         { replacement: true },
@@ -133,18 +137,18 @@ describe("priority across Job intake and lifecycle", () => {
           uniqueKey: "active",
         },
       ),
-    ).toEqual(original);
-    expect(await monque.enqueue("work", {}, { priority: 100, uniqueKey: "active" })).toEqual(
-      original,
-    );
-    expect(
-      await monque.enqueueMany([
+    ).resolves.toStrictEqual(original);
+    await expect(
+      monque.enqueue("work", {}, { priority: 100, uniqueKey: "active" }),
+    ).resolves.toStrictEqual(original);
+    await expect(
+      monque.enqueueMany([
         { name: "work", data: {}, priority: 101, uniqueKey: "active" },
         { name: "work", data: {}, priority: 102, uniqueKey: "active" },
         { name: "work", data: {}, priority: 7, uniqueKey: "new" },
       ]),
-    ).toEqual({ insertedCount: 1, deduplicatedCount: 2 });
-    expect(await monque.getJob(original._id)).toEqual(original);
+    ).resolves.toStrictEqual({ insertedCount: 1, deduplicatedCount: 2 });
+    await expect(monque.getJob(original._id)).resolves.toStrictEqual(original);
   });
 
   it("preserves priorities and partial database error results for an unordered batch", async () => {
@@ -164,11 +168,12 @@ describe("priority across Job intake and lifecycle", () => {
       failure = error;
     }
     expect(failure).toBeInstanceOf(ConnectionError);
-    if (!(failure instanceof ConnectionError) || !(failure.cause instanceof MongoBulkWriteError))
+    if (!(failure instanceof ConnectionError) || !(failure.cause instanceof MongoBulkWriteError)) {
       throw new Error("Expected native bulk result");
+    }
     expect(failure.cause.result.upsertedCount).toBe(2);
     expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);
-    expect(await monque.getJobs()).toMatchObject([
+    await expect(monque.getJobs()).resolves.toMatchObject([
       { data: { label: "first" }, priority: -4 },
       { data: { label: "last" }, priority: 9 },
     ]);
@@ -189,22 +194,24 @@ describe("priority across Job intake and lifecycle", () => {
       {},
       { priority: 15, timezone: "Europe/Berlin" },
     );
-    const seen: Array<number | undefined> = [];
-    monque.register("report", (job) => {
-      seen.push(job.priority);
-      if (seen.length === 1) throw new Error("Temporary failure");
+    const seen: (number | undefined)[] = [];
+    monque.register("report", (reportJob) => {
+      seen.push(reportJob.priority);
+      if (seen.length === 1) {
+        throw new Error("Temporary failure");
+      }
     });
-    const failures: Array<number | undefined> = [];
-    const completions: Array<number | undefined> = [];
-    monque.on("job:fail", ({ job }) => {
-      failures.push(job.priority);
+    const failures: (number | undefined)[] = [];
+    const completions: (number | undefined)[] = [];
+    monque.on("job:fail", ({ job: failedJob }) => {
+      failures.push(failedJob.priority);
     });
-    monque.on("job:complete", ({ job }) => {
-      completions.push(job.priority);
+    monque.on("job:complete", ({ job: completedJob }) => {
+      completions.push(completedJob.priority);
     });
     vi.setSystemTime(job.nextRunAt);
     monque.start();
-    await waitFor(async () => failures.length === 1);
+    await waitFor(() => failures.length === 1);
     const retry = await monque.getJob(job._id);
     expect(retry).toMatchObject({
       priority: 15,
@@ -212,8 +219,8 @@ describe("priority across Job intake and lifecycle", () => {
       status: "pending",
       failCount: 1,
     });
-    vi.setSystemTime(retry!.nextRunAt);
-    await waitFor(async () => completions.length === 1);
+    vi.setSystemTime(requireValue(retry).nextRunAt);
+    await waitFor(() => completions.length === 1);
     const next = await monque.getJob(job._id);
     expect(next).toMatchObject({
       priority: 15,
@@ -222,12 +229,19 @@ describe("priority across Job intake and lifecycle", () => {
       failCount: 0,
       nextRunAt: new Date("2026-03-29T07:00:00Z"),
     });
-    vi.setSystemTime(next!.nextRunAt);
-    await waitFor(async () => completions.length === 2);
-    expect(seen).toEqual([15, 15, 15]);
-    expect(failures).toEqual([15]);
-    expect(completions).toEqual([15, 15]);
-    expect((await monque.getJobSummariesWithCursor()).jobs[0]).toMatchObject({
+    vi.setSystemTime(requireValue(next).nextRunAt);
+    await waitFor(() => completions.length === 2);
+    expect({
+      seen,
+      failures,
+      completions,
+    }).toStrictEqual({
+      seen: [15, 15, 15],
+      failures: [15],
+      completions: [15, 15],
+    });
+    const awaitedResult1 = await monque.getJobSummariesWithCursor();
+    expect(awaitedResult1.jobs[0]).toMatchObject({
       priority: 15,
       nextRunAt: new Date("2026-03-30T07:00:00Z"),
     });
@@ -243,29 +257,42 @@ describe("priority across Job intake and lifecycle", () => {
     const job = await monque.now("work", {}, { priority: -6 });
     let attempts = 0;
     monque.register("work", () => {
-      if (++attempts === 1) throw new Error("Failed");
+      if ((attempts += 1) === 1) {
+        throw new Error("Failed");
+      }
     });
     monque.start();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.FAILED);
+    await waitFor(async () => {
+      const awaitedResult2 = await monque.getJob(job._id);
+      return awaitedResult2?.status === JobStatus.FAILED;
+    });
     monque.pause();
-    expect(await monque.retryJob(job._id.toHexString())).toMatchObject({
+    await expect(monque.retryJob(job._id.toHexString())).resolves.toMatchObject({
       priority: -6,
       status: "pending",
       failCount: 0,
     });
     await monque.cancelJob(job._id.toHexString());
-    expect(await monque.retryJobs({ name: "work" })).toMatchObject({ count: 1, errors: [] });
-    expect(await monque.rescheduleJob(job._id.toHexString(), new Date(0))).toMatchObject({
+    await expect(monque.retryJobs({ name: "work" })).resolves.toMatchObject({
+      count: 1,
+      errors: [],
+    });
+    await expect(monque.rescheduleJob(job._id.toHexString(), new Date(0))).resolves.toMatchObject({
       priority: -6,
       status: "pending",
       failCount: 0,
     });
     monque.resume();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
+    await waitFor(async () => {
+      const awaitedResult3 = await monque.getJob(job._id);
+      return awaitedResult3?.status === JobStatus.COMPLETED;
+    });
     const completed = await monque.getJob(job._id);
     expect(completed).toMatchObject({ priority: -6, status: "completed", failCount: 0 });
-    expect(completed).not.toHaveProperty("claimId");
-    expect(completed).not.toHaveProperty("claimedBy");
+    expect({
+      hasClaimId: Object.hasOwn(completed ?? {}, "claimId"),
+      hasClaimedBy: Object.hasOwn(completed ?? {}, "claimedBy"),
+    }).toStrictEqual({ hasClaimId: false, hasClaimedBy: false });
   });
 
   it("retains priority while stale recovery clears ownership and makes work claimable again", async () => {
@@ -299,8 +326,12 @@ describe("priority across Job intake and lifecycle", () => {
       handledPriority = job.priority;
     });
     monque.start();
-    await waitFor(async () => (await monque.getJob(id))?.status === JobStatus.COMPLETED);
+    await waitFor(async () => {
+      const awaitedResult4 = await monque.getJob(id);
+      return awaitedResult4?.status === JobStatus.COMPLETED;
+    });
     expect(handledPriority).toBe(23);
-    expect((await monque.getJob(id))?.priority).toBe(23);
+    const awaitedResult5 = await monque.getJob(id);
+    expect(awaitedResult5?.priority).toBe(23);
   });
 });

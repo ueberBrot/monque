@@ -1,4 +1,5 @@
-import { type Job, JobStatus, NonRetryableError } from "@monque/core";
+import { JobStatus, NonRetryableError } from "@monque/core";
+import type { Job } from "@monque/core";
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -14,32 +15,39 @@ class ExecutionController {
   static failCount = 0;
 
   @MonqueJob("permanent-failure")
-  async permanentFailure() {
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  permanentFailure() {
     throw new NonRetryableError("Account no longer exists");
   }
 
   @MonqueJob("success")
-  async success(job: Job) {
-    if (job._id) ExecutionController.processed.push(job._id.toString());
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  success(job: Job) {
+    if (job._id) {
+      ExecutionController.processed.push(job._id.toString());
+    }
   }
 
   @MonqueJob("fail-once")
-  async failOnce(job: Job) {
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  failOnce(job: Job) {
     if (ExecutionController.failCount === 0) {
-      ExecutionController.failCount++;
+      ExecutionController.failCount += 1;
       throw new Error("Intentional failure");
     }
-    if (job._id) ExecutionController.processed.push(job._id.toString());
+    if (job._id) {
+      ExecutionController.processed.push(job._id.toString());
+    }
   }
 }
 
 describe("Job Execution Flow", () => {
-  afterEach(resetMonque);
-
   beforeEach(() => {
     ExecutionController.processed = [];
     ExecutionController.failCount = 0;
   });
+
+  afterEach(resetMonque);
 
   it("should process a job successfully (Pending -> Processing -> Completed)", async () => {
     await bootstrapMonque({
@@ -88,7 +96,7 @@ describe("Job Execution Flow", () => {
         return persistedJob?.status === JobStatus.COMPLETED;
       },
       {
-        timeout: 10000,
+        timeout: 10_000,
       },
     );
 
@@ -107,10 +115,11 @@ describe("Job Execution Flow", () => {
     });
     const service = PlatformTest.get<MonqueService>(MonqueService);
     const job = await service.enqueue("execution.permanent-failure", {});
-    await waitFor(
-      async () => (await service.getJob(job._id.toHexString()))?.status === JobStatus.FAILED,
-    );
-    expect(await service.getJob(job._id.toHexString())).toMatchObject({
+    await waitFor(async () => {
+      const polledJob = await service.getJob(job._id.toHexString());
+      return polledJob?.status === JobStatus.FAILED;
+    });
+    await expect(service.getJob(job._id.toHexString())).resolves.toMatchObject({
       status: JobStatus.FAILED,
       failCount: 1,
       failReason: "Account no longer exists",

@@ -5,12 +5,10 @@ import monqueLogo from "@/assets/monque.svg";
 import { DashboardDevShellApp } from "./dev-shell-app.js";
 import { DashboardDevEnvironmentSchema } from "./environment.js";
 
-const rootElement = document.getElementById("app");
-
+const rootElement = document.querySelector("#app");
 if (!rootElement) {
   throw new Error("Missing #app root element.");
 }
-
 const root = ReactDOM.createRoot(rootElement);
 const favicon = document.createElement("link");
 favicon.rel = "icon";

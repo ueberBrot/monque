@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { Monque, MonqueError } from "@/index";
 
+const handler = async () => {};
+
 describe("runtime options", () => {
   const db = new MongoClient("mongodb://localhost:27017").db("options");
 
@@ -89,15 +91,20 @@ describe("runtime options", () => {
 
   it("validates registration before changing the registered worker", () => {
     const monque = new Monque(db);
-    const handler = async () => {};
     for (const concurrency of [Number.NaN, Infinity, -1, 0.5]) {
-      expect(() => monque.register("email", handler, { concurrency })).toThrow("concurrency");
+      expect(() => {
+        monque.register("email", handler, { concurrency });
+      }).toThrow("concurrency");
     }
-    expect(() => monque.register("email", handler, { concurrency: 0 })).not.toThrow();
-    expect(() => monque.register("email", handler, { replace: true, concurrency: -1 })).toThrow(
-      "concurrency",
-    );
-    expect(() => monque.register("email", handler)).toThrow("already registered");
+    expect(() => {
+      monque.register("email", handler, { concurrency: 0 });
+    }).not.toThrow();
+    expect(() => {
+      monque.register("email", handler, { replace: true, concurrency: -1 });
+    }).toThrow("concurrency");
+    expect(() => {
+      monque.register("email", handler);
+    }).toThrow("already registered");
   });
 
   it.each([
@@ -107,11 +114,14 @@ describe("runtime options", () => {
     { maxBackoffDelay: Infinity },
   ])("rejects invalid worker retry options before replacing its handler: %s", (options) => {
     const monque = new Monque(db);
-    const handler = async () => {};
-    expect(() => monque.register("email", handler, options)).toThrow(MonqueError);
-    expect(() => monque.register("email", handler)).not.toThrow();
-    expect(() => monque.register("email", handler, { ...options, replace: true })).toThrow(
-      MonqueError,
-    );
+    expect(() => {
+      monque.register("email", handler, options);
+    }).toThrow(MonqueError);
+    expect(() => {
+      monque.register("email", handler);
+    }).not.toThrow();
+    expect(() => {
+      monque.register("email", handler, { ...options, replace: true });
+    }).toThrow(MonqueError);
   });
 });

@@ -29,7 +29,7 @@ export default defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
+        command: "vp lint --type-aware --type-check --deny-warnings",
         dependsOn: [
           {
             task: "build",
@@ -102,8 +102,8 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
+      "@tests": fileURLToPath(new URL("tests", import.meta.url)),
     },
   },
   test: {
@@ -113,7 +113,7 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     globalSetup: ["./tests/integration/helpers/global-setup.ts"],
     fileParallelism: false,
-    testTimeout: 30000,
-    hookTimeout: 60000,
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
   },
 });

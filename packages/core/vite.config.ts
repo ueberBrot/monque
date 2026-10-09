@@ -39,8 +39,13 @@ export default defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check -A all",
-        dependsOn: ["lint:effect"],
+        command: "vp lint --type-aware --type-check --deny-warnings",
+        dependsOn: [
+          {
+            task: "build",
+            from: ["dependencies", "devDependencies"],
+          },
+        ],
         cache: { output: [] },
       },
       test: {
@@ -101,9 +106,9 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@tests": fileURLToPath(new URL("./tests", import.meta.url)),
-      "@test-utils": fileURLToPath(new URL("./tests/setup", import.meta.url)),
+      "@": fileURLToPath(new URL("src", import.meta.url)),
+      "@tests": fileURLToPath(new URL("tests", import.meta.url)),
+      "@test-utils": fileURLToPath(new URL("tests/setup", import.meta.url)),
     },
   },
   test: {
@@ -116,7 +121,7 @@ export default defineConfig({
     // Seed faker for deterministic tests
     setupFiles: ["./tests/setup/seed.ts", "./tests/setup/mongodb-cleanup.ts"],
     // Increase timeout for integration tests (container startup can be slow)
-    testTimeout: 30000,
-    hookTimeout: 60000,
+    testTimeout: 30_000,
+    hookTimeout: 60_000,
   },
 });

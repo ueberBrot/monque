@@ -1,20 +1,20 @@
 import {
-  type JobDto,
-  type JobListQueryDto,
   JobListSortByDtoSchema,
   JobListSortDirectionDtoSchema,
   JobStatusDtoSchema,
 } from "@monque/management/contract";
+import type { JobDto, JobListQueryDto } from "@monque/management/contract";
+import { z } from "zod";
 
 import { parseDashboardDate } from "@/lib/dates";
+import { isNumber, isString } from "@/lib/type-guards";
 
 import { JOB_STATUS_META } from "./job-status.js";
 
 const JOB_STATUS_ORDER = ["pending", "processing", "completed", "failed", "cancelled"] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-
-type JobsRouteSearch = {
+interface JobsRouteSearch {
   readonly createdAtFrom: string | undefined;
   readonly createdAtTo: string | undefined;
   readonly cursor: string | undefined;
@@ -27,124 +27,122 @@ type JobsRouteSearch = {
   readonly status: readonly JobStatusDto[];
   readonly updatedAtFrom: string | undefined;
   readonly updatedAtTo: string | undefined;
-};
-
+}
 type JobListSortByDto = NonNullable<JobListQueryDto["sortBy"]>;
 type JobListSortDirectionDto = NonNullable<JobListQueryDto["sortDirection"]>;
 type JobStatusDto = JobDto["status"];
-
-function parseJobsRouteSearch(search: Record<string, unknown>): JobsRouteSearch {
-  return {
-    cursor: getOptionalString(search["cursor"])?.trim() || undefined,
-    limit: parseLimit(search["limit"]),
-    name: getOptionalString(search["name"]),
-    status: parseStatusFilter(search["status"]),
-    createdAtFrom: getOptionalIsoDate(search["createdAtFrom"]),
-    createdAtTo: getOptionalIsoDate(search["createdAtTo"]),
-    updatedAtFrom: getOptionalIsoDate(search["updatedAtFrom"]),
-    updatedAtTo: getOptionalIsoDate(search["updatedAtTo"]),
-    nextRunAtFrom: getOptionalIsoDate(search["nextRunAtFrom"]),
-    nextRunAtTo: getOptionalIsoDate(search["nextRunAtTo"]),
-    sortBy: parseSortBy(search["sortBy"]),
-    sortDirection: parseSortDirection(search["sortDirection"]),
-  };
-}
-
-function toJobListQueryInput(search: JobsRouteSearch): JobListQueryDto {
-  return { ...search, limit: String(search.limit), status: toJobListStatusQuery(search.status) };
-}
-
-function getJobsSearchIdentity({ cursor: _cursor, ...filters }: JobsRouteSearch): string {
-  return JSON.stringify(filters);
-}
-
-function getNextSort(
+const getOptionalStringSchema = z
+  .unknown()
+  .transform((value) => (isString(value) && value.length > 0 ? value : undefined));
+const getOptionalString = getOptionalStringSchema.parse.bind(getOptionalStringSchema);
+const normalizeLimit = (value: number): number => {
+  if (!Number.isInteger(value) || value <= 0) {
+    return DEFAULT_LIMIT;
+  }
+  return Math.min(value, MAX_LIMIT);
+};
+const parseLimitSchema = z.unknown().transform((value) => {
+  if (isNumber(value)) {
+    return normalizeLimit(value);
+  }
+  if (isString(value)) {
+    const prefix = /^[+-]?\d+/u.exec(value.trimStart());
+    return normalizeLimit(prefix === null ? Number.NaN : Number(prefix[0]));
+  }
+  return DEFAULT_LIMIT;
+});
+const parseLimit = parseLimitSchema.parse.bind(parseLimitSchema);
+const parseStatusFilterSchema = z.unknown().transform((value) => {
+  const values: unknown[] = Array.isArray(value) ? value : [value];
+  const parsedStatuses = new Set(
+    values
+      .flatMap((candidate) => (isString(candidate) ? [candidate] : []))
+      .filter(
+        (candidate): candidate is JobStatusDto => JobStatusDtoSchema.safeParse(candidate).success,
+      ),
+  );
+  return JOB_STATUS_ORDER.filter((status) => parsedStatuses.has(status));
+});
+const parseStatusFilter = parseStatusFilterSchema.parse.bind(parseStatusFilterSchema);
+const getOptionalIsoDateSchema = z
+  .unknown()
+  .transform((value) =>
+    isString(value) && value.length > 0 ? parseDashboardDate(value)?.toISOString() : undefined,
+  );
+const getOptionalIsoDate = getOptionalIsoDateSchema.parse.bind(getOptionalIsoDateSchema);
+const parseSortBySchema = z.unknown().transform((value) => {
+  const parsed = JobListSortByDtoSchema.safeParse(value);
+  return parsed.success ? parsed.data : "createdAt";
+});
+const parseSortBy = parseSortBySchema.parse.bind(parseSortBySchema);
+const parseSortDirectionSchema = z.unknown().transform((value) => {
+  const parsed = JobListSortDirectionDtoSchema.safeParse(value);
+  return parsed.success ? parsed.data : "desc";
+});
+const parseSortDirection = parseSortDirectionSchema.parse.bind(parseSortDirectionSchema);
+const parseJobsRouteSearchSchema = z
+  .object({
+    cursor: z.unknown().optional(),
+    limit: z.unknown().optional(),
+    name: z.unknown().optional(),
+    status: z.unknown().optional(),
+    createdAtFrom: z.unknown().optional(),
+    createdAtTo: z.unknown().optional(),
+    updatedAtFrom: z.unknown().optional(),
+    updatedAtTo: z.unknown().optional(),
+    nextRunAtFrom: z.unknown().optional(),
+    nextRunAtTo: z.unknown().optional(),
+    sortBy: z.unknown().optional(),
+    sortDirection: z.unknown().optional(),
+  })
+  .transform((search): JobsRouteSearch => ({
+    cursor: getOptionalString(getOptionalString(search.cursor)?.trim()),
+    limit: parseLimit(search.limit),
+    name: getOptionalString(search.name),
+    status: parseStatusFilter(search.status),
+    createdAtFrom: getOptionalIsoDate(search.createdAtFrom),
+    createdAtTo: getOptionalIsoDate(search.createdAtTo),
+    updatedAtFrom: getOptionalIsoDate(search.updatedAtFrom),
+    updatedAtTo: getOptionalIsoDate(search.updatedAtTo),
+    nextRunAtFrom: getOptionalIsoDate(search.nextRunAtFrom),
+    nextRunAtTo: getOptionalIsoDate(search.nextRunAtTo),
+    sortBy: parseSortBy(search.sortBy),
+    sortDirection: parseSortDirection(search.sortDirection),
+  }));
+const parseJobsRouteSearch = parseJobsRouteSearchSchema.parse.bind(parseJobsRouteSearchSchema);
+const toJobListStatusQuery = (status: readonly JobStatusDto[]): JobListQueryDto["status"] => {
+  if (status.length === 0) {
+    return undefined;
+  }
+  if (status.length === 1) {
+    return status[0];
+  }
+  return [...status];
+};
+const toJobListQueryInput = (search: JobsRouteSearch): JobListQueryDto => ({
+  ...search,
+  limit: String(search.limit),
+  status: toJobListStatusQuery(search.status),
+});
+const getJobsSearchIdentity = ({ cursor: _cursor, ...filters }: JobsRouteSearch): string =>
+  JSON.stringify(filters);
+const getNextSort = (
   currentSortBy: JobListSortByDto,
   currentSortDirection: JobListSortDirectionDto,
   nextSortBy: JobListSortByDto,
-): Pick<JobsRouteSearch, "sortBy" | "sortDirection"> {
+): Pick<JobsRouteSearch, "sortBy" | "sortDirection"> => {
   if (currentSortBy !== nextSortBy) {
     return {
       sortBy: nextSortBy,
       sortDirection: nextSortBy === "identifier" ? "asc" : "desc",
     };
   }
-
   return {
     sortBy: nextSortBy,
     sortDirection: currentSortDirection === "asc" ? "desc" : "asc",
   };
-}
-
-function getStatusLabel(status: JobStatusDto): string {
-  return JOB_STATUS_META[status].label;
-}
-
-function parseLimit(value: unknown): number {
-  if (typeof value === "number") {
-    return normalizeLimit(value);
-  }
-
-  if (typeof value === "string") {
-    return normalizeLimit(Number.parseInt(value, 10));
-  }
-
-  return DEFAULT_LIMIT;
-}
-
-function parseStatusFilter(value: unknown): readonly JobStatusDto[] {
-  const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
-  const parsedStatuses = values
-    .flatMap((candidate) => (typeof candidate === "string" ? [candidate] : []))
-    .filter(
-      (candidate): candidate is JobStatusDto => JobStatusDtoSchema.safeParse(candidate).success,
-    );
-
-  return JOB_STATUS_ORDER.filter((status) => parsedStatuses.includes(status));
-}
-
-function parseSortBy(value: unknown): JobListSortByDto {
-  const parsed = JobListSortByDtoSchema.safeParse(value);
-  return parsed.success ? parsed.data : "createdAt";
-}
-
-function parseSortDirection(value: unknown): JobListSortDirectionDto {
-  const parsed = JobListSortDirectionDtoSchema.safeParse(value);
-  return parsed.success ? parsed.data : "desc";
-}
-
-function getOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function getOptionalIsoDate(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length === 0) {
-    return undefined;
-  }
-
-  return parseDashboardDate(value)?.toISOString();
-}
-
-function normalizeLimit(value: number): number {
-  if (!Number.isInteger(value) || value <= 0) {
-    return DEFAULT_LIMIT;
-  }
-
-  return Math.min(value, MAX_LIMIT);
-}
-
-function toJobListStatusQuery(status: readonly JobStatusDto[]): JobListQueryDto["status"] {
-  if (status.length === 0) {
-    return undefined;
-  }
-
-  if (status.length === 1) {
-    return status[0];
-  }
-
-  return [...status];
-}
-
+};
+const getStatusLabel = (status: JobStatusDto): string => JOB_STATUS_META[status].label;
 export {
   getJobsSearchIdentity,
   getNextSort,

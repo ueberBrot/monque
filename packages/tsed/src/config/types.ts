@@ -1,5 +1,5 @@
 /**
- * @monque/tsed - Configuration Types
+ * `@monque/tsed` - Configuration Types
  */
 
 import type { MonqueOptions } from "@monque/core";

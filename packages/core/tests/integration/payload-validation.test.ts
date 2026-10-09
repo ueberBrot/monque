@@ -21,6 +21,7 @@ describe("payload validation", () => {
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -33,10 +34,12 @@ describe("payload validation", () => {
     instances.push(monque);
     await monque.initialize();
     const job = await monque.enqueue("send", { email: "invalid" });
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     const options = { schema: z.object({ email: z.email() }), concurrency: 1 };
     const failures: Error[] = [];
-    monque.on("job:fail", ({ error }) => failures.push(error));
+    monque.on("job:fail", ({ error }) => {
+      failures.push(error);
+    });
     monque.register("send", handler, options);
     monque.start();
     await waitFor(async () => {
@@ -44,12 +47,17 @@ describe("payload validation", () => {
       return current?.status === JobStatus.FAILED || current?.status === JobStatus.COMPLETED;
     });
     await monque.stop();
-    expect(await monque.getJob(job._id)).toMatchObject({ status: JobStatus.FAILED, failCount: 1 });
+    await expect(monque.getJob(job._id)).resolves.toMatchObject({
+      status: JobStatus.FAILED,
+      failCount: 1,
+    });
     expect(handler).not.toHaveBeenCalled();
     expect(failures[0]).toBeInstanceOf(PayloadValidationError);
-    if (failures[0] instanceof PayloadValidationError) {
-      expect(failures[0].issues[0]?.path).toEqual(["email"]);
+    const [failure] = failures;
+    if (!(failure instanceof PayloadValidationError)) {
+      throw new Error("Expected a payload validation failure");
     }
+    expect(failure.issues[0]?.path).toStrictEqual(["email"]);
   });
 
   it("passes asynchronous schema output to each attempt while retaining stored input", async () => {
@@ -62,20 +70,30 @@ describe("payload validation", () => {
     instances.push(monque);
     await monque.initialize();
     const received: number[] = [];
-    const schema = z.object({ count: z.string().transform(async (value) => Number(value) + 1) });
+    const schema = z.object({
+      count: z.string().transform(vi.fn<(value: string) => Promise<number>>().mockResolvedValue(3)),
+    });
     monque.register(
       "work",
-      async (job) => {
+      (job) => {
         received.push(job.data.count);
-        if (received.length === 1) throw new Error("Try again");
+        if (received.length === 1) {
+          throw new Error("Try again");
+        }
       },
       { schema },
     );
     const job = await monque.enqueue("work", { count: "2" });
     monque.start();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
-    expect(received).toEqual([3, 3]);
-    expect(await monque.getJob(job._id)).toMatchObject({ data: { count: "2" }, failCount: 1 });
+    await waitFor(async () => {
+      const awaitedResult1 = await monque.getJob(job._id);
+      return awaitedResult1?.status === JobStatus.COMPLETED;
+    });
+    expect(received).toStrictEqual([3, 3]);
+    await expect(monque.getJob(job._id)).resolves.toMatchObject({
+      data: { count: "2" },
+      failCount: 1,
+    });
   });
 
   it("retries unexpected validator exceptions using the worker policy", async () => {
@@ -91,18 +109,24 @@ describe("payload validation", () => {
       "~standard": {
         version: 1,
         vendor: "runtime-test",
-        validate: async (value) => {
-          if (++attempts === 1) throw new Error("Validation service unavailable");
+        validate: (value) => {
+          if ((attempts += 1) === 1) {
+            throw new Error("Validation service unavailable");
+          }
           return { value };
         },
       },
     };
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     monque.register("work", handler, { schema, maxRetries: 2, baseRetryInterval: 0 });
     const job = await monque.enqueue("work", "input");
     monque.start();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
+    await waitFor(async () => {
+      const awaitedResult2 = await monque.getJob(job._id);
+      return awaitedResult2?.status === JobStatus.COMPLETED;
+    });
     expect(handler).toHaveBeenCalledOnce();
-    expect((await monque.getJob(job._id))?.failCount).toBe(1);
+    const awaitedResult3 = await monque.getJob(job._id);
+    expect(awaitedResult3?.failCount).toBe(1);
   });
 });

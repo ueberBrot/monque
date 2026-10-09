@@ -1,9 +1,12 @@
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
-import { type Document, ObjectId, type WithId } from "mongodb";
+import { ObjectId } from "mongodb";
+import type { Document, WithId } from "mongodb";
 
-import { type BulkOperationResult, type JobSelector, JobStatus, type PersistedJob } from "@/jobs";
+import { JobStatus } from "@/jobs";
+import type { BulkOperationResult, JobSelector, PersistedJob } from "@/jobs";
 import {
   ConnectionError,
   InvalidJobPriorityError,
@@ -11,37 +14,53 @@ import {
   MonqueError,
   toError,
 } from "@/shared";
+import { definedProperty } from "@/shared/utils/defined-property.js";
 import { validateJobPriority } from "@/shared/utils/job-priority.js";
 
 import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery } from "../helpers.js";
 import { CLAIM_CLEANUP_FIELDS } from "./job-lifecycle.js";
-import {
-  RETRYABLE_JOB_STATUSES,
-  type RetryableJobStatusType,
-  type SchedulerContext,
-} from "./types.js";
+import { RETRYABLE_JOB_STATUSES } from "./types.js";
+import type { RetryableJobStatusType, SchedulerContext } from "./types.js";
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Native database failures may be arbitrary values; preserve MonqueError identity and legacy fallback messages.
+const jobMutationError = (error: unknown, operation: string, action: string): MonqueError => {
+  if (error instanceof MonqueError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : `Unknown error during ${operation}`;
+  return new ConnectionError(
+    `Failed to ${action}: ${message}`,
+    error instanceof Error ? { cause: error } : undefined,
+  );
+};
 type PendingNotificationDocument = Document & {
   name?: unknown;
   nextRunAt?: unknown;
 };
-
 type PendingJobEdit =
-  | { action: "reschedule"; runAt: Date }
-  | { action: "setJobPriority"; priority: number };
-
+  | {
+      action: "reschedule";
+      runAt: Date;
+    }
+  | {
+      action: "setJobPriority";
+      priority: number;
+    };
 /**
  * Internal service for job lifecycle management operations.
  *
  * Provides atomic state transitions (cancel, retry, reschedule) and deletion.
  * Emits appropriate events on each operation.
  *
- * @internal Not part of public API - use Monque class methods instead.
+ * Not part of public API - use Monque class methods instead.
+ * @internal
  */
 export class JobManager {
-  constructor(private readonly ctx: SchedulerContext) {}
-
+  private readonly ctx: SchedulerContext;
+  constructor(ctx: SchedulerContext) {
+    this.ctx = ctx;
+  }
   /**
    * Cancel a pending or scheduled job.
    *
@@ -61,56 +80,53 @@ export class JobManager {
    * ```
    */
   cancelJob = Effect.fnUntraced(
-    function* (
+    function* cancelSingleJob(
       this: JobManager,
       jobId: string,
-    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
+    ): Effect.fn.Return<PersistedJob | null, unknown> {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
-
       const _id = new ObjectId(jobId);
       const now = yield* DateTime.nowAsDate;
-      const result = yield* fromPromise(() =>
-        this.ctx.collection.findOneAndUpdate(
-          { _id, status: JobStatus.PENDING },
-          {
-            $set: {
-              status: JobStatus.CANCELLED,
-              updatedAt: now,
+      const result = yield* fromPromise(
+        async () =>
+          await this.ctx.collection.findOneAndUpdate(
+            { _id, status: JobStatus.PENDING },
+            {
+              $set: {
+                status: JobStatus.CANCELLED,
+                updatedAt: now,
+              },
             },
-          },
-          { returnDocument: "after" },
-        ),
+            { returnDocument: "after" },
+          ),
       );
-
       if (result) {
         const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
         yield* attempt(() => this.ctx.emit("job:cancelled", { job }));
         return job;
       }
-
-      const jobDoc = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
+      const jobDoc = yield* fromPromise(
+        async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
+      );
       if (!jobDoc) {
         return null;
       }
-
-      if (jobDoc["status"] === JobStatus.CANCELLED) {
+      if (jobDoc.status === JobStatus.CANCELLED) {
         return yield* attempt(() => this.ctx.documentToPersistedJob(jobDoc));
       }
-
       return yield* Effect.fail(
         new JobStateError(
-          `Cannot cancel job in status '${jobDoc["status"]}'`,
+          `Cannot cancel job in status '${jobDoc.status}'`,
           jobId,
-          jobDoc["status"],
+          jobDoc.status,
           "cancel",
         ),
       );
     },
-    Effect.mapError((error) => jobMutationError(error, "cancelJob", "cancel job")),
+    Effect.mapError((failure) => jobMutationError(failure, "cancelJob", "cancel job")),
   );
-
   /**
    * Retry a failed or cancelled job.
    *
@@ -130,14 +146,13 @@ export class JobManager {
    * ```
    */
   retryJob = Effect.fnUntraced(
-    function* (
+    function* retrySingleJob(
       this: JobManager,
       jobId: string,
-    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
+    ): Effect.fn.Return<PersistedJob | null, unknown> {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
-
       const _id = new ObjectId(jobId);
       const now = yield* DateTime.nowAsDate;
       const update = {
@@ -149,47 +164,51 @@ export class JobManager {
         },
         $unset: { failReason: "", ...CLAIM_CLEANUP_FIELDS },
       };
-      const result = yield* fromPromise(() =>
-        this.ctx.collection.findOneAndUpdate(
-          {
-            _id,
-            status: { $in: RETRYABLE_JOB_STATUSES },
-          },
-          update,
-          { returnDocument: "before" },
-        ),
+      const result = yield* fromPromise(
+        async () =>
+          await this.ctx.collection.findOneAndUpdate(
+            {
+              _id,
+              status: { $in: RETRYABLE_JOB_STATUSES },
+            },
+            update,
+            { returnDocument: "before" },
+          ),
       );
-
       if (!result) {
-        const currentJob = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
+        const currentJob = yield* fromPromise(
+          async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
+        );
         if (!currentJob) {
           return null;
         }
-
         return yield* Effect.fail(
           new JobStateError(
-            `Cannot retry job in status '${currentJob["status"]}'`,
+            `Cannot retry job in status '${currentJob.status}'`,
             jobId,
-            currentJob["status"],
+            currentJob.status,
             "retry",
           ),
         );
       }
-
+      // SAFETY: The atomic update only matches RETRYABLE_JOB_STATUSES and returns the
+      // document before that update, so this event reports one of those statuses.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- MongoDB's update overload erases the query's status constraint.
       const previousStatus = result["status"] as RetryableJobStatusType;
       const updatedDoc: WithId<Document> = { ...result, ...update.$set };
       for (const field of Object.keys(update.$unset)) {
+        // oxlint-disable-next-line typescript/no-dynamic-delete -- Apply MongoDB's dynamic $unset keys to the returned document too.
         delete updatedDoc[field];
       }
-
       const job = yield* attempt(() => this.ctx.documentToPersistedJob(updatedDoc));
-      yield* attempt(() => this.ctx.notifyPendingJob(job.name, job.nextRunAt));
+      yield* attempt(() => {
+        this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+      });
       yield* attempt(() => this.ctx.emit("job:retried", { job, previousStatus }));
       return job;
     },
-    Effect.mapError((error) => jobMutationError(error, "retryJob", "retry job")),
+    Effect.mapError((failure) => jobMutationError(failure, "retryJob", "retry job")),
   );
-
   /**
    * Reschedule a pending job to run at a different time.
    *
@@ -207,67 +226,77 @@ export class JobManager {
    * ```
    */
   rescheduleJob = Effect.fnUntraced(
-    function* (
+    function* rescheduleSingleJob(
       this: JobManager,
       jobId: string,
       runAt: Date,
-    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
+    ): Effect.fn.Return<PersistedJob | null, unknown> {
       return yield* this.editPendingJob(jobId, { action: "reschedule", runAt });
     },
-    Effect.mapError((error) => jobMutationError(error, "rescheduleJob", "reschedule job")),
+    Effect.mapError((failure) => jobMutationError(failure, "rescheduleJob", "reschedule job")),
   );
-
   /** Atomically change priority on a pending Job, preserving schedule and ownership. */
   setJobPriority = Effect.fnUntraced(
-    function* (
+    function* setSingleJobPriority(
       this: JobManager,
       jobId: string,
       priority: number,
-    ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
+    ): Effect.fn.Return<PersistedJob | null, unknown> {
       yield* attempt(() => {
-        if (priority === undefined) throw new InvalidJobPriorityError();
+        if (priority === undefined) {
+          throw new InvalidJobPriorityError();
+        }
         validateJobPriority(priority);
       });
       return yield* this.editPendingJob(jobId, { action: "setJobPriority", priority });
     },
-    Effect.mapError((error) => jobMutationError(error, "setJobPriority", "change job priority")),
+    Effect.mapError((failure) =>
+      jobMutationError(failure, "setJobPriority", "change job priority"),
+    ),
   );
-
-  private editPendingJob = Effect.fnUntraced(function* (
+  private readonly editPendingJob = Effect.fnUntraced(function* editSinglePendingJob(
     this: JobManager,
     jobId: string,
     edit: PendingJobEdit,
-  ): Effect.fn.Return<PersistedJob<unknown> | null, unknown> {
-    if (!ObjectId.isValid(jobId)) return null;
+  ): Effect.fn.Return<PersistedJob | null, unknown> {
+    if (!ObjectId.isValid(jobId)) {
+      return null;
+    }
     const _id = new ObjectId(jobId);
     const now = yield* DateTime.nowAsDate;
     const fields =
       edit.action === "reschedule" ? { nextRunAt: edit.runAt } : { priority: edit.priority };
-    const result = yield* fromPromise(() =>
-      this.ctx.collection.findOneAndUpdate(
-        { _id, status: JobStatus.PENDING },
-        { $set: { ...fields, updatedAt: now } },
-        { returnDocument: "after" },
-      ),
+    const result = yield* fromPromise(
+      async () =>
+        await this.ctx.collection.findOneAndUpdate(
+          { _id, status: JobStatus.PENDING },
+          { $set: { ...fields, updatedAt: now } },
+          { returnDocument: "after" },
+        ),
     );
     if (result) {
       const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
-      yield* attempt(() => this.ctx.notifyPendingJob(job.name, job.nextRunAt));
+      yield* attempt(() => {
+        this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+      });
       return job;
     }
-    const currentJob = yield* fromPromise(() => this.ctx.collection.findOne({ _id }));
-    if (!currentJob) return null;
+    const currentJob = yield* fromPromise(
+      async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
+    );
+    if (!currentJob) {
+      return null;
+    }
     const action = edit.action === "reschedule" ? "reschedule" : "change priority of";
     return yield* Effect.fail(
       new JobStateError(
-        `Cannot ${action} job in status '${currentJob["status"]}'`,
+        `Cannot ${action} job in status '${currentJob.status}'`,
         jobId,
-        currentJob["status"],
+        currentJob.status,
         edit.action,
       ),
     );
   });
-
   /**
    * Permanently delete a job.
    *
@@ -286,27 +315,23 @@ export class JobManager {
    * ```
    */
   deleteJob = Effect.fnUntraced(
-    function* (this: JobManager, jobId: string): Effect.fn.Return<boolean, unknown> {
-      if (!ObjectId.isValid(jobId)) return false;
-
+    function* deleteSingleJob(this: JobManager, jobId: string): Effect.fn.Return<boolean, unknown> {
+      if (!ObjectId.isValid(jobId)) {
+        return false;
+      }
       const _id = new ObjectId(jobId);
-
-      const result = yield* fromPromise(() => this.ctx.collection.deleteOne({ _id }));
-
+      const result = yield* fromPromise(async () => await this.ctx.collection.deleteOne({ _id }));
       if (result.deletedCount > 0) {
         yield* attempt(() => this.ctx.emit("job:deleted", { jobId }));
         return true;
       }
-
       return false;
     },
-    Effect.mapError((error) => jobMutationError(error, "deleteJob", "delete job")),
+    Effect.mapError((failure) => jobMutationError(failure, "deleteJob", "delete job")),
   );
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Bulk Operations
   // ─────────────────────────────────────────────────────────────────────────────
-
   /**
    * Cancel multiple jobs matching the given filter via a single updateMany call.
    *
@@ -327,12 +352,11 @@ export class JobManager {
    * console.log(`Cancelled ${result.count} jobs`);
    * ```
    */
-  cancelJobs = Effect.fnUntraced(function* (
+  cancelJobs = Effect.fnUntraced(function* cancelMatchingJobs(
     this: JobManager,
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
-
     // Enforce allowed status, but respect explicit status filters
     if (filter.status !== undefined) {
       const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
@@ -341,28 +365,24 @@ export class JobManager {
       }
     }
     query["status"] = JobStatus.PENDING;
-
-    return yield* Effect.gen({ self: this }, function* () {
+    return yield* Effect.gen({ self: this }, function* writeCancelledJobs() {
       const now = yield* DateTime.nowAsDate;
-      const result = yield* fromPromise(() =>
-        this.ctx.collection.updateMany(query, {
-          $set: {
-            status: JobStatus.CANCELLED,
-            updatedAt: now,
-          },
-        }),
+      const result = yield* fromPromise(
+        async () =>
+          await this.ctx.collection.updateMany(query, {
+            $set: {
+              status: JobStatus.CANCELLED,
+              updatedAt: now,
+            },
+          }),
       );
-
       const count = result.modifiedCount;
-
       if (count > 0) {
         yield* attempt(() => this.ctx.emit("jobs:cancelled", { count }));
       }
-
       return { count, errors: [] };
-    }).pipe(Effect.mapError((error) => jobMutationError(error, "cancelJobs", "cancel jobs")));
+    }).pipe(Effect.mapError((failure) => jobMutationError(failure, "cancelJobs", "cancel jobs")));
   });
-
   /**
    * Retry multiple jobs matching the given filter via a single pipeline-style updateMany call.
    *
@@ -382,50 +402,47 @@ export class JobManager {
    * console.log(`Retried ${result.count} jobs`);
    * ```
    */
-  retryJobs = Effect.fnUntraced(function* (
+  retryJobs = Effect.fnUntraced(function* retryMatchingJobs(
     this: JobManager,
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
-
     // Enforce allowed statuses, but respect explicit status filters
-    if (filter.status !== undefined) {
+    if (filter.status === undefined) {
+      query["status"] = { $in: RETRYABLE_JOB_STATUSES };
+    } else {
       const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
       const allowed = requested.filter((status): status is RetryableJobStatusType =>
-        RETRYABLE_JOB_STATUSES.includes(status as RetryableJobStatusType),
+        RETRYABLE_JOB_STATUSES.some((retryableStatus) => retryableStatus === status),
       );
       if (allowed.length === 0) {
         return { count: 0, errors: [] };
       }
       query["status"] = allowed.length === 1 ? allowed[0] : { $in: allowed };
-    } else {
-      query["status"] = { $in: RETRYABLE_JOB_STATUSES };
     }
-
-    const spreadWindowMs = 30_000; // 30s max spread for staggered retry
-
-    return yield* Effect.gen({ self: this }, function* () {
+    // 30s max spread for staggered retry
+    const spreadWindowMs = 30_000;
+    return yield* Effect.gen({ self: this }, function* writeRetriedJobs() {
       const now = yield* DateTime.nowAsDate;
-      const result = yield* fromPromise(() =>
-        this.ctx.collection.updateMany(query, [
-          {
-            $set: {
-              status: JobStatus.PENDING,
-              failCount: 0,
-              nextRunAt: {
-                $add: [now, { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+      const result = yield* fromPromise(
+        async () =>
+          await this.ctx.collection.updateMany(query, [
+            {
+              $set: {
+                status: JobStatus.PENDING,
+                failCount: 0,
+                nextRunAt: {
+                  $add: [now, { $multiply: [{ $rand: {} }, spreadWindowMs] }],
+                },
+                updatedAt: now,
               },
-              updatedAt: now,
             },
-          },
-          {
-            $unset: ["failReason", ...Object.keys(CLAIM_CLEANUP_FIELDS)],
-          },
-        ]),
+            {
+              $unset: ["failReason", ...Object.keys(CLAIM_CLEANUP_FIELDS)],
+            },
+          ]),
       );
-
       const count = result.modifiedCount;
-
       if (count > 0) {
         yield* attempt(() => this.ctx.emit("jobs:retried", { count }));
         yield* this.notifyRetriedPendingJobs(filter, now).pipe(
@@ -437,18 +454,16 @@ export class JobManager {
           ),
         );
       }
-
       return { count, errors: [] };
-    }).pipe(Effect.mapError((error) => jobMutationError(error, "retryJobs", "retry jobs")));
+    }).pipe(Effect.mapError((failure) => jobMutationError(failure, "retryJobs", "retry jobs")));
   });
-
   /**
    * Emits local Pending Notifications for Jobs moved back to pending by bulk retry.
    *
    * The bulk update uses MongoDB-side staggered `nextRunAt` values, so this reads back the
    * changed Jobs by their shared `updatedAt` timestamp to preserve precise wakeup times.
    */
-  private notifyRetriedPendingJobs = Effect.fnUntraced(function* (
+  private readonly notifyRetriedPendingJobs = Effect.fnUntraced(function* notifyRetriedJobs(
     this: JobManager,
     filter: JobSelector,
     updatedAt: Date,
@@ -456,34 +471,37 @@ export class JobManager {
     // Retried Jobs are pending; retain only the original name and creation-date scope.
     const query = yield* attempt(() =>
       buildSelectorQuery({
-        ...(filter.name === undefined ? {} : { name: filter.name }),
-        ...(filter.olderThan === undefined ? {} : { olderThan: filter.olderThan }),
-        ...(filter.newerThan === undefined ? {} : { newerThan: filter.newerThan }),
+        ...definedProperty(filter, "name"),
+        ...definedProperty(filter, "olderThan"),
+        ...definedProperty(filter, "newerThan"),
       }),
     );
     query["status"] = JobStatus.PENDING;
     query["updatedAt"] = updatedAt;
-    const cursor = yield* attempt(() =>
-      this.ctx.collection.find<PendingNotificationDocument>(query, {
+    const cursor = yield* attempt(() => {
+      const { collection } = this.ctx;
+      const findNotificationJobs = collection.find.bind(collection);
+      return findNotificationJobs<PendingNotificationDocument>(query, {
         projection: { name: 1, nextRunAt: 1 },
-      }),
-    );
+      });
+    });
     let notified = false;
     yield* Stream.fromAsyncIterable(cursor, (error) => error).pipe(
       Stream.runForEach((job) =>
         attempt(() => {
           notified = true;
-          const name = typeof job.name === "string" ? job.name : undefined;
+          const name = Predicate.isString(job.name) ? job.name : undefined;
           const nextRunAt = job.nextRunAt instanceof Date ? job.nextRunAt : updatedAt;
           this.ctx.notifyPendingJob(name, nextRunAt);
         }),
       ),
     );
     if (!notified) {
-      yield* attempt(() => this.ctx.notifyPendingJob(filter.name, updatedAt));
+      yield* attempt(() => {
+        this.ctx.notifyPendingJob(filter.name, updatedAt);
+      });
     }
   });
-
   /**
    * Delete multiple jobs matching the given filter.
    *
@@ -504,35 +522,21 @@ export class JobManager {
    * console.log(`Deleted ${result.count} jobs`);
    * ```
    */
-  deleteJobs = Effect.fnUntraced(function* (
+  deleteJobs = Effect.fnUntraced(function* deleteMatchingJobs(
     this: JobManager,
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
-
     // Use deleteMany for efficiency
-    return yield* Effect.gen({ self: this }, function* () {
-      const result = yield* fromPromise(() => this.ctx.collection.deleteMany(query));
-
+    return yield* Effect.gen({ self: this }, function* writeDeletedJobs() {
+      const result = yield* fromPromise(async () => await this.ctx.collection.deleteMany(query));
       if (result.deletedCount > 0) {
         yield* attempt(() => this.ctx.emit("jobs:deleted", { count: result.deletedCount }));
       }
-
       return {
         count: result.deletedCount,
         errors: [],
       };
-    }).pipe(Effect.mapError((error) => jobMutationError(error, "deleteJobs", "delete jobs")));
+    }).pipe(Effect.mapError((failure) => jobMutationError(failure, "deleteJobs", "delete jobs")));
   });
-}
-
-function jobMutationError(error: unknown, operation: string, action: string): MonqueError {
-  if (error instanceof MonqueError) {
-    return error;
-  }
-  const message = error instanceof Error ? error.message : `Unknown error during ${operation}`;
-  return new ConnectionError(
-    `Failed to ${action}: ${message}`,
-    error instanceof Error ? { cause: error } : undefined,
-  );
 }

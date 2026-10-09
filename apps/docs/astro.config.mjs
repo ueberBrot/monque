@@ -9,11 +9,14 @@ import starlightLinksValidator from "starlight-links-validator";
 import starlightLlmsTxt from "starlight-llms-txt";
 import starlightThemeNova from "starlight-theme-nova";
 import starlightTypeDoc from "starlight-typedoc";
+import { z } from "zod";
 
 const corePackageJsonUrl = new URL("../../packages/core/package.json", import.meta.url);
-const corePackageJson = JSON.parse(readFileSync(corePackageJsonUrl, "utf8"));
-const coreVersion =
-  typeof corePackageJson?.version === "string" ? corePackageJson.version : "unknown";
+const parsedPackage = z
+  .object({ version: z.string() })
+  .safeParse(JSON.parse(readFileSync(corePackageJsonUrl, "utf-8")));
+const corePackage = parsedPackage.success ? parsedPackage.data : { version: "unknown" };
+const coreVersion = corePackage.version;
 
 const apiReferences = [
   { package: "core", output: "api", label: "Core API" },
@@ -27,12 +30,12 @@ const apiReferences = [
   { package: "dashboard", output: "api-dashboard", label: "Dashboard API" },
   { package: "dashboard-express", output: "api-dashboard-express", label: "Dashboard Express API" },
 ];
-const reuseApi = process.env["MONQUE_DOCS_REUSE_API"] === "1";
+const reuseApi = process.env.MONQUE_DOCS_REUSE_API === "1";
 if (reuseApi) {
   for (const { output } of apiReferences) {
-    const directory = new URL(`./src/content/docs/${output}/`, import.meta.url);
+    const directory = new URL(`src/content/docs/${output}/`, import.meta.url);
     if (
-      !readdirSync(directory, { recursive: true, encoding: "utf8" }).some((file) =>
+      !readdirSync(directory, { recursive: true, encoding: "utf-8" }).some((file) =>
         file.endsWith(".md"),
       )
     ) {
@@ -70,7 +73,7 @@ export default defineConfig({
       description:
         "A MongoDB-backed job scheduler for Node.js with atomic locking, exponential backoff, cron scheduling, and event-driven observability.",
       components: {
-        SiteTitle: "./src/components/SiteTitle.astro",
+        SiteTitle: "./src/components/site-title.astro",
       },
       logo: {
         src: "./src/assets/icon.svg",

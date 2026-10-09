@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { DashboardRuntimeConfigSchema, parseDashboardRuntimeConfig } from "@/runtime-config";
 
-describe("parseDashboardRuntimeConfig", () => {
+describe(parseDashboardRuntimeConfig, () => {
   it("normalizes mount-aware base paths", () => {
     expect(
       parseDashboardRuntimeConfig({
@@ -10,18 +10,17 @@ describe("parseDashboardRuntimeConfig", () => {
         basePath: "dashboard/",
         pollingIntervalMs: 15_000,
       }),
-    ).toEqual({
+    ).toStrictEqual({
       apiBaseUrl: "/api/management",
       basePath: "/dashboard",
       pollingIntervalMs: 15_000,
     });
-
     expect(
       parseDashboardRuntimeConfig({
         apiBaseUrl: "/api/management",
         basePath: "/",
       }),
-    ).toEqual({
+    ).toStrictEqual({
       apiBaseUrl: "/api/management",
       basePath: "/",
     });
@@ -43,6 +42,7 @@ describe("parseDashboardRuntimeConfig", () => {
     "",
     "   ",
     "http://[",
+    // oxlint-disable-next-line eslint/no-script-url -- The validator must reject script URLs.
     "javascript:alert(1)",
     "file:///api",
     "data:text/html,hello",
@@ -75,6 +75,6 @@ describe("parseDashboardRuntimeConfig", () => {
         basePath: "/dashboard",
         unexpected: true,
       }),
-    ).toThrow();
+    ).toThrow(/Unrecognized key/u);
   });
 });

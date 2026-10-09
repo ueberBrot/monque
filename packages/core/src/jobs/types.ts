@@ -1,5 +1,4 @@
 import type { ClientSession, ObjectId } from "mongodb";
-
 /**
  * Represents the lifecycle states of a job in the queue.
  *
@@ -29,12 +28,10 @@ export const JobStatus = {
   /** Job was manually cancelled */
   CANCELLED: "cancelled",
 } as const;
-
 /**
  * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'`
  */
 export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
-
 /**
  * Represents a job in the Monque queue.
  *
@@ -62,81 +59,71 @@ export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
 export interface Job<T = unknown> {
   /** MongoDB document identifier */
   _id?: ObjectId;
-
   /** Job type identifier, matches worker registration */
   name: string;
-
   /** Job payload - must be JSON-serializable */
   data: T;
-
   /** Current lifecycle state */
   status: JobStatusType;
-
   /** Higher safe integers run first among due Jobs with the same name. Defaults to 0. */
   priority?: number;
-
   /** When the job should be processed */
   nextRunAt: Date;
-
   /** Timestamp when job was locked for processing */
   lockedAt?: Date | null;
-
   /**
    * Unique identifier of the scheduler instance that claimed this job.
    * Used for atomic claim pattern - ensures only one instance processes each job.
    * Set when a job is claimed, cleared when job completes or fails.
    */
   claimedBy?: string | null;
-
   /** Identifier of this execution's claim; changes whenever the job is claimed again. */
   claimId?: string;
-
   /** Renewable claim deadline, measured by MongoDB's clock. Absent for absolute locks. */
   leaseExpiresAt?: Date;
-
   /**
    * Timestamp of the last heartbeat update for this job.
    * Used to detect stale jobs when a scheduler instance crashes without releasing.
    * Updated periodically while job is being processed.
    */
   lastHeartbeat?: Date | null;
-
   /**
    * Heartbeat interval in milliseconds for this job.
    * Stored on the job to allow recovery logic to use the correct timeout.
    */
   heartbeatInterval?: number;
-
   /** Number of failed attempts */
   failCount: number;
-
   /** Last failure error message */
   failReason?: string;
-
   /** Cron expression for recurring jobs */
   repeatInterval?: string;
-
   /** IANA timezone for recurring cron evaluation; omitted uses the server's local timezone. */
   timezone?: string;
-
   /** Deduplication key to prevent duplicate jobs */
   uniqueKey?: string;
-
   /** Job creation timestamp */
   createdAt: Date;
-
   /** Last modification timestamp */
   updatedAt: Date;
 }
-
 /**
  * A job that has been persisted to MongoDB and has a guaranteed `_id`.
  * This is returned by `enqueue()`, `now()`, and `schedule()` methods.
  *
  * @template T - The type of the job's data payload
  */
-export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
-
+export type PersistedJob<T = unknown> = Job<T> & {
+  _id: ObjectId;
+};
+/** Options shared by job writes. */
+export interface JobWriteOptions {
+  /**
+   * Session from the MongoClient used by Monque. The caller owns its lifetime,
+   * transaction, and commit. In a transaction, jobs become visible to workers after commit.
+   */
+  session?: ClientSession;
+}
 /**
  * Options for enqueueing a job.
  *
@@ -151,43 +138,28 @@ export type PersistedJob<T = unknown> = Job<T> & { _id: ObjectId };
 export interface EnqueueOptions extends JobWriteOptions {
   /** Signed safe integer; higher values run first among due Jobs. Defaults to 0. */
   priority?: number;
-
   /**
    * Deduplication key. If a job with this key is already pending or processing,
    * the enqueue operation will not create a duplicate.
    */
   uniqueKey?: string;
-
   /**
    * When the job should be processed. Defaults to immediately (new Date()).
    */
   runAt?: Date;
 }
-
 /** Options for immediate enqueueing, preserving caller-owned sessions. */
 export type NowOptions = Pick<EnqueueOptions, "priority" | "session">;
-
 /** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
 export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session"> {
   name: string;
   data: T;
 }
-
 /** Counts acknowledged by a successful enqueueMany() call. */
 export interface EnqueueManyResult {
   insertedCount: number;
   deduplicatedCount: number;
 }
-
-/** Options shared by job writes. */
-export interface JobWriteOptions {
-  /**
-   * Session from the MongoClient used by Monque. The caller owns its lifetime,
-   * transaction, and commit. In a transaction, jobs become visible to workers after commit.
-   */
-  session?: ClientSession;
-}
-
 /**
  * Options for scheduling a recurring job.
  *
@@ -201,20 +173,17 @@ export interface JobWriteOptions {
 export interface ScheduleOptions extends JobWriteOptions {
   /** Signed safe integer retained across recurring runs. Defaults to 0. */
   priority?: number;
-
   /**
    * IANA timezone for the recurring schedule, for example `Europe/Berlin` or `UTC`.
    * When omitted, cron evaluation uses the server's local timezone.
    */
   timezone?: string;
-
   /**
    * Deduplication key. If a job with this key is already pending or processing,
    * the schedule operation will not create a duplicate.
    */
   uniqueKey?: string;
 }
-
 /**
  * Filter options for querying jobs.
  *
@@ -239,17 +208,13 @@ export interface ScheduleOptions extends JobWriteOptions {
 export interface GetJobsFilter {
   /** Filter by job type name */
   name?: string;
-
   /** Filter by status (single or multiple) */
   status?: JobStatusType | JobStatusType[];
-
   /** Maximum jobs to return: integer from 1 to 1000 (default: 100). */
   limit?: number;
-
   /** Number of jobs to skip for pagination: non-negative safe integer (default: 0). */
   skip?: number;
 }
-
 /**
  * Handler function signature for processing jobs.
  *
@@ -263,7 +228,6 @@ export interface GetJobsFilter {
  * ```
  */
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
-
 /**
  * Valid cursor directions for pagination.
  *
@@ -276,26 +240,20 @@ export const CursorDirection = {
   FORWARD: "forward",
   BACKWARD: "backward",
 } as const;
-
 export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
-
 export const JobCursorSortField = {
   IDENTIFIER: "identifier",
   CREATED_AT: "createdAt",
   UPDATED_AT: "updatedAt",
   NEXT_RUN_AT: "nextRunAt",
 } as const;
-
 export type JobCursorSortFieldType = (typeof JobCursorSortField)[keyof typeof JobCursorSortField];
-
 export const JobCursorSortDirection = {
   ASC: "asc",
   DESC: "desc",
 } as const;
-
 export type JobCursorSortDirectionType =
   (typeof JobCursorSortDirection)[keyof typeof JobCursorSortDirection];
-
 /**
  * Selector options for bulk operations.
  *
@@ -316,7 +274,6 @@ export interface JobSelector {
   olderThan?: Date;
   newerThan?: Date;
 }
-
 export interface JobCursorFilter {
   name?: string;
   status?: JobStatusType | JobStatusType[];
@@ -327,12 +284,10 @@ export interface JobCursorFilter {
   nextRunAtFrom?: Date;
   nextRunAtTo?: Date;
 }
-
 export interface JobCursorSort {
   by: JobCursorSortFieldType;
   direction: JobCursorSortDirectionType;
 }
-
 /**
  * Options for cursor-based pagination.
  *
@@ -353,7 +308,6 @@ export interface CursorOptions {
   filter?: JobCursorFilter;
   sort?: JobCursorSort;
 }
-
 /**
  * Response structure for cursor-based pagination.
  *
@@ -375,13 +329,12 @@ export interface CursorPage<T = unknown> {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
 }
-
 /** Persisted metadata without the job payload. */
 export type JobSummary = Omit<PersistedJob, "data">;
-
 /** Cursor page of job metadata. */
-export type JobSummaryPage = Omit<CursorPage, "jobs"> & { jobs: JobSummary[] };
-
+export type JobSummaryPage = Omit<CursorPage, "jobs"> & {
+  jobs: JobSummary[];
+};
 /**
  * Aggregated statistics for the job queue.
  *
@@ -404,7 +357,6 @@ export interface QueueStats {
   total: number;
   avgProcessingDurationMs?: number;
 }
-
 /**
  * Local Worker observability exposed through Queue View summaries.
  *
@@ -414,10 +366,8 @@ export interface QueueStats {
 export interface QueueViewWorkerSummary {
   /** Maximum concurrent jobs this local Worker can process */
   readonly concurrency: number;
-
   /** Number of jobs currently active in this local Worker */
   readonly activeCount: number;
-
   /** Effective local pause state, including a scheduler-wide pause. */
   readonly paused?: boolean;
   /** Whether this local worker validates payloads with Standard Schema. */
@@ -429,7 +379,6 @@ export interface QueueViewWorkerSummary {
   /** Maximum retry delay in milliseconds, when configured. */
   readonly maxBackoffDelay?: number;
 }
-
 /**
  * Operator-facing summary for one Job Name.
  *
@@ -439,20 +388,15 @@ export interface QueueViewWorkerSummary {
 export interface QueueViewSummary {
   /** Job Name represented by this Queue View */
   readonly name: string;
-
   /** Whether at least one persisted Job exists for this Job Name */
   readonly hasPersistedJobs: boolean;
-
   /** Whether this scheduler instance has a local Worker registered for this Job Name */
   readonly hasRegisteredWorker: boolean;
-
   /** Aggregated persisted Job statistics for this Job Name */
   readonly stats: Readonly<QueueStats>;
-
   /** Local Worker observability, or null when no local Worker is registered */
   readonly worker: Readonly<QueueViewWorkerSummary> | null;
 }
-
 /**
  * Result of a bulk operation.
  *
@@ -468,5 +412,8 @@ export interface QueueViewSummary {
  */
 export interface BulkOperationResult {
   count: number;
-  errors: Array<{ jobId: string; error: string }>;
+  errors: {
+    jobId: string;
+    error: string;
+  }[];
 }

@@ -19,15 +19,16 @@
  *
  * @internal
  */
-export function toError(value: unknown): Error {
-  if (value instanceof Error) return value;
-
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- JavaScript can throw any value; this public adapter preserves Error identity and normalizes the rest.
+export const toError = (value: unknown): Error => {
+  if (value instanceof Error) {
+    return value;
+  }
   try {
     return new Error(String(value));
   } catch (conversionError: unknown) {
     const detail =
       conversionError instanceof Error ? conversionError.message : "unknown conversion failure";
-
     return new Error(`Unserializable value (${detail})`);
   }
-}
+};

@@ -1,26 +1,39 @@
+import { once } from "node:events";
 import { createServer, request as httpRequest } from "node:http";
-import { type JobSelector, Monque, type PersistedJob } from "@monque/core";
-import type { ManagementMonque } from "@monque/management";
-import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import type { IncomingMessage } from "node:http";
+import type { AddressInfo } from "node:net";
+import { Monque } from "@monque/core";
+import type { JobSelector, PersistedJob } from "@monque/core";
+import type { ManagementAuthorize, ManagementMonque } from "@monque/management";
+import { fromPartial } from "@total-typescript/shoehorn";
+import express from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import request from "supertest";
-import { describe, expect, test, vi } from "vite-plus/test";
+import { describe, expect, vi, it } from "vite-plus/test";
 
 import { createRequest } from "@/http";
-import { createManagementExpressRouter, type ManagementExpressRouterOptions } from "@/index";
+import { createManagementExpressRouter } from "@/index";
+import type { ManagementExpressRouterOptions } from "@/index";
 
-function createManagementMonque(overrides: Partial<ManagementMonque> = {}): ManagementMonque {
+const createManagementMonque = function createManagementMonque(
+  overrides: Partial<ManagementMonque> = {},
+): ManagementMonque {
   return {
     isHealthy: () => true,
-    getQueueViewSummaries: async () => [],
-    getJobsWithCursor: async () => ({
-      jobs: [],
-      cursor: null,
-      hasNextPage: false,
-      hasPreviousPage: false,
-    }),
-    getJob: async () => null,
-    getQueueStats: async () => ({
+    getQueueViewSummaries: vi
+      .fn<NonNullable<ManagementMonque["getQueueViewSummaries"]>>()
+      .mockResolvedValue([]),
+    getJobsWithCursor: vi
+      .fn<NonNullable<ManagementMonque["getJobsWithCursor"]>>()
+      .mockResolvedValue({
+        jobs: [],
+        cursor: null,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      }),
+    getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null),
+    getQueueStats: vi.fn<NonNullable<ManagementMonque["getQueueStats"]>>().mockResolvedValue({
       pending: 0,
       processing: 0,
       completed: 0,
@@ -30,17 +43,19 @@ function createManagementMonque(overrides: Partial<ManagementMonque> = {}): Mana
     }),
     ...overrides,
   };
-}
+};
 
-function createManagementApp<TContext>(options: ManagementExpressRouterOptions<TContext>): Express {
+const createManagementApp = function createManagementApp<TContext>(
+  options: ManagementExpressRouterOptions<TContext>,
+): Express {
   const app = express();
 
   app.use("/monque", createManagementExpressRouter(options));
 
   return app;
-}
+};
 
-function createRequestMock({
+const createRequestMock = function createRequestMock({
   body,
   headers = {},
   host = "example.test",
@@ -55,26 +70,29 @@ function createRequestMock({
   protocol?: string;
   url?: string;
 }): Request {
-  return {
+  return fromPartial<Request>({
     body,
     get: (name: string) => (name.toLowerCase() === "host" ? host : undefined),
     headers,
     method,
     protocol,
     url,
-  } as unknown as Request;
-}
+  });
+};
 
-function mountErrorJson(app: Express): void {
+const mountErrorJson = function mountErrorJson(app: Express): void {
+  // oxlint-disable-next-line promise/prefer-await-to-callbacks, anti-slop/no-unknown-parameters -- Express identifies error middleware by four arguments and may deliver arbitrary thrown values.
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
   });
-}
+};
 
 describe("Express Management Adapter", () => {
-  test("rejects sibling-origin forms carrying an authenticated operator cookie", async () => {
-    const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
-    const authorize = vi.fn(() => true);
+  it("rejects sibling-origin forms carrying an authenticated operator cookie", async () => {
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 3, errors: [] });
+    const authorize = vi.fn<() => boolean>(() => true);
     const app = express();
     app.use("/monque", (req, res, next) => {
       if (req.get("cookie") !== "session=valid-operator") {
@@ -98,15 +116,17 @@ describe("Express Management Adapter", () => {
       .send("")
       .expect(403);
 
-    expect(response.body).toEqual({ error: "Untrusted request origin" });
+    expect(response.body).toStrictEqual({ error: "Untrusted request origin" });
     expect(deleteJobs).not.toHaveBeenCalled();
     expect(authorize).not.toHaveBeenCalled();
   });
 
-  test.each(["http://ops.example.com", "https://dashboard.example.com"])(
+  it.each(["http://ops.example.com", "https://dashboard.example.com"])(
     "permits authenticated mutations from approved origin %s",
     async (origin) => {
-      const deleteJobs = vi.fn(async () => ({ count: 3, errors: [] }));
+      const deleteJobs = vi
+        .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+        .mockResolvedValue({ count: 3, errors: [] });
       const app = createManagementApp({
         monque: createManagementMonque({ deleteJobs }),
         trustedOrigins: ["https://dashboard.example.com"],
@@ -121,12 +141,12 @@ describe("Express Management Adapter", () => {
         .send({})
         .expect(200);
 
-      expect(response.body).toEqual({ count: 3, errors: [] });
+      expect(response.body).toStrictEqual({ count: 3, errors: [] });
       expect(deleteJobs).toHaveBeenCalledWith({});
     },
   );
 
-  test("preserves host route fallthrough for unrelated cross-origin POST requests", async () => {
+  it("preserves host route fallthrough for unrelated cross-origin POST requests", async () => {
     const app = createManagementApp({ monque: createManagementMonque() });
     app.post("/monque/host-feature", (_req, res) => res.status(202).json({ accepted: true }));
 
@@ -136,14 +156,15 @@ describe("Express Management Adapter", () => {
       .send({})
       .expect(202);
 
-    expect(response.body).toEqual({ accepted: true });
+    expect(response.body).toStrictEqual({ accepted: true });
   });
 
-  test("controls the addressed scheduler through the mounted HTTP routes", async () => {
+  it("controls the addressed scheduler through the mounted HTTP routes", async () => {
     const monque = new Monque(new MongoClient("mongodb://localhost:27017").db("controls"));
     const app = createManagementApp({ monque });
     const state = await request(app).get("/monque/api/v1/processing").expect(200);
-    const body = { instanceId: state.body.instanceId, name: "email" };
+    expect(state.body).toHaveProperty("instanceId", monque.getProcessingState().instanceId);
+    const body = { instanceId: monque.getProcessingState().instanceId, name: "email" };
     await request(app).post("/monque/api/v1/processing/actions/pause").send(body).expect(200);
     expect(monque.isPaused("email")).toBe(true);
     await request(app)
@@ -155,7 +176,7 @@ describe("Express Management Adapter", () => {
     expect(monque.isPaused("email")).toBe(false);
   });
 
-  test("serves local worker policies through the mounted queue-view endpoint", async () => {
+  it("serves local worker policies through the mounted queue-view endpoint", async () => {
     const worker = {
       concurrency: 2,
       activeCount: 1,
@@ -167,22 +188,24 @@ describe("Express Management Adapter", () => {
     };
     const app = createManagementApp({
       monque: createManagementMonque({
-        getQueueViewSummaries: async () => [
-          {
-            name: "work",
-            hasPersistedJobs: false,
-            hasRegisteredWorker: true,
-            stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
-            worker,
-          },
-        ],
+        getQueueViewSummaries: vi
+          .fn<NonNullable<ManagementMonque["getQueueViewSummaries"]>>()
+          .mockResolvedValue([
+            {
+              name: "work",
+              hasPersistedJobs: false,
+              hasRegisteredWorker: true,
+              stats: { pending: 0, processing: 0, completed: 0, failed: 0, cancelled: 0, total: 0 },
+              worker,
+            },
+          ]),
       }),
     });
     const response = await request(app).get("/monque/api/v1/queue-views").expect(200);
     expect(response.body).toMatchObject({ queueViews: [{ name: "work", worker }] });
   });
 
-  test("exposes an immediate failure and permits manual retry through the mounted API", async () => {
+  it("exposes an immediate failure and permits manual retry through the mounted API", async () => {
     const job: PersistedJob = {
       _id: new ObjectId(),
       name: "deliver",
@@ -194,9 +217,14 @@ describe("Express Management Adapter", () => {
       createdAt: new Date("2026-01-15T00:00:00Z"),
       updatedAt: new Date("2026-01-15T08:00:00Z"),
     };
-    const retryJob = vi.fn(async () => ({ ...job, status: "pending" as const, failCount: 0 }));
+    const retryJob = vi
+      .fn<NonNullable<ManagementMonque["retryJob"]>>()
+      .mockResolvedValue({ ...job, status: "pending" as const, failCount: 0 });
     const app = createManagementApp({
-      monque: createManagementMonque({ getJob: async () => job, retryJob }),
+      monque: createManagementMonque({
+        getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
+        retryJob,
+      }),
     });
     const path = `/monque/api/v1/jobs/${job._id.toHexString()}`;
     const failed = await request(app).get(path).expect(200);
@@ -210,7 +238,7 @@ describe("Express Management Adapter", () => {
     expect(retryJob).toHaveBeenCalledWith(job._id.toHexString());
   });
 
-  test("serves recurring schedule timezone metadata through the mounted API", async () => {
+  it("serves recurring schedule timezone metadata through the mounted API", async () => {
     const job: PersistedJob = {
       _id: new ObjectId(),
       name: "daily-report",
@@ -224,7 +252,9 @@ describe("Express Management Adapter", () => {
       updatedAt: new Date("2026-01-15T00:00:00Z"),
     };
     const app = createManagementApp({
-      monque: createManagementMonque({ getJob: async () => job }),
+      monque: createManagementMonque({
+        getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
+      }),
     });
     const response = await request(app)
       .get(`/monque/api/v1/jobs/${job._id.toHexString()}`)
@@ -235,7 +265,7 @@ describe("Express Management Adapter", () => {
     });
   });
 
-  test("preserves array headers while skipping undefined headers", async () => {
+  it("preserves array headers while skipping undefined headers", () => {
     const fetchRequest = createRequest(
       createRequestMock({
         body: { name: "send-email" },
@@ -252,7 +282,7 @@ describe("Express Management Adapter", () => {
     expect(fetchRequest.headers.has("x-missing-header")).toBe(false);
   });
 
-  test("creates Fetch requests from already-parsed body types", async () => {
+  it("creates Fetch requests from already-parsed body types", async () => {
     const cases = [
       {
         body: "plain body",
@@ -268,14 +298,15 @@ describe("Express Management Adapter", () => {
       },
     ];
 
-    for (const { body, expected } of cases) {
-      const fetchRequest = createRequest(createRequestMock({ body }));
-
-      expect(await fetchRequest.text()).toBe(expected);
-    }
+    await Promise.all(
+      cases.map(async ({ body, expected }) => {
+        const fetchRequest = createRequest(createRequestMock({ body }));
+        await expect(fetchRequest.text()).resolves.toBe(expected);
+      }),
+    );
   });
 
-  test("serves management routes under the host mount path", async () => {
+  it("serves management routes under the host mount path", async () => {
     const app = createManagementApp({
       monque: createManagementMonque({ isHealthy: () => false }),
     });
@@ -283,7 +314,7 @@ describe("Express Management Adapter", () => {
     await request(app)
       .get("/monque/api/v1/health")
       .expect(200)
-      .expect("content-type", /json/)
+      .expect("content-type", /json/u)
       .expect({
         status: "unavailable",
         scheduler: {
@@ -295,8 +326,10 @@ describe("Express Management Adapter", () => {
     expect(notFound.status).toBe(404);
   });
 
-  test("passes Express-derived context into management authorization hooks", async () => {
-    const authorize = vi.fn(({ context }) => context.role === "operator");
+  it("passes Express-derived context into management authorization hooks", async () => {
+    const authorize = vi.fn<ManagementAuthorize<{ role: string }>>(
+      ({ context }) => context.role === "operator",
+    );
     const app = createManagementApp<{ role: string }>({
       monque: createManagementMonque(),
       context: ({ req }) => ({ role: req.get("x-role") ?? "viewer" }),
@@ -332,8 +365,8 @@ describe("Express Management Adapter", () => {
     );
   });
 
-  test("reports missing context when authorization is configured without a context factory", async () => {
-    const authorize = vi.fn(({ action }) => action === "read");
+  it("reports missing context when authorization is configured without a context factory", async () => {
+    const authorize = vi.fn<ManagementAuthorize>(({ action }) => action === "read");
     const app = createManagementApp({
       monque: createManagementMonque(),
       authorize,
@@ -347,7 +380,7 @@ describe("Express Management Adapter", () => {
     expect(authorize).not.toHaveBeenCalled();
   });
 
-  test("serves the management OpenAPI document with mount-specific server metadata", async () => {
+  it("serves the management OpenAPI document with mount-specific server metadata", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
     });
@@ -355,21 +388,17 @@ describe("Express Management Adapter", () => {
     const response = await request(app)
       .get("/monque/openapi.json")
       .expect(200)
-      .expect("content-type", /json/);
+      .expect("content-type", /json/u);
 
-    expect(response.body).toEqual(
-      expect.objectContaining({
-        openapi: "3.1.1",
-        info: expect.objectContaining({
-          title: "Monque Management API",
-        }),
-        servers: [{ url: "/monque" }],
-      }),
-    );
-    expect(response.body.paths).toHaveProperty("/api/v1/health");
+    expect(response.body).toMatchObject({
+      openapi: "3.1.1",
+      info: { title: "Monque Management API" },
+      servers: [{ url: "/monque" }],
+    });
+    expect(response.body).toHaveProperty(["paths", "/api/v1/health"]);
   });
 
-  test("serves OpenAPI JSON from a configured path and server URL", async () => {
+  it("serves OpenAPI JSON from a configured path and server URL", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
       openApi: {
@@ -380,18 +409,20 @@ describe("Express Management Adapter", () => {
 
     const response = await request(app).get("/monque/docs/openapi.json").expect(200);
 
-    expect(response.body.servers).toEqual([{ url: "https://ops.example.test/monque" }]);
+    expect(response.body).toHaveProperty("servers", [{ url: "https://ops.example.test/monque" }]);
     await request(app).get("/monque/openapi.json").expect(404);
   });
 
-  test("resolves OpenAPI server metadata from Express request state", async () => {
+  it("resolves OpenAPI server metadata from Express request state", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
       openApi: {
         serverUrl: async ({ req, res }) => {
           res.setHeader("x-openapi-server-source", "resolver");
 
-          return `https://${req.get("x-forwarded-host") ?? req.get("host")}${req.baseUrl}`;
+          return await Promise.resolve(
+            `https://${req.get("x-forwarded-host") ?? req.get("host")}${req.baseUrl}`,
+          );
         },
       },
     });
@@ -402,10 +433,10 @@ describe("Express Management Adapter", () => {
       .expect(200)
       .expect("x-openapi-server-source", "resolver");
 
-    expect(response.body.servers).toEqual([{ url: "https://ops.example.test/monque" }]);
+    expect(response.body).toHaveProperty("servers", [{ url: "https://ops.example.test/monque" }]);
   });
 
-  test("forwards OpenAPI document errors to Express error middleware", async () => {
+  it("forwards OpenAPI document errors to Express error middleware", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
       openApi: {
@@ -416,22 +447,29 @@ describe("Express Management Adapter", () => {
     });
     mountErrorJson(app);
 
-    await request(app).get("/monque/openapi.json").expect(500).expect({
-      error: "OpenAPI server URL failed",
+    const httpResponse1 = await request(app).get("/monque/openapi.json");
+    expect(httpResponse1).toMatchObject({
+      status: 500,
+      body: {
+        error: "OpenAPI server URL failed",
+      },
     });
   });
 
-  test("can disable adapter-served OpenAPI JSON", async () => {
+  it("can disable adapter-served OpenAPI JSON", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
       openApi: false,
     });
 
-    await request(app).get("/monque/openapi.json").expect(404);
-    await request(app).get("/monque/api/v1/health").expect(200);
+    const httpResponse2 = await request(app).get("/monque/openapi.json");
+    expect(httpResponse2).toMatchObject({ status: 404 });
+
+    const httpResponse3 = await request(app).get("/monque/api/v1/health");
+    expect(httpResponse3).toMatchObject({ status: 200 });
   });
 
-  test("lets host auth middleware wrap body-bearing management routes", async () => {
+  it("lets host auth middleware wrap body-bearing management routes", async () => {
     const app = express();
     const selectors: JobSelector[] = [];
 
@@ -450,10 +488,10 @@ describe("Express Management Adapter", () => {
           cancelJobs: async (selector) => {
             selectors.push(selector);
 
-            return {
+            return await Promise.resolve({
               count: 2,
               errors: [],
-            };
+            });
           },
         }),
       }),
@@ -477,7 +515,7 @@ describe("Express Management Adapter", () => {
         errors: [],
       });
 
-    expect(selectors).toEqual([
+    expect(selectors).toStrictEqual([
       {
         name: "send-email",
         status: ["pending"],
@@ -486,7 +524,7 @@ describe("Express Management Adapter", () => {
     ]);
   });
 
-  test("accepts body-bearing management routes after Express parsed JSON", async () => {
+  it("accepts body-bearing management routes after Express parsed JSON", async () => {
     const app = express();
     const selectors: JobSelector[] = [];
 
@@ -498,10 +536,10 @@ describe("Express Management Adapter", () => {
           cancelJobs: async (selector) => {
             selectors.push(selector);
 
-            return {
+            return await Promise.resolve({
               count: 1,
               errors: [],
-            };
+            });
           },
         }),
       }),
@@ -519,7 +557,7 @@ describe("Express Management Adapter", () => {
         errors: [],
       });
 
-    expect(selectors).toEqual([
+    expect(selectors).toStrictEqual([
       {
         name: "send-email",
         status: ["pending"],
@@ -527,12 +565,12 @@ describe("Express Management Adapter", () => {
     ]);
   });
 
-  test.each([false, true])(
+  it.each([false, true])(
     "rejects oversized requests before job access with parsed middleware %s",
     async (parsed) => {
-      const getJob = vi.fn(async () => null);
-      const cancelJob = vi.fn(async () => null);
-      const authorize = vi.fn(() => false);
+      const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
+      const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
+      const authorize = vi.fn<() => boolean>(() => false);
       const app = express();
       if (parsed) {
         app.use(express.json({ limit: "1mb" }));
@@ -548,7 +586,7 @@ describe("Express Management Adapter", () => {
       await request(app)
         .post("/monque/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel")
         .set("content-type", "application/json")
-        .send(JSON.stringify({ ignored: "x".repeat(70000) }))
+        .send(JSON.stringify({ ignored: "x".repeat(70_000) }))
         .expect(413)
         .expect({ error: "Payload Too Large" });
 
@@ -558,8 +596,10 @@ describe("Express Management Adapter", () => {
     },
   );
 
-  test("applies a configured limit to approved parsed JSON mutations", async () => {
-    const deleteJobs = vi.fn(async () => ({ count: 1, errors: [] }));
+  it("applies a configured limit to approved parsed JSON mutations", async () => {
+    const deleteJobs = vi
+      .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
+      .mockResolvedValue({ count: 1, errors: [] });
     const app = express();
     app.use(express.json());
     app.use(
@@ -582,61 +622,60 @@ describe("Express Management Adapter", () => {
       .send({ name: "work" })
       .expect(413);
 
-    expect(deleteJobs).toHaveBeenCalledOnce();
-    expect(deleteJobs).toHaveBeenCalledWith({});
+    expect(deleteJobs).toHaveBeenCalledExactlyOnceWith({});
   });
 
-  test("returns 413 for an ongoing chunked upload without waiting for its end", async () => {
-    const getJob = vi.fn(async () => null);
-    const cancelJob = vi.fn(async () => null);
+  it("returns 413 for an ongoing chunked upload without waiting for its end", async () => {
+    const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
+    const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
     const app = createManagementApp({ monque: createManagementMonque({ getJob, cancelJob }) });
-    const server = createServer(app);
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const server = createServer((req, res) => {
+      app(req, res);
+    });
+    const listening = once(server, "listening");
+    server.listen(0, "127.0.0.1");
+    await listening;
     const address = server.address();
-    if (!address || typeof address === "string") {
+    const isNetworkListener = (value: ReturnType<typeof server.address>): value is AddressInfo =>
+      value !== null && "port" in new Object(value);
+    if (!isNetworkListener(address)) {
       throw new Error("Expected a local HTTP listener");
     }
     let client: ReturnType<typeof httpRequest> | undefined;
     try {
-      const response = await new Promise<{ status: number | undefined; body: string }>(
-        (resolve, reject) => {
-          client = httpRequest(
-            {
-              host: "127.0.0.1",
-              port: address.port,
-              method: "POST",
-              path: "/monque/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
-              headers: { "content-type": "application/json" },
-            },
-            (response) => {
-              let body = "";
-              response.setEncoding("utf8");
-              response.on("data", (chunk: string) => {
-                body += chunk;
-              });
-              response.on("end", () => resolve({ status: response.statusCode, body }));
-              response.on("error", reject);
-            },
-          );
-          client.on("error", reject);
-          client.write(Buffer.alloc(65537, 32));
+      const received: PromiseWithResolvers<IncomingMessage> = Promise.withResolvers();
+      client = httpRequest(
+        {
+          host: "127.0.0.1",
+          port: address.port,
+          method: "POST",
+          path: "/monque/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
+          headers: { "content-type": "application/json" },
         },
+        received.resolve,
       );
+      client.on("error", received.reject);
+      client.write(Buffer.alloc(65_537, 32));
+      const incoming = await received.promise;
+      incoming.setEncoding("utf-8");
+      const chunks: string[] = [];
+      for await (const chunk of incoming) {
+        chunks.push(String(chunk));
+      }
+      const response = { status: incoming.statusCode, body: chunks.join("") };
 
       expect(response.status).toBe(413);
-      expect(JSON.parse(response.body)).toEqual({ error: "Payload Too Large" });
+      expect(JSON.parse(response.body)).toStrictEqual({ error: "Payload Too Large" });
       expect(getJob).not.toHaveBeenCalled();
       expect(cancelJob).not.toHaveBeenCalled();
     } finally {
       client?.destroy();
       server.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      await server[Symbol.asyncDispose]();
     }
   });
 
-  test("forwards management route errors to Express error middleware", async () => {
+  it("forwards management route errors to Express error middleware", async () => {
     const app = createManagementApp({
       monque: createManagementMonque(),
       context: () => {
@@ -645,8 +684,12 @@ describe("Express Management Adapter", () => {
     });
     mountErrorJson(app);
 
-    await request(app).get("/monque/api/v1/health").expect(500).expect({
-      error: "Management context failed",
+    const httpResponse4 = await request(app).get("/monque/api/v1/health");
+    expect(httpResponse4).toMatchObject({
+      status: 500,
+      body: {
+        error: "Management context failed",
+      },
     });
   });
 });

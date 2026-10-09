@@ -1,8 +1,9 @@
 import { JobStateError } from "@monque/core";
 import { ObjectId } from "mongodb";
-import { describe, expect, test } from "vite-plus/test";
+import { vi, describe, expect, it } from "vite-plus/test";
 
 import { createManagementSurface } from "@/index";
+import type { ManagementMonque } from "@/surface";
 import {
   createManagementJob,
   createManagementMonque,
@@ -13,7 +14,7 @@ import {
 } from "@tests/unit/management-test-utils";
 
 describe("oRPC Management single Job action routes", () => {
-  test("cancels one Job through public core API with target authorization", async () => {
+  it("cancels one Job through public core API with target authorization", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({
       _id: jobId,
@@ -34,7 +35,7 @@ describe("oRPC Management single Job action routes", () => {
         cancelJob: async (id) => {
           coreCalls.push(id);
 
-          return cancelled;
+          return await Promise.resolve(cancelled);
         },
       }),
       authorize: ({ action, context, job }) => {
@@ -67,8 +68,8 @@ describe("oRPC Management single Job action routes", () => {
       createdAt: "2025-12-31T23:00:00.000Z",
       updatedAt: "2026-01-01T00:02:00.000Z",
     });
-    expect(coreCalls).toEqual([jobId.toHexString()]);
-    expect(authorizeCalls).toEqual([
+    expect(coreCalls).toStrictEqual([jobId.toHexString()]);
+    expect(authorizeCalls).toStrictEqual([
       {
         action: "cancel",
         context: { userId: "operator-1" },
@@ -77,7 +78,7 @@ describe("oRPC Management single Job action routes", () => {
     ]);
   });
 
-  test.each([1, 2])(
+  it.each([1, 2])(
     "manually retries a failed Job with %i failures through public core API",
     async (failCount) => {
       const jobId = new ObjectId();
@@ -101,7 +102,7 @@ describe("oRPC Management single Job action routes", () => {
           retryJob: async (id) => {
             coreCalls.push(id);
 
-            return retried;
+            return await Promise.resolve(retried);
           },
         }),
       });
@@ -121,11 +122,11 @@ describe("oRPC Management single Job action routes", () => {
           updatedAt: "2026-01-01T00:03:00.000Z",
         }),
       );
-      expect(coreCalls).toEqual([jobId.toHexString()]);
+      expect(coreCalls).toStrictEqual([jobId.toHexString()]);
     },
   );
 
-  test("maps a single Job mutation miss after target resolution to 404", async () => {
+  it("maps a single Job mutation miss after target resolution to 404", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "failed" });
     const coreCalls: string[] = [];
@@ -135,7 +136,7 @@ describe("oRPC Management single Job action routes", () => {
         retryJob: async (id) => {
           coreCalls.push(id);
 
-          return null;
+          return await Promise.resolve(null);
         },
       }),
     });
@@ -146,10 +147,10 @@ describe("oRPC Management single Job action routes", () => {
     );
 
     await expectJsonResponse(response, 404, { error: "Job not found" });
-    expect(coreCalls).toEqual([jobId.toHexString()]);
+    expect(coreCalls).toStrictEqual([jobId.toHexString()]);
   });
 
-  test("deletes one Job through public core API with a stable response DTO", async () => {
+  it("deletes one Job through public core API with a stable response DTO", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
@@ -159,7 +160,7 @@ describe("oRPC Management single Job action routes", () => {
         deleteJob: async (id) => {
           coreCalls.push(id);
 
-          return true;
+          return await Promise.resolve(true);
         },
       }),
     });
@@ -167,10 +168,10 @@ describe("oRPC Management single Job action routes", () => {
     const response = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
 
     await expectJsonResponse(response, 200, { deleted: true });
-    expect(coreCalls).toEqual([jobId.toHexString()]);
+    expect(coreCalls).toStrictEqual([jobId.toHexString()]);
   });
 
-  test("keeps single Job delete idempotent when repeated after deletion", async () => {
+  it("keeps single Job delete idempotent when repeated after deletion", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
@@ -182,13 +183,13 @@ describe("oRPC Management single Job action routes", () => {
             return null;
           }
 
-          return getManagementJobById(target)(id);
+          return await getManagementJobById(target)(id);
         },
         deleteJob: async (id) => {
           coreCalls.push(id);
           deleted = true;
 
-          return true;
+          return await Promise.resolve(true);
         },
       }),
     });
@@ -198,10 +199,10 @@ describe("oRPC Management single Job action routes", () => {
 
     await expectJsonResponse(first, 200, { deleted: true });
     await expectJsonResponse(second, 404, { error: "Job not found" });
-    expect(coreCalls).toEqual([jobId.toHexString()]);
+    expect(coreCalls).toStrictEqual([jobId.toHexString()]);
   });
 
-  test("maps a single Job delete miss after target resolution to 404", async () => {
+  it("maps a single Job delete miss after target resolution to 404", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
@@ -211,7 +212,7 @@ describe("oRPC Management single Job action routes", () => {
         deleteJob: async (id) => {
           coreCalls.push(id);
 
-          return false;
+          return await Promise.resolve(false);
         },
       }),
     });
@@ -219,10 +220,10 @@ describe("oRPC Management single Job action routes", () => {
     const response = await handleManagementDelete(surface, `/api/v1/jobs/${jobId.toHexString()}`);
 
     await expectJsonResponse(response, 404, { error: "Job not found" });
-    expect(coreCalls).toEqual([jobId.toHexString()]);
+    expect(coreCalls).toStrictEqual([jobId.toHexString()]);
   });
 
-  test("reschedules one Job with an ISO date DTO mapped to core Date", async () => {
+  it("reschedules one Job with an ISO date DTO mapped to core Date", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId });
     const rescheduled = createManagementJob({
@@ -230,14 +231,14 @@ describe("oRPC Management single Job action routes", () => {
       nextRunAt: new Date("2026-02-01T10:30:00.000Z"),
       updatedAt: new Date("2026-01-01T00:04:00.000Z"),
     });
-    const coreCalls: Array<{ id: string; runAt: Date }> = [];
+    const coreCalls: { id: string; runAt: Date }[] = [];
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
         rescheduleJob: async (id, runAt) => {
           coreCalls.push({ id, runAt });
 
-          return rescheduled;
+          return await Promise.resolve(rescheduled);
         },
       }),
     });
@@ -257,7 +258,7 @@ describe("oRPC Management single Job action routes", () => {
         updatedAt: "2026-01-01T00:04:00.000Z",
       }),
     );
-    expect(coreCalls).toEqual([
+    expect(coreCalls).toStrictEqual([
       {
         id: jobId.toHexString(),
         runAt: new Date("2026-02-01T10:30:00.000Z"),
@@ -265,7 +266,7 @@ describe("oRPC Management single Job action routes", () => {
     ]);
   });
 
-  test("maps single Job action failures to stable HTTP statuses", async () => {
+  it("maps single Job action failures to stable HTTP statuses", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId });
     const coreCalls: string[] = [];
@@ -274,7 +275,7 @@ describe("oRPC Management single Job action routes", () => {
         cancelJob: async () => {
           coreCalls.push("read-only");
 
-          return null;
+          return await Promise.resolve(null);
         },
       }),
       readOnly: true,
@@ -288,11 +289,11 @@ describe("oRPC Management single Job action routes", () => {
         cancelJob: async () => {
           coreCalls.push("denied");
 
-          return null;
+          return await Promise.resolve(null);
         },
       }),
       authorize: ({ action, context, job }) => {
-        expect({ action, context, job }).toEqual({
+        expect({ action, context, job }).toStrictEqual({
           action: "cancel",
           context: { role: "viewer" },
           job: target,
@@ -306,41 +307,44 @@ describe("oRPC Management single Job action routes", () => {
         getJob: async () => {
           coreCalls.push("invalid");
 
-          return target;
+          return await Promise.resolve(target);
         },
         cancelJob: async () => {
           coreCalls.push("invalid");
 
-          return target;
+          return await Promise.resolve(target);
         },
         rescheduleJob: async () => {
           coreCalls.push("invalid");
 
-          return target;
+          return await Promise.resolve(target);
         },
       }),
     });
     const missing = createManagementSurface({
       monque: createManagementMonque({
-        getJob: async () => null,
+        getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null),
         cancelJob: async () => {
           coreCalls.push("missing");
 
-          return null;
+          return await Promise.resolve(null);
         },
       }),
     });
     const conflict = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
-        cancelJob: async () => {
-          throw new JobStateError(
-            "Cannot cancel processing job",
-            jobId.toHexString(),
-            "processing",
-            "cancel",
-          );
-        },
+        cancelJob: async () =>
+          await vi
+            .fn<() => Promise<never>>()
+            .mockRejectedValue(
+              new JobStateError(
+                "Cannot cancel processing job",
+                jobId.toHexString(),
+                "processing",
+                "cancel",
+              ),
+            )(),
       }),
     });
 
@@ -385,6 +389,6 @@ describe("oRPC Management single Job action routes", () => {
     });
     await expectJsonResponse(missingResponse, 404, { error: "Job not found" });
     await expectJsonResponse(conflictResponse, 409, { error: "Cannot cancel processing job" });
-    expect(coreCalls).toEqual([]);
+    expect(coreCalls).toStrictEqual([]);
   });
 });

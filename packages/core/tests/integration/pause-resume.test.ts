@@ -19,6 +19,7 @@ describe("local pause and resume", () => {
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -33,16 +34,23 @@ describe("local pause and resume", () => {
     monque.pause("paused");
     monque.pause("paused");
     await monque.initialize();
-    monque.register("paused", async () => {});
-    monque.register("other", async () => {});
+    monque.register("paused", () => {});
+    monque.register("other", () => {});
     const paused = await monque.enqueue("paused", {});
     const other = await monque.enqueue("other", {});
     monque.start();
-    await waitFor(async () => (await monque.getJob(other._id))?.status === JobStatus.COMPLETED);
-    expect((await monque.getJob(paused._id))?.status).toBe(JobStatus.PENDING);
+    await waitFor(async () => {
+      const awaitedResult1 = await monque.getJob(other._id);
+      return awaitedResult1?.status === JobStatus.COMPLETED;
+    });
+    const awaitedResult2 = await monque.getJob(paused._id);
+    expect(awaitedResult2?.status).toBe(JobStatus.PENDING);
     monque.resume("paused");
     monque.resume("paused");
-    await waitFor(async () => (await monque.getJob(paused._id))?.status === JobStatus.COMPLETED);
+    await waitFor(async () => {
+      const awaitedResult3 = await monque.getJob(paused._id);
+      return awaitedResult3?.status === JobStatus.COMPLETED;
+    });
     expect(monque.isPaused("paused")).toBe(false);
   });
 
@@ -56,31 +64,41 @@ describe("local pause and resume", () => {
     });
     instances.push(monque);
     await monque.initialize();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started: PromiseWithResolvers<void> = Promise.withResolvers();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     monque.register("active", async () => {
       started.resolve();
       await release.promise;
     });
-    monque.register("next", async () => {});
+    monque.register("next", () => {});
     const active = await monque.enqueue("active", {});
     monque.start();
     try {
       await started.promise;
       monque.pause();
       const next = await monque.enqueue("next", {});
-      const original = (await monque.getJob(active._id))?.leaseExpiresAt;
+      const awaitedResult4 = await monque.getJob(active._id);
+      const original = awaitedResult4?.leaseExpiresAt;
       await waitFor(async () => {
-        const renewed = (await monque.getJob(active._id))?.leaseExpiresAt;
+        const awaitedResult5 = await monque.getJob(active._id);
+        const renewed = awaitedResult5?.leaseExpiresAt;
         return renewed instanceof Date && original instanceof Date && renewed > original;
       });
       expect(monque.isHealthy()).toBe(true);
-      expect((await monque.getJob(next._id))?.status).toBe(JobStatus.PENDING);
+      const awaitedResult6 = await monque.getJob(next._id);
+      expect(awaitedResult6?.status).toBe(JobStatus.PENDING);
       release.resolve();
-      await waitFor(async () => (await monque.getJob(active._id))?.status === JobStatus.COMPLETED);
-      expect((await monque.getJob(next._id))?.status).toBe(JobStatus.PENDING);
+      await waitFor(async () => {
+        const awaitedResult7 = await monque.getJob(active._id);
+        return awaitedResult7?.status === JobStatus.COMPLETED;
+      });
+      const awaitedResult8 = await monque.getJob(next._id);
+      expect(awaitedResult8?.status).toBe(JobStatus.PENDING);
       monque.resume();
-      await waitFor(async () => (await monque.getJob(next._id))?.status === JobStatus.COMPLETED);
+      await waitFor(async () => {
+        const awaitedResult9 = await monque.getJob(next._id);
+        return awaitedResult9?.status === JobStatus.COMPLETED;
+      });
     } finally {
       release.resolve();
     }
@@ -98,29 +116,37 @@ describe("local pause and resume", () => {
     await local.initialize();
     await other.initialize();
     const handled: string[] = [];
-    local.register("work", async () => {
+    local.register("work", () => {
       handled.push("local");
     });
-    other.register("work", async () => {
+    other.register("work", () => {
       handled.push("other");
     });
     local.pause("work");
     local.pause();
     expect(local.getProcessingState("work")).toMatchObject({ paused: true, globallyPaused: true });
     local.resume();
-    expect(local.getProcessingState("work")).toEqual({
+    expect(local.getProcessingState("work")).toStrictEqual({
       instanceId: local.getProcessingState().instanceId,
       name: "work",
       paused: true,
       globallyPaused: false,
     });
     expect(other.getProcessingState().instanceId).not.toBe(local.getProcessingState().instanceId);
-    expect(local.isPaused()).toBe(false);
-    expect(local.isPaused("work")).toBe(true);
+    expect({
+      localIsPaused: local.isPaused(),
+      localIsPausedWork: local.isPaused("work"),
+    }).toStrictEqual({
+      localIsPaused: false,
+      localIsPausedWork: true,
+    });
     const job = await local.enqueue("work", {});
     local.start();
     other.start();
-    await waitFor(async () => (await other.getJob(job._id))?.status === JobStatus.COMPLETED);
-    expect(handled).toEqual(["other"]);
+    await waitFor(async () => {
+      const awaitedResult10 = await other.getJob(job._id);
+      return awaitedResult10?.status === JobStatus.COMPLETED;
+    });
+    expect(handled).toStrictEqual(["other"]);
   });
 });

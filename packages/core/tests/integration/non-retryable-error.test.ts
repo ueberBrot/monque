@@ -13,13 +13,13 @@ import {
 describe("non-retryable handler errors", () => {
   let db: Db;
   const instances: Monque[] = [];
-
   beforeAll(async () => {
     db = await getTestDb("non-retryable-error");
   });
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -40,33 +40,48 @@ describe("non-retryable handler errors", () => {
       errors.push(event.error);
     });
     let repaired = false;
-    monque.register("deliver", async () => {
-      if (!repaired) throw error;
+    monque.register("deliver", () => {
+      if (!repaired) {
+        throw error;
+      }
     });
     const job = await monque.enqueue("deliver", {}, { uniqueKey: "account" });
     monque.start();
-    await waitFor(async () => failures.length > 0);
-    expect(failures).toEqual([false]);
-    expect(errors).toEqual([error]);
+    await waitFor(() => failures.length > 0);
+    expect({
+      failures,
+      errors,
+    }).toStrictEqual({
+      failures: [false],
+      errors: [error],
+    });
     const failed = await monque.getJob(job._id);
     expect(failed).toMatchObject({
       status: JobStatus.FAILED,
       failCount: 1,
       failReason: "Account no longer exists",
     });
-    expect(failed?.claimedBy).toBeUndefined();
-    expect(failed?.lockedAt).toBeUndefined();
+    expect({
+      failedClaimedBy: failed?.claimedBy,
+      failedLockedAt: failed?.lockedAt,
+    }).toStrictEqual({
+      failedClaimedBy: undefined,
+      failedLockedAt: undefined,
+    });
     repaired = true;
     await monque.retryJob(job._id.toHexString());
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
-    expect(failures).toEqual([false]);
+    await waitFor(async () => {
+      const awaitedResult1 = await monque.getJob(job._id);
+      return awaitedResult1?.status === JobStatus.COMPLETED;
+    });
+    expect(failures).toStrictEqual([false]);
   });
 
   it("stops recurring jobs and releases their unique key", async () => {
     const monque = new Monque(db, { collectionName: uniqueCollectionName("recurring") });
     instances.push(monque);
     await monque.initialize();
-    monque.register("daily", async () => {
+    monque.register("daily", () => {
       throw new NonRetryableError("Invalid subscription");
     });
     const job = await monque.schedule(
@@ -80,9 +95,12 @@ describe("non-retryable handler errors", () => {
     );
     await monque.rescheduleJob(job._id.toHexString(), new Date());
     monque.start();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.FAILED);
+    await waitFor(async () => {
+      const awaitedResult2 = await monque.getJob(job._id);
+      return awaitedResult2?.status === JobStatus.FAILED;
+    });
     await monque.stop();
-    expect(await monque.getJob(job._id)).toMatchObject({
+    await expect(monque.getJob(job._id)).resolves.toMatchObject({
       status: JobStatus.FAILED,
       failCount: 1,
       repeatInterval: "0 9 * * *",
@@ -119,8 +137,10 @@ describe("non-retryable handler errors", () => {
     instances.push(monque);
     await monque.initialize();
     const failures: boolean[] = [];
-    monque.on("job:fail", ({ willRetry }) => failures.push(willRetry));
-    monque.register("transient", async (job) => {
+    monque.on("job:fail", ({ willRetry }) => {
+      failures.push(willRetry);
+    });
+    monque.register("transient", (job) => {
       if (job.failCount === 0) {
         const error = new Error("Temporary outage");
         error.name = "NonRetryableError";
@@ -129,9 +149,13 @@ describe("non-retryable handler errors", () => {
     });
     const job = await monque.enqueue("transient", {});
     monque.start();
-    await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
-    expect(failures).toEqual([true]);
-    expect((await monque.getJob(job._id))?.failCount).toBe(1);
+    await waitFor(async () => {
+      const awaitedResult3 = await monque.getJob(job._id);
+      return awaitedResult3?.status === JobStatus.COMPLETED;
+    });
+    expect(failures).toStrictEqual([true]);
+    const awaitedResult4 = await monque.getJob(job._id);
+    expect(awaitedResult4?.failCount).toBe(1);
   });
 
   it("does not overwrite a recovered job when its former owner fails later", async () => {
@@ -139,10 +163,12 @@ describe("non-retryable handler errors", () => {
     const first = new Monque(db, { collectionName, lockTimeout: 50, workerConcurrency: 1 });
     instances.push(first);
     await first.initialize();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started: PromiseWithResolvers<void> = Promise.withResolvers();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     const failures: boolean[] = [];
-    first.on("job:fail", ({ willRetry }) => failures.push(willRetry));
+    first.on("job:fail", ({ willRetry }) => {
+      failures.push(willRetry);
+    });
     first.register("owned", async () => {
       started.resolve();
       await release.promise;
@@ -153,23 +179,27 @@ describe("non-retryable handler errors", () => {
     try {
       await started.promise;
       await waitFor(async () => {
-        const lockedAt = (await first.getJob(job._id))?.lockedAt;
-        return lockedAt != null && Date.now() - lockedAt.getTime() > 50;
+        const awaitedResult5 = await first.getJob(job._id);
+        const lockedAt = awaitedResult5?.lockedAt;
+        return lockedAt !== null && lockedAt !== undefined && Date.now() - lockedAt.getTime() > 50;
       });
       const second = new Monque(db, { collectionName, lockTimeout: 50, workerConcurrency: 1 });
       instances.push(second);
       await second.initialize();
-      second.register("owned", async () => {});
+      second.register("owned", () => {});
       second.start();
-      await waitFor(async () => (await second.getJob(job._id))?.status === JobStatus.COMPLETED);
+      await waitFor(async () => {
+        const awaitedResult6 = await second.getJob(job._id);
+        return awaitedResult6?.status === JobStatus.COMPLETED;
+      });
     } finally {
       release.resolve();
       await first.stop();
     }
-    expect(await first.getJob(job._id)).toMatchObject({
+    await expect(first.getJob(job._id)).resolves.toMatchObject({
       status: JobStatus.COMPLETED,
       failCount: 0,
     });
-    expect(failures).toEqual([]);
+    expect(failures).toStrictEqual([]);
   });
 });

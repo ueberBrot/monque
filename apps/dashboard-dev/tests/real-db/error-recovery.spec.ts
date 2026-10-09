@@ -10,12 +10,10 @@ for (const route of [
   for (const status of [401, 403, 500]) {
     test(`${route} recovers from ${status} in place`, async ({ page, app }) => {
       const job = await app.seed();
-      const path = route === "job-detail" ? `jobs/${job._id}` : route;
+      const path = route === "job-detail" ? `jobs/${String(job._id)}` : route;
       let failed = true;
-      let release = () => {};
-      const recovery = new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      const { promise: recovery, resolve: release }: PromiseWithResolvers<void> =
+        Promise.withResolvers();
       await page.route("**/api/v1/**", async (request) => {
         if (failed) {
           await request.fulfill({ status, json: { error: "Host rejected the request." } });
@@ -32,17 +30,21 @@ for (const route of [
       const url = page.url();
       failed = false;
       await page.getByRole("button", { name: "Retry", exact: true }).click();
-      await expect(page.getByRole("status", { name: /^Loading/ })).toBeVisible();
+      await expect(page.getByRole("status", { name: /^Loading/u })).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
       release();
-      const heading =
-        route === "queue-views"
-          ? "Queue Views"
-          : route === "health"
-            ? "Health"
-            : route.startsWith("jobs?")
-              ? "Jobs"
-              : "email";
+      const heading = (() => {
+        if (route === "queue-views") {
+          return "Queue Views";
+        }
+        if (route === "health") {
+          return "Health";
+        }
+        if (route.startsWith("jobs?")) {
+          return "Jobs";
+        }
+        return "email";
+      })();
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
       await expect(page).toHaveURL(url);
@@ -52,7 +54,6 @@ for (const route of [
     });
   }
 }
-
 test("invalid route search offers a working way back to Queue Views", async ({ page, app }) => {
   await app.seed();
   await page.goto(`${app.base}/dashboard/queue-views/email?limit=not-a-number`);
@@ -61,14 +62,12 @@ test("invalid route search offers a working way back to Queue Views", async ({ p
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
   await expect(page).toHaveURL(`${app.base}/dashboard/queue-views`);
 });
-
 test("unknown routes offer mount-aware navigation back to Queue Views", async ({ page, app }) => {
   await page.goto(`${app.base}/dashboard/unknown-page`);
   await expect(page.getByRole("heading", { name: "Route not found" })).toBeVisible();
   await page.getByRole("link", { name: "Go to Queue Views" }).click();
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
 });
-
 test("invalid browser configuration renders a startup error instead of a blank page", async ({
   page,
   app,
@@ -77,17 +76,21 @@ test("invalid browser configuration renders a startup error instead of a blank p
     let config: unknown;
     Object.defineProperty(window, "__MONQUE_DASHBOARD_CONFIG__", {
       get: () =>
-        sessionStorage.getItem("configuration-repaired")
-          ? config
-          : { apiBaseUrl: "http://[", basePath: "/dashboard" },
-      set: (value: unknown) => {
+        sessionStorage.getItem("configuration-repaired") === undefined ||
+        sessionStorage.getItem("configuration-repaired") === null ||
+        sessionStorage.getItem("configuration-repaired") === ""
+          ? { apiBaseUrl: "http://[", basePath: "/dashboard" }
+          : config,
+      set: (value: Parameters<typeof JSON.stringify>[0]) => {
         config = value;
       },
     });
   });
   await page.goto(`${app.base}/dashboard/jobs`);
   await expect(page.getByRole("heading", { name: "Dashboard configuration error" })).toBeVisible();
-  await page.evaluate(() => sessionStorage.setItem("configuration-repaired", "true"));
+  await page.evaluate(() => {
+    sessionStorage.setItem("configuration-repaired", "true");
+  });
   await page.getByRole("button", { name: "Reload page" }).click();
   await expect(page.getByRole("heading", { name: "No jobs found", exact: true })).toBeVisible();
 });

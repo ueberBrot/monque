@@ -1,5 +1,5 @@
 import type { Db } from "mongodb";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus, Monque } from "@/index";
 import {
@@ -19,6 +19,7 @@ describe("worker retry options", () => {
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -33,22 +34,24 @@ describe("worker retry options", () => {
     });
     instances.push(monque);
     await monque.initialize();
-    const fail = async () => {
-      throw new Error("Unavailable");
-    };
+    const fail = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("Unavailable"));
     const customOptions = { maxRetries: 2, concurrency: 1 };
     monque.register("custom", fail, customOptions);
     monque.register("default", fail);
     const custom = await monque.enqueue("custom", {});
     const inherited = await monque.enqueue("default", {});
     monque.start();
-    await waitFor(
-      async () =>
-        (await monque.getJob(custom._id))?.status === JobStatus.FAILED &&
-        (await monque.getJob(inherited._id))?.status === JobStatus.FAILED,
-    );
-    expect((await monque.getJob(custom._id))?.failCount).toBe(2);
-    expect((await monque.getJob(inherited._id))?.failCount).toBe(1);
+    await waitFor(async () => {
+      const [customJob, inheritedJob] = await Promise.all([
+        monque.getJob(custom._id),
+        monque.getJob(inherited._id),
+      ]);
+      return customJob?.status === JobStatus.FAILED && inheritedJob?.status === JobStatus.FAILED;
+    });
+    const awaitedResult1 = await monque.getJob(custom._id);
+    expect(awaitedResult1?.failCount).toBe(2);
+    const awaitedResult2 = await monque.getJob(inherited._id);
+    expect(awaitedResult2?.failCount).toBe(1);
   });
 
   it.each([
@@ -63,13 +66,18 @@ describe("worker retry options", () => {
     await monque.initialize();
     monque.register(
       "work",
-      async () => {
+      () => {
         throw new Error("Unavailable");
       },
       options,
     );
-    const failure = Promise.withResolvers<{ nextRunAt: Date; updatedAt: Date }>();
-    monque.once("job:fail", ({ job }) => failure.resolve(job));
+    const failure = Promise.withResolvers<{
+      nextRunAt: Date;
+      updatedAt: Date;
+    }>();
+    monque.once("job:fail", ({ job }) => {
+      failure.resolve(job);
+    });
     await monque.enqueue("work", {});
     monque.start();
     const job = await failure.promise;
@@ -88,8 +96,8 @@ describe("worker retry options", () => {
     });
     instances.push(monque);
     await monque.initialize();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started: PromiseWithResolvers<void> = Promise.withResolvers();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     monque.register(
       "work",
       async () => {
@@ -105,7 +113,7 @@ describe("worker retry options", () => {
       await started.promise;
       monque.register(
         "work",
-        async () => {
+        () => {
           throw new Error("Replacement failure");
         },
         {
@@ -114,8 +122,11 @@ describe("worker retry options", () => {
         },
       );
       release.resolve();
-      await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.FAILED);
-      expect(await monque.getJob(job._id)).toMatchObject({
+      await waitFor(async () => {
+        const awaitedResult3 = await monque.getJob(job._id);
+        return awaitedResult3?.status === JobStatus.FAILED;
+      });
+      await expect(monque.getJob(job._id)).resolves.toMatchObject({
         failCount: 1,
         failReason: "Original failure",
       });

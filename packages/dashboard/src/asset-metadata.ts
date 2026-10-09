@@ -1,9 +1,8 @@
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const DASHBOARD_RUNTIME_CONFIG_GLOBAL = "__MONQUE_DASHBOARD_CONFIG__";
 const DASHBOARD_RUNTIME_CONFIG_SCRIPT_ID = "monque-dashboard-runtime-config";
-
+// oxlint-disable-next-line typescript/consistent-type-definitions -- The published alias is assignable to string-indexed records; an interface changes that consumer contract.
 type DashboardAssetMetadata = {
   assetDirectory: "client";
   htmlEntrypoint: "index.html";
@@ -11,33 +10,21 @@ type DashboardAssetMetadata = {
   runtimeConfigGlobal: typeof DASHBOARD_RUNTIME_CONFIG_GLOBAL;
   runtimeConfigScriptId: typeof DASHBOARD_RUNTIME_CONFIG_SCRIPT_ID;
 };
-
-const DashboardAssetMetadata: DashboardAssetMetadata = {
+const dashboardAssetMetadata: DashboardAssetMetadata = {
   assetDirectory: "client",
   htmlEntrypoint: "index.html",
   manifestPath: ".vite/manifest.json",
   runtimeConfigGlobal: DASHBOARD_RUNTIME_CONFIG_GLOBAL,
   runtimeConfigScriptId: DASHBOARD_RUNTIME_CONFIG_SCRIPT_ID,
 };
-
-const dashboardPackageDistDirectory = dirname(fileURLToPath(import.meta.url));
-
-function getDashboardAssetMetadata(): DashboardAssetMetadata {
-  return DashboardAssetMetadata;
-}
-
-function getDashboardAssetDirectory(): string {
-  return join(dashboardPackageDistDirectory, DashboardAssetMetadata.assetDirectory);
-}
-
-function getDashboardHtmlEntrypointPath(): string {
-  return join(getDashboardAssetDirectory(), DashboardAssetMetadata.htmlEntrypoint);
-}
-
-function getDashboardManifestPath(): string {
-  return join(getDashboardAssetDirectory(), DashboardAssetMetadata.manifestPath);
-}
-
+const dashboardPackageDistDirectory = import.meta.dirname;
+const getDashboardAssetMetadata = (): DashboardAssetMetadata => dashboardAssetMetadata;
+const getDashboardAssetDirectory = (): string =>
+  path.join(dashboardPackageDistDirectory, dashboardAssetMetadata.assetDirectory);
+const getDashboardHtmlEntrypointPath = (): string =>
+  path.join(getDashboardAssetDirectory(), dashboardAssetMetadata.htmlEntrypoint);
+const getDashboardManifestPath = (): string =>
+  path.join(getDashboardAssetDirectory(), dashboardAssetMetadata.manifestPath);
 export {
   DASHBOARD_RUNTIME_CONFIG_GLOBAL,
   DASHBOARD_RUNTIME_CONFIG_SCRIPT_ID,

@@ -12,17 +12,19 @@ import {
 import { useFieldContext } from "./context.js";
 import { getFieldErrors } from "./field-errors.js";
 
-type SelectFieldProps = {
+interface SelectFieldProps {
   label: string;
   description?: string;
   placeholder?: string;
   id?: string;
   bare?: boolean;
   className?: string;
-  options: ReadonlyArray<{ label: string; value: string }>;
-};
-
-export function SelectField({
+  options: readonly {
+    label: string;
+    value: string;
+  }[];
+}
+export const SelectField = ({
   description,
   label,
   options,
@@ -30,18 +32,19 @@ export function SelectField({
   id,
   bare = false,
   className,
-}: SelectFieldProps) {
+}: SelectFieldProps) => {
   const field = useFieldContext<string>();
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const error = getFieldErrors(field.state.meta.errors);
-
   const control = (
     <Select
       name={field.name}
       items={options}
       value={field.state.value}
-      onValueChange={(value) => field.handleChange(value ?? "")}
+      onValueChange={(value) => {
+        field.handleChange(value ?? "");
+      }}
     >
       <SelectTrigger
         id={fieldId}
@@ -61,13 +64,19 @@ export function SelectField({
       </SelectContent>
     </Select>
   );
-  if (bare) return control;
+  if (bare) {
+    return control;
+  }
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
       {control}
-      {description ? <FieldDescription>{description}</FieldDescription> : null}
-      {error ? <FieldError>{error}</FieldError> : null}
+      {description === undefined || description === null || description === "" ? null : (
+        <FieldDescription>{description}</FieldDescription>
+      )}
+      {error === undefined || error === null || error === "" ? null : (
+        <FieldError>{error}</FieldError>
+      )}
     </Field>
   );
-}
+};

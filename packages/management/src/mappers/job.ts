@@ -2,13 +2,13 @@ import type { CursorPage, PersistedJob } from "@monque/core";
 
 import type { JobCursorPageDto, JobDto } from "../schemas/index.js";
 
-export function toJobSummaryPageDto(
-  page: Omit<CursorPage, "jobs"> & { jobs: Omit<PersistedJob, "data">[] },
-): JobCursorPageDto {
-  return { ...page, jobs: page.jobs.map(toJobSummaryDto) };
-}
+const toIsoStringOrNull = function toIsoStringOrNull(
+  value: Date | null | undefined,
+): string | null {
+  return value === null || value === undefined ? null : value.toISOString();
+};
 
-export function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
+export const toJobSummaryDto = function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
   const dto: JobDto = {
     id: job._id.toHexString(),
     name: job.name,
@@ -25,7 +25,7 @@ export function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
     updatedAt: job.updatedAt.toISOString(),
   };
 
-  if (job.heartbeatInterval != null) {
+  if (job.heartbeatInterval !== null && job.heartbeatInterval !== undefined) {
     dto.heartbeatInterval = job.heartbeatInterval;
   }
 
@@ -33,21 +33,23 @@ export function toJobSummaryDto(job: Omit<PersistedJob, "data">): JobDto {
     dto.leaseExpiresAt = job.leaseExpiresAt.toISOString();
   }
 
-  if (job.repeatInterval != null) {
+  if (job.repeatInterval !== null && job.repeatInterval !== undefined) {
     dto.repeatInterval = job.repeatInterval;
   }
 
-  if (job.timezone != null) {
+  if (job.timezone !== null && job.timezone !== undefined) {
     dto.timezone = job.timezone;
   }
 
-  if (job.uniqueKey != null) {
+  if (job.uniqueKey !== null && job.uniqueKey !== undefined) {
     dto.uniqueKey = job.uniqueKey;
   }
 
   return dto;
-}
+};
 
-function toIsoStringOrNull(value: Date | null | undefined): string | null {
-  return value === null || value === undefined ? null : value.toISOString();
-}
+export const toJobSummaryPageDto = function toJobSummaryPageDto(
+  page: Omit<CursorPage, "jobs"> & { jobs: Omit<PersistedJob, "data">[] },
+): JobCursorPageDto {
+  return { ...page, jobs: page.jobs.map(toJobSummaryDto) };
+};

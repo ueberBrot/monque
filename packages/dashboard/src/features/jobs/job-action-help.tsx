@@ -1,16 +1,20 @@
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
-function JobActionHelp({
+const JobActionHelp = ({
   actions,
 }: {
   readonly actions: readonly {
     readonly label: string;
     readonly reason: string | null | undefined;
   }[];
-}) {
-  const unavailable = actions.filter((action) => action.reason);
-  if (!unavailable.length) return null;
+}) => {
+  const unavailable = actions.filter(
+    ({ reason }) => reason !== undefined && reason !== null && reason !== "",
+  );
+  if (!unavailable.length) {
+    return null;
+  }
   return (
     <Collapsible className="w-full">
       <CollapsibleTrigger
@@ -30,6 +34,5 @@ function JobActionHelp({
       </CollapsibleContent>
     </Collapsible>
   );
-}
-
+};
 export { JobActionHelp };

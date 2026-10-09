@@ -1,4 +1,5 @@
-import { type QueryClient, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import type { RowSelectionState } from "@tanstack/react-table";
 import type { Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
@@ -6,13 +7,10 @@ import { toast } from "sonner";
 import type { DashboardManagementApi } from "@/management-client";
 
 import { jobActionMutationOptions } from "./job-action-mutation.js";
-import {
-  getActionErrorFeedback,
-  getActionSuccessFeedback,
-  type JobActionFeedback,
-} from "./job-actions.js";
+import { getActionErrorFeedback, getActionSuccessFeedback } from "./job-actions.js";
+import type { JobActionFeedback } from "./job-actions.js";
 
-function useJobsActionMutation({
+const useJobsActionMutation = ({
   managementApi,
   queryClient,
   setFeedback,
@@ -22,8 +20,8 @@ function useJobsActionMutation({
   readonly queryClient: QueryClient;
   readonly setFeedback: (feedback: JobActionFeedback | null) => void;
   readonly setRowSelection: Dispatch<SetStateAction<RowSelectionState>>;
-}) {
-  return useMutation({
+}) =>
+  useMutation({
     ...jobActionMutationOptions(managementApi, queryClient),
     onSuccess: ({ action, count, failed, firstError }, input) => {
       const errorFeedback = getActionErrorFeedback(firstError);
@@ -38,18 +36,15 @@ function useJobsActionMutation({
         toast.success(success.title, { description: success.description });
       }
       setRowSelection((selection) => {
-        const nextSelection = { ...selection };
         const failedIds = new Set(failed);
-        for (const id of input.jobIds) {
-          if (!failedIds.has(id)) delete nextSelection[id];
-        }
-        return nextSelection;
+        const succeededIds = new Set(input.jobIds.filter((id) => !failedIds.has(id)));
+        return Object.fromEntries(
+          Object.entries(selection).filter(([id]) => !succeededIds.has(id)),
+        );
       });
     },
     onError: (error) => {
       setFeedback(getActionErrorFeedback(error));
     },
   });
-}
-
 export { useJobsActionMutation };

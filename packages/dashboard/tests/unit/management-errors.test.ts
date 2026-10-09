@@ -8,32 +8,35 @@ describe("Management error presentation", () => {
   it.each([
     new ORPCError("FORBIDDEN", { message: "Forbidden", data: { error: "Session has expired." } }),
     { status: 403, message: "Forbidden", data: { body: { error: "Session has expired." } } },
-  ])("preserves the host message across queries, job details and actions", (error) => {
-    expect(readManagementError(error)).toEqual({ status: 403, message: "Session has expired." });
-    expect(resolveDashboardApiErrorState(error).description).toBe("Session has expired.");
-    expect(resolveDashboardApiErrorState(error, "job")).toMatchObject({
+  ])("preserves the host message across queries, job details and actions", (failure) => {
+    expect(readManagementError(failure)).toStrictEqual({
+      status: 403,
+      message: "Session has expired.",
+    });
+    expect(resolveDashboardApiErrorState(failure).description).toBe("Session has expired.");
+    expect(resolveDashboardApiErrorState(failure, "job")).toMatchObject({
       code: "forbidden",
       description: "Session has expired.",
     });
-    expect(getActionErrorFeedback(error)).toMatchObject({
+    expect(getActionErrorFeedback(failure)).toMatchObject({
       title: "Action unavailable",
       description: "Session has expired.",
     });
   });
 
   it("retains error status when the host sends malformed optional details", () => {
-    const error = { status: 401, data: { error: 42, body: null }, message: "" };
-    expect(readManagementError(error).status).toBe(401);
-    expect(resolveDashboardApiErrorState(error, "job").code).toBe("unauthorized");
-    expect(readManagementError(error).message).toBeUndefined();
+    const failure = { status: 401, data: { error: 42, body: null }, message: "" };
+    expect(readManagementError(failure).status).toBe(401);
+    expect(resolveDashboardApiErrorState(failure, "job").code).toBe("unauthorized");
+    expect(readManagementError(failure).message).toBeUndefined();
   });
 
   it.each([undefined, null, "broken", 42, { data: { error: {} } }])(
     "uses contextual fallbacks for an unknown failure: %j",
-    (error) => {
-      expect(readManagementError(error).message).toBeUndefined();
-      expect(resolveDashboardApiErrorState(error, "job").code).toBe("error");
-      expect(getActionErrorFeedback(error).title).toBe("Action failed");
+    (failure) => {
+      expect(readManagementError(failure).message).toBeUndefined();
+      expect(resolveDashboardApiErrorState(failure, "job").code).toBe("error");
+      expect(getActionErrorFeedback(failure).title).toBe("Action failed");
     },
   );
 

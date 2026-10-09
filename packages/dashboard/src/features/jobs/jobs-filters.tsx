@@ -6,7 +6,8 @@ import { useAppForm } from "@/forms";
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from "@/lib/dates";
 import { useMediaQuery } from "@/lib/use-media-query";
 
-import { getStatusLabel, JOB_STATUS_ORDER, type JobsRouteSearch } from "./job-list-search.js";
+import { getStatusLabel, JOB_STATUS_ORDER } from "./job-list-search.js";
+import type { JobsRouteSearch } from "./job-list-search.js";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 const JOB_DATE_FILTERS = [
@@ -30,21 +31,36 @@ type JobDateFilterField = keyof Pick<
   | "nextRunAtFrom"
   | "nextRunAtTo"
 >;
-
-function JobsFilters({
+const getFilterValues = (search: JobsRouteSearch) => ({
+  name: search.name ?? "",
+  limit: String(search.limit),
+  sortBy: search.sortBy,
+  sortDirection: search.sortDirection,
+  createdAtFrom: toDateTimeLocalValue(search.createdAtFrom),
+  createdAtTo: toDateTimeLocalValue(search.createdAtTo),
+  updatedAtFrom: toDateTimeLocalValue(search.updatedAtFrom),
+  updatedAtTo: toDateTimeLocalValue(search.updatedAtTo),
+  nextRunAtFrom: toDateTimeLocalValue(search.nextRunAtFrom),
+  nextRunAtTo: toDateTimeLocalValue(search.nextRunAtTo),
+  pending: search.status.includes("pending"),
+  processing: search.status.includes("processing"),
+  completed: search.status.includes("completed"),
+  failed: search.status.includes("failed"),
+  cancelled: search.status.includes("cancelled"),
+});
+const JobsFilters = ({
   search,
   updateSearch,
 }: {
   readonly search: JobsRouteSearch;
   readonly updateSearch: (updater: (search: JobsRouteSearch) => JobsRouteSearch) => void;
-}) {
+}) => {
   const compact = useMediaQuery("(max-width: 767px)");
   const form = useAppForm({ defaultValues: getFilterValues(search) });
   // Router history remains authoritative when filters change outside this form.
   useEffect(() => {
     form.reset(getFilterValues(search));
   }, [form, search]);
-
   return (
     <form.AppForm>
       <div className="grid min-w-0 gap-4 border-b border-border p-4">
@@ -52,8 +68,9 @@ function JobsFilters({
           <form.AppField
             name="name"
             listeners={{
-              onChange: ({ value }) =>
-                updateSearch((current) => ({ ...current, name: value, cursor: undefined })),
+              onChange: ({ value }) => {
+                updateSearch((current) => ({ ...current, name: value, cursor: undefined }));
+              },
             }}
           >
             {(field) => (
@@ -63,12 +80,13 @@ function JobsFilters({
           <form.AppField
             name="limit"
             listeners={{
-              onChange: ({ value }) =>
+              onChange: ({ value }) => {
                 updateSearch((current) => ({
                   ...current,
                   limit: Number(value),
                   cursor: undefined,
-                })),
+                }));
+              },
             }}
           >
             {(field) => (
@@ -87,8 +105,9 @@ function JobsFilters({
               <form.AppField
                 name="sortBy"
                 listeners={{
-                  onChange: ({ value }) =>
-                    updateSearch((current) => ({ ...current, sortBy: value, cursor: undefined })),
+                  onChange: ({ value }) => {
+                    updateSearch((current) => ({ ...current, sortBy: value, cursor: undefined }));
+                  },
                 }}
               >
                 {(field) => (
@@ -106,12 +125,13 @@ function JobsFilters({
               <form.AppField
                 name="sortDirection"
                 listeners={{
-                  onChange: ({ value }) =>
+                  onChange: ({ value }) => {
                     updateSearch((current) => ({
                       ...current,
                       sortDirection: value,
                       cursor: undefined,
-                    })),
+                    }));
+                  },
                 }}
               >
                 {(field) => (
@@ -131,7 +151,9 @@ function JobsFilters({
               render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}
             >
               Date filters
-              {JOB_DATE_FILTERS.some((filter) => search[filter.field]) ? " · Active" : ""}
+              {JOB_DATE_FILTERS.some(({ field }) => (search[field] ?? "") !== "")
+                ? " · Active"
+                : ""}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -140,12 +162,13 @@ function JobsFilters({
                     key={filter.field}
                     name={filter.field}
                     listeners={{
-                      onChange: ({ value }) =>
+                      onChange: ({ value }) => {
                         updateSearch((current) => ({
                           ...current,
                           [filter.field]: fromDateTimeLocalValue(value),
                           cursor: undefined,
-                        })),
+                        }));
+                      },
                     }}
                   >
                     {(field) => <field.DateTimeField id={filter.id} label={filter.label} />}
@@ -163,14 +186,15 @@ function JobsFilters({
                 <form.AppField
                   name={status}
                   listeners={{
-                    onChange: ({ value }) =>
+                    onChange: ({ value }) => {
                       updateSearch((current) => ({
                         ...current,
                         status: JOB_STATUS_ORDER.filter((candidate) =>
                           candidate === status ? value : current.status.includes(candidate),
                         ),
                         cursor: undefined,
-                      })),
+                      }));
+                    },
                   }}
                 >
                   {(field) => <field.CheckboxField label={getStatusLabel(status)} bare />}
@@ -183,26 +207,5 @@ function JobsFilters({
       </div>
     </form.AppForm>
   );
-}
-
-function getFilterValues(search: JobsRouteSearch) {
-  return {
-    name: search.name ?? "",
-    limit: String(search.limit),
-    sortBy: search.sortBy,
-    sortDirection: search.sortDirection,
-    createdAtFrom: toDateTimeLocalValue(search.createdAtFrom),
-    createdAtTo: toDateTimeLocalValue(search.createdAtTo),
-    updatedAtFrom: toDateTimeLocalValue(search.updatedAtFrom),
-    updatedAtTo: toDateTimeLocalValue(search.updatedAtTo),
-    nextRunAtFrom: toDateTimeLocalValue(search.nextRunAtFrom),
-    nextRunAtTo: toDateTimeLocalValue(search.nextRunAtTo),
-    pending: search.status.includes("pending"),
-    processing: search.status.includes("processing"),
-    completed: search.status.includes("completed"),
-    failed: search.status.includes("failed"),
-    cancelled: search.status.includes("cancelled"),
-  };
-}
-
+};
 export { JobsFilters };

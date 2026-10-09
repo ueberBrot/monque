@@ -10,6 +10,8 @@ import {
   waitFor,
 } from "@test-utils/test-utils";
 
+import { forEachSequential } from "./helpers";
+
 describe("renewable leases", () => {
   let db: Db;
   const instances: Monque[] = [];
@@ -19,6 +21,7 @@ describe("renewable leases", () => {
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -37,8 +40,8 @@ describe("renewable leases", () => {
     instances.push(owner, survivor);
     await owner.initialize();
     await survivor.initialize();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started: PromiseWithResolvers<void> = Promise.withResolvers();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     owner.register("work", async () => {
       started.resolve();
       await release.promise;
@@ -49,14 +52,21 @@ describe("renewable leases", () => {
     try {
       await started.promise;
       await owner.stop();
-      survivor.register("work", async () => {});
-      await waitFor(async () => (await survivor.getJob(job._id))?.status === JobStatus.COMPLETED);
+      survivor.register("work", () => {});
+      await waitFor(async () => {
+        const awaitedResult1 = await survivor.getJob(job._id);
+        return awaitedResult1?.status === JobStatus.COMPLETED;
+      });
+      await expect(survivor.getJob(job._id)).resolves.toMatchObject({
+        status: JobStatus.COMPLETED,
+      });
     } finally {
       release.resolve();
       await survivor.stop();
-      await waitFor(
-        async () => (await owner.getQueueViewSummaries())[0]?.worker?.activeCount === 0,
-      );
+      await waitFor(async () => {
+        const awaitedResult2 = await owner.getQueueViewSummaries();
+        return awaitedResult2[0]?.worker?.activeCount === 0;
+      });
     }
   });
 
@@ -75,13 +85,15 @@ describe("renewable leases", () => {
       });
       instances.push(owner);
       await owner.initialize();
-      const started = Promise.withResolvers<void>();
-      const probeStarted = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
+      const started: PromiseWithResolvers<void> = Promise.withResolvers();
+      const probeStarted: PromiseWithResolvers<void> = Promise.withResolvers();
+      const release: PromiseWithResolvers<void> = Promise.withResolvers();
       owner.register("work", async () => {
         started.resolve();
         await release.promise;
-        if (fail) throw new Error("Expired handler failed");
+        if (fail) {
+          throw new Error("Expired handler failed");
+        }
       });
       owner.register("probe", async () => {
         probeStarted.resolve();
@@ -100,17 +112,21 @@ describe("renewable leases", () => {
         owner.start();
         const probe = await owner.enqueue("probe", {});
         await probeStarted.promise;
-        const previous = (await owner.getJob(probe._id))?.lastHeartbeat;
+        const awaitedResult3 = await owner.getJob(probe._id);
+        const previous = awaitedResult3?.lastHeartbeat;
         await waitFor(async () => {
-          const current = (await owner.getJob(probe._id))?.lastHeartbeat;
+          const awaitedResult4 = await owner.getJob(probe._id);
+          const current = awaitedResult4?.lastHeartbeat;
           return current instanceof Date && previous instanceof Date && current > previous;
         });
-        expect((await owner.getJob(job._id))?.leaseExpiresAt).toEqual(deadline);
+        const awaitedResult5 = await owner.getJob(job._id);
+        expect(awaitedResult5?.leaseExpiresAt).toStrictEqual(deadline);
         release.resolve();
-        await waitFor(async () =>
-          (await owner.getQueueViewSummaries()).every((view) => view.worker?.activeCount === 0),
-        );
-        expect(await owner.getJob(job._id)).toMatchObject({
+        await waitFor(async () => {
+          const awaitedResult6 = await owner.getQueueViewSummaries();
+          return awaitedResult6.every((view) => view.worker?.activeCount === 0);
+        });
+        await expect(owner.getJob(job._id)).resolves.toMatchObject({
           status: JobStatus.PROCESSING,
           failCount: 0,
         });
@@ -134,8 +150,8 @@ describe("renewable leases", () => {
       const observer = new Monque(db, { collectionName, lockTimeout: 10 });
       instances.push(worker, observer);
       await worker.initialize();
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
+      const started: PromiseWithResolvers<void> = Promise.withResolvers();
+      const release: PromiseWithResolvers<void> = Promise.withResolvers();
       worker.register("work", async () => {
         started.resolve();
         await release.promise;
@@ -146,19 +162,28 @@ describe("renewable leases", () => {
       try {
         await started.promise;
         const claimed = await worker.getJob(job._id);
-        if (draining) stopping = worker.stop();
-        let previousDeadline = claimed?.leaseExpiresAt;
-        // Two renewals rule out a single heartbeat already in flight when draining starts.
-        for (let renewal = 0; renewal < 2; renewal++) {
-          await waitFor(async () => {
-            const deadline = (await worker.getJob(job._id))?.leaseExpiresAt;
-            if (!deadline || !previousDeadline || deadline <= previousDeadline) return false;
-            previousDeadline = deadline;
-            return true;
-          });
+        if (draining) {
+          stopping = worker.stop();
         }
+        let previousDeadline = claimed?.leaseExpiresAt;
+        const wasRenewed = async () => {
+          const awaitedResult7 = await worker.getJob(job._id);
+          const deadline = awaitedResult7?.leaseExpiresAt;
+          if (!deadline || !previousDeadline || deadline <= previousDeadline) {
+            return false;
+          }
+          previousDeadline = deadline;
+          return true;
+        };
+        // Two renewals rule out a single heartbeat already in flight when draining starts.
+        await forEachSequential(
+          Array.from({ length: Math.ceil(2 / 1) }, (_, index) => index * 1),
+          async (_renewal) => {
+            await waitFor(wasRenewed);
+          },
+        );
         await observer.initialize();
-        expect(await observer.getJob(job._id)).toMatchObject({
+        await expect(observer.getJob(job._id)).resolves.toMatchObject({
           status: JobStatus.PROCESSING,
           claimId: claimed?.claimId,
         });

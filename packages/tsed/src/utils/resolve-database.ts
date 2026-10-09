@@ -1,5 +1,5 @@
 /**
- * @monque/tsed - Database Resolution Utility
+ * `@monque/tsed` - Database Resolution Utility
  *
  * Multi-strategy database resolution for flexible MongoDB connection handling.
  */
@@ -28,7 +28,7 @@ export type InjectorFn = <T>(token: TokenProvider<T>) => T | undefined;
  * @param config - The Monque configuration containing database settings
  * @param injectorFn - Optional function to resolve DI tokens (required for dbToken strategy)
  * @returns The resolved MongoDB Db instance
- * @throws Error if no database strategy is provided or if DI resolution fails
+ * @throws {ConnectionError} if no database strategy is provided or if DI resolution fails
  *
  * @example
  * ```typescript
@@ -50,7 +50,8 @@ export type InjectorFn = <T>(token: TokenProvider<T>) => T | undefined;
  * );
  * ```
  */
-export async function resolveDatabase(
+/* oxlint-disable typescript/no-base-to-string -- Public failure diagnostics preserve the original String(token) representation, including constructor source and symbols. */
+export const resolveDatabase = async function resolveDatabase(
   config: MonqueTsedConfig,
   injectorFn?: InjectorFn,
 ): Promise<Db> {
@@ -61,11 +62,11 @@ export async function resolveDatabase(
 
   // Strategy 2: Factory function (sync or async)
   if (config.dbFactory) {
-    return config.dbFactory();
+    return await config.dbFactory();
   }
 
   // Strategy 3: DI token resolution
-  if (config.dbToken) {
+  if (config.dbToken !== undefined && config.dbToken !== "") {
     if (!injectorFn) {
       throw new ConnectionError(
         "MonqueTsedConfig.dbToken requires an injector function to resolve the database",
@@ -84,7 +85,10 @@ export async function resolveDatabase(
     if (isMongooseService(resolved)) {
       // Check for Mongoose Service (duck typing)
       // It has a get() method that returns a connection
-      const connectionId = config.mongooseConnectionId || "default";
+      const connectionId =
+        config.mongooseConnectionId === undefined || config.mongooseConnectionId === ""
+          ? "default"
+          : config.mongooseConnectionId;
       const connection = resolved.get(connectionId);
 
       if (!connection) {
@@ -94,27 +98,29 @@ export async function resolveDatabase(
         );
       }
 
-      if ("db" in connection && connection.db) {
-        return connection.db as Db;
+      if ("db" in connection && connection.db !== null && connection.db !== undefined) {
+        return connection.db;
       }
     }
 
     if (isMongooseConnection(resolved)) {
       // Check for Mongoose Connection (duck typing)
       // It has a db property that is the native Db instance
-      return resolved.db as Db;
+      return resolved.db;
     }
 
     // Default: Assume it is a native Db instance
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- This DI boundary validates the duck-typed native Db contract before forwarding the resolved instance.
     if (typeof resolved !== "object" || resolved === null || !("collection" in resolved)) {
       throw new ConnectionError(
         `Resolved value from token "${String(config.dbToken)}" does not appear to be a valid MongoDB Db instance.`,
       );
     }
 
-    return resolved as Db;
+    return resolved;
   }
 
   // No strategy provided
   throw new ConnectionError("MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set");
-}
+};
+/* oxlint-enable typescript/no-base-to-string */

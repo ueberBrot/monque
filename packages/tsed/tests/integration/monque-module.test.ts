@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
 import type { Job } from "@monque/core";
 import { InjectorService, LOGGER, ProviderScope, Scope } from "@tsed/di";
 import { PlatformTest } from "@tsed/platform-http/testing";
@@ -9,7 +10,7 @@ import { MonqueService } from "@/services";
 
 import { waitFor } from "../test-utils.js";
 import { bootstrapMonque, resetMonque } from "./helpers/bootstrap.js";
-import { Server } from "./helpers/Server.js";
+import { Server } from "./helpers/test-server.js";
 
 // 1. Request Scoped Job
 @JobController("request-scoped")
@@ -19,11 +20,12 @@ class RequestScopedController {
   static instanceCount = 0;
 
   constructor() {
-    RequestScopedController.instanceCount++;
+    RequestScopedController.instanceCount += 1;
   }
 
   @MonqueJob("job")
-  async handler(_job: Job) {
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  handler(_job: Job) {
     RequestScopedController.processed = true;
   }
 }
@@ -32,7 +34,8 @@ class RequestScopedController {
 @JobController("error")
 class ErrorController {
   @MonqueJob("throw")
-  async handler(_job: Job) {
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  handler(_job: Job) {
     throw new Error("Intentional Failure");
   }
 }
@@ -41,24 +44,27 @@ class ErrorController {
 @JobController("unresolvable")
 class UnresolvableController {
   @MonqueJob("job")
-  async handler(_job: Job) {}
+  // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+  handler(_job: Job) {}
 }
 
 describe("MonqueModule Lifecycle Integration", () => {
   afterEach(resetMonque);
 
   describe("Lifecycle (Mongoose Strategy)", () => {
-    beforeEach(() =>
-      bootstrapMonque({ connectionStrategy: "mongoose", imports: [ErrorController] }),
-    );
+    beforeEach(async () => {
+      await bootstrapMonque({ connectionStrategy: "mongoose", imports: [ErrorController] });
+    });
 
     it("persists and executes jobs through the Mongoose database strategy", async () => {
       const monqueService = PlatformTest.get<MonqueService>(MonqueService);
       const job = await monqueService.now("error.throw", {});
-      await waitFor(async () => (await monqueService.getJob(job._id.toString()))?.failCount === 1);
-      expect((await monqueService.getJob(job._id.toString()))?.failReason).toBe(
-        "Intentional Failure",
-      );
+      await waitFor(async () => {
+        const polledJob = await monqueService.getJob(job._id.toString());
+        return polledJob?.failCount === 1;
+      });
+      const persistedJob = await monqueService.getJob(job._id.toString());
+      expect(persistedJob?.failReason).toBe("Intentional Failure");
     });
   });
 
@@ -76,17 +82,19 @@ describe("MonqueModule Lifecycle Integration", () => {
   });
 
   describe("Disabled Module", () => {
-    beforeEach(() =>
-      bootstrapMonque({
+    beforeEach(async () => {
+      await bootstrapMonque({
         connectionStrategy: "dbFactory",
         monqueConfig: { enabled: false },
-      }),
-    );
+      });
+    });
 
     it("should not throw when module is disabled but service should throw on access", async () => {
       const monqueService = PlatformTest.get<MonqueService>(MonqueService);
       expect(monqueService).toBeDefined();
-      await expect(monqueService.enqueue("test", {})).rejects.toThrow();
+      await expect(monqueService.enqueue("test", {})).rejects.toThrow(
+        "MonqueService is not initialized",
+      );
     });
   });
 
@@ -98,15 +106,17 @@ describe("MonqueModule Lifecycle Integration", () => {
 
     it("should warn and skip if job controller instance cannot be resolved", async () => {
       // Mock injector to fail resolution for UnresolvableController
+      // oxlint-disable-next-line typescript/unbound-method -- The interceptor forwards this exact method with the original receiver via call below.
       const originalGet = InjectorService.prototype.get;
-      const getSpy = vi.spyOn(InjectorService.prototype, "get").mockImplementation(function (
+      const getSpy = vi.spyOn(InjectorService.prototype, "get").mockImplementation(function getSpy(
         this: InjectorService,
-        token: unknown,
+        token: Parameters<InjectorService["get"]>[0],
       ) {
         if (token === UnresolvableController) {
+          // oxlint-disable-next-line unicorn/no-useless-undefined -- consistent-return requires this missing-instance branch to return a value, matching InjectorService.get.
           return undefined;
         }
-        return originalGet.call(this, token as Parameters<InjectorService["get"]>[0]);
+        return originalGet.call(this, token);
       });
 
       try {
@@ -154,7 +164,7 @@ describe("MonqueModule Lifecycle Integration", () => {
       });
 
       const service = PlatformTest.get<MonqueService>(MonqueService);
-      const logger = PlatformTest.get(LOGGER);
+      const logger = PlatformTest.get<LOGGER>(LOGGER);
       const errorSpy = vi.spyOn(logger, "error");
 
       await service.enqueue("error.throw", {});
@@ -174,13 +184,15 @@ describe("MonqueModule Lifecycle Integration", () => {
       @JobController("duplicate")
       class DuplicateController1 {
         @MonqueJob("job")
-        async handler(_job: Job) {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        handler(_job: Job) {}
       }
 
       @JobController("duplicate")
       class DuplicateController2 {
         @MonqueJob("job")
-        async handler(_job: Job) {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        handler(_job: Job) {}
       }
 
       // We use a fresh bootstrap here because we want to fail during initialization

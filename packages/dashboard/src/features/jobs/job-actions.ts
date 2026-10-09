@@ -6,46 +6,62 @@ import { readManagementError } from "@/management-errors";
 
 const JOB_ACTION_ORDER = ["cancel", "retry", "reschedule", "priority", "delete"] as const;
 type JobActionKey = (typeof JOB_ACTION_ORDER)[number];
-type JobActionAvailability = {
+interface JobActionAvailability {
   readonly disabled: boolean;
   readonly reason: string | null;
-};
-type JobActionFeedback = {
+}
+interface JobActionFeedback {
   readonly description: string;
   readonly title: string;
   readonly tone: JobActionFeedbackTone;
-};
+}
 type JobActionFeedbackTone = "danger" | "success" | "warning";
 type JobActionRequest =
-  | { readonly action: Exclude<JobActionKey, "reschedule" | "priority"> }
-  | { readonly action: "reschedule"; readonly nextRunAt: string }
-  | { readonly action: "priority"; readonly priority: number };
-type RunJobActionInput = JobActionRequest & { readonly jobId: string };
-type RunJobActionsInput = JobActionRequest & { readonly jobIds: readonly string[] };
-type JobActionsResult = {
+  | {
+      readonly action: Exclude<JobActionKey, "reschedule" | "priority">;
+    }
+  | {
+      readonly action: "reschedule";
+      readonly nextRunAt: string;
+    }
+  | {
+      readonly action: "priority";
+      readonly priority: number;
+    };
+type RunJobActionInput = JobActionRequest & {
+  readonly jobId: string;
+};
+type RunJobActionsInput = JobActionRequest & {
+  readonly jobIds: readonly string[];
+};
+interface JobActionsResult {
   readonly action: JobActionKey;
   readonly count: number;
   readonly jobs: readonly JobDto[];
   readonly failed: string[];
   readonly firstError: unknown;
   readonly authorizationChanged: boolean;
-};
-
-type JobActionDialogState = {
+}
+interface JobActionDialogState {
   readonly action: JobActionKey;
   readonly jobIds: readonly string[];
   readonly jobName?: string;
   readonly nextRunAt: string;
   readonly priority?: string;
   readonly scope: "bulk" | "single";
-};
-
-function prepareSingleJobAction(
+}
+const prepareSingleJobAction = (
   action: JobActionKey,
   job: Pick<JobDto, "id" | "name" | "nextRunAt" | "priority">,
 ):
-  | { readonly type: "confirm"; readonly state: JobActionDialogState }
-  | { readonly type: "run"; readonly input: RunJobActionsInput } {
+  | {
+      readonly type: "confirm";
+      readonly state: JobActionDialogState;
+    }
+  | {
+      readonly type: "run";
+      readonly input: RunJobActionsInput;
+    } => {
   if (action === "delete" || action === "reschedule" || action === "priority") {
     return {
       type: "confirm",
@@ -60,13 +76,43 @@ function prepareSingleJobAction(
     };
   }
   return { type: "run", input: { action, jobIds: [job.id] } };
-}
-
-async function runJobActions(
+};
+const runJobAction = async (
+  managementApi: DashboardManagementApi,
+  input: RunJobActionInput,
+): Promise<readonly JobDto[]> => {
+  const params = { id: input.jobId };
+  switch (input.action) {
+    case "cancel": {
+      return [await managementApi.client.cancelJob({ params })];
+    }
+    case "retry": {
+      return [await managementApi.client.retryJob({ params })];
+    }
+    case "reschedule": {
+      return [
+        await managementApi.client.rescheduleJob({ params, body: { nextRunAt: input.nextRunAt } }),
+      ];
+    }
+    case "priority": {
+      return [
+        await managementApi.client.setJobPriority({ params, body: { priority: input.priority } }),
+      ];
+    }
+    case "delete": {
+      await managementApi.client.deleteJob({ params });
+      return [];
+    }
+    default: {
+      throw new RangeError("Unsupported job action.");
+    }
+  }
+};
+const runJobActions = async (
   managementApi: DashboardManagementApi,
   input: RunJobActionsInput,
-): Promise<JobActionsResult> {
-  if (input.jobIds.length === 0)
+): Promise<JobActionsResult> => {
+  if (input.jobIds.length === 0) {
     return {
       action: input.action,
       count: 0,
@@ -75,29 +121,39 @@ async function runJobActions(
       firstError: undefined,
       authorizationChanged: false,
     };
+  }
   if (input.jobIds.length === 1) {
-    const jobId = input.jobIds[0];
-    if (jobId === undefined) throw new Error("Missing selected job");
-    const job = await runJobAction(managementApi, { ...input, jobId });
+    const [jobId] = input.jobIds;
+    if (jobId === undefined) {
+      throw new Error("Missing selected job");
+    }
+    const jobs = await runJobAction(managementApi, { ...input, jobId });
     return {
       action: input.action,
       count: 1,
-      jobs: job ? [job] : [],
+      jobs,
       failed: [],
       firstError: undefined,
       authorizationChanged: false,
     };
   }
   const result = await managementApi.client.selectedJobActions(
-    input.action === "reschedule"
-      ? { action: input.action, ids: [...input.jobIds], nextRunAt: input.nextRunAt }
-      : input.action === "priority"
-        ? { action: input.action, ids: [...input.jobIds], priority: input.priority }
-        : { action: input.action, ids: [...input.jobIds] },
+    (() => {
+      if (input.action === "reschedule") {
+        return { action: input.action, ids: [...input.jobIds], nextRunAt: input.nextRunAt };
+      }
+      if (input.action === "priority") {
+        return { action: input.action, ids: [...input.jobIds], priority: input.priority };
+      }
+      return { action: input.action, ids: [...input.jobIds] };
+    })(),
   );
   const errors = new Map(result.errors.map((error) => [error.jobId, error]));
   const failed = input.jobIds.filter((id) => errors.has(id));
-  const first = failed[0] ? errors.get(failed[0]) : undefined;
+  const first =
+    failed[0] === undefined || failed[0] === null || failed[0] === ""
+      ? undefined
+      : errors.get(failed[0]);
   return {
     action: input.action,
     count: result.count,
@@ -106,8 +162,7 @@ async function runJobActions(
     firstError: first ? { status: first.status, message: first.error } : undefined,
     authorizationChanged: result.errors.some((error) => error.status === 403),
   };
-}
-
+};
 const JOB_ACTION_DEFINITIONS = {
   cancel: {
     label: "Cancel",
@@ -154,8 +209,7 @@ const JOB_ACTION_DEFINITIONS = {
     bulkReason: string;
   }
 >;
-
-function getJobActionLabels(action: JobActionKey, scope: "bulk" | "single") {
+const getJobActionLabels = (action: JobActionKey, scope: "bulk" | "single") => {
   if (action === "priority") {
     return {
       actionLabel: scope === "single" ? "Change job priority" : "Change priority for selected jobs",
@@ -168,142 +222,144 @@ function getJobActionLabels(action: JobActionKey, scope: "bulk" | "single") {
     actionLabel: `${JOB_ACTION_DEFINITIONS[action].label} ${noun}`,
     confirmationLabel: `Confirm ${action} ${noun}`,
   };
-}
-
-function getJobActionAvailability(
-  job: JobDto,
-  capabilities: CapabilitiesDto | undefined,
-  action: JobActionKey,
-): JobActionAvailability {
-  return getActionAvailability([job], capabilities, action, false);
-}
-
-function getBulkJobActionAvailability(
-  jobs: readonly JobDto[],
-  capabilities: CapabilitiesDto | undefined,
-  action: JobActionKey,
-): JobActionAvailability {
-  return getActionAvailability(jobs, capabilities, action, true);
-}
-
-function getActionAvailability(
+};
+const getActionAvailability = (
   jobs: readonly JobDto[],
   capabilities: CapabilitiesDto | undefined,
   action: JobActionKey,
   bulk: boolean,
-): JobActionAvailability {
-  if (!jobs.length) return { disabled: true, reason: "Select at least one job on this page." };
+): JobActionAvailability => {
+  if (!jobs.length) {
+    return { disabled: true, reason: "Select at least one job on this page." };
+  }
   const definition = JOB_ACTION_DEFINITIONS[action];
   if (
-    !capabilities?.actions[action === "priority" ? "setJobPriority" : action] ||
-    (bulk && !capabilities.actions[definition.bulkCapability])
+    capabilities?.actions[action === "priority" ? "setJobPriority" : action] !== true ||
+    (bulk && capabilities.actions[definition.bulkCapability] !== true)
   ) {
     return {
       disabled: true,
-      reason: capabilities?.readOnly
-        ? "This dashboard is read-only."
-        : "Your host application has not enabled this action for you.",
+      reason:
+        capabilities?.readOnly === true
+          ? "This dashboard is read-only."
+          : "Your host application has not enabled this action for you.",
     };
   }
-  const statuses = definition.statuses;
+  const { statuses } = definition;
   const enabled = action === "delete" || jobs.every((job) => statuses.has(job.status));
   return {
     disabled: !enabled,
-    reason: enabled ? null : bulk ? definition.bulkReason : definition.reason,
+    reason: (() => {
+      if (enabled) {
+        return null;
+      }
+      if (bulk) {
+        return definition.bulkReason;
+      }
+      return definition.reason;
+    })(),
   };
-}
-
-function getActionSuccessFeedback(action: JobActionKey, count = 1): JobActionFeedback {
+};
+const getJobActionAvailability = (
+  job: JobDto,
+  capabilities: CapabilitiesDto | undefined,
+  action: JobActionKey,
+): JobActionAvailability => getActionAvailability([job], capabilities, action, false);
+const getBulkJobActionAvailability = (
+  jobs: readonly JobDto[],
+  capabilities: CapabilitiesDto | undefined,
+  action: JobActionKey,
+): JobActionAvailability => getActionAvailability(jobs, capabilities, action, true);
+const getActionSuccessFeedback = (action: JobActionKey, count = 1): JobActionFeedback => {
   const noun = count === 1 ? "job" : "jobs";
-
   switch (action) {
-    case "cancel":
+    case "cancel": {
       return {
         tone: "success",
         title: count === 1 ? "Job cancelled" : "Jobs cancelled",
         description: `${count} ${noun} updated successfully.`,
       };
-    case "retry":
+    }
+    case "retry": {
       return {
         tone: "success",
         title: count === 1 ? "Job retried" : "Jobs retried",
         description: `${count} ${noun} moved back to pending.`,
       };
-    case "reschedule":
+    }
+    case "reschedule": {
       return {
         tone: "success",
         title: count === 1 ? "Job rescheduled" : "Jobs rescheduled",
         description: `${count} ${noun} received the new run time.`,
       };
-    case "priority":
+    }
+    case "priority": {
       return {
         tone: "success",
         title: count === 1 ? "Job priority changed" : "Job priorities changed",
         description: `${count} ${noun} received the new priority.`,
       };
-    case "delete":
+    }
+    case "delete": {
       return {
         tone: "success",
         title: count === 1 ? "Job deleted" : "Jobs deleted",
         description: `${count} ${noun} were removed from persistence.`,
       };
+    }
+    default: {
+      throw new RangeError("Unsupported job action.");
+    }
   }
-}
-
-function getActionErrorFeedback(error: unknown): JobActionFeedback {
+};
+const getActionErrorFeedback = (
+  error: Parameters<typeof readManagementError>[0],
+): JobActionFeedback => {
   const { status, message } = readManagementError(error);
-
+  const fallback: JobActionFeedback = {
+    tone: "danger",
+    title: "Action failed",
+    description:
+      message ?? "The Management API could not complete this action. Refresh and try again.",
+  };
+  if (status === undefined) {
+    return fallback;
+  }
   switch (status) {
-    case 409:
+    case 409: {
       return {
         tone: "warning",
         title: "State conflict",
         description:
           message ?? "The job changed before this action completed. The view has been refreshed.",
       };
-    case 404:
+    }
+    case 404: {
       return {
         tone: "warning",
         title: "Job not found",
         description:
           message ?? "The selected job is no longer available. The view has been refreshed.",
       };
-    case 403:
+    }
+    case 403: {
       return {
         tone: "warning",
         title: "Action unavailable",
         description: message ?? "Your current Management session cannot run this action.",
       };
-    default:
+    }
+    default: {
       return {
         tone: "danger",
         title: "Action failed",
         description:
           message ?? "The Management API could not complete this action. Refresh and try again.",
       };
+    }
   }
-}
-
-async function runJobAction(
-  managementApi: DashboardManagementApi,
-  input: RunJobActionInput,
-): Promise<JobDto | undefined> {
-  const params = { id: input.jobId };
-  switch (input.action) {
-    case "cancel":
-      return managementApi.client.cancelJob({ params });
-    case "retry":
-      return managementApi.client.retryJob({ params });
-    case "reschedule":
-      return managementApi.client.rescheduleJob({ params, body: { nextRunAt: input.nextRunAt } });
-    case "priority":
-      return managementApi.client.setJobPriority({ params, body: { priority: input.priority } });
-    case "delete":
-      await managementApi.client.deleteJob({ params });
-      return undefined;
-  }
-}
-
+};
 export {
   getActionErrorFeedback,
   getActionSuccessFeedback,

@@ -7,39 +7,35 @@ import { tableDevtoolsPlugin } from "@tanstack/react-table-devtools";
 
 import type { getRouter } from "./router.js";
 
-type DashboardDevtoolsProps = {
+interface DashboardDevtoolsProps {
   readonly queryClient: QueryClient;
   readonly router: ReturnType<typeof getRouter>;
-};
-
-function DashboardDevtools({ queryClient, router }: DashboardDevtoolsProps) {
-  return [
-    <TanStackDevtools
-      key="tanstack-devtools"
-      config={{
-        hideUntilHover: true,
-        panelLocation: "bottom",
-        position: "bottom-right",
-      }}
-      eventBusConfig={{
-        connectToServerBus: false,
-      }}
-      plugins={[
-        formDevtoolsPlugin(),
-        tableDevtoolsPlugin(),
-        {
-          id: "tanstack-query",
-          name: "TanStack Query",
-          render: <ReactQueryDevtoolsPanel client={queryClient} />,
-        },
-        {
-          id: "tanstack-router",
-          name: "TanStack Router",
-          render: <TanStackRouterDevtoolsPanel router={router} />,
-        },
-      ]}
-    />,
-  ];
 }
-
+const DashboardDevtools = ({ queryClient, router }: DashboardDevtoolsProps) => [
+  <TanStackDevtools
+    key="tanstack-devtools"
+    config={{
+      hideUntilHover: true,
+      panelLocation: "bottom",
+      position: "bottom-right",
+    }}
+    eventBusConfig={{
+      connectToServerBus: false,
+    }}
+    plugins={[
+      formDevtoolsPlugin(),
+      tableDevtoolsPlugin(),
+      {
+        id: "tanstack-query",
+        name: "TanStack Query",
+        render: <ReactQueryDevtoolsPanel client={queryClient} />,
+      },
+      {
+        id: "tanstack-router",
+        name: "TanStack Router",
+        render: <TanStackRouterDevtoolsPanel router={router} />,
+      },
+    ]}
+  />,
+];
 export { DashboardDevtools };

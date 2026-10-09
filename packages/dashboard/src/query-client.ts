@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 
-function createDashboardQueryClient(): QueryClient {
-  return new QueryClient({
+const createDashboardQueryClient = (): QueryClient =>
+  new QueryClient({
     defaultOptions: {
       mutations: {
         networkMode: "always",
@@ -10,10 +10,8 @@ function createDashboardQueryClient(): QueryClient {
       queries: {
         refetchOnWindowFocus: false,
         retry: false,
-        staleTime: 1_000,
+        staleTime: 1000,
       },
     },
   });
-}
-
 export { createDashboardQueryClient };

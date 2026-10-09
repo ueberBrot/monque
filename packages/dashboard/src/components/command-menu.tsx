@@ -15,20 +15,22 @@ import {
 import { parseJobsRouteSearch } from "@/features/jobs/job-list-search";
 import { copyToClipboard } from "@/lib/clipboard";
 
-const CommandSearch = lazy(() =>
-  import("./command-search.js").then((module) => ({ default: module.CommandSearch })),
-);
+const CommandSearch = lazy(async () => {
+  const module = await import("./command-search.js");
+  return { default: module.CommandSearch };
+});
 const COMMAND_HOTKEY = "Mod+K";
 const REFRESH_HOTKEY = "Mod+Shift+R";
-
-function CommandMenu() {
+const CommandMenu = () => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const refresh = () => {
     void queryClient.invalidateQueries();
   };
-  useHotkey(COMMAND_HOTKEY, () => setOpen((current) => !current));
+  useHotkey(COMMAND_HOTKEY, () => {
+    setOpen((current) => !current);
+  });
   useHotkey(REFRESH_HOTKEY, refresh);
   useHotkey({ key: "/", shift: true }, () => {
     setOpen(true);
@@ -91,17 +93,26 @@ function CommandMenu() {
             menu.
           </DialogDescription>
           {open ? (
-            <Suspense fallback={<p role="status">Loading commands…</p>}>
-              <CommandSearch commands={commands} onClose={() => setOpen(false)} />
+            <Suspense fallback={<output>Loading commands…</output>}>
+              <CommandSearch
+                commands={commands}
+                onClose={() => {
+                  setOpen(false);
+                }}
+              />
             </Suspense>
           ) : null}
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setOpen(false);
+            }}
+          >
             Close commands
           </Button>
         </DialogContent>
       </Dialog>
     </div>
   );
-}
-
+};
 export { CommandMenu };

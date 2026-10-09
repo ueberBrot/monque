@@ -1,11 +1,7 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, test } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import * as contractExports from "@/contract.js";
-
-type PackageJson = {
-  exports?: Record<string, unknown>;
-};
 
 const EXPECTED_CONTRACT_SUBPATH_EXPORT = {
   import: {
@@ -43,21 +39,23 @@ const SERVER_ONLY_RUNTIME_EXPORTS = [
   "generateManagementOpenApiDocument",
 ] as const;
 
-const packageJson = JSON.parse(
-  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-) as PackageJson;
+const packageJson: unknown = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+);
 
-const contractPackageJson = JSON.parse(
-  readFileSync(new URL("../../contract/package.json", import.meta.url), "utf8"),
-) as Record<string, unknown>;
+const contractPackageJson: unknown = JSON.parse(
+  readFileSync(new URL("../../contract/package.json", import.meta.url), "utf-8"),
+);
 
 describe("management contract subpath export", () => {
-  test("publishes a browser-safe ./contract subpath with ESM, CJS, and types entrypoints", () => {
-    expect(packageJson.exports?.["./contract"]).toEqual(EXPECTED_CONTRACT_SUBPATH_EXPORT);
-    expect(contractPackageJson).toEqual(EXPECTED_CONTRACT_PACKAGE_JSON);
+  it("publishes a browser-safe ./contract subpath with ESM, CJS, and types entrypoints", () => {
+    expect(packageJson).toMatchObject({
+      exports: { "./contract": EXPECTED_CONTRACT_SUBPATH_EXPORT },
+    });
+    expect(contractPackageJson).toStrictEqual(EXPECTED_CONTRACT_PACKAGE_JSON);
   });
 
-  test("exports the runtime contract and DTO schemas without server-only factories", () => {
+  it("exports the runtime contract and DTO schemas without server-only factories", () => {
     for (const exportName of BROWSER_SAFE_RUNTIME_EXPORTS) {
       expect(contractExports).toHaveProperty(exportName);
     }

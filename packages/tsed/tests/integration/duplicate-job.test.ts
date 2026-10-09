@@ -1,4 +1,6 @@
-import { type Job, JobStatus, WorkerRegistrationError } from "@monque/core";
+/* oxlint-disable eslint/max-classes-per-file -- Each scenario needs fresh decorated constructors to isolate global TsED metadata. */
+import { JobStatus, WorkerRegistrationError } from "@monque/core";
+import type { Job } from "@monque/core";
 import { PlatformTest } from "@tsed/platform-http/testing";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
@@ -15,13 +17,15 @@ describe("Duplicate Validation & Idempotency", () => {
       @JobController("duplicate")
       class EphemeralDuplicateController1 {
         @MonqueJob("job")
-        async handler(_job: Job) {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        handler(_job: Job) {}
       }
 
       @JobController("duplicate")
       class EphemeralDuplicateController2 {
         @MonqueJob("job")
-        async handler(_job: Job) {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        handler(_job: Job) {}
       }
 
       await expect(
@@ -36,7 +40,7 @@ describe("Duplicate Validation & Idempotency", () => {
           imports: [EphemeralDuplicateController1, EphemeralDuplicateController2],
           connectionStrategy: "db",
         }),
-      ).rejects.toThrow(/Duplicate job registration detected/);
+      ).rejects.toThrow(/Duplicate job registration detected/u);
     });
   });
 
@@ -45,7 +49,8 @@ describe("Duplicate Validation & Idempotency", () => {
       @JobController("idempotent")
       class EphemeralIdempotentController {
         @MonqueJob("job")
-        async handler(_job: Job) {}
+        // oxlint-disable-next-line eslint/class-methods-use-this -- Decorated TsED handlers must remain prototype methods for discovery.
+        handler(_job: Job) {}
       }
 
       await bootstrapMonque({

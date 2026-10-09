@@ -1,24 +1,19 @@
 import * as DateTime from "effect/DateTime";
+import { forEach as forEachEffect } from "effect/Effect";
 import * as Effect from "effect/Effect";
-import {
-  BSON,
-  type BulkWriteResult,
-  type Document,
-  MongoBulkWriteError,
-  MongoServerError,
-  ObjectId,
-} from "mongodb";
+import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
+import type { BulkWriteResult } from "mongodb";
 
-import {
-  type EnqueueJob,
-  type EnqueueManyResult,
-  type EnqueueOptions,
-  type Job,
-  JobStatus,
-  type JobWriteOptions,
-  type NowOptions,
-  type PersistedJob,
-  type ScheduleOptions,
+import { JobStatus } from "@/jobs";
+import type {
+  EnqueueJob,
+  EnqueueManyResult,
+  EnqueueOptions,
+  Job,
+  JobWriteOptions,
+  NowOptions,
+  PersistedJob,
+  ScheduleOptions,
 } from "@/jobs";
 import {
   ConnectionError,
@@ -33,34 +28,44 @@ import { validateJobPriority } from "../../shared/utils/job-priority.js";
 import { attempt, fromPromise } from "../effects.js";
 import type { SchedulerContext } from "./types.js";
 
+const isUniqueJobIndexPattern = (value: unknown): value is { name: 1; uniqueKey: 1 } =>
+  typeof value === "object" &&
+  value !== null &&
+  "name" in value &&
+  value.name === 1 &&
+  "uniqueKey" in value &&
+  value.uniqueKey === 1 &&
+  Object.keys(value).length === 2;
+
 /**
  * Internal module for creating pending jobs.
  *
  * Keeps validation, initial job document construction, persistence, and local
  * pending-job notification in one place.
  *
- * @internal Not part of public API - use Monque class methods instead.
+ * Not part of public API - use Monque class methods instead.
+ * @internal
  */
 export class JobIntake {
-  constructor(private readonly ctx: SchedulerContext) {}
-
-  private validateJobIdentifiers(name: string, uniqueKey?: string): void {
+  private readonly ctx: SchedulerContext;
+  constructor(ctx: SchedulerContext) {
+    this.ctx = ctx;
+  }
+  private static validateJobIdentifiers(name: string, uniqueKey?: string): void {
     validateJobName(name);
-
     if (uniqueKey !== undefined) {
       validateUniqueKey(uniqueKey);
     }
   }
-
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Job payloads intentionally accept every BSON-serializable value; size validation must not add a payload schema.
   private validatePayloadSize(data: unknown): void {
     const maxSize = this.ctx.options.maxPayloadSize;
     if (maxSize === undefined) {
       return;
     }
-
     let size: number;
     try {
-      size = BSON.calculateObjectSize({ data } as Document);
+      size = BSON.calculateObjectSize({ data });
     } catch (error) {
       const cause = toError(error);
       const sizeError = new PayloadTooLargeError(
@@ -71,7 +76,6 @@ export class JobIntake {
       sizeError.cause = cause;
       throw sizeError;
     }
-
     if (size > maxSize) {
       throw new PayloadTooLargeError(
         `Job payload exceeds maximum size: ${size} bytes > ${maxSize} bytes`,
@@ -80,14 +84,13 @@ export class JobIntake {
       );
     }
   }
-
-  private persistPendingJob = Effect.fnUntraced(function* <T>(
+  private readonly persistPendingJob = Effect.fnUntraced(function* persistPendingJobEffect<T>(
     this: JobIntake,
     operation: "enqueue" | "schedule",
     job: Omit<Job<T>, "_id">,
     options: EnqueueOptions | ScheduleOptions,
   ): Effect.fn.Return<PersistedJob<T>, unknown> {
-    return yield* Effect.gen({ self: this }, function* () {
+    return yield* Effect.gen({ self: this }, function* writePendingJob() {
       const { uniqueKey, session } = options;
       if (uniqueKey !== undefined) {
         const filter = {
@@ -95,45 +98,44 @@ export class JobIntake {
           uniqueKey,
           status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
         };
-        const result = yield* fromPromise(() =>
-          this.ctx.collection.findOneAndUpdate(
-            filter,
-            { $setOnInsert: job },
-            {
-              upsert: true,
-              returnDocument: "after",
-              ...(session && { session }),
-            },
-          ),
+        const result = yield* fromPromise(
+          async () =>
+            await this.ctx.collection.findOneAndUpdate(
+              filter,
+              { $setOnInsert: job },
+              {
+                upsert: true,
+                returnDocument: "after",
+                ...(session && { session }),
+              },
+            ),
         ).pipe(
           Effect.catch((error) =>
-            Effect.gen({ self: this }, function* () {
-              if (session?.inTransaction()) return yield* Effect.fail(error);
-              if (!(error instanceof MongoServerError) || error.code !== 11000)
+            Effect.gen({ self: this }, function* recoverDuplicateJob() {
+              if (session?.inTransaction() === true) {
                 return yield* Effect.fail(error);
+              }
+              if (!(error instanceof MongoServerError) || error.code !== 11_000) {
+                return yield* Effect.fail(error);
+              }
               const pattern: unknown = error["keyPattern"];
-              if (
-                typeof pattern !== "object" ||
-                pattern === null ||
-                !("name" in pattern) ||
-                pattern.name !== 1 ||
-                !("uniqueKey" in pattern) ||
-                pattern.uniqueKey !== 1 ||
-                Object.keys(pattern).length !== 2
-              )
+              if (!isUniqueJobIndexPattern(pattern)) {
                 return yield* Effect.fail(error);
-              const existing = yield* fromPromise(() =>
-                this.ctx.collection.findOne(filter, {
-                  readPreference: "primary",
-                  ...(session && { session }),
-                }),
+              }
+              const existing = yield* fromPromise(
+                async () =>
+                  await this.ctx.collection.findOne(filter, {
+                    readPreference: "primary",
+                    ...(session && { session }),
+                  }),
               );
-              if (!existing) return yield* Effect.fail(error);
+              if (!existing) {
+                return yield* Effect.fail(error);
+              }
               return existing;
             }),
           ),
         );
-
         if (!result) {
           return yield* Effect.fail(
             new ConnectionError(
@@ -141,36 +143,35 @@ export class JobIntake {
             ),
           );
         }
-
         const persistedJob = yield* attempt(() => this.ctx.documentToPersistedJob<T>(result));
-        if (persistedJob.status === JobStatus.PENDING && !session?.inTransaction()) {
-          yield* attempt(() =>
-            this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt),
-          );
+        if (persistedJob.status === JobStatus.PENDING && session?.inTransaction() !== true) {
+          yield* attempt(() => {
+            this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+          });
         }
         return persistedJob;
       }
-
-      const result = yield* fromPromise(() =>
-        this.ctx.collection.insertOne(job as Document, session ? { session } : undefined),
+      const result = yield* fromPromise(
+        async () => await this.ctx.collection.insertOne(job, session ? { session } : undefined),
       );
-      const persistedJob = yield* attempt(
-        () => ({ ...job, _id: result.insertedId }) as PersistedJob<T>,
-      );
-      if (!session?.inTransaction()) {
-        yield* attempt(() => this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt));
+      const persistedJob = yield* attempt(() => ({ ...job, _id: result.insertedId }));
+      if (session?.inTransaction() !== true) {
+        yield* attempt(() => {
+          this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
+        });
       }
       return persistedJob;
     }).pipe(
       Effect.mapError((error) => {
-        if (options.session?.inTransaction() || error instanceof ConnectionError) return error;
+        if (options.session?.inTransaction() === true || error instanceof ConnectionError) {
+          return error;
+        }
         const cause = toError(error);
         return new ConnectionError(`Failed to ${operation} job: ${cause.message}`, { cause });
       }),
     );
   });
-
-  schedule = Effect.fnUntraced(function* <T>(
+  schedule = Effect.fnUntraced(function* scheduleJob<T>(
     this: JobIntake,
     cron: string,
     name: string,
@@ -178,7 +179,7 @@ export class JobIntake {
     options: ScheduleOptions = {},
   ): Effect.fn.Return<PersistedJob<T>, unknown> {
     yield* attempt(() => {
-      this.validateJobIdentifiers(name, options.uniqueKey);
+      JobIntake.validateJobIdentifiers(name, options.uniqueKey);
       this.validatePayloadSize(data);
       validateJobPriority(options.priority);
     });
@@ -197,25 +198,27 @@ export class JobIntake {
         createdAt: now,
         updatedAt: now,
       };
-      if (options.timezone !== undefined) pendingJob.timezone = options.timezone;
-      if (options.uniqueKey !== undefined) pendingJob.uniqueKey = options.uniqueKey;
+      if (options.timezone !== undefined) {
+        pendingJob.timezone = options.timezone;
+      }
+      if (options.uniqueKey !== undefined) {
+        pendingJob.uniqueKey = options.uniqueKey;
+      }
       return pendingJob;
     });
     return yield* this.persistPendingJob("schedule", job, options);
   });
-
-  private createEnqueuedJob = Effect.fnUntraced(function* <T>(
+  private readonly createEnqueuedJob = Effect.fnUntraced(function* constructEnqueuedJob<T>(
     this: JobIntake,
     name: string,
     data: T,
     options: EnqueueOptions,
   ): Effect.fn.Return<Omit<Job<T>, "_id">, unknown> {
     yield* attempt(() => {
-      this.validateJobIdentifiers(name, options.uniqueKey);
+      JobIntake.validateJobIdentifiers(name, options.uniqueKey);
       this.validatePayloadSize(data);
       validateJobPriority(options.priority);
     });
-
     const now = yield* DateTime.nowAsDate;
     const job: Omit<Job<T>, "_id"> = {
       name,
@@ -227,15 +230,12 @@ export class JobIntake {
       createdAt: now,
       updatedAt: now,
     };
-
     if (options.uniqueKey !== undefined) {
       job.uniqueKey = options.uniqueKey;
     }
-
     return job;
   });
-
-  enqueue = Effect.fnUntraced(function* <T>(
+  enqueue = Effect.fnUntraced(function* enqueueJob<T>(
     this: JobIntake,
     name: string,
     data: T,
@@ -244,49 +244,54 @@ export class JobIntake {
     const job = yield* this.createEnqueuedJob(name, data, options);
     return yield* this.persistPendingJob("enqueue", job, options);
   });
-
-  enqueueMany = Effect.fnUntraced(function* (
+  enqueueMany = Effect.fnUntraced(function* enqueueJobBatch(
     this: JobIntake,
     inputs: readonly EnqueueJob[],
     options: JobWriteOptions = {},
   ): Effect.fn.Return<EnqueueManyResult, unknown> {
     const { session } = options;
-    const jobs = yield* Effect.forEach(inputs, (input) =>
+    const jobs = yield* forEachEffect(inputs, (input) =>
       this.createEnqueuedJob(input.name, input.data, input),
     );
-    if (jobs.length === 0) return { insertedCount: 0, deduplicatedCount: 0 };
-
+    if (jobs.length === 0) {
+      return { insertedCount: 0, deduplicatedCount: 0 };
+    }
     let result: BulkWriteResult | undefined;
-    const outcome = yield* fromPromise(() =>
-      this.ctx.collection.bulkWrite(
-        jobs.map((job) => ({
-          updateOne: {
-            filter:
-              job.uniqueKey === undefined
-                ? { _id: new ObjectId() }
-                : {
-                    name: job.name,
-                    uniqueKey: job.uniqueKey,
-                    status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-                  },
-            update: { $setOnInsert: job },
-            upsert: true,
-          },
-        })),
-        { ordered: false, ...(session && { session }) },
-      ),
+    const outcome = yield* fromPromise(
+      async () =>
+        await this.ctx.collection.bulkWrite(
+          jobs.map((job) => ({
+            updateOne: {
+              filter:
+                job.uniqueKey === undefined
+                  ? { _id: new ObjectId() }
+                  : {
+                      name: job.name,
+                      uniqueKey: job.uniqueKey,
+                      status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+                    },
+              update: { $setOnInsert: job },
+              upsert: true,
+            },
+          })),
+          { ordered: false, ...(session && { session }) },
+        ),
     ).pipe(
       Effect.map((written) => {
         result = written;
         return { insertedCount: written.upsertedCount, deduplicatedCount: written.matchedCount };
       }),
       Effect.catch((error) =>
-        Effect.gen({ self: this }, function* () {
-          if (session?.inTransaction()) return yield* Effect.fail(error);
+        Effect.gen({ self: this }, function* recoverBulkConflict() {
+          if (session?.inTransaction() === true) {
+            return yield* Effect.fail(error);
+          }
           if (error instanceof MongoBulkWriteError) {
-            result = error.result;
+            ({ result } = error);
             const reconciled = yield* this.reconcileBulkConflict(error, jobs, options);
-            if (reconciled) return reconciled;
+            if (reconciled) {
+              return reconciled;
+            }
           }
           const cause = toError(error);
           return yield* Effect.fail(
@@ -299,63 +304,66 @@ export class JobIntake {
     yield* attempt(() => {
       for (const index of Object.keys(result?.upsertedIds ?? {})) {
         const job = jobs[Number(index)];
-        if (job && !session?.inTransaction()) this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+        if (job && session?.inTransaction() !== true) {
+          this.ctx.notifyPendingJob(job.name, job.nextRunAt);
+        }
       }
     });
     return yield* outcome;
   });
-
-  private reconcileBulkConflict = Effect.fnUntraced(function* (
+  private readonly reconcileBulkConflict = Effect.fnUntraced(function* reconcileConflictingJobs(
     this: JobIntake,
-    error: MongoBulkWriteError,
+    failure: MongoBulkWriteError,
     jobs: Omit<Job, "_id">[],
     options: JobWriteOptions,
   ): Effect.fn.Return<EnqueueManyResult | undefined, unknown> {
-    const result = error.result;
+    const { result } = failure;
     const conflicts = yield* attempt(() => {
       const writeErrors = result.getWriteErrors();
       const duplicateJobs = writeErrors.flatMap(({ code, index }) => {
         const job = jobs[index];
-        return code === 11000 && job?.uniqueKey !== undefined
+        return code === 11_000 && job?.uniqueKey !== undefined
           ? [{ name: job.name, uniqueKey: job.uniqueKey }]
           : [];
       });
       if (
-        error.code !== 11000 ||
+        failure.code !== 11_000 ||
         duplicateJobs.length === 0 ||
         duplicateJobs.length !== writeErrors.length ||
         result.upsertedCount + result.matchedCount + duplicateJobs.length !== jobs.length ||
         result.getWriteConcernError()
-      )
-        return undefined;
+      ) {
+        return null;
+      }
       return duplicateJobs;
     });
-    if (!conflicts) return undefined;
-
-    const existing = yield* fromPromise(() =>
-      this.ctx.collection
-        .find(
-          { $or: conflicts, status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] } },
-          {
-            projection: { name: 1, uniqueKey: 1 },
-            readPreference: "primary",
-            ...(options.session && { session: options.session }),
-          },
-        )
-        .toArray(),
-    ).pipe(Effect.orElseSucceed(() => []));
+    if (!conflicts) {
+      return undefined;
+    }
+    const existing = yield* fromPromise(async () => {
+      const { collection } = this.ctx;
+      const findConflictingJobs = collection.find.bind(collection);
+      return await findConflictingJobs(
+        { $or: conflicts, status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] } },
+        {
+          projection: { name: 1, uniqueKey: 1 },
+          readPreference: "primary",
+          ...(options.session && { session: options.session }),
+        },
+      ).toArray();
+    }).pipe(Effect.orElseSucceed(() => []));
     const activeKeys = new Set(
       existing.map((job) => JSON.stringify([job["name"], job["uniqueKey"]])),
     );
-    if (!conflicts.every((job) => activeKeys.has(JSON.stringify([job.name, job.uniqueKey]))))
+    if (!conflicts.every((job) => activeKeys.has(JSON.stringify([job.name, job.uniqueKey])))) {
       return undefined;
+    }
     return {
       insertedCount: result.upsertedCount,
       deduplicatedCount: result.matchedCount + conflicts.length,
     };
   });
-
-  now = Effect.fnUntraced(function* <T>(
+  now = Effect.fnUntraced(function* enqueueImmediateJob<T>(
     this: JobIntake,
     name: string,
     data: T,

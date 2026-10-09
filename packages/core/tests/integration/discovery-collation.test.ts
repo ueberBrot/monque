@@ -13,11 +13,9 @@ import {
 describe("discovery with collection collation", () => {
   let db: Db;
   const instances: Monque[] = [];
-
   beforeAll(async () => {
     db = await getTestDb("discovery-collation");
   });
-
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
@@ -37,15 +35,13 @@ describe("discovery with collection collation", () => {
     instances.push(monque);
     await monque.initialize();
     const handled: string[] = [];
-    monque.register("email", async (job) => {
+    monque.register("email", (job) => {
       handled.push(job.name);
     });
     await monque.enqueue("EMAIL", {}, { runAt: new Date(Date.now() + (future ? 700 : 0)) });
-
     monque.start();
-
-    await waitFor(async () => handled.length === 1, { timeout: 3000, interval: 10 });
-    expect(handled).toEqual(["EMAIL"]);
+    await waitFor(() => handled.length === 1, { timeout: 3000, interval: 10 });
+    expect(handled).toStrictEqual(["EMAIL"]);
   });
 
   it("preserves shared-slot fairness for collation-equivalent registered names", async () => {
@@ -61,15 +57,13 @@ describe("discovery with collection collation", () => {
     await monque.initialize();
     const handledBy: string[] = [];
     for (const name of ["email", "EMAIL"]) {
-      monque.register(name, async () => {
+      monque.register(name, () => {
         handledBy.push(name);
       });
     }
     await monque.enqueueMany(Array.from({ length: 4 }, () => ({ name: "EMAIL", data: {} })));
-
     monque.start();
-
-    await waitFor(async () => handledBy.length === 4, { timeout: 3000, interval: 10 });
-    expect(handledBy).toEqual(["email", "EMAIL", "email", "EMAIL"]);
+    await waitFor(() => handledBy.length === 4, { timeout: 3000, interval: 10 });
+    expect(handledBy).toStrictEqual(["email", "EMAIL", "email", "EMAIL"]);
   });
 });

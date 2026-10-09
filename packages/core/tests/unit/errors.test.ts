@@ -35,8 +35,13 @@ describe("errors", () => {
     { name: "AggregationTimeoutError", create: () => new AggregationTimeoutError("Test message") },
   ])("$name preserves its message, name, stack and error hierarchy", ({ name, create }) => {
     const error = create();
-    expect(error.message).toBe("Test message");
-    expect(error.name).toBe(name);
+    expect({
+      errorMessage: error.message,
+      errorName: Object.is(error.name, name),
+    }).toStrictEqual({
+      errorMessage: "Test message",
+      errorName: true,
+    });
     expect(error.stack).toContain(`${name}: Test message`);
     expect(error).toBeInstanceOf(MonqueError);
     expect(error).toBeInstanceOf(Error);
@@ -56,8 +61,15 @@ describe("errors", () => {
       JobFactoryHelpers.processing({ name: "job1" }),
       JobFactoryHelpers.processing({ name: "job2" }),
     ];
-    expect(new ShutdownTimeoutError("Timeout", jobs).incompleteJobs).toEqual(jobs);
-    expect(new ShutdownTimeoutError("Timeout", []).incompleteJobs).toEqual([]);
+    expect({
+      newShutdownTimeoutErrorTimeoutJobsIncompleteJobs: new ShutdownTimeoutError("Timeout", jobs)
+        .incompleteJobs,
+      newShutdownTimeoutErrorTimeoutIncompleteJobs: new ShutdownTimeoutError("Timeout", [])
+        .incompleteJobs,
+    }).toStrictEqual({
+      newShutdownTimeoutErrorTimeoutJobsIncompleteJobs: jobs,
+      newShutdownTimeoutErrorTimeoutIncompleteJobs: [],
+    });
   });
 
   it("identifies the worker that failed registration", () => {

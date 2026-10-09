@@ -1,16 +1,16 @@
-export function getFieldErrors(errors: ReadonlyArray<unknown>): string | undefined {
+import { isString, isObject } from "../lib/type-guards.js";
+
+export const getFieldErrors = (errors: readonly unknown[]): string | undefined => {
   const messages = errors
-    .flatMap((error) => {
-      if (typeof error === "string") return [error];
-      if (
-        error &&
-        typeof error === "object" &&
-        "message" in error &&
-        typeof error.message === "string"
-      )
-        return [error.message];
+    .flatMap((issue) => {
+      if (isString(issue)) {
+        return [issue];
+      }
+      if (issue !== null && isObject(issue) && "message" in issue && isString(issue.message)) {
+        return [issue.message];
+      }
       return [];
     })
     .filter(Boolean);
   return messages.length > 0 ? messages.join(", ") : undefined;
-}
+};

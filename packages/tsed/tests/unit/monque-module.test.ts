@@ -1,26 +1,29 @@
+import { WorkerRegistrationError } from "@monque/core";
 /**
  * Unit tests for MonqueModule.registerJobs() edge cases (TEST-01)
  *
  * Tests scope resolution failure, duplicate job detection,
  * partial registration, and malformed metadata handling.
  */
-
 import type { Monque } from "@monque/core";
-import { WorkerRegistrationError } from "@monque/core";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { ProviderScope } from "@tsed/di";
+import type { LOGGER } from "@tsed/di";
+import type { Mock } from "vite-plus/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { MonqueModule } from "@/monque-module";
-import type { CollectedJobMetadata } from "@/utils";
+import type * as MonqueUtils from "@/utils";
+
+import { StubControllerA, StubControllerB, StubControllerC } from "./fixtures/stub-controllers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock collectJobMetadata so we can control metadata per-provider
 // ─────────────────────────────────────────────────────────────────────────────
-const collectJobMetadataMock =
-  vi.fn<(target: new (...args: unknown[]) => unknown) => CollectedJobMetadata[]>();
+const collectJobMetadataMock = vi.fn<typeof MonqueUtils.collectJobMetadata>();
 
-vi.mock("@/utils", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/utils")>();
+vi.mock(import("@/utils"), async (importOriginal) => {
+  const original = await importOriginal<typeof MonqueUtils>();
   return {
     ...original,
     collectJobMetadata: (...args: Parameters<typeof collectJobMetadataMock>) =>
@@ -33,19 +36,19 @@ vi.mock("@/utils", async (importOriginal) => {
 // ─────────────────────────────────────────────────────────────────────────────
 class TestableMonqueModule extends MonqueModule {
   public async callRegisterJobs(): Promise<void> {
-    return this.registerJobs();
+    await this.registerJobs();
   }
 
-  public setMonque(monque: unknown): void {
-    this.monque = monque as Monque;
+  public setMonque(monque: MockMonque): void {
+    this.monque = fromPartial<Monque>(monque);
   }
 
-  public setInjector(injector: unknown): void {
-    this.injector = injector as MonqueModule["injector"];
+  public setInjector(injector: MockInjector): void {
+    this.injector = fromPartial<MonqueModule["injector"]>(injector);
   }
 
-  public setLogger(logger: unknown): void {
-    this.logger = logger as MonqueModule["logger"];
+  public setLogger(logger: MockLogger): void {
+    this.logger = fromPartial<MonqueModule["logger"]>(logger);
   }
 }
 
@@ -53,57 +56,52 @@ class TestableMonqueModule extends MonqueModule {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 interface MockLogger {
-  info: ReturnType<typeof vi.fn>;
-  warn: ReturnType<typeof vi.fn>;
-  debug: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
+  info: Mock<LOGGER["info"]>;
+  warn: Mock<LOGGER["warn"]>;
+  debug: Mock<LOGGER["debug"]>;
+  error: Mock<LOGGER["error"]>;
 }
 
 interface MockMonque {
-  register: ReturnType<typeof vi.fn>;
-  schedule: ReturnType<typeof vi.fn>;
+  register: Mock<Monque["register"]>;
+  schedule: Mock<Monque["schedule"]>;
 }
 
 interface MockInjector {
-  getProviders: ReturnType<typeof vi.fn>;
-  get: ReturnType<typeof vi.fn>;
+  providers: { getMany: Mock<(type: string) => object[]> };
+  get: Mock<(token: symbol | string) => object | undefined>;
 }
 
-function createMockLogger(): MockLogger {
+const createMockLogger = function createMockLogger(): MockLogger {
   return {
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
+    info: vi.fn<LOGGER["info"]>(),
+    warn: vi.fn<LOGGER["warn"]>(),
+    debug: vi.fn<LOGGER["debug"]>(),
+    error: vi.fn<LOGGER["error"]>(),
   };
-}
+};
 
-function createMockMonque(): MockMonque {
+const createMockMonque = function createMockMonque(): MockMonque {
   return {
-    register: vi.fn(),
-    schedule: vi.fn().mockResolvedValue(undefined),
+    register: vi.fn<Monque["register"]>(),
+    schedule: vi.fn<Monque["schedule"]>().mockResolvedValue(fromPartial({})),
   };
-}
+};
 
-function createMockInjector(
-  providers: Array<{
+const createMockInjector = function createMockInjector(
+  providers: {
     token: symbol | string;
     name: string;
-    useClass: new (...args: unknown[]) => unknown;
+    useClass: new (...args: unknown[]) => object;
     scope?: (typeof ProviderScope)[keyof typeof ProviderScope];
-  }>,
-  getInstance: (token: symbol | string) => unknown,
+  }[],
+  getInstance: (token: symbol | string) => object | undefined,
 ): MockInjector {
   return {
-    getProviders: vi.fn().mockReturnValue(providers),
-    get: vi.fn().mockImplementation(getInstance),
+    providers: { getMany: vi.fn<(type: string) => object[]>().mockReturnValue(providers) },
+    get: vi.fn<(token: symbol | string) => object | undefined>().mockImplementation(getInstance),
   };
-}
-
-/** Stub class to use as useClass for providers */
-class StubControllerA {}
-class StubControllerB {}
-class StubControllerC {}
+};
 
 describe("MonqueModule.registerJobs()", () => {
   let module: TestableMonqueModule;
@@ -112,7 +110,8 @@ describe("MonqueModule.registerJobs()", () => {
 
   beforeEach(() => {
     // Construct bypassing the real DI constructor via Object.create
-    module = Object.create(TestableMonqueModule.prototype) as TestableMonqueModule;
+    module = fromPartial<TestableMonqueModule>({});
+    Object.setPrototypeOf(module, TestableMonqueModule.prototype);
     mockLogger = createMockLogger();
     mockMonque = createMockMonque();
 
@@ -140,7 +139,7 @@ describe("MonqueModule.registerJobs()", () => {
         },
       ];
 
-      const injector = createMockInjector(providers, () => undefined);
+      const injector = createMockInjector(providers, () => {});
       module.setInjector(injector);
 
       collectJobMetadataMock.mockReturnValue([
@@ -172,7 +171,7 @@ describe("MonqueModule.registerJobs()", () => {
         },
       ];
 
-      const injector = createMockInjector(providers, () => undefined);
+      const injector = createMockInjector(providers, () => {});
       module.setInjector(injector);
 
       collectJobMetadataMock.mockReturnValue([
@@ -218,11 +217,11 @@ describe("MonqueModule.registerJobs()", () => {
         },
       ];
 
-      const injector = createMockInjector(providers, (token) => {
-        if (token === tokenA) return instanceA;
-        if (token === tokenB) return instanceB;
-        return undefined;
-      });
+      const instances = new Map<symbol | string, object>([
+        [tokenA, instanceA],
+        [tokenB, instanceB],
+      ]);
+      const injector = createMockInjector(providers, (token) => instances.get(token));
       module.setInjector(injector);
 
       // Both controllers produce a job with the same fullName
@@ -252,7 +251,7 @@ describe("MonqueModule.registerJobs()", () => {
 
       const registerJobsPromise = module.callRegisterJobs();
       await expect(registerJobsPromise).rejects.toThrow(WorkerRegistrationError);
-      await expect(registerJobsPromise).rejects.toThrow(/duplicate-job/i);
+      await expect(registerJobsPromise).rejects.toThrow(/duplicate-job/iu);
     });
   });
 
@@ -290,12 +289,12 @@ describe("MonqueModule.registerJobs()", () => {
         },
       ];
 
-      const injector = createMockInjector(providers, (token) => {
-        if (token === tokenA) return instanceA;
-        if (token === tokenB) return instanceB;
-        if (token === tokenC) return instanceC;
-        return undefined;
-      });
+      const instances = new Map<symbol | string, object>([
+        [tokenA, instanceA],
+        [tokenB, instanceB],
+        [tokenC, instanceC],
+      ]);
+      const injector = createMockInjector(providers, (token) => instances.get(token));
       module.setInjector(injector);
 
       collectJobMetadataMock.mockImplementation((target) => {
@@ -336,8 +335,11 @@ describe("MonqueModule.registerJobs()", () => {
       await expect(module.callRegisterJobs()).rejects.toThrow(WorkerRegistrationError);
 
       // CtrlA's job-a was registered before the error
-      expect(mockMonque.register).toHaveBeenCalledTimes(1);
-      expect(mockMonque.register).toHaveBeenCalledWith("ns.job-a", expect.any(Function), {});
+      expect(mockMonque.register).toHaveBeenCalledExactlyOnceWith(
+        "ns.job-a",
+        expect.any(Function),
+        {},
+      );
 
       // CtrlC's job-c was never attempted (error stopped iteration)
     });

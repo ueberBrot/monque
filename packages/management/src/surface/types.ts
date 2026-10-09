@@ -37,6 +37,7 @@ export type ManagementAction =
  * only the methods you want exposed. Missing mutation methods make the matching endpoints
  * return `403 Unsupported action`.
  */
+/* oxlint-disable typescript/method-signature-style -- Public facade methods retain bivariance for existing custom adapters. */
 export interface ManagementMonque {
   getProcessingState?: Monque["getProcessingState"];
   pause?: Monque["pause"];
@@ -58,6 +59,7 @@ export interface ManagementMonque {
   retryJobs?(selector: JobSelector): Promise<BulkOperationResult>;
   deleteJobs?(selector: JobSelector): Promise<BulkOperationResult>;
 }
+/* oxlint-enable typescript/method-signature-style */
 
 /**
  * Input passed to the optional authorization callback.
@@ -108,9 +110,11 @@ export interface ManagementPayloadSerializationInput<TContext = unknown> {
  *
  * The returned value must be serializable by the HTTP framework that sends the response.
  */
+/* oxlint-disable anti-slop/no-unknown-returns -- The public serializer intentionally accepts arbitrary application payload output. */
 export type ManagementPayloadSerializer<TContext = unknown> = (
   input: ManagementPayloadSerializationInput<TContext>,
 ) => Promise<unknown>;
+/* oxlint-enable anti-slop/no-unknown-returns */
 
 /**
  * Options used to create a management router or OpenAPI handler.
@@ -141,6 +145,7 @@ export interface ManagementOptions<TContext = unknown> {
  * Framework adapters can attach their own request state in `managementContext`; that value
  * is passed to authorization and payload serialization hooks.
  */
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The public oRPC context permits arbitrary framework-owned properties.
 export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, unknown> & {
   managementContext?: TContext;
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { createDashboardManagementApi } from "@/management-client";
 
-describe("createDashboardManagementApi", () => {
+describe(createDashboardManagementApi, () => {
   it("rejects an invalid URL before obtaining the fetch implementation", () => {
     expect(() =>
       createDashboardManagementApi({
@@ -20,10 +20,15 @@ describe("createDashboardManagementApi", () => {
       apiBaseUrl: "/",
       origin: "https://dashboard.example",
       fetch: async () =>
-        new Response(JSON.stringify({ error: "Job state changed." }), {
-          status: 409,
-          headers: { "content-type": "application/json" },
-        }),
+        await Promise.resolve(
+          Response.json(
+            { error: "Job state changed." },
+            {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        ),
     });
     await expect(managementApi.client.cancelJob({ params: { id: "job-1" } })).rejects.toMatchObject(
       {
@@ -33,24 +38,26 @@ describe("createDashboardManagementApi", () => {
       },
     );
   });
+
   it("includes browser credentials by default on Management API requests", async () => {
     let capturedCredentials: RequestCredentials | undefined;
-
     const managementApi = createDashboardManagementApi({
       apiBaseUrl: "/api/management",
       fetch: async (_request, init) => {
         capturedCredentials = init?.credentials;
-
-        return new Response(JSON.stringify({ status: "ok", scheduler: { healthy: true } }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
+        return await Promise.resolve(
+          Response.json(
+            { status: "ok", scheduler: { healthy: true } },
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
+        );
       },
       origin: "https://dashboard.example",
     });
-
     await managementApi.client.health();
-
     expect(capturedCredentials).toBe("include");
   });
 });

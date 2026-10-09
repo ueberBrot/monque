@@ -1,12 +1,12 @@
 import type { OpenAPI } from "@orpc/openapi";
-import { afterEach, describe, expect, test, vi } from "vite-plus/test";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+import { afterEach, describe, expect, vi, it } from "vite-plus/test";
 
 describe("management OpenAPI generation", () => {
-  test("shares concurrent generation and reuses the successful document", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shares concurrent generation and reuses the successful document", async () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
     const generated: OpenAPI.Document = {
@@ -21,19 +21,19 @@ describe("management OpenAPI generation", () => {
     const first = generateManagementOpenApiDocument();
     const second = generateManagementOpenApiDocument();
     try {
-      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledOnce();
     } finally {
       gate.resolve(generated);
       await Promise.all([first, second]);
     }
 
-    expect(await first).toBe(generated);
-    expect(await second).toBe(generated);
-    expect(await generateManagementOpenApiDocument()).toBe(generated);
-    expect(generate).toHaveBeenCalledTimes(1);
+    await expect(first).resolves.toBe(generated);
+    await expect(second).resolves.toBe(generated);
+    await expect(generateManagementOpenApiDocument()).resolves.toBe(generated);
+    expect(generate).toHaveBeenCalledOnce();
   });
 
-  test("shares a failed generation without changing the error and retries the next call", async () => {
+  it("shares a failed generation without changing the error and retries the next call", async () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
     const generated: OpenAPI.Document = {
@@ -51,23 +51,26 @@ describe("management OpenAPI generation", () => {
 
     const first = generateManagementOpenApiDocument();
     const second = generateManagementOpenApiDocument();
-    const failures = Promise.all([
-      expect(first).rejects.toBe(failure),
-      expect(second).rejects.toBe(failure),
-    ]);
+    const failures = Promise.allSettled([first, second]);
     try {
-      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledOnce();
     } finally {
       gate.reject(failure);
-      await failures;
+      const results = await failures;
+      expect(
+        results.map((result) => result.status === "rejected" && result.reason === failure),
+      ).toStrictEqual([true, true]);
     }
 
-    expect(await generateManagementOpenApiDocument()).toBe(generated);
-    expect(await generateManagementOpenApiDocument()).toBe(generated);
+    const cached = await Promise.all([
+      generateManagementOpenApiDocument(),
+      generateManagementOpenApiDocument(),
+    ]);
+    expect(cached.map((document) => document === generated)).toStrictEqual([true, true]);
     expect(generate).toHaveBeenCalledTimes(2);
   });
 
-  test.each([undefined, null, "External failure", { reason: "External failure" }])(
+  it.each([undefined, null, "External failure", { reason: "External failure" }])(
     "preserves arbitrary generation failures %j and retries",
     async (failure) => {
       vi.resetModules();
@@ -89,9 +92,12 @@ describe("management OpenAPI generation", () => {
         expect(first).rejects.toBe(failure),
         expect(second).rejects.toBe(failure),
       ]);
-      expect(generate).toHaveBeenCalledTimes(1);
-      expect(await generateManagementOpenApiDocument()).toBe(generated);
-      expect(await generateManagementOpenApiDocument()).toBe(generated);
+      expect(generate).toHaveBeenCalledOnce();
+      const cached = await Promise.all([
+        generateManagementOpenApiDocument(),
+        generateManagementOpenApiDocument(),
+      ]);
+      expect(cached.map((document) => document === generated)).toStrictEqual([true, true]);
       expect(generate).toHaveBeenCalledTimes(2);
     },
   );

@@ -6,4 +6,10 @@ export const JOB_STATUS_META = {
   completed: { label: "Completed", badgeVariant: "success" },
   failed: { label: "Failed", badgeVariant: "danger" },
   cancelled: { label: "Cancelled", badgeVariant: "outline" },
-} as const satisfies Record<JobDto["status"], { label: string; badgeVariant: string }>;
+} as const satisfies Record<
+  JobDto["status"],
+  {
+    label: string;
+    badgeVariant: string;
+  }
+>;

@@ -5,4 +5,5 @@ import { Configuration } from "@tsed/di";
   disableComponentScan: true,
   httpsPort: false,
 })
+// oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
 export class Server {}

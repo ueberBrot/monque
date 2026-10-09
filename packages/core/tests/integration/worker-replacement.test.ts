@@ -1,3 +1,4 @@
+import { setTimeout as pauseFor } from "node:timers/promises";
 import type { Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 
@@ -13,13 +14,13 @@ import {
 describe("replacing a running worker", () => {
   let db: Db;
   const instances: Monque[] = [];
-
   beforeAll(async () => {
     db = await getTestDb("worker-replacement");
   });
   afterEach(async () => {
     await stopMonqueInstances(instances);
   });
+
   afterAll(async () => {
     await cleanupTestDb(db);
   });
@@ -36,14 +37,16 @@ describe("replacing a running worker", () => {
       });
       instances.push(monque);
       await monque.initialize();
-      const started = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
+      const started: PromiseWithResolvers<void> = Promise.withResolvers();
+      const release: PromiseWithResolvers<void> = Promise.withResolvers();
       const order: string[] = [];
       monque.register("work", async () => {
         started.resolve();
         await release.promise;
         order.push("original");
-        if (fail) throw new Error("Original handler failed");
+        if (fail) {
+          throw new Error("Original handler failed");
+        }
       });
       const original = await monque.enqueue("work", {});
       monque.start();
@@ -51,33 +54,38 @@ describe("replacing a running worker", () => {
         await started.promise;
         monque.register(
           "work",
-          async () => {
+          () => {
             order.push("replacement");
           },
           { replace: true },
         );
         monque.register(
           "work",
-          async () => {
+          () => {
             order.push("latest");
           },
           { replace: true },
         );
-        expect((await monque.getQueueViewSummaries())[0]?.worker).toMatchObject({
+        const awaitedResult1 = await monque.getQueueViewSummaries();
+        expect(awaitedResult1[0]?.worker).toMatchObject({
           activeCount: 1,
           concurrency: 1,
         });
         const next = await monque.enqueue("work", {});
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        expect((await monque.getJob(next._id))?.status).toBe(JobStatus.PENDING);
+        await pauseFor(100);
+        const awaitedResult2 = await monque.getJob(next._id);
+        expect(awaitedResult2?.status).toBe(JobStatus.PENDING);
         release.resolve();
-        await waitFor(async () => (await monque.getJob(next._id))?.status === JobStatus.COMPLETED);
+        await waitFor(async () => {
+          const awaitedResult3 = await monque.getJob(next._id);
+          return awaitedResult3?.status === JobStatus.COMPLETED;
+        });
         await monque.stop();
-        expect(order).toEqual(["original", "latest"]);
-        expect((await monque.getJob(original._id))?.status).toBe(
-          fail ? JobStatus.FAILED : JobStatus.COMPLETED,
-        );
-        expect((await monque.getQueueViewSummaries())[0]?.worker?.activeCount).toBe(0);
+        expect(order).toStrictEqual(["original", "latest"]);
+        const awaitedResult4 = await monque.getJob(original._id);
+        expect(awaitedResult4?.status).toBe(fail ? JobStatus.FAILED : JobStatus.COMPLETED);
+        const awaitedResult5 = await monque.getQueueViewSummaries();
+        expect(awaitedResult5[0]?.worker?.activeCount).toBe(0);
       } finally {
         release.resolve();
         await monque.stop();
@@ -89,8 +97,8 @@ describe("replacing a running worker", () => {
     const monque = new Monque(db, { collectionName: uniqueCollectionName("drain") });
     instances.push(monque);
     await monque.initialize();
-    const started = Promise.withResolvers<void>();
-    const release = Promise.withResolvers<void>();
+    const started: PromiseWithResolvers<void> = Promise.withResolvers();
+    const release: PromiseWithResolvers<void> = Promise.withResolvers();
     monque.register("work", async () => {
       started.resolve();
       await release.promise;
@@ -100,18 +108,22 @@ describe("replacing a running worker", () => {
     let stopped = false;
     try {
       await started.promise;
-      monque.register("work", async () => {}, { replace: true });
+      monque.register("work", () => {}, { replace: true });
       const stopping = monque.stop().then(() => {
         stopped = true;
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await pauseFor(100);
       expect(stopped).toBe(false);
       release.resolve();
       await stopping;
-      expect((await monque.getJob(job._id))?.status).toBe(JobStatus.COMPLETED);
+      const awaitedResult6 = await monque.getJob(job._id);
+      expect(awaitedResult6?.status).toBe(JobStatus.COMPLETED);
     } finally {
       release.resolve();
-      await waitFor(async () => (await monque.getJob(job._id))?.status === JobStatus.COMPLETED);
+      await waitFor(async () => {
+        const awaitedResult7 = await monque.getJob(job._id);
+        return awaitedResult7?.status === JobStatus.COMPLETED;
+      });
       await monque.stop();
     }
   });

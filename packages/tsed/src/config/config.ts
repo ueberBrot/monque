@@ -1,5 +1,5 @@
 /**
- * @monque/tsed - Configuration
+ * `@monque/tsed` - Configuration
  *
  * Defines the configuration interface and TsED module augmentation.
  */
@@ -18,6 +18,7 @@ import type { MonqueTsedConfig } from "./types.js";
  * This allows type-safe configuration via @Configuration decorator.
  */
 declare global {
+  // oxlint-disable-next-line typescript/no-namespace -- TsED declares Configuration in this global namespace.
   namespace TsED {
     interface Configuration {
       /**
@@ -36,7 +37,7 @@ declare global {
  * Validate that exactly one database resolution strategy is provided.
  *
  * @param config - The configuration to validate.
- * @throws Error if zero or multiple strategies are provided.
+ * @throws {MonqueError} if zero or multiple strategies are provided.
  *
  * @example
  * ```typescript
@@ -45,7 +46,9 @@ declare global {
  * validateDatabaseConfig({ db: mongoDb, dbFactory: fn }); // throws
  * ```
  */
-export function validateDatabaseConfig(config: MonqueTsedConfig): void {
+export const validateDatabaseConfig = function validateDatabaseConfig(
+  config: MonqueTsedConfig,
+): void {
   const strategies = [config.db, config.dbFactory, config.dbToken].filter(Boolean);
 
   if (strategies.length === 0) {
@@ -59,4 +62,4 @@ export function validateDatabaseConfig(config: MonqueTsedConfig): void {
       "MonqueTsedConfig accepts only one of 'db', 'dbFactory', or 'dbToken' - multiple were provided",
     );
   }
-}
+};

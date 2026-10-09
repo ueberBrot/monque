@@ -26,7 +26,7 @@ import type { ManagementOptions, ManagementSurface } from "./types.js";
  * });
  * ```
  */
-export function createManagementSurface<TContext = unknown>(
+export const createManagementSurface = function createManagementSurface<TContext = unknown>(
   options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
   const maxBodySize = options.maxBodySize ?? 64 * 1024;
@@ -38,27 +38,31 @@ export function createManagementSurface<TContext = unknown>(
   return {
     openApiHandler: new OpenAPIHandler(createManagementRouter(options), {
       adapterInterceptors: [
-        (options) =>
-          options.next({ ...options, request: createLimitedRequest(options.request, maxBodySize) }),
+        async (interceptorOptions) =>
+          await interceptorOptions.next({
+            ...interceptorOptions,
+            request: createLimitedRequest(interceptorOptions.request, maxBodySize),
+          }),
       ],
       customErrorResponseBodyEncoder: (error) => ({ error: error.message }),
       interceptors: [
-        (options) => {
-          if (!isTrustedMutationRequest(options.request, trustedOrigins)) {
-            return options.next({
-              ...options,
+        async (interceptorOptions) => {
+          if (!isTrustedMutationRequest(interceptorOptions.request, trustedOrigins)) {
+            return await interceptorOptions.next({
+              ...interceptorOptions,
               request: {
-                ...options.request,
-                body: async () => {
-                  throw new ORPCError("FORBIDDEN", { message: "Untrusted request origin" });
-                },
+                ...interceptorOptions.request,
+                body: async () =>
+                  await Promise.reject(
+                    new ORPCError("FORBIDDEN", { message: "Untrusted request origin" }),
+                  ),
               },
             });
           }
 
-          return options.next();
+          return await interceptorOptions.next();
         },
       ],
     }),
   };
-}
+};

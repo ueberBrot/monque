@@ -6,18 +6,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { useFieldContext } from "./context.js";
 import { getFieldErrors } from "./field-errors.js";
 
-type TextareaFieldProps = {
+interface TextareaFieldProps {
   label: string;
   description?: string;
   placeholder?: string;
   rows?: number;
-};
-
-export function TextareaField({ description, label, placeholder, rows }: TextareaFieldProps) {
+}
+export const TextareaField = ({ description, label, placeholder, rows }: TextareaFieldProps) => {
   const field = useFieldContext<string>();
   const fieldId = useId();
   const error = getFieldErrors(field.state.meta.errors);
-
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
@@ -29,10 +27,16 @@ export function TextareaField({ description, label, placeholder, rows }: Textare
         placeholder={placeholder}
         rows={rows}
         onBlur={field.handleBlur}
-        onChange={(event) => field.handleChange(event.currentTarget.value)}
+        onChange={(event) => {
+          field.handleChange(event.currentTarget.value);
+        }}
       />
-      {description ? <FieldDescription>{description}</FieldDescription> : null}
-      {error ? <FieldError>{error}</FieldError> : null}
+      {description === undefined || description === null || description === "" ? null : (
+        <FieldDescription>{description}</FieldDescription>
+      )}
+      {error === undefined || error === null || error === "" ? null : (
+        <FieldError>{error}</FieldError>
+      )}
     </Field>
   );
-}
+};

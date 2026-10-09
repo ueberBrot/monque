@@ -13,7 +13,6 @@ const dashboardCapabilityActionLabels = {
   pause: "Pause processing",
   resume: "Resume processing",
 } as const satisfies Record<keyof CapabilityActionsDto, string>;
-
 const dashboardCapabilityActions = [
   "read",
   "cancel",
@@ -25,37 +24,36 @@ const dashboardCapabilityActions = [
   "delete",
   "deleteBulk",
 ] as const satisfies readonly (keyof CapabilityActionsDto)[];
-
 type DashboardCapabilityAction = (typeof dashboardCapabilityActions)[number];
-type DashboardCapabilityState = {
+interface DashboardCapabilityState {
   readonly action: DashboardCapabilityAction;
   readonly available: boolean;
   readonly label: string;
   readonly reason: string;
-};
-
+}
 const AVAILABLE_CAPABILITY_REASON = "Available to you.";
 const READ_ONLY_CAPABILITY_REASON = "This dashboard is read-only.";
 const UNAVAILABLE_CAPABILITY_REASON = "Your host application has not enabled this action for you.";
-
-function listDashboardCapabilityStates(
+const listDashboardCapabilityStates = (
   capabilities: CapabilitiesDto,
-): readonly DashboardCapabilityState[] {
-  return dashboardCapabilityActions.map((action) => {
+): readonly DashboardCapabilityState[] =>
+  dashboardCapabilityActions.map((action) => {
     const available = Boolean(capabilities.actions[action]);
     return {
       action,
       available,
       label: dashboardCapabilityActionLabels[action],
-      reason: available
-        ? AVAILABLE_CAPABILITY_REASON
-        : capabilities.readOnly && action !== "read"
-          ? READ_ONLY_CAPABILITY_REASON
-          : UNAVAILABLE_CAPABILITY_REASON,
+      reason: (() => {
+        if (available) {
+          return AVAILABLE_CAPABILITY_REASON;
+        }
+        if (capabilities.readOnly && action !== "read") {
+          return READ_ONLY_CAPABILITY_REASON;
+        }
+        return UNAVAILABLE_CAPABILITY_REASON;
+      })(),
     };
   });
-}
-
 export {
   type DashboardCapabilityAction,
   type DashboardCapabilityState,
