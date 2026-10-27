@@ -307,14 +307,14 @@ const QueueViewDetailHeader = ({
             ],
             ["Payload validation", payloadValidationLabels.get(queueView.worker.hasSchema)],
           ] as const
-        )
-          .filter(([, value]) => value !== undefined)
-          .map(([label, value]) => (
+        ).map(([label, value]) =>
+          value === undefined ? null : (
             <div key={label}>
               <dt className="text-xs text-muted-foreground">{label}</dt>
               <dd className="mt-1 font-medium tabular-nums">{value}</dd>
             </div>
-          ))}
+          ),
+        )}
       </dl>
     ) : null}
   </section>

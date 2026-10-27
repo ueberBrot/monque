@@ -183,7 +183,8 @@ try {
     // Every Monque package must come from this install, even when a workspace is nearby.
     const consumerDirectory = await realpath(directory);
     await Promise.all(
-      [...dependencies.keys()]
+      dependencies
+        .keys()
         .filter((dependencyName) => dependencyName.startsWith("@monque/"))
         .map(async (dependencyName) => {
           const installed = await realpath(
@@ -193,7 +194,8 @@ try {
             installed.startsWith(`${consumerDirectory}/`),
             `${dependencyName} escaped the consumer install`,
           );
-        }),
+        })
+        .toArray(),
     );
     await run(process.execPath, ["app.mts"], directory, {
       MONQUE_VERIFY_CASE: scenario.name,

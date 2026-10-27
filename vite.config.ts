@@ -52,6 +52,10 @@ const vitestPreset: OxlintConfig = {
       "vitest/prefer-strict-boolean-matchers": "error",
       "vitest/prefer-to-be-truthy": "off",
       "vitest/prefer-to-be-falsy": "off",
+      // Lifecycle tests observe Promise<void> completion and await the chain later.
+      "promise/always-return": "off",
+      // A two-argument then settles both outcomes in the same Promise reaction.
+      "promise/catch-or-return": ["error", { allowThen: true }],
     },
   })),
 };
@@ -86,9 +90,8 @@ export default defineConfig({
     // CI runs native rules before builds, then typed lint and TypeScript together.
     options: { typeAware: false },
     rules: {
-      // Keep required arguments in typed APIs such as Deferred.succeed and Vitest
-      // mocks; the rule cannot distinguish them from optional JS arguments.
-      "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
+      // Keep related declarations and assertions grouped; Oxfmt owns formatting.
+      "anti-slop/require-readable-spacing": "off",
       // Public Promise<void> and Effect fiber APIs use void generic arguments.
       "typescript/no-invalid-void-type": ["error", { allowInGenericTypeArguments: true }],
       // This default-off diagnostic is absent from Effect's strict preset. Monque's
