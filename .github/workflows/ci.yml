@@ -97,7 +97,8 @@ jobs:
     name: Test (${{ matrix.group }})
     if: needs.quality.outputs.runtime == 'true'
     needs: quality
-    runs-on: ubuntu-latest
+    # MongoDB 8 requires a compatible kernel: https://jira.mongodb.org/browse/SERVER-121912
+    runs-on: ${{ matrix.group == 'backend' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     timeout-minutes: 10
     strategy:
       fail-fast: true
