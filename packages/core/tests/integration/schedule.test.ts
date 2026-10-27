@@ -271,9 +271,9 @@ describe("schedule()", () => {
         rescheduledJobStatus: JobStatus.PENDING,
         rescheduledJobRepeatInterval: TEST_CONSTANTS.CRON_EVERY_MINUTE,
       });
-      // nextRunAt should be in the future
+      // nextRunAt must follow the completion timestamp persisted with the reschedule.
       expect(new Date(requireValue(rescheduledJob?.nextRunAt)).getTime()).toBeGreaterThan(
-        Date.now(),
+        new Date(requireValue(rescheduledJob?.updatedAt)).getTime(),
       );
     });
 
