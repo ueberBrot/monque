@@ -80,6 +80,13 @@
       "enabled": false
     },
     {
+      "description": "Keep published Node.js support changes explicit instead of raising engine minimums through dependency updates",
+      "matchPackageNames": ["node"],
+      "matchDepTypes": ["engines"],
+      "matchFileNames": ["packages/**/package.json", "apps/docs/package.json"],
+      "enabled": false
+    },
+    {
       "description": "Group Ts.ED updates (manual)",
       "matchFileNames": ["packages/tsed/**"],
       "matchUpdateTypes": ["minor", "patch"],
