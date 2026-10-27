@@ -164,6 +164,7 @@ for (const change of ["cancelled", "missing", "denied"] as const) {
       await page.goto(`${app.origin}/private/dashboard/jobs/${String(job._id)}`);
       await page.getByRole("button", { name: "Change priority", exact: true }).click();
       await page.getByRole("spinbutton", { name: "Priority", exact: true }).fill("22");
+
       if (change === "cancelled") {
         await app.monque.cancelJob(job._id.toHexString());
       } else if (change === "missing") {

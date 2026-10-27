@@ -18,7 +18,6 @@ export interface ResolvedMonqueOptions
     Required<
       Omit<
         MonqueOptions,
-        // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
         | "maxBackoffDelay"
         | "jobRetention"
         | "instanceConcurrency"

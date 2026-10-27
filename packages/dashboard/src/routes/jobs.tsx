@@ -203,15 +203,11 @@ const resolveJobsReadState = (
   hasJobs: boolean,
   hasCapabilities: boolean,
 ) => {
-  const readErrors = errors
-    .filter((error) => error !== null)
-    .map((error) =>
-      resolveDashboardApiErrorState(
-        error,
-        "jobs",
-        hasJobs ? "Jobs could not be refreshed" : undefined,
-      ),
-    );
+  const heading = hasJobs ? "Jobs could not be refreshed" : undefined;
+
+  const readErrors = errors.flatMap((failure) =>
+    failure === null ? [] : [resolveDashboardApiErrorState(failure, "jobs", heading)],
+  );
 
   // A transient failure must not mask revoked access from the other query.
   const error = readErrors.find((state) => state.code !== "error") ?? readErrors[0];
