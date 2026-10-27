@@ -41,7 +41,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
-    "@effect/language-service": "0.87.3",
+    "@effect/language-service": "0.87.5",
     "@effect/tsgo": "0.48.0",
     "@shadcn/lint": "^0.2.0",
     "@tanstack/intent": "0.5.3",

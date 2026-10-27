@@ -456,20 +456,19 @@ describe("schedule()", () => {
       const monque = new Monque(db, { collectionName, pollInterval: 100 });
       monqueInstances.push(monque);
       await monque.initialize();
-      let processed = false;
-      const handlerImplementation = () => {
-        processed = true;
-      };
-      const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
+      const handler = vi.fn<() => void>();
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Enqueue a one-time job (not scheduled with cron)
       const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { oneTime: true });
       const originalJobId = job._id;
       monque.start();
-      // Wait for completion
-      await waitFor(() => processed);
-      // Check that the job is completed, not rescheduled
       const collection = db.collection<Job>(collectionName);
+      // Handler delivery precedes the persisted completion write.
+      await waitFor(async () => {
+        const persistedJob = await collection.findOne({ _id: originalJobId });
+        return persistedJob?.status === JobStatus.COMPLETED;
+      });
+      // Check that the job is completed, not rescheduled
       const completedJob = await collection.findOne({ _id: originalJobId });
       expect({
         completedJobStatus: completedJob?.status,
