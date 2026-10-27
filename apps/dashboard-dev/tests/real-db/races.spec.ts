@@ -123,36 +123,59 @@ for (const view of ["detail", "list"] as const) {
       }
     };
     await openDelete();
-    let failedRead: Promise<unknown> | undefined;
+    const readPath = `/api/v1/jobs${view === "detail" ? `/${String(job._id)}` : ""}`;
+    const jobPath = `/api/v1/jobs/${String(job._id)}`;
+    let deleteRequests = 0;
+    page.on("request", (request) => {
+      if (request.method() === "DELETE" && new URL(request.url()).pathname.endsWith(jobPath)) {
+        deleteRequests += 1;
+      }
+    });
+    const receivedRead: PromiseWithResolvers<void> = Promise.withResolvers();
     const releaseRead: PromiseWithResolvers<void> = Promise.withResolvers();
-    if (view === "detail") {
-      const receivedRead: PromiseWithResolvers<void> = Promise.withResolvers();
-      await page.route(`**/api/v1/jobs/${String(job._id)}`, async (route) => {
+    await page.route(
+      (url) => url.pathname.endsWith(readPath),
+      async (route) => {
         if (route.request().method() === "GET") {
           receivedRead.resolve();
           await releaseRead.promise;
         }
         await route.continue();
-      });
+      },
+    );
+    try {
       await receivedRead.promise;
-      failedRead = page.waitForEvent(
+      const failedRead = page.waitForEvent(
         "requestfailed",
         (request) =>
-          request.method() === "GET" &&
-          new URL(request.url()).pathname.endsWith(`/api/v1/jobs/${String(job._id)}`),
+          request.method() === "GET" && new URL(request.url()).pathname.endsWith(readPath),
       );
-    }
-    await context.setOffline(true);
-    try {
+      await context.setOffline(true);
       // An in-flight poll must fail before confirming, matching the CI race.
       releaseRead.resolve();
       await failedRead;
+      await expect(page.getByRole("alert", { includeHidden: true })).toBeVisible();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      const failedAction = page.waitForEvent(
+        "requestfailed",
+        (request) =>
+          request.method() === "DELETE" && new URL(request.url()).pathname.endsWith(jobPath),
+      );
       await page.getByRole("button", { name: "Confirm delete job", exact: true }).click();
+      await failedAction;
       await expect(page.getByText("Action failed", { exact: true })).toBeVisible();
+      expect(deleteRequests).toBe(1);
     } finally {
       releaseRead.resolve();
       await context.setOffline(false);
     }
+    const refreshed = await page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname.endsWith(readPath) &&
+        response.ok(),
+    );
+    await refreshed.finished();
     await expect(
       page.getByRole("button", {
         name: view === "detail" ? "Delete job" : `Actions for ${String(job._id)}`,
@@ -165,9 +188,11 @@ for (const view of ["detail", "list"] as const) {
         return awaitedResult1?.status;
       })
       .toBe("pending");
+    expect(deleteRequests).toBe(1);
     await openDelete();
     await page.getByRole("button", { name: "Confirm delete job", exact: true }).click();
     await expect(page.getByText("Job deleted", { exact: true })).toBeVisible();
+    expect(deleteRequests).toBe(2);
     expect(await app.jobs.findOne({ _id: job._id })).toBeNull();
   });
 }

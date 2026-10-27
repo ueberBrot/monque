@@ -135,18 +135,23 @@ for (const change of ["cancelled", "missing", "denied"] as const) {
     await context.request.post(`${app.origin}/auth/login`, {
       data: { username: "operator", password: "fixture-password" },
     });
-    await page.goto(`${app.origin}/private/dashboard/jobs/${String(job._id)}`);
-    await page.getByRole("button", { name: "Change priority", exact: true }).click();
-    await page.getByRole("spinbutton", { name: "Priority", exact: true }).fill("22");
-    // Stop fresh reads until the stale confirmation reaches the authoritative server.
+    // Allow the initial detail read, then hold polls before any can race the confirmation.
     const resumeReads: PromiseWithResolvers<void> = Promise.withResolvers();
+    let initialRead = true;
     await page.route(`**/private/api/v1/jobs/${String(job._id)}`, async (route) => {
       if (route.request().method() === "GET") {
-        await resumeReads.promise;
+        if (initialRead) {
+          initialRead = false;
+        } else {
+          await resumeReads.promise;
+        }
       }
       await route.continue();
     });
     try {
+      await page.goto(`${app.origin}/private/dashboard/jobs/${String(job._id)}`);
+      await page.getByRole("button", { name: "Change priority", exact: true }).click();
+      await page.getByRole("spinbutton", { name: "Priority", exact: true }).fill("22");
       if (change === "cancelled") {
         await app.monque.cancelJob(job._id.toHexString());
       } else if (change === "missing") {

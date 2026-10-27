@@ -156,27 +156,45 @@ const JobsPending = () => (
   </output>
 );
 const JobsErrorPanel = ({
-  error,
+  state,
   fetching,
   onRetry,
   onClearFilters,
 }: {
-  readonly error: unknown;
+  readonly state: ReturnType<typeof resolveDashboardApiErrorState>;
   readonly fetching: boolean;
   readonly onRetry: () => void;
   readonly onClearFilters: () => void;
-}) => {
-  const state = resolveDashboardApiErrorState(error, "jobs");
-  return (
-    <DashboardState {...state}>
-      <RetryButton onRetry={onRetry} fetching={fetching} />
-      {state.code === "error" ? (
-        <Button variant="outline" onClick={onClearFilters}>
-          Clear filters
-        </Button>
-      ) : null}
-    </DashboardState>
-  );
+}) => (
+  <DashboardState {...state}>
+    <RetryButton onRetry={onRetry} fetching={fetching} />
+    {state.code === "error" ? (
+      <Button variant="outline" onClick={onClearFilters}>
+        Clear filters
+      </Button>
+    ) : null}
+  </DashboardState>
+);
+const resolveJobsReadState = (
+  errors: readonly unknown[],
+  hasJobs: boolean,
+  hasCapabilities: boolean,
+) => {
+  const readErrors = errors
+    .filter((error) => error !== null)
+    .map((error) =>
+      resolveDashboardApiErrorState(
+        error,
+        "jobs",
+        hasJobs ? "Jobs could not be refreshed" : undefined,
+      ),
+    );
+  // A transient failure must not mask revoked access from the other query.
+  const error = readErrors.find((state) => state.code !== "error") ?? readErrors[0];
+  return {
+    error,
+    showContent: hasJobs && hasCapabilities && (!error || error.code === "error"),
+  };
 };
 const JobsPageHeader = ({
   updatedAt,
@@ -360,16 +378,21 @@ const JobsListRoute = () => {
   if (jobsQuery.isPending || capabilitiesQuery.isPending) {
     return <JobsPending />;
   }
-  const error = jobsQuery.error ?? capabilitiesQuery.error;
-  if (error) {
-    return (
-      <JobsErrorPanel
-        error={error}
-        fetching={jobsQuery.isFetching || capabilitiesQuery.isFetching}
-        onRetry={handleRefresh}
-        onClearFilters={clearFilters}
-      />
-    );
+  const readState = resolveJobsReadState(
+    [jobsQuery.error, capabilitiesQuery.error],
+    jobsPage !== undefined,
+    capabilitiesQuery.data !== undefined,
+  );
+  const errorPanel = readState.error ? (
+    <JobsErrorPanel
+      state={readState.error}
+      fetching={jobsQuery.isFetching || capabilitiesQuery.isFetching}
+      onRetry={handleRefresh}
+      onClearFilters={clearFilters}
+    />
+  ) : null;
+  if (!readState.showContent) {
+    return errorPanel;
   }
   return (
     <section className="grid min-w-0 gap-5">
@@ -380,6 +403,8 @@ const JobsListRoute = () => {
         pollingIntervalMs={runtimeConfig.pollingIntervalMs}
         onRefresh={handleRefresh}
       />
+
+      {errorPanel}
 
       <div className="min-w-0 rounded-xl border border-border bg-card">
         <JobsFilters search={search} updateSearch={updateSearch} />
