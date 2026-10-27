@@ -407,6 +407,7 @@ describe("PendingNotificationRouter Effect scheduling", () => {
             yield* Clock.Clock,
           );
           yield* Effect.addFinalizer(() =>
+            // oxlint-disable-next-line sonarjs/no-nested-functions -- The scoped finalizer closes the router created with this test clock.
             Effect.sync(() => {
               router.close();
             }),
@@ -439,6 +440,7 @@ describe("PendingNotificationRouter Effect scheduling", () => {
         const router = new PendingNotificationRouter(
           ctx,
           (names) =>
+            // oxlint-disable-next-line sonarjs/no-nested-functions -- The scoped finalizer closes the router created with this test clock.
             Effect.sync(() => {
               polls.push(names);
             }),

@@ -330,6 +330,7 @@ interface HealthSummaryCardProps {
   readonly heading: string;
   readonly description: string;
   readonly badgeLabel: string;
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   readonly badgeVariant: "danger" | "outline" | "success" | "warning";
   readonly icon: ReactNode;
 }

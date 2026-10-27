@@ -48,6 +48,14 @@ const getFilterValues = (search: JobsRouteSearch) => ({
   failed: search.status.includes("failed"),
   cancelled: search.status.includes("cancelled"),
 });
+const selectedStatuses = (
+  current: JobsRouteSearch["status"],
+  status: JobsRouteSearch["status"][number],
+  selected: boolean,
+): JobsRouteSearch["status"] =>
+  JOB_STATUS_ORDER.filter((candidate) =>
+    candidate === status ? selected : current.includes(candidate),
+  );
 const JobsFilters = ({
   search,
   updateSearch,
@@ -189,9 +197,7 @@ const JobsFilters = ({
                     onChange: ({ value }) => {
                       updateSearch((current) => ({
                         ...current,
-                        status: JOB_STATUS_ORDER.filter((candidate) =>
-                          candidate === status ? value : current.status.includes(candidate),
-                        ),
+                        status: selectedStatuses(current.status, status, value),
                         cursor: undefined,
                       }));
                     },

@@ -4,11 +4,7 @@ const createHeaders = function createHeaders(req: Request, omitContentLength: bo
   const headers = new Headers();
 
   for (const [name, value] of Object.entries(req.headers)) {
-    if (value === undefined) {
-      continue;
-    }
-
-    if (omitContentLength && name.toLowerCase() === "content-length") {
+    if (value === undefined || (omitContentLength && name.toLowerCase() === "content-length")) {
       continue;
     }
 
@@ -16,10 +12,9 @@ const createHeaders = function createHeaders(req: Request, omitContentLength: bo
       for (const entry of value) {
         headers.append(name, entry);
       }
-      continue;
+    } else {
+      headers.set(name, value);
     }
-
-    headers.set(name, value);
   }
 
   return headers;

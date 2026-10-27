@@ -1,6 +1,5 @@
-import * as DateTime from "effect/DateTime";
+import { DateTime, Effect } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
-import * as Effect from "effect/Effect";
 import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
 import type { BulkWriteResult } from "mongodb";
 
@@ -28,14 +27,17 @@ import { validateJobPriority } from "../../shared/utils/job-priority.js";
 import { attempt, fromPromise } from "../effects.js";
 import type { SchedulerContext } from "./types.js";
 
-const isUniqueJobIndexPattern = (value: unknown): value is { name: 1; uniqueKey: 1 } =>
-  typeof value === "object" &&
-  value !== null &&
-  "name" in value &&
-  value.name === 1 &&
-  "uniqueKey" in value &&
-  value.uniqueKey === 1 &&
-  Object.keys(value).length === 2;
+const isUniqueJobIndexPattern = (value: unknown): value is { name: 1; uniqueKey: 1 } => {
+  if (typeof value !== "object" || value === null || !("name" in value)) {
+    return false;
+  }
+  return (
+    value.name === 1 &&
+    "uniqueKey" in value &&
+    value.uniqueKey === 1 &&
+    Object.keys(value).length === 2
+  );
+};
 
 /**
  * Internal module for creating pending jobs.
@@ -123,6 +125,7 @@ export class JobIntake {
                 return yield* Effect.fail(error);
               }
               const existing = yield* fromPromise(
+                // oxlint-disable-next-line sonarjs/no-nested-functions -- Duplicate-key recovery reads through the current session and collection.
                 async () =>
                   await this.ctx.collection.findOne(filter, {
                     readPreference: "primary",
@@ -326,9 +329,10 @@ export class JobIntake {
           ? [{ name: job.name, uniqueKey: job.uniqueKey }]
           : [];
       });
+      if (failure.code !== 11_000 || duplicateJobs.length === 0) {
+        return null;
+      }
       if (
-        failure.code !== 11_000 ||
-        duplicateJobs.length === 0 ||
         duplicateJobs.length !== writeErrors.length ||
         result.upsertedCount + result.matchedCount + duplicateJobs.length !== jobs.length ||
         result.getWriteConcernError()

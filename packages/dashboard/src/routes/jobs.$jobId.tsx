@@ -163,12 +163,9 @@ const JobDetail = ({ jobId }: { readonly jobId: string }) => {
   if (jobQuery.isPending) {
     return <JobDetailPending />;
   }
+  const refreshErrorHeading = jobQuery.data ? "Job detail could not be refreshed" : undefined;
   const readError = jobQuery.isError
-    ? resolveDashboardApiErrorState(
-        jobQuery.error,
-        "job",
-        jobQuery.data ? "Job detail could not be refreshed" : undefined,
-      )
+    ? resolveDashboardApiErrorState(jobQuery.error, "job", refreshErrorHeading)
     : null;
   const errorPanel = readError ? (
     <DashboardState {...readError}>

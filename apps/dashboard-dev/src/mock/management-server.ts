@@ -23,6 +23,8 @@ import type { DashboardDevScenario, DashboardDevScenarioId } from "./scenario-ca
 interface MockManagementContext {
   readonly scenarioId: DashboardDevScenarioId;
 }
+const jobStateConflictMessage = "Job state changed before the mutation completed.";
+
 const managementImplementer = implement(managementContract).$context<MockManagementContext>();
 const DEFAULT_SCENARIO_ID: DashboardDevScenarioId = "pending-jobs";
 type JobMutation =
@@ -100,8 +102,8 @@ const assertMutationAllowed = (
   }
   if (scenario.mutationConflict === true) {
     throw new ORPCError("CONFLICT", {
-      data: { error: "Job state changed before the mutation completed." },
-      message: "Job state changed before the mutation completed.",
+      data: { error: jobStateConflictMessage },
+      message: jobStateConflictMessage,
     });
   }
 };
@@ -152,12 +154,13 @@ const mutateSingleJob = (id: string, scenario: MutableScenario, mutation: JobMut
   if (action === "cancel" && job.status === "cancelled") {
     return job;
   }
-  if (
-    (action === "retry" && job.status !== "failed" && job.status !== "cancelled") ||
-    (action !== "retry" && job.status !== "pending")
-  ) {
+  const eligible =
+    action === "retry"
+      ? job.status === "failed" || job.status === "cancelled"
+      : job.status === "pending";
+  if (!eligible) {
     throw new ORPCError("CONFLICT", {
-      message: "Job state changed before the mutation completed.",
+      message: jobStateConflictMessage,
     });
   }
   const updated = applyJobMutation(job, mutation, new Date().toISOString());
@@ -211,14 +214,16 @@ const matchesDateRange = (value: string, from?: string, to?: string): boolean =>
   return true;
 };
 const applyJobFilters = (jobs: readonly JobDto[], input: JobListQueryDto): readonly JobDto[] =>
-  jobs.filter(
-    (job) =>
-      matchesJobName(job, input.name) &&
-      matchesJobStatus(job, input.status) &&
+  jobs.filter((job) => {
+    if (!matchesJobName(job, input.name) || !matchesJobStatus(job, input.status)) {
+      return false;
+    }
+    return (
       matchesDateRange(job.createdAt, input.createdAtFrom, input.createdAtTo) &&
       matchesDateRange(job.updatedAt, input.updatedAtFrom, input.updatedAtTo) &&
-      matchesDateRange(job.nextRunAt, input.nextRunAtFrom, input.nextRunAtTo),
-  );
+      matchesDateRange(job.nextRunAt, input.nextRunAtFrom, input.nextRunAtTo)
+    );
+  });
 const normalizeLimit = (limit?: string): number => {
   const parsed = Number(limit ?? "50");
   if (!Number.isInteger(parsed) || parsed <= 0) {

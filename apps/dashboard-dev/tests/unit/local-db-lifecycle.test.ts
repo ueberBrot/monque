@@ -105,6 +105,7 @@ describe("local db lifecycle", () => {
       const server = createLocalDbManagementServer();
       const starting = server.start();
       let closed = false;
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const closing = server.close().then(() => {
         closed = true;
       });

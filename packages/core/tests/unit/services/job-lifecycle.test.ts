@@ -217,6 +217,7 @@ describe(JobLifecycle, () => {
     );
     it.effect("should return null for non-persisted jobs (no _id)", () =>
       Effect.gen(function* effectWorkflow10() {
+        // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
         const nonPersistedJob = fromAny<Parameters<typeof lifecycle.completeOwned>[0], unknown>(
           jobWithoutId,
@@ -345,6 +346,7 @@ describe(JobLifecycle, () => {
     );
     it.effect("should return null for non-persisted jobs (no _id)", () =>
       Effect.gen(function* effectWorkflow14() {
+        // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
         const nonPersistedJob = fromAny<Parameters<typeof lifecycle.failOwned>[0], unknown>(
           jobWithoutId,

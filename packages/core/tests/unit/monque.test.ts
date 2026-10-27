@@ -385,7 +385,7 @@ describe(Monque, () => {
       await vi.advanceTimersByTimeAsync(0);
       const stopping: PromiseWithResolvers<void> = Promise.withResolvers();
       monque.once("changestream:error", () => {
-        // oxlint-disable-next-line promise/prefer-catch -- Settle either outcome in the same Promise reaction before the restart assertions.
+        // oxlint-disable-next-line promise/prefer-catch, promise/catch-or-return -- Settle either outcome in the same Promise reaction before the restart assertions.
         monque.stop().then(stopping.resolve, stopping.reject);
         monque.start();
       });
@@ -529,6 +529,7 @@ describe(Monque, () => {
       await oldStarted.promise;
       await vi.advanceTimersByTimeAsync(0);
       let stopped = false;
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const stopping = monque.stop().then(() => {
         stopped = true;
       });
@@ -582,6 +583,7 @@ describe(Monque, () => {
       vi.mocked(mockCollection.updateMany).mockClear();
       monque.start();
       let firstStopped = false;
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const firstStopping = monque.stop().then(() => {
         firstStopped = true;
       });
@@ -597,6 +599,7 @@ describe(Monque, () => {
       monque.start();
       await started.promise;
       let secondStopped = false;
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const secondStopping = monque.stop().then(() => {
         secondStopped = true;
       });
@@ -749,10 +752,12 @@ describe(Monque, () => {
         await started.promise;
         let firstStopped = false;
         let secondStopped = false;
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const firstStopping = monque.stop().then(() => {
           firstStopped = true;
         });
         monque.start();
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const secondStopping = monque.stop().then(() => {
           secondStopped = true;
         });

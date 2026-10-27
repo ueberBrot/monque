@@ -2,7 +2,7 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { cn } from "cn";
 import { XIcon } from "lucide-react";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -59,7 +59,7 @@ const DialogContent = ({
     </DialogPrimitive.Popup>
   </DialogPortal>
 );
-const DialogHeader = ({ className, ...props }: React.ComponentProps<"div">) => (
+const DialogHeader = ({ className, ...props }: ComponentProps<"div">) => (
   <div data-slot="dialog-header" className={cn("flex flex-col gap-2", className)} {...props} />
 );
 const DialogFooter = ({
@@ -67,7 +67,7 @@ const DialogFooter = ({
   showCloseButton = false,
   children,
   ...props
-}: React.ComponentProps<"div"> & {
+}: ComponentProps<"div"> & {
   showCloseButton?: boolean;
 }) => (
   <div

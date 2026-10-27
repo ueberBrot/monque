@@ -1,5 +1,4 @@
-import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
+import { Effect, Fiber } from "effect";
 
 export const attempt = function attempt<A>(operation: () => A): Effect.Effect<A, unknown> {
   return Effect.try({

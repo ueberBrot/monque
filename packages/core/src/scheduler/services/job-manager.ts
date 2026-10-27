@@ -1,7 +1,4 @@
-import * as DateTime from "effect/DateTime";
-import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
-import * as Stream from "effect/Stream";
+import { DateTime, Effect, Predicate, Stream } from "effect";
 import { ObjectId } from "mongodb";
 import type { Document, WithId } from "mongodb";
 

@@ -1,8 +1,5 @@
-import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import type * as Fiber from "effect/Fiber";
-import * as Layer from "effect/Layer";
+import { Clock, Context, Effect, Layer } from "effect";
+import type { Fiber } from "effect";
 
 import { ChangeStreamHandler } from "./services/change-stream-handler.js";
 import { JobIntake } from "./services/job-intake.js";

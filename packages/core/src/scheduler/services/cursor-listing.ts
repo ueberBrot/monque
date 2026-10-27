@@ -1,6 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
+import { Cause, Effect, Schema } from "effect";
 import { ObjectId } from "mongodb";
 import type { Document, Filter, FindOptions, WithId } from "mongodb";
 
@@ -104,6 +102,7 @@ const createPageCursor = <T>(
   jobs: PersistedJob<T>[],
   direction: CursorDirectionType,
   sort: JobCursorSort,
+  // oxlint-disable-next-line sonarjs/no-inconsistent-returns -- All typed sort fields return; invalid runtime options retain the existing fallthrough.
 ): string | null => {
   const lastJob = direction === CursorDirection.BACKWARD ? jobs[0] : jobs.at(-1);
   if (!lastJob) {

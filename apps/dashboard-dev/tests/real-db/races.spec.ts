@@ -113,7 +113,8 @@ for (const view of ["detail", "list"] as const) {
     context,
   }) => {
     const job = await app.seed();
-    await page.goto(`${app.base}/dashboard/jobs${view === "detail" ? `/${String(job._id)}` : ""}`);
+    const jobPath = view === "detail" ? `/${String(job._id)}` : "";
+    await page.goto(`${app.base}/dashboard/jobs${jobPath}`);
     const openDelete = async () => {
       if (view === "detail") {
         await page.getByRole("button", { name: "Delete job", exact: true }).click();

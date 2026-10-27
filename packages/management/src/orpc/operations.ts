@@ -1,7 +1,7 @@
 import { InvalidCursorError, InvalidJobIdentifierError, JobStateError } from "@monque/core";
 import type { BulkOperationResult, CursorOptions, JobSelector, PersistedJob } from "@monque/core";
 import { ORPCError } from "@orpc/server";
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 
 import { attempt, fromPromise } from "../effects.js";
 import {
@@ -27,6 +27,8 @@ import { createManagementActionPolicy } from "../surface/action-policy.js";
 import { parseObjectId, toJobCursorOptions, toJobSelector } from "../surface/request-mapping.js";
 import type { ManagementAction, ManagementOptions } from "../surface/types.js";
 
+const jobNotFoundMessage = "Job not found";
+
 type BulkManagementAction = "cancelBulk" | "retryBulk" | "deleteBulk";
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
 type SingleJobMutationInput =
@@ -36,6 +38,7 @@ type SingleJobMutationInput =
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 
 const managementError = function managementError(
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   code: "BAD_REQUEST" | "FORBIDDEN" | "CONFLICT" | "NOT_FOUND",
   message: string,
 ) {
@@ -222,7 +225,7 @@ export const createManagementOperations = function createManagementOperations<TC
     }
     const job = yield* fromPromise(async () => await options.monque.getJob(idInput));
     if (!job) {
-      return yield* managementError("NOT_FOUND", "Job not found");
+      return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
     return { id: id.value, job };
   });
@@ -283,7 +286,7 @@ export const createManagementOperations = function createManagementOperations<TC
     const id = yield* resolveSingleJobTarget(input.action, idInput, context);
     const job = yield* mapJobStateConflict(fromPromise(async () => await supportedMutate(id)));
     if (!job) {
-      return yield* managementError("NOT_FOUND", "Job not found");
+      return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
     return job;
   });
@@ -308,7 +311,7 @@ export const createManagementOperations = function createManagementOperations<TC
     const id = yield* resolveSingleJobTarget("delete", idInput, context);
     const deleted = yield* fromPromise(async () => await supportedMutate(id));
     if (!deleted) {
-      return yield* managementError("NOT_FOUND", "Job not found");
+      return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
     return yield* Effect.void;
   });
@@ -373,10 +376,12 @@ export const createManagementOperations = function createManagementOperations<TC
           Effect.catchDefect(Effect.fail),
           Effect.matchEffect({
             onSuccess: () =>
+              // oxlint-disable-next-line sonarjs/no-nested-functions -- Mutation observers update this bulk result inside the current Effect.
               Effect.sync(() => {
                 result.count += 1;
               }),
             onFailure: (error) =>
+              // oxlint-disable-next-line sonarjs/no-nested-functions -- Mutation observers update this bulk result inside the current Effect.
               Effect.sync(() => {
                 result.errors.push({
                   jobId: id,

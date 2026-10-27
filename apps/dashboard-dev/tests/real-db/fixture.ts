@@ -60,6 +60,7 @@ const createApp = async () => {
     return session && session.expiresAt > Date.now() ? session : undefined;
   };
   const app = express();
+  app.disable("x-powered-by");
   const development = createLocalDbManagementServer({
     mongoUri:
       process.env["MONQUE_DASHBOARD_TEST_MONGO_URI"] ??
@@ -114,9 +115,16 @@ const createApp = async () => {
     createManagementExpressRouter({
       monque,
       context: ({ req }) => sessionFor(req)?.role,
-      authorize: ({ action, context, job }) =>
-        (context === "operator" || (context === "viewer" && action === "read")) &&
-        !(action === "setJobPriority" && job && deniedPriorityJobIds.has(job._id.toHexString())),
+      authorize: ({ action, context, job }) => {
+        if (context !== "operator" && !(context === "viewer" && action === "read")) {
+          return false;
+        }
+        return !(
+          action === "setJobPriority" &&
+          job &&
+          deniedPriorityJobIds.has(job._id.toHexString())
+        );
+      },
     }),
   );
   app.use(

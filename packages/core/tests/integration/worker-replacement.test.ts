@@ -109,6 +109,7 @@ describe("replacing a running worker", () => {
     try {
       await started.promise;
       monque.register("work", () => {}, { replace: true });
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const stopping = monque.stop().then(() => {
         stopped = true;
       });

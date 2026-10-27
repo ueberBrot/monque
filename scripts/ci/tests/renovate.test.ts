@@ -18,6 +18,7 @@ const repository = () => {
   directories.push(cwd);
   const output = nodePath.join(cwd, ".git", "output");
   const git = (...args: string[]) =>
+    // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     execFileSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
   const write = (path: string, value: JsonValue) => {
     mkdirSync(nodePath.dirname(nodePath.join(cwd, path)), { recursive: true });
@@ -86,8 +87,9 @@ describe("Renovate changesets", () => {
     expect(git("diff", "--name-only", head, `${generated}`)).toMatch(
       /^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/u,
     );
+    const changesetPath = git("diff", "--name-only", head, `${generated}`);
     expect({
-      changeset: git("show", `${generated}:${git("diff", "--name-only", head, `${generated}`)}`),
+      changeset: git("show", `${generated}:${changesetPath}`),
       generator: git("show", `${generated}:scripts/renovate-generate-changeset.ts`),
     }).toStrictEqual({
       changeset: '---\n"@monque/core": minor\n---\n\nUpdate runtime dependencies.',

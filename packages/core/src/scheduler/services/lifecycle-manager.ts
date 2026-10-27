@@ -1,12 +1,5 @@
-import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
+import { Cause, Clock, Effect, Exit, Fiber, Schedule, Scope, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
-import * as Schedule from "effect/Schedule";
-import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import type { DeleteResult } from "mongodb";
 
 import { JobStatus } from "@/jobs";

@@ -61,28 +61,17 @@ describe("atomic job locking", () => {
       monqueInstances.push(monque2);
       await monque1.initialize();
       await monque2.initialize();
-      const processedJobs: string[] = [];
       const processedJobIds = new Set<string>();
       const handler1Implementation = async (job: Job) => {
         const jobId = job._id?.toString() ?? "";
         if (!job._id) {
           throw new Error("Expected job._id to be defined");
         }
-        processedJobs.push(`instance1:${jobId}`);
         processedJobIds.add(jobId);
         await pauseFor(100);
       };
       const handler1 = vi.fn<typeof handler1Implementation>(handler1Implementation);
-      const handler2Implementation = async (job: Job) => {
-        const jobId = job._id?.toString() ?? "";
-        if (!job._id) {
-          throw new Error("Expected job._id to be defined");
-        }
-        processedJobs.push(`instance2:${jobId}`);
-        processedJobIds.add(jobId);
-        await pauseFor(100);
-      };
-      const handler2 = vi.fn<typeof handler2Implementation>(handler2Implementation);
+      const handler2 = vi.fn<typeof handler1Implementation>(handler1Implementation);
       monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
       monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
       // Enqueue multiple jobs

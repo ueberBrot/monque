@@ -48,6 +48,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     this.monqueConfig = configuration.get<MonqueTsedConfig | undefined>("monque") ?? {};
   }
 
+  // oxlint-disable-next-line sonarjs/function-name -- Ts.ED invokes this lifecycle hook by its exact name.
   async $onInit(): Promise<void> {
     const config = this.monqueConfig;
 
@@ -63,6 +64,7 @@ export class MonqueModule implements OnInit, OnDestroy {
       const db = await resolveDatabase(config, (token) => this.injector.get(token));
 
       // We construct the options object carefully to match MonqueOptions
+      // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
       const { db: _db, ...restConfig } = config;
       const options: MonqueOptions = restConfig;
 
@@ -90,6 +92,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     }
   }
 
+  // oxlint-disable-next-line sonarjs/function-name -- Ts.ED invokes this lifecycle hook by its exact name.
   async $onDestroy(): Promise<void> {
     if (this.monque) {
       this.logger.info("Monque: Stopping...");

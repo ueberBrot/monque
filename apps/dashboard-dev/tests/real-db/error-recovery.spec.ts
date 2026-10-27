@@ -79,7 +79,8 @@ test("invalid browser configuration renders a startup error instead of a blank p
         sessionStorage.getItem("configuration-repaired") === undefined ||
         sessionStorage.getItem("configuration-repaired") === null ||
         sessionStorage.getItem("configuration-repaired") === ""
-          ? { apiBaseUrl: "http://[", basePath: "/dashboard" }
+          ? // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- This literal is a test fixture or import-matching pattern, not an outgoing network request.
+            { apiBaseUrl: "http://[", basePath: "/dashboard" }
           : config,
       set: (value: Parameters<typeof JSON.stringify>[0]) => {
         config = value;

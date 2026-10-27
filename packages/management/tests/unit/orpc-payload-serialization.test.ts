@@ -44,17 +44,16 @@ describe("oRPC Management payload serialization", () => {
           });
           const context = { managementContext: { token: "context-secret" } };
           const jobPath = `/api/v1/jobs/${job._id.toHexString()}`;
+          const readPath = route === "list" ? "/api/v1/jobs" : jobPath;
+          const mutationBody =
+            route === "reschedule" ? { nextRunAt: "2026-02-01T00:00:00.000Z" } : undefined;
           const response =
             route === "list" || route === "detail"
-              ? await handleManagementGet(
-                  surface,
-                  route === "list" ? "/api/v1/jobs" : jobPath,
-                  context,
-                )
+              ? await handleManagementGet(surface, readPath, context)
               : await handleManagementPost(
                   surface,
                   `${jobPath}/actions/${route}`,
-                  route === "reschedule" ? { nextRunAt: "2026-02-01T00:00:00.000Z" } : undefined,
+                  mutationBody,
                   context,
                 );
 

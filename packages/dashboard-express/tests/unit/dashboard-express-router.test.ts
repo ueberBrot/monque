@@ -211,7 +211,7 @@ describe("Dashboard Express Adapter", () => {
     expect(response.text).not.toContain('"pollingIntervalMs"');
   });
 
-  // oxlint-disable-next-line eslint/no-script-url -- Deliberately exercise rejection of an executable URL scheme.
+  // oxlint-disable-next-line eslint/no-script-url, sonarjs/no-clear-text-protocols -- Invalid URL fixtures exercise rejection without issuing network requests.
   it.each(["http://[", "javascript:alert(1)", "   "])(
     "forwards invalid API base URL %j to the host error handler",
     async (apiBaseUrl) => {

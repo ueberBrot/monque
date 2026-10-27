@@ -1,6 +1,4 @@
-import * as Clock from "effect/Clock";
-import * as Deferred from "effect/Deferred";
-import * as Effect from "effect/Effect";
+import { Clock, Deferred, Effect } from "effect";
 /** Bounded snapshots with shared in-flight reads. Failed reads are never cached. */
 export class QueryCache<T, E = unknown> {
   private readonly entries = new Map<
@@ -34,6 +32,7 @@ export class QueryCache<T, E = unknown> {
           Effect.gen({ self: this }, function* loadUncachedQuery() {
             const result = yield* Effect.exit(
               Effect.suspend(load).pipe(
+                // oxlint-disable-next-line sonarjs/no-nested-functions -- The cache write captures this request's generation and TTL inside its uninterruptible load.
                 Effect.tap((value) =>
                   Effect.gen({ self: this }, function* storeQueryResult() {
                     const completedAt = yield* Clock.monotonicTimeNanos;

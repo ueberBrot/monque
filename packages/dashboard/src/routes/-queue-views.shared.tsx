@@ -143,6 +143,13 @@ const QueueViewsErrorState = ({
     </DashboardState>
   );
 };
+const getWorkerSummary = (view: QueueViewSummaryDto): string => {
+  if (!view.hasRegisteredWorker) {
+    return "Historical only · No registered worker";
+  }
+  const paused = view.worker?.paused === true ? "Paused · " : "";
+  return `${paused}${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`;
+};
 const QueueViewsOverview = ({
   refresh,
   queueViews,
@@ -183,9 +190,7 @@ const QueueViewsOverview = ({
             <h2 className="break-all text-sm font-semibold">{view.name}</h2>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               <ServerCog className="size-3.5" />
-              {view.hasRegisteredWorker
-                ? `${view.worker?.paused === true ? "Paused · " : ""}${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`
-                : "Historical only · No registered worker"}
+              {getWorkerSummary(view)}
             </p>
           </div>
           <div className="grid grid-cols-4 gap-3 md:contents">
@@ -374,6 +379,8 @@ const QueueViewJobsTable = ({
   readonly onRefresh: () => void;
 }): ReactElement => {
   const nextPageCursor = jobsPage.cursor;
+  const hasNextCursor =
+    nextPageCursor !== undefined && nextPageCursor !== null && nextPageCursor !== "";
   return (
     <section className="grid min-w-0 gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -433,8 +440,7 @@ const QueueViewJobsTable = ({
           {jobsPage.jobs.length} job{jobsPage.jobs.length === 1 ? "" : "s"} on this page
         </p>
         <div className="flex gap-2">
-          {jobsPage.hasNextPage &&
-          !(nextPageCursor === undefined || nextPageCursor === null || nextPageCursor === "") ? (
+          {jobsPage.hasNextPage && hasNextCursor ? (
             <ButtonLink
               to="/queue-views/$name"
               params={{ name }}

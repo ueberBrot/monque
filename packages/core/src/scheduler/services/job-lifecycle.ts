@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import * as DateTime from "effect/DateTime";
-import * as Effect from "effect/Effect";
-import * as Random from "effect/Random";
+import { DateTime, Effect, Random } from "effect";
 import type { Document, Filter } from "mongodb";
 
 import { isPersistedJob, JobStatus } from "@/jobs";

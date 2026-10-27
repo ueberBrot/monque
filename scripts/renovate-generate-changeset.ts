@@ -38,22 +38,22 @@ const catalogsSchema = z.unknown().transform((input): Catalogs => {
     entries.map(([name, catalog]) => [name, dependencyVersionsSchema.parse(catalog)]),
   );
 });
-const workspaceCatalogsSchema = z.unknown().transform((input): WorkspaceCatalogs => ({
-  catalog:
-    isJsonObject(input) &&
-    "catalog" in input &&
-    input.catalog !== null &&
-    input.catalog !== undefined
-      ? dependencyVersionsSchema.parse(input.catalog)
-      : undefined,
-  catalogs:
-    isJsonObject(input) &&
-    "catalogs" in input &&
-    input.catalogs !== null &&
-    input.catalogs !== undefined
-      ? catalogsSchema.parse(input.catalogs)
-      : undefined,
-}));
+const workspaceCatalogsSchema = z.unknown().transform((input): WorkspaceCatalogs => {
+  if (!isJsonObject(input)) {
+    // oxlint-disable-next-line sonarjs/no-undefined-assignment -- Missing catalogs remain undefined so optional catalog resolution uses its existing fallback.
+    return { catalog: undefined, catalogs: undefined };
+  }
+  return {
+    catalog:
+      "catalog" in input && input.catalog !== null && input.catalog !== undefined
+        ? dependencyVersionsSchema.parse(input.catalog)
+        : undefined,
+    catalogs:
+      "catalogs" in input && input.catalogs !== null && input.catalogs !== undefined
+        ? catalogsSchema.parse(input.catalogs)
+        : undefined,
+  };
+});
 const packageManifestSchema = z.unknown().transform((input): PackageManifest | null => {
   if (!isJsonObject(input)) {
     return null;
@@ -77,6 +77,7 @@ const packageManifestSchema = z.unknown().transform((input): PackageManifest | n
 });
 
 const git = (args: string[], options: { input?: string; env?: NodeJS.ProcessEnv } = {}): string =>
+  // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
   execFileSync("git", args, { encoding: "utf-8", ...options }).trim();
 const readManifestAt = (ref: string, filePath: string): PackageManifest | null => {
   try {
@@ -147,6 +148,8 @@ const hasCompatibilityUpdates = (
   return false;
 };
 
+const rootManifestPath = "package.json";
+
 const main = async (): Promise<void> => {
   const baseSha = process.env.BASE_SHA;
   const headSha = process.env.HEAD_SHA;
@@ -166,23 +169,20 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  const rootBefore = readManifestAt(baseSha, "package.json");
-  const rootAfter = readManifestAt(headSha, "package.json");
+  const rootBefore = readManifestAt(baseSha, rootManifestPath);
+  const rootAfter = readManifestAt(headSha, rootManifestPath);
   const packagePaths = git(["ls-tree", "-r", "--name-only", "-z", baseSha, "--", "packages"])
     .split("\0")
     .filter((path) => /^packages\/[^/]+\/package\.json$/u.test(path));
   const updatedPackages = new Set<string>();
   const compatibilityUpdates = new Set<string>();
-  for (const path of packagePaths) {
-    if (!changedFiles.includes("package.json") && !changedFiles.includes(path)) {
-      continue;
-    }
+  const relevantPaths = changedFiles.includes(rootManifestPath)
+    ? packagePaths
+    : packagePaths.filter((path) => changedFiles.includes(path));
+  for (const path of relevantPaths) {
     const before = readManifestAt(baseSha, path);
     const after = readManifestAt(headSha, path);
-    if (before === null || after === null || after.private) {
-      continue;
-    }
-    if (after.name === undefined) {
+    if (before === null || after === null || after.private || after.name === undefined) {
       continue;
     }
     if (hasCompatibilityUpdates(before, after, rootBefore, rootAfter)) {

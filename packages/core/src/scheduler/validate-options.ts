@@ -1,4 +1,4 @@
-import * as Schema from "effect/Schema";
+import { Schema } from "effect";
 
 import { MonqueError } from "@/shared";
 import type { RetryOptions } from "@/workers";

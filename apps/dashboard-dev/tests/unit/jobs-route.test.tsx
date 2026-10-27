@@ -181,9 +181,7 @@ describe("Jobs route", () => {
             });
           }
         },
-        removeEventListener: (_event: string, listener: EventListenerOrEventListenerObject) => {
-          void listener;
-        },
+        removeEventListener: (_event: string, _listener: EventListenerOrEventListenerObject) => {},
       }),
     );
     try {
@@ -304,9 +302,13 @@ describe("Jobs route", () => {
           request instanceof Request ? request.url : String(request),
           "https://dashboard.test",
         );
+        if (
+          url.pathname !== "/api/v1/jobs" ||
+          url.searchParams.get("name") !== "dispatch-webhook"
+        ) {
+          return false;
+        }
         return (
-          url.pathname === "/api/v1/jobs" &&
-          url.searchParams.get("name") === "dispatch-webhook" &&
           url.searchParams.get("status") === "failed" &&
           url.searchParams.get("sortBy") === "updatedAt" &&
           url.searchParams.get("sortDirection") === "asc" &&

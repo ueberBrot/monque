@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "cn";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
 const DropdownMenu = ({ ...props }: MenuPrimitive.Root.Props) => (
   <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
@@ -111,7 +111,7 @@ const DropdownMenuSubContent = ({
   sideOffset = 0,
   className,
   ...props
-}: React.ComponentProps<typeof DropdownMenuContent>) => (
+}: ComponentProps<typeof DropdownMenuContent>) => (
   <DropdownMenuContent
     data-slot="dropdown-menu-sub-content"
     className={cn(
@@ -193,7 +193,7 @@ const DropdownMenuSeparator = ({ className, ...props }: MenuPrimitive.Separator.
     {...props}
   />
 );
-const DropdownMenuShortcut = ({ className, ...props }: React.ComponentProps<"span">) => (
+const DropdownMenuShortcut = ({ className, ...props }: ComponentProps<"span">) => (
   <span
     data-slot="dropdown-menu-shortcut"
     className={cn(

@@ -104,6 +104,7 @@ export const ProcessingControls = ({
   }
   const { action, disabled, reason } = processingControlState(state, capabilities, name);
   const scope = name === undefined ? "instance" : "worker";
+  const actionLabel = state.paused ? "Resume" : "Pause";
   return (
     <section className="grid min-w-0 gap-3 rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -122,7 +123,7 @@ export const ProcessingControls = ({
           }}
         >
           {state.paused ? <Play /> : <Pause />}
-          {mutation.isPending ? "Saving…" : `${state.paused ? "Resume" : "Pause"} ${scope}`}
+          {mutation.isPending ? "Saving…" : `${actionLabel} ${scope}`}
         </Button>
       </div>
       <p className="break-all font-mono text-xs text-muted-foreground">

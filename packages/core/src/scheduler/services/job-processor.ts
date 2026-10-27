@@ -1,8 +1,5 @@
-import * as Cause from "effect/Cause";
-import * as Duration from "effect/Duration";
+import { Cause, Duration, Effect, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
-import * as Effect from "effect/Effect";
-import * as Semaphore from "effect/Semaphore";
 
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
@@ -73,6 +70,7 @@ export class JobProcessor {
     (effect: Effect.Effect<void, unknown>, _targetNames?: ReadonlySet<string>) =>
       Effect.uninterruptible(effect),
   );
+  // oxlint-disable-next-line sonarjs/cognitive-complexity -- Round-robin worker selection and exponential claim batches share the instance concurrency budget.
   private readonly doPoll = Effect.fnUntraced(function* claimAvailableJobs(
     this: JobProcessor,
     targetNames?: ReadonlySet<string>,
@@ -104,6 +102,7 @@ export class JobProcessor {
       return;
     }
     const dueNames = yield* this.discovery.discoverDue(eligibleNames, requestedNames);
+    // oxlint-disable-next-line sonarjs/too-many-break-or-continue-in-loop -- Guard clauses skip unavailable workers before claiming their slots.
     for (const name of names) {
       const worker = this.ctx.workers.get(name);
       if (!worker || this.ctx.isPaused(name) || !dueNames.has(name)) {
@@ -121,6 +120,7 @@ export class JobProcessor {
         return;
       }
       let remaining = availableSlots;
+      // oxlint-disable-next-line sonarjs/misplaced-loop-counter -- Batch size doubles independently while successful claims consume remaining slots.
       for (let batchSize = 1; remaining > 0 && this.ctx.isRunning(); batchSize *= 2) {
         const size = Math.min(batchSize, remaining);
         let found = 0;

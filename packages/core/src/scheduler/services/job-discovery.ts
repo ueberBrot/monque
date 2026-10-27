@@ -1,6 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
-import * as Effect from "effect/Effect";
+import { Cause, Clock, Effect } from "effect";
 
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";

@@ -22,7 +22,7 @@ const getRouter = (
   if (options?.history !== undefined) {
     historyOptions.history = options.history;
   }
-  const router = createTanStackRouter({
+  return createTanStackRouter({
     routeTree,
     defaultErrorComponent: DashboardRouteError,
     defaultPendingComponent: DashboardRoutePending,
@@ -35,7 +35,6 @@ const getRouter = (
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
   });
-  return router;
 };
 declare module "@tanstack/react-router" {
   interface Register {

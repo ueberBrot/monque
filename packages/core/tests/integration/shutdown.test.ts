@@ -162,6 +162,7 @@ describe("stop() - Graceful Shutdown", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monque.stop().then(() => {
           stopped = true;
         });
@@ -218,6 +219,7 @@ describe("stop() - Graceful Shutdown", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monque.stop().then(() => {
           stopped = true;
         });

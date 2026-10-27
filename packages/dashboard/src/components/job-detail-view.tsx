@@ -42,23 +42,26 @@ const JsonExpandButton = ({
   </button>
 );
 const jsonViewComponents = { arrow: <JsonExpandButton /> };
+const foregroundColor = "var(--foreground)";
+const mutedForegroundColor = "var(--muted-foreground)";
+
 const jsonViewTheme: CSSProperties & Record<`--${string}`, string> = {
-  "--w-rjv-add-color": "var(--foreground)",
-  "--w-rjv-arrow-color": "var(--muted-foreground)",
+  "--w-rjv-add-color": foregroundColor,
+  "--w-rjv-arrow-color": mutedForegroundColor,
   "--w-rjv-background-color": "transparent",
-  "--w-rjv-color": "var(--foreground)",
-  "--w-rjv-curlybraces-color": "var(--muted-foreground)",
+  "--w-rjv-color": foregroundColor,
+  "--w-rjv-curlybraces-color": mutedForegroundColor,
   "--w-rjv-font-family": "var(--font-mono)",
-  "--w-rjv-info-color": "var(--muted-foreground)",
+  "--w-rjv-info-color": mutedForegroundColor,
   "--w-rjv-line-color": "var(--border)",
-  "--w-rjv-type-boolean-color": "var(--foreground)",
-  "--w-rjv-type-date-color": "var(--foreground)",
-  "--w-rjv-type-float-color": "var(--foreground)",
-  "--w-rjv-type-int-color": "var(--foreground)",
-  "--w-rjv-type-null-color": "var(--muted-foreground)",
-  "--w-rjv-type-string-color": "var(--foreground)",
-  "--w-rjv-type-url-color": "var(--foreground)",
-  "--w-rjv-update-color": "var(--foreground)",
+  "--w-rjv-type-boolean-color": foregroundColor,
+  "--w-rjv-type-date-color": foregroundColor,
+  "--w-rjv-type-float-color": foregroundColor,
+  "--w-rjv-type-int-color": foregroundColor,
+  "--w-rjv-type-null-color": mutedForegroundColor,
+  "--w-rjv-type-string-color": foregroundColor,
+  "--w-rjv-type-url-color": foregroundColor,
+  "--w-rjv-update-color": foregroundColor,
 };
 const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
   ["Created", <JobTimestamp key="createdAt" value={job.createdAt} />],
@@ -82,14 +85,18 @@ const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
       : "Not set",
   ],
 ];
-const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => [
-  ["Claimed by", job.claimedBy ?? "Unclaimed"],
-  ["Repeat interval", job.repeatInterval ?? "One-time job"],
-  ...(job.repeatInterval === undefined || job.repeatInterval === null || job.repeatInterval === ""
-    ? []
-    : [["Schedule timezone", job.timezone ?? "Server local timezone"] satisfies MetadataItem]),
-  ["Unique key", job.uniqueKey ?? "Not set"],
-];
+const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => {
+  const hasRepeatInterval =
+    job.repeatInterval !== undefined && job.repeatInterval !== null && job.repeatInterval !== "";
+  return [
+    ["Claimed by", job.claimedBy ?? "Unclaimed"],
+    ["Repeat interval", job.repeatInterval ?? "One-time job"],
+    ...(hasRepeatInterval
+      ? [["Schedule timezone", job.timezone ?? "Server local timezone"] satisfies MetadataItem]
+      : []),
+    ["Unique key", job.uniqueKey ?? "Not set"],
+  ];
+};
 const CopyButton = ({
   label,
   getText,

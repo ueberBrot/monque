@@ -70,6 +70,7 @@ describe("management middleware", () => {
       expect(response.status).toBe(201);
       expect(response.headers.get("x-result")).toBe("created");
       await expect(response.json()).resolves.toStrictEqual({
+        // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- This literal is a test fixture or import-matching pattern, not an outgoing network request.
         url: "http://dashboard-dev.local/api/v1/jobs?name=email",
         method: "POST",
         scenario: "mixed",

@@ -14,6 +14,7 @@ import {
 } from "@tests/unit/management-test-utils";
 
 interface SelectedActionRequest {
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   action: "cancel" | "retry" | "delete" | "reschedule" | "priority";
   ids: string[];
   nextRunAt?: string;

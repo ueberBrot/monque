@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import * as Cause from "effect/Cause";
-import * as Context from "effect/Context";
-import * as Deferred from "effect/Deferred";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
-import * as Option from "effect/Option";
+import { Cause, Context, Deferred, Effect, Layer, ManagedRuntime, Option } from "effect";
 import { ObjectId } from "mongodb";
 import type { Collection, Db, Document, WithId } from "mongodb";
 

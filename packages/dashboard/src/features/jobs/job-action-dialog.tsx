@@ -97,6 +97,8 @@ const JobActionDialogForm = ({
   const requiresDate = state.action === "reschedule";
   const nextRunAt = requiresDate ? fromDateTimeLocalValue(date) : undefined;
   const { actionLabel, confirmationLabel } = getJobActionLabels(state.action, state.scope);
+  const dateMissing =
+    requiresDate && (nextRunAt === undefined || nextRunAt === null || nextRunAt === "");
   return (
     <form.AppForm>
       <DialogTitle>
@@ -172,11 +174,7 @@ const JobActionDialogForm = ({
           onClick={() => {
             void form.handleSubmit();
           }}
-          disabled={
-            busy ||
-            (requiresDate && (nextRunAt === undefined || nextRunAt === null || nextRunAt === "")) ||
-            (requiresPriority && priority === undefined)
-          }
+          disabled={busy || dateMissing || (requiresPriority && priority === undefined)}
         >
           {confirmationLabel}
         </Button>

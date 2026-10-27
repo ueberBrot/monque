@@ -120,10 +120,7 @@ describe("Index creation", () => {
       const indexes = await collection.indexes();
       const atomicClaimIndex = indexes.find(
         (idx) =>
-          "name" in idx.key &&
-          "status" in idx.key &&
-          "nextRunAt" in idx.key &&
-          "claimedBy" in idx.key &&
+          ["name", "status", "nextRunAt", "claimedBy"].every((key) => key in idx.key) &&
           Object.keys(idx.key).length === 4,
       );
       expect(atomicClaimIndex).toBeDefined();

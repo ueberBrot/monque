@@ -53,10 +53,10 @@ export const isMongooseService = function isMongooseService(
 export const isMongooseConnection = function isMongooseConnection(
   value: unknown,
 ): value is MongooseConnection {
+  if (typeof value !== "object" || value === null || !("db" in value)) {
+    return false;
+  }
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "db" in value &&
     typeof value.db === "object" &&
     value.db !== null &&
     "collection" in value.db &&

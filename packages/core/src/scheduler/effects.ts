@@ -1,7 +1,5 @@
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import type * as Fiber from "effect/Fiber";
+import { Cause, Effect, Exit } from "effect";
+import type { Fiber } from "effect";
 
 export const attempt = <A>(operation: () => A): Effect.Effect<A, unknown> =>
   Effect.try({ try: operation, catch: (error) => error });

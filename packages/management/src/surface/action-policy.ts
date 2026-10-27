@@ -1,6 +1,6 @@
 import type { JobSelector, PersistedJob } from "@monque/core";
 import { ORPCError } from "@orpc/server";
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 
 import { concurrently, fromPromise } from "../effects.js";
 import type {
@@ -11,6 +11,8 @@ import type {
   ManagementMonque,
   ManagementOptions,
 } from "./types.js";
+
+const unsupportedActionReason = "Unsupported action";
 
 const DEFAULT_CAPABILITY_ACTIONS = {
   read: false,
@@ -108,13 +110,14 @@ export const createManagementActionPolicy = function createManagementActionPolic
     if (options.readOnly === true && action !== "read") {
       return "Management surface is read-only";
     }
-    return supported ? undefined : "Unsupported action";
+    return supported ? undefined : unsupportedActionReason;
   };
 
   const getActionDenial = Effect.fnUntraced(function* getActionDenial(
     action: ManagementAction,
     context: TContext,
     target: ManagementActionTarget = {},
+    // oxlint-disable-next-line sonarjs/bool-param-default -- Undefined derives support from capabilities; false explicitly marks an unsupported action.
     supported?: boolean,
   ) {
     const denial = getSupportDenial(action, supported ?? true);
@@ -156,7 +159,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
   const requireSupported = Effect.fnUntraced(function* requireSupported(action: ManagementAction) {
     // Processing and selected actions reject missing support before checking read-only mode.
     if (!isManagementActionSupported(options.monque, action)) {
-      return yield* forbidden("Unsupported action");
+      return yield* forbidden(unsupportedActionReason);
     }
     return yield* Effect.void;
   });
@@ -166,7 +169,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
   ): Effect.fn.Return<TMutator, ORPCError<"FORBIDDEN", unknown>> {
     yield* requireAllowed(getSupportDenial(action));
     if (mutate === undefined) {
-      return yield* forbidden("Unsupported action");
+      return yield* forbidden(unsupportedActionReason);
     }
     return mutate;
   });

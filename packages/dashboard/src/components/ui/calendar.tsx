@@ -1,7 +1,8 @@
 "use client";
 import { cn } from "cn";
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import * as React from "react";
+import { useEffect, useRef } from "react";
+import type { ComponentProps } from "react";
 import type {
   ChevronProps,
   DayButtonProps,
@@ -35,9 +36,9 @@ const CalendarDayButton = ({
   locale?: Partial<Locale> | undefined;
 }) => {
   const defaultClassNames = getDefaultClassNames();
-  const ref = React.useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
   const { focused } = modifiers;
-  React.useEffect(() => {
+  useEffect(() => {
     if (focused === true) {
       ref.current?.focus();
     }
@@ -87,8 +88,8 @@ const Calendar = ({
   formatters,
   components,
   ...props
-}: React.ComponentProps<typeof DayPicker> & {
-  buttonVariant?: React.ComponentProps<typeof Button>["variant"];
+}: ComponentProps<typeof DayPicker> & {
+  buttonVariant?: ComponentProps<typeof Button>["variant"];
 }) => {
   const defaultClassNames = getDefaultClassNames();
   return (

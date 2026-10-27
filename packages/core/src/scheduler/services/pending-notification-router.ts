@@ -1,10 +1,6 @@
-import * as Clock from "effect/Clock";
+import { Clock, Effect, Exit, FiberHandle, Scope } from "effect";
+import type { Fiber } from "effect";
 import { catch as catchFailure } from "effect/Effect";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import type * as Fiber from "effect/Fiber";
-import * as FiberHandle from "effect/FiberHandle";
-import * as Scope from "effect/Scope";
 
 import { toError } from "@/shared";
 

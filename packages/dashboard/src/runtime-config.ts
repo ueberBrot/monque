@@ -11,13 +11,16 @@ const isApiBaseUrl = (value: string): boolean => {
     return false;
   }
 };
-const isMountPath = (value: string): boolean =>
-  value.trim().length > 0 &&
-  value === value.trim() &&
-  !value.startsWith("//") &&
-  !/[?#\\\r\n\t]/u.test(value) &&
-  !value.includes("://") &&
-  !value.split("/").some((segment) => /^(?:\.|%2e){1,2}$/iu.test(segment));
+const isMountPath = (value: string): boolean => {
+  if (value.trim().length === 0 || value !== value.trim() || value.startsWith("//")) {
+    return false;
+  }
+  return (
+    !/[?#\\\r\n\t]/u.test(value) &&
+    !value.includes("://") &&
+    !value.split("/").some((segment) => /^(?:\.|%2e){1,2}$/iu.test(segment))
+  );
+};
 const DashboardRuntimeConfigSchema = z.strictObject({
   apiBaseUrl: z.string().refine(isApiBaseUrl, {
     message: "apiBaseUrl must be an HTTP(S) URL or a relative API path.",

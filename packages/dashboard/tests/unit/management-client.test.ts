@@ -6,6 +6,7 @@ describe(createDashboardManagementApi, () => {
   it("rejects an invalid URL before obtaining the fetch implementation", () => {
     expect(() =>
       createDashboardManagementApi({
+        // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- This literal is a test fixture or import-matching pattern, not an outgoing network request.
         apiBaseUrl: "http://[",
         origin: "https://dashboard.example",
         get fetch(): typeof fetch {

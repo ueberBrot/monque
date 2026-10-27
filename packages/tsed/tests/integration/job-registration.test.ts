@@ -151,6 +151,7 @@ describe("Job Registration Integration", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monqueService.monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monqueService.monque.stop().then(() => {
           stopped = true;
         });

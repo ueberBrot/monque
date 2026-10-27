@@ -13,6 +13,7 @@ let dashboardClientBuild: Promise<void> | undefined;
 
 const buildDashboardClient = async (): Promise<void> => {
   dashboardClientBuild ??= (async () => {
+    // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     const child = spawn("vp", ["build"], {
       cwd: dashboardPackageDirectory,
       stdio: "inherit",
@@ -156,7 +157,7 @@ const config = defineConfig({
         injectSource: {
           enabled: true,
           ignore: {
-            files: [/.*\.test\.(?:ts|tsx)$/u],
+            files: [/\.test\.(?:ts|tsx)$/u],
           },
         },
         logging: true,

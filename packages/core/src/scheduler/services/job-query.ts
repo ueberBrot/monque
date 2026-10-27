@@ -1,5 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
+import { Cause, Effect } from "effect";
 import type { Document, ObjectId } from "mongodb";
 
 import { isValidJobStatus, JobStatus } from "@/jobs";

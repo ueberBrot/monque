@@ -1,6 +1,6 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { cn } from "cn";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
 const Popover = ({ ...props }: PopoverPrimitive.Root.Props) => (
   <PopoverPrimitive.Root data-slot="popover" {...props} />
@@ -41,7 +41,7 @@ const PopoverContent = ({
     </PopoverPrimitive.Positioner>
   </PopoverPrimitive.Portal>
 );
-const PopoverHeader = ({ className, ...props }: React.ComponentProps<"div">) => (
+const PopoverHeader = ({ className, ...props }: ComponentProps<"div">) => (
   <div
     data-slot="popover-header"
     className={cn("flex flex-col gap-0.5 text-sm", className)}

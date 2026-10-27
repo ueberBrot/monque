@@ -1,6 +1,9 @@
 import { setTimeout } from "node:timers/promises";
 import type { Monque } from "@monque/core";
 
+const demoBatchJobName = "demo-batch";
+const demoSource = "dashboard-demo";
+
 const startDemoWorkload = async (monque: Monque): Promise<void> => {
   monque.register("demo-email", async () => {
     await setTimeout(4000);
@@ -18,28 +21,28 @@ const startDemoWorkload = async (monque: Monque): Promise<void> => {
     await setTimeout(2000);
     throw new Error("Demo failure: the destination is unavailable.");
   });
-  monque.register("demo-batch", async (job) => {
+  monque.register(demoBatchJobName, async (job) => {
     const batch = `${String(job._id)}:${job.nextRunAt.toISOString()}`;
     await Promise.all(
       ["demo-email", "demo-report", "demo-webhook", "demo-failure"].map(
         async (name) =>
           await Promise.resolve(
-            monque.enqueue(name, { source: "dashboard-demo", batch }, { uniqueKey: batch }),
+            monque.enqueue(name, { source: demoSource, batch }, { uniqueKey: batch }),
           ),
       ),
     );
   });
   await monque.schedule(
     "*/15 * * * * *",
-    "demo-batch",
-    { source: "dashboard-demo" },
+    demoBatchJobName,
+    { source: demoSource },
     {
       uniqueKey: "dashboard-demo-recurring",
     },
   );
   await monque.enqueue(
-    "demo-batch",
-    { source: "dashboard-demo" },
+    demoBatchJobName,
+    { source: demoSource },
     {
       uniqueKey: "dashboard-demo-startup",
     },

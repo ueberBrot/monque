@@ -17,6 +17,7 @@ const scope = fileURLToPath(new URL("../scope.sh", import.meta.url));
 const gate = fileURLToPath(new URL("../gate.sh", import.meta.url));
 
 const status = (needs: GateNeeds) =>
+  // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
   spawnSync("bash", [gate], {
     env: { ...process.env, CI_NEEDS: JSON.stringify(needs) },
     encoding: "utf-8",
@@ -27,6 +28,7 @@ describe("CI change selection", () => {
     const cwd = mkdtempSync(nodePath.join(tmpdir(), "monque-ci-scope-"));
     const output = nodePath.join(cwd, ".git", "output");
     const git = (...args: string[]) =>
+      // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
       execFileSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
     const commit = () => {
       git("add", "-A");
@@ -38,6 +40,7 @@ describe("CI change selection", () => {
     };
     const select = (base: string) => {
       writeFileSync(output, "");
+      // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
       const result = spawnSync("bash", [scope], {
         cwd,
         env: { ...process.env, BASE_SHA: base, GITHUB_OUTPUT: output },

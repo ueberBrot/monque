@@ -25,17 +25,20 @@ const isRecord = (value: unknown): value is object =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isVerificationJob = (value: unknown): value is VerificationJob =>
   isRecord(value) && "_id" in value && value._id instanceof BSON.ObjectId;
-const isListedJob = (value: unknown): value is ListedJob =>
-  isRecord(value) &&
-  "id" in value &&
-  typeof value.id === "string" &&
-  (!("priority" in value) || value.priority === undefined || typeof value.priority === "number");
-const isIndex = (value: unknown): value is IndexDescriptionInfo =>
-  isRecord(value) &&
-  "name" in value &&
-  "key" in value &&
-  typeof value.name === "string" &&
-  isRecord(value.key);
+const isListedJob = (value: unknown): value is ListedJob => {
+  if (!isRecord(value) || !("id" in value) || typeof value.id !== "string") {
+    return false;
+  }
+  return (
+    !("priority" in value) || value.priority === undefined || typeof value.priority === "number"
+  );
+};
+const isIndex = (value: unknown): value is IndexDescriptionInfo => {
+  if (!isRecord(value) || !("name" in value) || !("key" in value)) {
+    return false;
+  }
+  return typeof value.name === "string" && isRecord(value.key);
+};
 
 interface VersionedPackage {
   version: string;
@@ -62,8 +65,12 @@ const isDashboardEntry = (
   "createDashboardExpressRouter" in value &&
   typeof value.createDashboardExpressRouter === "function";
 
+const verificationUserHeader = "x-verification-user";
+const priorityAction = "setJobPriority";
+
 const scenario = process.env.MONQUE_VERIFY_CASE;
 const current = scenario === "current";
+const minimumCore = scenario === "minimum-core";
 assert.ok(
   process.env.MONQUE_VERIFY_URI !== undefined && process.env.MONQUE_VERIFY_URI.length > 0,
   "Missing MongoDB URI",
@@ -85,15 +92,14 @@ const request = async (path: string, options: RequestInit = {}) => {
   const address = server?.address();
   assert.ok(isRecord(address) && "port" in address, "HTTP server is not listening");
   const headers = new Headers(options.headers);
-  if (!headers.has("x-verification-user")) {
-    headers.set("x-verification-user", "operator");
+  if (!headers.has(verificationUserHeader)) {
+    headers.set(verificationUserHeader, "operator");
   }
-  const response = await fetch(`http://127.0.0.1:${address.port}/ops${path}`, {
+  return await fetch(`http://127.0.0.1:${address.port}/ops${path}`, {
     ...options,
     headers,
     signal: AbortSignal.timeout(15_000),
   });
-  return response;
 };
 
 try {
@@ -102,11 +108,11 @@ try {
   if (current) {
     const parsed: unknown = BSON.EJSON.parse(await readFile(snapshotPath, "utf-8"));
     assert.ok(
-      isRecord(parsed) &&
-        "jobs" in parsed &&
-        "indexes" in parsed &&
-        Array.isArray(parsed.jobs) &&
-        Array.isArray(parsed.indexes),
+      isRecord(parsed) && "jobs" in parsed && "indexes" in parsed,
+      "Invalid legacy snapshot",
+    );
+    assert.ok(
+      Array.isArray(parsed.jobs) && Array.isArray(parsed.indexes),
       "Invalid legacy snapshot",
     );
     const snapshotJobs: unknown[] = parsed.jobs;
@@ -181,8 +187,9 @@ try {
 
   const job = await monque.enqueue("consumer-smoke", { source: scenario }, { priority: 7 });
   const app = express();
+  app.disable("x-powered-by");
   app.use("/ops", (req, res, next) => {
-    if (req.get("x-verification-user") !== "operator") {
+    if (req.get(verificationUserHeader) !== "operator") {
       res.sendStatus(401);
       return;
     }
@@ -194,7 +201,7 @@ try {
   await once(server, "listening");
   await Promise.all(
     ["/api/v1/jobs", "/dashboard/jobs", "/openapi.json"].map(async (path) => {
-      const unauthorized = await request(path, { headers: { "x-verification-user": "" } });
+      const unauthorized = await request(path, { headers: { [verificationUserHeader]: "" } });
       assert.equal(unauthorized.status, 401);
     }),
   );
@@ -211,22 +218,22 @@ try {
   const capabilitiesResponse = await request("/api/v1/capabilities");
   const capabilities: unknown = await capabilitiesResponse.json();
   assert.ok(isRecord(capabilities) && "actions" in capabilities && isRecord(capabilities.actions));
-  if (scenario === "minimum-core") {
+  if (minimumCore) {
     assert.equal(
-      "setJobPriority" in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
+      priorityAction in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
       false,
     );
   }
   if (scenario === "minimum-management") {
     assert.notEqual(
-      "setJobPriority" in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
+      priorityAction in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
       true,
     );
   }
   if (current) {
     assert.equal(listed.priority, 7);
     assert.equal(
-      "setJobPriority" in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
+      priorityAction in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
       true,
     );
     const changed = await request(`/api/v1/jobs/${job._id.toHexString()}/actions/priority`, {
@@ -238,7 +245,7 @@ try {
     const updatedJob = await monque.getJob(job._id);
     assert.equal(updatedJob?.priority, -5);
   }
-  if (scenario === "minimum-core") {
+  if (minimumCore) {
     const denied = await request(`/api/v1/jobs/${job._id.toHexString()}/actions/priority`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -280,7 +287,7 @@ try {
   assert.ok(isDashboardEntry(dashboardEntry));
   checks.push("ESM and CommonJS package entrypoints load");
 
-  if (scenario === "minimum-core") {
+  if (minimumCore) {
     await monque.enqueue(
       "legacy-future",
       { preserved: true },
