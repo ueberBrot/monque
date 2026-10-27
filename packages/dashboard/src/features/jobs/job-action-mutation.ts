@@ -15,18 +15,23 @@ export const jobActionMutationOptions = (api: DashboardManagementApi, queryClien
       for (const job of result?.jobs ?? []) {
         queryClient.setQueryData(api.orpc.job.queryKey({ input: { params: { id: job.id } } }), job);
       }
+
       const ids = input.jobIds;
+
       const authorizationChanged =
         result?.authorizationChanged === true || readManagementError(error).status === 403;
+
       const keys: QueryKey[] = [
         api.orpc.jobs.key(),
         api.orpc.jobStats.key(),
         api.orpc.queueViews.key(),
         ...ids.map((id) => api.orpc.job.key({ input: { params: { id } } })),
       ];
+
       if (authorizationChanged) {
         keys.push(api.orpc.capabilities.key());
       }
+
       await Promise.all(
         keys.map(async (queryKey) => {
           await Promise.resolve(queryClient.invalidateQueries({ queryKey }));

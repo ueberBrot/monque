@@ -21,7 +21,7 @@
 // Or add to package.json:
 //   "scripts": { "sandcastle": "bun .sandcastle/main.ts" }
 
-import * as sandcastle from "@ai-hero/sandcastle";
+import { Output, codex, createSandbox, run } from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { z } from "zod";
 
@@ -82,6 +82,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   if (iteration > MAX_ITERATIONS) {
     return;
   }
+
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
 
   // -------------------------------------------------------------------------
@@ -93,7 +94,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   //
   // It outputs a <plan> JSON block — Output.object parses and validates it.
   // -------------------------------------------------------------------------
-  const plan = await sandcastle.run({
+  const plan = await run({
     hooks,
     sandbox: docker(sandboxConfig),
     name: "planner",
@@ -101,12 +102,12 @@ const runIteration = async (iteration: number): Promise<void> => {
     // not write code. (Structured output requires maxIterations: 1.)
     maxIterations: 1,
     // Higher reasoning for planning: dependency analysis benefits from it.
-    agent: sandcastle.codex("gpt-5.5", { effort: "xhigh" }),
+    agent: codex("gpt-5.5", { effort: "xhigh" }),
     promptFile: "./.sandcastle/plan-prompt.md",
     // Extract and validate the <plan> JSON into a typed object. Throws
     // StructuredOutputError if the tag is missing, the JSON is malformed, or
     // validation fails — which aborts the loop.
-    output: sandcastle.Output.object({ tag: "plan", schema: planSchema }),
+    output: Output.object({ tag: "plan", schema: planSchema }),
   });
 
   const { issues } = plan.output;
@@ -114,10 +115,12 @@ const runIteration = async (iteration: number): Promise<void> => {
   if (issues.length === 0) {
     // No unblocked work — either everything is done or everything is blocked.
     console.log("No unblocked issues to work on. Exiting.");
+
     return;
   }
 
   console.log(`Planning complete. ${issues.length} issue(s) to work in parallel:`);
+
   for (const issue of issues) {
     console.log(`  ${issue.id}: ${issue.title} → ${issue.branch}`);
   }
@@ -134,7 +137,7 @@ const runIteration = async (iteration: number): Promise<void> => {
 
   const settled = await Promise.allSettled(
     issues.map(async (issue) => {
-      const sandbox = await sandcastle.createSandbox({
+      const sandbox = await createSandbox({
         branch: issue.branch,
         sandbox: docker(sandboxConfig),
         hooks,
@@ -146,7 +149,7 @@ const runIteration = async (iteration: number): Promise<void> => {
         const implement = await sandbox.run({
           name: "implementer",
           maxIterations: 100,
-          agent: sandcastle.codex("gpt-5.4", { effort: "medium" }),
+          agent: codex("gpt-5.4", { effort: "medium" }),
           promptFile: "./.sandcastle/implement-prompt.md",
           promptArgs: {
             TASK_ID: issue.id,
@@ -160,7 +163,7 @@ const runIteration = async (iteration: number): Promise<void> => {
           const review = await sandbox.run({
             name: "reviewer",
             maxIterations: 1,
-            agent: sandcastle.codex("gpt-5.5", { effort: "xhigh" }),
+            agent: codex("gpt-5.5", { effort: "xhigh" }),
             promptFile: "./.sandcastle/review-prompt.md",
             promptArgs: {
               BRANCH: issue.branch,
@@ -196,6 +199,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   const completedIssues = settled
     .flatMap((outcome, i) => {
       const issue = issues[i];
+
       return issue === undefined ? [] : [{ outcome, issue }];
     })
     .filter(
@@ -206,6 +210,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   const completedBranches = completedIssues.map((i) => i.branch);
 
   console.log(`\nExecution complete. ${completedBranches.length} branch(es) with commits:`);
+
   for (const branch of completedBranches) {
     console.log(`  ${branch}`);
   }
@@ -214,6 +219,7 @@ const runIteration = async (iteration: number): Promise<void> => {
     // All agents ran but none made commits — nothing to merge this cycle.
     console.log("No commits produced. Nothing to merge.");
     await runIteration(iteration + 1);
+
     return;
   }
 
@@ -226,12 +232,12 @@ const runIteration = async (iteration: number): Promise<void> => {
   // The {{BRANCHES}} and {{ISSUES}} prompt arguments are lists that the agent
   // uses to know which branches to merge and which issues to close.
   // -------------------------------------------------------------------------
-  await sandcastle.run({
+  await run({
     hooks,
     sandbox: docker(sandboxConfig),
     name: "merger",
     maxIterations: 1,
-    agent: sandcastle.codex("gpt-5.4", { effort: "medium" }),
+    agent: codex("gpt-5.4", { effort: "medium" }),
     promptFile: "./.sandcastle/merge-prompt.md",
     promptArgs: {
       // A markdown list of branch names, one per line.

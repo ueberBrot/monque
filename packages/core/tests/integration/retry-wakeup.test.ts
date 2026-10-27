@@ -47,6 +47,7 @@ describe("local retry wakeups", () => {
         ),
       );
       collectionName = uniqueCollectionName("retry_wakeup");
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 30_000,
@@ -55,13 +56,16 @@ describe("local retry wakeups", () => {
         baseRetryInterval: 10,
         workerConcurrency: 1,
       });
+
       instances.push(monque);
       await monque.initialize();
       const starts: number[] = [];
+
       const failures: {
         job: Job;
         willRetry: boolean;
       }[] = [];
+
       const errors: Error[] = [];
       monque.on("job:fail", (event) => {
         failures.push(event);
@@ -71,6 +75,7 @@ describe("local retry wakeups", () => {
       });
       monque.register("retry", () => {
         starts.push(Date.now());
+
         if (starts.length === 1 || terminalStatus === JobStatus.FAILED) {
           throw new Error(`Failure ${starts.length}`);
         }
@@ -80,6 +85,7 @@ describe("local retry wakeups", () => {
       await waitFor(
         async () => {
           const persisted = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
           return persisted?.status === terminalStatus;
         },
         { timeout: 5000 },
@@ -95,9 +101,11 @@ describe("local retry wakeups", () => {
         failuresMapWillRetryWillRetry: terminalStatus === JobStatus.FAILED ? [true, false] : [true],
       });
       const retry = failures[0]?.job;
+
       if (!retry) {
         throw new Error("Expected first attempt to schedule a retry");
       }
+
       expect(starts[1]).toBeGreaterThanOrEqual(retry.nextRunAt.getTime());
       const persisted = await db.collection<Job>(collectionName).findOne({ _id: job._id });
       expect({

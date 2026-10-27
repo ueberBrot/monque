@@ -128,6 +128,7 @@ describe("@Job", () => {
     it("should handle missing jobs array in existing store", () => {
       // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
       class TestClass {}
+
       const store = Store.from(TestClass);
       // Seed store with a partial object missing the jobs array.
       store.set(MONQUE, { type: "controller" });

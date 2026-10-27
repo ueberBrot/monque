@@ -16,18 +16,23 @@ import { createDashboardRuntimeConfig, dashboardDevScenarioOptions } from "./run
 import { createScenarioHeaderFetch } from "./scenario-header-fetch.js";
 
 const LOCAL_STORAGE_SCENARIO_KEY = "monque-dashboard-dev-scenario";
+
 const getStoredScenarioId = (defaultScenarioId: DashboardDevScenarioId): DashboardDevScenarioId => {
   if (globalThis.window === undefined) {
     return defaultScenarioId;
   }
+
   let storedScenarioId: string | null;
+
   try {
     storedScenarioId = window.localStorage.getItem(LOCAL_STORAGE_SCENARIO_KEY);
   } catch {
     return defaultScenarioId;
   }
+
   return isDashboardDevScenarioId(storedScenarioId) ? storedScenarioId : defaultScenarioId;
 };
+
 const DashboardDevOverlay = ({
   environment,
   scenarioId,
@@ -41,6 +46,7 @@ const DashboardDevOverlay = ({
   useEffect(() => {
     form.reset({ scenario: scenarioId });
   }, [form, scenarioId]);
+
   return (
     <Collapsible
       data-testid="dashboard-dev-shell"
@@ -54,9 +60,11 @@ const DashboardDevOverlay = ({
           if (environment.mode === "db") {
             return "Local MongoDB";
           }
+
           if (environment.mode === "live") {
             return "Live Management API";
           }
+
           return "Mock Management API";
         })()}
       </CollapsibleTrigger>
@@ -106,28 +114,35 @@ const DashboardDevOverlay = ({
     </Collapsible>
   );
 };
+
 type DevManagementApiOptions = {
   -readonly [Key in keyof Parameters<typeof createDashboardManagementApi>[0]]: Parameters<
     typeof createDashboardManagementApi
   >[0][Key];
 };
+
 const createDevRuntime = (
   mode: DashboardDevEnvironment["mode"],
   scenarioId: DashboardDevScenarioId,
 ) => {
   const runtimeConfig = createDashboardRuntimeConfig({ mode, scenarioId });
+
   const apiOptions: DevManagementApiOptions = {
     apiBaseUrl: runtimeConfig.apiBaseUrl,
     origin: window.location.origin,
   };
+
   if (mode === "mock") {
     apiOptions.fetch = createScenarioHeaderFetch(scenarioId);
   }
+
   const managementApi = createDashboardManagementApi(apiOptions);
   const queryClient = createDashboardQueryClient();
   const router = getRouter({ managementApi, queryClient, runtimeConfig });
+
   return { router, queryClient };
 };
+
 const DashboardDevRuntime = ({
   environment,
   scenarioId,
@@ -139,9 +154,12 @@ const DashboardDevRuntime = ({
     () => createDevRuntime(environment.mode, scenarioId),
     [environment.mode, scenarioId],
   );
+
   const { router, queryClient } = runtime;
+
   return <DashboardProviders queryClient={queryClient} router={router} />;
 };
+
 const DashboardDevShellApp = ({
   environment,
 }: {
@@ -150,6 +168,7 @@ const DashboardDevShellApp = ({
   const [scenarioId, setScenarioId] = useState<DashboardDevScenarioId>(() =>
     getStoredScenarioId(environment.scenarioId),
   );
+
   useEffect(() => {
     try {
       window.localStorage.setItem(LOCAL_STORAGE_SCENARIO_KEY, scenarioId);
@@ -157,6 +176,7 @@ const DashboardDevShellApp = ({
       // Browser privacy settings can prevent storing the selected scenario.
     }
   }, [scenarioId]);
+
   return (
     <>
       <DashboardDevOverlay
@@ -172,4 +192,5 @@ const DashboardDevShellApp = ({
     </>
   );
 };
+
 export { DashboardDevShellApp };

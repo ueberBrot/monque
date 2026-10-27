@@ -32,6 +32,7 @@ describe("worker retry options", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     const fail = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("Unavailable"));
@@ -46,6 +47,7 @@ describe("worker retry options", () => {
         monque.getJob(custom._id),
         monque.getJob(inherited._id),
       ]);
+
       return customJob?.status === JobStatus.FAILED && inheritedJob?.status === JobStatus.FAILED;
     });
     const awaitedResult1 = await monque.getJob(custom._id);
@@ -62,6 +64,7 @@ describe("worker retry options", () => {
       collectionName: uniqueCollectionName("backoff-options"),
       baseRetryInterval: 20_000,
     });
+
     instances.push(monque);
     await monque.initialize();
     monque.register(
@@ -71,10 +74,12 @@ describe("worker retry options", () => {
       },
       options,
     );
+
     const failure = Promise.withResolvers<{
       nextRunAt: Date;
       updatedAt: Date;
     }>();
+
     monque.once("job:fail", ({ job }) => {
       failure.resolve(job);
     });
@@ -94,6 +99,7 @@ describe("worker retry options", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -109,6 +115,7 @@ describe("worker retry options", () => {
     );
     const job = await monque.enqueue("work", {});
     monque.start();
+
     try {
       await started.promise;
       monque.register(
@@ -124,6 +131,7 @@ describe("worker retry options", () => {
       release.resolve();
       await waitFor(async () => {
         const awaitedResult3 = await monque.getJob(job._id);
+
         return awaitedResult3?.status === JobStatus.FAILED;
       });
       await expect(monque.getJob(job._id)).resolves.toMatchObject({

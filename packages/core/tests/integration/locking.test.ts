@@ -43,6 +43,7 @@ describe("atomic job locking", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -61,28 +62,21 @@ describe("atomic job locking", () => {
       monqueInstances.push(monque2);
       await monque1.initialize();
       await monque2.initialize();
-      const processedJobs: string[] = [];
       const processedJobIds = new Set<string>();
+
       const handler1Implementation = async (job: Job) => {
         const jobId = job._id?.toString() ?? "";
+
         if (!job._id) {
           throw new Error("Expected job._id to be defined");
         }
-        processedJobs.push(`instance1:${jobId}`);
+
         processedJobIds.add(jobId);
         await pauseFor(100);
       };
+
       const handler1 = vi.fn<typeof handler1Implementation>(handler1Implementation);
-      const handler2Implementation = async (job: Job) => {
-        const jobId = job._id?.toString() ?? "";
-        if (!job._id) {
-          throw new Error("Expected job._id to be defined");
-        }
-        processedJobs.push(`instance2:${jobId}`);
-        processedJobIds.add(jobId);
-        await pauseFor(100);
-      };
-      const handler2 = vi.fn<typeof handler2Implementation>(handler2Implementation);
+      const handler2 = vi.fn<typeof handler1Implementation>(handler1Implementation);
       monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
       monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
       // Enqueue multiple jobs
@@ -104,34 +98,41 @@ describe("atomic job locking", () => {
       await monque2.stop();
       // Verify each job was processed exactly once
       expect(processedJobIds.size).toBe(jobCount);
+
       // Verify all enqueued jobs were processed
       for (const jobId of enqueuedJobIds) {
         expect(processedJobIds.has(jobId)).toBe(true);
       }
+
       // Total handler calls should equal job count (no duplicates)
       expect(handler1.mock.calls.length + handler2.mock.calls.length).toBe(jobCount);
     });
 
     it("should distribute jobs between concurrent workers", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       const monque1 = new Monque(db, {
         collectionName,
         pollInterval: 30,
         safetyPollInterval: 30,
         workerConcurrency: 2,
       });
+
       monqueInstances.push(monque1);
+
       const monque2 = new Monque(db, {
         collectionName,
         pollInterval: 30,
         safetyPollInterval: 30,
         workerConcurrency: 2,
       });
+
       monqueInstances.push(monque2);
       await monque1.initialize();
       await monque2.initialize();
       const instance1Jobs: number[] = [];
       const instance2Jobs: number[] = [];
+
       const handler1Implementation = async (
         job: Job<{
           index: number;
@@ -140,7 +141,9 @@ describe("atomic job locking", () => {
         instance1Jobs.push(job.data.index);
         await pauseFor(80);
       };
+
       const handler1 = vi.fn<typeof handler1Implementation>(handler1Implementation);
+
       const handler2Implementation = async (
         job: Job<{
           index: number;
@@ -149,6 +152,7 @@ describe("atomic job locking", () => {
         instance2Jobs.push(job.data.index);
         await pauseFor(80);
       };
+
       const handler2 = vi.fn<typeof handler2Implementation>(handler2Implementation);
       monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
       monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
@@ -178,6 +182,7 @@ describe("atomic job locking", () => {
 
     it("should handle rapid polling without duplicate acquisition", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       // Very short poll interval to increase contention
       const monque1 = new Monque(db, {
         collectionName,
@@ -185,38 +190,48 @@ describe("atomic job locking", () => {
         safetyPollInterval: 10,
         workerConcurrency: 1,
       });
+
       monqueInstances.push(monque1);
+
       const monque2 = new Monque(db, {
         collectionName,
         pollInterval: 10,
         safetyPollInterval: 10,
         workerConcurrency: 1,
       });
+
       monqueInstances.push(monque2);
+
       const monque3 = new Monque(db, {
         collectionName,
         pollInterval: 10,
         safetyPollInterval: 10,
         workerConcurrency: 1,
       });
+
       monqueInstances.push(monque3);
       await monque1.initialize();
       await monque2.initialize();
       await monque3.initialize();
       const processedJobIds = new Set<string>();
       const duplicates: string[] = [];
+
       const createHandler = () =>
         vi.fn<(job: Job) => Promise<void>>(async (job: Job) => {
           const jobId = job._id?.toString() ?? "";
+
           if (!job._id) {
             throw new Error("Expected job._id to be defined");
           }
+
           if (processedJobIds.has(jobId)) {
             duplicates.push(jobId);
           }
+
           processedJobIds.add(jobId);
           await pauseFor(50);
         });
+
       const handler1 = createHandler();
       const handler2 = createHandler();
       const handler3 = createHandler();
@@ -251,6 +266,7 @@ describe("atomic job locking", () => {
   describe("lock state transitions", () => {
     it("should transition pending → processing → completed", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
         const monque = new Monque(db, { collectionName, pollInterval: 100 });
@@ -258,10 +274,12 @@ describe("atomic job locking", () => {
         await monque.initialize();
         const statusHistory: string[] = [];
         let checkDuringProcessing = false;
+
         const handlerImplementation = async () => {
           checkDuringProcessing = true;
           await release.promise;
         };
+
         const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
         monque.register(TEST_CONSTANTS.JOB_NAME, handler);
         const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, {});
@@ -279,6 +297,7 @@ describe("atomic job locking", () => {
         // Wait for completion
         await waitFor(async () => {
           const d = await collection.findOne({ _id: job._id });
+
           return d?.status === JobStatus.COMPLETED;
         });
         // Check completed status
@@ -307,6 +326,7 @@ describe("atomic job locking", () => {
       await waitFor(async () => {
         const collection = db.collection<Job>(collectionName);
         const doc = await collection.findOne({ _id: job._id });
+
         return doc?.status === JobStatus.COMPLETED;
       });
       await monque.stop();
@@ -330,6 +350,7 @@ describe("atomic job locking", () => {
       monque.start();
       await waitFor(async () => {
         const d = await collection.findOne({ _id: job._id });
+
         return d?.status === JobStatus.COMPLETED;
       });
       await monque.stop();

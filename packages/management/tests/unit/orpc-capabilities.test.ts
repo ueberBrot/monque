@@ -14,6 +14,7 @@ describe("oRPC Management capabilities route", () => {
     const checks: string[] = [];
     let active = 0;
     let maximum = 0;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
       authorize: async ({ action }) => {
@@ -22,6 +23,7 @@ describe("oRPC Management capabilities route", () => {
         maximum = Math.max(maximum, active);
         await Promise.resolve();
         active -= 1;
+
         return true;
       },
     });
@@ -45,15 +47,18 @@ describe("oRPC Management capabilities route", () => {
   it("can evaluate independent capability checks concurrently without sharing request context", async () => {
     const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const checks: string[] = [];
+
     const surface = createManagementSurface<{ user: string }>({
       monque: createManagementMonque({}, { mutations: true }),
       parallelCapabilityChecks: true,
       authorize: async ({ action, context }) => {
         checks.push(`${context.user}:${action}`);
         await gate.promise;
+
         return action === (context.user === "alice" ? "read" : "retry");
       },
     });
+
     const pending = Promise.all([
       handleManagementGet(surface, "/api/v1/capabilities", {
         managementContext: { user: "alice" },
@@ -62,6 +67,7 @@ describe("oRPC Management capabilities route", () => {
         managementContext: { user: "bob" },
       }),
     ]);
+
     try {
       await vi.waitFor(() => {
         expect(checks).toHaveLength(16);
@@ -69,6 +75,7 @@ describe("oRPC Management capabilities route", () => {
     } finally {
       gate.resolve();
     }
+
     const [aliceResponse, bobResponse] = await pending;
     expect(aliceResponse.status).toBe(200);
     expect(bobResponse.status).toBe(200);
@@ -88,6 +95,7 @@ describe("oRPC Management capabilities route", () => {
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
     });
+
     const expectedBody = {
       readOnly: false,
       actions: {
@@ -114,10 +122,12 @@ describe("oRPC Management capabilities route", () => {
 
   it("uses adapter-provided request context for action authorization", async () => {
     const authorizedActions = new Set(["read", "retry"]);
+
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({}, { mutations: true }),
       authorize: ({ action, context }) => {
         expect(context).toStrictEqual({ role: "viewer" });
+
         return authorizedActions.has(action);
       },
     });
@@ -263,10 +273,12 @@ describe("oRPC Management capabilities route", () => {
     });
 
     const capabilities = await handleManagementGet(surface, "/api/v1/capabilities");
+
     const singleCancel = await handleManagementPost(
       surface,
       "/api/v1/jobs/507f1f77bcf86cd799439011/actions/cancel",
     );
+
     const bulkCancel = await handleManagementPost(surface, "/api/v1/jobs/actions/cancel", {});
 
     const actions: unknown = expect.objectContaining({ cancel: false, cancelBulk: true });
@@ -301,6 +313,7 @@ describe("oRPC Management capabilities route", () => {
     async ({ path, body, error }) => {
       const authorize = vi.fn<() => boolean>(() => true);
       const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
+
       const surface = createManagementSurface({
         monque: createManagementMonque({ getJob }),
         readOnly: true,

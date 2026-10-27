@@ -2,6 +2,7 @@ import { InvalidJobIdentifierError } from "../errors.js";
 
 const MAX_JOB_NAME_LENGTH = 255;
 const JOB_NAME_PATTERN = /^[^\s\p{Cc}]+$/u;
+
 /**
  * Validate a public job name before it is registered or scheduled.
  *
@@ -16,6 +17,7 @@ export const validateJobName = (name: string): void => {
       "Job name cannot be empty or whitespace only.",
     );
   }
+
   if (name.length > MAX_JOB_NAME_LENGTH) {
     throw new InvalidJobIdentifierError(
       "name",
@@ -23,6 +25,7 @@ export const validateJobName = (name: string): void => {
       `Job name cannot exceed ${MAX_JOB_NAME_LENGTH} characters.`,
     );
   }
+
   if (!JOB_NAME_PATTERN.test(name)) {
     throw new InvalidJobIdentifierError(
       "name",
@@ -31,8 +34,10 @@ export const validateJobName = (name: string): void => {
     );
   }
 };
+
 const MAX_UNIQUE_KEY_LENGTH = 1024;
 const CONTROL_CHARACTER_PATTERN = /\p{Cc}/u;
+
 /**
  * Validate a deduplication key before it is stored or used in a unique query.
  *
@@ -47,6 +52,7 @@ export const validateUniqueKey = (uniqueKey: string): void => {
       "Unique key cannot be empty or whitespace only.",
     );
   }
+
   if (uniqueKey.length > MAX_UNIQUE_KEY_LENGTH) {
     throw new InvalidJobIdentifierError(
       "uniqueKey",
@@ -54,6 +60,7 @@ export const validateUniqueKey = (uniqueKey: string): void => {
       `Unique key cannot exceed ${MAX_UNIQUE_KEY_LENGTH} characters.`,
     );
   }
+
   if (CONTROL_CHARACTER_PATTERN.test(uniqueKey)) {
     throw new InvalidJobIdentifierError(
       "uniqueKey",

@@ -21,6 +21,7 @@ import { isNumber } from "../lib/type-guards.js";
 const routeApi = getRouteApi("/health");
 const SUMMARY_SKELETON_CARD_COUNT = 3;
 const HEALTH_PANEL_CLASS_NAME = "rounded-lg border border-border bg-card p-5";
+
 const HealthPanel = ({
   children,
   className,
@@ -28,6 +29,7 @@ const HealthPanel = ({
   readonly children: ReactNode;
   readonly className?: string;
 }) => <section className={cn(HEALTH_PANEL_CLASS_NAME, className)}>{children}</section>;
+
 const HealthRoutePendingState = () => (
   <output aria-label="Loading Health…" className="grid min-w-0 gap-6">
     <div className="grid min-w-0 gap-2">
@@ -61,6 +63,7 @@ const HealthRoutePendingState = () => (
     </HealthPanel>
   </output>
 );
+
 const getSchedulerSummary = (health: SchedulerHealthDto): HealthSummaryCardProps => {
   if (health.scheduler.healthy) {
     return {
@@ -72,6 +75,7 @@ const getSchedulerSummary = (health: SchedulerHealthDto): HealthSummaryCardProps
       icon: <CheckCircle2 className="size-4" />,
     };
   }
+
   return {
     title: "Scheduler",
     heading: "Scheduler unavailable",
@@ -81,6 +85,7 @@ const getSchedulerSummary = (health: SchedulerHealthDto): HealthSummaryCardProps
     icon: <AlertTriangle className="size-4" />,
   };
 };
+
 const getManagementModeSummary = (capabilities: CapabilitiesDto): HealthSummaryCardProps => {
   if (capabilities.readOnly) {
     return {
@@ -92,6 +97,7 @@ const getManagementModeSummary = (capabilities: CapabilitiesDto): HealthSummaryC
       icon: <Lock className="size-4" />,
     };
   }
+
   return {
     title: "Mode",
     heading: "Job actions enabled",
@@ -101,7 +107,9 @@ const getManagementModeSummary = (capabilities: CapabilitiesDto): HealthSummaryC
     icon: <Lock className="size-4" />,
   };
 };
+
 const HEALTH_SECTION_LABEL_CLASS_NAME = "text-sm font-medium text-muted-foreground";
+
 const HealthSummaryCard = ({
   title,
   heading,
@@ -123,9 +131,11 @@ const HealthSummaryCard = ({
             if (badgeVariant === "danger") {
               return "bg-destructive/10 text-destructive";
             }
+
             if (badgeVariant === "success") {
               return "bg-success/10 text-success";
             }
+
             return "bg-muted text-muted-foreground";
           })(),
         )}
@@ -139,13 +149,17 @@ const HealthSummaryCard = ({
     </div>
   </HealthPanel>
 );
+
 const formatPollingInterval = (pollingIntervalMs: number | undefined): string => {
   if (!isNumber(pollingIntervalMs)) {
     return "Off";
   }
+
   const seconds = Math.round(pollingIntervalMs / 1000);
+
   return `${seconds} second${seconds === 1 ? "" : "s"}`;
 };
+
 const HealthDefinition = ({
   term,
   children,
@@ -158,6 +172,7 @@ const HealthDefinition = ({
     <dd className="text-sm">{children}</dd>
   </div>
 );
+
 const HealthRouteContent = ({
   freshness,
   fetching,
@@ -177,6 +192,7 @@ const HealthRouteContent = ({
   const availableActionCount = capabilityStates.filter((capability) => capability.available).length;
   const schedulerSummary = getSchedulerSummary(health);
   const managementModeSummary = getManagementModeSummary(capabilities);
+
   return (
     <section className="grid gap-6">
       <div className="grid gap-2">
@@ -258,22 +274,28 @@ const HealthRouteContent = ({
     </section>
   );
 };
+
 const HealthRoute = () => {
   const { managementApi, runtimeConfig } = routeApi.useRouteContext();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
+
   const capabilitiesInterval = useDocumentVisiblePollingInterval(
     runtimeConfig.pollingIntervalMs,
     6,
   );
+
   const [healthQuery, capabilitiesQuery] = useQueries({
     queries: [
       { ...managementApi.orpc.health.queryOptions(), refetchInterval },
       { ...managementApi.orpc.capabilities.queryOptions(), refetchInterval: capabilitiesInterval },
     ],
   });
+
   const error = healthQuery.error ?? capabilitiesQuery.error;
+
   if (error) {
     const state = resolveDashboardApiErrorState(error);
+
     return (
       <DashboardState {...state}>
         <RetryButton
@@ -286,12 +308,15 @@ const HealthRoute = () => {
       </DashboardState>
     );
   }
+
   if (healthQuery.isPending || capabilitiesQuery.isPending) {
     return <HealthRoutePendingState />;
   }
+
   if (!healthQuery.data || !capabilitiesQuery.data) {
     return <HealthRoutePendingState />;
   }
+
   return (
     <div className="grid gap-6">
       <HealthRouteContent
@@ -321,15 +346,18 @@ const HealthRoute = () => {
     </div>
   );
 };
+
 export const Route = createFileRoute("/health")({
   component: HealthRoute,
   pendingComponent: HealthRoutePendingState,
 });
+
 interface HealthSummaryCardProps {
   readonly title: string;
   readonly heading: string;
   readonly description: string;
   readonly badgeLabel: string;
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   readonly badgeVariant: "danger" | "outline" | "success" | "warning";
   readonly icon: ReactNode;
 }

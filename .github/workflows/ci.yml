@@ -53,7 +53,7 @@ jobs:
           vp run --filter @monque/docs type-check
 
       - name: Upload build outputs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-artifacts
           path: |
@@ -78,7 +78,7 @@ jobs:
           task-cache: "true"
 
       - name: Download build outputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-artifacts
           path: .
@@ -97,7 +97,9 @@ jobs:
     name: Test (${{ matrix.group }})
     if: needs.quality.outputs.runtime == 'true'
     needs: quality
-    runs-on: ubuntu-latest
+    # Keep mongo:8 on Ubuntu 22.04's 6.8 kernel; newer 24.04 pools use 7.0.
+    # Compatibility: https://jira.mongodb.org/browse/SERVER-125742
+    runs-on: ${{ matrix.group == 'backend' && 'ubuntu-22.04' || 'ubuntu-latest' }}
     timeout-minutes: 10
     strategy:
       fail-fast: true
@@ -111,7 +113,7 @@ jobs:
         uses: ./.github/actions/setup-vite-plus
 
       - name: Download build outputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-artifacts
           path: .
@@ -151,7 +153,7 @@ jobs:
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
       - name: Download build outputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: build-artifacts
           path: .
@@ -163,7 +165,7 @@ jobs:
         run: vp exec playwright test --project=${{ matrix.project }}
       - name: Upload browser reports and failure traces
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dashboard-e2e-${{ matrix.project }}
           path: |

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
 interface JsonObject {
   [key: string]: JsonValue;
 }
@@ -17,24 +18,32 @@ const repository = () => {
   const cwd = mkdtempSync(nodePath.join(tmpdir(), "monque-renovate-"));
   directories.push(cwd);
   const output = nodePath.join(cwd, ".git", "output");
+
   const git = (...args: string[]) =>
+    // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     execFileSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
+
   const write = (path: string, value: JsonValue) => {
     mkdirSync(nodePath.dirname(nodePath.join(cwd, path)), { recursive: true });
     writeFileSync(nodePath.join(cwd, path), JSON.stringify(value));
   };
+
   const commit = () => {
     git("add", "-A");
     git("commit", "--quiet", "--no-verify", "-m", "fixture");
+
     return git("rev-parse", "HEAD");
   };
+
   const generate = (base: string, head: string) => {
     rmSync(output, { force: true });
+
     const result = spawnSync(process.execPath, [generator], {
       cwd,
       env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
       encoding: "utf-8",
     });
+
     return {
       result,
       generated: existsSync(output)
@@ -42,9 +51,11 @@ const repository = () => {
         : null,
     };
   };
+
   git("init", "--quiet");
   git("config", "user.email", "ci@example.invalid");
   git("config", "user.name", "CI test");
+
   return { cwd, git, write, commit, generate };
 };
 
@@ -86,8 +97,9 @@ describe("Renovate changesets", () => {
     expect(git("diff", "--name-only", head, `${generated}`)).toMatch(
       /^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/u,
     );
+    const changesetPath = git("diff", "--name-only", head, `${generated}`);
     expect({
-      changeset: git("show", `${generated}:${git("diff", "--name-only", head, `${generated}`)}`),
+      changeset: git("show", `${generated}:${changesetPath}`),
       generator: git("show", `${generated}:scripts/renovate-generate-changeset.ts`),
     }).toStrictEqual({
       changeset: '---\n"@monque/core": minor\n---\n\nUpdate runtime dependencies.',
@@ -100,7 +112,7 @@ describe("Renovate changesets", () => {
     }).toStrictEqual({ ranUntrustedCode: false, head: base, status: "" });
   });
 
-  it("groups optional and peer dependency updates with named catalogs into one changeset", () => {
+  it("generates a changeset for optional dependency updates with named catalogs", () => {
     const { git, write, commit, generate } = repository();
     write("package.json", { catalogs: { runtime: { express: "4.0.0" } } });
     write("packages/adapter/package.json", {
@@ -114,7 +126,7 @@ describe("Renovate changesets", () => {
     write("packages/adapter/package.json", {
       name: "@monque/adapter",
       optionalDependencies: { express: "catalog:runtime" },
-      peerDependencies: { monque: "2.0.0" },
+      peerDependencies: { monque: "1.0.0" },
       devDependencies: { tooling: "2.0.0" },
     });
     const head = commit();
@@ -167,7 +179,7 @@ describe("Renovate changesets", () => {
     write("packages/alpha/package.json", {
       name: "@monque/alpha",
       dependencies: { mongodb: "7.0.0" },
-      peerDependencies: { express: "5.0.0" },
+      peerDependencies: { express: "4.0.0" },
     });
     write("packages/dev-only/package.json", {
       name: "@monque/dev-only",
@@ -193,7 +205,7 @@ describe("Renovate changesets", () => {
     );
   });
 
-  it.each(["dependencies", "optionalDependencies", "peerDependencies"])(
+  it.each(["dependencies", "optionalDependencies"])(
     "generates a changeset for a standalone %s update",
     (section) => {
       const { git, write, commit, generate } = repository();
@@ -217,30 +229,27 @@ describe("Renovate changesets", () => {
     },
   );
 
-  it.each(["dependencies", "peerDependencies"])(
-    "includes @monque dependency updates in %s",
-    (section) => {
-      const { git, write, commit, generate } = repository();
-      write("packages/core/package.json", { name: "@monque/core" });
-      write("packages/adapter/package.json", {
-        name: "@monque/adapter",
-        [section]: { "@monque/core": "^0.1.0" },
-      });
-      const base = commit();
-      write("packages/adapter/package.json", {
-        name: "@monque/adapter",
-        [section]: { "@monque/core": "^0.2.0" },
-      });
-      const head = commit();
-      const { result, generated } = generate(base, head);
-      expect(result.status, result.stderr).toBe(0);
-      const path = git("diff", "--name-only", head, `${generated}`);
-      expect(path).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/u);
-      expect(git("show", `${generated}:${path}`)).toBe(
-        '---\n"@monque/adapter": minor\n---\n\nUpdate runtime dependencies.',
-      );
-    },
-  );
+  it.each(["dependencies"])("includes @monque dependency updates in %s", (section) => {
+    const { git, write, commit, generate } = repository();
+    write("packages/core/package.json", { name: "@monque/core" });
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      [section]: { "@monque/core": "^0.1.0" },
+    });
+    const base = commit();
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      [section]: { "@monque/core": "^0.2.0" },
+    });
+    const head = commit();
+    const { result, generated } = generate(base, head);
+    expect(result.status, result.stderr).toBe(0);
+    const path = git("diff", "--name-only", head, `${generated}`);
+    expect(path).toMatch(/^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/u);
+    expect(git("show", `${generated}:${path}`)).toBe(
+      '---\n"@monque/adapter": minor\n---\n\nUpdate runtime dependencies.',
+    );
+  });
 
   it("does not generate a changeset for development-only dependency updates", () => {
     const { write, commit, generate } = repository();
@@ -294,6 +303,68 @@ describe("Renovate changesets", () => {
     expect(generated).toBeNull();
   });
 
+  it.each<{ name: string; before: JsonObject; after: JsonObject }>([
+    {
+      name: "a higher Express peer minimum",
+      before: { peerDependencies: { express: "^5.2.1" } },
+      after: { peerDependencies: { express: "^5.3.0" } },
+    },
+    {
+      name: "a higher Monque peer minimum",
+      before: { peerDependencies: { "@monque/core": "^1.15.1" } },
+      after: { peerDependencies: { "@monque/core": "^1.18.0" } },
+    },
+    {
+      name: "a higher Node.js minimum",
+      before: { engines: { node: ">=22.12.0" } },
+      after: { engines: { node: ">=24.22.1" } },
+    },
+  ])("requires an explicit changeset for $name", ({ before, after }) => {
+    const { write, commit, generate } = repository();
+    write("packages/adapter/package.json", { name: "@monque/adapter", ...before });
+    const base = commit();
+    write("packages/adapter/package.json", { name: "@monque/adapter", ...after });
+    const { result, generated } = generate(base, commit());
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Add an explicit changeset");
+    expect(result.stderr).toContain("@monque/adapter");
+    expect(generated).toBeNull();
+  });
+
+  it("requires an explicit changeset when a catalog raises a published peer minimum", () => {
+    const { write, commit, generate } = repository();
+    write("package.json", { catalog: { express: "^5.2.1" } });
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      peerDependencies: { express: "catalog:" },
+    });
+    const base = commit();
+    write("package.json", { catalog: { express: "^5.3.0" } });
+    const { result, generated } = generate(base, commit());
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Add an explicit changeset");
+    expect(generated).toBeNull();
+  });
+
+  it("accepts an authored changeset for peer and Node.js compatibility changes", () => {
+    const { write, commit, generate } = repository();
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      peerDependencies: { express: "^5.2.1" },
+      engines: { node: ">=22.12.0" },
+    });
+    const base = commit();
+    write("packages/adapter/package.json", {
+      name: "@monque/adapter",
+      peerDependencies: { express: "^5.3.0" },
+      engines: { node: ">=24.22.1" },
+    });
+    write(".changeset/compatibility.md", "Explicitly classify the support change.");
+    const { result, generated } = generate(base, commit());
+    expect(result.status, result.stderr).toBe(0);
+    expect(generated).toBeNull();
+  });
+
   it("ignores malformed manifests and private packages without producing a commit", () => {
     const { cwd, write, commit, generate } = repository();
     write("packages/core/package.json", {
@@ -321,6 +392,7 @@ describe("Renovate changesets", () => {
     const { write, commit, generate } = repository();
     write("package.json", {});
     const head = commit();
+
     for (const revision of ["HEAD", "--help", `${head}:package.json`, ""]) {
       const { result, generated } = generate(revision, head);
       expect(result.status).not.toBe(0);

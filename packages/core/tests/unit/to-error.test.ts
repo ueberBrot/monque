@@ -72,6 +72,7 @@ describe(toError, () => {
         throw new Error("broken toString");
       },
     };
+
     const result = toError(value);
     expect(result).toBeInstanceOf(Error);
     expect(result.message).toBe("Unserializable value (broken toString)");
@@ -84,6 +85,7 @@ describe(toError, () => {
         throw "raw string throw";
       },
     };
+
     const result = toError(value);
     expect(result).toBeInstanceOf(Error);
     expect(result.message).toBe("Unserializable value (unknown conversion failure)");

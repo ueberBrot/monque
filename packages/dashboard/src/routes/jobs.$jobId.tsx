@@ -33,7 +33,9 @@ const jobDetailSearchSchema = z.object({
   queueCursor: z.string().optional(),
   queueLimit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
 const routeApi = getRouteApi("/jobs/$jobId");
+
 const JobDetailPending = () => (
   <output aria-label="Loading job details…" className="grid min-w-0 gap-4">
     <Skeleton className="h-5 w-28" />
@@ -67,6 +69,7 @@ const JobDetailPending = () => (
     </div>
   </output>
 );
+
 const JobDetailActions = ({
   busy,
   capabilities,
@@ -83,7 +86,9 @@ const JobDetailActions = ({
     label: JOB_ACTION_DEFINITIONS[action].label,
     ...getJobActionAvailability(job, capabilities, action),
   }));
+
   const [state, setState] = useState<JobActionDialogState | null>(null);
+
   return (
     <>
       {actions.map(({ action, label, disabled, reason }) => (
@@ -93,6 +98,7 @@ const JobDetailActions = ({
           size="sm"
           onClick={() => {
             const prepared = prepareSingleJobAction(action, job);
+
             if (prepared.type === "confirm") {
               setState(prepared.state);
             } else {
@@ -120,6 +126,7 @@ const JobDetailActions = ({
     </>
   );
 };
+
 const getJobBackLink = (search: z.output<typeof jobDetailSearchSchema>) =>
   search.queueView === undefined || search.queueView === null || search.queueView === ""
     ? { to: "/jobs" as const, search: parseJobsRouteSearch(search) }
@@ -136,40 +143,47 @@ const JobDetail = ({ jobId }: { readonly jobId: string }) => {
   const navigate = routeApi.useNavigate();
   const router = useRouter();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
+
   const jobQuery = useQuery({
     ...managementApi.orpc.job.queryOptions({ input: { params: { id: jobId } } }),
     refetchInterval,
   });
+
   const capabilitiesInterval = useDocumentVisiblePollingInterval(
     runtimeConfig.pollingIntervalMs,
     6,
   );
+
   const capabilitiesQuery = useQuery({
     ...managementApi.orpc.capabilities.queryOptions(),
     refetchInterval: capabilitiesInterval,
   });
+
   const mutation = useMutation({
     ...jobActionMutationOptions(managementApi, queryClient),
     onMutate: () => router.state.location,
     onSuccess: async ({ action }, _input, origin) => {
       const success = getActionSuccessFeedback(action);
       toast.success(success.title, { description: success.description });
+
       if (action !== "delete" || router.state.location !== origin) {
         return;
       }
+
       await navigate({ ...backLink, replace: true });
     },
   });
+
   if (jobQuery.isPending) {
     return <JobDetailPending />;
   }
+
+  const refreshErrorHeading = jobQuery.data ? "Job detail could not be refreshed" : undefined;
+
   const readError = jobQuery.isError
-    ? resolveDashboardApiErrorState(
-        jobQuery.error,
-        "job",
-        jobQuery.data ? "Job detail could not be refreshed" : undefined,
-      )
+    ? resolveDashboardApiErrorState(jobQuery.error, "job", refreshErrorHeading)
     : null;
+
   const errorPanel = readError ? (
     <DashboardState {...readError}>
       <RetryButton
@@ -190,11 +204,14 @@ const JobDetail = ({ jobId }: { readonly jobId: string }) => {
       </Link>
     </DashboardState>
   ) : null;
+
   if (!jobQuery.data || (readError && readError.code !== "error")) {
     return errorPanel;
   }
+
   const job = jobQuery.data;
   const feedback = mutation.error ? getActionErrorFeedback(mutation.error) : null;
+
   return (
     <section className="grid min-w-0 gap-4">
       <Link {...backLink} className="w-fit text-sm text-muted-foreground hover:text-primary">
@@ -235,10 +252,13 @@ const JobDetail = ({ jobId }: { readonly jobId: string }) => {
     </section>
   );
 };
+
 const JobDetailRoute = () => {
   const { jobId } = routeApi.useParams();
+
   return <JobDetail key={jobId} jobId={jobId} />;
 };
+
 export const Route = createFileRoute("/jobs/$jobId")({
   component: JobDetailRoute,
   pendingComponent: JobDetailPending,

@@ -36,6 +36,7 @@ describe("Concurrency & Scalability", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -60,6 +61,7 @@ describe("Concurrency & Scalability", () => {
           safetyPollInterval: 50,
           workerConcurrency: 5,
         });
+
         monqueInstances.push(monque);
         await monque.initialize();
       },
@@ -68,6 +70,7 @@ describe("Concurrency & Scalability", () => {
     const processedJobs = new Set<number>();
     const duplicateJobs = new Set<number>();
     const processingErrors: Error[] = [];
+
     // Define handler that tracks execution
     const handler = async (
       job: Job<{
@@ -75,13 +78,16 @@ describe("Concurrency & Scalability", () => {
       }>,
     ) => {
       const { id } = job.data;
+
       if (processedJobs.has(id)) {
         duplicateJobs.add(id);
       }
+
       processedJobs.add(id);
       // Simulate some work
       await pauseFor(10);
     };
+
     // Register worker on all instances
     for (const monque of monqueInstances) {
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
@@ -89,20 +95,27 @@ describe("Concurrency & Scalability", () => {
         processingErrors.push(payload.error);
       });
     }
+
     // Enqueue jobs using the first instance
     const [firstInstance] = monqueInstances;
+
     if (!firstInstance) {
       throw new Error("No Monque instance available");
     }
+
     const enqueuePromises = [];
+
     for (let i = 0; i < jobCount; i += 1) {
       enqueuePromises.push(firstInstance.enqueue(TEST_CONSTANTS.JOB_NAME, { id: i }));
     }
+
     await Promise.all(enqueuePromises);
+
     // Start all instances
     for (const m of monqueInstances) {
       m.start();
     }
+
     // Wait for all jobs to be processed
     await waitFor(() => processedJobs.size === jobCount, {
       timeout: 30_000,
@@ -123,16 +136,20 @@ describe("Concurrency & Scalability", () => {
         const count = await db
           .collection(collectionName)
           .countDocuments({ status: JobStatus.COMPLETED });
+
         return count === jobCount;
       },
       { timeout: 10_000 },
     );
+
     const count = await db
       .collection(collectionName)
       .countDocuments({ status: JobStatus.COMPLETED });
+
     expect(count).toBe(jobCount);
   });
 });
+
 describe("Instance-level Concurrency (instanceConcurrency)", () => {
   let db: Db;
   let collectionName: string;
@@ -143,6 +160,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -155,12 +173,14 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
   it("should limit total concurrent jobs to instanceConcurrency", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
     const instanceConcurrency = 3;
+
     const stats = {
       active: 0,
       max: 0,
       completed: 0,
       inc() {
         this.active += 1;
+
         if (this.active > this.max) {
           this.max = this.active;
         }
@@ -170,6 +190,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
         this.completed += 1;
       },
     };
+
     const monque = new Monque(db, {
       collectionName,
       // Slower polling to avoid race conditions in test
@@ -180,8 +201,10 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
       // Each worker could do 10, but global limit is 3
       workerConcurrency: 10,
     });
+
     monqueInstances.push(monque);
     await monque.initialize();
+
     // Handler that tracks concurrent execution
     const handler = async (_job: Job) => {
       stats.inc();
@@ -189,6 +212,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
       await pauseFor(200);
       stats.dec();
     };
+
     // Register two workers - each has concurrency 10, but global limit is 3
     monque.register("worker-a", handler);
     monque.register("worker-b", handler);
@@ -211,6 +235,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
   it("should process all jobs with instanceConcurrency even when limit is lower than worker concurrency", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
     let completedJobs = 0;
+
     const monque = new Monque(db, {
       collectionName,
       pollInterval: 50,
@@ -218,12 +243,15 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
       instanceConcurrency: 2,
       workerConcurrency: 5,
     });
+
     monqueInstances.push(monque);
     await monque.initialize();
+
     const handler = async (_job: Job) => {
       await pauseFor(50);
       completedJobs += 1;
     };
+
     monque.register("test-job", handler);
     // Enqueue 6 jobs
     await forEachSequential(
@@ -242,13 +270,16 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
         const count = await db
           .collection(collectionName)
           .countDocuments({ status: JobStatus.COMPLETED });
+
         return count === 6;
       },
       { timeout: 10_000 },
     );
+
     const count = await db
       .collection(collectionName)
       .countDocuments({ status: JobStatus.COMPLETED });
+
     expect(count).toBe(6);
   });
 
@@ -257,6 +288,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
     let activeJobs = 0;
     let maxActiveJobs = 0;
     let completedJobs = 0;
+
     const monque = new Monque(db, {
       collectionName,
       pollInterval: 50,
@@ -264,8 +296,10 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
       // No instanceConcurrency set
       workerConcurrency: 5,
     });
+
     monqueInstances.push(monque);
     await monque.initialize();
+
     const handler = async (_job: Job) => {
       activeJobs += 1;
       maxActiveJobs = Math.max(maxActiveJobs, activeJobs);
@@ -273,6 +307,7 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
       activeJobs -= 1;
       completedJobs += 1;
     };
+
     monque.register("test-job", handler);
     // Enqueue 10 jobs
     await forEachSequential(

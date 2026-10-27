@@ -25,7 +25,8 @@
           "missingEffectError": "error",
           "missingStarInYieldEffectGen": "error",
           "returnEffectInGen": "error",
-          "promiseInEffectSuccess": "error"
+          "promiseInEffectSuccess": "error",
+          "apiStabilityLeak": "error"
         },
         "overrides": [
           {

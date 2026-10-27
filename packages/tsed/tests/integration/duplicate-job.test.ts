@@ -69,6 +69,7 @@ describe("Duplicate Validation & Idempotency", () => {
         { foo: "bar" },
         { uniqueKey: "unique-1" },
       );
+
       expect(job1).toBeDefined();
 
       // Second Enqueue (Duplicate)

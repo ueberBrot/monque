@@ -57,12 +57,15 @@ const injectRuntimeConfig = function injectRuntimeConfig(
     .replaceAll("'", "&#39;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+
   // Relative Vite assets otherwise resolve below a deep-link route (for example /jobs/:id).
   const mountAwareHtml = htmlTemplate.replaceAll(
     /\b(?<attribute>src|href)=(?<quote>['"])\.\/assets\//gu,
     (_match, attribute: string, quote: string) => `${attribute}=${quote}${assetBasePath}`,
   );
+
   const runtimeConfigJson = JSON.stringify(options.runtimeConfig).replaceAll("<", "\\u003c");
+
   const runtimeConfigScript = [
     `<script id="${options.runtimeConfigScriptId}">`,
     `window.${options.runtimeConfigGlobal} = ${runtimeConfigJson};`,
@@ -98,11 +101,13 @@ export const createDashboardExpressRouter = function createDashboardExpressRoute
   router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!shouldServeDashboardHtml(req)) {
       next();
+
       return;
     }
 
     try {
       const { apiBaseUrl } = options;
+
       const runtimeConfig = parseDashboardRuntimeConfig({
         // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Dispatch the documented string-or-resolver adapter option.
         apiBaseUrl: await (typeof apiBaseUrl === "string" ? apiBaseUrl : apiBaseUrl({ req, res })),

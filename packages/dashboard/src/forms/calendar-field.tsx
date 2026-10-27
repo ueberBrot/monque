@@ -8,10 +8,13 @@ import { useFieldContext } from "./context.js";
 const Calendar = memo(
   lazy(async () => {
     const module = await import("@/components/ui/calendar");
+
     return { default: module.Calendar };
   }),
 );
+
 Calendar.displayName = "Calendar";
+
 export const CalendarInput = ({
   value,
   onChange,
@@ -24,6 +27,7 @@ export const CalendarInput = ({
   onMonthChange: (month: Date) => void;
 }) => {
   const selected = useMemo(() => parseDateTime(value, "12:00"), [value]);
+
   const selectDate = useCallback(
     (day: Date | undefined) => {
       if (day) {
@@ -32,6 +36,7 @@ export const CalendarInput = ({
     },
     [onChange],
   );
+
   return (
     <Suspense fallback={<output className="h-72">Loading calendar…</output>}>
       <Calendar
@@ -46,6 +51,7 @@ export const CalendarInput = ({
     </Suspense>
   );
 };
+
 export const CalendarField = ({
   month,
   onMonthChange,
@@ -54,6 +60,7 @@ export const CalendarField = ({
   onMonthChange: (month: Date) => void;
 }) => {
   const field = useFieldContext<string>();
+
   return (
     <CalendarInput
       value={field.state.value}

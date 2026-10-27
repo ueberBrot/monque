@@ -28,6 +28,7 @@ describe(resolveDatabase, () => {
     it("should prioritize db over other strategies", async () => {
       const mockDb = createMockDb();
       const factoryDb = createMockDb();
+
       const config: MonqueTsedConfig = {
         db: mockDb,
         dbFactory: () => factoryDb,
@@ -66,6 +67,7 @@ describe(resolveDatabase, () => {
       const factory = vi
         .fn<() => Db | Promise<Db>>()
         .mockRejectedValue(new Error("Connection failed"));
+
       const config: MonqueTsedConfig = { dbFactory: factory };
 
       await expect(resolveDatabase(config)).rejects.toThrow("Connection failed");
@@ -127,15 +129,18 @@ describe(resolveDatabase, () => {
 
     it("should resolve from Mongoose Service (duck typing)", async () => {
       const mockDb = createMockDb();
+
       // Mock Mongoose Service structure
       const mockMongooseService = {
         get: vi.fn<MongooseService["get"]>().mockReturnValue({
           db: mockDb,
         }),
       };
+
       const injectorFn: InjectorFn = fromPartial(
         vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
       );
+
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_SERVICE" };
 
       const result = await resolveDatabase(config, injectorFn);
@@ -147,17 +152,21 @@ describe(resolveDatabase, () => {
 
     it("should resolve from Mongoose Service with custom connection ID", async () => {
       const mockDb = createMockDb();
+
       const mockMongooseService = {
         get: vi.fn<MongooseService["get"]>().mockImplementation((id) => {
           if (id === "custom-conn") {
             return { db: mockDb };
           }
+
           return fromAny(null);
         }),
       };
+
       const injectorFn: InjectorFn = fromPartial(
         vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
       );
+
       const config: MonqueTsedConfig = {
         dbToken: "MONGOOSE_SERVICE",
         mongooseConnectionId: "custom-conn",
@@ -171,13 +180,16 @@ describe(resolveDatabase, () => {
 
     it("should resolve from Mongoose Connection (duck typing)", async () => {
       const mockDb = createMockDb();
+
       // Mock Mongoose Connection structure
       const mockMongooseConnection = {
         db: mockDb,
       };
+
       const injectorFn: InjectorFn = fromPartial(
         vi.fn<InjectorFn>().mockReturnValue(mockMongooseConnection),
       );
+
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_CONNECTION" };
 
       const result = await resolveDatabase(config, injectorFn);
@@ -191,9 +203,11 @@ describe(resolveDatabase, () => {
         // Deliberately return a malformed connection.
         get: vi.fn<MongooseService["get"]>().mockReturnValue(fromAny(null)),
       };
+
       const injectorFn: InjectorFn = fromPartial(
         vi.fn<InjectorFn>().mockReturnValue(mockMongooseService),
       );
+
       const config: MonqueTsedConfig = { dbToken: "MONGOOSE_SERVICE" };
 
       await expect(resolveDatabase(config, injectorFn)).rejects.toThrow(ConnectionError);
@@ -240,6 +254,7 @@ describe(resolveDatabase, () => {
         dbFactory: () => factoryDb,
         dbToken: "TOKEN",
       };
+
       await expect(resolveDatabase(config1, injectorFn)).resolves.toBe(directDb);
 
       // Factory and token - should use factory
@@ -247,6 +262,7 @@ describe(resolveDatabase, () => {
         dbFactory: () => factoryDb,
         dbToken: "TOKEN",
       };
+
       await expect(resolveDatabase(config2, injectorFn)).resolves.toBe(factoryDb);
     });
   });

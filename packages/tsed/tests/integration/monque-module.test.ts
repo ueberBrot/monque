@@ -61,6 +61,7 @@ describe("MonqueModule Lifecycle Integration", () => {
       const job = await monqueService.now("error.throw", {});
       await waitFor(async () => {
         const polledJob = await monqueService.getJob(job._id.toString());
+
         return polledJob?.failCount === 1;
       });
       const persistedJob = await monqueService.getJob(job._id.toString());
@@ -108,6 +109,7 @@ describe("MonqueModule Lifecycle Integration", () => {
       // Mock injector to fail resolution for UnresolvableController
       // oxlint-disable-next-line typescript/unbound-method -- The interceptor forwards this exact method with the original receiver via call below.
       const originalGet = InjectorService.prototype.get;
+
       const getSpy = vi.spyOn(InjectorService.prototype, "get").mockImplementation(function getSpy(
         this: InjectorService,
         token: Parameters<InjectorService["get"]>[0],
@@ -116,6 +118,7 @@ describe("MonqueModule Lifecycle Integration", () => {
           // oxlint-disable-next-line unicorn/no-useless-undefined -- consistent-return requires this missing-instance branch to return a value, matching InjectorService.get.
           return undefined;
         }
+
         return originalGet.call(this, token);
       });
 

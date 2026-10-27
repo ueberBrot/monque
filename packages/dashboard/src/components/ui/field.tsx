@@ -1,4 +1,5 @@
 "use client";
+
 import { cva } from "class-variance-authority";
 import type { VariantProps } from "class-variance-authority";
 import { cn } from "cn";
@@ -17,6 +18,7 @@ const FieldSet = ({ className, ...props }: React.ComponentProps<"fieldset">) => 
     {...props}
   />
 );
+
 const FieldLegend = ({
   className,
   variant = "legend",
@@ -34,6 +36,7 @@ const FieldLegend = ({
     {...props}
   />
 );
+
 const FieldGroup = ({ className, ...props }: React.ComponentProps<"div">) => (
   <div
     data-slot="field-group"
@@ -44,6 +47,7 @@ const FieldGroup = ({ className, ...props }: React.ComponentProps<"div">) => (
     {...props}
   />
 );
+
 const fieldVariants = cva("group/field flex w-full gap-2 data-[invalid=true]:text-destructive", {
   variants: {
     orientation: {
@@ -58,6 +62,7 @@ const fieldVariants = cva("group/field flex w-full gap-2 data-[invalid=true]:tex
     orientation: "vertical",
   },
 });
+
 const Field = ({
   className,
   orientation = "vertical",
@@ -70,6 +75,7 @@ const Field = ({
     {...props}
   />
 );
+
 const FieldContent = ({ className, ...props }: React.ComponentProps<"div">) => (
   <div
     data-slot="field-content"
@@ -77,9 +83,11 @@ const FieldContent = ({ className, ...props }: React.ComponentProps<"div">) => (
     {...props}
   />
 );
-const FieldLabel = ({ className, ...props }: React.ComponentProps<typeof Label>) => (
+
+const FieldLabel = ({ className, htmlFor, ...props }: React.ComponentProps<typeof Label>) => (
   <Label
     data-slot="field-label"
+    htmlFor={htmlFor}
     className={cn(
       "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-muted/50 has-[>[data-slot=field]]:has-[:focus-visible]:border-ring has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-ring/50 *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10",
       "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
@@ -88,6 +96,7 @@ const FieldLabel = ({ className, ...props }: React.ComponentProps<typeof Label>)
     {...props}
   />
 );
+
 const FieldTitle = ({ className, ...props }: React.ComponentProps<"div">) => (
   <div
     data-slot="field-label"
@@ -98,6 +107,7 @@ const FieldTitle = ({ className, ...props }: React.ComponentProps<"div">) => (
     {...props}
   />
 );
+
 const FieldDescription = ({ className, ...props }: React.ComponentProps<"p">) => (
   <p
     data-slot="field-description"
@@ -110,6 +120,7 @@ const FieldDescription = ({ className, ...props }: React.ComponentProps<"p">) =>
     {...props}
   />
 );
+
 const FieldSeparator = ({
   children,
   className,
@@ -118,6 +129,7 @@ const FieldSeparator = ({
   children?: React.ReactNode;
 }) => {
   const hasChildren = Boolean(children);
+
   return (
     <div
       data-slot="field-separator"
@@ -140,6 +152,7 @@ const FieldSeparator = ({
     </div>
   );
 };
+
 const FieldError = ({
   className,
   children,
@@ -154,18 +167,23 @@ const FieldError = ({
   )[];
 }) => {
   const hasChildren = Boolean(children);
+
   // oxlint-disable-next-line typescript/promise-function-async -- ReactNode includes Promise children; useMemo evaluates its callback synchronously.
   const content = useMemo(() => {
     if (hasChildren) {
       return children;
     }
+
     if (errors === undefined || errors.length === 0) {
       return null;
     }
+
     const uniqueErrors = [...new Map(errors.map((error) => [error?.message, error])).values()];
+
     if (uniqueErrors?.length === 1) {
       return uniqueErrors[0]?.message;
     }
+
     return (
       <ul className="ml-4 flex list-disc flex-col gap-1">
         {uniqueErrors.map(
@@ -177,10 +195,13 @@ const FieldError = ({
       </ul>
     );
   }, [children, errors, hasChildren]);
+
   const hasContent = Boolean(content);
+
   if (!hasContent) {
     return null;
   }
+
   return (
     <div
       role="alert"
@@ -192,6 +213,7 @@ const FieldError = ({
     </div>
   );
 };
+
 export {
   Field,
   FieldContent,

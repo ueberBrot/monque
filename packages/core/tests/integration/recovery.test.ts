@@ -35,6 +35,7 @@ describe("recovery and cleanup", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -46,12 +47,14 @@ describe("recovery and cleanup", () => {
   describe("stale job recovery", () => {
     it("should recover stale jobs and emit stale:recovered event", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       // Use a short lock timeout for testing
       const monque = new Monque(db, {
         collectionName,
         lockTimeout: 1000,
         recoverStaleJobs: true,
       });
+
       monqueInstances.push(monque);
       // We need to initialize the collection first to insert data
       // But we want to test recovery during initialize(), so we'll use a separate instance or direct DB access
@@ -86,11 +89,13 @@ describe("recovery and cleanup", () => {
 
     it("should not recover non-stale jobs", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       const monque = new Monque(db, {
         collectionName,
         lockTimeout: 5000,
         recoverStaleJobs: true,
       });
+
       monqueInstances.push(monque);
       const collection = db.collection<Job>(collectionName);
       const now = new Date();
@@ -122,6 +127,7 @@ describe("recovery and cleanup", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const collection = db.collection<Job>(collectionName);
+
       // Insert a job that has failed previously
       const result = await collection.insertOne(
         JobFactory.build({
@@ -130,12 +136,14 @@ describe("recovery and cleanup", () => {
           failReason: "Previous error",
         }),
       );
+
       const jobId = result.insertedId;
       const handler = vi.fn<() => void>();
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       monque.start();
       await waitFor(async () => {
         const doc = await collection.findOne({ _id: jobId });
+
         return doc?.status === JobStatus.COMPLETED;
       });
       const job = await collection.findOne({ _id: jobId });
@@ -156,6 +164,7 @@ describe("recovery and cleanup", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const collection = db.collection<Job>(collectionName);
+
       // Insert a recurring job that has failed previously
       const result = await collection.insertOne(
         JobFactory.build({
@@ -166,12 +175,14 @@ describe("recovery and cleanup", () => {
           failReason: "Previous error",
         }),
       );
+
       const jobId = result.insertedId;
       const handler = vi.fn<() => void>();
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       monque.start();
       await waitFor(async () => {
         const doc = await collection.findOne({ _id: jobId });
+
         // For recurring jobs, status goes back to PENDING
         // We can check if failCount is reset to 0
         return doc?.status === JobStatus.PENDING && doc?.failCount === 0;

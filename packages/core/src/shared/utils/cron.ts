@@ -13,6 +13,7 @@ const handleCronParseError = (expression: string, error: unknown): never => {
       'Example: "0 9 * * 1" (every Monday at 9am)',
   );
 };
+
 /**
  * Parse a cron expression and return the next scheduled run date.
  *
@@ -47,6 +48,7 @@ export const getNextCronDate = (
       if (timezone.startsWith("+") || timezone.startsWith("-")) {
         throw new RangeError("Fixed offsets are not IANA timezone identifiers");
       }
+
       // Intl rejects host-relative aliases such as Luxon's "local" and "system".
       Intl.DateTimeFormat("en", { timeZone: timezone });
     } catch {
@@ -56,17 +58,22 @@ export const getNextCronDate = (
       );
     }
   }
+
   try {
     const options: CronExpressionOptions = { currentDate: currentDate ?? new Date() };
+
     if (timezone !== undefined) {
       options.tz = timezone;
     }
+
     const interval = CronExpressionParser.parse(expression, options);
+
     return interval.next().toDate();
   } catch (error) {
     return handleCronParseError(expression, error);
   }
 };
+
 /**
  * Validate a cron expression without calculating the next run date.
  *

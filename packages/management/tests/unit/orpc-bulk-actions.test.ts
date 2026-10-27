@@ -14,11 +14,13 @@ import {
 } from "@tests/unit/management-test-utils";
 
 interface SelectedActionRequest {
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   action: "cancel" | "retry" | "delete" | "reschedule" | "priority";
   ids: string[];
   nextRunAt?: string;
   priority?: number;
 }
+
 interface ProtectedPriorityRequest {
   action: string;
   ids: string[];
@@ -32,6 +34,7 @@ describe("oRPC Management bulk action routes", () => {
     const other = createManagementJob({ priority: 7 });
     const jobs = [selected, other];
     const changes: { id: string; priority: number }[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: async (id) =>
@@ -39,15 +42,20 @@ describe("oRPC Management bulk action routes", () => {
         setJobPriority: async (id, priority) => {
           changes.push({ id, priority });
           const selectedJob = jobs.find((candidate) => candidate._id.toHexString() === id);
+
           if (!selectedJob) {
             return await Promise.resolve(null);
           }
+
           selectedJob.priority = priority;
+
           return await Promise.resolve(selectedJob);
         },
       }),
     });
+
     const id = selected._id.toHexString();
+
     const response = await handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
       action: "priority",
       ids: [id, id.toUpperCase(), id],
@@ -67,6 +75,7 @@ describe("oRPC Management bulk action routes", () => {
     const ids = jobs.map((job) => job._id.toHexString());
     const slow: PromiseWithResolvers<void> = Promise.withResolvers();
     const started: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque(
         {
@@ -74,25 +83,30 @@ describe("oRPC Management bulk action routes", () => {
             await Promise.resolve(jobs.find((job) => job._id.toHexString() === id) ?? null),
           retryJob: async (id) => {
             started.push(id);
+
             if (id === ids[0]) {
               await slow.promise;
             }
+
             return createManagementJob({ status: "pending" });
           },
         },
         { mutations: true },
       ),
     });
+
     const request = handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
       action: "retry",
       ids,
     });
+
     try {
       await expect.poll(() => started.length, { timeout: 200 }).toBe(8);
     } finally {
       slow.resolve();
       await request;
     }
+
     const response1 = await request;
     await expect(response1.json()).resolves.toMatchObject({ count: 8, errors: [] });
   });
@@ -102,6 +116,7 @@ describe("oRPC Management bulk action routes", () => {
     const denied = createManagementJob({ status: "failed" });
     const changed: string[] = [];
     const authorizationIds: (readonly string[])[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque(
         {
@@ -111,6 +126,7 @@ describe("oRPC Management bulk action routes", () => {
             ),
           retryJob: async (id) => {
             changed.push(id);
+
             return await Promise.resolve({ ...allowed, status: "pending" });
           },
         },
@@ -120,12 +136,14 @@ describe("oRPC Management bulk action routes", () => {
         if (ids) {
           authorizationIds.push(ids);
         }
+
         return !job || job._id.equals(allowed._id);
       },
       serializePayload: () => {
         throw new Error("Bulk actions do not return payloads");
       },
     });
+
     const response = await handleManagementPost(
       surface,
       "/api/v1/jobs/actions/selected",
@@ -135,6 +153,7 @@ describe("oRPC Management bulk action routes", () => {
       },
       { managementContext: {} },
     );
+
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       count: 1,
@@ -151,14 +170,17 @@ describe("oRPC Management bulk action routes", () => {
       let active = 0;
       let maximum = 0;
       const changed: string[] = [];
+
       const mutate = async (id: string) => {
         active += 1;
         maximum = Math.max(active, maximum);
         await delay(2);
         active -= 1;
         changed.push(id);
+
         return createManagementJob();
       };
+
       const surface = createManagementSurface({
         monque: createManagementMonque(
           {
@@ -170,28 +192,35 @@ describe("oRPC Management bulk action routes", () => {
             setJobPriority: mutate,
             deleteJob: async (id) => {
               await mutate(id);
+
               return true;
             },
           },
           { mutations: true },
         ),
       });
+
       const missing = createManagementJob()._id.toHexString();
+
       const requestBody: SelectedActionRequest = {
         action,
         ids: [...jobs.map((job) => job._id.toHexString()), missing],
       };
+
       if (action === "reschedule") {
         requestBody.nextRunAt = "2027-01-01T00:00:00.000Z";
       }
+
       if (action === "priority") {
         requestBody.priority = 8;
       }
+
       const response = await handleManagementPost(
         surface,
         "/api/v1/jobs/actions/selected",
         requestBody,
       );
+
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         count: 12,
@@ -208,29 +237,37 @@ describe("oRPC Management bulk action routes", () => {
     const raced = createManagementJob({ priority: 3 });
     const removed = createManagementJob({ priority: 4 });
     const untouched = createManagementJob({ priority: 5 });
+
     const nonpending = (["processing", "completed", "failed", "cancelled"] as const).map((status) =>
       createManagementJob({ status, priority: 6 }),
     );
+
     const jobs = [allowed, denied, raced, removed, untouched, ...nonpending];
     const missing = createManagementJob()._id.toHexString();
+
     const selected = [allowed, denied, raced, removed, ...nonpending].map((job) =>
       job._id.toHexString(),
     );
+
     const ids = [...selected, missing];
     const authorization: unknown[] = [];
     const changed: string[] = [];
+
     const surface = createManagementSurface<{ user: string }>({
       monque: createManagementMonque({
         getJob: async (id) =>
           await Promise.resolve(jobs.find((job) => job._id.toHexString() === id) ?? null),
         setJobPriority: async (id, priority) => {
           const selectedJob = jobs.find((candidate) => candidate._id.toHexString() === id);
+
           if (!selectedJob || selectedJob === removed) {
             return await Promise.resolve(null);
           }
+
           if (selectedJob === raced) {
             selectedJob.status = "processing";
           }
+
           if (selectedJob.status !== "pending") {
             return await vi
               .fn<() => Promise<never>>()
@@ -243,16 +280,20 @@ describe("oRPC Management bulk action routes", () => {
                 ),
               )();
           }
+
           changed.push(id);
           selectedJob.priority = priority;
+
           return await Promise.resolve(selectedJob);
         },
       }),
       authorize: ({ action, context, job, ids: targetIds }) => {
         authorization.push({ action, context, id: job?._id.toHexString(), ids: targetIds });
+
         return action === "read" || job !== denied;
       },
     });
+
     const response = await handleManagementPost(
       surface,
       "/api/v1/jobs/actions/selected",
@@ -263,8 +304,10 @@ describe("oRPC Management bulk action routes", () => {
       },
       { managementContext: { user: "operator" } },
     );
+
     expect(response.status).toBe(200);
     const body: unknown = await response.json();
+
     const expectedErrors: unknown = expect.arrayContaining([
       expect.objectContaining({ jobId: denied._id.toHexString(), status: 403 }),
       expect.objectContaining({ jobId: missing, status: 404 }),
@@ -274,9 +317,11 @@ describe("oRPC Management bulk action routes", () => {
           jobId: job._id.toHexString(),
           status: 409,
         });
+
         return expectedError;
       }),
     ]);
+
     expect(body).toMatchObject({ count: 1, errors: expectedErrors });
     expect(body).toHaveProperty("errors.length", 8);
     expect(changed).toStrictEqual([allowed._id.toHexString()]);
@@ -299,6 +344,7 @@ describe("oRPC Management bulk action routes", () => {
             managementContext: { user: "operator" },
           },
         );
+
         await expect(readResponse.json()).resolves.toMatchObject({
           priority: expectedPriorities[index],
         });
@@ -310,27 +356,33 @@ describe("oRPC Management bulk action routes", () => {
     "rejects selected priority %j before authorization or job access",
     async (priority) => {
       let accessed = false;
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: async () => {
             accessed = true;
+
             return await Promise.resolve(null);
           },
           setJobPriority: async () => {
             accessed = true;
+
             return await Promise.resolve(null);
           },
         }),
         authorize: () => {
           accessed = true;
+
           return true;
         },
       });
+
       const response = await handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
         action: "priority",
         ids: [createManagementJob()._id.toHexString()],
         priority,
       });
+
       expect(response.status).toBe(400);
       expect(accessed).toBe(false);
     },
@@ -339,15 +391,18 @@ describe("oRPC Management bulk action routes", () => {
   it("validates the raw selection limit and rejects extra scope before mutation", async () => {
     const target = createManagementJob({ priority: 0 });
     let changes = 0;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(target),
         setJobPriority: async (_id, priority) => {
           changes += 1;
+
           return await Promise.resolve({ ...target, priority });
         },
       }),
     });
+
     await Promise.all(
       [
         { ids: [] },
@@ -362,6 +417,7 @@ describe("oRPC Management bulk action routes", () => {
           priority: 0,
           ...body,
         });
+
         expect(response.status).toBe(400);
       }),
     );
@@ -391,18 +447,22 @@ describe("oRPC Management bulk action routes", () => {
     async ({ policy, allowed }) => {
       const target = createManagementJob();
       let accessed = false;
+
       const methods: Partial<ManagementMonque> = {
         getJob: async () => {
           accessed = true;
+
           return await Promise.resolve(target);
         },
       };
+
       if (policy !== "unsupported") {
         // oxlint-disable-next-line vitest/prefer-spy-on -- Add an absent optional facade capability; there is no existing method to spy on.
         methods.setJobPriority = vi
           .fn<NonNullable<ManagementMonque["setJobPriority"]>>()
           .mockResolvedValue(target);
       }
+
       const surface = createManagementSurface<{ allowed: boolean }>({
         monque: createManagementMonque(methods),
         readOnly: policy === "readonly",
@@ -417,6 +477,7 @@ describe("oRPC Management bulk action routes", () => {
       await expect(discovery.json()).resolves.toMatchObject({
         actions: { setJobPriority: expected },
       });
+
       const response = await handleManagementPost(
         surface,
         "/api/v1/jobs/actions/selected",
@@ -427,6 +488,7 @@ describe("oRPC Management bulk action routes", () => {
         },
         context,
       );
+
       expect(response.status).toBe(expected ? 200 : 403);
       expect(accessed).toBe(expected);
     },
@@ -437,34 +499,43 @@ describe("oRPC Management bulk action routes", () => {
     async (protection) => {
       let accessed = false;
       const target = createManagementJob();
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: async () => {
             accessed = true;
+
             return await Promise.resolve(target);
           },
           setJobPriority: async () => {
             accessed = true;
+
             return await Promise.resolve(target);
           },
         }),
         authorize: () => {
           accessed = true;
+
           return true;
         },
       });
+
       const headers = new Headers({ "content-type": "application/json" });
+
       const requestBody: ProtectedPriorityRequest = {
         action: "priority",
         ids: [target._id.toHexString()],
         priority: 1,
       };
+
       if (protection === "origin") {
         headers.set("origin", "https://attacker.example");
       }
+
       if (protection === "body") {
         requestBody.padding = "x".repeat(70_000);
       }
+
       const result = await surface.openApiHandler.handle(
         new Request("https://management.example/api/v1/jobs/actions/selected", {
           method: "POST",
@@ -473,6 +544,7 @@ describe("oRPC Management bulk action routes", () => {
         }),
         { context: { managementContext: {} } },
       );
+
       expect(result.response?.status).toBe(protection === "origin" ? 403 : 413);
       expect(accessed).toBe(false);
     },
@@ -483,22 +555,28 @@ describe("oRPC Management bulk action routes", () => {
       monque: createManagementMonque({}, { mutations: true }),
       readOnly: true,
     });
+
     const id = createManagementJob()._id.toHexString();
+
     const oversized = await handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
       action: "retry",
       ids: Array.from({ length: 101 }, () => id),
     });
+
     expect(oversized.status).toBe(400);
+
     const denied = await handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
       action: "retry",
       ids: [id],
     });
+
     expect(denied.status).toBe(403);
   });
 
   it("bulk cancels Jobs through public core API with selector DTOs", async () => {
     const coreCalls: JobSelector[] = [];
     const authorizeCalls: unknown[] = [];
+
     const surface = createManagementSurface<{ userId: string }>({
       monque: createManagementMonque({
         cancelJobs: async (selector): Promise<BulkOperationResult> => {
@@ -512,6 +590,7 @@ describe("oRPC Management bulk action routes", () => {
       }),
       authorize: ({ action, context, selector }) => {
         authorizeCalls.push({ action, context, selector });
+
         return true;
       },
     });
@@ -534,6 +613,7 @@ describe("oRPC Management bulk action routes", () => {
       olderThan: new Date("2026-02-01T10:30:00.000Z"),
       newerThan: new Date("2026-01-01T00:00:00.000Z"),
     };
+
     await expectJsonResponse(response, 200, {
       count: 2,
       errors: [],
@@ -550,6 +630,7 @@ describe("oRPC Management bulk action routes", () => {
 
   it("bulk retries and deletes Jobs through public core APIs with stable result DTOs", async () => {
     const coreCalls: { action: string; selector: JobSelector }[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         retryJobs: async (selector): Promise<BulkOperationResult> => {
@@ -574,6 +655,7 @@ describe("oRPC Management bulk action routes", () => {
     const retry = await handleManagementPost(surface, "/api/v1/jobs/actions/retry", {
       status: "failed",
     });
+
     const deleted = await handleManagementPost(surface, "/api/v1/jobs/actions/delete", {
       status: ["completed", "cancelled"],
     });
@@ -594,6 +676,7 @@ describe("oRPC Management bulk action routes", () => {
 
   it("passes an empty bulk Job selector through to public core APIs", async () => {
     const coreCalls: JobSelector[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         deleteJobs: async (selector): Promise<BulkOperationResult> => {
@@ -612,6 +695,7 @@ describe("oRPC Management bulk action routes", () => {
 
   it("rejects read-only, unsupported, and denied bulk actions with 403", async () => {
     const coreCalls: string[] = [];
+
     const readOnly = createManagementSurface({
       monque: createManagementMonque({
         cancelJobs: async (): Promise<BulkOperationResult> => {
@@ -622,9 +706,11 @@ describe("oRPC Management bulk action routes", () => {
       }),
       readOnly: true,
     });
+
     const unsupported = createManagementSurface({
       monque: createManagementMonque(),
     });
+
     const denied = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({
         cancelJobs: async (): Promise<BulkOperationResult> => {
@@ -649,11 +735,13 @@ describe("oRPC Management bulk action routes", () => {
       "/api/v1/jobs/actions/cancel",
       {},
     );
+
     const unsupportedResponse = await handleManagementPost(
       unsupported,
       "/api/v1/jobs/actions/cancel",
       {},
     );
+
     const deniedResponse = await handleManagementPost(
       denied,
       "/api/v1/jobs/actions/cancel",
@@ -669,6 +757,7 @@ describe("oRPC Management bulk action routes", () => {
 
   it("rejects invalid bulk selector request shapes before calling core", async () => {
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         cancelJobs: async (): Promise<BulkOperationResult> => {
@@ -680,12 +769,15 @@ describe("oRPC Management bulk action routes", () => {
     });
 
     const invalidBody = await handleManagementPost(surface, "/api/v1/jobs/actions/cancel", []);
+
     const invalidStatus = await handleManagementPost(surface, "/api/v1/jobs/actions/cancel", {
       status: [],
     });
+
     const invalidDate = await handleManagementPost(surface, "/api/v1/jobs/actions/cancel", {
       olderThan: "February 1, 2026 10:30:00",
     });
+
     const unknownSelectorField = await handleManagementPost(
       surface,
       "/api/v1/jobs/actions/cancel",

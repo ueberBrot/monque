@@ -16,4 +16,5 @@ const Separator = ({
     {...props}
   />
 );
+
 export { Separator };

@@ -9,17 +9,20 @@ describe("management OpenAPI generation", () => {
   it("shares concurrent generation and reuses the successful document", async () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
+
     const generated: OpenAPI.Document = {
       openapi: "3.1.1",
       info: { title: "Monque Management API", version: "0.0.0" },
       paths: {},
     };
+
     const gate = Promise.withResolvers<OpenAPI.Document>();
     const generate = vi.spyOn(OpenAPIGenerator.prototype, "generate").mockReturnValue(gate.promise);
     const { generateManagementOpenApiDocument } = await import("@/index");
 
     const first = generateManagementOpenApiDocument();
     const second = generateManagementOpenApiDocument();
+
     try {
       expect(generate).toHaveBeenCalledOnce();
     } finally {
@@ -36,22 +39,27 @@ describe("management OpenAPI generation", () => {
   it("shares a failed generation without changing the error and retries the next call", async () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
+
     const generated: OpenAPI.Document = {
       openapi: "3.1.1",
       info: { title: "Monque Management API", version: "0.0.0" },
       paths: {},
     };
+
     const failure = new Error("OpenAPI generation failed");
     const gate = Promise.withResolvers<OpenAPI.Document>();
+
     const generate = vi
       .spyOn(OpenAPIGenerator.prototype, "generate")
       .mockReturnValueOnce(gate.promise)
       .mockResolvedValue(generated);
+
     const { generateManagementOpenApiDocument } = await import("@/index");
 
     const first = generateManagementOpenApiDocument();
     const second = generateManagementOpenApiDocument();
     const failures = Promise.allSettled([first, second]);
+
     try {
       expect(generate).toHaveBeenCalledOnce();
     } finally {
@@ -66,6 +74,7 @@ describe("management OpenAPI generation", () => {
       generateManagementOpenApiDocument(),
       generateManagementOpenApiDocument(),
     ]);
+
     expect(cached.map((document) => document === generated)).toStrictEqual([true, true]);
     expect(generate).toHaveBeenCalledTimes(2);
   });
@@ -75,15 +84,18 @@ describe("management OpenAPI generation", () => {
     async (failure) => {
       vi.resetModules();
       const { OpenAPIGenerator } = await import("@orpc/openapi");
+
       const generated: OpenAPI.Document = {
         openapi: "3.1.1",
         info: { title: "Monque Management API", version: "0.0.0" },
         paths: {},
       };
+
       const generate = vi
         .spyOn(OpenAPIGenerator.prototype, "generate")
         .mockRejectedValueOnce(failure)
         .mockResolvedValue(generated);
+
       const { generateManagementOpenApiDocument } = await import("@/index");
 
       const first = generateManagementOpenApiDocument();
@@ -93,10 +105,12 @@ describe("management OpenAPI generation", () => {
         expect(second).rejects.toBe(failure),
       ]);
       expect(generate).toHaveBeenCalledOnce();
+
       const cached = await Promise.all([
         generateManagementOpenApiDocument(),
         generateManagementOpenApiDocument(),
       ]);
+
       expect(cached.map((document) => document === generated)).toStrictEqual([true, true]);
       expect(generate).toHaveBeenCalledTimes(2);
     },

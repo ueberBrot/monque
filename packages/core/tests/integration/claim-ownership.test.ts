@@ -36,6 +36,7 @@ describe("claim ownership", () => {
         shutdownTimeout: 1,
         maxRetries: 1,
       };
+
       const original = new Monque(db, options);
       const replacement = new Monque(db, { ...options, lockTimeout: 0 });
       instances.push(original, replacement);
@@ -51,6 +52,7 @@ describe("claim ownership", () => {
       original.register("work", async () => {
         firstStarted.resolve();
         await firstRelease.promise;
+
         if (fail) {
           throw new Error("Late failure");
         }
@@ -61,6 +63,7 @@ describe("claim ownership", () => {
       });
       const job = await original.enqueue("work", {});
       original.start();
+
       try {
         await firstStarted.promise;
         await original.stop();
@@ -70,6 +73,7 @@ describe("claim ownership", () => {
         firstRelease.resolve();
         await waitFor(async () => {
           const awaitedResult1 = await original.getQueueViewSummaries();
+
           return awaitedResult1[0]?.worker?.activeCount === 0;
         });
         const awaitedResult2 = await replacement.getJob(job._id);
@@ -79,6 +83,7 @@ describe("claim ownership", () => {
         secondRelease.resolve();
         await waitFor(async () => {
           const awaitedResult3 = await replacement.getJob(job._id);
+
           return awaitedResult3?.status === JobStatus.COMPLETED;
         });
       } finally {
@@ -86,6 +91,7 @@ describe("claim ownership", () => {
         secondRelease.resolve();
         await waitFor(async () => {
           const awaitedResult4 = await original.getQueueViewSummaries();
+
           return awaitedResult4[0]?.worker?.activeCount === 0;
         });
         await replacement.stop();
@@ -95,6 +101,7 @@ describe("claim ownership", () => {
 
   it("retains both executions when the same scheduler reclaims a recovered job", async () => {
     const collectionName = uniqueCollectionName("overlapping-claims");
+
     const monque = new Monque(db, {
       collectionName,
       workerConcurrency: 2,
@@ -102,6 +109,7 @@ describe("claim ownership", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     const recovery = new Monque(db, { collectionName, lockTimeout: 0 });
     instances.push(monque, recovery);
     await monque.initialize();
@@ -121,6 +129,7 @@ describe("claim ownership", () => {
     });
     const job = await monque.enqueue("work", {});
     monque.start();
+
     try {
       await firstStarted.promise;
       await recovery.initialize();
@@ -130,6 +139,7 @@ describe("claim ownership", () => {
       firstRelease.resolve();
       await waitFor(async () => {
         const awaitedResult6 = await monque.getQueueViewSummaries();
+
         return awaitedResult6[0]?.worker?.activeCount === 1;
       });
       const awaitedResult7 = await monque.getJob(job._id);
@@ -137,6 +147,7 @@ describe("claim ownership", () => {
       await waitFor(async () => {
         const awaitedResult8 = await monque.getJob(job._id);
         const current = awaitedResult8?.lastHeartbeat;
+
         return current instanceof Date && heartbeat instanceof Date && current > heartbeat;
       });
       const awaitedResult9 = await monque.getJob(job._id);
@@ -146,6 +157,7 @@ describe("claim ownership", () => {
       secondRelease.resolve();
       await monque.stop();
     }
+
     const awaitedResult10 = await monque.getJob(job._id);
     expect(awaitedResult10?.status).toBe(JobStatus.COMPLETED);
   });
@@ -158,6 +170,7 @@ describe("claim ownership", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     };
+
     const original = new Monque(db, { ...options, heartbeatInterval: 20 });
     const replacement = new Monque(db, { ...options, lockTimeout: 0, heartbeatInterval: 30_000 });
     instances.push(original, replacement);
@@ -180,6 +193,7 @@ describe("claim ownership", () => {
     });
     const job = await original.enqueue("work", {});
     original.start();
+
     try {
       await firstStarted.promise;
       await replacement.initialize();
@@ -195,6 +209,7 @@ describe("claim ownership", () => {
       await waitFor(async () => {
         const awaitedResult13 = await original.getJob(probe._id);
         const current = awaitedResult13?.lastHeartbeat;
+
         return (
           current instanceof Date && probeHeartbeat instanceof Date && current > probeHeartbeat
         );

@@ -14,18 +14,23 @@ describe("scenario header fetch", () => {
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = new Request(input, init);
         received.push(request.clone());
+
         return await mockFetch(request);
       });
+
       const api = createDashboardManagementApi({
         apiBaseUrl: "/",
         origin: "https://dashboard-dev.example",
         fetch: createScenarioHeaderFetch("pending-jobs"),
       });
+
       const awaitedResult1 = await api.client.jobs({ status: "pending", limit: "1" });
       const [job] = awaitedResult1.jobs;
+
       if (!job) {
         throw new Error("Missing pending scenario job");
       }
+
       const nextRunAt = "2035-10-01T12:30:00.000Z";
       await api.client.rescheduleJob({ params: { id: job.id }, body: { nextRunAt } });
       const awaitedResult2 = await api.client.job({ params: { id: job.id } });
@@ -39,6 +44,7 @@ describe("scenario header fetch", () => {
 
     it("preserves request options and applies init overrides without changing input headers", async () => {
       const controller = new AbortController();
+
       const original = new Request("https://dashboard-dev.example/api/v1/jobs", {
         method: "POST",
         headers: { "content-type": "application/json", "x-original": "preserved" },
@@ -48,9 +54,11 @@ describe("scenario header fetch", () => {
         cache: "no-store",
         redirect: "manual",
       });
+
       let received: Request | undefined;
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
         received = new Request(input, init);
+
         return await Promise.resolve(new Response(null, { status: 204 }));
       });
       await createScenarioHeaderFetch("pending-jobs")(original, {
@@ -60,9 +68,11 @@ describe("scenario header fetch", () => {
         scenario: original.headers.has("x-monque-dev-scenario"),
         original: original.headers.get("x-original"),
       }).toStrictEqual({ scenario: false, original: "preserved" });
+
       if (!received) {
         throw new Error("Fetch did not receive a request");
       }
+
       expect({
         override: received.headers.get("x-override"),
         original: received.headers.has("x-original"),

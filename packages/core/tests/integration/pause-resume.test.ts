@@ -30,6 +30,7 @@ describe("local pause and resume", () => {
       pollInterval: 60_000,
       safetyPollInterval: 60_000,
     });
+
     instances.push(monque);
     monque.pause("paused");
     monque.pause("paused");
@@ -41,6 +42,7 @@ describe("local pause and resume", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult1 = await monque.getJob(other._id);
+
       return awaitedResult1?.status === JobStatus.COMPLETED;
     });
     const awaitedResult2 = await monque.getJob(paused._id);
@@ -49,6 +51,7 @@ describe("local pause and resume", () => {
     monque.resume("paused");
     await waitFor(async () => {
       const awaitedResult3 = await monque.getJob(paused._id);
+
       return awaitedResult3?.status === JobStatus.COMPLETED;
     });
     expect(monque.isPaused("paused")).toBe(false);
@@ -62,6 +65,7 @@ describe("local pause and resume", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -73,6 +77,7 @@ describe("local pause and resume", () => {
     monque.register("next", () => {});
     const active = await monque.enqueue("active", {});
     monque.start();
+
     try {
       await started.promise;
       monque.pause();
@@ -82,6 +87,7 @@ describe("local pause and resume", () => {
       await waitFor(async () => {
         const awaitedResult5 = await monque.getJob(active._id);
         const renewed = awaitedResult5?.leaseExpiresAt;
+
         return renewed instanceof Date && original instanceof Date && renewed > original;
       });
       expect(monque.isHealthy()).toBe(true);
@@ -90,6 +96,7 @@ describe("local pause and resume", () => {
       release.resolve();
       await waitFor(async () => {
         const awaitedResult7 = await monque.getJob(active._id);
+
         return awaitedResult7?.status === JobStatus.COMPLETED;
       });
       const awaitedResult8 = await monque.getJob(next._id);
@@ -97,6 +104,7 @@ describe("local pause and resume", () => {
       monque.resume();
       await waitFor(async () => {
         const awaitedResult9 = await monque.getJob(next._id);
+
         return awaitedResult9?.status === JobStatus.COMPLETED;
       });
     } finally {
@@ -110,6 +118,7 @@ describe("local pause and resume", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     };
+
     const local = new Monque(db, options);
     const other = new Monque(db, options);
     instances.push(local, other);
@@ -145,6 +154,7 @@ describe("local pause and resume", () => {
     other.start();
     await waitFor(async () => {
       const awaitedResult10 = await other.getJob(job._id);
+
       return awaitedResult10?.status === JobStatus.COMPLETED;
     });
     expect(handled).toStrictEqual(["other"]);

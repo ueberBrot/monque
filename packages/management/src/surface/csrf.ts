@@ -1,11 +1,13 @@
 const isCanonicalOrigin = function isCanonicalOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
+
     return (url.protocol === "https:" || url.protocol === "http:") && url.origin === origin;
   } catch {
     return false;
   }
 };
+
 export const parseTrustedOrigins = function parseTrustedOrigins(
   origins: readonly string[],
 ): ReadonlySet<string> {
@@ -43,5 +45,6 @@ export const isTrustedMutationRequest = function isTrustedMutationRequest(
   }
 
   const fetchSite = request.headers["sec-fetch-site"];
+
   return fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "none";
 };

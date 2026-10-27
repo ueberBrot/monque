@@ -19,6 +19,7 @@ describe("worker fairness", () => {
       collectionName: uniqueCollectionName("replacement"),
       instanceConcurrency: 2,
     });
+
     await monque.initialize();
     const handled: string[] = [];
     monque.register(
@@ -40,6 +41,7 @@ describe("worker fairness", () => {
     await monque.enqueue("first", {});
     await monque.enqueue("second", {});
     monque.start();
+
     try {
       await waitFor(() => handled.length > 0);
       expect(handled).toStrictEqual(["new"]);
@@ -57,6 +59,7 @@ describe("worker fairness", () => {
         pollInterval: targeted ? 60_000 : 20,
         safetyPollInterval: targeted ? 60_000 : 20,
       });
+
       await monque.initialize();
       const started: string[] = [];
       const releases: (() => void)[] = [];
@@ -74,23 +77,29 @@ describe("worker fairness", () => {
       await monque.enqueue("busy", {});
       await monque.enqueue("waiting", {});
       monque.start();
+
       try {
         await waitFor(() => started.length === 1);
         releases[0]?.();
+
         if (targeted) {
           await waitFor(async () => {
             const awaitedResult1 = await monque.getQueueViewSummaries();
+
             return awaitedResult1.every((view) => view.worker?.activeCount === 0);
           });
           await monque.enqueue("busy", {});
         }
+
         await waitFor(() => started.length >= 2);
         expect(started.slice(0, 2)).toStrictEqual(["busy", "waiting"]);
       } finally {
         const stopping = monque.stop();
+
         for (const release of releases) {
           release();
         }
+
         await stopping;
       }
     },

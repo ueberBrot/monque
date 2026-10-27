@@ -2,6 +2,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vite-plus/test";
 
 afterEach(cleanup);
+
 // jsdom has no scrolling implementation; browser tests verify workspace geometry.
 if (globalThis.Element !== undefined) {
   Object.defineProperty(Element.prototype, "scrollTo", {
@@ -9,6 +10,7 @@ if (globalThis.Element !== undefined) {
     value: vi.fn<typeof window.scrollTo>(),
   });
 }
+
 if (globalThis.window !== undefined) {
   Object.defineProperty(window, "scrollTo", {
     configurable: true,

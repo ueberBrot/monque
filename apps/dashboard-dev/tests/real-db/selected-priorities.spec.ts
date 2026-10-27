@@ -39,11 +39,13 @@ test("selected priority confirmation changes only the selected pending Jobs", as
   await expect(page.getByRole("dialog")).toContainText("Set priority to -18 for 2 selected jobs.");
   const awaitedResult2 = await app.monque.getJob(first._id);
   expect(awaitedResult2?.priority).toBe(2);
+
   const response = page.waitForResponse(
     (currentResponse1) =>
       currentResponse1.request().method() === "POST" &&
       currentResponse1.url().endsWith("/jobs/actions/selected"),
   );
+
   await confirm.click();
   const awaitedResult3 = await response;
   expect(await awaitedResult3.json()).toEqual({ count: 2, errors: [] });
@@ -52,6 +54,7 @@ test("selected priority confirmation changes only the selected pending Jobs", as
     const row = page
       .getByRole("row")
       .filter({ has: page.getByRole("link", { name: job.name, exact: true }) });
+
     await expect(row.getByText(isMobile ? "Priority -18" : "-18", { exact: true })).toBeVisible();
     await expect(row.getByRole("checkbox")).not.toBeChecked();
     const awaitedResult1 = await app.monque.getJob(job._id);
@@ -62,6 +65,7 @@ test("selected priority confirmation changes only the selected pending Jobs", as
   await page.reload();
   await expect(page.getByText(isMobile ? "Priority -18" : "-18", { exact: true })).toHaveCount(2);
 });
+
 test("selected priority reports stale and denied Jobs and preserves failed and newer selections", async ({
   page,
   app,
@@ -99,13 +103,16 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
     await release.promise;
     await route.continue();
   });
+
   try {
     await app.monque.cancelJob(stale._id.toHexString());
     await app.monque.deleteJob(missing._id.toHexString());
     app.deniedPriorityJobIds.add(denied._id.toHexString());
+
     const response = page.waitForResponse((currentResponse2) =>
       currentResponse2.url().endsWith("/jobs/actions/selected"),
     );
+
     await page.getByRole("button", { name: "Confirm priority changes", exact: true }).click();
     await received.promise;
     await page
@@ -125,6 +132,7 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
     release.resolve();
     resumeReads.resolve();
   }
+
   await expect(page.getByText(/1 succeeded, 3 failed\./u)).toBeVisible();
   await forEachSequential([stale, denied, untouched], async (job) => {
     await expect(
@@ -137,9 +145,11 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
   await expect(
     page.getByRole("checkbox", { name: `Select job row missing ${String(missing._id)}` }),
   ).toHaveCount(0);
+
   const validRow = page
     .getByRole("row")
     .filter({ has: page.getByRole("link", { name: "valid", exact: true }) });
+
   await expect(validRow.getByText(isMobile ? "Priority 23" : "23", { exact: true })).toBeVisible();
   const awaitedResult6 = await app.monque.getJob(valid._id);
   expect(awaitedResult6?.priority).toBe(23);
@@ -166,21 +176,26 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
     ).toBeChecked();
   });
 });
+
 test("selected priority requires all pending Jobs and an enabled host capability", async ({
   page,
   app,
 }) => {
   const pending = await app.seed({ name: "pending" });
+
   const others = await Promise.all(
     (["processing", "completed", "failed", "cancelled"] as const).map(
       async (status) => await Promise.resolve(app.seed({ name: status, status })),
     ),
   );
+
   await page.goto(`${app.base}/dashboard/jobs`);
+
   const priority = page.getByRole("button", {
     name: "Change priority for selected jobs",
     exact: true,
   });
+
   await page
     .getByRole("checkbox", { name: `Select job row pending ${String(pending._id)}` })
     .check();
@@ -189,6 +204,7 @@ test("selected priority requires all pending Jobs and an enabled host capability
     const checkbox = page.getByRole("checkbox", {
       name: `Select job row ${job.name} ${String(job._id)}`,
     });
+
     await checkbox.check();
     await expect(priority).toBeDisabled();
     await checkbox.uncheck();
@@ -200,6 +216,7 @@ test("selected priority requires all pending Jobs and an enabled host capability
     .check();
   await expect(priority).toBeDisabled();
 });
+
 test("selected priority reports a revoked operator session and leaves Jobs unchanged", async ({
   page,
   app,
@@ -223,9 +240,11 @@ test("selected priority reports a revoked operator session and leaves Jobs uncha
   const awaitedResult11 = await context.cookies();
   const cookie = awaitedResult11.find((currentCookie3) => currentCookie3.name === "session");
   const session = app.sessions.get(cookie?.value ?? "");
+
   if (!session) {
     throw new Error("Missing operator session");
   }
+
   session.role = "viewer";
   await page.getByRole("button", { name: "Confirm priority changes", exact: true }).click();
   await expect(page.getByText("Action unavailable", { exact: true }).first()).toBeVisible();
