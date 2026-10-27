@@ -22,8 +22,18 @@ test("development MongoDB mode starts its scheduler and processes live demo jobs
 }) => {
   test.setTimeout(60_000);
   const base = `${app.origin}/development/dashboard`;
-  await page.goto(`${base}/health`);
-  await expect(page.getByRole("heading", { name: "Scheduler healthy" })).toBeVisible();
+  const openHealth = async () => {
+    const responses = Promise.all([
+      page.waitForResponse(`${app.origin}/development/api/v1/health`),
+      page.waitForResponse(`${app.origin}/development/api/v1/capabilities`),
+    ]);
+    await page.goto(`${base}/health`);
+    for (const response of await responses) {
+      expect(response.status()).toBe(200);
+    }
+    await expect(page.getByRole("heading", { name: "Scheduler healthy" })).toBeVisible();
+  };
+  await openHealth();
   await page.goto(`${base}/jobs?name=demo-report&sortBy=createdAt&sortDirection=desc`);
   await expect(page.locator("tbody tr").first()).toContainText("Processing", { timeout: 15_000 });
   const reportLink = await page.locator("tbody tr").first().getByRole("link").getAttribute("href");
@@ -50,8 +60,7 @@ test("development MongoDB mode starts its scheduler and processes live demo jobs
   const recurring = await jobs.findOne({ name: "demo-batch", repeatInterval: { $exists: true } });
   expect(recurring?.["nextRunAt"]).toBeInstanceOf(Date);
   await app.development.close();
-  await page.goto(`${base}/health`);
-  await expect(page.getByRole("heading", { name: "Scheduler healthy" })).toBeVisible();
+  await openHealth();
   expect(
     await jobs.countDocuments({
       name: "demo-batch",
