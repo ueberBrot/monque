@@ -42,7 +42,7 @@
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@effect/language-service": "0.87.3",
-    "@effect/tsgo": "0.48.0",
+    "@effect/tsgo": "0.59.0",
     "@shadcn/lint": "^0.2.0",
     "@tanstack/intent": "0.5.3",
     "@types/node": "^22.20.5",
@@ -67,9 +67,9 @@
   },
   "packageManager": "bun@1.4.4",
   "catalog": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
-    "vitest": "5.0.1",
-    "vite-plus": "1.0.0"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+    "vitest": "5.0.5",
+    "vite-plus": "1.4.0"
   },
   "intent": {
     "skills": [

@@ -100,7 +100,7 @@ describe("heartbeat mechanism", () => {
         const heartbeat = initial?.lastHeartbeat;
         expect(heartbeat).toBeInstanceOf(Date);
         if (!(heartbeat instanceof Date)) {
-          throw new Error("Missing initial heartbeat");
+          throw new TypeError("Missing initial heartbeat");
         }
         let previous = heartbeat.getTime();
         const heartbeatAdvanced = async () => {

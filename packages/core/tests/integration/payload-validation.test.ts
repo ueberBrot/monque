@@ -55,7 +55,7 @@ describe("payload validation", () => {
     expect(failures[0]).toBeInstanceOf(PayloadValidationError);
     const [failure] = failures;
     if (!(failure instanceof PayloadValidationError)) {
-      throw new Error("Expected a payload validation failure");
+      throw new TypeError("Expected a payload validation failure");
     }
     expect(failure.issues[0]?.path).toStrictEqual(["email"]);
   });
