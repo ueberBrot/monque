@@ -141,9 +141,34 @@ try {
 
   const cases = [
     // 1.15.1 was never published; 1.16.0 is the first release satisfying ^1.15.1.
-    { name: "minimum-core", core: "1.16.0", management: tarballs["@monque/management"] },
-    { name: "minimum-management", core: tarballs["@monque/core"], management: "0.8.0" },
-    { name: "current", core: tarballs["@monque/core"], management: tarballs["@monque/management"] },
+    {
+      name: "minimum-core",
+      core: "1.16.0",
+      management: tarballs["@monque/management"],
+      express: "5.2.1",
+    },
+    {
+      name: "minimum-management",
+      core: tarballs["@monque/core"],
+      management: "0.8.0",
+      express: "5.2.1",
+    },
+    {
+      name: "current",
+      core: tarballs["@monque/core"],
+      management: tarballs["@monque/management"],
+      express: "5.2.1",
+      tsed: "8.41.2",
+      mongoose: "9.10.4",
+    },
+    {
+      name: "candidate",
+      core: tarballs["@monque/core"],
+      management: tarballs["@monque/management"],
+      express: "5.3.0",
+      tsed: "8.44.3",
+      mongoose: "9.11.4",
+    },
   ];
   const mongoContainer = await new MongoDBContainer("mongo:8").start();
   container = mongoContainer;
@@ -158,12 +183,16 @@ try {
     const dependencies = new Map(Object.entries(tarballs));
     dependencies.set("@monque/core", scenario.core);
     dependencies.set("@monque/management", scenario.management);
-    dependencies.set("express", "5.2.1");
+    dependencies.set("express", scenario.express);
     dependencies.set("mongodb", "7.7.0");
-    if (scenario.name === "current") {
-      dependencies.set("@tsed/core", "8.41.2");
-      dependencies.set("@tsed/di", "8.41.2");
-      dependencies.set("@tsed/platform-http", "8.41.2");
+    if (scenario.tsed !== undefined && scenario.mongoose !== undefined) {
+      for (const name of ["ajv", "core", "di", "mongoose", "platform-http"]) {
+        dependencies.set(`@tsed/${name}`, scenario.tsed);
+      }
+      dependencies.set("mongoose", scenario.mongoose);
+      dependencies.set("typescript", "6.0.3");
+      dependencies.set("@types/node", "22.20.5");
+      dependencies.set("@types/express", "5.0.6");
     } else {
       dependencies.delete("@monque/tsed");
     }
@@ -178,6 +207,10 @@ try {
     await copyFile(
       nodePath.join(root, "scripts/verification/consumer-app.mts"),
       nodePath.join(directory, "app.mts"),
+    );
+    await copyFile(
+      nodePath.join(root, "scripts/verification/consumer-mongoose.mts"),
+      nodePath.join(directory, "consumer-mongoose.mts"),
     );
     await run("bun", ["install", "--ignore-scripts"], directory);
     // Every Monque package must come from this install, even when a workspace is nearby.
@@ -195,11 +228,38 @@ try {
           );
         }),
     );
-    await run(process.execPath, ["app.mts"], directory, {
-      MONQUE_VERIFY_CASE: scenario.name,
-      MONQUE_VERIFY_URI: mongoContainer.getConnectionString(),
-      MONQUE_VERIFY_SCRATCH: scratch,
-    });
+    if (scenario.tsed !== undefined) {
+      await run(
+        "bun",
+        [
+          "node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "--strict",
+          "--skipLibCheck",
+          "--target",
+          "ESNext",
+          "--module",
+          "NodeNext",
+          "--types",
+          "node",
+          "--allowImportingTsExtensions",
+          "app.mts",
+        ],
+        directory,
+      );
+    }
+    // Node 22.12 needs the opt-in flag for TypeScript stripping. Override the
+    // executable to validate that public floor as well as the development Node.
+    await run(
+      process.env.MONQUE_VERIFY_NODE ?? "node",
+      ["--experimental-strip-types", "app.mts"],
+      directory,
+      {
+        MONQUE_VERIFY_CASE: scenario.name,
+        MONQUE_VERIFY_URI: mongoContainer.getConnectionString(),
+        MONQUE_VERIFY_SCRATCH: scratch,
+      },
+    );
     const result: unknown = JSON.parse(
       await readFile(nodePath.join(directory, "result.json"), "utf-8"),
     );
@@ -209,7 +269,7 @@ try {
   await verifyCase(0);
   const report = {
     checkedAt: new Date().toISOString(),
-    runtime: { node: process.version, bun: process.versions.bun },
+    runner: { node: process.version, bun: process.versions.bun },
     packages: versions,
     results,
   };

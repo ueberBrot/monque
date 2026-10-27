@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
@@ -13,6 +14,8 @@
       "express": ["./packages/management-express/node_modules/@types/express"],
       "mongodb": ["./packages/core/node_modules/mongodb"],
       "@tsed/di": ["./packages/tsed/node_modules/@tsed/di"],
+      "@tsed/mongoose": ["./packages/tsed/node_modules/@tsed/mongoose"],
+      "mongoose": ["./packages/tsed/node_modules/mongoose"],
       "@tsed/platform-http/testing": [
         "./packages/tsed/node_modules/@tsed/platform-http/lib/types/testing/index.d.ts"
       ],

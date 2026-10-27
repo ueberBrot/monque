@@ -63,7 +63,7 @@ const isDashboardEntry = (
   typeof value.createDashboardExpressRouter === "function";
 
 const scenario = process.env.MONQUE_VERIFY_CASE;
-const current = scenario === "current";
+const current = scenario === "current" || scenario === "candidate";
 assert.ok(
   process.env.MONQUE_VERIFY_URI !== undefined && process.env.MONQUE_VERIFY_URI.length > 0,
   "Missing MongoDB URI",
@@ -73,7 +73,14 @@ assert.ok(
   "Missing scratch directory",
 );
 const client = new MongoClient(process.env.MONQUE_VERIFY_URI, { directConnection: true });
-const db = client.db(scenario === "minimum-management" ? "management_compatibility" : "upgrade");
+let databaseName = "upgrade";
+if (scenario === "minimum-management") {
+  databaseName = "management_compatibility";
+}
+if (scenario === "candidate") {
+  databaseName = "candidate";
+}
+const db = client.db(databaseName);
 const jobs = db.collection<VerificationJob>("monque_jobs");
 const snapshotPath = nodePath.join(process.env.MONQUE_VERIFY_SCRATCH, "legacy.json");
 const checks = [];
@@ -99,7 +106,7 @@ const request = async (path: string, options: RequestInit = {}) => {
 try {
   await client.connect();
   let snapshot: { jobs: VerificationJob[]; indexes: IndexDescriptionInfo[] } | undefined;
-  if (current) {
+  if (scenario === "current") {
     const parsed: unknown = BSON.EJSON.parse(await readFile(snapshotPath, "utf-8"));
     assert.ok(
       isRecord(parsed) &&
@@ -120,7 +127,7 @@ try {
   monque = new Monque(db, { recoverStaleJobs: false });
   await monque.initialize();
 
-  if (current) {
+  if (scenario === "current") {
     assert.ok(snapshot !== undefined);
     await Promise.all(
       snapshot.jobs.map(async (before) => {
@@ -324,7 +331,7 @@ try {
     };
     await PlatformTest.bootstrap(ConsumerServer, {
       imports: [MonqueModule],
-      monque: { dbFactory: () => client.db("tsed_consumer"), disableJobProcessing: true },
+      monque: { dbFactory: () => client.db(`tsed_${scenario}`), disableJobProcessing: true },
     })();
     const service = PlatformTest.get<InstanceType<typeof MonqueService>>(MonqueService);
     const tsedJob = await service.now("tsed-priority", { from: "consumer" }, { priority: 12 });
@@ -339,6 +346,9 @@ try {
     checks.push(
       "Installed Ts.ED module bootstraps through DI and forwards priority intake and changes",
     );
+    await resetTsed();
+    const { verifyMongoose } = await import("./consumer-mongoose.mts");
+    checks.push(await verifyMongoose(process.env.MONQUE_VERIFY_URI, `mongoose_${scenario}`));
   }
   const versions: Record<string, string> = {};
   await Promise.all(
@@ -357,7 +367,23 @@ try {
       versions[`@monque/${name}`] = manifest.version;
     }),
   );
-  await writeFile("result.json", `${JSON.stringify({ scenario, versions, checks }, null, 2)}\n`);
+  await Promise.all(
+    [
+      "express",
+      "mongodb",
+      ...(current ? ["@tsed/core", "@tsed/di", "@tsed/mongoose", "mongoose"] : []),
+    ].map(async (name) => {
+      const manifest: unknown = JSON.parse(
+        await readFile(`node_modules/${name}/package.json`, "utf-8"),
+      );
+      assert.ok(isVersionedPackage(manifest));
+      versions[name] = manifest.version;
+    }),
+  );
+  await writeFile(
+    "result.json",
+    `${JSON.stringify({ scenario, node: process.version, versions, checks }, null, 2)}\n`,
+  );
 } finally {
   const serverToClose = server;
   try {
