@@ -21,6 +21,7 @@ interface PackageManifest extends WorkspaceCatalogs {
   dependencies: DependencyVersions;
   optionalDependencies: DependencyVersions;
   peerDependencies: DependencyVersions;
+  engines: DependencyVersions;
   workspaces: WorkspaceCatalogs;
 }
 const isJsonObject = (value: unknown): value is object =>
@@ -70,6 +71,7 @@ const packageManifestSchema = z.unknown().transform((input): PackageManifest | n
     peerDependencies: dependencyVersionsSchema.parse(
       "peerDependencies" in input ? input.peerDependencies : undefined,
     ),
+    engines: dependencyVersionsSchema.parse("engines" in input ? input.engines : undefined),
     workspaces: workspaceCatalogsSchema.parse("workspaces" in input ? input.workspaces : undefined),
   };
 });
@@ -104,7 +106,7 @@ const hasDependencyUpdates = (
   rootBefore: PackageManifest | null,
   rootAfter: PackageManifest | null,
 ): boolean => {
-  for (const key of ["dependencies", "optionalDependencies", "peerDependencies"] as const) {
+  for (const key of ["dependencies", "optionalDependencies"] as const) {
     const prev = before[key];
     const next = after[key];
     for (const [name, rawTo] of Object.entries(next)) {
@@ -115,6 +117,31 @@ const hasDependencyUpdates = (
       if (resolveVersion(name, rawFrom, rootBefore) !== resolveVersion(name, rawTo, rootAfter)) {
         return true;
       }
+    }
+  }
+  return false;
+};
+const hasCompatibilityUpdates = (
+  before: PackageManifest,
+  after: PackageManifest,
+  rootBefore: PackageManifest | null,
+  rootAfter: PackageManifest | null,
+): boolean => {
+  if (before.engines.node !== after.engines.node) {
+    return true;
+  }
+  const peers = new Set([
+    ...Object.keys(before.peerDependencies),
+    ...Object.keys(after.peerDependencies),
+  ]);
+  for (const name of peers) {
+    const from = before.peerDependencies[name];
+    const to = after.peerDependencies[name];
+    if (from === undefined || to === undefined) {
+      return true;
+    }
+    if (resolveVersion(name, from, rootBefore) !== resolveVersion(name, to, rootAfter)) {
+      return true;
     }
   }
   return false;
@@ -145,6 +172,7 @@ const main = async (): Promise<void> => {
     .split("\0")
     .filter((path) => /^packages\/[^/]+\/package\.json$/u.test(path));
   const updatedPackages = new Set<string>();
+  const compatibilityUpdates = new Set<string>();
   for (const path of packagePaths) {
     if (!changedFiles.includes("package.json") && !changedFiles.includes(path)) {
       continue;
@@ -157,9 +185,18 @@ const main = async (): Promise<void> => {
     if (after.name === undefined) {
       continue;
     }
+    if (hasCompatibilityUpdates(before, after, rootBefore, rootAfter)) {
+      compatibilityUpdates.add(after.name);
+    }
     if (hasDependencyUpdates(before, after, rootBefore, rootAfter)) {
       updatedPackages.add(after.name);
     }
+  }
+  if (compatibilityUpdates.size > 0) {
+    throw new Error(
+      `Published peer dependencies or Node.js engines changed for ${[...compatibilityUpdates].toSorted().join(", ")}. ` +
+        "Add an explicit changeset that classifies and explains the compatibility change.",
+    );
   }
   if (updatedPackages.size === 0) {
     console.log("No published dependency updates detected; nothing to do.");

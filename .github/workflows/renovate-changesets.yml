@@ -1,7 +1,7 @@
 name: Renovate Changesets
 
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] Only trusted base code runs; PR files are read through Git.
     types: [opened, reopened, synchronize]
 
 permissions:
@@ -30,11 +30,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
-        with:
-          node-version: "24"
-          package-manager-cache: false
+      - name: Install trusted base dependencies
+        uses: ./.github/actions/setup-vite-plus # zizmor: ignore[self-repository] Use the explicitly checked-out trusted base SHA.
 
       - name: Fetch pinned PR commit
         env:
@@ -57,7 +54,7 @@ jobs:
       - name: Generate App Token
         if: steps.changeset.outputs.commit != ''
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
