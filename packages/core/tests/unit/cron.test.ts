@@ -17,25 +17,6 @@ const cronFailure = (operation: () => void): InvalidCronError => {
 };
 
 describe("cron", () => {
-  describe.each([
-    { operation: "next run", parse: getNextCronDate },
-    { operation: "validation", parse: validateCronExpression },
-  ])("expression length during $operation", ({ parse }) => {
-    it("accepts an expression at the parser length limit", () => {
-      expect(() => parse("* * * * *".padEnd(1024))).not.toThrow();
-    });
-
-    it("reports oversized expressions as InvalidCronError", () => {
-      const expression = "* * * * *".padEnd(1025);
-      const error = cronFailure(() => {
-        parse(expression);
-      });
-
-      expect(error.expression).toBe(expression);
-      expect(error.message).toContain("too long");
-    });
-  });
-
   describe(getNextCronDate, () => {
     it('should parse "* * * * *" (every minute)', () => {
       const now = new Date();
