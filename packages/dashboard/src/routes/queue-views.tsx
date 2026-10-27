@@ -12,16 +12,20 @@ import {
 } from "./-queue-views.shared.js";
 
 const routeApi = getRouteApi("/queue-views");
+
 const QueueViewsListRoute = () => {
   const { managementApi, runtimeConfig } = routeApi.useRouteContext();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
+
   const queueViewsQuery = useQuery({
     ...managementApi.orpc.queueViews.queryOptions(),
     refetchInterval,
   });
+
   if (queueViewsQuery.isPending) {
     return <QueueViewsLoadingState />;
   }
+
   if (queueViewsQuery.isError) {
     return (
       <QueueViewsErrorState
@@ -34,9 +38,11 @@ const QueueViewsListRoute = () => {
       />
     );
   }
+
   if (queueViewsQuery.data.queueViews.length === 0) {
     return <QueueViewsEmptyState />;
   }
+
   return (
     <QueueViewsOverview
       queueViews={queueViewsQuery.data.queueViews}
@@ -59,10 +65,13 @@ const QueueViewsListRoute = () => {
     />
   );
 };
+
 const QueueViewsRoute = () => {
   const matchRoute = useMatchRoute();
+
   return matchRoute({ to: "/queue-views/$name" }) === false ? <QueueViewsListRoute /> : <Outlet />;
 };
+
 export const Route = createFileRoute("/queue-views")({
   component: QueueViewsRoute,
   pendingComponent: QueueViewsLoadingState,

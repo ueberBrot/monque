@@ -23,11 +23,13 @@ describe(runJobActions, () => {
       failCount: 0,
       failureReason: null,
     };
+
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
       fetch: async () => await Promise.resolve(Response.json(job)),
     });
+
     const client = createDashboardQueryClient();
     const mutation = client.getMutationCache().build(client, jobActionMutationOptions(api, client));
     await expect(mutation.execute({ action: "retry", jobIds: [job.id] })).resolves.toMatchObject({
@@ -46,10 +48,12 @@ describe(runJobActions, () => {
       "000000000000000000000002",
       "000000000000000000000003",
     ];
+
     const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
       await expect(request.json()).resolves.toStrictEqual({ action: "retry", ids });
+
       return Response.json({
         count: 1,
         errors: [
@@ -58,11 +62,13 @@ describe(runJobActions, () => {
         ],
       });
     });
+
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
       fetch,
     });
+
     const client = createDashboardQueryClient();
     const capabilities = api.orpc.capabilities.queryOptions();
     const health = api.orpc.health.queryOptions();
@@ -83,6 +89,7 @@ describe(runJobActions, () => {
 
   it("changes selected priorities in one request and preserves failed IDs", async () => {
     const ids = ["000000000000000000000001", "000000000000000000000002"];
+
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
@@ -94,12 +101,14 @@ describe(runJobActions, () => {
           ids,
           priority: -8,
         });
+
         return Response.json({
           count: 1,
           errors: [{ jobId: ids[1], error: "Job is processing", status: 409 }],
         });
       },
     });
+
     await expect(
       runJobActions(api, { action: "priority", jobIds: ids, priority: -8 }),
     ).resolves.toMatchObject({
@@ -111,11 +120,13 @@ describe(runJobActions, () => {
 
   it("returns an empty result without issuing requests when nothing is selected", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
+
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
       fetch,
     });
+
     await expect(runJobActions(api, { action: "delete", jobIds: [] })).resolves.toStrictEqual({
       action: "delete",
       count: 0,

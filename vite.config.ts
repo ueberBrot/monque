@@ -1,6 +1,7 @@
 import { strict as effectStrict } from "@effect/tsgo/oxlint-presets";
 import ultraciteAntiSlop from "ultracite/oxlint/anti-slop";
 import ultraciteCore from "ultracite/oxlint/core";
+import { selectJsPlugins } from "ultracite/oxlint/js-plugins";
 import ultraciteReact from "ultracite/oxlint/react";
 import ultraciteTanstack from "ultracite/oxlint/tanstack";
 import ultraciteVitest from "ultracite/oxlint/vitest";
@@ -20,6 +21,8 @@ const ignoredFiles = [
 ];
 
 const effectTestBlocks = ["it.effect", "it.live", "it.scoped", "it.scopedLive"];
+const sonarJs = selectJsPlugins(["sonarjs"]);
+
 const vitestPreset: OxlintConfig = {
   ...ultraciteVitest,
   overrides: (ultraciteVitest.overrides ?? []).map((override) => ({
@@ -63,6 +66,7 @@ export default defineConfig({
       newlinesBetween: false,
       internalPattern: ["@/", "@tests/", "@test-utils/"],
       customGroups: [
+        // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- Import sorting recognizes HTTP and HTTPS URL specifiers.
         { groupName: "url", elementNamePattern: ["https://**", "http://**"] },
         { groupName: "protocol", elementNamePattern: ["node:*", "bun:*", "npm:*"] },
       ],
@@ -80,23 +84,101 @@ export default defineConfig({
     },
   },
   lint: {
-    extends: [ultraciteCore, ultraciteTanstack, ultraciteAntiSlop, effectStrict, vitestPreset],
-    jsPlugins: ultraciteAntiSlop.jsPlugins,
+    env: ultraciteCore.env,
+    extends: [
+      ultraciteCore,
+      ultraciteTanstack,
+      ultraciteAntiSlop,
+      effectStrict,
+      vitestPreset,
+      sonarJs,
+    ],
+    jsPlugins: [...(ultraciteAntiSlop.jsPlugins ?? []), ...(sonarJs.jsPlugins ?? [])],
     ignorePatterns: [...(ultraciteCore.ignorePatterns ?? []), ...ignoredFiles, "specs/**"],
     // CI runs native rules before builds, then typed lint and TypeScript together.
     options: { typeAware: false },
     rules: {
-      // Keep required arguments in typed APIs such as Deferred.succeed and Vitest
-      // mocks; the rule cannot distinguish them from optional JS arguments.
-      "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
       // Public Promise<void> and Effect fiber APIs use void generic arguments.
       "typescript/no-invalid-void-type": ["error", { allowInGenericTypeArguments: true }],
-      // This default-off diagnostic is absent from Effect's strict preset. Monque's
-      // Promise adapters preserve arbitrary rejection values as part of their API.
+      // Promise adapters preserve arbitrary third-party rejection values in the error channel.
       "effecttsgo/any-unknown-in-error-context": "off",
     },
     overrides: [
-      { files: ["**/tests/**"], env: { vitest: true } },
+      {
+        files: ["**/tests/**"],
+        env: { vitest: true },
+        // Fixtures and exact assertions distinguish undefined from null and absent keys.
+        rules: { "sonarjs/no-undefined-assignment": "off" },
+      },
+      {
+        files: [
+          "apps/dashboard-dev/tests/unit/dev-shell-environment.test.ts",
+          "apps/dashboard-dev/tests/unit/local-db-lifecycle.test.ts",
+          "apps/dashboard-dev/tests/unit/mock-management-fetch.test.ts",
+          "packages/dashboard-express/tests/unit/dashboard-express-router.test.ts",
+          "packages/dashboard/tests/unit/command-menu.test.tsx",
+          "packages/management/tests/unit/contract-subpath-export.test.ts",
+          "packages/tsed/tests/unit/monque-module.test.ts",
+        ],
+        // Module seam tests need typeof the whole module, and export tests enumerate its namespace.
+        rules: { "sonarjs/no-wildcard-import": "off" },
+      },
+      {
+        files: [
+          "packages/core/src/scheduler/monque.ts",
+          "packages/core/src/scheduler/types.ts",
+          "packages/dashboard/src/components/processing-controls.tsx",
+          "packages/dashboard/src/components/ui/calendar.tsx",
+          "packages/dashboard/src/routes/-queue-views.shared.tsx",
+          "packages/management/src/surface/action-policy.ts",
+          "packages/management/src/surface/types.ts",
+          "packages/management/tests/unit/management-test-utils.ts",
+        ],
+        // Explicit undefined remains assignable for consumers using exactOptionalPropertyTypes.
+        rules: { "sonarjs/no-redundant-optional": "off" },
+      },
+      {
+        files: [
+          "packages/core/src/scheduler/services/job-processor.ts",
+          "packages/core/src/scheduler/services/pending-notification-router.ts",
+          "packages/dashboard/src/features/jobs/job-action-dialog.tsx",
+          "packages/dashboard/src/features/jobs/job-actions.ts",
+          "packages/dashboard/src/features/jobs/jobs-filters.tsx",
+          "packages/dashboard/src/lib/document-visibility.ts",
+          "packages/dashboard/src/lib/use-now.ts",
+          "packages/dashboard/src/management-errors.ts",
+          "packages/dashboard/src/routes/jobs.tsx",
+        ],
+        // Undefined clears optional state, timers, and search parameters; null has different semantics.
+        rules: { "sonarjs/no-undefined-assignment": "off" },
+      },
+      {
+        files: [
+          "packages/core/tests/unit/services/cursor-listing.test.ts",
+          "packages/core/tests/unit/services/job-intake.test.ts",
+          "packages/core/tests/unit/services/job-lifecycle.test.ts",
+          "packages/core/tests/unit/services/job-manager.test.ts",
+          "packages/core/tests/unit/services/job-processor.test.ts",
+          "packages/core/tests/unit/services/job-query.test.ts",
+        ],
+        // SonarJS's fixed test-call list does not recognize @effect/vitest's it.effect.
+        rules: { "sonarjs/no-empty-test-file": "off" },
+      },
+      {
+        files: ["packages/tsed/tests/integration/*.test.ts"],
+        // Controller fixture statics record execution and are reset between tests.
+        rules: { "sonarjs/public-static-readonly": "off" },
+      },
+      {
+        files: ["**/*.tsx"],
+        // React components use PascalCase, including functions returning conditional JSX.
+        rules: { "sonarjs/function-name": ["error", { format: "^[_a-zA-Z][a-zA-Z0-9]*$" }] },
+      },
+      {
+        files: ["**/*.astro"],
+        // The JS bridge cannot see imports referenced by the Astro template.
+        rules: { "sonarjs/unused-import": "off" },
+      },
       {
         files: ["packages/core/src/**/*.ts", "packages/management/src/**/*.ts"],
         // Keep unstable Effect types out of published APIs.

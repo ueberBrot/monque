@@ -35,6 +35,7 @@ describe("renewable leases", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     };
+
     const owner = new Monque(db, options);
     const survivor = new Monque(db, options);
     instances.push(owner, survivor);
@@ -49,12 +50,14 @@ describe("renewable leases", () => {
     survivor.start();
     const job = await owner.enqueue("work", {});
     owner.start();
+
     try {
       await started.promise;
       await owner.stop();
       survivor.register("work", () => {});
       await waitFor(async () => {
         const awaitedResult1 = await survivor.getJob(job._id);
+
         return awaitedResult1?.status === JobStatus.COMPLETED;
       });
       await expect(survivor.getJob(job._id)).resolves.toMatchObject({
@@ -65,6 +68,7 @@ describe("renewable leases", () => {
       await survivor.stop();
       await waitFor(async () => {
         const awaitedResult2 = await owner.getQueueViewSummaries();
+
         return awaitedResult2[0]?.worker?.activeCount === 0;
       });
     }
@@ -74,6 +78,7 @@ describe("renewable leases", () => {
     "does not revive an expired lease or accept its late result (failure: %s)",
     async (fail) => {
       const collectionName = uniqueCollectionName("expired-lease");
+
       const owner = new Monque(db, {
         collectionName,
         leaseDuration: 30_000,
@@ -83,6 +88,7 @@ describe("renewable leases", () => {
         pollInterval: 20,
         safetyPollInterval: 20,
       });
+
       instances.push(owner);
       await owner.initialize();
       const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -91,6 +97,7 @@ describe("renewable leases", () => {
       owner.register("work", async () => {
         started.resolve();
         await release.promise;
+
         if (fail) {
           throw new Error("Expired handler failed");
         }
@@ -101,6 +108,7 @@ describe("renewable leases", () => {
       });
       const job = await owner.enqueue("work", {});
       owner.start();
+
       try {
         await started.promise;
         await owner.stop();
@@ -117,6 +125,7 @@ describe("renewable leases", () => {
         await waitFor(async () => {
           const awaitedResult4 = await owner.getJob(probe._id);
           const current = awaitedResult4?.lastHeartbeat;
+
           return current instanceof Date && previous instanceof Date && current > previous;
         });
         const awaitedResult5 = await owner.getJob(job._id);
@@ -124,6 +133,7 @@ describe("renewable leases", () => {
         release.resolve();
         await waitFor(async () => {
           const awaitedResult6 = await owner.getQueueViewSummaries();
+
           return awaitedResult6.every((view) => view.worker?.activeCount === 0);
         });
         await expect(owner.getJob(job._id)).resolves.toMatchObject({
@@ -141,12 +151,14 @@ describe("renewable leases", () => {
     "keeps a healthy job claimed when another scheduler initializes (draining: %s)",
     async (draining) => {
       const collectionName = uniqueCollectionName("leases");
+
       const worker = new Monque(db, {
         collectionName,
         leaseDuration: 30_000,
         heartbeatInterval: 20,
         lockTimeout: 10,
       });
+
       const observer = new Monque(db, { collectionName, lockTimeout: 10 });
       instances.push(worker, observer);
       await worker.initialize();
@@ -159,22 +171,30 @@ describe("renewable leases", () => {
       const job = await worker.enqueue("work", {});
       worker.start();
       let stopping: Promise<void> | undefined;
+
       try {
         await started.promise;
         const claimed = await worker.getJob(job._id);
+
         if (draining) {
           stopping = worker.stop();
         }
+
         let previousDeadline = claimed?.leaseExpiresAt;
+
         const wasRenewed = async () => {
           const awaitedResult7 = await worker.getJob(job._id);
           const deadline = awaitedResult7?.leaseExpiresAt;
+
           if (!deadline || !previousDeadline || deadline <= previousDeadline) {
             return false;
           }
+
           previousDeadline = deadline;
+
           return true;
         };
+
         // Two renewals rule out a single heartbeat already in flight when draining starts.
         await forEachSequential(
           Array.from({ length: Math.ceil(2 / 1) }, (_, index) => index * 1),

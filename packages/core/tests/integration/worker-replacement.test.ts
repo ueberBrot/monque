@@ -35,6 +35,7 @@ describe("replacing a running worker", () => {
         pollInterval: 20,
         safetyPollInterval: 20,
       });
+
       instances.push(monque);
       await monque.initialize();
       const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -44,12 +45,14 @@ describe("replacing a running worker", () => {
         started.resolve();
         await release.promise;
         order.push("original");
+
         if (fail) {
           throw new Error("Original handler failed");
         }
       });
       const original = await monque.enqueue("work", {});
       monque.start();
+
       try {
         await started.promise;
         monque.register(
@@ -78,6 +81,7 @@ describe("replacing a running worker", () => {
         release.resolve();
         await waitFor(async () => {
           const awaitedResult3 = await monque.getJob(next._id);
+
           return awaitedResult3?.status === JobStatus.COMPLETED;
         });
         await monque.stop();
@@ -106,12 +110,16 @@ describe("replacing a running worker", () => {
     const job = await monque.enqueue("work", {});
     monque.start();
     let stopped = false;
+
     try {
       await started.promise;
       monque.register("work", () => {}, { replace: true });
+
+      // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const stopping = monque.stop().then(() => {
         stopped = true;
       });
+
       await pauseFor(100);
       expect(stopped).toBe(false);
       release.resolve();
@@ -122,6 +130,7 @@ describe("replacing a running worker", () => {
       release.resolve();
       await waitFor(async () => {
         const awaitedResult7 = await monque.getJob(job._id);
+
         return awaitedResult7?.status === JobStatus.COMPLETED;
       });
       await monque.stop();

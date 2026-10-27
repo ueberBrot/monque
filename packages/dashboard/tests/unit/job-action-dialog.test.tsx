@@ -15,12 +15,14 @@ describe("job action dialog", () => {
       "submits an explicit UTC run time for %s rescheduling",
       async (scope) => {
         const onConfirm = vi.fn<(input: RunJobActionsInput) => void>();
+
         const state: JobActionDialogState = {
           action: "reschedule",
           scope,
           jobIds: scope === "single" ? ["job-a"] : ["job-a", "job-b"],
           nextRunAt: "2026-12-03T14:30",
         };
+
         render(
           <JobActionDialog
             state={state}
@@ -43,12 +45,14 @@ describe("job action dialog", () => {
 
     it("keeps an edited draft across refreshes and resets it when reopened", async () => {
       const onConfirm = vi.fn<(input: RunJobActionsInput) => void>();
+
       const state: JobActionDialogState = {
         action: "reschedule",
         scope: "single",
         jobIds: ["job-a"],
         nextRunAt: "2026-12-03T14:30",
       };
+
       const props = { busy: false, onClose: vi.fn<() => void>(), onConfirm };
       const { rerender } = render(<JobActionDialog {...props} state={state} />);
       fireEvent.click(screen.getByRole("button", { name: "Next run at" }));

@@ -31,16 +31,19 @@ describe("transactional intake", () => {
     await client.withSession(async (session) => {
       await session.withTransaction(async () => {
         await db.collection("orders").insertOne({ reference: "order-1" }, { session });
+
         const first = await monque.enqueue(
           "work",
           { id: 1 },
           { session, uniqueKey: "order-1", priority: 8 },
         );
+
         const awaitedResult1 = await monque.enqueue(
           "work",
           { id: 99 },
           { session, uniqueKey: "order-1", priority: 99 },
         );
+
         expect(awaitedResult1._id).toStrictEqual(first._id);
         await expect(
           monque.enqueueMany(
@@ -124,6 +127,7 @@ describe("transactional intake", () => {
       code: 112,
       errorLabels: ["TransientTransactionError"],
     });
+
     // oxlint-disable-next-line typescript/unbound-method -- The original prototype method is invoked with its collection receiver through call.
     const original = Collection.prototype.insertOne;
     let injected = false;
@@ -136,6 +140,7 @@ describe("transactional intake", () => {
         injected = true;
         throw transient;
       }
+
       return await original.call(this, document, options);
     });
     let attempts = 0;
@@ -160,11 +165,13 @@ describe("transactional intake", () => {
         code: 112,
         errorLabels: ["TransientTransactionError"],
       });
+
       if (kind === "batch") {
         vi.spyOn(Collection.prototype, "bulkWrite").mockRejectedValueOnce(transient);
       } else {
         vi.spyOn(Collection.prototype, "findOneAndUpdate").mockRejectedValueOnce(transient);
       }
+
       const caughtErrors: unknown[] = [];
       let attempts = 0;
       const client = await getMongoClient();
@@ -172,6 +179,7 @@ describe("transactional intake", () => {
         await session.withTransaction(async () => {
           attempts += 1;
           await monque.now("transaction-companion", {}, { session, priority: -1 });
+
           try {
             await (kind === "batch"
               ? monque.enqueueMany([{ name: "work", data: {}, priority: 17 }], { session })

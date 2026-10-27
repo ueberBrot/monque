@@ -13,12 +13,15 @@ let dashboardClientBuild: Promise<void> | undefined;
 
 const buildDashboardClient = async (): Promise<void> => {
   dashboardClientBuild ??= (async () => {
+    // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     const child = spawn("vp", ["build"], {
       cwd: dashboardPackageDirectory,
       stdio: "inherit",
     });
+
     const exit: unknown[] = await once(child, "exit");
     const [code, signal] = exit;
+
     if (code !== 0) {
       throw new Error(
         `Dashboard client build failed with code ${String(code)} and signal ${String(signal)}.`,
@@ -156,7 +159,7 @@ const config = defineConfig({
         injectSource: {
           enabled: true,
           ignore: {
-            files: [/.*\.test\.(?:ts|tsx)$/u],
+            files: [/\.test\.(?:ts|tsx)$/u],
           },
         },
         logging: true,

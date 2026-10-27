@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+
 interface JsonObject {
   [key: string]: JsonValue;
 }
@@ -17,24 +18,32 @@ const repository = () => {
   const cwd = mkdtempSync(nodePath.join(tmpdir(), "monque-renovate-"));
   directories.push(cwd);
   const output = nodePath.join(cwd, ".git", "output");
+
   const git = (...args: string[]) =>
+    // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     execFileSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" }).trim();
+
   const write = (path: string, value: JsonValue) => {
     mkdirSync(nodePath.dirname(nodePath.join(cwd, path)), { recursive: true });
     writeFileSync(nodePath.join(cwd, path), JSON.stringify(value));
   };
+
   const commit = () => {
     git("add", "-A");
     git("commit", "--quiet", "--no-verify", "-m", "fixture");
+
     return git("rev-parse", "HEAD");
   };
+
   const generate = (base: string, head: string) => {
     rmSync(output, { force: true });
+
     const result = spawnSync(process.execPath, [generator], {
       cwd,
       env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
       encoding: "utf-8",
     });
+
     return {
       result,
       generated: existsSync(output)
@@ -42,9 +51,11 @@ const repository = () => {
         : null,
     };
   };
+
   git("init", "--quiet");
   git("config", "user.email", "ci@example.invalid");
   git("config", "user.name", "CI test");
+
   return { cwd, git, write, commit, generate };
 };
 
@@ -86,8 +97,9 @@ describe("Renovate changesets", () => {
     expect(git("diff", "--name-only", head, `${generated}`)).toMatch(
       /^\.changeset\/renovate-deps-[0-9a-f]{16}\.md$/u,
     );
+    const changesetPath = git("diff", "--name-only", head, `${generated}`);
     expect({
-      changeset: git("show", `${generated}:${git("diff", "--name-only", head, `${generated}`)}`),
+      changeset: git("show", `${generated}:${changesetPath}`),
       generator: git("show", `${generated}:scripts/renovate-generate-changeset.ts`),
     }).toStrictEqual({
       changeset: '---\n"@monque/core": minor\n---\n\nUpdate runtime dependencies.',
@@ -380,6 +392,7 @@ describe("Renovate changesets", () => {
     const { write, commit, generate } = repository();
     write("package.json", {});
     const head = commit();
+
     for (const revision of ["HEAD", "--help", `${head}:package.json`, ""]) {
       const { result, generated } = generate(revision, head);
       expect(result.status).not.toBe(0);

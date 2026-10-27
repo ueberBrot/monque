@@ -25,6 +25,7 @@ const useJobsActionMutation = ({
     ...jobActionMutationOptions(managementApi, queryClient),
     onSuccess: ({ action, count, failed, firstError }, input) => {
       const errorFeedback = getActionErrorFeedback(firstError);
+
       if (failed.length) {
         setFeedback({
           ...errorFeedback,
@@ -35,9 +36,11 @@ const useJobsActionMutation = ({
         const success = getActionSuccessFeedback(action, count);
         toast.success(success.title, { description: success.description });
       }
+
       setRowSelection((selection) => {
         const failedIds = new Set(failed);
         const succeededIds = new Set(input.jobIds.filter((id) => !failedIds.has(id)));
+
         return Object.fromEntries(
           Object.entries(selection).filter(([id]) => !succeededIds.has(id)),
         );
@@ -47,4 +50,5 @@ const useJobsActionMutation = ({
       setFeedback(getActionErrorFeedback(error));
     },
   });
+
 export { useJobsActionMutation };

@@ -45,6 +45,7 @@ const features = tableFeatures({
   rowPaginationFeature,
   columnVisibilityFeature,
 });
+
 const SORTABLE_DATE_COLUMNS = [
   { accessorKey: "createdAt", label: "Created time" },
   { accessorKey: "updatedAt", label: "Updated time" },
@@ -53,6 +54,7 @@ const SORTABLE_DATE_COLUMNS = [
   readonly accessorKey: Extract<JobListSortByDto, "createdAt" | "updatedAt" | "nextRunAt">;
   readonly label: string;
 }[];
+
 interface JobsColumnsOptions {
   readonly busy: boolean;
   readonly activeSortBy: JobListSortByDto;
@@ -61,10 +63,13 @@ interface JobsColumnsOptions {
   readonly onAction: (action: JobActionKey, job: JobDto) => void;
   readonly onSortChange: (sortBy: JobListSortByDto) => void;
 }
+
 const CompactTableContext = createContext(false);
 const JobsColumnsContext = createContext<JobsColumnsOptions | null>(null);
+
 const JobNameCell = ({ row }: JobCellProps) => {
   const compact = useContext(CompactTableContext);
+
   return (
     <div className="min-w-0 whitespace-normal">
       <Link
@@ -89,22 +94,29 @@ const JobNameCell = ({ row }: JobCellProps) => {
     </div>
   );
 };
+
 const useJobsColumnsOptions = (): JobsColumnsOptions => {
   const options = useContext(JobsColumnsContext);
+
   if (!options) {
     throw new Error("Jobs table cells require column options.");
   }
+
   return options;
 };
+
 const renderSortIcon = (isActive: boolean, direction: JobsRouteSearch["sortDirection"]) => {
   if (!isActive) {
     return <ArrowUpDown className="size-3.5" />;
   }
+
   if (direction === "asc") {
     return <ArrowUp className="size-3.5" />;
   }
+
   return <ArrowDown className="size-3.5" />;
 };
+
 const JobColumnSortHeader = ({
   columnId,
   label,
@@ -114,6 +126,7 @@ const JobColumnSortHeader = ({
 }) => {
   const { activeSortBy, direction, onSortChange } = useJobsColumnsOptions();
   const isActive = activeSortBy === columnId;
+
   return (
     <Button
       type="button"
@@ -129,6 +142,7 @@ const JobColumnSortHeader = ({
     </Button>
   );
 };
+
 const JobDateCell = ({
   job,
   field,
@@ -143,9 +157,11 @@ const JobDateCell = ({
     <JobTimestamp value={job[field]} />
   </div>
 );
+
 const JobActionsCell = ({ row }: JobCellProps) => {
   const { busy, capabilities, onAction } = useJobsColumnsOptions();
   const job = row.original;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -160,6 +176,7 @@ const JobActionsCell = ({ row }: JobCellProps) => {
           const { disabled, reason } = getJobActionAvailability(job, capabilities, action);
           const { actionLabel: label } = getJobActionLabels(action, "single");
           const reasonId = `${job.id}-${action}-reason`;
+
           return (
             <DropdownMenuItem
               key={action}
@@ -188,6 +205,7 @@ const JobActionsCell = ({ row }: JobCellProps) => {
     </DropdownMenu>
   );
 };
+
 const createJobsColumns = (): ColumnDef<typeof features, JobDto>[] => [
   {
     id: "select",
@@ -234,7 +252,9 @@ const createJobsColumns = (): ColumnDef<typeof features, JobDto>[] => [
   },
   { id: "actions", header: "Actions", cell: JobActionsCell },
 ];
+
 const JOB_COLUMNS = createJobsColumns();
+
 const getSortAriaValue = (
   isActive: boolean,
   direction: JobsRouteSearch["sortDirection"],
@@ -242,35 +262,46 @@ const getSortAriaValue = (
   if (!isActive) {
     return "none";
   }
+
   return direction === "asc" ? "ascending" : "descending";
 };
+
 const getColumnVisibilityClass = (id: string): string => {
   if (id === "name") {
     return "md:w-48";
   }
+
   if (id === "select") {
     return "w-10";
   }
+
   if (id === "status") {
     return "w-28";
   }
+
   if (id === "priority") {
     return "w-24";
   }
+
   if (id === "actions") {
     return "w-18";
   }
+
   if (id === "createdAt" || id === "updatedAt") {
     return "w-48";
   }
+
   if (id === "identifier") {
     return "w-52";
   }
+
   if (id === "nextRunAt") {
     return "w-48";
   }
+
   return "";
 };
+
 const JobsTable = ({
   jobs,
   rowSelection,
@@ -283,12 +314,15 @@ const JobsTable = ({
   readonly options: JobsColumnsOptions;
 }) => {
   const selected = Object.fromEntries(jobs.map((job) => [job.id, Boolean(rowSelection[job.id])]));
+
   const selectionForm = useSelectionForm(
     selected,
     jobs.length > 0 && jobs.every((job) => rowSelection[job.id]),
   );
+
   const compact = useMediaQuery("(max-width: 767px)");
   const narrow = useMediaQuery("(max-width: 639px)");
+
   const table = useTable({
     key: "jobs",
     features,
@@ -309,7 +343,9 @@ const JobsTable = ({
       },
     },
   });
+
   useTanStackTableDevtools(table, { enabled: import.meta.env.DEV });
+
   return (
     <div className="overflow-x-auto">
       <SelectionFormContext value={selectionForm}>
@@ -354,5 +390,7 @@ const JobsTable = ({
     </div>
   );
 };
+
 type JobCellProps = CellContext<typeof features, JobDto>;
+
 export { type JobsColumnsOptions, JobsTable };

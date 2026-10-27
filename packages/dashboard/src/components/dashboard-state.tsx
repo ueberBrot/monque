@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type DashboardStateTone = "default" | "danger" | "warning";
+
 const DashboardState = ({
   title,
   description,
@@ -17,6 +18,7 @@ const DashboardState = ({
   readonly children?: ReactNode;
 }) => {
   const hasChildren = Boolean(children);
+
   return (
     <section
       className={cn(
@@ -25,9 +27,11 @@ const DashboardState = ({
           if (tone === "danger") {
             return "border-destructive/30 bg-destructive/10 text-destructive";
           }
+
           if (tone === "warning") {
             return "border-warning/30 bg-warning/10 text-warning-foreground";
           }
+
           return "border-border bg-card text-foreground";
         })(),
       )}
@@ -47,6 +51,7 @@ const DashboardState = ({
     </section>
   );
 };
+
 const RetryButton = ({
   onRetry,
   fetching = false,
@@ -65,4 +70,5 @@ const RetryButton = ({
     {fetching ? "Retrying…" : "Retry"}
   </Button>
 );
+
 export { DashboardState, RetryButton };

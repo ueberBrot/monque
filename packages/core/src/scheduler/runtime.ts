@@ -1,8 +1,5 @@
-import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import type * as Fiber from "effect/Fiber";
-import * as Layer from "effect/Layer";
+import { Clock, Context, Effect, Layer } from "effect";
+import type { Fiber } from "effect";
 
 import { ChangeStreamHandler } from "./services/change-stream-handler.js";
 import { JobIntake } from "./services/job-intake.js";
@@ -17,6 +14,7 @@ import type { SchedulerContext } from "./services/types.js";
 interface SchedulerExecution {
   readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
 }
+
 export class SchedulerServices extends Context.Service<
   SchedulerServices,
   {
@@ -37,18 +35,22 @@ export const makeSchedulerLayer = (
     SchedulerServices,
     Effect.gen(function* constructSchedulerServices() {
       const lifecycle = new JobLifecycle(environment);
+
       if (environment.options.recoverStaleJobs) {
         yield* lifecycle.recoverStaleJobs();
       }
+
       yield* lifecycle.assertNoActiveInstanceCollision();
       const clock = yield* Clock.Clock;
       const processing = new JobProcessor(environment, lifecycle);
+
       const notifications = new PendingNotificationRouter(
         environment,
         (targetNames) => processing.poll(targetNames),
         execution.runFork,
         clock,
       );
+
       return {
         intake: new JobIntake(environment),
         manager: new JobManager(environment),

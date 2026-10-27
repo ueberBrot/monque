@@ -12,6 +12,7 @@ describe(collectJobMetadata, () => {
   it("should return empty array if no job store exists", () => {
     // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class PlainClass {}
+
     const metadata = collectJobMetadata(PlainClass);
     expect(metadata).toStrictEqual([]);
   });

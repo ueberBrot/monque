@@ -1,9 +1,7 @@
 import { OpenAPIGenerator } from "@orpc/openapi";
 import type { OpenAPI } from "@orpc/openapi";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
-import * as Duration from "effect/Duration";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
+import { Duration, Effect, Exit } from "effect";
 
 import { attempt, fromPromise } from "../effects.js";
 import { ManagementOpenApiComponentSchemas } from "../schemas/registry.js";

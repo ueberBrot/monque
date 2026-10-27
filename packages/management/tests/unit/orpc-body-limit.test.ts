@@ -17,6 +17,7 @@ const streamedRequest = function streamedRequest(
     body,
     duplex: "half",
   };
+
   return new Request(`https://management.example${path}`, init);
 };
 
@@ -27,13 +28,16 @@ describe("Management request body limits", () => {
     const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
     const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
     const authorize = vi.fn<() => boolean>(() => false);
+
     const body = new ReadableStream<Uint8Array>(
       {
         pull(controller) {
           if (bytesRead === 128 * 1024) {
             controller.close();
+
             return;
           }
+
           bytesRead += 1024;
           controller.enqueue(new Uint8Array(1024).fill(32));
         },
@@ -41,6 +45,7 @@ describe("Management request body limits", () => {
       },
       { highWaterMark: 0 },
     );
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob, cancelJob }),
       authorize,
@@ -67,6 +72,7 @@ describe("Management request body limits", () => {
   it("cancels a stalled body when the request is aborted", async () => {
     const controller = new AbortController();
     const cancel = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["cancel"]>>();
+
     const body = new ReadableStream<Uint8Array>(
       {
         pull: () => {
@@ -76,6 +82,7 @@ describe("Management request body limits", () => {
       },
       { highWaterMark: 0 },
     );
+
     const surface = createManagementSurface({ monque: createManagementMonque() });
     const request = new Request(streamedRequest(body), { signal: controller.signal });
 
@@ -97,6 +104,7 @@ describe("Management request body limits", () => {
           controller.close();
         },
       });
+
       const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
       const surface = createManagementSurface({ monque: createManagementMonque({ getJob }) });
 
@@ -136,15 +144,19 @@ describe("Management request body limits", () => {
           controller.close();
         },
       );
+
       const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
+
       const init: RequestInit & { duplex: "half" } = {
         method: "POST",
         body,
         duplex: "half",
       };
+
       if (contentLength !== undefined) {
         init.headers = { "content-length": contentLength };
       }
+
       const request = new Request("https://management.example/other", init);
       const surface = createManagementSurface({ monque: createManagementMonque() });
 
@@ -164,7 +176,9 @@ describe("Management request body limits", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 1, errors: [] });
+
     const authorize = vi.fn<() => boolean>(() => true);
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       maxBodySize: 2,
@@ -188,6 +202,7 @@ describe("Management request body limits", () => {
 
   it("counts UTF-8 bytes rather than characters", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque(), maxBodySize: 6 });
+
     const result = await surface.openApiHandler.handle(
       new Request(`https://management.example${path}`, {
         method: "POST",
@@ -204,6 +219,7 @@ describe("Management request body limits", () => {
     const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>();
     const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
     const surface = createManagementSurface({ monque: createManagementMonque() });
+
     const result = await surface.openApiHandler.handle(
       streamedRequest(body, { origin: "https://evil.example", "content-length": "100000" }),
       { context: { managementContext: {} } },
@@ -226,7 +242,9 @@ describe("Management request body limits", () => {
       },
       { highWaterMark: 0 },
     );
+
     const surface = createManagementSurface({ monque: createManagementMonque() });
+
     const result = await surface.openApiHandler.handle(streamedRequest(body), {
       context: { managementContext: {} },
     });
@@ -244,7 +262,9 @@ describe("Management request body limits", () => {
       },
       { highWaterMark: 0 },
     );
+
     const surface = createManagementSurface({ monque: createManagementMonque() });
+
     const result = await surface.openApiHandler.handle(streamedRequest(body), {
       context: { managementContext: {} },
     });

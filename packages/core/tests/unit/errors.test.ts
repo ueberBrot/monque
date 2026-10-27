@@ -61,6 +61,7 @@ describe("errors", () => {
       JobFactoryHelpers.processing({ name: "job1" }),
       JobFactoryHelpers.processing({ name: "job2" }),
     ];
+
     expect({
       newShutdownTimeoutErrorTimeoutJobsIncompleteJobs: new ShutdownTimeoutError("Timeout", jobs)
         .incompleteJobs,

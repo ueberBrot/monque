@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { JobIntake } from "@/scheduler/services/job-intake.js";
 import { PayloadTooLargeError } from "@/shared";
 import { createMockContext } from "@tests/factories";
+
 // vi.mock hoisted to top of file - mock the mongodb module so we can control BSON.calculateObjectSize.
 // We wrap calculateObjectSize in a vi.fn so tests can temporarily override it with mockImplementationOnce.
 // The real function is captured inside importOriginal to avoid circular reference from the mock itself.
 vi.mock(import("mongodb"), async (importOriginal) => {
   const actual = await importOriginal();
   const realCalculateObjectSize = actual.BSON.calculateObjectSize;
+
   return {
     ...actual,
     BSON: {
@@ -23,6 +25,7 @@ vi.mock(import("mongodb"), async (importOriginal) => {
     },
   };
 });
+
 describe("payload size validation", () => {
   afterEach(() => {
     vi.mocked(BSON.calculateObjectSize).mockClear();

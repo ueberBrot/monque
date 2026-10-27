@@ -9,14 +9,17 @@ export const appendJobMetadata = function appendJobMetadata(
   metadata: JobMetadata | CronMetadata,
 ): void {
   const store = Store.from(target.constructor);
+
   const existing = store.get<Partial<JobStore> | undefined>(MONQUE) ?? {
     type: "controller",
     jobs: [],
     cronJobs: [],
   };
+
   const registrations =
     "pattern" in metadata
       ? { cronJobs: [...(existing.cronJobs ?? []), metadata] }
       : { jobs: [...(existing.jobs ?? []), metadata] };
+
   store.set(MONQUE, { ...existing, ...registrations });
 };

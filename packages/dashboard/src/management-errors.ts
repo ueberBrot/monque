@@ -2,6 +2,7 @@ import { z } from "zod";
 
 // oxlint-disable promise/prefer-await-to-then -- Zod.catch defines a synchronous parse fallback, not a Promise handler.
 const ErrorMessageSchema = z.string().min(1).optional().catch(undefined);
+
 const ManagementErrorSchema = z.object({
   status: z.number().int().optional().catch(undefined),
   message: ErrorMessageSchema,
@@ -13,20 +14,25 @@ const ManagementErrorSchema = z.object({
     .optional()
     .catch(undefined),
 });
+
 const ReadManagementErrorSchema = ManagementErrorSchema.transform(({ status, message, data }) => ({
   status,
   message: data?.error ?? data?.body?.error ?? message,
 })).catch(() => ({ status: undefined, message: undefined }));
+
 const readManagementError = ReadManagementErrorSchema.parse.bind(ReadManagementErrorSchema);
 
 // oxlint-enable promise/prefer-await-to-then
 type DashboardErrorCode = "unauthorized" | "forbidden" | "not-found" | "error";
+
 type DashboardErrorResource = "health" | "jobs" | "job" | "queue-views";
+
 interface ErrorPresentation {
   readonly title: string;
   readonly description: string;
   readonly tone: "default" | "danger" | "warning";
 }
+
 /** Keep read-error classification and recovery copy together. */
 const resolveDashboardApiErrorState = (
   error: Parameters<typeof readManagementError>[0],
@@ -36,6 +42,7 @@ const resolveDashboardApiErrorState = (
   readonly code: DashboardErrorCode;
 } => {
   const { status, message } = readManagementError(error);
+
   if (status === 401) {
     return {
       code: "unauthorized",
@@ -45,6 +52,7 @@ const resolveDashboardApiErrorState = (
       tone: "warning",
     };
   }
+
   if (status === 403) {
     return {
       code: "forbidden",
@@ -53,6 +61,7 @@ const resolveDashboardApiErrorState = (
       tone: resource === "jobs" ? "warning" : "danger",
     };
   }
+
   if (status === 404 && resource === "job") {
     return {
       code: "not-found",
@@ -61,12 +70,14 @@ const resolveDashboardApiErrorState = (
       tone: "default",
     };
   }
+
   const titles = {
     health: "Dashboard data unavailable",
     jobs: "Jobs failed to load",
     job: "Job detail could not be loaded",
     "queue-views": "Queue Views failed to load",
   };
+
   return {
     code: "error",
     title: failureTitle ?? titles[resource],
@@ -75,4 +86,5 @@ const resolveDashboardApiErrorState = (
     tone: "danger",
   };
 };
+
 export { readManagementError, resolveDashboardApiErrorState };

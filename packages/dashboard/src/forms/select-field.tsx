@@ -24,6 +24,7 @@ interface SelectFieldProps {
     value: string;
   }[];
 }
+
 export const SelectField = ({
   description,
   label,
@@ -37,6 +38,7 @@ export const SelectField = ({
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const error = getFieldErrors(field.state.meta.errors);
+
   const control = (
     <Select
       name={field.name}
@@ -64,9 +66,11 @@ export const SelectField = ({
       </SelectContent>
     </Select>
   );
+
   if (bare) {
     return control;
   }
+
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>

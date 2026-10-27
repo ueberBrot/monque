@@ -10,11 +10,14 @@ describe("Management HTTP mutation origins", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 3, errors: [] });
+
     const authorize = vi.fn<() => boolean>(() => true);
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       authorize,
     });
+
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
         method: "POST",
@@ -53,15 +56,18 @@ describe("Management HTTP mutation origins", () => {
   ])("rejects an untrusted origin for %s %s before body decoding", async (method, path) => {
     const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
     const authorize = vi.fn<() => boolean>(() => true);
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob }, { mutations: true }),
       authorize,
     });
+
     const init: RequestInit = {
       method,
       headers: { origin: "https://attacker.test", "content-type": "application/json" },
       body: "invalid json",
     };
+
     const mutation = new Request(`https://ops.example.com${path}`, init);
     const result = await surface.openApiHandler.handle(mutation, { context: {} });
 
@@ -88,7 +94,9 @@ describe("Management HTTP mutation origins", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 0, errors: [] });
+
     const surface = createManagementSurface({ monque: createManagementMonque({ deleteJobs }) });
+
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
         method: "POST",
@@ -107,7 +115,9 @@ describe("Management HTTP mutation origins", () => {
       const deleteJobs = vi
         .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
         .mockResolvedValue({ count: 0, errors: [] });
+
       const surface = createManagementSurface({ monque: createManagementMonque({ deleteJobs }) });
+
       const result = await surface.openApiHandler.handle(
         new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
           method: "POST",
@@ -132,10 +142,12 @@ describe("Management HTTP mutation origins", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 3, errors: [] });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ deleteJobs }),
       trustedOrigins: ["https://dashboard.example.com"],
     });
+
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/jobs/actions/delete", {
         method: "POST",
@@ -152,6 +164,7 @@ describe("Management HTTP mutation origins", () => {
 
   it("allows read routes from untrusted origins", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque() });
+
     const result = await surface.openApiHandler.handle(
       new Request("https://ops.example.com/api/v1/health", {
         headers: { origin: "https://attacker.test", "sec-fetch-site": "cross-site" },
@@ -164,11 +177,13 @@ describe("Management HTTP mutation origins", () => {
 
   it("leaves unmatched unsafe requests to the host without decoding their bodies", async () => {
     const surface = createManagementSurface({ monque: createManagementMonque() });
+
     const mutation = new Request("https://ops.example.com/other-host-feature", {
       method: "POST",
       headers: { origin: "https://attacker.test", "content-type": "application/json" },
       body: "invalid json",
     });
+
     const result = await surface.openApiHandler.handle(mutation, { context: {} });
 
     expect(result).toStrictEqual({ matched: false, response: undefined });

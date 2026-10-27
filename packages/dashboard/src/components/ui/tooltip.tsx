@@ -4,12 +4,15 @@ import { cn } from "cn";
 const TooltipProvider = ({ delay = 0, ...props }: TooltipPrimitive.Provider.Props) => (
   <TooltipPrimitive.Provider data-slot="tooltip-provider" delay={delay} {...props} />
 );
+
 const Tooltip = ({ ...props }: TooltipPrimitive.Root.Props) => (
   <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 );
+
 const TooltipTrigger = ({ ...props }: TooltipPrimitive.Trigger.Props) => (
   <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 );
+
 const TooltipContent = ({
   className,
   side = "top",
@@ -42,4 +45,5 @@ const TooltipContent = ({
     </TooltipPrimitive.Positioner>
   </TooltipPrimitive.Portal>
 );
+
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

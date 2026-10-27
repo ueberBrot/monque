@@ -27,6 +27,7 @@ import type { JobDecoratorOptions, JobDecoratorTarget, JobMetadata } from "./typ
  * @param name - The job name (will be prefixed with controller namespace if present)
  * @param options - Optional job configuration (concurrency, replace, etc.)
  */
+// oxlint-disable-next-line sonarjs/function-name -- Job is the public decorator name.
 export const Job = function Job(name: string, options?: JobDecoratorOptions): MethodDecorator {
   return <T>(
     target: JobDecoratorTarget,

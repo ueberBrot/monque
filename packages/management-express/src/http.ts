@@ -4,11 +4,7 @@ const createHeaders = function createHeaders(req: Request, omitContentLength: bo
   const headers = new Headers();
 
   for (const [name, value] of Object.entries(req.headers)) {
-    if (value === undefined) {
-      continue;
-    }
-
-    if (omitContentLength && name.toLowerCase() === "content-length") {
+    if (value === undefined || (omitContentLength && name.toLowerCase() === "content-length")) {
       continue;
     }
 
@@ -16,16 +12,16 @@ const createHeaders = function createHeaders(req: Request, omitContentLength: bo
       for (const entry of value) {
         headers.append(name, entry);
       }
-      continue;
+    } else {
+      headers.set(name, value);
     }
-
-    headers.set(name, value);
   }
 
   return headers;
 };
 
 type FetchRequestBody = string | Buffer | URLSearchParams;
+
 const isFetchRequestBody = function isFetchRequestBody(value: unknown): value is FetchRequestBody {
   return typeof value === "string" || Buffer.isBuffer(value) || value instanceof URLSearchParams;
 };
@@ -33,6 +29,7 @@ const isFetchRequestBody = function isFetchRequestBody(value: unknown): value is
 export const createRequest = function createRequest(req: Request): globalThis.Request {
   const url = new URL(req.url, `${req.protocol}://${req.get("host") ?? "localhost"}`);
   const parsedBody: unknown = req.body;
+
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
     headers: createHeaders(req, parsedBody !== undefined),
@@ -56,6 +53,7 @@ export const sendResponse = async function sendResponse(
   response: globalThis.Response,
 ): Promise<void> {
   res.status(response.status);
+
   for (const [key, value] of response.headers) {
     res.setHeader(key, value);
   }

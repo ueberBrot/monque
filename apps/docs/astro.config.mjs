@@ -12,9 +12,11 @@ import starlightTypeDoc from "starlight-typedoc";
 import { z } from "zod";
 
 const corePackageJsonUrl = new URL("../../packages/core/package.json", import.meta.url);
+
 const parsedPackage = z
   .object({ version: z.string() })
   .safeParse(JSON.parse(readFileSync(corePackageJsonUrl, "utf-8")));
+
 const corePackage = parsedPackage.success ? parsedPackage.data : { version: "unknown" };
 const coreVersion = corePackage.version;
 
@@ -30,10 +32,13 @@ const apiReferences = [
   { package: "dashboard", output: "api-dashboard", label: "Dashboard API" },
   { package: "dashboard-express", output: "api-dashboard-express", label: "Dashboard Express API" },
 ];
+
 const reuseApi = process.env.MONQUE_DOCS_REUSE_API === "1";
+
 if (reuseApi) {
   for (const { output } of apiReferences) {
     const directory = new URL(`src/content/docs/${output}/`, import.meta.url);
+
     if (
       !readdirSync(directory, { recursive: true, encoding: "utf-8" }).some((file) =>
         file.endsWith(".md"),

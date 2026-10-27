@@ -40,6 +40,7 @@ export default defineConfig({
       },
       test: {
         command: "vp test run",
+        // oxlint-disable-next-line sonarjs/no-duplicate-string -- Each test task depends on the named type-check task.
         dependsOn: ["type-check"],
         cache: false,
       },

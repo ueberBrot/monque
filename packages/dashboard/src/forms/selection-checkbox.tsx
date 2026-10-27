@@ -14,9 +14,11 @@ export const SelectionCheckbox = ({
   onChange: (checked: boolean) => void;
 }) => {
   const form = useContext(SelectionFormContext);
+
   if (!form) {
     throw new Error("Selection checkboxes require a selection form.");
   }
+
   return (
     <form.AppField
       name={name}

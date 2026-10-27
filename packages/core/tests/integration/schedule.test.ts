@@ -41,6 +41,7 @@ describe("schedule()", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -57,11 +58,13 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const beforeSchedule = Date.now();
+
       const job = await monque.schedule(
         "0 * * * *",
         TEST_CONSTANTS.JOB_NAME,
         TEST_CONSTANTS.JOB_DATA,
       );
+
       const afterSchedule = Date.now();
       expect(job._id).toBeDefined();
       expect({
@@ -121,16 +124,19 @@ describe("schedule()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const job1 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         { v: 1 },
       );
+
       const job2 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         { v: 2 },
       );
+
       expect(job1._id).not.toStrictEqual(job2._id);
     });
 
@@ -140,18 +146,21 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const uniqueKey = "duplicate-schedule-key";
+
       const job1 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         { value: 1 },
         { uniqueKey },
       );
+
       const job2 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         { value: 2 },
         { uniqueKey },
       );
+
       // Should return the existing job (same _id)
       expect(job2._id.toString()).toBe(job1._id.toString());
       // Should only be one job in the collection
@@ -166,18 +175,21 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const uniqueKey = "shared-unique-key";
+
       const job1 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         "job-name-1",
         { value: 1 },
         { uniqueKey },
       );
+
       const job2 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         "job-name-2",
         { value: 2 },
         { uniqueKey },
       );
+
       // Different job names should create different jobs even with same uniqueKey
       expect(job1._id.toString()).not.toStrictEqual(job2._id.toString());
     });
@@ -196,12 +208,14 @@ describe("schedule()", () => {
         originalData,
         { uniqueKey },
       );
+
       const job2 = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         newData,
         { uniqueKey },
       );
+
       // Returned job should have original data
       expect(job2.data).toStrictEqual(originalData);
       // Verify the original data is preserved in DB
@@ -216,12 +230,14 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const uniqueKey = "preserved-key";
+
       const job = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         {},
         { uniqueKey },
       );
+
       expect(job._id).toBeDefined();
       expect(job.uniqueKey).toBe(uniqueKey);
       const collection = db.collection<Job>(collectionName);
@@ -237,16 +253,20 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const handlerCalls: Job[] = [];
+
       const handlerImplementation = (job: Job) => {
         handlerCalls.push(job);
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
       // Schedule a job with a cron that runs every minute
       // We'll manually set nextRunAt to now so it runs immediately
       const job = await monque.schedule(TEST_CONSTANTS.CRON_EVERY_MINUTE, TEST_CONSTANTS.JOB_NAME, {
         testValue: "recurring",
       });
+
       const originalJobId = job._id;
       const completion: PromiseWithResolvers<void> = Promise.withResolvers();
       monque.on("job:complete", ({ job: completedJob }) => {
@@ -283,9 +303,11 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       let processedJob: Job | null = null;
+
       const handlerImplementation = (job: Job) => {
         processedJob = job;
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Use a specific cron expression for predictable timing
@@ -312,20 +334,25 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       let callCount = 0;
+
       const handlerImplementation = () => {
         callCount += 1;
+
         if (callCount === 1) {
           throw new Error("Simulated failure");
         }
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
       // Schedule a recurring job
       const job = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         {},
       );
+
       const originalJobId = job._id;
       // Update the job to run immediately
       const collection = db.collection<Job>(collectionName);
@@ -335,6 +362,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 1;
         },
         { timeout: 5000 },
@@ -345,6 +373,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           // After success, failCount should be reset to 0
           return doc?.failCount === 0 && doc?.status === JobStatus.PENDING;
         },
@@ -380,6 +409,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 1;
         },
         { timeout: 5000 },
@@ -398,6 +428,7 @@ describe("schedule()", () => {
 
     it("should use cron timing for next run after successful retry (not backoff)", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
@@ -405,15 +436,19 @@ describe("schedule()", () => {
         // 1 second base for backoff
         baseRetryInterval: 1000,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let callCount = 0;
+
       const handlerImplementation = () => {
         callCount += 1;
+
         if (callCount === 1) {
           throw new Error("First attempt fails");
         }
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Schedule a recurring job that runs hourly
@@ -428,6 +463,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 1;
         },
         { timeout: 5000 },
@@ -438,6 +474,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 0 && doc?.status === JobStatus.PENDING;
         },
         { timeout: 5000 },
@@ -457,9 +494,11 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       let processed = false;
+
       const handlerImplementation = () => {
         processed = true;
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Enqueue a one-time job (not scheduled with cron)
@@ -485,21 +524,25 @@ describe("schedule()", () => {
       const monque = new Monque(db, { collectionName, pollInterval: 100 });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const completedEvents: {
         job: Job;
         duration: number;
       }[] = [];
+
       monque.on("job:complete", (event) => {
         completedEvents.push(event);
       });
       const handler = vi.fn<() => void>();
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
       // Schedule a recurring job
       const job = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         {},
       );
+
       // Update the job to run immediately
       const collection = db.collection<Job>(collectionName);
       await triggerJobImmediately(collection, job._id);
@@ -519,20 +562,25 @@ describe("schedule()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       let callCount = 0;
+
       const handlerImplementation = () => {
         callCount += 1;
+
         if (callCount === 1) {
           throw new Error("Test failure reason");
         }
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
+
       // Schedule a recurring job
       const job = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         {},
       );
+
       const originalJobId = job._id;
       // Update the job to run immediately
       const collection = db.collection<Job>(collectionName);
@@ -542,6 +590,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 1 && doc?.failReason === "Test failure reason";
         },
         { timeout: 5000 },
@@ -552,6 +601,7 @@ describe("schedule()", () => {
       await waitFor(
         async () => {
           const doc = await collection.findOne({ _id: originalJobId });
+
           return doc?.failCount === 0 && doc?.status === JobStatus.PENDING;
         },
         { timeout: 5000 },
@@ -572,6 +622,7 @@ describe("schedule()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const complexData = {
         string: "test",
         number: 42,
@@ -579,11 +630,13 @@ describe("schedule()", () => {
         nested: { key: "value" },
         array: [1, 2, 3],
       };
+
       const job = await monque.schedule(
         TEST_CONSTANTS.CRON_EVERY_MINUTE,
         TEST_CONSTANTS.JOB_NAME,
         complexData,
       );
+
       expect(job.data).toStrictEqual(complexData);
       // Verify from database
       const collection = db.collection<Job>(collectionName);

@@ -51,6 +51,7 @@ export const bootstrapMonque = async function bootstrapMonque(
           client = new MongoClient(url, { directConnection: true });
           await client.connect();
           db = client.db(dbName);
+
           return db;
         },
       };
@@ -80,6 +81,7 @@ export const bootstrapMonque = async function bootstrapMonque(
       };
       break;
     }
+
     default: {
       throw new Error("Unsupported database connection strategy");
     }
@@ -107,6 +109,7 @@ export const resetMonque = async function resetMonque(): Promise<void> {
   }
 
   await PlatformTest.reset();
+
   if (client) {
     await client.close();
     client = null;
@@ -129,6 +132,7 @@ export const getTestDb = function getTestDb(): Db {
   try {
     const mongooseService = PlatformTest.get<MongooseService>(MongooseService);
     const conn = mongooseService.get("default");
+
     if (conn?.db) {
       return fromPartial<Db>(conn.db);
     }

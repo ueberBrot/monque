@@ -10,9 +10,9 @@ const hasStackCapture = (
 /** Preserve native V8 stack trimming while allowing other JavaScript runtimes. */
 export const captureErrorStack = (
   error: Error,
-  constructor: NonNullable<Parameters<typeof Error.captureStackTrace>[1]>,
+  boundary: NonNullable<Parameters<typeof Error.captureStackTrace>[1]>,
 ): void => {
   if (hasStackCapture(Error)) {
-    Error.captureStackTrace(error, constructor);
+    Error.captureStackTrace(error, boundary);
   }
 };

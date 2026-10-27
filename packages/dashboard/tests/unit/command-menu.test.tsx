@@ -9,14 +9,17 @@ import { describe, afterEach, expect, it, vi } from "vite-plus/test";
 import { CommandMenu } from "@/components/command-menu";
 
 const invalidateQueries = vi.fn<() => Promise<void>>();
+
 vi.mock(import("@tanstack/react-router"), () =>
   fromPartial<typeof ReactRouterModule>({ useNavigate: () => vi.fn<() => Promise<void>>() }),
 );
+
 vi.mock(import("@tanstack/react-query"), () =>
   fromPartial<typeof ReactQueryModule>({
     useQueryClient: () => ({ invalidateQueries }),
   }),
 );
+
 describe("command menu", () => {
   afterEach(() => {
     cleanup();

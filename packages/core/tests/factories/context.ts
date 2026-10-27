@@ -14,6 +14,7 @@ import type { PersistedJob } from "@/jobs";
 import type { ResolvedMonqueOptions, SchedulerContext } from "@/scheduler/services/types.js";
 import type { WorkerRegistration } from "@/workers";
 import type { MockFunction } from "@tests/setup/mock-function.js";
+
 /**
  * Create a mock MongoDB collection with vi.fn() stubs.
  */
@@ -34,6 +35,7 @@ const createMockCollection = () => ({
   watch: vi.fn<MockFunction<Collection["watch"]>>(),
   createIndexes: vi.fn<MockFunction<Collection["createIndexes"]>>(),
 });
+
 /**
  * Default resolved options for tests.
  */
@@ -56,6 +58,7 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
   maxPayloadSize: undefined,
   statsCacheTtlMs: 5000,
 };
+
 /**
  * Create a mock SchedulerContext for testing internal services.
  *
@@ -73,11 +76,14 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
  */
 export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => {
   const mockCollection = createMockCollection();
+
   const emitHistory: {
     event: string;
     payload: unknown;
   }[] = [];
+
   const workers = new Map<string, WorkerRegistration>();
+
   const ctx = {
     collection: fromPartial<Collection>(mockCollection),
     options: { ...DEFAULT_TEST_OPTIONS },
@@ -96,6 +102,7 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
       overrides.emit ??
         (<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
           emitHistory.push({ event, payload });
+
           return true;
         }),
     ),
@@ -106,8 +113,10 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
       overrides.notifyJobFinished,
     ),
   };
+
   return { ...ctx, mockCollection, emitHistory };
 };
+
 /**
  * Create a mock WorkerRegistration for testing.
  *
