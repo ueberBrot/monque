@@ -45,7 +45,7 @@ const getDialogContent = (): HTMLElement => {
     .getByText("Dashboard navigation")
     .closest('[data-slot="dialog-content"]');
   if (!(dialogContent instanceof HTMLElement)) {
-    throw new Error("Expected dashboard navigation to be inside dialog content.");
+    throw new TypeError("Expected dashboard navigation to be inside dialog content.");
   }
   return dialogContent;
 };

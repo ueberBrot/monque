@@ -202,7 +202,7 @@ describe("enqueue()", () => {
         !(failure instanceof ConnectionError) ||
         !(failure.cause instanceof MongoBulkWriteError)
       ) {
-        throw new Error("Expected a ConnectionError caused by MongoBulkWriteError");
+        throw new TypeError("Expected a ConnectionError caused by MongoBulkWriteError");
       }
       expect(failure.cause.result.upsertedCount).toBe(2);
       expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);

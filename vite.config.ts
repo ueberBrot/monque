@@ -98,6 +98,11 @@ export default defineConfig({
     overrides: [
       { files: ["**/tests/**"], env: { vitest: true } },
       {
+        files: ["packages/core/src/**/*.ts", "packages/management/src/**/*.ts"],
+        // Keep unstable Effect types out of published APIs.
+        rules: { "effecttsgo/api-stability-leak": "error" },
+      },
+      {
         files: ["packages/dashboard/**/*.{ts,tsx}", "apps/dashboard-dev/**/*.{ts,tsx}"],
         ...ultraciteReact,
       },

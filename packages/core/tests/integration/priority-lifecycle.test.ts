@@ -169,7 +169,7 @@ describe("priority across Job intake and lifecycle", () => {
     }
     expect(failure).toBeInstanceOf(ConnectionError);
     if (!(failure instanceof ConnectionError) || !(failure.cause instanceof MongoBulkWriteError)) {
-      throw new Error("Expected native bulk result");
+      throw new TypeError("Expected native bulk result");
     }
     expect(failure.cause.result.upsertedCount).toBe(2);
     expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);
