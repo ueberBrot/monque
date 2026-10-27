@@ -65,7 +65,7 @@
     "mongodb": "^7.7.0",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "@monque/core": "^1.18.0",
