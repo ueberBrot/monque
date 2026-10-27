@@ -37,6 +37,7 @@ describe("Index creation", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -77,9 +78,11 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const indexes = await collection.indexes();
+
       const claimedByIndex = indexes.find(
         (idx) => "claimedBy" in idx.key && "status" in idx.key && Object.keys(idx.key).length === 2,
       );
+
       expect(claimedByIndex).toBeDefined();
       expect({
         claimedByIndexKey: claimedByIndex?.key,
@@ -97,10 +100,12 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const indexes = await collection.indexes();
+
       const heartbeatIndex = indexes.find(
         (idx) =>
           "lastHeartbeat" in idx.key && "status" in idx.key && Object.keys(idx.key).length === 2,
       );
+
       expect(heartbeatIndex).toBeDefined();
       expect({
         heartbeatIndexKey: heartbeatIndex?.key,
@@ -118,11 +123,13 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const indexes = await collection.indexes();
+
       const atomicClaimIndex = indexes.find(
         (idx) =>
           ["name", "status", "nextRunAt", "claimedBy"].every((key) => key in idx.key) &&
           Object.keys(idx.key).length === 4,
       );
+
       expect(atomicClaimIndex).toBeDefined();
       expect({
         atomicClaimIndexKey: atomicClaimIndex?.key,
@@ -140,6 +147,7 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const indexes = await collection.indexes();
+
       const recoveryIndex = indexes.find(
         (idx) =>
           "lockedAt" in idx.key &&
@@ -147,6 +155,7 @@ describe("Index creation", () => {
           "status" in idx.key &&
           Object.keys(idx.key).length === 3,
       );
+
       expect(recoveryIndex).toBeDefined();
       expect({
         recoveryIndexKey: recoveryIndex?.key,
@@ -165,20 +174,25 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const instanceId = "test-instance-123";
+
       // Insert test jobs using factory helpers
       const job1 = JobFactoryHelpers.processing({
         name: TEST_CONSTANTS.JOB_NAME,
         claimedBy: instanceId,
       });
+
       const job2 = JobFactoryHelpers.processing({
         name: TEST_CONSTANTS.JOB_NAME,
         claimedBy: "other-instance",
       });
+
       await collection.insertMany([job1, job2]);
+
       // Query using the index
       const explainResult = await collection
         .find({ claimedBy: instanceId, status: JobStatus.PROCESSING })
         .explain("executionStats");
+
       // Verify index was used (not a collection scan)
       const queryPlanner = readExplanation(explainResult).winningPlan;
       const winningPlanStr = JSON.stringify(queryPlanner);
@@ -193,22 +207,27 @@ describe("Index creation", () => {
       await monque.initialize();
       const collection = db.collection(collectionName);
       const staleThreshold = new Date(Date.now() - 30_000);
+
       // Insert test jobs using factory helpers with different heartbeat times
       const staleJob = JobFactoryHelpers.processing({
         name: "stale-job",
         // 60 seconds ago (stale)
         lastHeartbeat: new Date(Date.now() - 60_000),
       });
+
       const activeJob = JobFactoryHelpers.processing({
         name: "active-job",
         // Just now (not stale)
         lastHeartbeat: new Date(),
       });
+
       await collection.insertMany([staleJob, activeJob]);
+
       // Query using the index (find stale jobs)
       const explainResult = await collection
         .find({ status: JobStatus.PROCESSING, lastHeartbeat: { $lt: staleThreshold } })
         .explain("executionStats");
+
       // Verify index was used
       const queryPlanner = readExplanation(explainResult).winningPlan;
       const winningPlanStr = JSON.stringify(queryPlanner);

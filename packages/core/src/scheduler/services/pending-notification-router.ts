@@ -9,6 +9,7 @@ import type { SchedulerContext } from "./types.js";
 
 const makeTimers = () => {
   const scope = Scope.makeUnsafe();
+
   const handles = Effect.runSync(
     Effect.gen(function* createTimerHandles() {
       return {
@@ -18,21 +19,27 @@ const makeTimers = () => {
       };
     }).pipe(Effect.provideService(Scope.Scope, scope)),
   );
+
   return { scope, ...handles };
 };
+
 /** Minimum poll interval floor to prevent tight loops (ms) */
 const MIN_POLL_INTERVAL = 100;
+
 /** Grace period after nextRunAt before scheduling a wakeup poll (ms) */
 const POLL_GRACE_PERIOD = 200;
+
 /** Node turns delays beyond this signed 32-bit limit into a 1 ms timer. */
 const MAX_TIMER_DELAY = 2_147_483_647;
 const MAX_WAKEUP_DEADLINES = 1024;
 const MAX_WAKEUP_NAMES = 1024;
+
 interface WakeupDeadline {
   time: number;
   /** Missing names require full discovery at this deadline. */
   targetNames: Set<string> | undefined;
 }
+
 /**
  * Owns Pending Notification scheduling, future wakeups, and full discovery deadlines.
  *
@@ -59,9 +66,11 @@ export class PendingNotificationRouter {
   /** Start full discovery, followed by fallback or safety polling. */
   start(): void {
     const { state } = this;
+
     if (state.started || !this.ctx.isRunning()) {
       return;
     }
+
     this.state = { ...state, started: true };
     observeBackgroundFailure(this.runFork(this.pollAndScheduleNext(state.generation)));
   }
@@ -89,21 +98,26 @@ export class PendingNotificationRouter {
     if (!this.ctx.isRunning()) {
       return;
     }
+
     if (nextRunAt.getTime() > this.clock.currentTimeMillisUnsafe()) {
       this.scheduleWakeup(jobName, nextRunAt);
+
       return;
     }
+
     this.notifyRunnableJob(jobName);
   }
   notifyRunnableJob(jobName?: string): void {
     if (!this.ctx.isRunning()) {
       return;
     }
+
     if (jobName !== undefined && jobName) {
       this.pendingTargetNames.add(jobName);
     } else {
       this.fullBatchPollRequested = true;
     }
+
     this.scheduleBatchPoll();
   }
   close(): void {
@@ -133,14 +147,18 @@ export class PendingNotificationRouter {
     if (this.batchPending) {
       return;
     }
+
     this.batchPending = true;
     const { state } = this;
+
     const fiber = this.runFork(
       Effect.gen({ self: this }, function* flushPendingBatch() {
         yield* Effect.sleep(MIN_POLL_INTERVAL);
+
         if (state.generation !== this.state.generation) {
           return;
         }
+
         this.batchPending = false;
         const names = this.fullBatchPollRequested ? undefined : new Set(this.pendingTargetNames);
         this.pendingTargetNames.clear();
@@ -148,6 +166,7 @@ export class PendingNotificationRouter {
         observeBackgroundFailure(this.runFork(this.poll(names)));
       }),
     );
+
     FiberHandle.setUnsafe(state.timers.batch, fiber);
     observeTimerFailure(fiber);
   }
@@ -161,6 +180,7 @@ export class PendingNotificationRouter {
   private scheduleWakeup(jobName: string | undefined, nextRunAt: Date): void {
     const time = nextRunAt.getTime();
     const latestDeadline = this.wakeups[MAX_WAKEUP_DEADLINES - 1];
+
     if (
       latestDeadline !== undefined &&
       this.wakeups.length === MAX_WAKEUP_DEADLINES &&
@@ -168,19 +188,24 @@ export class PendingNotificationRouter {
     ) {
       return;
     }
+
     const index = this.wakeups.findIndex((deadline) => deadline.time >= time);
     let deadline = index === -1 ? undefined : this.wakeups[index];
+
     if (deadline?.time !== time) {
       deadline = { time, targetNames: new Set() };
+
       if (index === -1) {
         this.wakeups.push(deadline);
       } else {
         this.wakeups.splice(index, 0, deadline);
       }
+
       if (this.wakeups.length > MAX_WAKEUP_DEADLINES) {
         this.wakeupNameCount -= this.wakeups.pop()?.targetNames?.size ?? 0;
       }
     }
+
     if (deadline.targetNames && !deadline.targetNames.has(jobName ?? "")) {
       if (jobName === undefined || !jobName || this.wakeupNameCount === MAX_WAKEUP_NAMES) {
         this.wakeupNameCount -= deadline.targetNames.size;
@@ -190,43 +215,57 @@ export class PendingNotificationRouter {
         this.wakeupNameCount += 1;
       }
     }
+
     if (this.wakeupTime && nextRunAt >= this.wakeupTime) {
       return;
     }
+
     this.armWakeup();
   }
   private armWakeup(): void {
     this.clearWakeupTimer();
     const [headDeadline] = this.wakeups;
+
     if (headDeadline === undefined) {
       return;
     }
+
     const nextRunAt = new Date(headDeadline.time);
     this.wakeupTime = nextRunAt;
+
     const delay = Math.max(
       nextRunAt.getTime() - this.clock.currentTimeMillisUnsafe() + POLL_GRACE_PERIOD,
       MIN_POLL_INTERVAL,
     );
+
     const { state } = this;
+
     const fiber = this.runFork(
       Effect.gen({ self: this }, function* wakePendingNames() {
         yield* Effect.sleep(Math.min(delay, MAX_TIMER_DELAY));
+
         if (state.generation !== this.state.generation) {
           return;
         }
+
         this.wakeupTime = null;
+
         if (delay > MAX_TIMER_DELAY) {
           this.armWakeup();
+
           return;
         }
+
         const now = yield* Clock.currentTimeMillis;
         const names = new Set<string>();
         let fullPoll = false;
         let [dueDeadline] = this.wakeups;
+
         while (dueDeadline !== undefined && dueDeadline.time <= now) {
           const deadline = dueDeadline;
           this.wakeups.shift();
           this.wakeupNameCount -= deadline.targetNames?.size ?? 0;
+
           if (deadline.targetNames) {
             for (const name of deadline.targetNames) {
               names.add(name);
@@ -234,14 +273,18 @@ export class PendingNotificationRouter {
           } else {
             fullPoll = true;
           }
+
           [dueDeadline] = this.wakeups;
         }
+
         if (this.wakeups.length > 0) {
           this.armWakeup();
         }
+
         observeBackgroundFailure(this.runFork(fullPoll ? this.poll() : this.poll(names)));
       }),
     );
+
     FiberHandle.setUnsafe(state.timers.wakeup, fiber);
     observeTimerFailure(fiber);
   }
@@ -267,16 +310,21 @@ export class PendingNotificationRouter {
   }
   private scheduleFullPoll(): void {
     const { state } = this;
+
     if (!state.started || !this.ctx.isRunning()) {
       return;
     }
+
     const interval = state.changeStreamActive
       ? this.ctx.options.safetyPollInterval
       : this.ctx.options.pollInterval;
+
     const dueAt = this.clock.monotonicTimeNanosUnsafe() + BigInt(Math.ceil(interval * 1_000_000));
+
     if (this.fullPollDueAt !== null && this.fullPollDueAt <= dueAt) {
       return;
     }
+
     this.fullPollDueAt = dueAt;
     this.armFullPoll();
   }
@@ -284,22 +332,29 @@ export class PendingNotificationRouter {
     if (this.fullPollDueAt === null) {
       return;
     }
+
     const delay = Number(this.fullPollDueAt - this.clock.monotonicTimeNanosUnsafe()) / 1_000_000;
     const { state } = this;
+
     const fiber = this.runFork(
       Effect.gen({ self: this }, function* runSafetyPoll() {
         yield* Effect.sleep(Math.min(delay, MAX_TIMER_DELAY));
+
         if (state.generation !== this.state.generation) {
           return;
         }
+
         if (this.fullPollDueAt !== null && this.fullPollDueAt > (yield* Clock.monotonicTimeNanos)) {
           this.armFullPoll();
+
           return;
         }
+
         this.fullPollDueAt = null;
         observeBackgroundFailure(this.runFork(this.pollAndScheduleNext(state.generation)));
       }),
     );
+
     FiberHandle.setUnsafe(state.timers.fullPoll, fiber);
     observeTimerFailure(fiber);
   }

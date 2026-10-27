@@ -6,12 +6,15 @@ import type { ComponentProps } from "react";
 const DropdownMenu = ({ ...props }: MenuPrimitive.Root.Props) => (
   <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
 );
+
 const DropdownMenuPortal = ({ ...props }: MenuPrimitive.Portal.Props) => (
   <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
 );
+
 const DropdownMenuTrigger = ({ ...props }: MenuPrimitive.Trigger.Props) => (
   <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
 );
+
 const DropdownMenuContent = ({
   align = "start",
   alignOffset = 0,
@@ -40,9 +43,11 @@ const DropdownMenuContent = ({
     </MenuPrimitive.Positioner>
   </MenuPrimitive.Portal>
 );
+
 const DropdownMenuGroup = ({ ...props }: MenuPrimitive.Group.Props) => (
   <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 );
+
 const DropdownMenuLabel = ({
   className,
   inset,
@@ -60,6 +65,7 @@ const DropdownMenuLabel = ({
     {...props}
   />
 );
+
 const DropdownMenuItem = ({
   className,
   inset,
@@ -80,9 +86,11 @@ const DropdownMenuItem = ({
     {...props}
   />
 );
+
 const DropdownMenuSub = ({ ...props }: MenuPrimitive.SubmenuRoot.Props) => (
   <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />
 );
+
 const DropdownMenuSubTrigger = ({
   className,
   inset,
@@ -104,6 +112,7 @@ const DropdownMenuSubTrigger = ({
     <ChevronRightIcon className="ml-auto" />
   </MenuPrimitive.SubmenuTrigger>
 );
+
 const DropdownMenuSubContent = ({
   align = "start",
   alignOffset = -3,
@@ -125,6 +134,7 @@ const DropdownMenuSubContent = ({
     {...props}
   />
 );
+
 const DropdownMenuCheckboxItem = ({
   className,
   children,
@@ -155,9 +165,11 @@ const DropdownMenuCheckboxItem = ({
     {children}
   </MenuPrimitive.CheckboxItem>
 );
+
 const DropdownMenuRadioGroup = ({ ...props }: MenuPrimitive.RadioGroup.Props) => (
   <MenuPrimitive.RadioGroup data-slot="dropdown-menu-radio-group" {...props} />
 );
+
 const DropdownMenuRadioItem = ({
   className,
   children,
@@ -186,6 +198,7 @@ const DropdownMenuRadioItem = ({
     {children}
   </MenuPrimitive.RadioItem>
 );
+
 const DropdownMenuSeparator = ({ className, ...props }: MenuPrimitive.Separator.Props) => (
   <MenuPrimitive.Separator
     data-slot="dropdown-menu-separator"
@@ -193,6 +206,7 @@ const DropdownMenuSeparator = ({ className, ...props }: MenuPrimitive.Separator.
     {...props}
   />
 );
+
 const DropdownMenuShortcut = ({ className, ...props }: ComponentProps<"span">) => (
   <span
     data-slot="dropdown-menu-shortcut"
@@ -203,6 +217,7 @@ const DropdownMenuShortcut = ({ className, ...props }: ComponentProps<"span">) =
     {...props}
   />
 );
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,

@@ -5,16 +5,22 @@ import type { JobCursorFilter, JobSelector, JobStatusType } from "@/jobs";
 import { InvalidJobQueryError } from "@/shared";
 
 const MAX_QUERY_LIMIT = 1000;
+
 export const resolveQueryLimit = (limit: number | undefined, defaultLimit: number): number => {
   const { value = defaultLimit } = { value: limit };
+
   if (!Number.isSafeInteger(value) || value < 1 || value > MAX_QUERY_LIMIT) {
     throw new InvalidJobQueryError(`limit must be an integer between 1 and ${MAX_QUERY_LIMIT}`);
   }
+
   return value;
 };
+
 type CursorQueryFilter = JobSelector | JobCursorFilter;
+
 const isRecord = (value: unknown): value is { readonly name?: unknown } =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
 const isNonEmptyName = (name: unknown): name is string =>
   typeof name === "string" && name.length > 0;
 
@@ -24,12 +30,16 @@ export const parseJobNameFilter = (filter: unknown): string | undefined => {
   if (!isRecord(filter)) {
     throw new InvalidJobQueryError("Job filter must be an object");
   }
+
   const { name } = filter;
+
   if (name !== undefined && !isNonEmptyName(name)) {
     throw new InvalidJobQueryError("Job name filter must be a non-empty string");
   }
+
   return name;
 };
+
 const validateQueryDate: (value: unknown, field: string) => asserts value is Date | undefined = (
   value,
   field,
@@ -38,13 +48,16 @@ const validateQueryDate: (value: unknown, field: string) => asserts value is Dat
     throw new InvalidJobQueryError(`${field} must be a valid Date`);
   }
 };
+
 type DateRangeField = "createdAt" | "updatedAt" | "nextRunAt";
+
 interface DateRangeQuery {
   $gt?: Date;
   $gte?: Date;
   $lt?: Date;
   $lte?: Date;
 }
+
 interface SelectorQuery {
   name?: string;
   status?: JobStatusType | { $in: JobStatusType[] };
@@ -60,17 +73,22 @@ const applySelectorCreatedAtRange = (query: SelectorQuery, filter: CursorQueryFi
   if (!("olderThan" in filter || "newerThan" in filter)) {
     return;
   }
+
   validateQueryDate(filter.olderThan, "olderThan");
   validateQueryDate(filter.newerThan, "newerThan");
   const range = getDateRange(query, "createdAt");
+
   if (filter.olderThan) {
     range.$lt = filter.olderThan;
   }
+
   if (filter.newerThan) {
     range.$gt = filter.newerThan;
   }
+
   query.createdAt = range;
 };
+
 const applyDateRange = (
   query: SelectorQuery,
   field: DateRangeField,
@@ -79,29 +97,38 @@ const applyDateRange = (
 ): void => {
   validateQueryDate(from, `${field}From`);
   validateQueryDate(to, `${field}To`);
+
   if (!from && !to) {
     return;
   }
+
   const range = getDateRange(query, field);
+
   if (from) {
     range.$gte = from;
   }
+
   if (to) {
     range.$lte = to;
   }
+
   query[field] = range;
 };
+
 const applyCursorDateRanges = (query: SelectorQuery, filter: CursorQueryFilter): void => {
   if ("createdAtFrom" in filter || "createdAtTo" in filter) {
     applyDateRange(query, "createdAt", filter.createdAtFrom, filter.createdAtTo);
   }
+
   if ("updatedAtFrom" in filter || "updatedAtTo" in filter) {
     applyDateRange(query, "updatedAt", filter.updatedAtFrom, filter.updatedAtTo);
   }
+
   if ("nextRunAtFrom" in filter || "nextRunAtTo" in filter) {
     applyDateRange(query, "nextRunAt", filter.nextRunAtFrom, filter.nextRunAtTo);
   }
 };
+
 /**
  * Build a MongoDB query filter from a selector or cursor filter.
  *
@@ -113,25 +140,33 @@ const applyCursorDateRanges = (query: SelectorQuery, filter: CursorQueryFilter):
 export const buildSelectorQuery = (filter: CursorQueryFilter): Filter<Document> => {
   const query: SelectorQuery = {};
   const name = parseJobNameFilter(filter);
+
   if (name !== undefined) {
     query.name = name;
   }
+
   const { status } = filter;
+
   if (status !== undefined) {
     if (Array.isArray(status)) {
       const statuses = [...status];
+
       if (!statuses.every(isValidJobStatus)) {
         throw new InvalidJobQueryError("Job status filter contains an invalid status");
       }
+
       query.status = { $in: statuses };
     } else {
       if (!isValidJobStatus(status)) {
         throw new InvalidJobQueryError("Job status filter must be a valid status or status array");
       }
+
       query.status = status;
     }
   }
+
   applySelectorCreatedAtRange(query, filter);
   applyCursorDateRanges(query, filter);
+
   return query;
 };

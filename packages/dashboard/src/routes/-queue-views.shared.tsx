@@ -33,13 +33,16 @@ const payloadValidationLabels = new Map<boolean | undefined, string | undefined>
   [true, "Enabled"],
   [false, "Not configured"],
 ]);
+
 const OVERVIEW_STATS = [
   { key: "pending", label: "Pending" },
   { key: "processing", label: "Processing" },
   { key: "failed", label: "Failed" },
   { key: "total", label: "Total" },
 ] as const;
+
 const queueViewSkeletonKeys = ["skeleton-1", "skeleton-2", "skeleton-3", "skeleton-4"] as const;
+
 const QueueViewsStatePanel = ({
   children,
   description,
@@ -57,6 +60,7 @@ const QueueViewsStatePanel = ({
     {children}
   </section>
 );
+
 const QueueViewsLoadingState = (): ReactElement => (
   <output aria-label="Loading Queue Views…" className="grid gap-6">
     <div className="grid gap-2">
@@ -86,6 +90,7 @@ const QueueViewsLoadingState = (): ReactElement => (
     </div>
   </output>
 );
+
 const QueueViewDetailLoadingState = (): ReactElement => (
   <output aria-label="Loading Queue View…" className="grid gap-4">
     <div className="grid gap-2">
@@ -119,12 +124,14 @@ const QueueViewDetailLoadingState = (): ReactElement => (
     </div>
   </output>
 );
+
 const QueueViewsEmptyState = (): ReactElement => (
   <QueueViewsStatePanel
     title="Queue Views"
     description="No Queue Views are available yet. Persisted jobs and registered workers will appear here."
   />
 );
+
 const QueueViewsErrorState = ({
   error,
   heading,
@@ -137,19 +144,24 @@ const QueueViewsErrorState = ({
   readonly fetching: boolean;
 }): ReactElement => {
   const state = resolveDashboardApiErrorState(error, "queue-views", heading);
+
   return (
     <DashboardState {...state}>
       <RetryButton onRetry={onRetry} fetching={fetching} />
     </DashboardState>
   );
 };
+
 const getWorkerSummary = (view: QueueViewSummaryDto): string => {
   if (!view.hasRegisteredWorker) {
     return "Historical only · No registered worker";
   }
+
   const paused = view.worker?.paused === true ? "Paused · " : "";
+
   return `${paused}${view.worker?.activeCount ?? 0} active · Concurrency ${view.worker?.concurrency ?? 0}`;
 };
+
 const QueueViewsOverview = ({
   refresh,
   queueViews,
@@ -218,6 +230,7 @@ const QueueViewsOverview = ({
     </p>
   </section>
 );
+
 const QueueStatCard = ({
   highlight = false,
   icon,
@@ -237,6 +250,7 @@ const QueueStatCard = ({
     <p className={cn("mt-1 text-lg font-semibold", highlight && "text-destructive")}>{value}</p>
   </div>
 );
+
 const QueueStatsGrid = ({ stats }: { readonly stats: QueueStatsDto }): ReactElement => (
   <div className="grid grid-cols-3 gap-4 border-y border-border py-4 sm:grid-cols-6">
     <QueueStatCard icon={<Clock3 className="size-4" />} label="Pending" value={stats.pending} />
@@ -260,6 +274,7 @@ const QueueStatsGrid = ({ stats }: { readonly stats: QueueStatsDto }): ReactElem
     <QueueStatCard label="Total" value={stats.total} />
   </div>
 );
+
 const QueueViewDetailHeader = ({
   name,
   queueView,
@@ -324,6 +339,7 @@ const QueueViewDetailHeader = ({
     ) : null}
   </section>
 );
+
 const QueueViewJobRow = ({
   job,
   queueCursor,
@@ -362,6 +378,7 @@ const QueueViewJobRow = ({
     </TableCell>
   </TableRow>
 );
+
 const QueueViewJobsTable = ({
   search,
   freshness,
@@ -379,8 +396,10 @@ const QueueViewJobsTable = ({
   readonly onRefresh: () => void;
 }): ReactElement => {
   const nextPageCursor = jobsPage.cursor;
+
   const hasNextCursor =
     nextPageCursor !== undefined && nextPageCursor !== null && nextPageCursor !== "";
+
   return (
     <section className="grid min-w-0 gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -455,6 +474,7 @@ const QueueViewJobsTable = ({
     </section>
   );
 };
+
 export {
   QueueViewDetailHeader,
   QueueViewDetailLoadingState,

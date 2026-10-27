@@ -18,8 +18,10 @@ const buildDashboardClient = async (): Promise<void> => {
       cwd: dashboardPackageDirectory,
       stdio: "inherit",
     });
+
     const exit: unknown[] = await once(child, "exit");
     const [code, signal] = exit;
+
     if (code !== 0) {
       throw new Error(
         `Dashboard client build failed with code ${String(code)} and signal ${String(signal)}.`,

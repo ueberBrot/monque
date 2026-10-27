@@ -41,44 +41,56 @@ import { useDocumentVisiblePollingInterval } from "@/lib/document-visibility";
 import { resolveDashboardApiErrorState } from "@/management-errors";
 
 const routeApi = getRouteApi("/jobs");
+
 const useJobActionDialog = (search: JobsRouteSearch) => {
   const [dialogState, setDialogState] = useState<JobActionDialogState | null>(null);
   const searchIdentity = JSON.stringify(search);
   const [previousSearchIdentity, setPreviousSearchIdentity] = useState(searchIdentity);
+
   if (searchIdentity !== previousSearchIdentity) {
     setPreviousSearchIdentity(searchIdentity);
     setDialogState(null);
   }
+
   return { dialogState, setDialogState };
 };
+
 const useDebouncedJobName = (name: string | undefined): string | undefined => {
   const [debouncedName, setDebouncedName] = useState(name);
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedName(name);
     }, 300);
+
     return () => {
       clearTimeout(timer);
     };
   }, [name]);
+
   return debouncedName;
 };
+
 const useJobsPagination = (search: JobsRouteSearch, nextPageCursor: string | null | undefined) => {
   const searchIdentity = getJobsSearchIdentity(search);
   const cursor = search.cursor ?? "";
   const [history, setHistory] = useState({ identity: searchIdentity, cursors: [cursor] });
   const currentIndex = history.cursors.indexOf(cursor);
+
   if (searchIdentity !== history.identity) {
     setHistory({ identity: searchIdentity, cursors: [cursor] });
   }
+
   const rememberNextPage = (): void => {
     if (nextPageCursor === undefined || nextPageCursor === null || nextPageCursor === "") {
       return;
     }
+
     const trail = currentIndex === -1 ? [cursor] : history.cursors.slice(0, currentIndex + 1);
     setHistory({ identity: searchIdentity, cursors: [...trail, nextPageCursor] });
   };
+
   const previousCursor = currentIndex > 0 ? history.cursors[currentIndex - 1] : undefined;
+
   return {
     hasPreviousPage: Boolean(cursor),
     previousPageLabel: cursor && currentIndex <= 0 ? "First page" : "Previous page",
@@ -86,35 +98,44 @@ const useJobsPagination = (search: JobsRouteSearch, nextPageCursor: string | nul
     previousCursor: previousCursor === "" ? undefined : previousCursor,
   };
 };
+
 const EMPTY_JOBS: JobDto[] = [];
+
 const getSelectionForVisibleJobs = (
   currentSelection: RowSelectionState,
   jobs: readonly JobDto[],
 ): RowSelectionState => {
   const visibleJobIds = new Set(jobs.map((job) => job.id));
+
   return Object.fromEntries(
     Object.entries(currentSelection).filter(
       ([rowId, selected]) => selected && visibleJobIds.has(rowId),
     ),
   );
 };
+
 const tableSelectionToJobs = (
   currentSelection: RowSelectionState,
   jobs: readonly JobDto[],
 ): readonly JobDto[] => jobs.filter((job) => currentSelection[job.id]);
+
 const useJobsSelection = (jobs: readonly JobDto[]) => {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [previousJobs, setPreviousJobs] = useState(jobs);
+
   if (jobs !== previousJobs) {
     setPreviousJobs(jobs);
     setRowSelection((selection) => getSelectionForVisibleJobs(selection, jobs));
   }
+
   const selectedJobs = useMemo(
     () => tableSelectionToJobs(rowSelection, jobs),
     [jobs, rowSelection],
   );
+
   return { rowSelection, setRowSelection, selectedJobs };
 };
+
 const JobsPending = () => (
   <output aria-label="Loading jobs…" className="grid min-w-0 gap-5">
     <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -155,6 +176,7 @@ const JobsPending = () => (
     </div>
   </output>
 );
+
 const JobsErrorPanel = ({
   state,
   fetching,
@@ -175,6 +197,7 @@ const JobsErrorPanel = ({
     ) : null}
   </DashboardState>
 );
+
 const resolveJobsReadState = (
   errors: readonly unknown[],
   hasJobs: boolean,
@@ -189,13 +212,16 @@ const resolveJobsReadState = (
         hasJobs ? "Jobs could not be refreshed" : undefined,
       ),
     );
+
   // A transient failure must not mask revoked access from the other query.
   const error = readErrors.find((state) => state.code !== "error") ?? readErrors[0];
+
   return {
     error,
     showContent: hasJobs && hasCapabilities && (!error || error.code === "error"),
   };
 };
+
 const JobsPageHeader = ({
   updatedAt,
   fetching,
@@ -227,6 +253,7 @@ const JobsPageHeader = ({
     </div>
   </div>
 );
+
 const JobsResultsToolbar = ({
   count,
   onClearFilters,
@@ -243,6 +270,7 @@ const JobsResultsToolbar = ({
     </Button>
   </div>
 );
+
 const JobsPagination = ({
   previousPageLabel,
   selectedRowCount,
@@ -287,6 +315,7 @@ const JobsPagination = ({
     </div>
   </div>
 );
+
 const JobsListRoute = () => {
   const search = routeApi.useSearch();
   const navigate = useNavigate({ from: "/jobs" });
@@ -296,6 +325,7 @@ const JobsListRoute = () => {
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
   const debouncedName = useDebouncedJobName(search.name);
   const namePending = debouncedName !== search.name;
+
   const jobsQuery = useQuery(
     managementApi.orpc.jobs.queryOptions({
       input: { ...toJobListQueryInput(search), view: "summary" },
@@ -304,33 +334,42 @@ const JobsListRoute = () => {
       refetchInterval,
     }),
   );
+
   const capabilitiesInterval = useDocumentVisiblePollingInterval(
     runtimeConfig.pollingIntervalMs,
     6,
   );
+
   const capabilitiesQuery = useQuery({
     ...managementApi.orpc.capabilities.queryOptions(),
     refetchInterval: capabilitiesInterval,
   });
+
   const resultsPending = namePending || jobsQuery.isPlaceholderData;
   const jobsPage = jobsQuery.data;
+
   const { hasPreviousPage, previousPageLabel, previousCursor, rememberNextPage } =
     useJobsPagination(search, jobsPage?.cursor);
+
   const jobs = jobsPage?.jobs ?? EMPTY_JOBS;
   const { rowSelection, setRowSelection, selectedJobs } = useJobsSelection(jobs);
+
   const actionMutation = useJobsActionMutation({
     managementApi,
     queryClient,
     setFeedback,
     setRowSelection,
   });
+
   const actionsBusy = actionMutation.isPending || resultsPending;
+
   const updateSearch = useCallback(
     (updater: (currentSearch: JobsRouteSearch) => JobsRouteSearch): void => {
       void navigate({ search: updater, replace: true });
     },
     [navigate],
   );
+
   const handleSortChange = (nextSortBy: JobListSortByDto): void => {
     updateSearch((currentSearch) => ({
       ...currentSearch,
@@ -338,6 +377,7 @@ const JobsListRoute = () => {
       cursor: undefined,
     }));
   };
+
   const columnOptions: JobsColumnsOptions = {
     busy: actionsBusy,
     activeSortBy: search.sortBy,
@@ -345,6 +385,7 @@ const JobsListRoute = () => {
     direction: search.sortDirection,
     onAction: (action, job) => {
       const prepared = prepareSingleJobAction(action, job);
+
       if (prepared.type === "confirm") {
         setDialogState(prepared.state);
       } else {
@@ -354,14 +395,18 @@ const JobsListRoute = () => {
     },
     onSortChange: handleSortChange,
   };
+
   const clearFilters = (): void => {
     updateSearch(() => parseJobsRouteSearch({}));
   };
+
   const { refetch: jobsQueryRefetch } = jobsQuery;
   const { refetch: capabilitiesQueryRefetch } = capabilitiesQuery;
+
   const handleRefresh = useCallback((): void => {
     void Promise.all([jobsQueryRefetch(), capabilitiesQueryRefetch()]);
   }, [jobsQueryRefetch, capabilitiesQueryRefetch]);
+
   const openBulkDialog = (action: JobActionKey): void => {
     setDialogState({
       action,
@@ -370,19 +415,23 @@ const JobsListRoute = () => {
       scope: "bulk",
     });
   };
+
   const handleDialogConfirm = (input: RunJobActionsInput): void => {
     setFeedback(null);
     actionMutation.mutate(input);
     setDialogState(null);
   };
+
   if (jobsQuery.isPending || capabilitiesQuery.isPending) {
     return <JobsPending />;
   }
+
   const readState = resolveJobsReadState(
     [jobsQuery.error, capabilitiesQuery.error],
     jobsPage !== undefined,
     capabilitiesQuery.data !== undefined,
   );
+
   const errorPanel = readState.error ? (
     <JobsErrorPanel
       state={readState.error}
@@ -391,9 +440,11 @@ const JobsListRoute = () => {
       onClearFilters={clearFilters}
     />
   ) : null;
+
   if (!readState.showContent) {
     return errorPanel;
   }
+
   return (
     <section className="grid min-w-0 gap-5">
       <JobsPageHeader
@@ -470,10 +521,13 @@ const JobsListRoute = () => {
     </section>
   );
 };
+
 const JobsRoute = () => {
   const matchRoute = useMatchRoute();
+
   return matchRoute({ to: "/jobs/$jobId" }) === false ? <JobsListRoute /> : <Outlet />;
 };
+
 export const Route = createFileRoute("/jobs")({
   validateSearch: parseJobsRouteSearch,
   component: JobsRoute,

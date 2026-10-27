@@ -12,12 +12,14 @@ const renderHealthRoute = (scenarioId: DashboardDevScenarioId) => {
     origin: "https://dashboard.example",
   }).render();
 };
+
 describe("Health route", () => {
   it("shows scheduler health and Management capabilities", async () => {
     renderHealthRoute("pending-jobs");
     await expect(screen.findByRole("heading", { name: "Health" })).resolves.toBeInstanceOf(
       HTMLElement,
     );
+
     const labels = [
       "Scheduler healthy",
       "Management API reachable",
@@ -25,6 +27,7 @@ describe("Health route", () => {
       "Cancel job",
       "Change job priority",
     ];
+
     const elements = await Promise.all(labels.map(async (label) => await screen.findByText(label)));
     expect(elements.map((element) => element.textContent)).toStrictEqual(labels);
   });

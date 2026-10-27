@@ -4,7 +4,9 @@ import { ObjectId } from "mongodb";
 import type { Db, WithId } from "mongodb";
 
 const scenarioNames = ["mixed", "pagination", "mutations", "dates"] as const;
+
 type ScenarioName = (typeof scenarioNames)[number];
+
 const createJob = (overrides: Partial<Job> = {}): WithId<Job> => ({
   name: "email",
   data: { source: "dashboard-scenario" },
@@ -16,11 +18,13 @@ const createJob = (overrides: Partial<Job> = {}): WithId<Job> => ({
   ...overrides,
   _id: new ObjectId(),
 });
+
 /** Stable, reusable datasets; IDs are unique each time a worker resets its database. */
 const createScenario = (name: ScenarioName): WithId<Job>[] => {
   if (name === "pagination") {
     return Array.from({ length: 125 }, (_, index) => createJob({ data: { index } }));
   }
+
   if (name === "mutations") {
     return Array.from({ length: 12 }, (_, index) =>
       createJob({
@@ -30,14 +34,18 @@ const createScenario = (name: ScenarioName): WithId<Job>[] => {
       }),
     );
   }
+
   if (name === "dates") {
     return [0, 1, 2, 3, 4].map((index) => {
       const date = new Date(Date.UTC(2026, 5, 1, 10, index));
+
       return createJob({ createdAt: date, updatedAt: date, nextRunAt: date, data: { index } });
     });
   }
+
   const names = ["email", "fails", "archived-queue"];
   const statuses = ["pending", "processing", "completed", "failed", "cancelled"] as const;
+
   return names.flatMap((queue) =>
     statuses.flatMap((status) =>
       [0, 1, 2].map((index) => {
@@ -47,9 +55,11 @@ const createScenario = (name: ScenarioName): WithId<Job>[] => {
           failCount: status === "failed" ? index + 1 : 0,
           data: {},
         };
+
         if (status === "failed") {
           overrides.failReason = `Seeded failure ${index}`;
         }
+
         if (status === "processing") {
           Object.assign(overrides, {
             claimedBy: "seed-worker",
@@ -58,6 +68,7 @@ const createScenario = (name: ScenarioName): WithId<Job>[] => {
             heartbeatInterval: 15_000,
           });
         }
+
         if (index === 2) {
           Object.assign(overrides, {
             repeatInterval: "*/5 * * * *",
@@ -65,17 +76,21 @@ const createScenario = (name: ScenarioName): WithId<Job>[] => {
             uniqueKey: `${queue}-${status}-recurring`,
           });
         }
+
         if (index === 1) {
           overrides.data = { nested: { values: [null, true, 42, "Unicode: café 日本語"] } };
         }
+
         if (index === 2) {
           overrides.data = { text: "payload-".repeat(200) };
         }
+
         return createJob(overrides);
       }),
     ),
   );
 };
+
 /** Actual job handlers record observable attempts/effects in MongoDB. */
 const registerScenarioWorkers = (monque: Monque, db: Db): void => {
   // Retain the original development queue names when loading an existing seed database.
@@ -90,15 +105,18 @@ const registerScenarioWorkers = (monque: Monque, db: Db): void => {
       await db.collection("effects").insertOne({ jobId: job._id, kind: "completed" });
     });
   }
+
   monque.register("fails", async (job) => {
     await db.collection("attempts").insertOne({ jobId: job._id, at: new Date() });
     throw new Error("intentional e2e worker failure");
   });
   monque.register("flaky", async (job) => {
     await db.collection("attempts").insertOne({ jobId: job._id, at: new Date() });
+
     if ((await db.collection("attempts").countDocuments({ jobId: job._id })) === 1) {
       throw new Error("retry once");
     }
+
     await db.collection("effects").insertOne({ jobId: job._id, kind: "recovered" });
   });
   monque.register(
@@ -110,4 +128,5 @@ const registerScenarioWorkers = (monque: Monque, db: Db): void => {
     { concurrency: 1 },
   );
 };
+
 export { createJob, createScenario, registerScenarioWorkers, type ScenarioName };

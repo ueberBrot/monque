@@ -21,6 +21,7 @@ const createHeaders = function createHeaders(req: Request, omitContentLength: bo
 };
 
 type FetchRequestBody = string | Buffer | URLSearchParams;
+
 const isFetchRequestBody = function isFetchRequestBody(value: unknown): value is FetchRequestBody {
   return typeof value === "string" || Buffer.isBuffer(value) || value instanceof URLSearchParams;
 };
@@ -28,6 +29,7 @@ const isFetchRequestBody = function isFetchRequestBody(value: unknown): value is
 export const createRequest = function createRequest(req: Request): globalThis.Request {
   const url = new URL(req.url, `${req.protocol}://${req.get("host") ?? "localhost"}`);
   const parsedBody: unknown = req.body;
+
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
     headers: createHeaders(req, parsedBody !== undefined),
@@ -51,6 +53,7 @@ export const sendResponse = async function sendResponse(
   response: globalThis.Response,
 ): Promise<void> {
   res.status(response.status);
+
   for (const [key, value] of response.headers) {
     res.setHeader(key, value);
   }

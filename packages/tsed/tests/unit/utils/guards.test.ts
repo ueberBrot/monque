@@ -18,6 +18,7 @@ describe("Type Guards", () => {
       const service: MongooseService = {
         get: vi.fn<MongooseService["get"]>(),
       };
+
       expect(isMongooseService(service)).toBe(true);
     });
 
@@ -46,6 +47,7 @@ describe("Type Guards", () => {
       const connection: MongooseConnection = {
         db: createMockDb(),
       };
+
       expect(isMongooseConnection(connection)).toBe(true);
     });
 

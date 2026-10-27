@@ -1,4 +1,5 @@
 "use client";
+
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { cn } from "cn";
 import { XIcon } from "lucide-react";
@@ -9,15 +10,19 @@ import { Button } from "@/components/ui/button";
 const Dialog = ({ ...props }: DialogPrimitive.Root.Props) => (
   <DialogPrimitive.Root data-slot="dialog" {...props} />
 );
+
 const DialogTrigger = ({ ...props }: DialogPrimitive.Trigger.Props) => (
   <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 );
+
 const DialogPortal = ({ ...props }: DialogPrimitive.Portal.Props) => (
   <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 );
+
 const DialogClose = ({ ...props }: DialogPrimitive.Close.Props) => (
   <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 );
+
 const DialogOverlay = ({ className, ...props }: DialogPrimitive.Backdrop.Props) => (
   <DialogPrimitive.Backdrop
     data-slot="dialog-overlay"
@@ -28,6 +33,7 @@ const DialogOverlay = ({ className, ...props }: DialogPrimitive.Backdrop.Props) 
     {...props}
   />
 );
+
 const DialogContent = ({
   className,
   children,
@@ -59,9 +65,11 @@ const DialogContent = ({
     </DialogPrimitive.Popup>
   </DialogPortal>
 );
+
 const DialogHeader = ({ className, ...props }: ComponentProps<"div">) => (
   <div data-slot="dialog-header" className={cn("flex flex-col gap-2", className)} {...props} />
 );
+
 const DialogFooter = ({
   className,
   showCloseButton = false,
@@ -84,6 +92,7 @@ const DialogFooter = ({
     )}
   </div>
 );
+
 const DialogTitle = ({ className, ...props }: DialogPrimitive.Title.Props) => (
   <DialogPrimitive.Title
     data-slot="dialog-title"
@@ -91,6 +100,7 @@ const DialogTitle = ({ className, ...props }: DialogPrimitive.Title.Props) => (
     {...props}
   />
 );
+
 const DialogDescription = ({ className, ...props }: DialogPrimitive.Description.Props) => (
   <DialogPrimitive.Description
     data-slot="dialog-description"
@@ -101,6 +111,7 @@ const DialogDescription = ({ className, ...props }: DialogPrimitive.Description.
     {...props}
   />
 );
+
 export {
   Dialog,
   DialogClose,

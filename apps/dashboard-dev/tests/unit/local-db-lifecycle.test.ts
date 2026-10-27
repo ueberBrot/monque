@@ -20,12 +20,15 @@ const runtime = vi.hoisted(() => ({
   stop: vi.fn<() => Promise<void>>(),
   startDemo: vi.fn<() => () => void>(),
 }));
+
 vi.mock(import("mongodb"), async () => {
   const { createMongoClientDouble } = await import("../setup/mock-mongo-client.js");
+
   return fromPartial<typeof MongodbModule>({
     MongoClient: createMongoClientDouble(runtime.connect, runtime.close),
   });
 });
+
 vi.mock(import("@monque/core"), () =>
   fromPartial<typeof CoreModule>({
     Monque: class {
@@ -34,26 +37,32 @@ vi.mock(import("@monque/core"), () =>
     },
   }),
 );
+
 vi.mock(import("@monque/management"), () =>
   fromPartial<typeof ManagementModule>({ createManagementSurface: () => ({}) }),
 );
+
 vi.mock(import("../../src/local-db/scenarios.js"), () =>
   fromPartial<typeof ScenariosJsModule>({
     createScenario: () => [],
     registerScenarioWorkers: vi.fn<() => void>(),
   }),
 );
+
 vi.mock(import("../../src/local-db/demo-workload.js"), () =>
   fromPartial<typeof DemoWorkloadJsModule>({ startDemoWorkload: runtime.startDemo }),
 );
+
 const captureFailure = async (operation: Promise<unknown>): Promise<Error> => {
   try {
     await operation;
   } catch (error) {
     return z.instanceof(Error).parse(error);
   }
+
   throw new Error("Expected the operation to fail");
 };
+
 describe("local db lifecycle", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -105,10 +114,12 @@ describe("local db lifecycle", () => {
       const server = createLocalDbManagementServer();
       const starting = server.start();
       let closed = false;
+
       // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
       const closing = server.close().then(() => {
         closed = true;
       });
+
       await forEachSequential(
         Array.from({ length: 5 }, (_, index) => index),
         async () => {

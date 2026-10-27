@@ -87,18 +87,22 @@ describe(PendingNotificationRouter, () => {
 
   it.each([false, true])("preserves unknown future names, unknown first: %s", (unknownFirst) => {
     const names = unknownFirst ? [undefined, "email"] : ["email", undefined];
+
     for (const name of names) {
       router.notifyPendingJob(name, new Date(Date.now() + 1000));
     }
+
     vi.advanceTimersByTime(1200);
     expect(onPoll).toHaveBeenCalledExactlyOnceWith();
   });
 
   it("keeps a wakeup when too many names share one deadline, then restores targeting", () => {
     const runAt = new Date(Date.now() + 1000);
+
     for (let i = 0; i < 2000; i += 1) {
       router.notifyPendingJob(`worker-${i}`, runAt);
     }
+
     vi.advanceTimersByTime(1200);
     expect(onPoll).toHaveBeenCalledExactlyOnceWith();
     router.notifyPendingJob("email", new Date(Date.now() + 1000));
@@ -111,6 +115,7 @@ describe(PendingNotificationRouter, () => {
       router.notifyRunnableJob(i % 2 === 0 ? "email" : "sms");
       vi.advanceTimersByTime(50);
     }
+
     expect(onPoll).toHaveBeenCalledTimes(10);
     expect(onPoll).toHaveBeenLastCalledWith(new Set(["email", "sms"]));
   });
@@ -139,9 +144,11 @@ describe(PendingNotificationRouter, () => {
     "preserves a full poll in a mixed batch, unnamed first: %s",
     (unnamedFirst) => {
       const names = unnamedFirst ? [undefined, "email"] : ["email", undefined];
+
       for (const name of names) {
         router.notifyRunnableJob(name);
       }
+
       vi.advanceTimersByTime(100);
       expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
       router.notifyRunnableJob("sms");
@@ -213,14 +220,17 @@ describe(PendingNotificationRouter, () => {
     "wakes for every future deadline, notified latest first: %s",
     (latestFirst) => {
       const deadlines = [1000, 5000, 9000];
+
       if (latestFirst) {
         deadlines.reverse();
       }
+
       for (const delay of deadlines) {
         const runAt = new Date(Date.now() + delay);
         router.notifyPendingJob("email", runAt);
         router.notifyPendingJob("email", runAt);
       }
+
       vi.advanceTimersByTime(1200);
       expect(onPoll).toHaveBeenCalledOnce();
       vi.advanceTimersByTime(4000);
@@ -249,10 +259,12 @@ describe(PendingNotificationRouter, () => {
     "bounds wakeup polls after repeated future rescheduling, latest first: %s",
     (latestFirst) => {
       const now = Date.now();
+
       for (let i = 0; i < 10_000; i += 1) {
         const delay = latestFirst ? 10_000_000 - i * 1000 : 1000 + i * 1000;
         router.notifyPendingJob("email", new Date(now + delay));
       }
+
       vi.advanceTimersByTime(1200);
       expect(onPoll).toHaveBeenCalledOnce();
       vi.advanceTimersByTime(10_000_000);
@@ -279,12 +291,15 @@ describe(PendingNotificationRouter, () => {
       router.setChangeStreamActive(streamActive);
       router.start();
       await vi.advanceTimersByTimeAsync(0);
+
       for (let i = 0; i < 10_000; i += 1) {
         router.notifyPendingJob("email", new Date(now + 1000 + i));
       }
+
       for (const runAt of pendingRunTimes) {
         router.notifyPendingJob("email", new Date(now + runAt));
       }
+
       await vi.advanceTimersByTimeAsync(9000);
       expect(executedAt).toStrictEqual(streamActive ? [6000, 9000] : [5000, 7000]);
     },
@@ -318,11 +333,13 @@ describe(PendingNotificationRouter, () => {
     router.setChangeStreamActive(true);
     router.start();
     await vi.advanceTimersByTimeAsync(0);
+
     for (let i = 0; i < 20; i += 1) {
       router.notifyRunnableJob("email");
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each notification must follow the preceding 500 ms of timer and Promise processing to model a sustained stream.
       await vi.advanceTimersByTimeAsync(500);
     }
+
     const fullPolls = vi.mocked(onPoll).mock.calls.filter(([names]) => names === undefined);
     expect(fullPolls).toHaveLength(11);
     expect(onPoll).toHaveBeenCalledWith(new Set(["email"]));
@@ -384,6 +401,7 @@ describe(PendingNotificationRouter, () => {
     expect(onPoll).toHaveBeenCalledTimes(4);
   });
 });
+
 describe("PendingNotificationRouter Effect scheduling", () => {
   effectIt.effect.each([false, true])(
     "keeps full polling on elapsed time after a backward clock correction, stream active: %s",
@@ -400,12 +418,14 @@ describe("PendingNotificationRouter Effect scheduling", () => {
           ctx.options.safetyPollInterval = 3000;
           const interval = streamActive ? 3000 : 1000;
           const poll = vi.fn<() => Effect.Effect<void>>().mockReturnValue(Effect.void);
+
           const router = new PendingNotificationRouter(
             ctx,
             poll,
             Effect.runForkWith(context),
             yield* Clock.Clock,
           );
+
           yield* Effect.addFinalizer(() =>
             // oxlint-disable-next-line sonarjs/no-nested-functions -- The scoped finalizer closes the router created with this test clock.
             Effect.sync(() => {
@@ -437,6 +457,7 @@ describe("PendingNotificationRouter Effect scheduling", () => {
         const context = yield* Effect.context();
         const ctx = createMockContext();
         const polls: (ReadonlySet<string> | undefined)[] = [];
+
         const router = new PendingNotificationRouter(
           ctx,
           (names) =>
@@ -447,6 +468,7 @@ describe("PendingNotificationRouter Effect scheduling", () => {
           Effect.runForkWith(context),
           yield* Clock.Clock,
         );
+
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             router.close();

@@ -15,6 +15,7 @@ type HarnessOptions = {
     Parameters<typeof createDashboardHarness>[1]
   >[Key];
 };
+
 const renderJobsRoute = async ({
   fetch: fetchImplementation,
   initialEntry,
@@ -25,21 +26,28 @@ const renderJobsRoute = async ({
   readonly pollingIntervalMs?: number;
 }) => {
   const harnessOptions: HarnessOptions = { fetch: fetchImplementation, history: "memory" };
+
   if (pollingIntervalMs !== undefined) {
     harnessOptions.pollingIntervalMs = pollingIntervalMs;
   }
+
   const dashboard = createDashboardHarness(initialEntry, harnessOptions);
   await dashboard.router.load();
   dashboard.render();
+
   return { router: dashboard.router };
 };
+
 const getFirstElement = <TElement,>(elements: readonly TElement[]): TElement => {
   const [firstElement] = elements;
+
   if (firstElement === undefined) {
     throw new Error("Expected at least one matching element.");
   }
+
   return firstElement;
 };
+
 const createCapabilities = (overrides: Partial<CapabilitiesDto> = {}): CapabilitiesDto => ({
   readOnly: false,
   actions: {
@@ -55,6 +63,7 @@ const createCapabilities = (overrides: Partial<CapabilitiesDto> = {}): Capabilit
   },
   ...overrides,
 });
+
 const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 200): Response =>
   Response.json(body, {
     status,
@@ -62,6 +71,7 @@ const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 
       "content-type": "application/json",
     },
   });
+
 const createOrpcErrorResponse = (code: string, status: number, message: string): Response =>
   createJsonResponse(
     {
@@ -75,11 +85,13 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
     },
     status,
   );
+
 interface CreateJobsActionFetchResult {
   readonly deletedJobIds: string[];
   readonly fetch: typeof fetch;
   readonly listRequestCount: number;
 }
+
 const createJobsActionFetch = (options: {
   readonly capabilities?: CapabilitiesDto;
   readonly jobs: readonly JobDto[];
@@ -88,6 +100,7 @@ const createJobsActionFetch = (options: {
   const jobs = [...options.jobs];
   const deletedJobIds: string[] = [];
   let listRequestCount = 0;
+
   return {
     deletedJobIds,
     get listRequestCount() {
@@ -96,11 +109,14 @@ const createJobsActionFetch = (options: {
     fetch: async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const url = new URL(request.url, "https://dashboard.test");
+
       if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
         return await Promise.resolve(createJsonResponse(capabilities));
       }
+
       if (request.method === "GET" && url.pathname === "/api/v1/jobs") {
         listRequestCount += 1;
+
         return await Promise.resolve(
           createJsonResponse({
             jobs: [...jobs],
@@ -110,23 +126,31 @@ const createJobsActionFetch = (options: {
           }),
         );
       }
+
       if (request.method === "DELETE" && url.pathname.startsWith("/api/v1/jobs/")) {
         const jobId = url.pathname.split("/").at(-1);
+
         if (jobId === undefined || jobId === null || jobId === "") {
           return await Promise.resolve(createJsonResponse({ error: "Job not found" }, 404));
         }
+
         const jobIndex = jobs.findIndex((job) => job.id === jobId);
+
         if (jobIndex === -1) {
           return await Promise.resolve(createOrpcErrorResponse("NOT_FOUND", 404, "Job not found"));
         }
+
         jobs.splice(jobIndex, 1);
         deletedJobIds.push(jobId);
+
         return await Promise.resolve(createJsonResponse({ deleted: true }));
       }
+
       return await Promise.resolve(createOrpcErrorResponse("NOT_FOUND", 404, "Route not found"));
     },
   };
 };
+
 const createListJob = (overrides: Partial<JobDto> = {}): JobDto => ({
   id: "job-123",
   name: "send-email",
@@ -148,6 +172,7 @@ const createListJob = (overrides: Partial<JobDto> = {}): JobDto => ({
   updatedAt: "2026-06-03T11:55:00.000Z",
   ...overrides,
 });
+
 const createForbiddenFetch = (): typeof fetch => async () =>
   await Promise.resolve(
     Response.json(
@@ -160,6 +185,7 @@ const createForbiddenFetch = (): typeof fetch => async () =>
       },
     ),
   );
+
 describe("Jobs route", () => {
   afterEach(() => {
     cleanup();
@@ -170,6 +196,7 @@ describe("Jobs route", () => {
     const mediaDefaults = window.matchMedia("");
     const listeners = new Set<() => void>();
     let compact = true;
+
     const media = vi.spyOn(window, "matchMedia").mockImplementation((query) =>
       Object.assign(mediaDefaults, {
         media: query,
@@ -184,11 +211,13 @@ describe("Jobs route", () => {
         removeEventListener: (_event: string, _listener: EventListenerOrEventListenerObject) => {},
       }),
     );
+
     try {
       // One row exercises responsive columns and sort controls without a large table render.
       const fetchSpy = vi.fn<typeof fetch>(
         createJobsActionFetch({ jobs: [createListJob({ name: "dispatch-webhook" })] }).fetch,
       );
+
       const { router } = await renderJobsRoute({ fetch: fetchSpy, initialEntry: "/jobs" });
       await screen.findAllByRole("link", { name: /dispatch-webhook/u });
       expect({
@@ -237,6 +266,7 @@ describe("Jobs route", () => {
             .textContent?.includes("Ascending"),
           requested: fetchSpy.mock.calls.some(([input]) => {
             const url = new URL(input instanceof Request ? input.url : String(input));
+
             return (
               url.searchParams.get("sortBy") === "updatedAt" &&
               url.searchParams.get("sortDirection") === "asc"
@@ -266,6 +296,7 @@ describe("Jobs route", () => {
       });
       act(() => {
         compact = false;
+
         for (const listener of listeners) {
           listener();
         }
@@ -284,6 +315,7 @@ describe("Jobs route", () => {
     const fetchSpy = vi.fn<typeof fetch>(
       createMockManagementFetch({ scenarioId: "large-dataset" }),
     );
+
     await renderJobsRoute({
       fetch: fetchSpy,
       initialEntry:
@@ -302,12 +334,14 @@ describe("Jobs route", () => {
           request instanceof Request ? request.url : String(request),
           "https://dashboard.test",
         );
+
         if (
           url.pathname !== "/api/v1/jobs" ||
           url.searchParams.get("name") !== "dispatch-webhook"
         ) {
           return false;
         }
+
         return (
           url.searchParams.get("status") === "failed" &&
           url.searchParams.get("sortBy") === "updatedAt" &&
@@ -324,30 +358,39 @@ describe("Jobs route", () => {
       const job = createListJob();
       const state = createJobsActionFetch({ jobs: [job] });
       let capabilitiesRequests = 0;
+
       const fetch: typeof globalThis.fetch = async (input, init) => {
         const request = new Request(input, init);
         const path = new URL(request.url).pathname;
+
         if (path === "/api/v1/capabilities") {
           capabilitiesRequests += 1;
           const capabilities = createCapabilities();
+
           return Response.json({
             ...capabilities,
             actions: { ...capabilities.actions, cancel: capabilitiesRequests > 1 },
           });
         }
+
         if (path === `/api/v1/jobs/${job.id}`) {
           return Response.json(job);
         }
+
         return await state.fetch(request);
       };
+
       await renderJobsRoute({ fetch, initialEntry, pollingIntervalMs: 100 });
       const isList = initialEntry === "/jobs";
+
       if (isList) {
         fireEvent.click(await screen.findByRole("button", { name: `Actions for ${job.id}` }));
       }
+
       const action = await screen.findByRole(isList ? "menuitem" : "button", {
         name: isList ? "Cancel job" : "Cancel",
       });
+
       expect(
         action.hasAttribute("disabled") || action.getAttribute("aria-disabled") === "true",
       ).toBe(true);
@@ -366,18 +409,23 @@ describe("Jobs route", () => {
   it("disables cached detail actions when the permission refresh is denied", async () => {
     const job = createListJob();
     let capabilitiesRequests = 0;
+
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const request = new Request(input, init);
+
       if (new URL(request.url).pathname === "/api/v1/capabilities") {
         capabilitiesRequests += 1;
+
         return await Promise.resolve(
           capabilitiesRequests === 1
             ? Response.json(createCapabilities())
             : Response.json({ error: "Access revoked" }, { status: 403 }),
         );
       }
+
       return await Promise.resolve(Response.json(job));
     };
+
     await renderJobsRoute({ fetch, initialEntry: `/jobs/${job.id}`, pollingIntervalMs: 100 });
     const action = await screen.findByRole("button", { name: "Cancel" });
     await waitFor(() => {
@@ -416,6 +464,7 @@ describe("Jobs route", () => {
     const fetchSpy = vi.fn<typeof fetch>(
       createMockManagementFetch({ scenarioId: "large-dataset" }),
     );
+
     await renderJobsRoute({ fetch: fetchSpy, initialEntry: "/jobs?limit=10" });
     const input = await screen.findByLabelText<HTMLInputElement>("Job name");
     fetchSpy.mockClear();
@@ -434,9 +483,11 @@ describe("Jobs route", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     });
+
     const names = fetchSpy.mock.calls.map(([request]) =>
       new URL(request instanceof Request ? request.url : String(request)).searchParams.get("name"),
     );
+
     expect(names).toStrictEqual(["send-email"]);
   });
 
@@ -445,6 +496,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     const input = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
@@ -461,6 +513,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     const input = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await forEachSequential(["send", " ", "email"], async (suffix) => {
@@ -483,6 +536,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     const input = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
@@ -492,10 +546,13 @@ describe("Jobs route", () => {
     expect(router.state.location.search.name).toBe("send-email");
     await act(async () => {
       await Promise.resolve();
+
       if (source === "toolbar") {
         fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
         return;
       }
+
       await router.navigate({ to: "/jobs", search: parseJobsRouteSearch({}) });
     });
     await act(async () => {
@@ -510,6 +567,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     const input = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
@@ -537,6 +595,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     const matchingCells = await screen.findAllByRole("cell", { name: /scenario-46003-/iu });
     expect(matchingCells.length).toBeGreaterThan(0);
     fireEvent.click(
@@ -544,12 +603,15 @@ describe("Jobs route", () => {
     );
     expect(router.state.location.search).not.toHaveProperty("selected");
     const nextPageButtons = screen.getAllByRole("link", { name: "Next page" });
+
     const nextPageButton = nextPageButtons.find(
       (link) => link.getAttribute("aria-disabled") !== "true",
     );
+
     if (!nextPageButton) {
       throw new Error("Expected an enabled next page button.");
     }
+
     fireEvent.click(nextPageButton);
     await waitFor(() => {
       expect({
@@ -564,6 +626,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "pending-jobs" }),
       initialEntry: "/jobs?limit=10",
     });
+
     await screen.findAllByRole("checkbox", { name: /^Select job row /u });
     fireEvent.click(
       getFirstElement(screen.getAllByRole("checkbox", { name: /^Select job row /u })),
@@ -583,6 +646,7 @@ describe("Jobs route", () => {
       fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
       initialEntry: "/jobs?limit=10",
     });
+
     await screen.findAllByRole("checkbox", { name: /^Select job row /u });
     await act(async () => {
       await Promise.resolve();
@@ -668,10 +732,12 @@ describe("Jobs route", () => {
       expect(router.state.location.search.cursor).toBeUndefined();
     });
     cleanup();
+
     const reloaded = await renderJobsRoute({
       fetch,
       initialEntry: `/jobs?limit=10&cursor=${encodeURIComponent(String(secondPageCursor))}`,
     });
+
     const firstPage = await screen.findByRole("link", { name: "First page" });
     await act(async () => await Promise.resolve(fireEvent.click(firstPage)));
     await waitFor(() => {
@@ -703,16 +769,21 @@ describe("Jobs route", () => {
     const response = Promise.withResolvers<Response>();
     const refresh = Promise.withResolvers<Response>();
     let listRequests = 0;
+
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const request = new Request(input, init);
+
       if (request.method === "POST") {
         return await response.promise;
       }
+
       if (new URL(request.url).pathname === "/api/v1/jobs" && (listRequests += 1) > 1) {
         return await refresh.promise;
       }
+
       return await state.fetch(request);
     });
+
     await renderJobsRoute({ fetch, initialEntry: "/jobs" });
     const actionButton = () => screen.getByRole("button", { name: `Actions for ${job.id}` });
     fireEvent.click(
@@ -725,6 +796,7 @@ describe("Jobs route", () => {
         fetch.mock.calls.some(([input]) => input instanceof Request && input.method === "POST"),
       ).toBe(true);
     });
+
     try {
       expect(actionButton().hasAttribute("disabled")).toBe(true);
       await act(async () => {
@@ -749,6 +821,7 @@ describe("Jobs route", () => {
         );
       });
     }
+
     await waitFor(() => {
       expect(actionButton().hasAttribute("disabled")).toBe(false);
     });
@@ -769,10 +842,13 @@ describe("Jobs route", () => {
         fetch: createMockManagementFetch({ scenarioId: "large-dataset" }),
         initialEntry: "/jobs?limit=10",
       });
+
       await screen.findByRole("heading", { name: "Jobs" });
+
       const firstRow = getFirstElement(
         await screen.findAllByRole("checkbox", { name: /^Select job row /u }),
       ).getAttribute("aria-label");
+
       if (change === "cursor") {
         fireEvent.click(await screen.findByRole("link", { name: "Next page" }));
       } else {
@@ -783,6 +859,7 @@ describe("Jobs route", () => {
           });
         });
       }
+
       await waitFor(() => {
         expect({
           hasCursor: isString(router.state.location.search.cursor),
@@ -845,14 +922,17 @@ describe("Jobs route", () => {
       name: "send-email",
       status: "pending",
     });
+
     const jobB = createListJob({
       id: "job-bulk-b",
       name: "dispatch-webhook",
       status: "pending",
     });
+
     const fetchState = createJobsActionFetch({
       jobs: [jobA, jobB],
     });
+
     await renderJobsRoute({
       fetch: fetchState.fetch,
       initialEntry: "/jobs",

@@ -17,6 +17,7 @@ const InputGroup = ({ className, ...props }: ComponentProps<"fieldset">) => (
     {...props}
   />
 );
+
 const inputGroupAddonVariants = cva(
   "flex h-auto cursor-text items-center justify-center gap-2 py-1.5 text-sm font-medium text-muted-foreground select-none group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-4",
   {
@@ -35,6 +36,7 @@ const inputGroupAddonVariants = cva(
     },
   },
 );
+
 const InputGroupAddon = ({
   className,
   align = "inline-start",
@@ -49,11 +51,13 @@ const InputGroupAddon = ({
       if (e.target instanceof Element && e.target.closest("button")) {
         return;
       }
+
       e.currentTarget.parentElement?.querySelector("input")?.focus();
     }}
     {...props}
   />
 );
+
 const inputGroupButtonVariants = cva("flex items-center gap-2 text-sm shadow-none", {
   variants: {
     size: {
@@ -67,6 +71,7 @@ const inputGroupButtonVariants = cva("flex items-center gap-2 text-sm shadow-non
     size: "xs",
   },
 });
+
 const InputGroupButton = ({
   className,
   type = "button",
@@ -85,6 +90,7 @@ const InputGroupButton = ({
     {...props}
   />
 );
+
 const InputGroupText = ({ className, ...props }: ComponentProps<"span">) => (
   <span
     className={cn(
@@ -94,6 +100,7 @@ const InputGroupText = ({ className, ...props }: ComponentProps<"span">) => (
     {...props}
   />
 );
+
 const InputGroupInput = ({ className, ...props }: ComponentProps<"input">) => (
   <Input
     data-slot="input-group-control"
@@ -104,6 +111,7 @@ const InputGroupInput = ({ className, ...props }: ComponentProps<"input">) => (
     {...props}
   />
 );
+
 const InputGroupTextarea = ({ className, ...props }: ComponentProps<"textarea">) => (
   <Textarea
     data-slot="input-group-control"
@@ -114,6 +122,7 @@ const InputGroupTextarea = ({ className, ...props }: ComponentProps<"textarea">)
     {...props}
   />
 );
+
 export {
   InputGroup,
   InputGroupAddon,

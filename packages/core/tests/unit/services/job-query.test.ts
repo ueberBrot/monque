@@ -31,6 +31,7 @@ describe(JobQueryService, () => {
     const statusCounts = Object.entries(stats)
       .filter(([key]) => key !== "total" && key !== "avgMs")
       .map(([_id, count]) => ({ _id, count }));
+
     const mockAggregateCursor = {
       toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([
         {
@@ -40,10 +41,12 @@ describe(JobQueryService, () => {
         },
       ]),
     };
+
     vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
       fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
     );
   };
+
   let queryService: JobQueryService;
   beforeEach(() => {
     ctx = createMockContext();
@@ -61,9 +64,11 @@ describe(JobQueryService, () => {
         );
         const failureResult1 = yield* Effect.result(queryService.getJob(new ObjectId()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect(error.message).toMatch(/Failed to get job/u);
@@ -90,14 +95,17 @@ describe(JobQueryService, () => {
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockRejectedValueOnce(new Error("Database timeout")),
         };
+
         vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.find>, unknown>(mockCursor),
         );
         const failureResult1 = yield* Effect.result(queryService.getJobs());
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect(fromAny<ConnectionError, unknown>(error).message).toMatch(/Failed to query jobs/u);
@@ -113,6 +121,7 @@ describe(JobQueryService, () => {
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockRejectedValueOnce("Network failure"),
         };
+
         vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.find>, unknown>(mockCursor),
         );
@@ -139,6 +148,7 @@ describe(JobQueryService, () => {
             total: [{ count: 18 }],
           },
         ];
+
         const mockAggregateCursor = {
           toArray: vi
             .fn<MockFunction<FindCursor["toArray"]>>()
@@ -174,6 +184,7 @@ describe(JobQueryService, () => {
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -208,6 +219,7 @@ describe(JobQueryService, () => {
             },
           ]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -221,9 +233,11 @@ describe(JobQueryService, () => {
     it.effect("should throw AggregationTimeoutError when aggregation exceeds timeout", () =>
       Effect.gen(function* effectWorkflow8() {
         const timeoutError = Object.assign(new Error("max time expired"), { code: 50 });
+
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValueOnce(timeoutError),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -238,9 +252,11 @@ describe(JobQueryService, () => {
         const timeoutError = Object.assign(new Error("write concern timeout"), {
           writeConcernError: { code: 50 },
         });
+
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValueOnce(timeoutError),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -257,14 +273,17 @@ describe(JobQueryService, () => {
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockRejectedValueOnce(new Error("Database connection lost")),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
         const failureResult1 = yield* Effect.result(queryService.getQueueStats());
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect(fromAny<ConnectionError, unknown>(error).message).toMatch(
@@ -279,6 +298,7 @@ describe(JobQueryService, () => {
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockRejectedValueOnce("Network failure"),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -298,11 +318,13 @@ describe(JobQueryService, () => {
             total: [{ count: 3 }],
           },
         ];
+
         const mockAggregateCursor = {
           toArray: vi
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockResolvedValueOnce(mockAggregateResult),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -327,11 +349,13 @@ describe(JobQueryService, () => {
             total: [{ count: 0 }],
           },
         ];
+
         const mockAggregateCursor = {
           toArray: vi
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockResolvedValueOnce(mockAggregateResult),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -357,9 +381,11 @@ describe(JobQueryService, () => {
           );
           const first = yield* Effect.forkChild(queryService.getQueueStats());
           yield* Deferred.await(started);
+
           const second = yield* Effect.forkChild(queryService.getQueueStats(), {
             startImmediately: true,
           });
+
           yield* Fiber.interrupt(first);
           expect({
             exitHasInterruptsFiberFirst: Exit.hasInterrupts(yield* Fiber.await(first)),
@@ -397,9 +423,11 @@ describe(JobQueryService, () => {
               toArray: async () => await runPromise(Deferred.await(pending)),
             }),
           );
+
           const readers = yield* forEachEffect(Array.from({ length: 10 }), () =>
             Effect.forkChild(queryService.getQueueStats(), { startImmediately: true }),
           );
+
           expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
           yield* Deferred.succeed(pending, [
             {
@@ -422,9 +450,11 @@ describe(JobQueryService, () => {
               toArray: async () => await runPromise(Deferred.await(pending)),
             }),
           );
+
           const oldRead = yield* Effect.forkChild(queryService.getQueueStats(), {
             startImmediately: true,
           });
+
           expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
           queryService.clearStatsCache();
           mockStatsResult({ pending: 2, total: 2 });
@@ -456,21 +486,26 @@ describe(JobQueryService, () => {
               toArray: async () => await runPromise(Deferred.await(pending)),
             }),
           );
+
           const first = yield* Effect.forkChild(queryService.getQueueStats(), {
             startImmediately: true,
           });
+
           const second = yield* Effect.forkChild(queryService.getQueueStats(), {
             startImmediately: true,
           });
+
           yield* Deferred.fail(pending, new Error("Unavailable"));
           const results = yield* forEachEffect([first, second], Fiber.await);
           expect(results.every(Exit.isFailure)).toBe(true);
+
           for (const result of results) {
             expect(Exit.findError(result)).toMatchObject({
               _tag: "Success",
               success: anyMatcher(ConnectionError),
             });
           }
+
           mockStatsResult({ pending: 3, total: 3 });
           expect({
             queryServiceGetQueueStatsPending: (yield* queryService.getQueueStats()).pending,
@@ -608,11 +643,13 @@ describe(JobQueryService, () => {
       it.effect("should evict oldest entry when cache exceeds max size", () =>
         Effect.gen(function* effectWorkflow24() {
           ctx.options.statsCacheTtlMs = 60_000;
+
           // Fill cache with 101 entries (exceeds MAX_CACHE_SIZE of 100)
           for (let i = 0; i <= 100; i += 1) {
             mockStatsResult({ pending: i, total: i });
             yield* queryService.getQueueStats({ name: `job-${i}` });
           }
+
           // job-0 was the first entry and should have been evicted
           vi.mocked(ctx.mockCollection.aggregate).mockClear();
           mockStatsResult({ pending: 999, total: 999 });
@@ -693,6 +730,7 @@ describe(JobQueryService, () => {
             },
           ]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -727,6 +765,7 @@ describe(JobQueryService, () => {
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -758,6 +797,7 @@ describe(JobQueryService, () => {
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -788,6 +828,7 @@ describe(JobQueryService, () => {
             },
           ]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -812,6 +853,7 @@ describe(JobQueryService, () => {
     it.effect("should combine persisted jobs and registered workers with active counts", () =>
       Effect.gen(function* effectWorkflow30() {
         const activeJob = JobFactory.build({ name: "email-send" });
+
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([
             {
@@ -827,6 +869,7 @@ describe(JobQueryService, () => {
             },
           ]),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -861,6 +904,7 @@ describe(JobQueryService, () => {
       () =>
         Effect.gen(function* effectWorkflow31() {
           const activeJob = JobFactory.build({ name: "email-send" });
+
           const mockAggregateCursor = {
             toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValueOnce([
               {
@@ -876,6 +920,7 @@ describe(JobQueryService, () => {
               },
             ]),
           };
+
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
           );
@@ -889,9 +934,11 @@ describe(JobQueryService, () => {
           const summaries = yield* queryService.getQueueViewSummaries();
           const [summary] = summaries;
           expect(summary).toBeDefined();
+
           if (!summary) {
             throw new Error("Expected Queue View summary");
           }
+
           expect({
             objectIsFrozenSummaries: Object.isFrozen(summaries),
             objectIsFrozenSummary: Object.isFrozen(summary),
@@ -924,14 +971,17 @@ describe(JobQueryService, () => {
             .fn<MockFunction<FindCursor["toArray"]>>()
             .mockRejectedValueOnce(new Error("Database connection lost")),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
         const failureResult1 = yield* Effect.result(queryService.getQueueViewSummaries());
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect(fromAny<ConnectionError, unknown>(error).message).toMatch(
@@ -942,9 +992,11 @@ describe(JobQueryService, () => {
     it.effect("should throw AggregationTimeoutError when aggregation exceeds timeout", () =>
       Effect.gen(function* effectWorkflow33() {
         const timeoutError = Object.assign(new Error("max time expired"), { code: 50 });
+
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValueOnce(timeoutError),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
@@ -959,9 +1011,11 @@ describe(JobQueryService, () => {
         const timeoutError = Object.assign(new Error("write concern timeout"), {
           writeConcernError: { code: 50 },
         });
+
         const mockAggregateCursor = {
           toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValueOnce(timeoutError),
         };
+
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );

@@ -28,15 +28,19 @@ export const toJobCursorOptions = function toJobCursorOptions(
 ): CursorOptions | { error: string } {
   const limitInput = query.limit;
   let limit = 50;
+
   if (limitInput !== undefined) {
     limit = Number(limitInput);
+
     if (!Number.isInteger(limit) || limit < 1) {
       return { error: "Invalid limit" };
     }
+
     limit = Math.min(limit, 100);
   }
 
   const filter: JobCursorFilter = {};
+
   const status =
     Array.isArray(query.status) && query.status.length === 1 ? query.status[0] : query.status;
 

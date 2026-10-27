@@ -45,6 +45,7 @@ import {
   validateOptions,
   validateRetryOptions,
 } from "./validate-options.js";
+
 /**
  * Default configuration values
  */
@@ -62,7 +63,9 @@ const DEFAULTS = {
   // 30 seconds
   heartbeatInterval: 30_000,
 } as const;
+
 type SchedulerRuntime = ManagedRuntime.ManagedRuntime<SchedulerServices, never>;
+
 interface LegacyConcurrencyOptions {
   defaultConcurrency?: number | undefined;
   maxConcurrency?: number | undefined;
@@ -187,11 +190,13 @@ export class Monque extends EventEmitter {
       statsCacheTtlMs: options.statsCacheTtlMs ?? 5000,
     };
     validateOptions(this.options);
+
     if (legacyOptions.defaultConcurrency !== undefined) {
       console.warn(
         '[@monque/core] "defaultConcurrency" is deprecated and will be removed in a future major version. Use "workerConcurrency" instead.',
       );
     }
+
     if (legacyOptions.maxConcurrency !== undefined) {
       console.warn(
         '[@monque/core] "maxConcurrency" is deprecated and will be removed in a future major version. Use "instanceConcurrency" instead.',
@@ -208,11 +213,15 @@ export class Monque extends EventEmitter {
     if (this.#initialized) {
       return;
     }
+
     if (this.#initialization) {
       await this.#initialization;
+
       return;
     }
+
     this.#initialization = Effect.runPromise(this.#initializeRuntime());
+
     try {
       await this.#initialization;
     } finally {
@@ -221,12 +230,15 @@ export class Monque extends EventEmitter {
   }
   #initializeRuntime(): Effect.Effect<void, ConnectionError> {
     let candidate: SchedulerRuntime | null = null;
+
     return Effect.gen({ self: this }, function* initializeSchedulerRuntime() {
       const collection = yield* attempt(() => this.db.collection(this.options.collectionName));
       this.collection = collection;
+
       if (!this.options.skipIndexCreation) {
         yield* this.createIndexes();
       }
+
       // Missing MongoDB sort keys are not numeric zero (notably against negatives).
       // Normalize before any claims, including when applications manage indexes.
       yield* fromPromise(
@@ -234,20 +246,25 @@ export class Monque extends EventEmitter {
           await collection.updateMany({ priority: { $exists: false } }, { $set: { priority: 0 } }),
       );
       const ctx = yield* attempt(() => this.buildContext());
+
       const runtime: SchedulerRuntime = ManagedRuntime.make(
         makeSchedulerLayer(ctx, {
           runFork: (effect) => runtime.runFork(effect),
         }).pipe(Layer.orDie),
       );
+
       candidate = runtime;
       const context = yield* runtime.contextEffect;
       this.#initialized = { runtime, services: Context.get(context, SchedulerServices) };
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
+
         const message =
           error instanceof Error ? error.message : "Unknown error during initialization";
+
         const release = candidate ? candidate.disposeEffect.pipe(Effect.ignoreCause) : Effect.void;
+
         return release.pipe(
           Effect.andThen(
             Effect.fail(new ConnectionError(`Failed to initialize Monque: ${message}`)),
@@ -264,6 +281,7 @@ export class Monque extends EventEmitter {
     if (!this.#initialized) {
       throw new ConnectionError("Monque not initialized. Call initialize() first.");
     }
+
     return this.#initialized.runtime;
   }
   /**
@@ -273,6 +291,7 @@ export class Monque extends EventEmitter {
     if (!this.collection) {
       throw new ConnectionError("Collection not initialized");
     }
+
     return {
       collection: this.collection,
       options: this.options,
@@ -286,6 +305,7 @@ export class Monque extends EventEmitter {
         if (!this.#state.running) {
           return;
         }
+
         this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
       },
       notifyJobFinished: (name) => {
@@ -313,9 +333,11 @@ export class Monque extends EventEmitter {
     this: Monque,
   ): Effect.fn.Return<void, unknown> {
     const { collection } = this;
+
     if (!collection) {
       return yield* Effect.fail(new ConnectionError("Collection not initialized"));
     }
+
     yield* fromPromise(
       async () =>
         await collection.createIndexes([
@@ -381,6 +403,7 @@ export class Monque extends EventEmitter {
               ]),
         ]),
     );
+
     return yield* Effect.void;
   });
   // ─────────────────────────────────────────────────────────────────────────────
@@ -769,9 +792,11 @@ export class Monque extends EventEmitter {
    */
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
     const runtime = this.#runtime;
+
     if (!ObjectId.isValid(id)) {
       return null;
     }
+
     return await runtime.runPromise(
       SchedulerServices.use(({ queries: query }) => query.getJob<T>(new ObjectId(id))),
     );
@@ -1000,12 +1025,15 @@ export class Monque extends EventEmitter {
     validateJobName(name);
     const concurrency = options.concurrency ?? this.options.workerConcurrency;
     validateIntegerOption("concurrency", concurrency);
+
     const retryOptions = {
       maxRetries: options.maxRetries ?? this.options.maxRetries,
       baseRetryInterval: options.baseRetryInterval ?? this.options.baseRetryInterval,
       maxBackoffDelay: options.maxBackoffDelay ?? this.options.maxBackoffDelay,
     };
+
     validateRetryOptions(retryOptions);
+
     // Check for existing worker and throw unless replace is explicitly true
     if (this.workers.has(name) && options.replace !== true) {
       throw new WorkerRegistrationError(
@@ -1013,6 +1041,7 @@ export class Monque extends EventEmitter {
         name,
       );
     }
+
     this.workers.set(name, {
       // SAFETY: The registration retains its schema with its handler; workers are stored
       // together after generic payload types are erased by the heterogeneous map.
@@ -1044,6 +1073,7 @@ export class Monque extends EventEmitter {
       validateJobName(name);
       this.#state.pausedWorkers.delete(name);
     }
+
     this.#initialized?.services.notifications.notifyRunnableJob(name);
   }
   /** Whether the local instance, or the named worker, is effectively paused. */
@@ -1051,15 +1081,19 @@ export class Monque extends EventEmitter {
     if (name !== undefined) {
       validateJobName(name);
     }
+
     const state = this.#state;
+
     return state.paused || (name !== undefined && state.pausedWorkers.has(name));
   }
   /** Identify the local scheduler and inspect global or named-worker processing state. */
   getProcessingState(name?: string): ProcessingState {
     const scope: ProcessingScope = { instanceId: this.options.schedulerInstanceId };
+
     if (name !== undefined) {
       scope.name = name;
     }
+
     return {
       ...scope,
       paused: this.isPaused(name),
@@ -1113,9 +1147,11 @@ export class Monque extends EventEmitter {
     if (this.#state.running) {
       return;
     }
+
     if (!this.#initialized) {
       throw new ConnectionError("Monque not initialized. Call initialize() before start().");
     }
+
     const { services } = this.#initialized;
     this.#runGeneration += 1;
     this.#state.running = true;
@@ -1163,6 +1199,7 @@ export class Monque extends EventEmitter {
     if (!this.#state.running) {
       return;
     }
+
     await this.#runtime.runPromise(this.#stopScheduler());
   }
   readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
@@ -1176,30 +1213,39 @@ export class Monque extends EventEmitter {
     query.clearStatsCache();
     yield* streams.close().pipe(Effect.ignoreCause);
     let timedOut = false;
+
     if (getIncompleteJobs().length > 0) {
       const drain = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
       const checkDrain = () => {
         if (getIncompleteJobs().length === 0) {
           Deferred.doneUnsafe(drain, Effect.void);
         }
       };
+
       this.#drainChecks.add(checkDrain);
       checkDrain();
+
       const result = yield* Deferred.await(drain).pipe(
         Effect.timeoutOption(this.options.shutdownTimeout),
         Effect.ensuring(Effect.sync(() => this.#drainChecks.delete(checkDrain))),
       );
+
       timedOut = Option.isNone(result);
     }
+
     if (generation === this.#runGeneration) {
       timers.stopTimers();
     }
+
     if (timedOut) {
       const incompleteJobs = getIncompleteJobs();
+
       const error = new ShutdownTimeoutError(
         `Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
         incompleteJobs,
       );
+
       this.emit("job:error", { error });
     }
   });
@@ -1278,6 +1324,7 @@ export class Monque extends EventEmitter {
    */
   private onJobFinished(name: string): void {
     this.#initialized?.services.notifications.notifyRunnableJob(name);
+
     for (const checkDrain of this.#drainChecks) {
       checkDrain();
     }
@@ -1290,9 +1337,11 @@ export class Monque extends EventEmitter {
    */
   private getActiveJobsList(): Job[] {
     const activeJobs: Job[] = [];
+
     for (const worker of this.workers.values()) {
       activeJobs.push(...worker.activeJobs.values());
     }
+
     return activeJobs;
   }
   /**

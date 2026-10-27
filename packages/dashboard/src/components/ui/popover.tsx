@@ -5,9 +5,11 @@ import type { ComponentProps } from "react";
 const Popover = ({ ...props }: PopoverPrimitive.Root.Props) => (
   <PopoverPrimitive.Root data-slot="popover" {...props} />
 );
+
 const PopoverTrigger = ({ ...props }: PopoverPrimitive.Trigger.Props) => (
   <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 );
+
 const PopoverContent = ({
   className,
   align = "center",
@@ -41,6 +43,7 @@ const PopoverContent = ({
     </PopoverPrimitive.Positioner>
   </PopoverPrimitive.Portal>
 );
+
 const PopoverHeader = ({ className, ...props }: ComponentProps<"div">) => (
   <div
     data-slot="popover-header"
@@ -48,6 +51,7 @@ const PopoverHeader = ({ className, ...props }: ComponentProps<"div">) => (
     {...props}
   />
 );
+
 const PopoverTitle = ({ className, ...props }: PopoverPrimitive.Title.Props) => (
   <PopoverPrimitive.Title
     data-slot="popover-title"
@@ -55,6 +59,7 @@ const PopoverTitle = ({ className, ...props }: PopoverPrimitive.Title.Props) => 
     {...props}
   />
 );
+
 const PopoverDescription = ({ className, ...props }: PopoverPrimitive.Description.Props) => (
   <PopoverPrimitive.Description
     data-slot="popover-description"
@@ -62,4 +67,5 @@ const PopoverDescription = ({ className, ...props }: PopoverPrimitive.Descriptio
     {...props}
   />
 );
+
 export { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger };

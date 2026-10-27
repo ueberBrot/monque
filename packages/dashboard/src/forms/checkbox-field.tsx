@@ -12,6 +12,7 @@ interface CheckboxFieldProps {
   bare?: boolean;
   indeterminate?: boolean;
 }
+
 export const CheckboxField = ({
   description,
   label,
@@ -21,6 +22,7 @@ export const CheckboxField = ({
   const field = useFieldContext<boolean>();
   const error = getFieldErrors(field.state.meta.errors);
   const fieldId = useId();
+
   const control = (
     <Checkbox
       id={fieldId}
@@ -32,9 +34,11 @@ export const CheckboxField = ({
       onCheckedChange={field.handleChange}
     />
   );
+
   if (bare) {
     return control;
   }
+
   return (
     <Field data-invalid={Boolean(error)}>
       <div className="flex items-center gap-2">

@@ -22,8 +22,11 @@ interface JobDetailViewProps {
   readonly actions?: ReactElement;
   readonly job: JobDto;
 }
+
 type MetadataItem = readonly [label: string, value: ReactNode];
+
 const MAX_INITIAL_PAYLOAD_ENTRIES = 100;
+
 const JsonExpandButton = ({
   "data-expand": expanded = false,
   className,
@@ -41,6 +44,7 @@ const JsonExpandButton = ({
     <ChevronDown className="size-3" />
   </button>
 );
+
 const jsonViewComponents = { arrow: <JsonExpandButton /> };
 const foregroundColor = "var(--foreground)";
 const mutedForegroundColor = "var(--muted-foreground)";
@@ -63,6 +67,7 @@ const jsonViewTheme: CSSProperties & Record<`--${string}`, string> = {
   "--w-rjv-type-url-color": foregroundColor,
   "--w-rjv-update-color": foregroundColor,
 };
+
 const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
   ["Created", <JobTimestamp key="createdAt" value={job.createdAt} />],
   ["Updated", <JobTimestamp key="updatedAt" value={job.updatedAt} />],
@@ -85,9 +90,11 @@ const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
       : "Not set",
   ],
 ];
+
 const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => {
   const hasRepeatInterval =
     job.repeatInterval !== undefined && job.repeatInterval !== null && job.repeatInterval !== "";
+
   return [
     ["Claimed by", job.claimedBy ?? "Unclaimed"],
     ["Repeat interval", job.repeatInterval ?? "One-time job"],
@@ -97,6 +104,7 @@ const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => {
     ["Unique key", job.uniqueKey ?? "Not set"],
   ];
 };
+
 const CopyButton = ({
   label,
   getText,
@@ -116,6 +124,7 @@ const CopyButton = ({
     {label}
   </Button>
 );
+
 const SummaryTile = ({
   label,
   value,
@@ -132,6 +141,7 @@ const SummaryTile = ({
     </div>
   </div>
 );
+
 const renderPayload = (payload: JobDto["payload"]): ReactElement => {
   if (isEmptyPayload(payload)) {
     return (
@@ -140,6 +150,7 @@ const renderPayload = (payload: JobDto["payload"]): ReactElement => {
       </div>
     );
   }
+
   if (isStructuredPayload(payload)) {
     return (
       <div className="max-w-full overflow-x-auto rounded-lg border border-border bg-background/70 p-3">
@@ -154,12 +165,14 @@ const renderPayload = (payload: JobDto["payload"]): ReactElement => {
       </div>
     );
   }
+
   return (
     <pre className="overflow-x-auto rounded-lg border border-border bg-background/70 p-3 font-mono text-xs text-foreground">
       {formatPayloadForDisplay(payload)}
     </pre>
   );
 };
+
 const MetadataList = ({ items }: { readonly items: readonly MetadataItem[] }): ReactElement => (
   <dl className="divide-y divide-border/70">
     {items.map(([label, value]) => (
@@ -170,10 +183,12 @@ const MetadataList = ({ items }: { readonly items: readonly MetadataItem[] }): R
     ))}
   </dl>
 );
+
 const JobDetailView = ({ actions, job }: JobDetailViewProps): ReactElement => {
   const operatorTimeZone = getOperatorTimeZoneLabel();
   const lifecycleItems = getLifecycleMetadataItems(job);
   const schedulingItems = getSchedulingMetadataItems(job);
+
   return (
     <section className="grid min-w-0 gap-6">
       <header className="grid min-w-0 gap-4">
@@ -255,4 +270,5 @@ const JobDetailView = ({ actions, job }: JobDetailViewProps): ReactElement => {
     </section>
   );
 };
+
 export { JobDetailView };

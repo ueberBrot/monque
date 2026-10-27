@@ -13,6 +13,7 @@ const RootComponent = () => (
     <Outlet />
   </DashboardShell>
 );
+
 export const Route = createRootRouteWithContext<DashboardRouterContext>()({
   component: RootComponent,
   notFoundComponent: DashboardRouteNotFound,

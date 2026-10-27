@@ -28,6 +28,7 @@ describe("local processing controls", () => {
         }),
       }),
     });
+
     await expectJsonResponse(await handleManagementGet(surface, "/api/v1/processing"), 200, {
       instanceId: "custom",
       paused: false,
@@ -41,15 +42,18 @@ describe("local processing controls", () => {
     const initial = await handleManagementGet(surface, "/api/v1/processing");
     const { instanceId } = monque.getProcessingState();
     await expectJsonResponse(initial, 200, { instanceId, paused: false, globallyPaused: false });
+
     const pausedWorker = await handleManagementPost(surface, "/api/v1/processing/actions/pause", {
       instanceId,
       name: "email",
     });
+
     const pausedScheduler = await handleManagementPost(
       surface,
       "/api/v1/processing/actions/pause",
       { instanceId },
     );
+
     expect([pausedWorker.status, pausedScheduler.status]).toStrictEqual([200, 200]);
     await expectJsonResponse(
       await handleManagementPost(surface, "/api/v1/processing/actions/resume", { instanceId }),
@@ -102,26 +106,32 @@ describe("local processing controls", () => {
   it("authorizes the worker name and scheduler identity and denies unapproved scopes", async () => {
     const monque = createScheduler();
     const { instanceId } = monque.getProcessingState();
+
     const surface = createManagementSurface({
       monque,
       authorize: ({ action, name, instanceId: target }) =>
         action === "read" || (name === "email" && target === instanceId),
     });
+
     const scoped = await handleManagementGet(surface, "/api/v1/capabilities?name=email");
     await expect(scoped.json()).resolves.toMatchObject({ actions: { pause: true, resume: true } });
     const global = await handleManagementGet(surface, "/api/v1/capabilities");
     await expect(global.json()).resolves.toMatchObject({
       actions: { pause: false, resume: false },
     });
+
     const response = await handleManagementPost(surface, "/api/v1/processing/actions/pause", {
       instanceId,
       name: "email",
     });
+
     expect(response.status).toBe(200);
     const workerPaused = monque.isPaused("email");
+
     const globalPause = await handleManagementPost(surface, "/api/v1/processing/actions/pause", {
       instanceId,
     });
+
     expect(globalPause.status).toBe(403);
     expect({ workerPaused, globallyPaused: monque.isPaused() }).toStrictEqual({
       workerPaused: true,
@@ -139,10 +149,12 @@ describe("local processing controls", () => {
     const monque = createScheduler();
     monque.pause("email");
     const surface = createManagementSurface({ monque, readOnly: true });
+
     const response = await handleManagementPost(surface, `/api/v1/processing/actions/${action}`, {
       instanceId: monque.getProcessingState().instanceId,
       name: "email",
     });
+
     expect(response.status).toBe(403);
     expect(monque.isPaused("email")).toBe(true);
     const capabilities = await handleManagementGet(surface, "/api/v1/capabilities");
@@ -155,6 +167,7 @@ describe("local processing controls", () => {
     const surface = createManagementSurface({ monque: createManagementMonque() });
     const response = await handleManagementGet(surface, "/api/v1/processing");
     expect(response.status).toBe(403);
+
     const unsupportedPause = await handleManagementPost(
       surface,
       "/api/v1/processing/actions/pause",
@@ -162,6 +175,7 @@ describe("local processing controls", () => {
         instanceId: "old",
       },
     );
+
     expect(unsupportedPause.status).toBe(403);
   });
 

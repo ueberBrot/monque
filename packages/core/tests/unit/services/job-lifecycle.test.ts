@@ -57,6 +57,7 @@ describe(JobLifecycle, () => {
         const job = JobFactoryHelpers.processing({
           repeatInterval: "0 * * * *",
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
         const result = yield* lifecycle.completeOwned(job);
         expect({
@@ -98,6 +99,7 @@ describe(JobLifecycle, () => {
             claimedBy: "test-instance-id",
             lastHeartbeat: new Date(),
           });
+
           vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(activeJob);
           const error = yield* Effect.flip(lifecycle.assertNoActiveInstanceCollision());
           expect(error).toBeInstanceOf(ConnectionError);
@@ -136,11 +138,13 @@ describe(JobLifecycle, () => {
     it.effect("should atomically mark one-time job as completed", () =>
       Effect.gen(function* effectWorkflow7() {
         const job = JobFactoryHelpers.processing();
+
         const completedJob = JobFactoryHelpers.completed({
           _id: job._id,
           name: job.name,
           data: job.data,
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(completedJob);
         const result = yield* lifecycle.completeOwned(job);
         expect(result).not.toBeNull();
@@ -168,6 +172,7 @@ describe(JobLifecycle, () => {
     it.effect("should atomically reschedule recurring job with next cron date", () =>
       Effect.gen(function* effectWorkflow8() {
         const job = JobFactoryHelpers.processing({ repeatInterval: "0 * * * *" });
+
         const rescheduledJob = JobFactoryHelpers.pending({
           _id: job._id,
           name: job.name,
@@ -175,6 +180,7 @@ describe(JobLifecycle, () => {
           repeatInterval: "0 * * * *",
           failCount: 0,
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(rescheduledJob);
         const result = yield* lifecycle.completeOwned(job);
         expect(result).not.toBeNull();
@@ -219,9 +225,11 @@ describe(JobLifecycle, () => {
       Effect.gen(function* effectWorkflow10() {
         // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
+
         const nonPersistedJob = fromAny<Parameters<typeof lifecycle.completeOwned>[0], unknown>(
           jobWithoutId,
         );
+
         const result = yield* lifecycle.completeOwned(nonPersistedJob);
         expect({
           result,
@@ -238,6 +246,7 @@ describe(JobLifecycle, () => {
     it.effect("should atomically schedule retry with increased failCount when retries remain", () =>
       Effect.gen(function* effectWorkflow11() {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
+
         const retriedJob = JobFactoryHelpers.pending({
           _id: job._id,
           name: job.name,
@@ -245,6 +254,7 @@ describe(JobLifecycle, () => {
           failCount: 1,
           failReason: "Test failure",
         });
+
         const error = new Error("Test failure");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(retriedJob);
         const result = yield* lifecycle.failOwned(job, error);
@@ -281,6 +291,7 @@ describe(JobLifecycle, () => {
     it.effect("should atomically mark job as failed when max retries exceeded", () =>
       Effect.gen(function* effectWorkflow12() {
         const job = JobFactoryHelpers.processing({ failCount: 2 });
+
         const failedJob = JobFactoryHelpers.failed({
           _id: job._id,
           name: job.name,
@@ -288,6 +299,7 @@ describe(JobLifecycle, () => {
           failCount: 3,
           failReason: "Final failure",
         });
+
         const error = new Error("Final failure");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(failedJob);
         const result = yield* lifecycle.failOwned(job, error);
@@ -348,9 +360,11 @@ describe(JobLifecycle, () => {
       Effect.gen(function* effectWorkflow14() {
         // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
+
         const nonPersistedJob = fromAny<Parameters<typeof lifecycle.failOwned>[0], unknown>(
           jobWithoutId,
         );
+
         const error = new Error("Test error");
         const result = yield* lifecycle.failOwned(nonPersistedJob, error);
         expect({

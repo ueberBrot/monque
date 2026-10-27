@@ -12,12 +12,14 @@ import { JobLifecycle } from "./job-lifecycle.js";
 import type { SchedulerContext } from "./types.js";
 
 const MAX_REPOLL_TARGET_NAMES = 1024;
+
 interface ProcessingState {
   repollRequested: boolean;
   repollTargetNames: Set<string> | undefined;
   totalActiveJobs: number;
   lastServedWorker: string | undefined;
 }
+
 export class JobProcessor {
   private readonly polling = Semaphore.makeUnsafe(1);
   private readonly state: ProcessingState = {
@@ -42,21 +44,27 @@ export class JobProcessor {
       if (!this.ctx.isRunning() || this.ctx.isPaused()) {
         return;
       }
+
       if (!(yield* this.polling.takeIfAvailable(1))) {
         let names = targetNames ? this.state.repollTargetNames : undefined;
+
         if (names && targetNames) {
           for (const name of targetNames) {
             if (names.size === MAX_REPOLL_TARGET_NAMES && !names.has(name)) {
               names = undefined;
               break;
             }
+
             names.add(name);
           }
         }
+
         this.state.repollRequested = true;
         this.state.repollTargetNames = names;
+
         return;
       }
+
       let requestedNames = targetNames;
       yield* Effect.gen({ self: this }, function* runSerializedPoll() {
         do {
@@ -77,20 +85,26 @@ export class JobProcessor {
   ): Effect.fn.Return<void, unknown> {
     const { instanceConcurrency } = this.ctx.options;
     const { state } = this;
+
     if (instanceConcurrency !== undefined && state.totalActiveJobs >= instanceConcurrency) {
       return;
     }
+
     let names = [...this.ctx.workers.keys()];
     let requestedNames = targetNames;
+
     if (instanceConcurrency !== undefined) {
       const next =
         state.lastServedWorker === undefined ? 0 : names.indexOf(state.lastServedWorker) + 1;
+
       names = [...names.slice(next), ...names.slice(0, next)];
       requestedNames = undefined;
     }
+
     const eligibleNames = new Set(
       names.filter((name) => {
         const worker = this.ctx.workers.get(name);
+
         return (
           worker !== undefined &&
           !this.ctx.isPaused(name) &&
@@ -98,28 +112,38 @@ export class JobProcessor {
         );
       }),
     );
+
     if (eligibleNames.size === 0) {
       return;
     }
+
     const dueNames = yield* this.discovery.discoverDue(eligibleNames, requestedNames);
+
     // oxlint-disable-next-line sonarjs/too-many-break-or-continue-in-loop -- Guard clauses skip unavailable workers before claiming their slots.
     for (const name of names) {
       const worker = this.ctx.workers.get(name);
+
       if (!worker || this.ctx.isPaused(name) || !dueNames.has(name)) {
         continue;
       }
+
       const workerAvailableSlots = worker.concurrency - worker.activeJobs.size;
+
       if (workerAvailableSlots <= 0) {
         continue;
       }
+
       const availableSlots =
         instanceConcurrency === undefined
           ? workerAvailableSlots
           : Math.min(workerAvailableSlots, instanceConcurrency - this.state.totalActiveJobs);
+
       if (availableSlots <= 0 || !this.ctx.isRunning()) {
         return;
       }
+
       let remaining = availableSlots;
+
       // oxlint-disable-next-line sonarjs/misplaced-loop-counter -- Batch size doubles independently while successful claims consume remaining slots.
       for (let batchSize = 1; remaining > 0 && this.ctx.isRunning(); batchSize *= 2) {
         const size = Math.min(batchSize, remaining);
@@ -133,8 +157,10 @@ export class JobProcessor {
                 if (!job) {
                   return Effect.void;
                 }
+
                 found += 1;
                 this.state.lastServedWorker = name;
+
                 return this.dispatchClaim(job, worker, name);
               }),
               Effect.catchCause((cause) =>
@@ -147,12 +173,15 @@ export class JobProcessor {
             ),
           { concurrency: "unbounded", discard: true },
         );
+
         if (found < size) {
           if (!acquisitionFailed && this.ctx.isRunning() && !this.ctx.isPaused(name)) {
             yield* this.discovery.notifyNextRun(name);
           }
+
           break;
         }
+
         remaining -= size;
       }
     }
@@ -173,10 +202,13 @@ export class JobProcessor {
           }),
         ),
       );
+
       return;
     }
+
     worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
     this.state.totalActiveJobs += 1;
+
     const fiber = yield* Effect.forkDetach(
       this.processJob(job, worker).pipe(
         Effect.catchCause((cause) =>
@@ -187,30 +219,39 @@ export class JobProcessor {
       ),
       { startImmediately: true, uninterruptible: true },
     );
+
     observeBackgroundFailure(fiber);
   });
   private processJob(job: PersistedJob, worker: WorkerRegistration): Effect.Effect<void, unknown> {
     const claimId = job.claimId ?? job._id.toString();
+
     return Effect.gen({ self: this }, function* executeClaimedJob() {
       const [duration] = yield* Effect.gen({ self: this }, function* measureWorkerExecution() {
         yield* attempt(() => this.ctx.emit("job:start", job));
         let handlerJob = job;
         const { schema } = worker;
+
         if (schema !== undefined) {
           const result = yield* fromPromise(
             async () => await schema["~standard"].validate(job.data),
           );
+
           if (result.issues) {
             return yield* Effect.fail(new PayloadValidationError(job.name, result.issues));
           }
+
           handlerJob = { ...job, data: result.value };
         }
+
         yield* fromPromise(async () => {
           await worker.handler(handlerJob);
         });
+
         return yield* Effect.void;
       }).pipe(Effect.timed);
+
       const updatedJob = yield* this.lifecycle.completeOwned(job);
+
       if (updatedJob) {
         yield* attempt(() =>
           this.ctx.emit("job:complete", { job: updatedJob, duration: Duration.toMillis(duration) }),
@@ -221,6 +262,7 @@ export class JobProcessor {
         Effect.gen({ self: this }, function* handleWorkerFailure() {
           const error = toError(Cause.squash(cause));
           const updatedJob = yield* this.lifecycle.failOwned(job, error, worker.retryOptions);
+
           if (updatedJob) {
             yield* attempt(() =>
               this.ctx.emit("job:fail", {

@@ -23,5 +23,6 @@ export const concurrently = Effect.fnUntraced(function* concurrently<A, E>(
   const fibers = yield* Effect.forEach(operations, (operation) =>
     Effect.forkDetach(operation, { startImmediately: true }),
   );
+
   return yield* Fiber.joinAll(fibers);
 });

@@ -11,8 +11,10 @@ const createApi = () =>
     origin: "https://dashboard.test",
     fetch: createMockManagementFetch(),
   }).client;
+
 const sorts = ["identifier", "createdAt", "updatedAt", "nextRunAt"] as const;
 const directions = ["asc", "desc"] as const;
+
 describe("mock pagination", () => {
   it("returns only the requested Queue View and preserves unfiltered listings", async () => {
     const api = createApi();
@@ -34,9 +36,11 @@ describe("mock pagination", () => {
       const api = createApi();
       const all = await api.jobs({ ...sort, limit: "100" });
       const first = await api.jobs({ ...sort, limit: "3" });
+
       if (first.cursor === undefined || first.cursor === null || first.cursor === "") {
         throw new Error("Expected a second page");
       }
+
       await Promise.all(
         first.jobs.map(
           async (job) => await Promise.resolve(api.deleteJob({ params: { id: job.id } })),
@@ -68,16 +72,20 @@ describe("mock pagination", () => {
             ),
         ),
       );
+
       const query = {
         status: "pending",
         sortBy: "nextRunAt",
         sortDirection,
       } satisfies JobListQueryDto;
+
       const all = await api.jobs({ ...query, limit: "100" });
       const first = await api.jobs({ ...query, limit: "3" });
+
       if (first.cursor === undefined || first.cursor === null || first.cursor === "") {
         throw new Error("Expected a second page");
       }
+
       await Promise.all(
         first.jobs.map(
           async (job) => await Promise.resolve(api.deleteJob({ params: { id: job.id } })),
@@ -106,9 +114,11 @@ describe("mock pagination", () => {
     async (sort) => {
       const api = createApi();
       const first = await api.jobs({ limit: "3" });
+
       if (first.cursor === undefined || first.cursor === null || first.cursor === "") {
         throw new Error("Expected a second page");
       }
+
       await expect(api.jobs({ ...sort, cursor: first.cursor })).rejects.toMatchObject({
         code: "BAD_REQUEST",
         status: 400,
@@ -124,23 +134,28 @@ describe("mock pagination", () => {
       await Promise.all(
         pending.jobs.map(async (job, index) => {
           const nextRunAt = index % 2 ? "2035-01-01T00:00:00.001Z" : "2035-01-01T00:00:00Z";
+
           return mode === "single"
             ? await api.rescheduleJob({ params: { id: job.id }, body: { nextRunAt } })
             : await api.selectedJobActions({ action: "reschedule", ids: [job.id], nextRunAt });
         }),
       );
+
       const page = await api.jobs({
         status: "pending",
         sortBy: "nextRunAt",
         sortDirection: "asc",
         limit: "100",
       });
+
       const expected = [...page.jobs].toSorted(
         (left, right) =>
           Date.parse(left.nextRunAt) - Date.parse(right.nextRunAt) ||
           left.id.localeCompare(right.id),
       );
+
       expect(page.jobs).toStrictEqual(expected);
+
       for (const job of page.jobs) {
         expect(job.nextRunAt).toBe(new Date(job.nextRunAt).toISOString());
       }
@@ -156,6 +171,7 @@ describe("mock pagination", () => {
         sortDirection: "desc",
       }),
     ).toString("base64url");
+
     await expect(createApi().jobs({ cursor })).rejects.toMatchObject({
       code: "BAD_REQUEST",
       status: 400,

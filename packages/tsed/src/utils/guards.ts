@@ -56,6 +56,7 @@ export const isMongooseConnection = function isMongooseConnection(
   if (typeof value !== "object" || value === null || !("db" in value)) {
     return false;
   }
+
   return (
     typeof value.db === "object" &&
     value.db !== null &&

@@ -240,6 +240,7 @@ export class MonqueService {
       if (!ObjectId.isValid(jobId)) {
         throw new MonqueError(`Invalid job ID format: ${jobId}`);
       }
+
       id = ObjectId.createFromHexString(jobId);
     } else {
       id = jobId;

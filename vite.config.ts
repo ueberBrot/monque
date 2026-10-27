@@ -22,6 +22,7 @@ const ignoredFiles = [
 
 const effectTestBlocks = ["it.effect", "it.live", "it.scoped", "it.scopedLive"];
 const sonarJs = selectJsPlugins(["sonarjs"]);
+
 const vitestPreset: OxlintConfig = {
   ...ultraciteVitest,
   overrides: (ultraciteVitest.overrides ?? []).map((override) => ({

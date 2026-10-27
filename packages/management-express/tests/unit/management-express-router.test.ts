@@ -92,13 +92,16 @@ describe("Express Management Adapter", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 3, errors: [] });
+
     const authorize = vi.fn<() => boolean>(() => true);
     const app = express();
     app.use("/monque", (req, res, next) => {
       if (req.get("cookie") !== "session=valid-operator") {
         res.sendStatus(401);
+
         return;
       }
+
       next();
     });
     app.use(
@@ -127,12 +130,14 @@ describe("Express Management Adapter", () => {
       const deleteJobs = vi
         .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
         .mockResolvedValue({ count: 3, errors: [] });
+
       const app = createManagementApp({
         monque: createManagementMonque({ deleteJobs }),
         trustedOrigins: ["https://dashboard.example.com"],
         context: ({ req }) => ({ authenticated: req.get("cookie") === "session=valid-operator" }),
         authorize: ({ context }) => context.authenticated,
       });
+
       const response = await request(app)
         .post("/monque/api/v1/jobs/actions/delete")
         .set("Host", "ops.example.com")
@@ -186,6 +191,7 @@ describe("Express Management Adapter", () => {
       baseRetryInterval: 0,
       maxBackoffDelay: 100,
     };
+
     const app = createManagementApp({
       monque: createManagementMonque({
         getQueueViewSummaries: vi
@@ -201,6 +207,7 @@ describe("Express Management Adapter", () => {
           ]),
       }),
     });
+
     const response = await request(app).get("/monque/api/v1/queue-views").expect(200);
     expect(response.body).toMatchObject({ queueViews: [{ name: "work", worker }] });
   });
@@ -217,15 +224,18 @@ describe("Express Management Adapter", () => {
       createdAt: new Date("2026-01-15T00:00:00Z"),
       updatedAt: new Date("2026-01-15T08:00:00Z"),
     };
+
     const retryJob = vi
       .fn<NonNullable<ManagementMonque["retryJob"]>>()
       .mockResolvedValue({ ...job, status: "pending" as const, failCount: 0 });
+
     const app = createManagementApp({
       monque: createManagementMonque({
         getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
         retryJob,
       }),
     });
+
     const path = `/monque/api/v1/jobs/${job._id.toHexString()}`;
     const failed = await request(app).get(path).expect(200);
     expect(failed.body).toMatchObject({
@@ -251,14 +261,17 @@ describe("Express Management Adapter", () => {
       createdAt: new Date("2026-01-15T00:00:00Z"),
       updatedAt: new Date("2026-01-15T00:00:00Z"),
     };
+
     const app = createManagementApp({
       monque: createManagementMonque({
         getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
       }),
     });
+
     const response = await request(app)
       .get(`/monque/api/v1/jobs/${job._id.toHexString()}`)
       .expect(200);
+
     expect(response.body).toMatchObject({
       timezone: "Europe/Berlin",
       nextRunAt: "2026-01-15T08:00:00.000Z",
@@ -330,6 +343,7 @@ describe("Express Management Adapter", () => {
     const authorize = vi.fn<ManagementAuthorize<{ role: string }>>(
       ({ context }) => context.role === "operator",
     );
+
     const app = createManagementApp<{ role: string }>({
       monque: createManagementMonque(),
       context: ({ req }) => ({ role: req.get("x-role") ?? "viewer" }),
@@ -367,6 +381,7 @@ describe("Express Management Adapter", () => {
 
   it("reports missing context when authorization is configured without a context factory", async () => {
     const authorize = vi.fn<ManagementAuthorize>(({ action }) => action === "read");
+
     const app = createManagementApp({
       monque: createManagementMonque(),
       authorize,
@@ -445,6 +460,7 @@ describe("Express Management Adapter", () => {
         },
       },
     });
+
     mountErrorJson(app);
 
     const httpResponse1 = await request(app).get("/monque/openapi.json");
@@ -476,6 +492,7 @@ describe("Express Management Adapter", () => {
     app.use((req, res, next) => {
       if (req.get("authorization") !== "Bearer secret") {
         res.status(401).json({ error: "Unauthorized" });
+
         return;
       }
 
@@ -572,9 +589,11 @@ describe("Express Management Adapter", () => {
       const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
       const authorize = vi.fn<() => boolean>(() => false);
       const app = express();
+
       if (parsed) {
         app.use(express.json({ limit: "1mb" }));
       }
+
       app.use(
         "/monque",
         createManagementExpressRouter({
@@ -600,6 +619,7 @@ describe("Express Management Adapter", () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()
       .mockResolvedValue({ count: 1, errors: [] });
+
     const app = express();
     app.use(express.json());
     app.use(
@@ -629,19 +649,25 @@ describe("Express Management Adapter", () => {
     const getJob = vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null);
     const cancelJob = vi.fn<NonNullable<ManagementMonque["cancelJob"]>>().mockResolvedValue(null);
     const app = createManagementApp({ monque: createManagementMonque({ getJob, cancelJob }) });
+
     const server = createServer((req, res) => {
       app(req, res);
     });
+
     const listening = once(server, "listening");
     server.listen(0, "127.0.0.1");
     await listening;
     const address = server.address();
+
     const isNetworkListener = (value: ReturnType<typeof server.address>): value is AddressInfo =>
       value !== null && "port" in new Object(value);
+
     if (!isNetworkListener(address)) {
       throw new Error("Expected a local HTTP listener");
     }
+
     let client: ReturnType<typeof httpRequest> | undefined;
+
     try {
       const received: PromiseWithResolvers<IncomingMessage> = Promise.withResolvers();
       client = httpRequest(
@@ -659,9 +685,11 @@ describe("Express Management Adapter", () => {
       const incoming = await received.promise;
       incoming.setEncoding("utf-8");
       const chunks: string[] = [];
+
       for await (const chunk of incoming) {
         chunks.push(String(chunk));
       }
+
       const response = { status: incoming.statusCode, body: chunks.join("") };
 
       expect(response.status).toBe(413);
@@ -682,6 +710,7 @@ describe("Express Management Adapter", () => {
         throw new Error("Management context failed");
       },
     });
+
     mountErrorJson(app);
 
     const httpResponse4 = await request(app).get("/monque/api/v1/health");

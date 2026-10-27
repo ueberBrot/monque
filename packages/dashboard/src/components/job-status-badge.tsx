@@ -11,6 +11,7 @@ const STATUS_ICONS = {
   failed: AlertTriangle,
   cancelled: CircleX,
 };
+
 export const JobStatusBadge = ({
   status,
   withIcon = false,
@@ -20,6 +21,7 @@ export const JobStatusBadge = ({
 }) => {
   const meta = JOB_STATUS_META[status];
   const Icon = STATUS_ICONS[status];
+
   return (
     <Badge variant={meta.badgeVariant} className={withIcon ? "h-7 gap-1.5 px-2.5" : undefined}>
       {withIcon ? <Icon className="size-3.5" /> : null}

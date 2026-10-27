@@ -11,9 +11,11 @@ test("listings omit payloads and queue detail avoids a second statistics request
   const job = await app.seed({ data: { content: "x".repeat(16_384) } });
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
+
   const listing = page.waitForResponse((response) =>
     new URL(response.url()).pathname.endsWith("/api/v1/jobs"),
   );
+
   await page.goto(`${app.base}/dashboard/queue-views/${job.name}`);
   const response = await listing;
   expect(new URL(response.url()).searchParams.get("view")).toBe("summary");
@@ -27,6 +29,7 @@ test("listings omit payloads and queue detail avoids a second statistics request
     16_384,
   );
 });
+
 test("a cold command search receives keyboard focus after its chunk loads", async ({
   page,
   app,

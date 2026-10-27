@@ -23,6 +23,7 @@ const protectActiveLease = (filter: Filter<Document>, enabled: boolean): Filter<
   if (enabled) {
     filter["$expr"] = { $gt: ["$leaseExpiresAt", "$$NOW"] };
   }
+
   return filter;
 };
 
@@ -33,6 +34,7 @@ export const CLAIM_CLEANUP_FIELDS = {
   leaseExpiresAt: "",
   lastHeartbeat: "",
 } as const;
+
 /**
  * Concentrates ownership-sensitive job lifecycle operations.
  *
@@ -57,8 +59,10 @@ export class JobLifecycle {
     if (!(yield* attempt(() => this.ctx.isRunning() && !this.ctx.isPaused(name)))) {
       return null;
     }
+
     const now = yield* DateTime.nowAsDate;
     const { leaseDuration } = this.ctx.options;
+
     const claim = {
       status: JobStatus.PROCESSING,
       claimedBy: this.ctx.instanceId,
@@ -68,6 +72,7 @@ export class JobLifecycle {
       heartbeatInterval: this.ctx.options.heartbeatInterval,
       updatedAt: now,
     };
+
     const result = yield* fromPromise(
       async () =>
         await this.ctx.collection.findOneAndUpdate(
@@ -96,6 +101,7 @@ export class JobLifecycle {
           },
         ),
     );
+
     return result ? yield* attempt(() => this.ctx.documentToPersistedJob(result)) : null;
   });
   /**
@@ -127,8 +133,10 @@ export class JobLifecycle {
     if (!isPersistedJob(job)) {
       return null;
     }
+
     const now = yield* DateTime.nowAsDate;
     const { repeatInterval } = job;
+
     const completion =
       repeatInterval !== undefined && repeatInterval
         ? {
@@ -137,6 +145,7 @@ export class JobLifecycle {
             failCount: 0,
           }
         : { status: JobStatus.COMPLETED };
+
     const result = yield* fromPromise(
       async () =>
         await this.ctx.collection.findOneAndUpdate(
@@ -148,15 +157,19 @@ export class JobLifecycle {
           { returnDocument: "after" },
         ),
     );
+
     if (!result) {
       return null;
     }
+
     const persistedJob = yield* attempt(() => this.ctx.documentToPersistedJob(result));
+
     if (completion.status === JobStatus.PENDING) {
       yield* attempt(() => {
         this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
       });
     }
+
     return persistedJob;
   });
   /**
@@ -171,17 +184,21 @@ export class JobLifecycle {
     if (!isPersistedJob(job)) {
       return null;
     }
+
     const now = yield* DateTime.now;
     const newFailCount = job.failCount + 1;
+
     const terminal =
       error instanceof NonRetryableError ||
       newFailCount >= (options.maxRetries ?? this.ctx.options.maxRetries);
+
     const retry = terminal
       ? { status: JobStatus.FAILED }
       : {
           status: JobStatus.PENDING,
           nextRunAt: yield* this.retryDate(newFailCount, options),
         };
+
     const result = yield* fromPromise(
       async () =>
         await this.ctx.collection.findOneAndUpdate(
@@ -198,15 +215,19 @@ export class JobLifecycle {
           { returnDocument: "after" },
         ),
     );
+
     if (!result) {
       return null;
     }
+
     const persistedJob = yield* attempt(() => this.ctx.documentToPersistedJob(result));
+
     if (!terminal) {
       yield* attempt(() => {
         this.ctx.notifyPendingJob(persistedJob.name, persistedJob.nextRunAt);
       });
     }
+
     return persistedJob;
   });
   private readonly retryDate = Effect.fnUntraced(function* calculateRetryDate(
@@ -216,16 +237,19 @@ export class JobLifecycle {
   ): Effect.fn.Return<Date> {
     const maxDelay =
       options.maxBackoffDelay ?? this.ctx.options.maxBackoffDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
+
     const baseDelay = calculateBackoffDelay(
       failCount,
       options.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
       maxDelay,
       0,
     );
+
     const spread = baseDelay * DEFAULT_JITTER_FACTOR;
     const jitter = baseDelay <= 0 ? 0 : ((yield* Random.next) * 2 - 1) * spread;
     const delay = Math.min(Math.max(0, Math.round(baseDelay + jitter)), maxDelay);
     const now = yield* DateTime.now;
+
     return DateTime.toDateUtc(DateTime.mapEpochMillis(now, (millis) => millis + delay));
   });
   /**
@@ -235,6 +259,7 @@ export class JobLifecycle {
     this: JobLifecycle,
   ): Effect.fn.Return<void, unknown> {
     const claimIds: string[] = [];
+
     for (const worker of this.ctx.workers.values()) {
       for (const job of worker.activeJobs.values()) {
         if (hasClaimIdentifier(job.claimId)) {
@@ -242,9 +267,11 @@ export class JobLifecycle {
         }
       }
     }
+
     if (claimIds.length === 0) {
       return;
     }
+
     const now = yield* DateTime.nowAsDate;
     const { leaseDuration } = this.ctx.options;
     yield* fromPromise(
@@ -284,9 +311,11 @@ export class JobLifecycle {
     this: JobLifecycle,
   ): Effect.fn.Return<void, unknown> {
     const now = yield* DateTime.now;
+
     const staleThreshold = DateTime.toDateUtc(
       DateTime.subtractDuration(now, this.ctx.options.lockTimeout),
     );
+
     const result = yield* fromPromise(
       async () =>
         await this.ctx.collection.updateMany(
@@ -306,6 +335,7 @@ export class JobLifecycle {
           },
         ),
     );
+
     if (result.modifiedCount > 0) {
       const nextRunAt = yield* DateTime.nowAsDate;
       yield* attempt(() => {
@@ -321,9 +351,11 @@ export class JobLifecycle {
     this: JobLifecycle,
   ): Effect.fn.Return<void, unknown> {
     const now = yield* DateTime.now;
+
     const aliveThreshold = DateTime.toDateUtc(
       DateTime.subtractDuration(now, this.ctx.options.heartbeatInterval * 2),
     );
+
     const activeJob = yield* fromPromise(
       async () =>
         await this.ctx.collection.findOne({
@@ -332,6 +364,7 @@ export class JobLifecycle {
           lastHeartbeat: { $gte: aliveThreshold },
         }),
     );
+
     if (activeJob) {
       return yield* Effect.fail(
         new ConnectionError(
@@ -341,6 +374,7 @@ export class JobLifecycle {
         ),
       );
     }
+
     return yield* Effect.void;
   });
   /**

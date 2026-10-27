@@ -53,10 +53,12 @@ describe("Management APIs: Single Job", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobDoc = JobFactoryHelpers.processing({
         name: queueName,
         data: {},
       });
+
       const { insertedId } = await db.collection<Job>(collectionName).insertOne(jobDoc);
       const jobId = insertedId.toString();
       await expect(monque.cancelJob(jobId)).rejects.toThrow(JobStateError);
@@ -94,12 +96,14 @@ describe("Management APIs: Single Job", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobDoc = JobFactoryHelpers.failed({
         name: queueName,
         data: {},
         failCount: 5,
         failReason: "Something went wrong",
       });
+
       const { insertedId } = await db.collection<Job>(collectionName).insertOne(jobDoc);
       const jobId = insertedId.toString();
       const result = await monque.retryJob(jobId);
@@ -142,10 +146,12 @@ describe("Management APIs: Single Job", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobDoc = JobFactoryHelpers.processing({
         name: queueName,
         data: {},
       });
+
       const { insertedId } = await db.collection<Job>(collectionName).insertOne(jobDoc);
       await expect(monque.retryJob(insertedId.toString())).rejects.toThrow(JobStateError);
     });
@@ -169,10 +175,12 @@ describe("Management APIs: Single Job", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobDoc = JobFactoryHelpers.processing({
         name: queueName,
         data: {},
       });
+
       const { insertedId } = await db.collection<Job>(collectionName).insertOne(jobDoc);
       await expect(monque.rescheduleJob(insertedId.toString(), new Date())).rejects.toThrow(
         JobStateError,
@@ -207,10 +215,12 @@ describe("Management APIs: Single Job", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobDoc = JobFactoryHelpers.failed({
         name: queueName,
         data: {},
       });
+
       const { insertedId } = await db.collection<Job>(collectionName).insertOne(jobDoc);
       const result = await monque.deleteJob(insertedId.toString());
       expect(result).toBe(true);

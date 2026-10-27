@@ -5,6 +5,7 @@ import type { TestProject } from "vite-plus/test/node";
 export const setup = async function setup(project: TestProject): Promise<() => Promise<void>> {
   const container = await new MongoDBContainer("mongo:8").start();
   project.provide("tsedMongoUri", container.getConnectionString());
+
   return async () => {
     await container.stop();
   };

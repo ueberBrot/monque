@@ -135,14 +135,18 @@ describe("Dashboard Express Adapter", () => {
     async (apiBaseUrl) => {
       const app = await createDashboardApp({ apiBaseUrl });
       const response = await request(app).get("/dashboard/jobs").expect(200);
+
       const script =
         /<script id="monque-dashboard-runtime-config">(?<script>[\s\S]*?)<\/script>/u.exec(
           response.text,
         )?.[1];
+
       expect(script).toBeDefined();
+
       const config = script?.match(
         /window\.__MONQUE_DASHBOARD_CONFIG__ = (?<config>[\s\S]*);/u,
       )?.[1];
+
       expect(JSON.parse(config ?? "")).toStrictEqual({ basePath: "/dashboard", apiBaseUrl });
     },
   );

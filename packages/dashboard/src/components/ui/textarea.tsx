@@ -11,4 +11,5 @@ const Textarea = ({ className, ...props }: ComponentProps<"textarea">) => (
     {...props}
   />
 );
+
 export { Textarea };

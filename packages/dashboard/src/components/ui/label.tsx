@@ -1,4 +1,5 @@
 "use client";
+
 import { cn } from "cn";
 import type { ComponentProps } from "react";
 
@@ -13,4 +14,5 @@ const Label = ({ className, htmlFor, ...props }: ComponentProps<"label">) => (
     {...props}
   />
 );
+
 export { Label };

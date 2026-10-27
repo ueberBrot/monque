@@ -14,6 +14,7 @@ describe(documentToPersistedJob, () => {
     Object.setPrototypeOf(doc, {
       get lockedAt() {
         reads += 1;
+
         return null;
       },
     });
@@ -32,6 +33,7 @@ describe(documentToPersistedJob, () => {
       claimedBy: null,
       lastHeartbeat: null,
     });
+
     const doc = fromAny<WithId<Document>, unknown>(original);
     expect(documentToPersistedJob(doc)).toStrictEqual(original);
   });
@@ -42,8 +44,10 @@ describe(documentToPersistedJob, () => {
       items: string[];
       total: number;
     }
+
     const data: OrderData = { orderId: "order-123", items: ["item-a", "item-b"], total: 99.99 };
     const now = new Date();
+
     const doc: WithId<Document> = {
       _id: new ObjectId(),
       name: "test-job",
@@ -65,6 +69,7 @@ describe(documentToPersistedJob, () => {
       timezone: "Europe/Berlin",
       uniqueKey: "dedup-key",
     };
+
     const result = documentToPersistedJob<OrderData>(doc);
     expect({
       result,

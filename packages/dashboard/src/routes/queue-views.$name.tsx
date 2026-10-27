@@ -16,21 +16,26 @@ import {
 } from "./-queue-views.shared.js";
 
 const DEFAULT_QUEUE_VIEW_JOBS_LIMIT = 50;
+
 const QueueViewDetailSearchSchema = z.strictObject({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
 const routeApi = getRouteApi("/queue-views/$name");
+
 const QueueViewDetailRoute = () => {
   const { managementApi, runtimeConfig } = routeApi.useRouteContext();
   const { name } = routeApi.useParams();
   const search = routeApi.useSearch();
   const refetchInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs);
   const statsInterval = useDocumentVisiblePollingInterval(runtimeConfig.pollingIntervalMs, 3);
+
   const queueViewsQuery = useQuery({
     ...managementApi.orpc.queueViews.queryOptions({ input: { name } }),
     refetchInterval: statsInterval,
   });
+
   const jobsQuery = useQuery({
     ...managementApi.orpc.jobs.queryOptions({
       input: {
@@ -42,15 +47,20 @@ const QueueViewDetailRoute = () => {
     }),
     refetchInterval,
   });
+
   const { refetch: jobsQueryRefetch } = jobsQuery;
   const { refetch: queueViewsQueryRefetch } = queueViewsQuery;
+
   const refetchQueueViewDetail = useCallback((): void => {
     void Promise.all([queueViewsQueryRefetch(), jobsQueryRefetch()]);
   }, [jobsQueryRefetch, queueViewsQueryRefetch]);
+
   if (queueViewsQuery.isPending || jobsQuery.isPending) {
     return <QueueViewDetailLoadingState />;
   }
+
   const firstError = queueViewsQuery.error ?? jobsQuery.error;
+
   if (firstError) {
     return (
       <QueueViewsErrorState
@@ -61,12 +71,16 @@ const QueueViewDetailRoute = () => {
       />
     );
   }
+
   const queueViews = queueViewsQuery.data?.queueViews;
   const jobsPage = jobsQuery.data;
+
   if (!queueViews || !jobsPage) {
     return <QueueViewDetailLoadingState />;
   }
+
   const queueView = queueViews.find((candidate) => candidate.name === name);
+
   const stats = queueView?.stats ?? {
     pending: 0,
     processing: 0,
@@ -75,6 +89,7 @@ const QueueViewDetailRoute = () => {
     cancelled: 0,
     total: 0,
   };
+
   return (
     <div className="grid gap-4">
       <QueueViewDetailHeader name={name} queueView={queueView} stats={stats} />
@@ -109,6 +124,7 @@ const QueueViewDetailRoute = () => {
     </div>
   );
 };
+
 export const Route = createFileRoute("/queue-views/$name")({
   validateSearch: (search) => QueueViewDetailSearchSchema.parse(search),
   component: QueueViewDetailRoute,

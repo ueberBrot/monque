@@ -11,12 +11,15 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { getOperatorTimeZoneLabel, parseDateTime } from "@/lib/dates";
+
 // The draft editor is loaded only when opened; this also keeps the shared form hook
 // independent of the picker trigger and its registered field component.
 const DateTimeEditor = lazy(async () => {
   const module = await import("@/forms/date-time-editor");
+
   return { default: module.DateTimeEditor };
 });
+
 /** Local calendar/time editor composed from the generated shadcn components. */
 const DateTimePicker = ({
   id,
@@ -33,6 +36,7 @@ const DateTimePicker = ({
 }) => {
   const [open, setOpen] = useState(false);
   const current = parseDateTime(value.slice(0, 10), value.slice(11, 16));
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -74,4 +78,5 @@ const DateTimePicker = ({
     </Popover>
   );
 };
+
 export { DateTimePicker };

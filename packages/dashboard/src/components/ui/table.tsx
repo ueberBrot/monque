@@ -10,9 +10,11 @@ const Table = ({ className, ...props }: ComponentProps<"table">) => (
     />
   </div>
 );
+
 const TableHeader = ({ className, ...props }: ComponentProps<"thead">) => (
   <thead data-slot="table-header" className={cn("[&_tr]:border-b", className)} {...props} />
 );
+
 const TableBody = ({ className, ...props }: ComponentProps<"tbody">) => (
   <tbody
     data-slot="table-body"
@@ -20,6 +22,7 @@ const TableBody = ({ className, ...props }: ComponentProps<"tbody">) => (
     {...props}
   />
 );
+
 const TableFooter = ({ className, ...props }: ComponentProps<"tfoot">) => (
   <tfoot
     data-slot="table-footer"
@@ -27,6 +30,7 @@ const TableFooter = ({ className, ...props }: ComponentProps<"tfoot">) => (
     {...props}
   />
 );
+
 const TableRow = ({ className, ...props }: ComponentProps<"tr">) => (
   <tr
     data-slot="table-row"
@@ -37,6 +41,7 @@ const TableRow = ({ className, ...props }: ComponentProps<"tr">) => (
     {...props}
   />
 );
+
 const TableHead = ({ className, ...props }: ComponentProps<"th">) => (
   <th
     data-slot="table-head"
@@ -47,6 +52,7 @@ const TableHead = ({ className, ...props }: ComponentProps<"th">) => (
     {...props}
   />
 );
+
 const TableCell = ({ className, ...props }: ComponentProps<"td">) => (
   <td
     data-slot="table-cell"
@@ -54,6 +60,7 @@ const TableCell = ({ className, ...props }: ComponentProps<"td">) => (
     {...props}
   />
 );
+
 const TableCaption = ({ className, ...props }: ComponentProps<"caption">) => (
   <caption
     data-slot="table-caption"
@@ -61,4 +68,5 @@ const TableCaption = ({ className, ...props }: ComponentProps<"caption">) => (
     {...props}
   />
 );
+
 export { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow };

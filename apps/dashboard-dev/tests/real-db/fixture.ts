@@ -25,15 +25,18 @@ const sessionToken = (req: Request) =>
     .map((part) => part.trim())
     .find((part) => part.startsWith("session="))
     ?.slice(8);
+
 const createApp = async () => {
   const client = new MongoClient(
     process.env["MONQUE_DASHBOARD_TEST_MONGO_URI"] ??
       "mongodb://127.0.0.1:27018/?directConnection=true",
     { serverSelectionTimeoutMS: 3000 },
   );
+
   await client.connect();
   const db = client.db(`monque_dashboard_e2e_${randomUUID().replaceAll("-", "")}`);
   const jobs = db.collection<Job>("jobs");
+
   const monque = new Monque(db, {
     collectionName: "jobs",
     statsCacheTtlMs: 0,
@@ -41,13 +44,17 @@ const createApp = async () => {
     maxRetries: 2,
     baseRetryInterval: 500,
   });
+
   await monque.initialize();
   registerScenarioWorkers(monque, db);
+
   type Role = "operator" | "viewer" | "blocked";
+
   interface Session {
     role: Role;
     expiresAt: number;
   }
+
   const sessions = new Map<string, Session>();
   const deniedPriorityJobIds = new Set<string>();
   const operator = randomUUID();
@@ -57,16 +64,20 @@ const createApp = async () => {
 
   const sessionFor = (req: Request) => {
     const session = sessions.get(sessionToken(req) ?? "");
+
     return session && session.expiresAt > Date.now() ? session : undefined;
   };
+
   const app = express();
   app.disable("x-powered-by");
+
   const development = createLocalDbManagementServer({
     mongoUri:
       process.env["MONQUE_DASHBOARD_TEST_MONGO_URI"] ??
       "mongodb://127.0.0.1:27018/?directConnection=true",
     databaseName: db.databaseName,
   });
+
   app.use("/development/api", development.middleware);
   app.use(
     "/development/dashboard",
@@ -75,17 +86,22 @@ const createApp = async () => {
       pollingIntervalMs: 1000,
     }),
   );
+
   // Test-only host login: the dashboard delegates authentication to its host.
   const CredentialsSchema = z.strictObject({
     username: z.enum(["operator", "viewer", "blocked"]),
     password: z.string(),
   });
+
   app.post("/auth/login", express.json(), (req, res) => {
     const result = CredentialsSchema.safeParse(req.body);
+
     if (!result.success || result.data.password !== "fixture-password") {
       res.status(401).json({ error: "Invalid credentials" });
+
       return;
     }
+
     const token = randomUUID();
     sessions.set(token, { role: result.data.username, expiresAt: Date.now() + 60_000 });
     res
@@ -96,6 +112,7 @@ const createApp = async () => {
     sessions.delete(sessionToken(req) ?? "");
     res.clearCookie("session", { path: "/" }).sendStatus(204);
   });
+
   for (const mount of ["/open", "/readonly"]) {
     app.use(mount, createManagementExpressRouter({ monque, readOnly: mount === "/readonly" }));
     app.use(
@@ -103,11 +120,14 @@ const createApp = async () => {
       createDashboardExpressRouter({ apiBaseUrl: mount, pollingIntervalMs: 500 }),
     );
   }
+
   app.use("/private", (req, res, next) => {
     if (!sessionFor(req)) {
       res.status(401).json({ error: "Sign in required" });
+
       return;
     }
+
     next();
   });
   app.use(
@@ -119,6 +139,7 @@ const createApp = async () => {
         if (context !== "operator" && !(context === "viewer" && action === "read")) {
           return false;
         }
+
         return !(
           action === "setJobPriority" &&
           job &&
@@ -134,10 +155,13 @@ const createApp = async () => {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address();
+
   if (address === null || isString(address)) {
     throw new Error("Missing test server address");
   }
+
   const origin = `http://127.0.0.1:${address.port}`;
+
   return {
     origin,
     client,
@@ -165,11 +189,13 @@ const createApp = async () => {
     async seed(overrides: Partial<Job> = {}) {
       const job = createJob(overrides);
       await jobs.insertOne(job);
+
       return job;
     },
     async seedScenario(name: ScenarioName) {
       const records = createScenario(name);
       await jobs.insertMany(records);
+
       return records;
     },
     async close() {
@@ -192,7 +218,9 @@ const createApp = async () => {
     },
   };
 };
+
 type RealApp = Awaited<ReturnType<typeof createApp>>;
+
 const test = base.extend<
   {
     app: RealApp & {
@@ -210,6 +238,7 @@ const test = base.extend<
     // oxlint-disable-next-line no-empty-pattern -- Playwright requires destructuring fixture dependencies.
     async ({}, provide) => {
       const server = await createApp();
+
       try {
         await provide(server);
       } finally {
@@ -220,12 +249,15 @@ const test = base.extend<
   ],
   app: async ({ server, context, authenticated }, provide) => {
     await server.reset();
+
     if (authenticated) {
       const response = await context.request.post(`${server.origin}/auth/login`, {
         data: { username: "operator", password: "fixture-password" },
       });
+
       expect(response.status()).toBe(204);
     }
+
     await provide({ ...server, base: `${server.origin}/${authenticated ? "private" : "open"}` });
   },
   pageErrors: [
@@ -238,5 +270,7 @@ const test = base.extend<
     { auto: true },
   ],
 });
+
 export { test };
+
 export { expect } from "@playwright/test";

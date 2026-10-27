@@ -24,7 +24,9 @@ const dashboardDevScenarioIds = [
   "api-error",
   "mutation-conflict",
 ] as const;
+
 type DashboardDevScenarioId = (typeof dashboardDevScenarioIds)[number];
+
 interface DashboardDevScenario {
   readonly id: DashboardDevScenarioId;
   readonly label: string;
@@ -38,10 +40,12 @@ interface DashboardDevScenario {
   readonly apiError?: string;
   readonly mutationConflict?: boolean;
 }
+
 const isDashboardDevScenarioId = (
   value: string | null | undefined,
 ): value is DashboardDevScenarioId =>
   isString(value) && dashboardDevScenarioIds.some((scenarioId) => scenarioId === value);
+
 const createScenarioCapabilities = ({
   readOnly,
 }: {
@@ -62,6 +66,7 @@ const createScenarioCapabilities = ({
     resume: !readOnly,
   },
 });
+
 const createQueueStats = (jobs: readonly JobDto[]): QueueStatsDto => {
   const counts: Pick<QueueStatsDto, JobDto["status"]> = {
     pending: 0,
@@ -70,32 +75,38 @@ const createQueueStats = (jobs: readonly JobDto[]): QueueStatsDto => {
     failed: 0,
     cancelled: 0,
   };
+
   for (const { status } of jobs) {
     if (Object.hasOwn(counts, status)) {
       counts[status] += 1;
     }
   }
+
   return {
     ...counts,
     total: jobs.length,
     avgProcessingDurationMs: counts.processing > 0 ? 42_000 : undefined,
   };
 };
+
 const buildQueueViews = (
   jobs: readonly JobDto[],
   workerNames: readonly string[],
 ): readonly QueueViewSummaryDto[] => {
   const registeredWorkers = new Set(workerNames);
   const queueNames = new Set(registeredWorkers);
+
   for (const job of jobs) {
     queueNames.add(job.name);
   }
+
   return [...queueNames]
     .toSorted((left, right) => left.localeCompare(right))
     .map((name, index) => {
       const queueJobs = jobs.filter((job) => job.name === name);
       const stats = createQueueStats(queueJobs);
       const hasRegisteredWorker = registeredWorkers.has(name);
+
       return {
         name,
         hasPersistedJobs: queueJobs.length > 0,
@@ -115,6 +126,7 @@ const buildQueueViews = (
       };
     });
 };
+
 const createScenario = (options: {
   readonly id: DashboardDevScenarioId;
   readonly label: string;
@@ -136,18 +148,22 @@ const createScenario = (options: {
   jobs: options.jobs,
   queueViews: buildQueueViews(options.jobs, options.workerNames ?? []),
 });
+
 const createMulberry32 = (seed: number): (() => number) => {
   let current = seed;
+
   return () => {
     /* oxlint-disable eslint/no-bitwise, unicorn/prefer-math-trunc -- Mulberry32 uses exact signed 32-bit wrapping, XOR, and unsigned shifts. */
     current |= 0;
     current = (current + 1_831_565_813) | 0;
     let mixed = Math.imul(current ^ (current >>> 15), current | 1);
     mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
     /* oxlint-enable eslint/no-bitwise, unicorn/prefer-math-trunc */
   };
 };
+
 const createGeneratedJobs = (options: {
   readonly seed: number;
   readonly count: number;
@@ -157,6 +173,7 @@ const createGeneratedJobs = (options: {
   const random = createMulberry32(options.seed);
   const baseTime = Date.parse("2026-06-01T08:00:00.000Z");
   const jobs: JobDto[] = [];
+
   for (let index = 0; index < options.count; index += 1) {
     const status = options.statuses[index % options.statuses.length] ?? "pending";
     const name = options.queueNames[index % options.queueNames.length] ?? emailJobName;
@@ -190,8 +207,10 @@ const createGeneratedJobs = (options: {
       updatedAt: updatedAt.toISOString(),
     });
   }
+
   return jobs;
 };
+
 const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
   createScenario({
     id: "empty-state",
@@ -318,10 +337,12 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
     mutationConflict: true,
   },
 ];
+
 const getDashboardDevScenario = (
   scenarioId: DashboardDevScenarioId,
 ): DashboardDevScenario | undefined =>
   getDashboardDevScenarioCatalog().find((scenario) => scenario.id === scenarioId);
+
 export {
   createQueueStats,
   type DashboardDevScenario,

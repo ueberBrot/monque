@@ -12,6 +12,7 @@ import {
 } from "@test-utils/test-utils";
 
 type QueueStatsCounts = Omit<QueueStats, "avgProcessingDurationMs">;
+
 const zeroQueueStats: QueueStatsCounts = {
   pending: 0,
   processing: 0,
@@ -20,20 +21,25 @@ const zeroQueueStats: QueueStatsCounts = {
   cancelled: 0,
   total: 0,
 };
+
 const queueStats = (overrides: Partial<QueueStatsCounts> = {}): QueueStats => ({
   ...zeroQueueStats,
   ...overrides,
 });
+
 describe("Management APIs: Queue View Summaries", () => {
   let db: Db;
   const monqueInstances: Monque[] = [];
+
   const createInitializedMonque = async (collectionNamePrefix: string): Promise<Monque> => {
     const collectionName = uniqueCollectionName(collectionNamePrefix);
     const monque = new Monque(db, { collectionName, statsCacheTtlMs: 0 });
     monqueInstances.push(monque);
     await monque.initialize();
+
     return monque;
   };
+
   beforeAll(async () => {
     db = await getTestDb("queue-view-api");
   });
@@ -54,6 +60,7 @@ describe("Management APIs: Queue View Summaries", () => {
         maxRetries: 2,
         baseRetryInterval: 25,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       monque.register("default", () => {});
@@ -107,6 +114,7 @@ describe("Management APIs: Queue View Summaries", () => {
         collectionName: uniqueCollectionName("filtered_views"),
         statsCacheTtlMs: 60_000,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       const job = await monque.enqueue("alpha", {});
@@ -149,14 +157,17 @@ describe("Management APIs: Queue View Summaries", () => {
         collectionName: uniqueCollectionName("cached_views"),
         statsCacheTtlMs: 60_000,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       const job = await monque.enqueue("email", {});
       const views = await monque.getQueueViewSummaries();
       const [first] = views;
+
       if (!first) {
         throw new Error("Expected queue");
       }
+
       expect(Object.isFrozen(first.stats)).toBe(true);
       monque.register("new-worker", () => {});
       await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([

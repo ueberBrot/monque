@@ -112,9 +112,11 @@ export class MonqueModule implements OnInit, OnDestroy {
     }
 
     const { monque } = this;
+
     const jobControllers: Provider<unknown>[] = this.injector.providers.getMany(
       ProviderTypes.JOB_CONTROLLER,
     );
+
     const registeredJobs = new Set<string>();
 
     this.logger.info(`Monque: Found ${jobControllers.length} job controllers`);
@@ -154,12 +156,14 @@ export class MonqueModule implements OnInit, OnDestroy {
             injector: this.injector,
             id: job._id?.toString() ?? "unknown",
           });
+
           $ctx.set("MONQUE_JOB", job);
           $ctx.container.set(DIContext, $ctx);
 
           await runInContext($ctx, async () => {
             try {
               let targetInstance: unknown = instance;
+
               if (
                 provider.scope === ProviderScope.REQUEST ||
                 targetInstance === null ||
@@ -177,6 +181,7 @@ export class MonqueModule implements OnInit, OnDestroy {
                 (typeof targetInstance === "object" || typeof targetInstance === "function")
               ) {
                 const jobMethod: unknown = Reflect.get(targetInstance, method);
+
                 if (typeof jobMethod === "function") {
                   await jobMethod.call(targetInstance, job);
                 }

@@ -33,6 +33,7 @@ describe("Instance Collision Detection", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -44,9 +45,11 @@ describe("Instance Collision Detection", () => {
 
   it("throws when second instance initializes with same schedulerInstanceId while first is active", async () => {
     const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
     try {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const sharedId = "shared-collision-id";
+
       const monque1 = new Monque(db, {
         collectionName,
         schedulerInstanceId: sharedId,
@@ -54,6 +57,7 @@ describe("Instance Collision Detection", () => {
         heartbeatInterval: 200,
         lockTimeout: 60_000,
       });
+
       monqueInstances.push(monque1);
       await monque1.initialize();
       // Register a long-running worker and start processing
@@ -67,6 +71,7 @@ describe("Instance Collision Detection", () => {
       monque1.start();
       // Wait for the job to start processing and heartbeat to be written
       await waitFor(() => jobStarted, { timeout: 5000 });
+
       // Create second instance with same ID — should fail
       const monque2 = new Monque(db, {
         collectionName,
@@ -75,6 +80,7 @@ describe("Instance Collision Detection", () => {
         heartbeatInterval: 200,
         lockTimeout: 60_000,
       });
+
       monqueInstances.push(monque2);
       await expect(monque2.initialize()).rejects.toThrow(ConnectionError);
       await expect(
@@ -95,6 +101,7 @@ describe("Instance Collision Detection", () => {
   it("allows second instance after first stops (no false positive)", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
     const sharedId = "stop-then-start-id";
+
     const monque1 = new Monque(db, {
       collectionName,
       schedulerInstanceId: sharedId,
@@ -102,6 +109,7 @@ describe("Instance Collision Detection", () => {
       heartbeatInterval: 200,
       lockTimeout: 60_000,
     });
+
     monqueInstances.push(monque1);
     await monque1.initialize();
     // Register worker, process a job, then stop
@@ -114,6 +122,7 @@ describe("Instance Collision Detection", () => {
     monque1.start();
     await waitFor(() => completed, { timeout: 5000 });
     await monque1.stop();
+
     // Second instance with same ID should succeed (job is completed, not processing)
     const monque2 = new Monque(db, {
       collectionName,
@@ -122,6 +131,7 @@ describe("Instance Collision Detection", () => {
       heartbeatInterval: 200,
       lockTimeout: 60_000,
     });
+
     monqueInstances.push(monque2);
     await expect(monque2.initialize()).resolves.toBeUndefined();
   });
@@ -135,6 +145,7 @@ describe("Instance Collision Detection", () => {
     const collection = db.collection<Job>(collectionName);
     // 60 seconds ago
     const staleTime = new Date(Date.now() - 60_000);
+
     const staleJob = JobFactoryHelpers.processing({
       name: "stale-crash-job",
       data: { value: "from-crashed-instance" },
@@ -146,7 +157,9 @@ describe("Instance Collision Detection", () => {
       createdAt: staleTime,
       updatedAt: staleTime,
     });
+
     await collection.insertOne(staleJob);
+
     // Create monque2 with stale recovery enabled (default)
     // Stale recovery runs first (resets the old doc to pending),
     // then collision check finds no active processing jobs → success
@@ -158,6 +171,7 @@ describe("Instance Collision Detection", () => {
       lockTimeout,
       recoverStaleJobs: true,
     });
+
     monqueInstances.push(monque2);
     await expect(monque2.initialize()).resolves.toBeUndefined();
     // Verify the stale job was recovered to pending

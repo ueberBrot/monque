@@ -35,6 +35,7 @@ export const createManagementRouter = function createManagementRouter<TContext =
 ): ManagementRouter<TContext> {
   const managementImplementer =
     implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
+
   const operations = createManagementOperations(options);
   const requireContext = requiresOpenApiManagementContext(options);
 

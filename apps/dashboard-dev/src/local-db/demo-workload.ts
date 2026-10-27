@@ -13,6 +13,7 @@ const startDemoWorkload = async (monque: Monque): Promise<void> => {
   });
   monque.register("demo-webhook", async (job) => {
     await setTimeout(3000);
+
     if (job.failCount === 0) {
       throw new Error("Demo webhook timed out; the next attempt succeeds.");
     }
@@ -49,4 +50,5 @@ const startDemoWorkload = async (monque: Monque): Promise<void> => {
   );
   monque.start();
 };
+
 export { startDemoWorkload };

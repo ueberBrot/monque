@@ -61,6 +61,7 @@ const findFiles = (dir: string, extensions: string[], ignore: string[] = []): st
       results.push(...findFiles(fullPath, extensions, ignore));
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
+
       if (extensions.includes(ext)) {
         results.push(fullPath);
       }
@@ -115,12 +116,15 @@ const extractApiLinks = (content: string, filePath: string): ApiLink[] => {
     while (position < line.length) {
       const labelStart = line.indexOf("[", position);
       const labelEnd = labelStart === -1 ? -1 : line.indexOf("]", labelStart + 1);
+
       if (labelEnd === -1) {
         break;
       }
+
       const match = targetPattern.exec(line.slice(labelEnd));
       position = labelEnd + (match?.[0].length ?? 1);
       const { path: fullPath, anchor = "" } = match?.groups ?? {};
+
       if (fullPath !== undefined) {
         links.push({
           fullLink: line.slice(labelStart, position),
@@ -177,6 +181,7 @@ const validateAnchor = (apiPath: string, anchor: string): boolean => {
 
   for (const match of matches) {
     const [, headingText] = match;
+
     // Generate anchor from heading (simplified - matches common patterns)
     const generatedAnchor = headingText
       .toLowerCase()
@@ -219,6 +224,7 @@ const main = (): void => {
 
       // Normalize path (ensure trailing slash for comparison)
       let normalizedPath = link.path.toLowerCase();
+
       if (!normalizedPath.endsWith("/")) {
         normalizedPath += "/";
       }
@@ -258,6 +264,7 @@ const main = (): void => {
 
   // Group by file for cleaner output
   const byFile: Record<string, InvalidLink[]> = {};
+
   for (const link of invalidLinks) {
     byFile[link.file] ??= [];
     byFile[link.file].push(link);
@@ -265,10 +272,12 @@ const main = (): void => {
 
   for (const [file, links] of Object.entries(byFile)) {
     console.log(`  📄 ${file}`);
+
     for (const link of links) {
       console.log(`     Line ${link.line}: ${link.reason}`);
       console.log(`       ${link.fullLink}`);
     }
+
     console.log();
   }
 

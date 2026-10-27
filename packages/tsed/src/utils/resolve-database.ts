@@ -94,6 +94,7 @@ export const resolveDatabase = async function resolveDatabase(
       config.mongooseConnectionId === undefined || config.mongooseConnectionId === ""
         ? "default"
         : config.mongooseConnectionId;
+
     const connection = resolved.get(connectionId);
 
     if (!connection) {

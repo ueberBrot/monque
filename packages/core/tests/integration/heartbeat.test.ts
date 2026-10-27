@@ -37,6 +37,7 @@ describe("heartbeat mechanism", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -48,13 +49,16 @@ describe("heartbeat mechanism", () => {
   describe("heartbeat updates during processing", () => {
     it("should set lastHeartbeat when claiming a job", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
         const monque = new Monque(db, {
           collectionName,
           pollInterval: 100,
           heartbeatInterval: 100,
         });
+
         monqueInstances.push(monque);
         await monque.initialize();
         let jobStarted = false;
@@ -78,11 +82,13 @@ describe("heartbeat mechanism", () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       // 100ms for faster test
       const heartbeatInterval = 100;
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 50,
         heartbeatInterval,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -91,6 +97,7 @@ describe("heartbeat mechanism", () => {
         started.resolve();
         await release.promise;
       });
+
       try {
         const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { value: 1 });
         monque.start();
@@ -99,19 +106,26 @@ describe("heartbeat mechanism", () => {
         const initial = await collection.findOne({ _id: job._id });
         const heartbeat = initial?.lastHeartbeat;
         expect(heartbeat).toBeInstanceOf(Date);
+
         if (!(heartbeat instanceof Date)) {
           throw new TypeError("Missing initial heartbeat");
         }
+
         let previous = heartbeat.getTime();
+
         const heartbeatAdvanced = async () => {
           const doc = await collection.findOne({ _id: job._id });
           const current = doc?.lastHeartbeat;
+
           if (!(current instanceof Date) || current.getTime() <= previous) {
             return false;
           }
+
           previous = current.getTime();
+
           return true;
         };
+
         await forEachSequential(
           Array.from({ length: Math.ceil(2 / 1) }, (_, index) => index * 1),
           async (_update) => {
@@ -125,11 +139,13 @@ describe("heartbeat mechanism", () => {
 
     it("should clear lastHeartbeat when job completes", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         heartbeatInterval: 50,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let completed = false;
@@ -156,14 +172,17 @@ describe("heartbeat mechanism", () => {
   describe("heartbeat interval configuration", () => {
     it("should use custom heartbeat interval", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
         const customInterval = 200;
+
         const monque = new Monque(db, {
           collectionName,
           pollInterval: 50,
           heartbeatInterval: customInterval,
         });
+
         monqueInstances.push(monque);
         await monque.initialize();
         let jobStarted = false;
@@ -184,13 +203,16 @@ describe("heartbeat mechanism", () => {
 
     it("should use default heartbeat interval of 30000ms", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
         const monque = new Monque(db, {
           collectionName,
           pollInterval: 50,
           // No heartbeatInterval specified
         });
+
         monqueInstances.push(monque);
         await monque.initialize();
         let jobStarted = false;
@@ -217,6 +239,7 @@ describe("heartbeat mechanism", () => {
       // Create a stale job (lastHeartbeat older than lockTimeout)
       const collection = db.collection<Job>(collectionName);
       const staleTime = new Date(Date.now() - lockTimeout * 2);
+
       const staleJob = JobFactoryHelpers.processing({
         name: TEST_CONSTANTS.JOB_NAME,
         data: { value: "stale" },
@@ -228,13 +251,16 @@ describe("heartbeat mechanism", () => {
         createdAt: staleTime,
         updatedAt: staleTime,
       });
+
       await collection.insertOne(staleJob);
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         lockTimeout,
         recoverStaleJobs: true,
       });
+
       monqueInstances.push(monque);
       let staleRecovered = false;
       monque.on("stale:recovered", ({ count }) => {
@@ -262,6 +288,7 @@ describe("heartbeat mechanism", () => {
       // Create a job with recent heartbeat (not stale)
       const collection = db.collection<Job>(collectionName);
       const recentTime = new Date();
+
       const activeJob = JobFactoryHelpers.processing({
         name: TEST_CONSTANTS.JOB_NAME,
         data: { value: "active" },
@@ -273,13 +300,16 @@ describe("heartbeat mechanism", () => {
         createdAt: recentTime,
         updatedAt: recentTime,
       });
+
       await collection.insertOne(activeJob);
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         lockTimeout,
         recoverStaleJobs: true,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       // Job should still be processing (not recovered)
@@ -297,6 +327,7 @@ describe("heartbeat mechanism", () => {
     it("should release claimed jobs when stop() is called", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const instanceId = "shutdown-instance";
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 50,
@@ -304,6 +335,7 @@ describe("heartbeat mechanism", () => {
         schedulerInstanceId: instanceId,
         shutdownTimeout: 5000,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let jobStarted = false;

@@ -31,6 +31,7 @@ describe(createDashboardManagementApi, () => {
           ),
         ),
     });
+
     await expect(managementApi.client.cancelJob({ params: { id: "job-1" } })).rejects.toMatchObject(
       {
         code: "CONFLICT",
@@ -42,10 +43,12 @@ describe(createDashboardManagementApi, () => {
 
   it("includes browser credentials by default on Management API requests", async () => {
     let capturedCredentials: RequestCredentials | undefined;
+
     const managementApi = createDashboardManagementApi({
       apiBaseUrl: "/api/management",
       fetch: async (_request, init) => {
         capturedCredentials = init?.credentials;
+
         return await Promise.resolve(
           Response.json(
             { status: "ok", scheduler: { healthy: true } },
@@ -58,6 +61,7 @@ describe(createDashboardManagementApi, () => {
       },
       origin: "https://dashboard.example",
     });
+
     await managementApi.client.health();
     expect(capturedCredentials).toBe("include");
   });

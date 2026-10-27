@@ -82,6 +82,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   if (iteration > MAX_ITERATIONS) {
     return;
   }
+
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
 
   // -------------------------------------------------------------------------
@@ -114,10 +115,12 @@ const runIteration = async (iteration: number): Promise<void> => {
   if (issues.length === 0) {
     // No unblocked work — either everything is done or everything is blocked.
     console.log("No unblocked issues to work on. Exiting.");
+
     return;
   }
 
   console.log(`Planning complete. ${issues.length} issue(s) to work in parallel:`);
+
   for (const issue of issues) {
     console.log(`  ${issue.id}: ${issue.title} → ${issue.branch}`);
   }
@@ -196,6 +199,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   const completedIssues = settled
     .flatMap((outcome, i) => {
       const issue = issues[i];
+
       return issue === undefined ? [] : [{ outcome, issue }];
     })
     .filter(
@@ -206,6 +210,7 @@ const runIteration = async (iteration: number): Promise<void> => {
   const completedBranches = completedIssues.map((i) => i.branch);
 
   console.log(`\nExecution complete. ${completedBranches.length} branch(es) with commits:`);
+
   for (const branch of completedBranches) {
     console.log(`  ${branch}`);
   }
@@ -214,6 +219,7 @@ const runIteration = async (iteration: number): Promise<void> => {
     // All agents ran but none made commits — nothing to merge this cycle.
     console.log("No commits produced. Nothing to merge.");
     await runIteration(iteration + 1);
+
     return;
   }
 

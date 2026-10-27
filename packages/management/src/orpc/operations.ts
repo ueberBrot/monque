@@ -30,11 +30,14 @@ import type { ManagementAction, ManagementOptions } from "../surface/types.js";
 const jobNotFoundMessage = "Job not found";
 
 type BulkManagementAction = "cancelBulk" | "retryBulk" | "deleteBulk";
+
 type BulkJobMutator = (selector: JobSelector) => Promise<BulkOperationResult>;
+
 type SingleJobMutationInput =
   | { action: "cancel" | "retry" }
   | { action: "reschedule"; nextRunAt: string }
   | { action: "setJobPriority"; priority: number };
+
 type SingleJobMutator = (id: string) => Promise<PersistedJob | null>;
 
 const managementError = function managementError(
@@ -67,17 +70,21 @@ export const createManagementOperations = function createManagementOperations<TC
     if (!options.monque.getProcessingState) {
       return yield* managementError("FORBIDDEN", "Processing state is unsupported");
     }
+
     return yield* attempt(() => {
       // oxlint-disable-next-line typescript/no-non-null-assertion -- The preceding branch rejects unsupported facades; keep the method receiver.
       const state = options.monque.getProcessingState!(name);
+
       const result: ProcessingStateDto = {
         instanceId: state.instanceId,
         paused: state.paused,
         globallyPaused: state.globallyPaused,
       };
+
       if (state.name !== undefined) {
         result.name = state.name;
       }
+
       return result;
     }).pipe(
       Effect.mapError((error) =>
@@ -93,6 +100,7 @@ export const createManagementOperations = function createManagementOperations<TC
     context: TContext,
   ) {
     yield* policy.requireAction("read", context);
+
     return yield* readProcessingState(name);
   });
 
@@ -109,15 +117,18 @@ export const createManagementOperations = function createManagementOperations<TC
       instanceId: input.instanceId,
     });
     const state = yield* readProcessingState(input.name);
+
     if (state.instanceId !== input.instanceId) {
       return yield* managementError(
         "CONFLICT",
         "Scheduler instance changed; refresh before retrying",
       );
     }
+
     yield* attempt(() => {
       supportedMutate.call(options.monque, input.name);
     });
+
     return yield* readProcessingState(input.name);
   });
 
@@ -126,6 +137,7 @@ export const createManagementOperations = function createManagementOperations<TC
     context: TContext,
   ) {
     const state = options.monque.getProcessingState ? yield* readProcessingState(name) : undefined;
+
     return yield* policy.getCapabilities(
       context,
       state ? { name: state.name, instanceId: state.instanceId } : {},
@@ -138,9 +150,11 @@ export const createManagementOperations = function createManagementOperations<TC
   ) {
     yield* policy.requireAction("read", context);
     const scope = filter?.name === undefined ? undefined : { name: filter.name };
+
     const summaries = yield* fromPromise(
       async () => await options.monque.getQueueViewSummaries(scope),
     );
+
     return yield* attempt(() =>
       toQueueViewSummaryListDto(
         scope ? summaries.filter((view) => view.name === scope.name) : summaries,
@@ -152,12 +166,15 @@ export const createManagementOperations = function createManagementOperations<TC
     const dto = toJobSummaryDto(job);
     const jobName = job.name;
     const serializers = options.serializePayloadByJobName;
+
     const serializePayload =
       (serializers && Object.hasOwn(serializers, jobName) ? serializers[jobName] : undefined) ??
       options.serializePayload;
+
     dto.payload = await (serializePayload
       ? serializePayload({ job, payload: job.data, context })
       : job.data);
+
     return dto;
   };
 
@@ -172,14 +189,18 @@ export const createManagementOperations = function createManagementOperations<TC
           ? await options.monque.getJobSummariesWithCursor(cursorOptions)
           : await options.monque.getJobsWithCursor(cursorOptions),
       );
+
       return yield* attempt(() => toJobSummaryPageDto(page));
     }
+
     const page = yield* fromPromise(
       async () => await options.monque.getJobsWithCursor(cursorOptions),
     );
+
     const jobs = yield* fromPromise(
       async () => await Promise.all(page.jobs.map(async (job) => await serializeJob(job, context))),
     );
+
     return {
       jobs,
       cursor: page.cursor,
@@ -191,9 +212,11 @@ export const createManagementOperations = function createManagementOperations<TC
   const jobs = Effect.fnUntraced(function* jobs(input: JobListQueryDto, context: TContext) {
     yield* policy.requireAction("read", context);
     const cursorOptions = yield* attempt(() => toJobCursorOptions(input));
+
     if ("error" in cursorOptions) {
       return yield* managementError("BAD_REQUEST", cursorOptions.error);
     }
+
     return yield* readJobsPage(cursorOptions, input.view === "summary", context).pipe(
       Effect.catchDefect(Effect.fail),
       Effect.mapError((error) =>
@@ -209,30 +232,37 @@ export const createManagementOperations = function createManagementOperations<TC
     context: TContext,
   ) {
     yield* policy.requireAction("read", context);
+
     const stats = yield* fromPromise(
       async () =>
         await options.monque.getQueueStats(
           input.name === undefined ? undefined : { name: input.name },
         ),
     );
+
     return yield* attempt(() => toQueueStatsDto(stats));
   });
 
   const resolvePersistedJob = Effect.fnUntraced(function* resolvePersistedJob(idInput: string) {
     const id = yield* attempt(() => parseObjectId(idInput));
+
     if ("error" in id) {
       return yield* managementError("BAD_REQUEST", id.error);
     }
+
     const job = yield* fromPromise(async () => await options.monque.getJob(idInput));
+
     if (!job) {
       return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
+
     return { id: id.value, job };
   });
 
   const readJob = Effect.fnUntraced(function* readJob(idInput: string, context: TContext) {
     yield* policy.requireAction("read", context);
     const { job } = yield* resolvePersistedJob(idInput);
+
     return yield* fromPromise(async () => await serializeJob(job, context));
   });
 
@@ -243,6 +273,7 @@ export const createManagementOperations = function createManagementOperations<TC
   ) {
     const { id, job } = yield* resolvePersistedJob(idInput);
     yield* policy.requireAction(action, context, { job });
+
     return yield* attempt(() => id.toHexString());
   });
 
@@ -253,23 +284,29 @@ export const createManagementOperations = function createManagementOperations<TC
       case "cancel": {
         return options.monque.cancelJob?.bind(options.monque);
       }
+
       case "retry": {
         return options.monque.retryJob?.bind(options.monque);
       }
+
       case "reschedule": {
         const runAt = new Date(input.nextRunAt);
         const rescheduleJob = options.monque.rescheduleJob?.bind(options.monque);
+
         return rescheduleJob === undefined
           ? undefined
           : async (id) => await rescheduleJob(id, runAt);
       }
+
       case "setJobPriority": {
         const { priority } = input;
         const setJobPriority = options.monque.setJobPriority?.bind(options.monque);
+
         return setJobPriority === undefined
           ? undefined
           : async (id) => await setJobPriority(id, priority);
       }
+
       default: {
         return undefined;
       }
@@ -285,9 +322,11 @@ export const createManagementOperations = function createManagementOperations<TC
     const supportedMutate = yield* policy.requireMutation(input.action, mutate);
     const id = yield* resolveSingleJobTarget(input.action, idInput, context);
     const job = yield* mapJobStateConflict(fromPromise(async () => await supportedMutate(id)));
+
     if (!job) {
       return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
+
     return job;
   });
 
@@ -297,6 +336,7 @@ export const createManagementOperations = function createManagementOperations<TC
     context: TContext,
   ) {
     const job = yield* executeJobMutation(input, idInput, context);
+
     return yield* fromPromise(async () => await serializeJob(job, context));
   });
 
@@ -308,16 +348,20 @@ export const createManagementOperations = function createManagementOperations<TC
       "delete",
       options.monque.deleteJob?.bind(options.monque),
     );
+
     const id = yield* resolveSingleJobTarget("delete", idInput, context);
     const deleted = yield* fromPromise(async () => await supportedMutate(id));
+
     if (!deleted) {
       return yield* managementError("NOT_FOUND", jobNotFoundMessage);
     }
+
     return yield* Effect.void;
   });
 
   const deleteJob = Effect.fnUntraced(function* deleteJob(idInput: string, context: TContext) {
     yield* executeJobDeletion(idInput, context);
+
     return toDeleteJobDto();
   });
 
@@ -330,9 +374,11 @@ export const createManagementOperations = function createManagementOperations<TC
     const supportedMutate = yield* policy.requireMutation(action, mutate);
     const selector = yield* attempt(() => toJobSelector(input));
     yield* policy.requireAction(action, context, { selector });
+
     const result = yield* mapJobStateConflict(
       fromPromise(async () => await supportedMutate(selector)),
     );
+
     return yield* attempt(() => toBulkActionResultDto(result));
   });
 
@@ -341,6 +387,7 @@ export const createManagementOperations = function createManagementOperations<TC
     context: TContext,
   ): Effect.fn.Return<BulkActionResultDto, unknown> {
     let capability: ManagementAction;
+
     if (input.action === "priority") {
       capability = "setJobPriority";
     } else if (input.action === "reschedule") {
@@ -348,10 +395,13 @@ export const createManagementOperations = function createManagementOperations<TC
     } else {
       capability = `${input.action}Bulk`;
     }
+
     yield* policy.requireSupported(capability);
+
     const ids = [
       ...new Set(input.ids.map((id) => (/^[a-fA-F0-9]{24}$/u.test(id) ? id.toLowerCase() : id))),
     ];
+
     yield* policy.requireAction(capability, context, { ids });
     const result: BulkActionResultDto = { count: 0, errors: [] };
     // oxlint-disable-next-line unicorn/no-array-for-each -- Effect.forEach traverses Effects, not an Array callback.
@@ -359,6 +409,7 @@ export const createManagementOperations = function createManagementOperations<TC
       ids,
       (id) => {
         let operation: Effect.Effect<unknown, unknown>;
+
         if (input.action === "delete") {
           operation = executeJobDeletion(id, context);
         } else if (input.action === "priority") {
@@ -372,6 +423,7 @@ export const createManagementOperations = function createManagementOperations<TC
         } else {
           operation = executeJobMutation({ action: input.action }, id, context);
         }
+
         return operation.pipe(
           Effect.catchDefect(Effect.fail),
           Effect.matchEffect({
@@ -394,6 +446,7 @@ export const createManagementOperations = function createManagementOperations<TC
       },
       { concurrency: 5, discard: true },
     );
+
     return result;
   });
 

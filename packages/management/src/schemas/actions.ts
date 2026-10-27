@@ -79,6 +79,7 @@ export type RescheduleJobInputDto = z.infer<typeof RescheduleJobInputDtoSchema>;
 export const SetJobPriorityRequestDtoSchema = z.strictObject({
   priority: JobDtoSchema.shape.priority,
 });
+
 export type SetJobPriorityRequestDto = z.infer<typeof SetJobPriorityRequestDtoSchema>;
 
 /** Detailed oRPC input shape for the priority action. */
@@ -88,6 +89,7 @@ export const SetJobPriorityInputDtoSchema = z.strictObject({
   headers: z.looseObject({}).optional(),
   body: SetJobPriorityRequestDtoSchema,
 });
+
 export type SetJobPriorityInputDto = z.infer<typeof SetJobPriorityInputDtoSchema>;
 
 /** Standard management error response body. */
@@ -116,4 +118,5 @@ export const SelectedJobActionsDtoSchema = z.discriminatedUnion("action", [
     priority: SetJobPriorityRequestDtoSchema.shape.priority,
   }),
 ]);
+
 export type SelectedJobActionsDto = z.infer<typeof SelectedJobActionsDtoSchema>;

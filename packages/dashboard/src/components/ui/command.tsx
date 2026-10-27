@@ -22,6 +22,7 @@ const Command = ({ className, ...props }: ComponentProps<typeof CommandPrimitive
     {...props}
   />
 );
+
 const CommandDialog = ({
   title = "Command Palette",
   description = "Search for a command to run...",
@@ -49,6 +50,7 @@ const CommandDialog = ({
     </DialogContent>
   </Dialog>
 );
+
 const CommandInput = ({ className, ...props }: ComponentProps<typeof CommandPrimitive.Input>) => (
   <div data-slot="command-input-wrapper" className="p-1 pb-0">
     <InputGroup className="h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
@@ -66,6 +68,7 @@ const CommandInput = ({ className, ...props }: ComponentProps<typeof CommandPrim
     </InputGroup>
   </div>
 );
+
 const CommandList = ({ className, ...props }: ComponentProps<typeof CommandPrimitive.List>) => (
   <CommandPrimitive.List
     data-slot="command-list"
@@ -76,6 +79,7 @@ const CommandList = ({ className, ...props }: ComponentProps<typeof CommandPrimi
     {...props}
   />
 );
+
 const CommandEmpty = ({ className, ...props }: ComponentProps<typeof CommandPrimitive.Empty>) => (
   <CommandPrimitive.Empty
     data-slot="command-empty"
@@ -83,6 +87,7 @@ const CommandEmpty = ({ className, ...props }: ComponentProps<typeof CommandPrim
     {...props}
   />
 );
+
 const CommandGroup = ({ className, ...props }: ComponentProps<typeof CommandPrimitive.Group>) => (
   <CommandPrimitive.Group
     data-slot="command-group"
@@ -93,6 +98,7 @@ const CommandGroup = ({ className, ...props }: ComponentProps<typeof CommandPrim
     {...props}
   />
 );
+
 const CommandSeparator = ({
   className,
   ...props
@@ -103,6 +109,7 @@ const CommandSeparator = ({
     {...props}
   />
 );
+
 const CommandItem = ({
   className,
   children,
@@ -120,6 +127,7 @@ const CommandItem = ({
     <CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
   </CommandPrimitive.Item>
 );
+
 const CommandShortcut = ({ className, ...props }: ComponentProps<"span">) => (
   <span
     data-slot="command-shortcut"
@@ -130,6 +138,7 @@ const CommandShortcut = ({ className, ...props }: ComponentProps<"span">) => (
     {...props}
   />
 );
+
 export {
   Command,
   CommandDialog,

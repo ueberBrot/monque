@@ -12,6 +12,7 @@ import { routeTree } from "./routeTree.gen";
 interface RouterHistoryOptions {
   history?: RouterHistory;
 }
+
 const getRouter = (
   context: DashboardRouterContext,
   options?: {
@@ -19,9 +20,11 @@ const getRouter = (
   },
 ) => {
   const historyOptions: RouterHistoryOptions = {};
+
   if (options?.history !== undefined) {
     historyOptions.history = options.history;
   }
+
   return createTanStackRouter({
     routeTree,
     defaultErrorComponent: DashboardRouteError,
@@ -36,9 +39,11 @@ const getRouter = (
     defaultPreloadStaleTime: 0,
   });
 };
+
 declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof getRouter>;
   }
 }
+
 export { getRouter };

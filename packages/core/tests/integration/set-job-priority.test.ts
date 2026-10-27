@@ -36,6 +36,7 @@ describe("Changing a pending Job priority", () => {
     const monque = new Monque(db, { collectionName });
     instances.push(monque);
     await monque.initialize();
+
     const created = await monque.enqueue(
       "work",
       { preserved: true },
@@ -45,6 +46,7 @@ describe("Changing a pending Job priority", () => {
         priority: 2,
       },
     );
+
     await db
       .collection(collectionName)
       .updateOne({ _id: created._id }, { $set: { failCount: 2, failReason: "previous attempt" } });
@@ -114,12 +116,14 @@ describe("Changing a pending Job priority", () => {
     const release: PromiseWithResolvers<void> = Promise.withResolvers();
     consumer.register("work", async (job) => {
       received.push(job.data);
+
       if (job.data === "promoted") {
         started.resolve();
         await release.promise;
       }
     });
     consumer.start();
+
     try {
       await started.promise;
       const claimed = await producer.getJob(promoted._id);
@@ -131,8 +135,10 @@ describe("Changing a pending Job priority", () => {
     } finally {
       release.resolve();
     }
+
     await waitFor(async () => {
       const awaitedResult2 = await producer.getJob(routine._id);
+
       return awaitedResult2?.status === "completed";
     });
     expect(received).toStrictEqual(["promoted", "routine"]);
@@ -151,6 +157,7 @@ describe("Changing a pending Job priority", () => {
       collectionName: uniqueCollectionName("priority-lifecycle"),
       workerConcurrency: 1,
     });
+
     instances.push(monque);
     await monque.initialize();
     const recurring = await monque.schedule("0 * * * *", "recurring", {});
@@ -161,6 +168,7 @@ describe("Changing a pending Job priority", () => {
     monque.register("recurring", (job) => {
       priorities.push(job.priority);
       attempts += 1;
+
       if (attempts === 1) {
         throw new NonRetryableError("requires operator retry");
       }
@@ -168,6 +176,7 @@ describe("Changing a pending Job priority", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult3 = await monque.getJob(recurring._id);
+
       return awaitedResult3?.status === "failed";
     });
     await expect(monque.setJobPriority(recurring._id.toHexString(), 8)).rejects.toThrow(
@@ -177,6 +186,7 @@ describe("Changing a pending Job priority", () => {
     expect(awaitedResult4?.priority).toBe(-4);
     await waitFor(async () => {
       const current = await monque.getJob(recurring._id);
+
       return attempts === 2 && current?.status === "pending";
     });
     const awaitedResult5 = await monque.getJob(recurring._id);
@@ -184,6 +194,7 @@ describe("Changing a pending Job priority", () => {
     await monque.rescheduleJob(recurring._id.toHexString(), new Date());
     await waitFor(async () => {
       const current = await monque.getJob(recurring._id);
+
       return attempts === 3 && current?.status === "pending";
     });
     expect(priorities).toStrictEqual([-4, -4, -4]);
@@ -197,22 +208,29 @@ describe("Changing a pending Job priority", () => {
           throw new Error("Streams unavailable");
         });
       }
+
       const collectionName = uniqueCollectionName("priority-wakeup");
+
       const consumer = new Monque(db, {
         collectionName,
         pollInterval: mode === "polling" ? 20 : 60_000,
         safetyPollInterval: 60_000,
       });
+
       const producer = mode === "local" ? consumer : new Monque(db, { collectionName });
       instances.push(consumer);
+
       if (producer !== consumer) {
         instances.push(producer);
         await producer.initialize();
       }
+
       await consumer.initialize();
+
       const future = await producer.enqueue("work", "priority-edit", {
         runAt: new Date(Date.now() + 60_000),
       });
+
       const sentinel = await producer.now("ready", "ready");
       const received: unknown[] = [];
       consumer.register("work", (job) => {
@@ -224,11 +242,13 @@ describe("Changing a pending Job priority", () => {
       consumer.start();
       await waitFor(async () => {
         const awaitedResult6 = await producer.getJob(sentinel._id);
+
         return awaitedResult6?.status === "completed";
       });
       // A replacement deliberately simulates a missed notification: only the following
       // priority-only update can wake the stream/local scheduler before its safety poll.
       await pauseFor(100);
+
       if (mode === "polling") {
         // Commit the edit before making the Job eligible so the fast poll cannot win first.
         const edited = await producer.setJobPriority(future._id.toHexString(), 6);
@@ -241,9 +261,11 @@ describe("Changing a pending Job priority", () => {
           .replaceOne({ _id: future._id }, { ...future, nextRunAt: new Date(0) });
         await producer.setJobPriority(future._id.toHexString(), 6);
       }
+
       await waitFor(
         async () => {
           const awaitedResult7 = await producer.getJob(future._id);
+
           return awaitedResult7?.status === "completed";
         },
         {
@@ -267,6 +289,7 @@ describe("Changing a pending Job priority", () => {
     const priorities: (number | undefined)[] = [];
     monque.register("retry", (current) => {
       priorities.push(current.priority);
+
       if (priorities.length === 1) {
         throw new Error("retry once");
       }
@@ -274,6 +297,7 @@ describe("Changing a pending Job priority", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult9 = await monque.getJob(job._id);
+
       return awaitedResult9?.status === "completed";
     });
     expect(priorities).toStrictEqual([11, 11]);

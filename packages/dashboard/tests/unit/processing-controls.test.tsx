@@ -15,15 +15,19 @@ const renderControls = (
   } = {},
 ) => {
   let paused = options.globallyPaused ?? false;
+
   const requests: {
     pathname: string;
     body: unknown;
   }[] = [];
+
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+
     if (url.pathname.endsWith("/capabilities")) {
       expect(url.searchParams.get("name")).toBe("email");
+
       return Response.json({
         readOnly: options.readOnly ?? false,
         actions: {
@@ -33,16 +37,20 @@ const renderControls = (
         },
       });
     }
+
     if (request.method === "POST") {
       requests.push({ pathname: url.pathname, body: await request.json() });
+
       if (options.conflict === true) {
         return Response.json(
           { error: "Scheduler instance changed; refresh before retrying" },
           { status: 409 },
         );
       }
+
       paused = url.pathname.endsWith("/pause");
     }
+
     return Response.json({
       instanceId: "scheduler-1",
       name: "email",
@@ -50,14 +58,17 @@ const renderControls = (
       globallyPaused: options.globallyPaused ?? false,
     });
   };
+
   const api = createDashboardManagementApi({ apiBaseUrl: "https://management.test", fetch });
   render(
     <QueryClientProvider client={createDashboardQueryClient()}>
       <ProcessingControls managementApi={api} name="email" />
     </QueryClientProvider>,
   );
+
   return requests;
 };
+
 describe("processing controls", () => {
   it("sends the displayed instance and worker, then refreshes the state after pause and resume", async () => {
     const requests = renderControls();
