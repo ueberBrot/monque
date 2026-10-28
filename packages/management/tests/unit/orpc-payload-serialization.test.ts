@@ -20,6 +20,7 @@ describe("oRPC Management payload serialization", () => {
         "redacts the %s response without exposing request context",
         async (route) => {
           const job = createManagementJob({ name, data: { token: "payload-secret" } });
+
           const surface = createManagementSurface<{ token: string }>({
             monque: createManagementMonque({
               getJobsWithCursor: vi
@@ -42,19 +43,21 @@ describe("oRPC Management payload serialization", () => {
             serializePayload: async () => await Promise.resolve({ redacted: true }),
             serializePayloadByJobName: {},
           });
+
           const context = { managementContext: { token: "context-secret" } };
           const jobPath = `/api/v1/jobs/${job._id.toHexString()}`;
+          const readPath = route === "list" ? "/api/v1/jobs" : jobPath;
+
+          const mutationBody =
+            route === "reschedule" ? { nextRunAt: "2026-02-01T00:00:00.000Z" } : undefined;
+
           const response =
             route === "list" || route === "detail"
-              ? await handleManagementGet(
-                  surface,
-                  route === "list" ? "/api/v1/jobs" : jobPath,
-                  context,
-                )
+              ? await handleManagementGet(surface, readPath, context)
               : await handleManagementPost(
                   surface,
                   `${jobPath}/actions/${route}`,
-                  route === "reschedule" ? { nextRunAt: "2026-02-01T00:00:00.000Z" } : undefined,
+                  mutationBody,
                   context,
                 );
 
@@ -62,6 +65,7 @@ describe("oRPC Management payload serialization", () => {
             name,
             payload: { redacted: true },
           });
+
           await expectJsonResponse(
             response,
             200,
@@ -74,6 +78,7 @@ describe("oRPC Management payload serialization", () => {
 
       it("returns only the original payload when no serializer is configured", async () => {
         const job = createManagementJob({ name, data: { visible: true } });
+
         const surface = createManagementSurface({
           monque: createManagementMonque({ getJob: getManagementJobById(job) }),
           serializePayloadByJobName: {},
@@ -96,10 +101,13 @@ describe("oRPC Management payload serialization", () => {
 
       it("uses an explicit serializer in a null-prototype map", async () => {
         const job = createManagementJob({ name, data: { token: "payload-secret" } });
+
         const serializers = {
           [name]: async () => await Promise.resolve({ source: "job" }),
         } satisfies Record<string, ManagementPayloadSerializer>;
+
         Object.setPrototypeOf(serializers, null);
+
         const surface = createManagementSurface({
           monque: createManagementMonque({ getJob: getManagementJobById(job) }),
           serializePayload: async () => await Promise.resolve({ source: "global" }),
@@ -126,6 +134,7 @@ describe("oRPC Management payload serialization", () => {
     Object.setPrototypeOf(serializers, {
       "send-email": async () => await Promise.resolve({ source: "inherited" }),
     });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob: getManagementJobById(job) }),
       serializePayload: async () => await Promise.resolve({ source: "global" }),
@@ -145,6 +154,7 @@ describe("oRPC Management payload serialization", () => {
     const job = createManagementJob();
     const serializers: Record<string, ManagementPayloadSerializer> = {};
     Object.defineProperty(serializers, job.name, { value });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob: getManagementJobById(job) }),
       serializePayload: async () => await Promise.resolve({ source: "global" }),
@@ -168,6 +178,7 @@ describe("oRPC Management payload serialization", () => {
     },
   ])("awaits raw payloads without a serializer", async (data) => {
     const job = createManagementJob({ data });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob: getManagementJobById(job) }),
     });
@@ -182,14 +193,17 @@ describe("oRPC Management payload serialization", () => {
   it("captures metadata before reading live serializer options and invokes hooks without a receiver", async () => {
     const job = createManagementJob();
     const context = { role: "admin" };
+
     const options: ManagementOptions<typeof context> = {
       monque: createManagementMonque({ getJob: getManagementJobById(job) }),
       serializePayload: async () => await Promise.resolve({ source: "initial" }),
     };
+
     const surface = createManagementSurface(options);
     Object.defineProperty(options, "serializePayloadByJobName", {
       get: () => {
         job.updatedAt = new Date("2026-02-01T00:00:00.000Z");
+
         return {};
       },
     });
@@ -199,6 +213,7 @@ describe("oRPC Management payload serialization", () => {
       expect(input.payload).toBe(job.data);
       expect(input.context).toBe(context);
       job.name = "renamed";
+
       return await Promise.resolve({ source: "live" });
     };
 

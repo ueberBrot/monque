@@ -123,14 +123,17 @@ const config = defineConfig(({ mode }) => {
         if (process.env["VITEST"] !== undefined && process.env["VITEST"].length > 0) {
           return [viteReact()];
         }
+
         // Defer workspace runtime imports until builds have produced their entrypoints.
         const loaded = await loadConfigFromFile(
           { command: "serve", mode },
           fileURLToPath(new URL("vite.plugins.config.ts", import.meta.url)),
         );
+
         if (!loaded) {
           throw new Error("Could not load dashboard development plugins");
         }
+
         return loaded.config.plugins ?? [];
       }) ?? [],
   };

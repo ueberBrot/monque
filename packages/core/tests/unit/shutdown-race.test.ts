@@ -63,6 +63,7 @@ describe("Monque Shutdown Race Condition", () => {
       monque.register("work", async () => {
         started.resolve();
         await release.promise;
+
         if (fail) {
           throw new Error("Handler failed during shutdown");
         }
@@ -85,10 +86,12 @@ describe("Monque Shutdown Race Condition", () => {
       leaseDuration: 1000,
       heartbeatInterval: 20,
     });
+
     // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB ChangeStream extends Node's EventEmitter, including synchronous listener exceptions.
     const stream = Object.assign(new EventEmitter(), {
       close: vi.fn<MockFunction<ChangeStream["close"]>>().mockResolvedValue(undefined),
     });
+
     collection.watch.mockReturnValue(fromPartial<ChangeStream>(stream));
     await monque.initialize();
     const started: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -112,6 +115,7 @@ describe("Monque Shutdown Race Condition", () => {
       await release.promise;
     });
     monque.start();
+
     try {
       await started.promise;
       const stopped = Promise.allSettled([monque.stop()]);
@@ -151,9 +155,11 @@ describe("Monque Shutdown Race Condition", () => {
     await monque.initialize();
     // Register a worker so poll() simulates fetching jobs
     monque.register("test-job", vi.fn<() => Promise<void>>().mockResolvedValue(undefined));
+
     // Setup a controlled promise to hang on the first findOneAndUpdate call
     const { promise: firstCallPromise, resolve: resolveFirstCall } =
       Promise.withResolvers<WithId<Document> | null>();
+
     // 1st call hangs (simulating long DB op), subsequent calls return null (to stop poll loop)
     collection.findOneAndUpdate.mockReturnValueOnce(firstCallPromise).mockResolvedValue(null);
     // Start Monque (triggers poll via setInterval)
@@ -173,11 +179,13 @@ describe("Monque Shutdown Race Condition", () => {
         data: {},
       }),
     );
+
     // Wait for the acquisition promise chain to process the resolved job.
     for (let i = 0; i < 10; i += 1) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Advance ten successive native Promise turns; parallel resolution would not flush the claim-release chain.
       await Promise.resolve();
     }
+
     // Ensure the job was not absorbed into regular active job tracking
     // oxlint-disable-next-line typescript/dot-notation -- Bracket access retains Monque's declared private worker type for this shutdown invariant without asserting a replacement object shape.
     const worker = monque["workers"].get("test-job");

@@ -25,12 +25,14 @@ import {
   uniqueCollectionName,
 } from "@test-utils/test-utils.js";
 import { JobFactory, JobFactoryHelpers } from "@tests/factories/job.factory.js";
+
 /** Test-specific job names to avoid collision */
 const JOB_NAMES = {
   EMAIL: "send-email",
   REPORT: "generate-report",
   SYNC: "sync-data",
 } as const;
+
 describe("getJobs()", () => {
   let db: Db;
   let collectionName: string;
@@ -47,6 +49,7 @@ describe("getJobs()", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -60,11 +63,13 @@ describe("getJobs()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const seedJobs = [
         JobFactory.build({ name: JOB_NAMES.EMAIL }),
         JobFactory.build({ name: JOB_NAMES.REPORT }),
         JobFactory.build({ name: JOB_NAMES.SYNC }),
       ];
+
       await collection.insertMany(seedJobs);
       const jobs = await monque.getJobs();
       expect(jobs).toHaveLength(3);
@@ -89,6 +94,7 @@ describe("getJobs()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const now = Date.now();
+
       const seedJobs = [
         JobFactory.build({
           name: JOB_NAMES.EMAIL,
@@ -106,10 +112,13 @@ describe("getJobs()", () => {
           nextRunAt: new Date(now + 2000),
         }),
       ];
+
       await collection.insertMany(seedJobs);
+
       const jobs = await monque.getJobs<{
         order: number;
       }>();
+
       expect({
         jobs0DataOrder: jobs[0]?.data.order,
         jobs1DataOrder: jobs[1]?.data.order,
@@ -143,11 +152,13 @@ describe("getJobs()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const seedJobs = [
         JobFactory.build({ name: JOB_NAMES.EMAIL }),
         JobFactory.build({ name: JOB_NAMES.EMAIL }),
         JobFactory.build({ name: JOB_NAMES.REPORT }),
       ];
+
       await collection.insertMany(seedJobs);
       const emailJobs = await monque.getJobs({ name: JOB_NAMES.EMAIL });
       expect({
@@ -200,9 +211,11 @@ describe("getJobs()", () => {
       const completedJob = JobFactoryHelpers.completed({ name: JOB_NAMES.REPORT });
       const failedJob = JobFactoryHelpers.failed({ name: JOB_NAMES.SYNC });
       await collection.insertMany([pendingJob, completedJob, failedJob]);
+
       const finishedJobs = await monque.getJobs({
         status: [JobStatus.COMPLETED, JobStatus.FAILED],
       });
+
       expect({
         finishedJobs: finishedJobs.length,
         finishedJobsSomeJJStatusJobStatusCOMPLETED: finishedJobs.some(
@@ -234,6 +247,7 @@ describe("getJobs()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const now = Date.now();
+
       const seedJobs = Array.from({ length: 5 }, (_, i) =>
         JobFactory.build({
           name: JOB_NAMES.EMAIL,
@@ -241,10 +255,13 @@ describe("getJobs()", () => {
           nextRunAt: new Date(now + i * 1000),
         }),
       );
+
       await collection.insertMany(seedJobs);
+
       const resultJobs = await monque.getJobs<{
         index: number;
       }>({ skip: 2 });
+
       expect({
         resultJobs: resultJobs.length,
         resultJobs0DataIndex: resultJobs[0]?.data.index,
@@ -263,6 +280,7 @@ describe("getJobs()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const now = Date.now();
+
       const seedJobs = Array.from({ length: 10 }, (_, i) =>
         JobFactory.build({
           name: JOB_NAMES.EMAIL,
@@ -270,16 +288,21 @@ describe("getJobs()", () => {
           nextRunAt: new Date(now + i * 1000),
         }),
       );
+
       await collection.insertMany(seedJobs);
+
       const page1 = await monque.getJobs<{
         index: number;
       }>({ limit: 3, skip: 0 });
+
       const page2 = await monque.getJobs<{
         index: number;
       }>({ limit: 3, skip: 3 });
+
       const page3 = await monque.getJobs<{
         index: number;
       }>({ limit: 3, skip: 6 });
+
       expect({
         page1: page1.length,
         page10DataIndex: page1[0]?.data.index,
@@ -316,10 +339,12 @@ describe("getJobs()", () => {
       const completedEmail = JobFactoryHelpers.completed({ name: JOB_NAMES.EMAIL });
       const pendingReport = JobFactory.build({ name: JOB_NAMES.REPORT });
       await collection.insertMany([pendingEmail, completedEmail, pendingReport]);
+
       const pendingEmails = await monque.getJobs({
         name: JOB_NAMES.EMAIL,
         status: JobStatus.PENDING,
       });
+
       expect({
         pendingEmails: pendingEmails.length,
         pendingEmails0Name: pendingEmails[0]?.name,
@@ -336,6 +361,7 @@ describe("getJobs()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const now = Date.now();
+
       const emailJobs = Array.from({ length: 10 }, (_, i) =>
         JobFactory.build({
           name: JOB_NAMES.EMAIL,
@@ -343,8 +369,10 @@ describe("getJobs()", () => {
           nextRunAt: new Date(now + i * 1000),
         }),
       );
+
       const reportJob = JobFactory.build({ name: JOB_NAMES.REPORT });
       await collection.insertMany([...emailJobs, reportJob]);
+
       const jobs = await monque.getJobs<{
         index: number;
       }>({
@@ -353,6 +381,7 @@ describe("getJobs()", () => {
         limit: 3,
         skip: 2,
       });
+
       expect({
         jobs: jobs.length,
         jobs0DataIndex: jobs[0]?.data.index,
@@ -372,6 +401,7 @@ describe("getJobs()", () => {
     });
   });
 });
+
 describe("getJob()", () => {
   let db: Db;
   let collectionName: string;
@@ -388,6 +418,7 @@ describe("getJob()", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -423,11 +454,13 @@ describe("getJob()", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const futureDate = new Date(Date.now() + 60_000);
+
       const seedJob = JobFactory.build({
         name: JOB_NAMES.EMAIL,
         nextRunAt: futureDate,
         uniqueKey: "test-unique-key",
       });
+
       await collection.insertOne(seedJob);
       const job = await monque.getJob(seedJob._id);
       expect({
@@ -457,14 +490,17 @@ describe("getJob()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       interface EmailJobData {
         to: string;
         subject: string;
       }
+
       const seedJob = JobFactoryHelpers.withData<EmailJobData>(
         { to: "test@example.com", subject: "Hello" },
         { name: JOB_NAMES.EMAIL },
       );
+
       await collection.insertOne(seedJob);
       const job = await monque.getJob<EmailJobData>(seedJob._id);
       expect({

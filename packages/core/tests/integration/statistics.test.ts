@@ -21,6 +21,7 @@ const LargeStatsJobBuilder = {
     startIndex: number,
   ): Document[] {
     const now = new Date();
+
     return Array.from({ length: count }, (_, index) => {
       const document: Document = {
         name: jobName,
@@ -31,15 +32,18 @@ const LargeStatsJobBuilder = {
         updatedAt: now,
         nextRunAt: now,
       };
+
       if (status === JobStatus.PROCESSING) {
         document["lockedAt"] = now;
         document["claimedBy"] = "test-instance";
         document["lastHeartbeat"] = now;
       }
+
       return document;
     });
   },
 };
+
 describe("Management APIs: Queue Statistics", () => {
   let db: Db;
   let monque: Monque;
@@ -94,23 +98,29 @@ describe("Management APIs: Queue Statistics", () => {
       await monque.enqueue(queueName, { task: 2 });
       // pending
       await monque.enqueue(queueName, { task: 3 });
+
       // Insert jobs directly into DB for other statuses
       const processingDoc = JobFactoryHelpers.processing({
         name: queueName,
         data: { task: 4 },
       });
+
       await db.collection(collectionName).insertOne(processingDoc);
+
       const completedDocs = [
         JobFactoryHelpers.completed({ name: queueName, data: { task: 5 } }),
         JobFactoryHelpers.completed({ name: queueName, data: { task: 6 } }),
       ];
+
       await db.collection(collectionName).insertMany(completedDocs);
       const failedDoc = JobFactoryHelpers.failed({ name: queueName, data: { task: 7 } });
       await db.collection(collectionName).insertOne(failedDoc);
+
       const cancelledDocs = [
         JobFactoryHelpers.cancelled({ name: queueName, data: { task: 8 } }),
         JobFactoryHelpers.cancelled({ name: queueName, data: { task: 9 } }),
       ];
+
       await db.collection(collectionName).insertMany(cancelledDocs);
       const stats = await monque.getQueueStats();
       expect({
@@ -139,15 +149,19 @@ describe("Management APIs: Queue Statistics", () => {
       await monque.enqueue("email-queue", { task: 1 });
       await monque.enqueue("email-queue", { task: 2 });
       await monque.enqueue("sms-queue", { task: 3 });
+
       const completedEmail = JobFactoryHelpers.completed({
         name: "email-queue",
         data: { task: 4 },
       });
+
       await db.collection(collectionName).insertOne(completedEmail);
+
       const completedSms = JobFactoryHelpers.completed({
         name: "sms-queue",
         data: { task: 5 },
       });
+
       await db.collection(collectionName).insertOne(completedSms);
       // Get stats for email-queue only
       const emailStats = await monque.getQueueStats({ name: "email-queue" });
@@ -180,6 +194,7 @@ describe("Management APIs: Queue Statistics", () => {
       await monque.initialize();
       // Create completed jobs with known processing durations (createdAt -> updatedAt)
       const now = new Date();
+
       // Job 1: 1000ms processing time (createdAt to updatedAt)
       const job1 = JobFactoryHelpers.completed({
         name: queueName,
@@ -187,6 +202,7 @@ describe("Management APIs: Queue Statistics", () => {
         createdAt: new Date(now.getTime() - 1000),
         updatedAt: now,
       });
+
       // Job 2: 2000ms processing time
       const job2 = JobFactoryHelpers.completed({
         name: queueName,
@@ -194,6 +210,7 @@ describe("Management APIs: Queue Statistics", () => {
         createdAt: new Date(now.getTime() - 2000),
         updatedAt: now,
       });
+
       // Job 3: 3000ms processing time
       const job3 = JobFactoryHelpers.completed({
         name: queueName,
@@ -201,6 +218,7 @@ describe("Management APIs: Queue Statistics", () => {
         createdAt: new Date(now.getTime() - 3000),
         updatedAt: now,
       });
+
       await db.collection(collectionName).insertMany([job1, job2, job3]);
       const stats = await monque.getQueueStats();
       // Average of 1000, 2000, 3000 = 2000ms
@@ -220,6 +238,7 @@ describe("Management APIs: Queue Statistics", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const now = new Date();
+
       // Job with lockedAt (1000ms processing time)
       const jobWithLockedAt = JobFactoryHelpers.completed({
         name: queueName,
@@ -229,6 +248,7 @@ describe("Management APIs: Queue Statistics", () => {
         // Has lockedAt but we don't use it
         lockedAt: new Date(now.getTime() - 500),
       });
+
       // Job without lockedAt (2000ms processing time)
       const jobWithoutLockedAt = {
         ...JobFactoryHelpers.completed({
@@ -239,6 +259,7 @@ describe("Management APIs: Queue Statistics", () => {
         }),
         lockedAt: null,
       };
+
       await db.collection(collectionName).insertMany([jobWithLockedAt, jobWithoutLockedAt]);
       const stats = await monque.getQueueStats();
       // Both jobs should be included in average: (1000 + 2000) / 2 = 1500ms
@@ -258,6 +279,7 @@ describe("Management APIs: Queue Statistics", () => {
       // Create 100K jobs - 20K per status
       const countPerStatus = 20_000;
       const batchSize = 5000;
+
       const statuses = [
         JobStatus.PENDING,
         JobStatus.PROCESSING,
@@ -265,6 +287,7 @@ describe("Management APIs: Queue Statistics", () => {
         JobStatus.FAILED,
         JobStatus.CANCELLED,
       ] as const;
+
       let taskIndex = 0;
       await forEachSequential(statuses, async (status) => {
         await forEachSequential(

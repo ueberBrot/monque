@@ -27,6 +27,7 @@ describe(JobIntake, () => {
   ])("preserves partial bulk failures after an earlier duplicate: %j", ({ code, count }) =>
     Effect.gen(function* effectWorkflow1() {
       const insertedId = new ObjectId();
+
       const result = fromPartial<BulkWriteResult>({
         upsertedCount: 1,
         matchedCount: 0,
@@ -34,6 +35,7 @@ describe(JobIntake, () => {
         getWriteErrors: () => [{ code: 11_000, index: 0 }],
         getWriteConcernError: () => {},
       });
+
       const error = new MongoBulkWriteError({ message: "Later batch failed", code }, result);
       vi.spyOn(ctx.mockCollection, "bulkWrite").mockRejectedValueOnce(error);
       expect(
@@ -88,6 +90,7 @@ describe(JobIntake, () => {
         code: 11_000,
         keyPattern: { "data.id": 1 },
       });
+
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(error);
       expect(
         yield* Effect.result(intake.enqueue("work", {}, { uniqueKey: "shared" })),
@@ -107,6 +110,7 @@ describe(JobIntake, () => {
         code: 11_000,
         keyPattern: { name: 1, uniqueKey: 1 },
       });
+
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(error);
       vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(null);
       expect(
@@ -175,9 +179,11 @@ describe(JobIntake, () => {
       });
       const job = yield* intake.enqueue("delayed-job", { x: 1 }, { runAt });
       const [insertCall] = ctx.mockCollection.insertOne.mock.calls;
+
       const insertedDoc = fromAny<{ nextRunAt: Date; uniqueKey?: string }, unknown>(
         insertCall?.[0],
       );
+
       expect({
         insertedDocNextRunAt: insertedDoc.nextRunAt,
         jobNextRunAt: job.nextRunAt,
@@ -196,9 +202,11 @@ describe(JobIntake, () => {
       });
       yield* intake.enqueue("job", { x: 1 });
       const [insertCall] = ctx.mockCollection.insertOne.mock.calls;
+
       const insertedDoc = fromAny<{ nextRunAt: Date; uniqueKey?: string }, unknown>(
         insertCall?.[0],
       );
+
       expect(insertedDoc.uniqueKey).toBeUndefined();
     }),
   );
@@ -209,12 +217,15 @@ describe(JobIntake, () => {
         uniqueKey: "user-123",
         data: { userId: "user-123" },
       });
+
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(existingJob);
+
       const job = yield* intake.enqueue(
         "sync-user",
         { userId: "ignored" },
         { uniqueKey: "user-123" },
       );
+
       expect({
         job_id: job._id,
         jobData: job.data,
@@ -233,12 +244,15 @@ describe(JobIntake, () => {
         data: { userId: "user-123" },
         status: JobStatus.PROCESSING,
       });
+
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(existingJob);
+
       const job = yield* intake.enqueue(
         "sync-user",
         { userId: "ignored" },
         { uniqueKey: "user-123" },
       );
+
       expect({
         job_id: job._id,
         jobData: job.data,
@@ -334,13 +348,16 @@ describe(JobIntake, () => {
         repeatInterval: "0 0 * * *",
         data: { report: "sales" },
       });
+
       vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(existingJob);
+
       const job = yield* intake.schedule(
         "0 0 * * *",
         "daily-report",
         { report: "ignored" },
         { uniqueKey: "sales-report" },
       );
+
       expect({
         job_id: job._id,
         jobData: job.data,
@@ -364,13 +381,16 @@ describe(JobIntake, () => {
           data: { report: "sales" },
           status: JobStatus.PROCESSING,
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(existingJob);
+
         const job = yield* intake.schedule(
           "0 0 * * *",
           "daily-report",
           { report: "ignored" },
           { uniqueKey: "sales-report" },
         );
+
         expect({
           job_id: job._id,
           jobData: job.data,

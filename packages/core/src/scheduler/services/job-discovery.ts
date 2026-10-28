@@ -1,6 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
-import * as Effect from "effect/Effect";
+import { Cause, Clock, Effect } from "effect";
 
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";
@@ -12,7 +10,9 @@ const DISCOVERY_READ_OPTIONS = {
   readPreference: "primary",
   readConcern: { level: "local" },
 } as const;
+
 type DiscoveryContext = Pick<SchedulerContext, "collection" | "emit" | "notifyPendingJob">;
+
 const hasSimpleCollation = (value: unknown): value is { locale: "simple" } =>
   typeof value === "object" && value !== null && "locale" in value && value.locale === "simple";
 
@@ -42,9 +42,11 @@ export class JobDiscovery {
     if (!(yield* this.usesBinaryNameMatching())) {
       return names;
     }
+
     if (targetNames) {
       return new Set([...names].filter((name) => targetNames.has(name)));
     }
+
     return yield* Effect.gen({ self: this }, function* queryDueJobNames() {
       const pending = yield* fromPromise(
         async () =>
@@ -62,8 +64,10 @@ export class JobDiscovery {
             )
             .toArray(),
       );
+
       const dueNames = new Set<string>();
       const now = yield* Clock.currentTimeMillis;
+
       for (const job of pending) {
         if (job.nextRunAt.getTime() <= now) {
           dueNames.add(job._id);
@@ -71,12 +75,14 @@ export class JobDiscovery {
           this.ctx.notifyPendingJob(job._id, job.nextRunAt);
         }
       }
+
       return dueNames;
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.sync(() => {
           // Discovery is an optimization; atomic claims remain the fallback on read failure.
           this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
+
           return names;
         }),
       ),
@@ -89,13 +95,16 @@ export class JobDiscovery {
     if (this.binaryNameMatching !== undefined) {
       return this.binaryNameMatching;
     }
+
     return yield* Effect.gen({ self: this }, function* readCollectionCollation() {
       const { collation: rawCollation } = yield* fromPromise(
         async () => await this.ctx.collection.options({ readPreference: "primary" }),
       );
+
       const collation: unknown = rawCollation;
       this.binaryNameMatching =
         collation === undefined || collation === null || hasSimpleCollation(collation);
+
       return this.binaryNameMatching;
     }).pipe(
       Effect.catchCause((cause) =>
@@ -103,6 +112,7 @@ export class JobDiscovery {
           // Metadata access is optional; retain database matching without retrying every poll.
           this.binaryNameMatching = false;
           this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
+
           return this.binaryNameMatching;
         }),
       ),
@@ -127,6 +137,7 @@ export class JobDiscovery {
             },
           ),
       );
+
       if (job) {
         this.ctx.notifyPendingJob(name, job.nextRunAt);
       }

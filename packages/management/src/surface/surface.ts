@@ -30,9 +30,11 @@ export const createManagementSurface = function createManagementSurface<TContext
   options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
   const maxBodySize = options.maxBodySize ?? 64 * 1024;
+
   if (!Number.isSafeInteger(maxBodySize) || maxBodySize < 0) {
     throw new TypeError("maxBodySize must be a nonnegative safe integer");
   }
+
   const trustedOrigins = parseTrustedOrigins(options.trustedOrigins ?? []);
 
   return {

@@ -18,20 +18,24 @@ describe("single Job priority action", () => {
     const target = createManagementJob({ _id: new ObjectId(), priority: 0 });
     const coreCalls: unknown[] = [];
     const authorization: unknown[] = [];
+
     const surface = createManagementSurface<{ user: string }>({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
         setJobPriority: async (id, priority) => {
           coreCalls.push({ id, priority });
+
           return await Promise.resolve({ ...target, priority });
         },
       }),
       authorize: ({ action, context, job }) => {
         authorization.push({ action, context, job });
+
         return true;
       },
       serializePayload: async () => await Promise.resolve({ redacted: true }),
     });
+
     await expectJsonResponse(
       await handleManagementPost(
         surface,
@@ -62,29 +66,35 @@ describe("single Job priority action", () => {
     { priority: 1, extra: true },
   ])("rejects malformed body %j before authorization or mutation", async (body) => {
     let called = false;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         setJobPriority: async () => {
           called = true;
+
           return await Promise.resolve(null);
         },
       }),
       authorize: () => {
         called = true;
+
         return true;
       },
     });
+
     const response = await handleManagementPost(
       surface,
       `/api/v1/jobs/${new ObjectId().toHexString()}/actions/priority`,
       body,
     );
+
     expect(response.status).toBe(400);
     expect(called).toBe(false);
   });
 
   it.each(["missing", "lost", "state"] as const)("maps %s core outcomes", async (outcome) => {
     const target = createManagementJob();
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob:
@@ -104,10 +114,12 @@ describe("single Job priority action", () => {
                 ),
               )();
           }
+
           return await Promise.resolve(null);
         },
       }),
     });
+
     const response1 = await handleManagementPost(
       surface,
       `/api/v1/jobs/${target._id.toHexString()}/actions/priority`,
@@ -115,6 +127,7 @@ describe("single Job priority action", () => {
         priority: 3,
       },
     );
+
     expect(response1.status).toBe(outcome === "state" ? 409 : 404);
   });
 
@@ -128,12 +141,15 @@ describe("single Job priority action", () => {
       const target = createManagementJob();
       let mutated = false;
       const methods: Partial<ManagementMonque> = { getJob: getManagementJobById(target) };
+
       if (policy !== "unsupported") {
         methods.setJobPriority = async (_id, priority) => {
           mutated = true;
+
           return await Promise.resolve({ ...target, priority });
         };
       }
+
       const surface = createManagementSurface<{ allowed: boolean }>({
         monque: createManagementMonque(methods),
         readOnly: policy === "readonly",
@@ -147,12 +163,14 @@ describe("single Job priority action", () => {
       await expect(capabilities.json()).resolves.toMatchObject({
         actions: { setJobPriority: expected },
       });
+
       const response = await handleManagementPost(
         surface,
         `/api/v1/jobs/${target._id.toHexString()}/actions/priority`,
         { priority: 3 },
         context,
       );
+
       expect(response.status).toBe(expected ? 200 : 403);
       expect(mutated).toBe(expected);
     },
@@ -180,13 +198,16 @@ describe("single Job priority action", () => {
 
   it("rejects oversized priority request bodies before authorization", async () => {
     let authorized = false;
+
     const surface = createManagementSurface({
       monque: createManagementMonque(),
       authorize: () => {
         authorized = true;
+
         return true;
       },
     });
+
     const request = new Request(
       `https://management.example/api/v1/jobs/${new ObjectId().toHexString()}/actions/priority`,
       {
@@ -195,9 +216,11 @@ describe("single Job priority action", () => {
         body: JSON.stringify({ priority: 1, padding: "x".repeat(70_000) }),
       },
     );
+
     const result = await surface.openApiHandler.handle(request, {
       context: { managementContext: {} },
     });
+
     expect(result.response?.status).toBe(413);
     expect(authorized).toBe(false);
   });

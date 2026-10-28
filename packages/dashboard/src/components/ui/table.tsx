@@ -1,7 +1,7 @@
 import { cn } from "cn";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
-const Table = ({ className, ...props }: React.ComponentProps<"table">) => (
+const Table = ({ className, ...props }: ComponentProps<"table">) => (
   <div data-slot="table-container" className="relative w-full overflow-x-auto">
     <table
       data-slot="table"
@@ -10,24 +10,28 @@ const Table = ({ className, ...props }: React.ComponentProps<"table">) => (
     />
   </div>
 );
-const TableHeader = ({ className, ...props }: React.ComponentProps<"thead">) => (
+
+const TableHeader = ({ className, ...props }: ComponentProps<"thead">) => (
   <thead data-slot="table-header" className={cn("[&_tr]:border-b", className)} {...props} />
 );
-const TableBody = ({ className, ...props }: React.ComponentProps<"tbody">) => (
+
+const TableBody = ({ className, ...props }: ComponentProps<"tbody">) => (
   <tbody
     data-slot="table-body"
     className={cn("[&_tr:last-child]:border-0", className)}
     {...props}
   />
 );
-const TableFooter = ({ className, ...props }: React.ComponentProps<"tfoot">) => (
+
+const TableFooter = ({ className, ...props }: ComponentProps<"tfoot">) => (
   <tfoot
     data-slot="table-footer"
     className={cn("border-t bg-muted/50 font-medium [&>tr]:last:border-b-0", className)}
     {...props}
   />
 );
-const TableRow = ({ className, ...props }: React.ComponentProps<"tr">) => (
+
+const TableRow = ({ className, ...props }: ComponentProps<"tr">) => (
   <tr
     data-slot="table-row"
     className={cn(
@@ -37,7 +41,8 @@ const TableRow = ({ className, ...props }: React.ComponentProps<"tr">) => (
     {...props}
   />
 );
-const TableHead = ({ className, ...props }: React.ComponentProps<"th">) => (
+
+const TableHead = ({ className, ...props }: ComponentProps<"th">) => (
   <th
     data-slot="table-head"
     className={cn(
@@ -47,18 +52,21 @@ const TableHead = ({ className, ...props }: React.ComponentProps<"th">) => (
     {...props}
   />
 );
-const TableCell = ({ className, ...props }: React.ComponentProps<"td">) => (
+
+const TableCell = ({ className, ...props }: ComponentProps<"td">) => (
   <td
     data-slot="table-cell"
     className={cn("p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0", className)}
     {...props}
   />
 );
-const TableCaption = ({ className, ...props }: React.ComponentProps<"caption">) => (
+
+const TableCaption = ({ className, ...props }: ComponentProps<"caption">) => (
   <caption
     data-slot="table-caption"
     className={cn("mt-4 text-sm text-muted-foreground", className)}
     {...props}
   />
 );
+
 export { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow };

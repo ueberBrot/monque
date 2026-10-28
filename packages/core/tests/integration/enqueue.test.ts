@@ -47,6 +47,7 @@ describe("enqueue()", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -132,6 +133,7 @@ describe("enqueue()", () => {
             ]),
         ),
       );
+
       expect({
         insertedCount: results.reduce((sum, result) => sum + result.insertedCount, 0),
         deduplicatedCount: results.reduce((sum, result) => sum + result.deduplicatedCount, 0),
@@ -146,6 +148,7 @@ describe("enqueue()", () => {
       const watch = vi.spyOn(Collection.prototype, "watch").mockImplementation(() => {
         throw new Error("Change streams unavailable");
       });
+
       const received: number[] = [];
       let delayedStartedAt: number | undefined;
       const runAt = new Date(Date.now() + 1000);
@@ -155,8 +158,10 @@ describe("enqueue()", () => {
         if (job.data.id === 2) {
           delayedStartedAt = Date.now();
         }
+
         received.push(job.data.id);
       });
+
       try {
         monque.start();
         await monque.enqueueMany([
@@ -188,6 +193,7 @@ describe("enqueue()", () => {
     it("preserves successful writes and native error details when another job is rejected", async () => {
       await db.command({ collMod: collectionName, validator: { "data.reject": { $ne: true } } });
       let failure: unknown;
+
       try {
         await monque.enqueueMany([
           { name: "work", data: { id: 1 } },
@@ -197,13 +203,16 @@ describe("enqueue()", () => {
       } catch (error) {
         failure = error;
       }
+
       expect(failure).toBeInstanceOf(ConnectionError);
+
       if (
         !(failure instanceof ConnectionError) ||
         !(failure.cause instanceof MongoBulkWriteError)
       ) {
-        throw new Error("Expected a ConnectionError caused by MongoBulkWriteError");
+        throw new TypeError("Expected a ConnectionError caused by MongoBulkWriteError");
       }
+
       expect(failure.cause.result.upsertedCount).toBe(2);
       expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);
       await expect(
@@ -217,6 +226,7 @@ describe("enqueue()", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const data = {
         message: "Hello",
         count: 42,
@@ -227,6 +237,7 @@ describe("enqueue()", () => {
         items: [1, 2, 3],
         user: { profile: { name: "John" }, options: ["a", "b"] },
       };
+
       const beforeEnqueue = Date.now();
       const job = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, data);
       const afterEnqueue = Date.now();
@@ -242,10 +253,12 @@ describe("enqueue()", () => {
         jobStatus: JobStatus.PENDING,
         jobFailCount: 0,
       });
+
       for (const timestamp of [job.createdAt, job.updatedAt, job.nextRunAt]) {
         expect(timestamp.getTime()).toBeGreaterThanOrEqual(beforeEnqueue);
         expect(timestamp.getTime()).toBeLessThanOrEqual(afterEnqueue);
       }
+
       expect({
         jobUniqueKey: job.uniqueKey,
         jobRepeatInterval: job.repeatInterval,
@@ -274,11 +287,13 @@ describe("enqueue()", () => {
       await monque.initialize();
       // 1 minute in future
       const futureDate = new Date(Date.now() + 60_000);
+
       const job = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { task: "later" },
         { runAt: futureDate },
       );
+
       expect(job.nextRunAt.getTime()).toBe(futureDate.getTime());
     });
 
@@ -313,6 +328,7 @@ describe("enqueue()", () => {
     });
   });
 });
+
 describe("now()", () => {
   let db: Db;
   let collectionName: string;
@@ -323,6 +339,7 @@ describe("now()", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -353,6 +370,7 @@ describe("now()", () => {
     );
   });
 });
+
 /**
  * Tests for uniqueKey deduplication behavior.
  *
@@ -374,6 +392,7 @@ describe("uniqueKey deduplication", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -388,18 +407,21 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Create first job with uniqueKey
       const job1 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123", first: true },
         { uniqueKey: "sync-user-123" },
       );
+
       // Try to create duplicate with different data
       const job2 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123", second: true },
         { uniqueKey: "sync-user-123" },
       );
+
       // Should return existing job with original data
       expect(job2).toStrictEqual(job1);
       await expect(
@@ -413,12 +435,14 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Create a job with uniqueKey
       const job1 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123" },
         { uniqueKey: "sync-user-123" },
       );
+
       expect(job1._id).toBeDefined();
       // Manually update job status to processing (simulating worker pickup)
       const collection = db.collection(collectionName);
@@ -426,12 +450,14 @@ describe("uniqueKey deduplication", () => {
         { _id: job1._id },
         { $set: { status: JobStatus.PROCESSING, lockedAt: new Date() } },
       );
+
       // Try to create another job with same uniqueKey
       const job2 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123" },
         { uniqueKey: "sync-user-123" },
       );
+
       // Should return the existing job (same _id)
       expect(job2._id?.toString()).toBe(job1._id?.toString());
       // Should only be one job in the collection
@@ -445,22 +471,26 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Create a job with uniqueKey
       const job1 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123" },
         { uniqueKey: "sync-user-123" },
       );
+
       expect(job1._id).toBeDefined();
       // Manually update job status to completed
       const collection = db.collection(collectionName);
       await collection.updateOne({ _id: job1._id }, { $set: { status: JobStatus.COMPLETED } });
+
       // Create another job with same uniqueKey
       const job2 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123", retry: true },
         { uniqueKey: "sync-user-123" },
       );
+
       // Should create a NEW job (different _id)
       expect(job2._id?.toString()).not.toBe(job1._id?.toString());
       expect({
@@ -473,10 +503,12 @@ describe("uniqueKey deduplication", () => {
       // Should have two jobs in the collection (one completed, one pending)
       const totalCount = await collection.countDocuments({ uniqueKey: "sync-user-123" });
       expect(totalCount).toBe(2);
+
       const pendingCount = await collection.countDocuments({
         uniqueKey: "sync-user-123",
         status: JobStatus.PENDING,
       });
+
       expect(pendingCount).toBe(1);
     });
   });
@@ -486,12 +518,14 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Create a job with uniqueKey
       const job1 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123" },
         { uniqueKey: "sync-user-123" },
       );
+
       expect(job1._id).toBeDefined();
       // Manually update job status to failed (permanent failure after max retries)
       const collection = db.collection(collectionName);
@@ -505,12 +539,14 @@ describe("uniqueKey deduplication", () => {
           },
         },
       );
+
       // Create another job with same uniqueKey
       const job2 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "123", retry: true },
         { uniqueKey: "sync-user-123" },
       );
+
       // Should create a NEW job (different _id)
       expect(job2._id?.toString()).not.toBe(job1._id?.toString());
       expect(job2.status).toBe(JobStatus.PENDING);
@@ -525,6 +561,7 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Create 10 concurrent enqueue attempts with same uniqueKey
       const enqueuePromises = Array.from(
         { length: 10 },
@@ -535,6 +572,7 @@ describe("uniqueKey deduplication", () => {
             { uniqueKey: "concurrent-test" },
           ),
       );
+
       const results = await Promise.all(enqueuePromises);
       // All results should be defined
       expect(results).toHaveLength(10);
@@ -556,21 +594,25 @@ describe("uniqueKey deduplication", () => {
       const monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const job1 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "111" },
         { uniqueKey: "sync-user-111" },
       );
+
       const job2 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "222" },
         { uniqueKey: "sync-user-222" },
       );
+
       const job3 = await monque.enqueue(
         TEST_CONSTANTS.JOB_NAME,
         { userId: "333" },
         { uniqueKey: "sync-user-333" },
       );
+
       // All should have different _ids
       expect(job1._id?.toString()).not.toBe(job2._id?.toString());
       expect(job2._id?.toString()).not.toBe(job3._id?.toString());

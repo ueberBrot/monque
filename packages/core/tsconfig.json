@@ -25,9 +25,16 @@
           "missingEffectError": "error",
           "missingStarInYieldEffectGen": "error",
           "returnEffectInGen": "error",
-          "promiseInEffectSuccess": "error"
+          "promiseInEffectSuccess": "error",
+          "apiStabilityLeak": "error"
         },
         "overrides": [
+          {
+            "include": ["tests/**/*.ts"],
+            "options": {
+              "allowedUnstableApis": ["@effect/vitest#it"]
+            }
+          },
           {
             "include": ["src/scheduler/effects.ts"],
             "options": {

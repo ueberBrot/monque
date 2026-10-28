@@ -12,6 +12,7 @@ const chooseDate = async (page: Page, label: string, date: string, time: string)
   await picker.getByRole("button", { name: "Apply", exact: true }).click();
   await expect(picker).not.toBeVisible();
 };
+
 test("empty database, no matches, malformed and missing identifiers", async ({ page, app }) => {
   await page.goto(`${app.base}/dashboard/jobs`);
   await expect(page.getByRole("heading", { name: "No jobs found" })).toBeVisible();
@@ -28,6 +29,7 @@ test("empty database, no matches, malformed and missing identifiers", async ({ p
   });
   expect(await app.jobs.countDocuments({ _id: job._id })).toBe(1);
 });
+
 test("deep-link reload, legacy null fields, long payload, and layout", async ({ page, app }) => {
   const text = `<script>window.__payloadExecuted = true</script>${"long-payload-".repeat(100)}`;
   const job = await app.seed({ data: { text } });
@@ -42,9 +44,11 @@ test("deep-link reload, legacy null fields, long payload, and layout", async ({ 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Payload", exact: true })).toBeVisible();
   const favicon = await page.locator('link[rel="icon"]').getAttribute("href");
+
   if (favicon === undefined || favicon === null || favicon === "") {
     throw new Error("Missing dashboard favicon");
   }
+
   const faviconResponse = await page.request.get(new URL(favicon, page.url()).href);
   expect(faviconResponse.ok()).toBe(true);
   expect(faviconResponse.headers()["content-type"]).toContain("image/svg+xml");
@@ -55,6 +59,7 @@ test("deep-link reload, legacy null fields, long payload, and layout", async ({ 
   expect(response.status()).toBe(200);
   expect(await response.json()).not.toHaveProperty("heartbeatInterval");
 });
+
 test("cancel is persisted and idempotent; retry resets failure state", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
@@ -62,12 +67,15 @@ test("cancel is persisted and idempotent; retry resets failure state", async ({ 
   await expect
     .poll(async () => {
       const awaitedResult1 = await app.jobs.findOne({ _id: job._id });
+
       return awaitedResult1?.status;
     })
     .toBe("cancelled");
+
   const repeated = await page.request.post(
     `${app.base}/api/v1/jobs/${String(job._id)}/actions/cancel`,
   );
+
   expect(repeated.status()).toBe(200);
   await app.jobs.updateOne(
     { _id: job._id },
@@ -78,6 +86,7 @@ test("cancel is persisted and idempotent; retry resets failure state", async ({ 
   await expect
     .poll(async () => {
       const awaitedResult2 = await app.jobs.findOne({ _id: job._id });
+
       return awaitedResult2?.status;
     })
     .toBe("pending");
@@ -87,6 +96,7 @@ test("cancel is persisted and idempotent; retry resets failure state", async ({ 
   await page.reload();
   await expect(page.getByText("Pending", { exact: true })).toBeVisible();
 });
+
 test("dotted Queue View names support direct links and reloads", async ({ page, app }) => {
   await app.seed({ name: "email.send" });
   await page.goto(`${app.base}/dashboard/queue-views/email.send`);
@@ -95,6 +105,7 @@ test("dotted Queue View names support direct links and reloads", async ({ page, 
   await expect(page.getByRole("heading", { name: "email.send", exact: true })).toBeVisible();
   await expect(page.locator("tbody tr")).toHaveCount(1);
 });
+
 test("rescheduling validates DST and persists local time as UTC", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
@@ -109,12 +120,14 @@ test("rescheduling validates DST and persists local time as UTC", async ({ page,
   await expect
     .poll(async () => {
       const awaitedResult3 = await app.jobs.findOne({ _id: job._id });
+
       return awaitedResult3?.nextRunAt.toISOString();
     })
     .toBe("2027-03-28T01:30:00.000Z");
   await page.reload();
   await expect(page.getByText("Mar 28, 2027 at 03:30:00", { exact: true })).toBeVisible();
 });
+
 test("delete dismissal preserves data; confirmation removes it and handles reload", async ({
   page,
   app,
@@ -140,26 +153,31 @@ test("delete dismissal preserves data; confirmation removes it and handles reloa
   await expect(page).toHaveURL(/\/dashboard\/jobs(?:\?|$)/u);
   await expect(page.getByRole("heading", { name: "No jobs found" })).toBeVisible();
 });
+
 test("cursor pagination with tied dates neither skips nor repeats jobs", async ({ page, app }) => {
   await app.seedScenario("pagination");
   await page.goto(`${app.base}/dashboard/jobs`);
   await expect(page.locator("tbody tr")).toHaveCount(50);
+
   const first = await page
     .locator("tbody a")
     .evaluateAll((links) =>
       links.map((link) => new URL(link.getAttribute("href") ?? "", window.location.href).pathname),
     );
+
   await page
     .getByRole("checkbox", { name: /^Select job row /u })
     .first()
     .check();
   await page.getByRole("link", { name: "Next page", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(50);
+
   const second = await page
     .locator("tbody a")
     .evaluateAll((links) =>
       links.map((link) => new URL(link.getAttribute("href") ?? "", window.location.href).pathname),
     );
+
   expect(new Set([...first, ...second]).size).toBe(100);
   await expect(page.getByRole("button", { name: "Delete selected jobs" })).toHaveCount(0);
   await page.reload();
@@ -167,6 +185,7 @@ test("cursor pagination with tied dates neither skips nor repeats jobs", async (
   await page.getByRole("link", { name: "First page", exact: true }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("cursor")).toBeNull();
 });
+
 test("pagination links preserve URLs and support opening another tab", async ({
   page,
   app,
@@ -183,6 +202,7 @@ test("pagination links preserve URLs and support opening another tab", async ({
   expect(href).toBeTruthy();
   const target = new URL(href ?? "", page.url()).href;
   let otherTab: Page;
+
   if (isMobile) {
     otherTab = await page.context().newPage();
     await otherTab.goto(target);
@@ -193,12 +213,14 @@ test("pagination links preserve URLs and support opening another tab", async ({
       next.click({ button: "middle", modifiers: ["Shift"] }),
     ]);
   }
+
   await expect(otherTab).toHaveURL(target);
   await expect(otherTab.locator("tbody tr")).toHaveCount(10);
   expect(new URL(page.url()).searchParams.get("cursor")).toBeNull();
   expect(new URL(otherTab.url()).searchParams.get("limit")).toBe("10");
   await otherTab.close();
 });
+
 test("Jobs pagination follows browser Back and returns from job details", async ({ page, app }) => {
   await app.seedScenario("pagination");
   await page.goto(`${app.base}/dashboard/jobs?limit=10`);
@@ -228,6 +250,7 @@ test("Jobs pagination follows browser Back and returns from job details", async 
   await page.getByRole("link", { name: "First page", exact: true }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("cursor")).toBeNull();
 });
+
 test("date boundaries, combined statuses, URL restoration, and clearing filters", async ({
   page,
   app,
@@ -249,6 +272,7 @@ test("date boundaries, combined statuses, URL restoration, and clearing filters"
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(4);
 });
+
 test("mixed selection disables invalid actions; bulk deletion affects selected IDs only", async ({
   page,
   app,
@@ -273,6 +297,7 @@ test("mixed selection disables invalid actions; bulk deletion affects selected I
   expect(await app.jobs.countDocuments()).toBe(1);
   expect(await app.jobs.findOne({ _id: untouched._id })).not.toBeNull();
 });
+
 test("bulk conflict reports partial success and preserves a job claimed by another worker", async ({
   page,
   app,
@@ -308,6 +333,7 @@ test("bulk conflict reports partial success and preserves a job claimed by anoth
   const awaitedResult6 = await app.jobs.findOne({ _id: untouched._id });
   expect(awaitedResult6?.status).toBe("pending");
 });
+
 test("deletion by another operator is reflected without reloading", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
@@ -315,6 +341,7 @@ test("deletion by another operator is reflected without reloading", async ({ pag
   await app.jobs.deleteOne({ _id: job._id });
   await expect(page.getByRole("heading", { name: "Job not found" })).toBeVisible();
 });
+
 test("read-only surface blocks UI and all mutation endpoints", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.origin}/readonly/dashboard/jobs/${String(job._id)}`);
@@ -326,15 +353,19 @@ test("read-only surface blocks UI and all mutation endpoints", async ({ page, ap
       `${app.origin}/readonly/api/v1/jobs/${String(job._id)}/actions/${action}`,
       { data: { nextRunAt: "2035-01-01T00:00:00Z" } },
     );
+
     expect(response.status()).toBe(403);
   });
+
   const deniedDeleteResponse = await page.request.delete(
     `${app.origin}/readonly/api/v1/jobs/${String(job._id)}`,
   );
+
   expect(deniedDeleteResponse.status()).toBe(403);
   const awaitedResult7 = await app.jobs.findOne({ _id: job._id });
   expect(awaitedResult7?.status).toBe("pending");
 });
+
 test("invalid cursor and mutation inputs return errors without changing persistence", async ({
   page,
   app,
@@ -342,10 +373,12 @@ test("invalid cursor and mutation inputs return errors without changing persiste
   const job = await app.seed();
   const awaitedResult8 = await page.request.get(`${app.base}/api/v1/jobs?cursor=invalid`);
   expect(awaitedResult8.status()).toBe(400);
+
   const invalidRescheduleResponse = await page.request.post(
     `${app.base}/api/v1/jobs/${String(job._id)}/actions/reschedule`,
     { data: { nextRunAt: "not-a-date" } },
   );
+
   expect(invalidRescheduleResponse.status()).toBe(400);
   const awaitedResult9 = await app.jobs.findOne({ _id: job._id });
   expect(awaitedResult9?.nextRunAt).toEqual(job.nextRunAt);
@@ -354,6 +387,7 @@ test("invalid cursor and mutation inputs return errors without changing persiste
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(1);
 });
+
 test("actual workers complete and fail jobs while the dashboard polls", async ({ page, app }) => {
   const success = await app.monque.enqueue("email", { work: "execute" });
   const failure = await app.monque.enqueue("fails", { work: "fail" });
@@ -364,6 +398,7 @@ test("actual workers complete and fail jobs while the dashboard polls", async ({
   await expect
     .poll(async () => {
       const awaitedResult10 = await app.jobs.findOne({ _id: failure._id });
+
       return awaitedResult10?.status;
     })
     .toBe("failed");
@@ -371,6 +406,7 @@ test("actual workers complete and fail jobs while the dashboard polls", async ({
   await expect(page.getByText("Failed", { exact: true })).toBeVisible();
   await expect(page.getByText("intentional e2e worker failure", { exact: true })).toBeVisible();
 });
+
 test("database disconnect shows a recoverable error and reconnect restores jobs", async ({
   page,
   app,
@@ -383,6 +419,7 @@ test("database disconnect shows a recoverable error and reconnect restores jobs"
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator("tbody tr")).toHaveCount(1);
 });
+
 test("sorting changes database order and restored URLs retain the sort", async ({ page, app }) => {
   const oldest = await app.seed({ createdAt: new Date("2026-01-01T00:00:00Z") });
   const newest = await app.seed({ createdAt: new Date("2026-06-01T00:00:00Z") });
@@ -403,6 +440,7 @@ test("sorting changes database order and restored URLs retain the sort", async (
     new RegExp(oldest._id.toHexString(), "u"),
   );
 });
+
 test("concurrent cancellation requests remain idempotent in MongoDB", async ({ page, app }) => {
   const job = await app.seed();
   const url = `${app.base}/api/v1/jobs/${String(job._id)}/actions/cancel`;

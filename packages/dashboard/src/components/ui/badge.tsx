@@ -27,6 +27,7 @@ const badgeVariants = cva(
     },
   },
 );
+
 const Badge = ({
   className,
   variant = "default",
@@ -47,4 +48,5 @@ const Badge = ({
       variant,
     },
   });
+
 export { Badge, badgeVariants };

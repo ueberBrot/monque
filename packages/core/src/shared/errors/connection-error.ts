@@ -24,9 +24,11 @@ export class ConnectionError extends MonqueError {
   ) {
     super(message);
     this.name = "ConnectionError";
+
     if (options?.cause) {
       this.cause = options.cause;
     }
+
     captureErrorStack(this, ConnectionError);
   }
 }

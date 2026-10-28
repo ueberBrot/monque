@@ -24,6 +24,7 @@ const writeResult = {
   upsertedCount: 0,
   upsertedId: null,
 };
+
 describe(LifecycleManager, () => {
   let ctx: ReturnType<typeof createMockContext>;
   let manager: LifecycleManager;
@@ -49,10 +50,12 @@ describe(LifecycleManager, () => {
 
     it("replaces retained heartbeat and cleanup timers without duplicate writes", async () => {
       ctx.options.jobRetention = { completed: 60_000, interval: ctx.options.heartbeatInterval };
+
       const cleanup = vi.spyOn(ctx.mockCollection, "deleteMany").mockResolvedValue({
         acknowledged: true,
         deletedCount: 0,
       });
+
       manager.startTimers();
       manager.stopTimers(true);
       manager.startTimers();
@@ -318,11 +321,14 @@ describe(LifecycleManager, () => {
       ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
       const result = { acknowledged: true, deletedCount: 0 };
       const pending = Promise.withResolvers<typeof result>();
+
       const deletion = vi
         .mocked(ctx.mockCollection.deleteMany)
         .mockResolvedValue(result)
         .mockReturnValueOnce(pending.promise);
+
       manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+
       try {
         manager.startTimers();
         yield* TestClock.adjust(5000);
@@ -352,12 +358,15 @@ describe(LifecycleManager, () => {
         const result = { acknowledged: true, deletedCount: 0 };
         const pending = Promise.withResolvers<typeof result>();
         const error = new Error("Completed retention failed");
+
         const deletion = vi
           .mocked(ctx.mockCollection.deleteMany)
           .mockResolvedValue(result)
           .mockRejectedValueOnce(error)
           .mockReturnValueOnce(pending.promise);
+
         manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+
         try {
           manager.startTimers();
           yield* TestClock.adjust(0);
@@ -368,11 +377,13 @@ describe(LifecycleManager, () => {
           manager.startTimers();
           yield* TestClock.adjust(1000);
           expect(deletion).toHaveBeenCalledTimes(2);
+
           if (siblingRejects) {
             pending.reject(new Error("Failed retention failed"));
           } else {
             pending.resolve(result);
           }
+
           yield* TestClock.adjust(1000);
           expect({
             deletionMockCallsLength: deletion.mock.calls.length,
@@ -400,11 +411,14 @@ describe(LifecycleManager, () => {
           ctx.options.leaseDuration = 1100;
           ctx.options.recoverStaleJobs = false;
           ctx.options.jobRetention = { completed: 10_000, interval: 1000 };
+
           const deletion = vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValue({
             acknowledged: true,
             deletedCount: 0,
           });
+
           manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
+
           try {
             manager.startTimers();
             yield* testClock.adjust(1000);
@@ -416,6 +430,7 @@ describe(LifecycleManager, () => {
               deletionMockCallsLength: 2,
             });
             offset += shift;
+
             for (let tick = 2; tick <= 4; tick += 1) {
               yield* testClock.adjust(999);
               expect({
@@ -436,6 +451,7 @@ describe(LifecycleManager, () => {
                 deletionMockCallsLength: tick + 1,
               });
             }
+
             expect(deletion).toHaveBeenLastCalledWith({
               status: JobStatus.COMPLETED,
               updatedAt: { $lt: new Date(54_000 + shift) },

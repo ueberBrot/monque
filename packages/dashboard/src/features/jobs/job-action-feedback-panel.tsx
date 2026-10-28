@@ -10,8 +10,10 @@ const feedbackToneClasses = {
   success: "bg-primary/10 text-foreground",
   warning: "bg-warning/10 text-warning-foreground-strong",
 } satisfies Record<JobActionFeedbackTone, string>;
+
 const getJobActionFeedbackToneClassName = (tone: JobActionFeedbackTone): string =>
   feedbackToneClasses[tone];
+
 const JobActionFeedbackPanel = ({
   className,
   feedback,
@@ -39,4 +41,5 @@ const JobActionFeedbackPanel = ({
     ) : null}
   </output>
 );
+
 export { JobActionFeedbackPanel };

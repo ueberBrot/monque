@@ -21,13 +21,16 @@ const createDashboardHarness = (
   if (options.history !== "memory") {
     window.history.replaceState({}, "", pathname);
   }
+
   const runtimeConfig: Parameters<typeof getRouter>[0]["runtimeConfig"] = {
     apiBaseUrl: "/",
     basePath: "/",
   };
+
   if (options.pollingIntervalMs !== undefined) {
     runtimeConfig.pollingIntervalMs = options.pollingIntervalMs;
   }
+
   const managementApi = createDashboardManagementApi({
     apiBaseUrl: runtimeConfig.apiBaseUrl,
     fetch:
@@ -35,16 +38,20 @@ const createDashboardHarness = (
       createMockManagementFetch({ scenarioId: options.scenarioId ?? "pending-jobs" }),
     origin: options.origin ?? "https://dashboard.test",
   });
+
   const queryClient = createDashboardQueryClient();
+
   const router = getRouter(
     { managementApi, queryClient, runtimeConfig },
     options.history === "memory"
       ? { history: createMemoryHistory({ initialEntries: [pathname] }) }
       : undefined,
   );
+
   return {
     router,
     render: () => render(<DashboardProviders queryClient={queryClient} router={router} />),
   };
 };
+
 export { createDashboardHarness };

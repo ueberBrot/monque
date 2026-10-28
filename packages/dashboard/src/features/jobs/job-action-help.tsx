@@ -12,9 +12,11 @@ const JobActionHelp = ({
   const unavailable = actions.filter(
     ({ reason }) => reason !== undefined && reason !== null && reason !== "",
   );
+
   if (!unavailable.length) {
     return null;
   }
+
   return (
     <Collapsible className="w-full">
       <CollapsibleTrigger
@@ -35,4 +37,5 @@ const JobActionHelp = ({
     </Collapsible>
   );
 };
+
 export { JobActionHelp };

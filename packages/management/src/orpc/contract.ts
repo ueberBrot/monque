@@ -23,6 +23,8 @@ import {
   SelectedJobActionsDtoSchema,
 } from "../schemas/index.js";
 
+const successDescription = "Successful response";
+
 const ManagementMutationErrors = {
   BAD_REQUEST: {
     status: 400,
@@ -105,7 +107,7 @@ export const managementContract = {
       path: "/api/v1/health",
       operationId: "getSchedulerHealth",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .output(SchedulerHealthDtoSchema),
   capabilities: oc
@@ -114,7 +116,7 @@ export const managementContract = {
       path: "/api/v1/capabilities",
       operationId: "getCapabilities",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(ProcessingQueryDtoSchema.optional())
     .output(CapabilitiesDtoSchema),
@@ -124,7 +126,7 @@ export const managementContract = {
       path: "/api/v1/queue-views",
       operationId: "listQueueViews",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(QueueViewQueryDtoSchema.optional())
     .output(QueueViewSummaryListDtoSchema),
@@ -134,7 +136,7 @@ export const managementContract = {
       path: "/api/v1/jobs",
       operationId: "listJobs",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(JobListQueryDtoSchema)
     .output(JobCursorPageDtoSchema),
@@ -144,7 +146,7 @@ export const managementContract = {
       path: "/api/v1/jobs/stats",
       operationId: "getJobStats",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(JobStatsQueryDtoSchema)
     .output(QueueStatsDtoSchema),
@@ -154,7 +156,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}",
       operationId: "getJob",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -165,7 +167,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}/actions/cancel",
       operationId: "cancelJob",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -177,7 +179,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}/actions/retry",
       operationId: "retryJob",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -189,7 +191,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}/actions/reschedule",
       operationId: "rescheduleJob",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(RescheduleJobInputDtoSchema)
@@ -201,7 +203,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}/actions/priority",
       operationId: "setJobPriority",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(SetJobPriorityInputDtoSchema)
@@ -213,7 +215,7 @@ export const managementContract = {
       path: "/api/v1/jobs/{id}",
       operationId: "deleteJob",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -225,7 +227,7 @@ export const managementContract = {
       path: "/api/v1/jobs/actions/cancel",
       operationId: "cancelJobs",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
@@ -236,7 +238,7 @@ export const managementContract = {
       path: "/api/v1/jobs/actions/retry",
       operationId: "retryJobs",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
@@ -247,7 +249,7 @@ export const managementContract = {
       path: "/api/v1/jobs/actions/delete",
       operationId: "deleteJobs",
       successStatus: 200,
-      successDescription: "Successful response",
+      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)

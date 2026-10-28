@@ -24,6 +24,7 @@ const queueSummary = (name: string): QueueViewSummary => ({
 
 describe("oRPC Management read routes", () => {
   const views = ["detail", "full", "summary"] as const;
+
   const priorities = [
     { priority: 12, expected: 12 },
     { priority: 0, expected: 0 },
@@ -35,9 +36,11 @@ describe("oRPC Management read routes", () => {
     "exposes effective priority $priority in the $view view",
     async ({ priority, expected, view }) => {
       const job = createManagementJob();
+
       if (priority !== undefined) {
         job.priority = priority;
       }
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: getManagementJobById(job),
@@ -49,16 +52,20 @@ describe("oRPC Management read routes", () => {
           }),
         }),
       });
+
       const paths = {
         detail: `/api/v1/jobs/${job._id.toHexString()}`,
         full: "/api/v1/jobs",
         summary: "/api/v1/jobs?view=summary",
       };
+
       const response = await handleManagementGet(surface, paths[view]);
       expect(response.status).toBe(200);
       const body: unknown = await response.json();
+
       const dto =
         view === "detail" ? JobDtoSchema.parse(body) : JobCursorPageDtoSchema.parse(body).jobs[0];
+
       expect(dto).toMatchObject({
         priority: expected,
         payload: view === "summary" ? null : job.data,
@@ -72,9 +79,11 @@ describe("oRPC Management read routes", () => {
     "serializes renewable lease deadline $leaseExpiresAt in the $view view",
     async ({ leaseExpiresAt, view }) => {
       const job = createManagementJob({ status: "processing" });
+
       if (leaseExpiresAt !== undefined) {
         job.leaseExpiresAt = leaseExpiresAt;
       }
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: getManagementJobById(job),
@@ -86,16 +95,20 @@ describe("oRPC Management read routes", () => {
           }),
         }),
       });
+
       const paths = {
         detail: `/api/v1/jobs/${job._id.toHexString()}`,
         full: "/api/v1/jobs",
         summary: "/api/v1/jobs?view=summary",
       };
+
       const response = await handleManagementGet(surface, paths[view]);
       expect(response.status).toBe(200);
       const body: unknown = await response.json();
+
       const dto =
         view === "detail" ? JobDtoSchema.parse(body) : JobCursorPageDtoSchema.parse(body).jobs[0];
+
       expect(dto?.leaseExpiresAt).toBe(leaseExpiresAt?.toISOString());
       expect(Object.keys(dto ?? {}).includes("leaseExpiresAt")).toBe(leaseExpiresAt !== undefined);
     },
@@ -107,9 +120,11 @@ describe("oRPC Management read routes", () => {
       failCount: 1,
       failReason: "Account no longer exists",
     });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({ getJob: getManagementJobById(job) }),
     });
+
     const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
     expect(response.status).toBe(200);
     expect(JobDtoSchema.parse(await response.json())).toMatchObject({
@@ -125,9 +140,11 @@ describe("oRPC Management read routes", () => {
     "preserves schedule timezone $timezone in the $view view",
     async ({ timezone, view }) => {
       const job = createManagementJob({ repeatInterval: "0 9 * * *" });
+
       if (timezone !== undefined) {
         job.timezone = timezone;
       }
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: getManagementJobById(job),
@@ -139,16 +156,20 @@ describe("oRPC Management read routes", () => {
           }),
         }),
       });
+
       const paths = {
         detail: `/api/v1/jobs/${job._id.toHexString()}`,
         full: "/api/v1/jobs",
         summary: "/api/v1/jobs?view=summary",
       };
+
       const response = await handleManagementGet(surface, paths[view]);
       expect(response.status).toBe(200);
       const body: unknown = await response.json();
+
       const dto =
         view === "detail" ? JobDtoSchema.parse(body) : JobCursorPageDtoSchema.parse(body).jobs[0];
+
       expect(dto?.timezone).toBe(timezone);
       expect(Object.keys(dto ?? {}).includes("timezone")).toBe(timezone !== undefined);
       expect(dto?.repeatInterval).toBe("0 9 * * *");
@@ -157,6 +178,7 @@ describe("oRPC Management read routes", () => {
 
   it("summary listings omit payloads without invoking payload serializers", async () => {
     const job = createManagementJob();
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJobsWithCursor: vi
@@ -172,6 +194,7 @@ describe("oRPC Management read routes", () => {
         throw new Error("Summary reads must not serialize payloads");
       },
     });
+
     const response = await handleManagementGet(surface, "/api/v1/jobs?view=summary");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -183,6 +206,7 @@ describe("oRPC Management read routes", () => {
     const jobId = new ObjectId();
     let capturedOptions: CursorOptions | undefined;
     const serializedPayloads: unknown[] = [];
+
     const job = createManagementJob({
       _id: jobId,
       data: { to: "person@example.test", token: "secret" },
@@ -193,6 +217,7 @@ describe("oRPC Management read routes", () => {
       failCount: 2,
       failReason: "SMTP rejected",
     });
+
     const surface = createManagementSurface<{ userId: string }>({
       monque: createManagementMonque({
         getJobsWithCursor: async (options) => {
@@ -264,11 +289,13 @@ describe("oRPC Management read routes", () => {
 
   it("returns Job detail DTOs by id and maps missing or invalid ids", async () => {
     const jobId = new ObjectId();
+
     const job = createManagementJob({
       _id: jobId,
       data: { visible: true },
       status: "completed",
     });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(job),
@@ -276,10 +303,12 @@ describe("oRPC Management read routes", () => {
     });
 
     const found = await handleManagementGet(surface, `/api/v1/jobs/${jobId.toHexString()}`);
+
     const missing = await handleManagementGet(
       surface,
       `/api/v1/jobs/${new ObjectId().toHexString()}`,
     );
+
     const invalid = await handleManagementGet(surface, "/api/v1/jobs/not-an-object-id");
 
     await expectJsonResponse(found, 200, {
@@ -305,6 +334,7 @@ describe("oRPC Management read routes", () => {
     const coreCalls: string[] = [];
     const pathId = new ObjectId();
     const queryId = new ObjectId();
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: async () => {
@@ -329,6 +359,7 @@ describe("oRPC Management read routes", () => {
     async (name) => {
       const jobId = new ObjectId();
       let capturedOptions: CursorOptions | undefined;
+
       const job = createManagementJob({
         _id: jobId,
         name,
@@ -340,6 +371,7 @@ describe("oRPC Management read routes", () => {
         repeatInterval: "0 * * * *",
         uniqueKey: "send-email:user-1",
       });
+
       const surface = createManagementSurface<{ role: string }>({
         monque: createManagementMonque({
           getJobsWithCursor: async (options) => {
@@ -410,6 +442,7 @@ describe("oRPC Management read routes", () => {
 
   it("passes a single Job status query as a scalar core filter", async () => {
     let capturedOptions: CursorOptions | undefined;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJobsWithCursor: async (options) => {
@@ -447,6 +480,7 @@ describe("oRPC Management read routes", () => {
 
   it("maps Dashboard-grade Job list filters and sorting into core cursor options", async () => {
     let capturedOptions: CursorOptions | undefined;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJobsWithCursor: async (options) => {
@@ -494,10 +528,12 @@ describe("oRPC Management read routes", () => {
 
   it("maps invalid Job list query shapes and malformed cursors to stable 400 responses", async () => {
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJobsWithCursor: async () => {
           coreCalls.push("called");
+
           return await vi
             .fn<() => Promise<never>>()
             .mockRejectedValue(new InvalidCursorError("Invalid cursor"))();
@@ -506,15 +542,19 @@ describe("oRPC Management read routes", () => {
     });
 
     const invalidStatus = await handleManagementGet(surface, "/api/v1/jobs?status=wat");
+
     const invalidRepeatedStatus = await handleManagementGet(
       surface,
       "/api/v1/jobs?status=pending&status=wat",
     );
+
     const unsupportedFilter = await handleManagementGet(
       surface,
       "/api/v1/jobs?claimedBy=scheduler-1",
     );
+
     const invalidLimit = await handleManagementGet(surface, "/api/v1/jobs?limit=0");
+
     const malformedCursor = await handleManagementGet(
       surface,
       "/api/v1/jobs?cursor=not-a-valid-cursor",
@@ -533,6 +573,7 @@ describe("oRPC Management read routes", () => {
   it("rejects Job reads when authorization denies read access", async () => {
     const calls: unknown[] = [];
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({
         getJobsWithCursor: async () => {
@@ -553,6 +594,7 @@ describe("oRPC Management read routes", () => {
       }),
       authorize: ({ action, context }) => {
         calls.push({ action, context });
+
         return false;
       },
     });
@@ -560,6 +602,7 @@ describe("oRPC Management read routes", () => {
     const list = await handleManagementGet(surface, "/api/v1/jobs", {
       managementContext: { role: "viewer" },
     });
+
     const detail = await handleManagementGet(
       surface,
       `/api/v1/jobs/${new ObjectId().toHexString()}`,
@@ -579,6 +622,7 @@ describe("oRPC Management read routes", () => {
 
   it("lists Queue Views through the public scheduler summary API", async () => {
     const scopes: ({ name?: string } | undefined)[] = [];
+
     const queueViews = [
       {
         name: "send-email",
@@ -618,10 +662,12 @@ describe("oRPC Management read routes", () => {
         worker: null,
       },
     ] satisfies QueueViewSummary[];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getQueueViewSummaries: async (filter?: { name?: string }) => {
           scopes.push(filter);
+
           return await Promise.resolve(queueViews);
         },
       }),
@@ -680,10 +726,12 @@ describe("oRPC Management read routes", () => {
       monque: createManagementMonque({
         getQueueViewSummaries: async (filter?: { name?: string }) => {
           scopes.push(filter);
+
           return await Promise.resolve([queueSummary("alpha"), queueSummary("beta")]);
         },
       }),
     });
+
     const response = await handleManagementGet(surface, "/api/v1/queue-views?name=beta");
     await expectJsonResponse(response, 200, { queueViews: [queueSummary("beta")] });
     expect(scopes).toStrictEqual([{ name: "beta" }]);
@@ -693,6 +741,7 @@ describe("oRPC Management read routes", () => {
 
   it("returns Job statistics through the public scheduler stats API", async () => {
     const calls: ({ name?: string } | undefined)[] = [];
+
     const stats = {
       pending: 4,
       processing: 3,
@@ -702,10 +751,12 @@ describe("oRPC Management read routes", () => {
       total: 30,
       avgProcessingDurationMs: 456,
     } satisfies QueueStats;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getQueueStats: async (filter) => {
           calls.push(filter);
+
           return await Promise.resolve(stats);
         },
       }),
@@ -738,15 +789,18 @@ describe("oRPC Management read routes", () => {
   it("rejects Queue View reads when authorization denies read access", async () => {
     const calls: unknown[] = [];
     const queueViewCalls: string[] = [];
+
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({
         getQueueViewSummaries: async () => {
           queueViewCalls.push("called");
+
           return await Promise.resolve([]);
         },
       }),
       authorize: ({ action, context }) => {
         calls.push({ action, context });
+
         return false;
       },
     });
@@ -762,10 +816,12 @@ describe("oRPC Management read routes", () => {
 
   it("rejects invalid Job stats query shapes before calling core", async () => {
     const calls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getQueueStats: async () => {
           calls.push("called");
+
           return await Promise.resolve({
             pending: 0,
             processing: 0,
@@ -787,10 +843,12 @@ describe("oRPC Management read routes", () => {
   it("rejects Job stats reads when authorization denies read access", async () => {
     const calls: unknown[] = [];
     const statsCalls: string[] = [];
+
     const surface = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({
         getQueueStats: async () => {
           statsCalls.push("called");
+
           return await Promise.resolve({
             pending: 0,
             processing: 0,
@@ -803,6 +861,7 @@ describe("oRPC Management read routes", () => {
       }),
       authorize: ({ action, context }) => {
         calls.push({ action, context });
+
         return false;
       },
     });
@@ -824,11 +883,13 @@ describe("oRPC Management read routes", () => {
       repeatInterval: { value: null },
       uniqueKey: { value: null },
     });
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
       }),
     });
+
     const response = await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`);
     expect(response.status).toBe(200);
     const body = await response.json();

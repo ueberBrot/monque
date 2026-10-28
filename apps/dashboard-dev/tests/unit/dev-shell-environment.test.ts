@@ -18,6 +18,7 @@ import type { DashboardDevEnvironment } from "../../src/environment.js";
 vi.mock(import("@/management-client"), () =>
   fromPartial<typeof ManagementClientModule>({ createDashboardManagementApi: () => ({}) }),
 );
+
 vi.mock(import("@/query-client"), () =>
   fromPartial<typeof QueryClientModule>({
     createDashboardQueryClient: vi.fn<typeof createDashboardQueryClient>(() =>
@@ -25,11 +26,13 @@ vi.mock(import("@/query-client"), () =>
     ),
   }),
 );
+
 vi.mock(import("@/router"), () =>
   fromPartial<typeof RouterModule>({
     getRouter: vi.fn<typeof getRouter>(() => fromPartial<ReturnType<typeof getRouter>>({})),
   }),
 );
+
 vi.mock(import("@/providers"), () =>
   fromPartial<typeof ProvidersModule>({
     DashboardProviders: vi.fn<
@@ -37,8 +40,10 @@ vi.mock(import("@/providers"), () =>
     >(() => null),
   }),
 );
+
 const renderShell = (config: DashboardDevEnvironment) =>
   createElement(StrictMode, null, createElement(DashboardDevShellApp, { environment: config }));
+
 describe("dev shell environment", () => {
   afterEach(() => {
     cleanup();
@@ -52,6 +57,7 @@ describe("dev shell environment", () => {
       if (!(stored === undefined || stored === null || stored === "")) {
         localStorage.setItem("monque-dashboard-dev-scenario", stored);
       }
+
       render(
         createElement(DashboardDevShellApp, {
           environment: { mode: "mock", scenarioId: "failed-jobs" },

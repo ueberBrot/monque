@@ -14,6 +14,7 @@ describe("priority query costs", () => {
     directConnection: true,
     monitorCommands: true,
   });
+
   const db = client.db(`monque_priority_queries_${randomUUID().replaceAll("-", "")}`);
   const instances: Monque[] = [];
   beforeAll(async () => {
@@ -37,6 +38,7 @@ describe("priority query costs", () => {
     "keeps due claims and discovery indexed (distinct priorities: $distinctPriorities, managed legacy index: $managedLegacyIndex)",
     async ({ distinctPriorities, managedLegacyIndex }) => {
       const collectionName = `backlog-${distinctPriorities}-${managedLegacyIndex}`;
+
       if (managedLegacyIndex) {
         await db.collection(collectionName).createIndex({
           name: 1,
@@ -45,10 +47,12 @@ describe("priority query costs", () => {
           claimedBy: 1,
         });
       }
+
       const producer = new Monque(db, {
         collectionName,
         skipIndexCreation: managedLegacyIndex,
       });
+
       const consumer = new Monque(db, {
         collectionName,
         skipIndexCreation: managedLegacyIndex,
@@ -56,6 +60,7 @@ describe("priority query costs", () => {
         instanceConcurrency: 1,
         safetyPollInterval: 60_000,
       });
+
       instances.push(producer, consumer);
       await producer.initialize();
       await consumer.initialize();
@@ -99,9 +104,11 @@ describe("priority query costs", () => {
       let discovery: Document[] | undefined;
       client.on("commandStarted", (event: CommandStartedEvent) => {
         const command = readCommand(event.command);
+
         if (command.findAndModify === collectionName) {
           claim ??= command;
         }
+
         if (
           command.aggregate === collectionName &&
           command.pipeline?.[0]?.["$changeStream"] === undefined
@@ -115,6 +122,7 @@ describe("priority query costs", () => {
       if (!claim || !discovery) {
         throw new Error("Scheduler did not issue claim and discovery");
       }
+
       // Explain the observed atomic write without applying it. The urgent Job has
       // been claimed, leaving 100 due routine Jobs beside 1,000 future urgent Jobs.
       const claimExplanation = await db.command({
@@ -127,10 +135,12 @@ describe("priority query costs", () => {
         },
         verbosity: "executionStats",
       });
+
       const discoveryExplanation = await db
         .collection(collectionName)
         .aggregate(discovery)
         .explain("executionStats");
+
       const { stats: claimStats, winningPlan } = readExplanation(claimExplanation);
       const { stats: discoveryStats } = readExplanation(discoveryExplanation);
       // Permit either ordered priority scans or deadline scans with a bounded

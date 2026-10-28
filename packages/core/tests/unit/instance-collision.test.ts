@@ -18,9 +18,11 @@ type FindOne = (
   filter: Filter<Document>,
   options?: FindOptions,
 ) => Promise<Partial<WithId<Document>> | null>;
+
 // Mock the services to avoid instantiating them
 vi.mock(import("@/scheduler/services/index.js"), async (importOriginal) => {
   const actual = await importOriginal();
+
   return {
     ...actual,
     JobIntake: fromPartial<typeof actual.JobIntake>(vi.fn<typeof actual.JobIntake>()),
@@ -34,6 +36,7 @@ vi.mock(import("@/scheduler/services/index.js"), async (importOriginal) => {
     ),
   };
 });
+
 describe("Instance Collision Detection", () => {
   let mockDb: NativeMock<Db>;
   let mockCollection: NativeMock<Collection>;
@@ -100,10 +103,12 @@ describe("Instance Collision Detection", () => {
   it("queries with correct filter shape including heartbeat threshold", async () => {
     const heartbeatInterval = 5000;
     const instanceId = "check-query-id";
+
     const monque = new Monque(fromPartial<Db>(mockDb), {
       schedulerInstanceId: instanceId,
       heartbeatInterval,
     });
+
     findOneSpy.mockResolvedValue(null);
     await monque.initialize();
     // Verify findOne was called with the collision detection query
@@ -116,10 +121,12 @@ describe("Instance Collision Detection", () => {
         }),
       }),
     );
+
     // Verify the threshold is approximately 2× heartbeatInterval ago
     const callArgs = fromAny<[{ lastHeartbeat: { $gte: Date } }], unknown>(
       findOneSpy.mock.calls[0],
     );
+
     const [query] = callArgs;
     const { lastHeartbeat } = query;
     const threshold = lastHeartbeat.$gte;
@@ -131,10 +138,12 @@ describe("Instance Collision Detection", () => {
 
   it("does not throw when heartbeat is stale (crash recovery scenario)", async () => {
     const instanceId = "crashed-instance";
+
     const monque = new Monque(fromPartial<Db>(mockDb), {
       schedulerInstanceId: instanceId,
       heartbeatInterval: 1000,
     });
+
     // findOne returns null because MongoDB $gte filter excludes stale heartbeats
     // (stale heartbeats are older than 2× heartbeatInterval)
     findOneSpy.mockResolvedValue(null);
@@ -148,6 +157,7 @@ describe("Instance Collision Detection", () => {
         throw new Error("DB unavailable");
       }),
     });
+
     const monque = new Monque(fromPartial<Db>(failingDb), { schedulerInstanceId: "test-id" });
     // Should throw ConnectionError from the DB failure, not from collision check
     await expect(monque.initialize()).rejects.toThrow(ConnectionError);
@@ -157,16 +167,19 @@ describe("Instance Collision Detection", () => {
 
   it("runs collision check after stale recovery", async () => {
     const instanceId = "order-check-id";
+
     const monque = new Monque(fromPartial<Db>(mockDb), {
       schedulerInstanceId: instanceId,
       recoverStaleJobs: true,
     });
+
     const callOrder: string[] = [];
     vi.mocked(mockCollection.updateMany).mockImplementation(
       nativeAsyncMock<Collection["updateMany"]>((filter) => {
         if (filter["status"] === "processing") {
           callOrder.push("recoverStaleJobs");
         }
+
         return {
           acknowledged: true,
           matchedCount: 0,
@@ -179,6 +192,7 @@ describe("Instance Collision Detection", () => {
     findOneSpy.mockImplementation(
       nativeAsyncMock<FindOne>(() => {
         callOrder.push("findOne");
+
         return null;
       }),
     );
@@ -196,6 +210,7 @@ describe("Instance Collision Detection", () => {
     await monque2.initialize();
     // findOne is called once per initialize() for the collision check
     expect(findOneSpy).toHaveBeenCalledTimes(2);
+
     // Verify the two instances used different claimedBy (schedulerInstanceId) values
     const call1Query = fromAny<
       {
@@ -203,12 +218,14 @@ describe("Instance Collision Detection", () => {
       },
       unknown
     >(findOneSpy.mock.calls[0]?.[0]);
+
     const call2Query = fromAny<
       {
         claimedBy: string;
       },
       unknown
     >(findOneSpy.mock.calls[1]?.[0]);
+
     expect({
       call1QueryClaimedBy: call1Query.claimedBy,
       call2QueryClaimedBy: call2Query.claimedBy,

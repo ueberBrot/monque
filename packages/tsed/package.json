@@ -64,9 +64,10 @@
     "cookie": "^2.0.1",
     "mongodb": "^7.7.0",
     "mongoose": "9.11.4",
+    "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "@monque/core": "^1.18.0",

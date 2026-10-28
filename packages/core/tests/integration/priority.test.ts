@@ -77,6 +77,7 @@ describe("Job priorities", () => {
     async (skipIndexCreation) => {
       const collectionName = uniqueCollectionName("legacy-priority");
       const timestamp = new Date("2025-01-01T00:00:00Z");
+
       const legacy = {
         _id: new ObjectId("000000000000000000000002"),
         name: "work",
@@ -87,6 +88,7 @@ describe("Job priorities", () => {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
+
       await db.collection(collectionName).insertOne(legacy);
       const monque = new Monque(db, { collectionName, skipIndexCreation, workerConcurrency: 1 });
       instances.push(monque);
@@ -133,11 +135,13 @@ describe("Job priorities", () => {
     instances.push(monque);
     await monque.initialize();
     const runAt = new Date(Date.now() + 60_000);
+
     const original = await monque.enqueue(
       "work",
       { original: true },
       { priority: -5, uniqueKey: "active", runAt },
     );
+
     await expect(
       monque.enqueue("work", { replacement: true }, { priority: 10, uniqueKey: "active" }),
     ).resolves.toStrictEqual(original);
@@ -186,14 +190,17 @@ describe("Job priorities", () => {
           throw new Error("Change Streams unavailable");
         });
       }
+
       const collectionName = uniqueCollectionName("due-priority");
       const producer = new Monque(db, { collectionName });
+
       const consumer = new Monque(db, {
         collectionName,
         workerConcurrency: 1,
         pollInterval: polling ? 20 : 60_000,
         safetyPollInterval: 60_000,
       });
+
       instances.push(producer, consumer);
       await producer.initialize();
       await consumer.initialize();
@@ -201,6 +208,7 @@ describe("Job priorities", () => {
       let futureStart = 0;
       consumer.register("work", (job) => {
         received.push(job.data);
+
         if (job.data === "future") {
           futureStart = Date.now();
         }
@@ -225,11 +233,13 @@ describe("Job priorities", () => {
     instances.push(monque);
     await monque.initialize();
     const received: unknown[] = [];
+
     for (const name of ["email", "other"]) {
       monque.register(name, (job) => {
         received.push(job.data);
       });
     }
+
     await monque.enqueue("EMAIL", "routine", { priority: 1 });
     await monque.enqueue("EMAIL", "urgent", { priority: 100 });
     await monque.enqueue("other", "other", { priority: -100 });
@@ -240,9 +250,11 @@ describe("Job priorities", () => {
 
   it("retains one atomic owner per Job across concurrent prioritized consumers", async () => {
     const collectionName = uniqueCollectionName("owners-priority");
+
     const consumers = ["priority-owner-1", "priority-owner-2"].map(
       (schedulerInstanceId) => new Monque(db, { collectionName, schedulerInstanceId }),
     );
+
     instances.push(...consumers);
     await Promise.all(
       consumers.map(async (consumer) => {
@@ -251,6 +263,7 @@ describe("Job priorities", () => {
     );
     const claims: string[] = [];
     const ids: string[] = [];
+
     for (const [index, consumer] of consumers.entries()) {
       consumer.register("work", (job) => {
         expect(job.claimedBy).toBe(`priority-owner-${index + 1}`);
@@ -259,15 +272,18 @@ describe("Job priorities", () => {
         ids.push(requireValue(job._id).toHexString());
       });
     }
+
     await forEachSequential(
       Array.from({ length: Math.ceil(20 / 1) }, (_, index) => index * 1),
       async (index) => {
         await requireValue(consumers[0]).enqueue("work", {}, { priority: index - 10 });
       },
     );
+
     for (const consumer of consumers) {
       consumer.start();
     }
+
     await waitFor(() => ids.length === 20);
     expect({
       newSetIdsSize: new Set(ids).size,
@@ -306,6 +322,7 @@ describe("Job priorities", () => {
   it("normalizes legacy ownership metadata without rewriting lifecycle fields or explicit priorities", async () => {
     const collectionName = uniqueCollectionName("priority-metadata");
     const now = new Date();
+
     const owned = {
       _id: new ObjectId(),
       name: "work",
@@ -322,6 +339,7 @@ describe("Job priorities", () => {
       claimedBy: "other-instance",
       claimId: "other-claim",
     };
+
     const explicit = { ...owned, _id: new ObjectId(), status: "completed", priority: -9 };
     await db.collection(collectionName).insertMany([owned, explicit]);
     await forEachSequential(

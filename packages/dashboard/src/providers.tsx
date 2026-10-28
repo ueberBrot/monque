@@ -8,9 +8,12 @@ import type { getRouter } from "@/router";
 
 const DashboardDevtools = lazy(async () => {
   const module = await import("@/devtools");
+
   return { default: module.DashboardDevtools };
 });
+
 const shouldRenderDashboardDevtools = import.meta.env.DEV && import.meta.env.MODE !== "test";
+
 const DashboardProviders = ({
   queryClient,
   router,
@@ -29,4 +32,5 @@ const DashboardProviders = ({
     </TooltipProvider>
   </QueryClientProvider>
 );
+
 export { DashboardProviders };

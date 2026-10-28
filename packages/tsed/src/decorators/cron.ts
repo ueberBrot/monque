@@ -19,6 +19,7 @@ import { appendJobMetadata } from "./append-job-metadata.js";
  * }
  * ```
  */
+// oxlint-disable-next-line sonarjs/function-name -- Cron is the public decorator name.
 export const Cron = function Cron(
   pattern: string,
   options?: CronDecoratorOptions,

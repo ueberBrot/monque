@@ -19,6 +19,7 @@ const renderDashboardAt = (
     pollingIntervalMs: options?.pollingIntervalMs ?? 15_000,
   }).render();
 };
+
 const pause = async (durationMs: number): Promise<void> => {
   const pending: PromiseWithResolvers<void> = Promise.withResolvers();
   window.setTimeout(() => {
@@ -26,6 +27,7 @@ const pause = async (durationMs: number): Promise<void> => {
   }, durationMs);
   await pending.promise;
 };
+
 const setDocumentVisibilityState = (state: "hidden" | "visible"): void => {
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -33,6 +35,7 @@ const setDocumentVisibilityState = (state: "hidden" | "visible"): void => {
   });
   document.dispatchEvent(new Event("visibilitychange"));
 };
+
 describe("queue views route", () => {
   describe("Queue Views routes", () => {
     it("renders Queue Views from the Management API on the overview route", async () => {
@@ -74,6 +77,7 @@ describe("queue views route", () => {
       renderDashboardAt("/queue-views/send-email", {
         fetch: async (input, init) => {
           calls.push(input instanceof Request ? input.url : String(input));
+
           return await mockFetch(input, init);
         },
       });
@@ -103,6 +107,7 @@ describe("queue views route", () => {
         pollingIntervalMs: 25,
         fetch: async () => {
           requests += 1;
+
           return await Promise.resolve(Response.json({ error: "Sign in" }, { status: 401 }));
         },
       });
@@ -143,19 +148,25 @@ describe("queue views route", () => {
 
     it("polls while visible and pauses polling while the document is hidden", async () => {
       const calls: string[] = [];
+
       const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = (() => {
           if (isString(input)) {
             return input;
           }
+
           if (input instanceof URL) {
             return input.toString();
           }
+
           return input.url;
         })();
+
         calls.push(url);
+
         return await createMockManagementFetch({ scenarioId: "pending-jobs" })(input, init);
       };
+
       renderDashboardAt("/queue-views", { fetch, pollingIntervalMs: 25 });
       await waitFor(() => {
         expect(calls.length).toBeGreaterThan(0);

@@ -14,6 +14,8 @@ vp run @monque/docs#dev
 
 Open the URL printed by Astro, normally `http://localhost:4321/monque/`.
 To build the site, run `vp run @monque/docs#build`. Output is written to `apps/docs/dist/`.
+For a report of build phases, Markdown processing, and slow pages, run
+`vp run @monque/docs#build --timings`.
 
 ## Edit the docs
 

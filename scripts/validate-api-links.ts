@@ -61,6 +61,7 @@ const findFiles = (dir: string, extensions: string[], ignore: string[] = []): st
       results.push(...findFiles(fullPath, extensions, ignore));
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
+
       if (extensions.includes(ext)) {
         results.push(fullPath);
       }
@@ -106,29 +107,34 @@ const buildApiPathMap = (): Set<string> => {
 const extractApiLinks = (content: string, filePath: string): ApiLink[] => {
   const links: ApiLink[] = [];
 
-  // Match markdown links: [text](/monque/api/...)
-  // and bare URLs in href attributes or similar
-  const linkRegex = /\[(?<text>[^\]]*)\]\((?<path>\/monque\/api\/[^)#\s]+)(?<anchor>#[^)\s]*)?\)/gu;
+  const targetPattern = /^\]\((?<path>\/monque\/api\/[^)#\s]+)(?<anchor>#[^)\s]*)?\)/u;
   const lines = content.split("\n");
 
-  for (let lineNum = 0; lineNum < lines.length; lineNum += 1) {
-    const line = lines[lineNum];
-    const matches = line.matchAll(linkRegex);
+  for (const [lineNum, line] of lines.entries()) {
+    let position = 0;
 
-    for (const match of matches) {
-      const { path: fullPath, anchor = "" } = match.groups ?? {};
-      if (fullPath === undefined) {
-        continue;
+    while (position < line.length) {
+      const labelStart = line.indexOf("[", position);
+      const labelEnd = labelStart === -1 ? -1 : line.indexOf("]", labelStart + 1);
+
+      if (labelEnd === -1) {
+        break;
       }
 
-      links.push({
-        fullLink: match[0],
-        path: fullPath,
-        anchor,
-        line: lineNum + 1,
-        column: match.index + 1,
-        file: filePath,
-      });
+      const match = targetPattern.exec(line.slice(labelEnd));
+      position = labelEnd + (match?.[0].length ?? 1);
+      const { path: fullPath, anchor = "" } = match?.groups ?? {};
+
+      if (fullPath !== undefined) {
+        links.push({
+          fullLink: line.slice(labelStart, position),
+          path: fullPath,
+          anchor,
+          line: lineNum + 1,
+          column: labelStart + 1,
+          file: filePath,
+        });
+      }
     }
   }
 
@@ -175,6 +181,7 @@ const validateAnchor = (apiPath: string, anchor: string): boolean => {
 
   for (const match of matches) {
     const [, headingText] = match;
+
     // Generate anchor from heading (simplified - matches common patterns)
     const generatedAnchor = headingText
       .toLowerCase()
@@ -217,6 +224,7 @@ const main = (): void => {
 
       // Normalize path (ensure trailing slash for comparison)
       let normalizedPath = link.path.toLowerCase();
+
       if (!normalizedPath.endsWith("/")) {
         normalizedPath += "/";
       }
@@ -234,14 +242,11 @@ const main = (): void => {
       }
 
       // If there's an anchor, validate it
-      if (link.anchor) {
-        const anchorValid = validateAnchor(link.path, link.anchor);
-        if (!anchorValid) {
-          invalidLinks.push({
-            ...link,
-            reason: `Anchor not found: ${link.anchor}`,
-          });
-        }
+      if (link.anchor && !validateAnchor(link.path, link.anchor)) {
+        invalidLinks.push({
+          ...link,
+          reason: `Anchor not found: ${link.anchor}`,
+        });
       }
     }
   }
@@ -259,16 +264,20 @@ const main = (): void => {
 
   // Group by file for cleaner output
   const byFile: Record<string, InvalidLink[]> = {};
+
   for (const link of invalidLinks) {
-    (byFile[link.file] ??= []).push(link);
+    byFile[link.file] ??= [];
+    byFile[link.file].push(link);
   }
 
   for (const [file, links] of Object.entries(byFile)) {
     console.log(`  📄 ${file}`);
+
     for (const link of links) {
       console.log(`     Line ${link.line}: ${link.reason}`);
       console.log(`       ${link.fullLink}`);
     }
+
     console.log();
   }
 
