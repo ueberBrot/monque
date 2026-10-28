@@ -1,5 +1,15 @@
 # @monque/core
 
+## 1.19.0
+
+### Minor Changes
+
+- [#610](https://github.com/ueberBrot/monque/pull/610) [`d437929`](https://github.com/ueberBrot/monque/commit/d4379297baf08da0e5e81158e23ecd50cbc6d93b) - Update cron-parser to 5.10.2, which rejects cron expressions longer than 1,024 characters before expanding their fields.
+
+### Patch Changes
+
+- [#611](https://github.com/ueberBrot/monque/pull/611) [`a13c140`](https://github.com/ueberBrot/monque/commit/a13c1401d8996098879c0daafbc046e543d9be7c) - Update Effect to 4.0.6 to pick up fixes for retained callback state and fiber resource cleanup.
+
 ## 1.18.0
 
 ### Minor Changes

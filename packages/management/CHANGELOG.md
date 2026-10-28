@@ -1,5 +1,15 @@
 # @monque/management
 
+## 0.10.0
+
+### Minor Changes
+
+- [#610](https://github.com/ueberBrot/monque/pull/610) [`d437929`](https://github.com/ueberBrot/monque/commit/d4379297baf08da0e5e81158e23ecd50cbc6d93b) - Update oRPC to 1.16.1 and Zod to 4.6.7.
+
+### Patch Changes
+
+- [#611](https://github.com/ueberBrot/monque/pull/611) [`a13c140`](https://github.com/ueberBrot/monque/commit/a13c1401d8996098879c0daafbc046e543d9be7c) - Update Effect to 4.0.6 to pick up fixes for retained callback state and fiber resource cleanup.
+
 ## 0.9.0
 
 ### Minor Changes
