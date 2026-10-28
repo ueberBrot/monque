@@ -1,5 +1,17 @@
 # @monque/dashboard
 
+## 0.7.0
+
+### Minor Changes
+
+- [#610](https://github.com/ueberBrot/monque/pull/610) [`d437929`](https://github.com/ueberBrot/monque/commit/d4379297baf08da0e5e81158e23ecd50cbc6d93b) - Update Zod to 4.6.7 and the bundled oRPC clients to 1.16.1.
+
+- [#617](https://github.com/ueberBrot/monque/pull/617) [`1f15718`](https://github.com/ueberBrot/monque/commit/1f15718464bc0dddd523bf637922e309a1dcf828) - Update the bundled Dashboard to React 19.3.1, Base UI 1.9.0, TanStack Table 9.3.1, TanStack Hotkeys 0.17.0, and cn 0.5.0.
+
+### Patch Changes
+
+- [#618](https://github.com/ueberBrot/monque/pull/618) [`4297519`](https://github.com/ueberBrot/monque/commit/4297519597af11483aebdf5f4fd5716b5573f868) - Keep cached Jobs, selections, open confirmations, and action failure feedback visible when a Jobs-list refresh fails transiently. Continue replacing cached content when either Jobs or capability reads report an authentication or authorization failure.
+
 ## 0.6.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @monque/docs
 
+## 1.4.1
+
+### Patch Changes
+
+- [#613](https://github.com/ueberBrot/monque/pull/613) [`4b0ad85`](https://github.com/ueberBrot/monque/commit/4b0ad8597ec0e647014134b3fb98e6abc693dc15) - Correct optional API signatures and type-parameter links in the generated reference,
+  and support Mermaid 12 in the diagram integration.
+
 ## 1.4.0
 
 ### Minor Changes
