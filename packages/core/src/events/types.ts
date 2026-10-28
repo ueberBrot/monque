@@ -1,4 +1,5 @@
 import type { Job } from "@/jobs";
+
 /**
  * Event payloads for Monque lifecycle events.
  */

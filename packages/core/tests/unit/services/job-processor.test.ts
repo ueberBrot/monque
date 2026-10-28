@@ -27,25 +27,31 @@ import { nativeAsyncMock } from "@tests/setup/native-async-mock.js";
 
 const claimName = (filter: Filter<Document>): string => {
   const name: unknown = filter["name"];
+
   if (isString(name)) {
     return name;
   }
+
   throw new Error("Expected a claim query with a Job Name");
 };
 
 describe(JobProcessor, () => {
   let ctx: ReturnType<typeof createMockContext>;
+
   const observeJobCompletion = (count = 1) => {
     const finished = Deferred.makeUnsafe<Effect.Success<typeof Effect.void>>();
     let remaining = count;
     vi.mocked(ctx.notifyJobFinished).mockImplementation(() => {
       remaining -= 1;
+
       if (remaining === 0) {
         Deferred.doneUnsafe(finished, Effect.void);
       }
     });
+
     return Deferred.await(finished);
   };
+
   let processor: JobProcessor;
   beforeEach(() => {
     ctx = createMockContext();
@@ -68,6 +74,7 @@ describe(JobProcessor, () => {
         for (let i = 0; i < 100; i += 1) {
           ctx.workers.set(`worker-${i}`, createWorker());
         }
+
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
           fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
             toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValue([]),
@@ -107,6 +114,7 @@ describe(JobProcessor, () => {
           for (const name of ["work", "unrelated"]) {
             ctx.workers.set(name, createWorker());
           }
+
           vi.mocked(ctx.mockCollection.options).mockResolvedValue(
             locale !== undefined && locale !== "" ? { collation: { locale } } : {},
           );
@@ -197,11 +205,13 @@ describe(JobProcessor, () => {
         Effect.gen(function* effectWorkflow7() {
           ctx.workers.set("work", createWorker());
           const metadata = vi.mocked(ctx.mockCollection.options);
+
           if (reason === "collation") {
             metadata.mockResolvedValue({ collation: { locale: "en", strength: 2 } });
           } else {
             metadata.mockRejectedValue(new Error("Collection metadata access denied"));
           }
+
           vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
           yield* processor.poll();
           yield* processor.poll();
@@ -228,12 +238,15 @@ describe(JobProcessor, () => {
           for (const name of ["email", "unrelated"]) {
             ctx.workers.set(name, createWorker());
           }
+
           const metadata = vi.mocked(ctx.mockCollection.options);
+
           if (reason === "collation") {
             metadata.mockResolvedValue({ collation: { locale: "en", strength: 2 } });
           } else {
             metadata.mockRejectedValue(new Error("Collection metadata access denied"));
           }
+
           const claim = vi.mocked(ctx.mockCollection.findOneAndUpdate).mockResolvedValue(null);
           yield* processor.poll(new Set(["EMAIL"]));
           yield* processor.poll(new Set(["EMAIL"]));
@@ -275,12 +288,14 @@ describe(JobProcessor, () => {
     it.effect.each(["stop", "pause"])("does not claim after %s during discovery", (action) =>
       Effect.gen(function* effectWorkflow10() {
         ctx.workers.set("work", createWorker());
+
         const discovery = yield* Deferred.make<
           {
             _id: string;
             nextRunAt: Date;
           }[]
         >();
+
         const discovering = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const runPromise = Effect.runPromiseWith(yield* Effect.context());
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
@@ -297,11 +312,13 @@ describe(JobProcessor, () => {
         );
         const polling = yield* Effect.forkChild(processor.poll());
         yield* Deferred.await(discovering);
+
         if (action === "stop") {
           vi.mocked(ctx.isRunning).mockReturnValue(false);
         } else {
           vi.mocked(ctx.isPaused).mockReturnValue(true);
         }
+
         yield* Deferred.succeed(discovery, [{ _id: "work", nextRunAt: new Date(0) }]);
         yield* Fiber.join(polling);
         expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
@@ -311,16 +328,20 @@ describe(JobProcessor, () => {
       "does not invoke a handler if paused during acquisition (release fails: %s)",
       (releaseFails) => {
         const releaseError = new Error("Release failed");
+
         return Effect.gen(function* effectWorkflow11() {
           const lifecycle = new JobLifecycle(ctx);
           processor = new JobProcessor(ctx, lifecycle);
           const acquisition = yield* Deferred.make<PersistedJob | null>();
           const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
           const claimed = JobFactoryHelpers.processing({ name: "work" });
+
           const handler = vi
             .fn<MockFunction<WorkerRegistration["handler"]>>()
             .mockResolvedValue(undefined);
+
           ctx.workers.set("work", createWorker({ handler }));
+
           const claim = vi
             .spyOn(lifecycle, "claimNext")
             .mockReturnValueOnce(
@@ -328,10 +349,13 @@ describe(JobProcessor, () => {
                 Effect.andThen(Deferred.await(acquisition)),
               ),
             );
+
           const release = vi.spyOn(lifecycle, "releaseOwnedClaim").mockReturnValue(Effect.void);
+
           if (releaseFails) {
             release.mockReturnValue(Effect.fail(releaseError));
           }
+
           const polling = yield* Effect.forkChild(processor.poll());
           yield* Deferred.await(acquiring);
           expect(vi.mocked(claim).mock.calls.length).toBeGreaterThan(0);
@@ -340,6 +364,7 @@ describe(JobProcessor, () => {
           yield* Fiber.join(polling);
           expect(handler).not.toHaveBeenCalled();
           expect(release).toHaveBeenCalledExactlyOnceWith(claimed);
+
           if (releaseFails) {
             expect(ctx.emit).toHaveBeenCalledWith("job:error", {
               error: objectContainingMatcher({ message: "Release failed" }),
@@ -354,9 +379,11 @@ describe(JobProcessor, () => {
         ctx.options.instanceConcurrency = 1;
         const first = JobFactoryHelpers.processing({ name: "test-job" });
         const next = JobFactoryHelpers.processing({ name: "test-job" });
+
         const handler = vi
           .fn<MockFunction<WorkerRegistration["handler"]>>()
           .mockResolvedValue(undefined);
+
         const worker = createWorker({ handler });
         ctx.workers.set("test-job", worker);
         let throwOnStart = true;
@@ -365,6 +392,7 @@ describe(JobProcessor, () => {
             throwOnStart = false;
             throw new Error("Metrics listener failed");
           }
+
           return true;
         });
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
@@ -431,11 +459,14 @@ describe(JobProcessor, () => {
         ctx.options.instanceConcurrency = 2;
         const job1 = JobFactory.build({ name: "worker-1" });
         const job2 = JobFactory.build({ name: "worker-2" });
+
         const { promise: handlerPromise, resolve: resolveHandlers }: PromiseWithResolvers<void> =
           Promise.withResolvers();
+
         const handler = async () => {
           await handlerPromise;
         };
+
         ctx.workers.set("worker-1", createWorker({ concurrency: 5, handler }));
         ctx.workers.set("worker-2", createWorker({ concurrency: 5, handler }));
         // Seed the counter by acquiring 2 jobs through a first poll
@@ -445,9 +476,11 @@ describe(JobProcessor, () => {
           .mockResolvedValue(null);
         const finished = observeJobCompletion(2);
         yield* processor.poll();
+
         const callsAfterFirstPoll = fromAny<ReturnType<typeof vi.fn>, unknown>(
           ctx.mockCollection.findOneAndUpdate,
         ).mock.calls.length;
+
         vi.clearAllMocks();
         // Now the counter is at 2 (= instanceConcurrency), a second poll should not acquire
         yield* processor.poll();
@@ -482,18 +515,22 @@ describe(JobProcessor, () => {
         const newJob1 = JobFactory.build({ name: "test-job" });
         const newJob2 = JobFactory.build({ name: "test-job" });
         ctx.workers.set("test-job", createWorker({ concurrency: 10 }));
+
         const spy = vi
           .spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(newJob1)
           .mockResolvedValueOnce(newJob2)
           .mockResolvedValue(null);
+
         yield* processor.poll();
+
         // Should acquire exactly 2 jobs (the instanceConcurrency limit).
         // completeJob/failJob also call findOneAndUpdate, so count only acquire calls
         // (filter contains status: 'pending').
         const acquireCalls = spy.mock.calls.filter(
           (args) => args[0]["status"] === JobStatus.PENDING,
         );
+
         expect(acquireCalls).toHaveLength(2);
       }),
     );
@@ -510,11 +547,14 @@ describe(JobProcessor, () => {
     it.effect("fills available slots when jobs are waiting", () =>
       Effect.gen(function* effectWorkflow20() {
         const jobs = Array.from({ length: 8 }, () => JobFactoryHelpers.processing());
+
         const { promise: handlerPromise, resolve: finishHandlers }: PromiseWithResolvers<void> =
           Promise.withResolvers();
+
         const handler = vi.fn<MockFunction<WorkerRegistration["handler"]>>(async () => {
           await handlerPromise;
         });
+
         const worker = createWorker({ concurrency: 8, handler });
         ctx.workers.set("test-job", worker);
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockImplementation(
@@ -540,6 +580,7 @@ describe(JobProcessor, () => {
         const acquisition = yield* Deferred.make<null>();
         const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const runPromise = Effect.runPromiseWith(yield* Effect.context());
+
         const spy = vi
           .spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockImplementationOnce(
@@ -551,14 +592,17 @@ describe(JobProcessor, () => {
               ),
           )
           .mockResolvedValue(null);
+
         // Start first poll (will be held open)
         const polling = yield* Effect.forkChild(processor.poll());
         yield* Deferred.await(acquiring);
         expect(spy).toHaveBeenCalledOnce();
+
         // While first poll is running, request another poll
         const secondPolling = yield* Effect.forkChild(processor.poll(new Set(["test-job"])), {
           startImmediately: true,
         });
+
         // The second poll should stay queued until the first poll finishes.
         expect(spy).toHaveBeenCalledOnce();
         // Release the first poll
@@ -576,9 +620,11 @@ describe(JobProcessor, () => {
           for (const name of ["first", "second", "unrelated"]) {
             ctx.workers.set(name, createWorker());
           }
+
           const acquisition = yield* Deferred.make<null>();
           const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
           const runPromise = Effect.runPromiseWith(yield* Effect.context());
+
           const claim = vi
             .mocked(ctx.mockCollection.findOneAndUpdate)
             .mockImplementationOnce(
@@ -590,12 +636,15 @@ describe(JobProcessor, () => {
                 ),
             )
             .mockResolvedValue(null);
+
           const polling = yield* Effect.forkChild(processor.poll(new Set(["first"])));
           yield* Deferred.await(acquiring);
           expect(claim).toHaveBeenCalledOnce();
+
           if (full) {
             yield* processor.poll();
           }
+
           yield* processor.poll(new Set(["second"]));
           yield* Deferred.succeed(acquisition, null);
           yield* Fiber.join(polling);
@@ -609,9 +658,11 @@ describe(JobProcessor, () => {
         for (const name of ["first", "second", "unrelated"]) {
           ctx.workers.set(name, createWorker());
         }
+
         const acquisition = yield* Deferred.make<null>();
         const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const runPromise = Effect.runPromiseWith(yield* Effect.context());
+
         const claim = vi
           .mocked(ctx.mockCollection.findOneAndUpdate)
           .mockImplementationOnce(
@@ -623,6 +674,7 @@ describe(JobProcessor, () => {
               ),
           )
           .mockResolvedValue(null);
+
         const polling = yield* Effect.forkChild(processor.poll(new Set(["first"])));
         yield* Deferred.await(acquiring);
         expect(claim).toHaveBeenCalledOnce();
@@ -655,14 +707,17 @@ describe(JobProcessor, () => {
       Effect.gen(function* effectWorkflow24() {
         const job = JobFactoryHelpers.processing();
         const completedJob = { ...job, status: JobStatus.COMPLETED };
+
         const validation = Promise.withResolvers<{
           value: unknown;
         }>();
+
         const handler: PromiseWithResolvers<void> = Promise.withResolvers();
         const persistence: PromiseWithResolvers<void> = Promise.withResolvers();
         const validating = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const handling = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const persisting = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
         const worker = createWorker({
           handler: async () => {
             Deferred.doneUnsafe(handling, Effect.void);
@@ -671,12 +726,14 @@ describe(JobProcessor, () => {
             }
           },
         });
+
         worker.schema = {
           "~standard": {
             version: 1,
             vendor: "test",
             validate: async () => {
               Deferred.doneUnsafe(validating, Effect.void);
+
               return await validation.promise;
             },
           },
@@ -686,10 +743,12 @@ describe(JobProcessor, () => {
           .mockImplementationOnce(async () => {
             Deferred.doneUnsafe(persisting, Effect.void);
             await persistence.promise;
+
             return completedJob;
           });
         ctx.workers.set(job.name, worker);
         const finished = observeJobCompletion();
+
         try {
           yield* processor.poll(new Set([job.name]));
           yield* Deferred.await(validating);
@@ -723,13 +782,16 @@ describe(JobProcessor, () => {
           yield* Effect.gen(function* effectWorkflow26() {
             yield* testClock.setTime(10_000);
             const job = JobFactoryHelpers.processing();
+
             const completedJob = JobFactoryHelpers.completed({
               _id: job._id,
               name: job.name,
               data: job.data,
             });
+
             const handler: PromiseWithResolvers<void> = Promise.withResolvers();
             const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
             const worker = createWorker({
               handler: async () => {
                 Deferred.doneUnsafe(started, Effect.void);
@@ -738,6 +800,7 @@ describe(JobProcessor, () => {
                 }
               },
             });
+
             vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
               .mockResolvedValueOnce(job)
               .mockResolvedValueOnce(completedJob);
@@ -773,14 +836,17 @@ describe(JobProcessor, () => {
     it.effect("should execute handler and emit job:start and job:complete events", () =>
       Effect.gen(function* effectWorkflow27() {
         const job = JobFactoryHelpers.processing();
+
         const completedJob = JobFactoryHelpers.completed({
           _id: job._id,
           name: job.name,
           data: job.data,
         });
+
         const handler = vi
           .fn<MockFunction<WorkerRegistration["handler"]>>()
           .mockResolvedValue(undefined);
+
         const worker = createWorker({ handler });
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
@@ -800,11 +866,13 @@ describe(JobProcessor, () => {
       () =>
         Effect.gen(function* effectWorkflow28() {
           const job = JobFactoryHelpers.processing();
+
           const completedJob = JobFactoryHelpers.completed({
             _id: job._id,
             name: job.name,
             data: job.data,
           });
+
           const worker = createWorker();
           vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
             .mockResolvedValueOnce(job)
@@ -815,6 +883,7 @@ describe(JobProcessor, () => {
           yield* finished;
           expect(worker.activeJobs.size).toBe(0);
           const completeEvent = ctx.emitHistory.find((e) => e.event === "job:complete");
+
           const payload = fromAny<
             {
               job: PersistedJob;
@@ -822,6 +891,7 @@ describe(JobProcessor, () => {
             },
             unknown
           >(completeEvent?.payload);
+
           expect({
             payloadJobStatus: payload.job.status,
             payloadJob_id: payload.job._id,
@@ -834,6 +904,7 @@ describe(JobProcessor, () => {
     it.effect("should call failJob and emit job:fail on handler error", () =>
       Effect.gen(function* effectWorkflow29() {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
+
         const failedJob = JobFactoryHelpers.pending({
           _id: job._id,
           name: job.name,
@@ -841,11 +912,13 @@ describe(JobProcessor, () => {
           failCount: 1,
           failReason: "Handler failed",
         });
+
         const worker = createWorker({
           handler: vi
             .fn<MockFunction<WorkerRegistration["handler"]>>()
             .mockRejectedValue(new Error("Handler failed")),
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
           .mockResolvedValueOnce(failedJob);
@@ -869,6 +942,7 @@ describe(JobProcessor, () => {
     it.effect("should coerce non-Error thrown values to Error objects", () =>
       Effect.gen(function* effectWorkflow30() {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
+
         const failedJob = JobFactoryHelpers.pending({
           _id: job._id,
           name: job.name,
@@ -876,11 +950,13 @@ describe(JobProcessor, () => {
           failCount: 1,
           failReason: "String error message",
         });
+
         const worker = createWorker({
           handler: vi
             .fn<MockFunction<WorkerRegistration["handler"]>>()
             .mockRejectedValue("String error message"),
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
           .mockResolvedValueOnce(failedJob);
@@ -891,12 +967,14 @@ describe(JobProcessor, () => {
         expect(worker.activeJobs.size).toBe(0);
         expect(ctx.emitHistory).toContainEqual(objectContainingMatcher({ event: "job:fail" }));
         const failEvent = ctx.emitHistory.find((e) => e.event === "job:fail");
+
         const payload = fromAny<
           {
             error: Error;
           },
           unknown
         >(failEvent?.payload);
+
         expect(payload.error).toBeInstanceOf(Error);
         expect(payload.error.message).toBe("String error message");
       }),
@@ -904,11 +982,13 @@ describe(JobProcessor, () => {
     it.effect("should track job in activeJobs during processing and remove after", () =>
       Effect.gen(function* effectWorkflow31() {
         const job = JobFactoryHelpers.processing();
+
         const completedJob = JobFactoryHelpers.completed({
           _id: job._id,
           name: job.name,
           data: job.data,
         });
+
         const worker = createWorker();
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
@@ -948,11 +1028,13 @@ describe(JobProcessor, () => {
     it.effect("should not emit job:fail when failJob returns null (race condition)", () =>
       Effect.gen(function* effectWorkflow33() {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
+
         const worker = createWorker({
           handler: vi
             .fn<MockFunction<WorkerRegistration["handler"]>>()
             .mockRejectedValue(new Error("Handler failed")),
         });
+
         // failJob returns null (job was deleted or status changed concurrently)
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
@@ -972,17 +1054,20 @@ describe(JobProcessor, () => {
         Effect.gen(function* effectWorkflow34() {
           // Case 1: Job will retry (status reset to PENDING)
           const job1 = JobFactoryHelpers.processing({ failCount: 0 });
+
           const retriedJob = JobFactoryHelpers.pending({
             _id: job1._id,
             name: job1.name,
             data: job1.data,
             failCount: 1,
           });
+
           const worker1 = createWorker({
             handler: vi
               .fn<MockFunction<WorkerRegistration["handler"]>>()
               .mockRejectedValue(new Error("Fail")),
           });
+
           vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
             .mockResolvedValueOnce(job1)
             .mockResolvedValueOnce(retriedJob);
@@ -1004,17 +1089,20 @@ describe(JobProcessor, () => {
           ctx.emitHistory.length = 0;
           // Case 2: Job permanently failed (status set to FAILED)
           const job2 = JobFactoryHelpers.processing({ failCount: 2 });
+
           const permanentlyFailedJob = JobFactoryHelpers.failed({
             _id: job2._id,
             name: job2.name,
             data: job2.data,
             failCount: 3,
           });
+
           const worker2 = createWorker({
             handler: vi
               .fn<MockFunction<WorkerRegistration["handler"]>>()
               .mockRejectedValue(new Error("Fail")),
           });
+
           vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
             .mockResolvedValueOnce(job2)
             .mockResolvedValueOnce(permanentlyFailedJob);
@@ -1057,11 +1145,13 @@ describe(JobProcessor, () => {
     it.effect("should call notifyJobFinished after successful completion", () =>
       Effect.gen(function* effectWorkflow36() {
         const job = JobFactoryHelpers.processing();
+
         const completedJob = JobFactoryHelpers.completed({
           _id: job._id,
           name: job.name,
           data: job.data,
         });
+
         const worker = createWorker();
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
@@ -1082,6 +1172,7 @@ describe(JobProcessor, () => {
     it.effect("should call notifyJobFinished after failure", () =>
       Effect.gen(function* effectWorkflow37() {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
+
         const failedJob = JobFactoryHelpers.pending({
           _id: job._id,
           name: job.name,
@@ -1089,11 +1180,13 @@ describe(JobProcessor, () => {
           failCount: 1,
           failReason: "Handler failed",
         });
+
         const worker = createWorker({
           handler: vi
             .fn<MockFunction<WorkerRegistration["handler"]>>()
             .mockRejectedValue(new Error("Handler failed")),
         });
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job)
           .mockResolvedValueOnce(failedJob);
@@ -1117,11 +1210,13 @@ describe(JobProcessor, () => {
       () =>
         Effect.gen(function* effectWorkflow38() {
           const acquiredJob = JobFactory.build({ name: "test-job" });
+
           const completedJob = JobFactoryHelpers.completed({
             _id: acquiredJob._id,
             name: acquiredJob.name,
             data: acquiredJob.data,
           });
+
           ctx.workers.set("test-job", createWorker({ concurrency: 3 }));
           vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
             // acquireJob succeeds
@@ -1140,12 +1235,14 @@ describe(JobProcessor, () => {
     it.effect("should decrement counter even when processJob handler fails", () =>
       Effect.gen(function* effectWorkflow39() {
         const acquiredJob = JobFactory.build({ name: "test-job" });
+
         const failedJob = JobFactoryHelpers.failed({
           _id: acquiredJob._id,
           name: acquiredJob.name,
           data: acquiredJob.data,
           failCount: 3,
         });
+
         ctx.workers.set(
           "test-job",
           createWorker({
@@ -1195,15 +1292,19 @@ describe(JobProcessor, () => {
         ctx.workers.set("test-job", createWorker({ concurrency: 10 }));
         const job1 = JobFactory.build({ name: "test-job" });
         const job2 = JobFactory.build({ name: "test-job" });
+
         const spy = vi
           .spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job1)
           .mockResolvedValueOnce(job2)
           .mockResolvedValue(null);
+
         yield* processor.poll();
+
         const acquireCalls = spy.mock.calls.filter(
           (args) => args[0]["status"] === JobStatus.PENDING,
         );
+
         // counter enforces the limit: exactly 2 acquired (= instanceConcurrency)
         expect(acquireCalls).toHaveLength(2);
       }),

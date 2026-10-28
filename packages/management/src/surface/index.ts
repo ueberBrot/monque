@@ -1,4 +1,5 @@
 export { createManagementSurface } from "./surface.js";
+
 export type {
   ManagementAction,
   ManagementAuthorizationInput,

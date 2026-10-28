@@ -1,6 +1,6 @@
 import { implement, ORPCError } from "@orpc/server";
 import type { Router } from "@orpc/server";
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 
 import type { ManagementOpenApiContext, ManagementOptions } from "../surface/index.js";
 import { managementContract } from "./contract.js";
@@ -35,6 +35,7 @@ export const createManagementRouter = function createManagementRouter<TContext =
 ): ManagementRouter<TContext> {
   const managementImplementer =
     implement(managementContract).$context<ManagementOpenApiContext<TContext>>();
+
   const operations = createManagementOperations(options);
   const requireContext = requiresOpenApiManagementContext(options);
 

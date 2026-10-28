@@ -38,6 +38,7 @@ describe("atomic job claiming", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -49,14 +50,17 @@ describe("atomic job claiming", () => {
   describe("claimedBy field behavior", () => {
     it("should set claimedBy to scheduler instance ID when acquiring a job", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
         const instanceId = "test-instance-123";
+
         const monque = new Monque(db, {
           collectionName,
           pollInterval: 100,
           schedulerInstanceId: instanceId,
         });
+
         monqueInstances.push(monque);
         await monque.initialize();
         let processedJob: Job | null = null;
@@ -88,11 +92,13 @@ describe("atomic job claiming", () => {
     it("should clear claimedBy when job completes successfully", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const instanceId = "test-instance-456";
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         schedulerInstanceId: instanceId,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let completed = false;
@@ -117,6 +123,7 @@ describe("atomic job claiming", () => {
     it("should clear claimedBy when job fails permanently", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const instanceId = "test-instance-789";
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
@@ -124,6 +131,7 @@ describe("atomic job claiming", () => {
         // Fail immediately after first attempt
         maxRetries: 1,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let permanentlyFailed = false;
@@ -152,12 +160,14 @@ describe("atomic job claiming", () => {
     it("should clear claimedBy when job fails but will retry", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const instanceId = "test-instance-retry";
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         schedulerInstanceId: instanceId,
         maxRetries: 3,
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       let failedWithRetry = false;
@@ -169,6 +179,7 @@ describe("atomic job claiming", () => {
       let attempts = 0;
       monque.register(TEST_CONSTANTS.JOB_NAME, () => {
         attempts += 1;
+
         if (attempts === 1) {
           throw new Error("First attempt fails");
         }
@@ -196,24 +207,28 @@ describe("atomic job claiming", () => {
       const instance1Id = "instance-1";
       const instance2Id = "instance-2";
       const instance3Id = "instance-3";
+
       const monque1 = new Monque(db, {
         collectionName,
         pollInterval: 50,
         schedulerInstanceId: instance1Id,
         workerConcurrency: 1,
       });
+
       const monque2 = new Monque(db, {
         collectionName,
         pollInterval: 50,
         schedulerInstanceId: instance2Id,
         workerConcurrency: 1,
       });
+
       const monque3 = new Monque(db, {
         collectionName,
         pollInterval: 50,
         schedulerInstanceId: instance3Id,
         workerConcurrency: 1,
       });
+
       monqueInstances.push(monque1, monque2, monque3);
       await monque1.initialize();
       await monque2.initialize();
@@ -221,6 +236,7 @@ describe("atomic job claiming", () => {
       const claimedBy = new Set<string>();
       const processedJobIds = new Set<string>();
       const duplicates: string[] = [];
+
       const createHandler =
         (instanceName: string) =>
         async (
@@ -229,13 +245,16 @@ describe("atomic job claiming", () => {
           }>,
         ) => {
           const jobId = job._id?.toString() ?? "";
+
           if (processedJobIds.has(jobId)) {
             duplicates.push(`${jobId} by ${instanceName}`);
           }
+
           processedJobIds.add(jobId);
           claimedBy.add(instanceName);
           await pauseFor(50);
         };
+
       monque1.register(TEST_CONSTANTS.JOB_NAME, createHandler("instance-1"));
       monque2.register(TEST_CONSTANTS.JOB_NAME, createHandler("instance-2"));
       monque3.register(TEST_CONSTANTS.JOB_NAME, createHandler("instance-3"));
@@ -261,6 +280,7 @@ describe("atomic job claiming", () => {
     it("should distribute multiple jobs across instances without duplicates", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
       const jobCount = 20;
+
       const monque1 = new Monque(db, {
         collectionName,
         pollInterval: 30,
@@ -268,6 +288,7 @@ describe("atomic job claiming", () => {
         schedulerInstanceId: "dist-instance-1",
         workerConcurrency: 3,
       });
+
       const monque2 = new Monque(db, {
         collectionName,
         pollInterval: 30,
@@ -275,6 +296,7 @@ describe("atomic job claiming", () => {
         schedulerInstanceId: "dist-instance-2",
         workerConcurrency: 3,
       });
+
       monqueInstances.push(monque1, monque2);
       await monque1.initialize();
       await monque2.initialize();
@@ -282,32 +304,39 @@ describe("atomic job claiming", () => {
       const duplicateJobs = new Set<number>();
       const instance1Jobs: number[] = [];
       const instance2Jobs: number[] = [];
+
       const handler1 = async (
         job: Job<{
           id: number;
         }>,
       ) => {
         const { id } = job.data;
+
         if (processedJobs.has(id)) {
           duplicateJobs.add(id);
         }
+
         processedJobs.add(id);
         instance1Jobs.push(id);
         await pauseFor(20);
       };
+
       const handler2 = async (
         job: Job<{
           id: number;
         }>,
       ) => {
         const { id } = job.data;
+
         if (processedJobs.has(id)) {
           duplicateJobs.add(id);
         }
+
         processedJobs.add(id);
         instance2Jobs.push(id);
         await pauseFor(20);
       };
+
       monque1.register(TEST_CONSTANTS.JOB_NAME, handler1);
       monque2.register(TEST_CONSTANTS.JOB_NAME, handler2);
       // Enqueue jobs
@@ -336,13 +365,16 @@ describe("atomic job claiming", () => {
           const count = await db
             .collection<Job>(collectionName)
             .countDocuments({ status: JobStatus.COMPLETED });
+
           return count === jobCount;
         },
         { timeout: 5000 },
       );
+
       const completedCount = await db
         .collection<Job>(collectionName)
         .countDocuments({ status: JobStatus.COMPLETED });
+
       expect(completedCount).toBe(jobCount);
     });
   });
@@ -352,6 +384,7 @@ describe("atomic job claiming", () => {
       // Create a job and manually set it as claimed by another instance
       const collection = db.collection<Job>(collectionName);
       const now = new Date();
+
       const claimedJob = JobFactoryHelpers.processing({
         name: TEST_CONSTANTS.JOB_NAME,
         data: { value: 1 },
@@ -362,12 +395,15 @@ describe("atomic job claiming", () => {
         createdAt: now,
         updatedAt: now,
       });
+
       await collection.insertOne(claimedJob);
+
       const monque = new Monque(db, {
         collectionName,
         pollInterval: 100,
         schedulerInstanceId: "new-instance",
       });
+
       monqueInstances.push(monque);
       await monque.initialize();
       const handler = vi.fn<() => void>();

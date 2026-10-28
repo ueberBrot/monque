@@ -19,16 +19,20 @@ export const applyJitter = (delay: number, factor: number): number => {
   if (factor <= 0 || delay <= 0) {
     return delay;
   }
+
   const spread = delay * factor;
   // Uniform random in [-spread, +spread]
   const jitter = (Math.random() * 2 - 1) * spread;
+
   return Math.max(0, Math.round(delay + jitter));
 };
+
 /**
  * Default base interval for exponential backoff in milliseconds.
  * @default 1000
  */
 export const DEFAULT_BASE_INTERVAL = 1000;
+
 /**
  * Default jitter factor applied to backoff delays.
  *
@@ -39,6 +43,7 @@ export const DEFAULT_BASE_INTERVAL = 1000;
  * @default 0.25
  */
 export const DEFAULT_JITTER_FACTOR = 0.25;
+
 /**
  * Default maximum delay cap for exponential backoff in milliseconds.
  *
@@ -47,6 +52,7 @@ export const DEFAULT_JITTER_FACTOR = 0.25;
  * @default 86400000 (24 hours)
  */
 export const DEFAULT_MAX_BACKOFF_DELAY = 24 * 60 * 60 * 1000;
+
 /**
  * Calculate just the delay in milliseconds for a given fail count, with jitter.
  *
@@ -65,8 +71,10 @@ export const calculateBackoffDelay = (
   const effectiveMaxDelay = maxDelay ?? DEFAULT_MAX_BACKOFF_DELAY;
   const baseDelay = Math.min(2 ** failCount * baseInterval, effectiveMaxDelay);
   const jittered = applyJitter(baseDelay, jitterFactor);
+
   return Math.min(jittered, effectiveMaxDelay);
 };
+
 /**
  * Calculate the next run time using exponential backoff with jitter.
  *
@@ -97,5 +105,6 @@ export const calculateBackoff = (
   jitterFactor: number = DEFAULT_JITTER_FACTOR,
 ): Date => {
   const delay = calculateBackoffDelay(failCount, baseInterval, maxDelay, jitterFactor);
+
   return new Date(Date.now() + delay);
 };

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { getNextCronDate, InvalidCronError, validateCronExpression } from "@/shared";
+
 // Test fixtures - shared reference dates
 const TEST_DATE_MID_MORNING = new Date("2025-01-01T10:30:00.000Z");
 const TEST_DATE_EARLY_MORNING = new Date("2025-01-01T08:00:00.000Z");
+
 const cronFailure = (operation: () => void): InvalidCronError => {
   try {
     operation();
@@ -11,8 +13,10 @@ const cronFailure = (operation: () => void): InvalidCronError => {
     if (error instanceof InvalidCronError) {
       return error;
     }
+
     throw error;
   }
+
   throw new Error("Expected an InvalidCronError");
 };
 
@@ -113,6 +117,7 @@ describe("cron", () => {
       const error = cronFailure(() => {
         getNextCronDate("not a cron");
       });
+
       expect(error).toBeInstanceOf(InvalidCronError);
       expect(error.expression).toBe("not a cron");
     });
@@ -121,8 +126,10 @@ describe("cron", () => {
       const error = cronFailure(() => {
         getNextCronDate("bad");
       });
+
       expect(error).toBeInstanceOf(InvalidCronError);
       const { message } = error;
+
       const expectedFragments = [
         "Invalid cron expression",
         '"bad"',
@@ -130,6 +137,7 @@ describe("cron", () => {
         "predefined expression",
         "Example:",
       ];
+
       expect(expectedFragments.filter((fragment) => !message.includes(fragment))).toStrictEqual([]);
     });
 
@@ -196,6 +204,7 @@ describe("cron", () => {
       const error = cronFailure(() => {
         validateCronExpression("wrong");
       });
+
       expect(error).toBeInstanceOf(InvalidCronError);
       expect(error.expression).toBe("wrong");
     });
@@ -204,6 +213,7 @@ describe("cron", () => {
       const error = cronFailure(() => {
         validateCronExpression("x x x x x");
       });
+
       expect(error).toBeInstanceOf(InvalidCronError);
       const { message } = error;
       expect(message).toContain("Invalid cron expression");

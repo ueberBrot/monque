@@ -48,11 +48,13 @@ describe("oRPC Management OpenAPI contract", () => {
 
   it("publishes selected priority input limits and per-Job outcome responses", () => {
     const route = document.paths?.["/api/v1/jobs/actions/selected"]?.post;
+
     const priority: unknown = expect.objectContaining({
       type: "integer",
       minimum: -9_007_199_254_740_991,
       maximum: 9_007_199_254_740_991,
     });
+
     const anyOf: unknown = expect.arrayContaining([
       expect.objectContaining({
         properties: {
@@ -64,6 +66,7 @@ describe("oRPC Management OpenAPI contract", () => {
         additionalProperties: false,
       }),
     ]);
+
     expect(route).toMatchObject({
       operationId: "selectedJobActions",
       requestBody: {
@@ -91,9 +94,11 @@ describe("oRPC Management OpenAPI contract", () => {
   it("publishes schedule timezone as optional Job metadata", () => {
     const job = document.components?.schemas?.["Job"];
     expect(job).toMatchObject({ properties: { timezone: { type: "string" } } });
+
     if (!job || !("required" in job)) {
       throw new Error("Expected the Job object schema");
     }
+
     expect(job.required).not.toContain("timezone");
   });
 
@@ -370,6 +375,7 @@ describe("oRPC Management OpenAPI contract", () => {
       ["/api/v1/jobs/actions/retry", "retryJobs"],
       ["/api/v1/jobs/actions/delete", "deleteJobs"],
     ] as const;
+
     for (const [path, operationId] of paths) {
       const operation = document.paths?.[path]?.post;
 
@@ -390,6 +396,7 @@ describe("oRPC Management OpenAPI contract", () => {
           },
         },
       });
+
       for (const status of ["400", "403", "409", "500"]) {
         expect(operation?.responses?.[status]).toMatchObject({
           content: {
@@ -400,6 +407,7 @@ describe("oRPC Management OpenAPI contract", () => {
         });
       }
     }
+
     expect(document.components?.schemas?.["JobSelector"]).toMatchObject({
       type: "object",
       properties: {
@@ -449,6 +457,7 @@ describe("oRPC Management OpenAPI contract", () => {
       ["/api/v1/jobs/{id}/actions/retry", "retryJob"],
       ["/api/v1/jobs/{id}/actions/reschedule", "rescheduleJob"],
     ] as const;
+
     for (const [path, operationId] of jobResponseRoutes) {
       const operation = document.paths?.[path]?.post;
 
@@ -469,6 +478,7 @@ describe("oRPC Management OpenAPI contract", () => {
           },
         },
       });
+
       for (const status of ["400", "403", "404", "409", "500"]) {
         expect(operation?.responses?.[status]).toMatchObject({
           content: {
@@ -479,6 +489,7 @@ describe("oRPC Management OpenAPI contract", () => {
         });
       }
     }
+
     expect(document.paths?.["/api/v1/jobs/{id}"]?.delete?.parameters).toStrictEqual([
       expect.objectContaining({
         name: "id",
@@ -510,6 +521,7 @@ describe("oRPC Management OpenAPI contract", () => {
         },
       },
     });
+
     for (const status of ["400", "403", "404", "409", "500"]) {
       expect(deleteResponses?.[status]).toMatchObject({
         content: {
@@ -519,6 +531,7 @@ describe("oRPC Management OpenAPI contract", () => {
         },
       });
     }
+
     expect(document.components?.schemas?.["RescheduleJobRequest"]).toMatchObject({
       type: "object",
       required: ["nextRunAt"],

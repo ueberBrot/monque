@@ -9,9 +9,11 @@ describe("calendar", () => {
   it("keeps calendar controls and keyboard focus when its parent rerenders", () => {
     const day = new Date(2026, 9, 9);
     const onSelect = vi.fn<(date: Date | undefined) => void>();
+
     const { rerender } = render(
       <Calendar mode="single" month={day} locale={enUS} onSelect={onSelect} />,
     );
+
     const button = screen.getByRole("button", { name: /October 9th, 2026/u });
     const root = button.closest("[data-slot=calendar]");
     button.focus();

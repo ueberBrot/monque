@@ -24,6 +24,7 @@ const collectJobMetadataMock = vi.fn<typeof MonqueUtils.collectJobMetadata>();
 
 vi.mock(import("@/utils"), async (importOriginal) => {
   const original = await importOriginal<typeof MonqueUtils>();
+
   return {
     ...original,
     collectJobMetadata: (...args: Parameters<typeof collectJobMetadataMock>) =>
@@ -221,6 +222,7 @@ describe("MonqueModule.registerJobs()", () => {
         [tokenA, instanceA],
         [tokenB, instanceB],
       ]);
+
       const injector = createMockInjector(providers, (token) => instances.get(token));
       module.setInjector(injector);
 
@@ -236,6 +238,7 @@ describe("MonqueModule.registerJobs()", () => {
             },
           ];
         }
+
         if (target === StubControllerB) {
           return [
             {
@@ -246,6 +249,7 @@ describe("MonqueModule.registerJobs()", () => {
             },
           ];
         }
+
         return [];
       });
 
@@ -294,6 +298,7 @@ describe("MonqueModule.registerJobs()", () => {
         [tokenB, instanceB],
         [tokenC, instanceC],
       ]);
+
       const injector = createMockInjector(providers, (token) => instances.get(token));
       module.setInjector(injector);
 
@@ -308,6 +313,7 @@ describe("MonqueModule.registerJobs()", () => {
             },
           ];
         }
+
         if (target === StubControllerB) {
           // This will collide with job-a from CtrlA
           return [
@@ -319,6 +325,7 @@ describe("MonqueModule.registerJobs()", () => {
             },
           ];
         }
+
         if (target === StubControllerC) {
           return [
             {
@@ -329,6 +336,7 @@ describe("MonqueModule.registerJobs()", () => {
             },
           ];
         }
+
         return [];
       });
 

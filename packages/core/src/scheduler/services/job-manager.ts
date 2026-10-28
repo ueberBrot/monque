@@ -1,7 +1,4 @@
-import * as DateTime from "effect/DateTime";
-import * as Effect from "effect/Effect";
-import * as Predicate from "effect/Predicate";
-import * as Stream from "effect/Stream";
+import { DateTime, Effect, Predicate, Stream } from "effect";
 import { ObjectId } from "mongodb";
 import type { Document, WithId } from "mongodb";
 
@@ -28,16 +25,20 @@ const jobMutationError = (error: unknown, operation: string, action: string): Mo
   if (error instanceof MonqueError) {
     return error;
   }
+
   const message = error instanceof Error ? error.message : `Unknown error during ${operation}`;
+
   return new ConnectionError(
     `Failed to ${action}: ${message}`,
     error instanceof Error ? { cause: error } : undefined,
   );
 };
+
 type PendingNotificationDocument = Document & {
   name?: unknown;
   nextRunAt?: unknown;
 };
+
 type PendingJobEdit =
   | {
       action: "reschedule";
@@ -47,6 +48,7 @@ type PendingJobEdit =
       action: "setJobPriority";
       priority: number;
     };
+
 /**
  * Internal service for job lifecycle management operations.
  *
@@ -87,8 +89,10 @@ export class JobManager {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
+
       const _id = new ObjectId(jobId);
       const now = yield* DateTime.nowAsDate;
+
       const result = yield* fromPromise(
         async () =>
           await this.ctx.collection.findOneAndUpdate(
@@ -102,20 +106,26 @@ export class JobManager {
             { returnDocument: "after" },
           ),
       );
+
       if (result) {
         const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
         yield* attempt(() => this.ctx.emit("job:cancelled", { job }));
+
         return job;
       }
+
       const jobDoc = yield* fromPromise(
         async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
       );
+
       if (!jobDoc) {
         return null;
       }
+
       if (jobDoc.status === JobStatus.CANCELLED) {
         return yield* attempt(() => this.ctx.documentToPersistedJob(jobDoc));
       }
+
       return yield* Effect.fail(
         new JobStateError(
           `Cannot cancel job in status '${jobDoc.status}'`,
@@ -153,8 +163,10 @@ export class JobManager {
       if (!ObjectId.isValid(jobId)) {
         return null;
       }
+
       const _id = new ObjectId(jobId);
       const now = yield* DateTime.nowAsDate;
+
       const update = {
         $set: {
           status: JobStatus.PENDING,
@@ -164,6 +176,7 @@ export class JobManager {
         },
         $unset: { failReason: "", ...CLAIM_CLEANUP_FIELDS },
       };
+
       const result = yield* fromPromise(
         async () =>
           await this.ctx.collection.findOneAndUpdate(
@@ -175,13 +188,16 @@ export class JobManager {
             { returnDocument: "before" },
           ),
       );
+
       if (!result) {
         const currentJob = yield* fromPromise(
           async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
         );
+
         if (!currentJob) {
           return null;
         }
+
         return yield* Effect.fail(
           new JobStateError(
             `Cannot retry job in status '${currentJob.status}'`,
@@ -191,20 +207,24 @@ export class JobManager {
           ),
         );
       }
+
       // SAFETY: The atomic update only matches RETRYABLE_JOB_STATUSES and returns the
       // document before that update, so this event reports one of those statuses.
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- MongoDB's update overload erases the query's status constraint.
       const previousStatus = result["status"] as RetryableJobStatusType;
       const updatedDoc: WithId<Document> = { ...result, ...update.$set };
+
       for (const field of Object.keys(update.$unset)) {
         // oxlint-disable-next-line typescript/no-dynamic-delete -- Apply MongoDB's dynamic $unset keys to the returned document too.
         delete updatedDoc[field];
       }
+
       const job = yield* attempt(() => this.ctx.documentToPersistedJob(updatedDoc));
       yield* attempt(() => {
         this.ctx.notifyPendingJob(job.name, job.nextRunAt);
       });
       yield* attempt(() => this.ctx.emit("job:retried", { job, previousStatus }));
+
       return job;
     },
     Effect.mapError((failure) => jobMutationError(failure, "retryJob", "retry job")),
@@ -246,8 +266,10 @@ export class JobManager {
         if (priority === undefined) {
           throw new InvalidJobPriorityError();
         }
+
         validateJobPriority(priority);
       });
+
       return yield* this.editPendingJob(jobId, { action: "setJobPriority", priority });
     },
     Effect.mapError((failure) =>
@@ -262,10 +284,13 @@ export class JobManager {
     if (!ObjectId.isValid(jobId)) {
       return null;
     }
+
     const _id = new ObjectId(jobId);
     const now = yield* DateTime.nowAsDate;
+
     const fields =
       edit.action === "reschedule" ? { nextRunAt: edit.runAt } : { priority: edit.priority };
+
     const result = yield* fromPromise(
       async () =>
         await this.ctx.collection.findOneAndUpdate(
@@ -274,20 +299,26 @@ export class JobManager {
           { returnDocument: "after" },
         ),
     );
+
     if (result) {
       const job = yield* attempt(() => this.ctx.documentToPersistedJob(result));
       yield* attempt(() => {
         this.ctx.notifyPendingJob(job.name, job.nextRunAt);
       });
+
       return job;
     }
+
     const currentJob = yield* fromPromise(
       async () => await this.ctx.collection.findOne<WithId<{ status: string }>>({ _id }),
     );
+
     if (!currentJob) {
       return null;
     }
+
     const action = edit.action === "reschedule" ? "reschedule" : "change priority of";
+
     return yield* Effect.fail(
       new JobStateError(
         `Cannot ${action} job in status '${currentJob.status}'`,
@@ -319,12 +350,16 @@ export class JobManager {
       if (!ObjectId.isValid(jobId)) {
         return false;
       }
+
       const _id = new ObjectId(jobId);
       const result = yield* fromPromise(async () => await this.ctx.collection.deleteOne({ _id }));
+
       if (result.deletedCount > 0) {
         yield* attempt(() => this.ctx.emit("job:deleted", { jobId }));
+
         return true;
       }
+
       return false;
     },
     Effect.mapError((failure) => jobMutationError(failure, "deleteJob", "delete job")),
@@ -357,16 +392,21 @@ export class JobManager {
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
+
     // Enforce allowed status, but respect explicit status filters
     if (filter.status !== undefined) {
       const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+
       if (!requested.includes(JobStatus.PENDING)) {
         return { count: 0, errors: [] };
       }
     }
+
     query["status"] = JobStatus.PENDING;
+
     return yield* Effect.gen({ self: this }, function* writeCancelledJobs() {
       const now = yield* DateTime.nowAsDate;
+
       const result = yield* fromPromise(
         async () =>
           await this.ctx.collection.updateMany(query, {
@@ -376,10 +416,13 @@ export class JobManager {
             },
           }),
       );
+
       const count = result.modifiedCount;
+
       if (count > 0) {
         yield* attempt(() => this.ctx.emit("jobs:cancelled", { count }));
       }
+
       return { count, errors: [] };
     }).pipe(Effect.mapError((failure) => jobMutationError(failure, "cancelJobs", "cancel jobs")));
   });
@@ -407,23 +450,30 @@ export class JobManager {
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
+
     // Enforce allowed statuses, but respect explicit status filters
     if (filter.status === undefined) {
       query["status"] = { $in: RETRYABLE_JOB_STATUSES };
     } else {
       const requested = Array.isArray(filter.status) ? filter.status : [filter.status];
+
       const allowed = requested.filter((status): status is RetryableJobStatusType =>
         RETRYABLE_JOB_STATUSES.some((retryableStatus) => retryableStatus === status),
       );
+
       if (allowed.length === 0) {
         return { count: 0, errors: [] };
       }
+
       query["status"] = allowed.length === 1 ? allowed[0] : { $in: allowed };
     }
+
     // 30s max spread for staggered retry
     const spreadWindowMs = 30_000;
+
     return yield* Effect.gen({ self: this }, function* writeRetriedJobs() {
       const now = yield* DateTime.nowAsDate;
+
       const result = yield* fromPromise(
         async () =>
           await this.ctx.collection.updateMany(query, [
@@ -442,7 +492,9 @@ export class JobManager {
             },
           ]),
       );
+
       const count = result.modifiedCount;
+
       if (count > 0) {
         yield* attempt(() => this.ctx.emit("jobs:retried", { count }));
         yield* this.notifyRetriedPendingJobs(filter, now).pipe(
@@ -454,6 +506,7 @@ export class JobManager {
           ),
         );
       }
+
       return { count, errors: [] };
     }).pipe(Effect.mapError((failure) => jobMutationError(failure, "retryJobs", "retry jobs")));
   });
@@ -476,15 +529,19 @@ export class JobManager {
         ...definedProperty(filter, "newerThan"),
       }),
     );
+
     query["status"] = JobStatus.PENDING;
     query["updatedAt"] = updatedAt;
+
     const cursor = yield* attempt(() => {
       const { collection } = this.ctx;
       const findNotificationJobs = collection.find.bind(collection);
+
       return findNotificationJobs<PendingNotificationDocument>(query, {
         projection: { name: 1, nextRunAt: 1 },
       });
     });
+
     let notified = false;
     yield* Stream.fromAsyncIterable(cursor, (error) => error).pipe(
       Stream.runForEach((job) =>
@@ -496,6 +553,7 @@ export class JobManager {
         }),
       ),
     );
+
     if (!notified) {
       yield* attempt(() => {
         this.ctx.notifyPendingJob(filter.name, updatedAt);
@@ -527,12 +585,15 @@ export class JobManager {
     filter: JobSelector,
   ): Effect.fn.Return<BulkOperationResult, unknown> {
     const query = yield* attempt(() => buildSelectorQuery(filter));
+
     // Use deleteMany for efficiency
     return yield* Effect.gen({ self: this }, function* writeDeletedJobs() {
       const result = yield* fromPromise(async () => await this.ctx.collection.deleteMany(query));
+
       if (result.deletedCount > 0) {
         yield* attempt(() => this.ctx.emit("jobs:deleted", { count: result.deletedCount }));
       }
+
       return {
         count: result.deletedCount,
         errors: [],

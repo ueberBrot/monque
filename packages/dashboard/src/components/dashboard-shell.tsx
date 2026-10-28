@@ -24,48 +24,63 @@ import { cn } from "@/lib/utils";
 import { isFunction } from "../lib/type-guards.js";
 
 const THEME_STORAGE_KEY = "monque-dashboard-theme";
+
 const dashboardNavItems = [
   { href: "/queue-views", label: "Queue Views", icon: Layers },
   { href: "/jobs", label: "Jobs", icon: ListTodo },
   { href: "/health", label: "Health", icon: Activity },
 ] as const;
+
 const themeModes = {
   light: { label: "Light", icon: Sun },
   dark: { label: "Dark", icon: Moon },
   system: { label: "System", icon: LaptopMinimal },
 } as const;
+
 const dashboardThemeModes = ["light", "dark", "system"] as const;
+
 type DashboardThemeMode = (typeof dashboardThemeModes)[number];
+
 const isDashboardThemeMode = (value: string | null): value is DashboardThemeMode =>
   dashboardThemeModes.some((mode) => mode === value);
+
 const getStoredThemeMode = (): DashboardThemeMode => {
   if (globalThis.window === undefined) {
     return "system";
   }
+
   try {
     const storedThemeMode = window.localStorage.getItem(THEME_STORAGE_KEY);
+
     if (isDashboardThemeMode(storedThemeMode)) {
       return storedThemeMode;
     }
   } catch {
     // A disabled storage backend does not prevent navigation.
   }
+
   return "system";
 };
+
 const getSystemPrefersDark = (): boolean =>
   globalThis.window !== undefined &&
   isFunction(window.matchMedia) &&
   window.matchMedia("(prefers-color-scheme: dark)").matches;
+
 const applyThemeMode = (themeMode: DashboardThemeMode): void => {
   if (globalThis.document === undefined) {
     return;
   }
+
   const rootElement = document.documentElement;
+
   const resolvedDarkMode =
     themeMode === "dark" || (themeMode === "system" && getSystemPrefersDark());
+
   rootElement.classList.toggle("dark", resolvedDarkMode);
   rootElement.dataset["theme"] = themeMode;
 };
+
 const DashboardNavigation = ({
   ariaLabel,
   className,
@@ -92,6 +107,7 @@ const DashboardNavigation = ({
     ))}
   </nav>
 );
+
 const ThemeModeMenu = ({
   themeMode,
   onThemeModeChange,
@@ -100,6 +116,7 @@ const ThemeModeMenu = ({
   readonly onThemeModeChange: (themeMode: DashboardThemeMode) => void;
 }): ReactElement => {
   const Icon = themeModes[themeMode].icon;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -118,6 +135,7 @@ const ThemeModeMenu = ({
       <DropdownMenuContent className="w-44">
         {dashboardThemeModes.map((mode) => {
           const { icon: ModeIcon, label } = themeModes[mode];
+
           return (
             <DropdownMenuItem
               key={mode}
@@ -134,31 +152,39 @@ const ThemeModeMenu = ({
     </DropdownMenu>
   );
 };
+
 const DashboardShell = ({ children }: { readonly children: ReactNode }): ReactElement => {
   const [themeMode, setThemeMode] = useState<DashboardThemeMode>(() => getStoredThemeMode());
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   useEffect(() => {
     applyThemeMode(themeMode);
+
     if (globalThis.window === undefined) {
       return () => {
         // Server rendering creates no browser subscription.
       };
     }
+
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
     } catch {
       // A disabled storage backend does not prevent navigation.
     }
+
     if (themeMode !== "system" || !isFunction(window.matchMedia)) {
       return () => {
         // This theme mode creates no media subscription to clean up.
       };
     }
+
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
     const handleChange = () => {
       applyThemeMode("system");
     };
+
     mediaQuery.addEventListener("change", handleChange);
+
     return () => {
       mediaQuery.removeEventListener("change", handleChange);
     };
@@ -167,11 +193,14 @@ const DashboardShell = ({ children }: { readonly children: ReactNode }): ReactEl
     const toggle = () => {
       setThemeMode(document.documentElement.classList.contains("dark") ? "light" : "dark");
     };
+
     window.addEventListener("monque:toggle-theme", toggle);
+
     return () => {
       window.removeEventListener("monque:toggle-theme", toggle);
     };
   }, []);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground">
       <Toaster
@@ -270,4 +299,5 @@ const DashboardShell = ({ children }: { readonly children: ReactNode }): ReactEl
     </div>
   );
 };
+
 export { DashboardShell };

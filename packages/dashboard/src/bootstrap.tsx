@@ -17,6 +17,7 @@ const createDashboardContent = (
     const managementApi = createDashboardManagementApi(runtimeConfig);
     const queryClient = createDashboardQueryClient();
     const router = getRouter({ managementApi, queryClient, runtimeConfig });
+
     return <DashboardProviders queryClient={queryClient} router={router} />;
   } catch {
     return (
@@ -40,4 +41,5 @@ const createDashboardContent = (
     );
   }
 };
+
 export { createDashboardContent };

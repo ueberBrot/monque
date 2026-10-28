@@ -41,6 +41,7 @@ describe(parseDashboardRuntimeConfig, () => {
   it.each([
     "",
     "   ",
+    // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- This literal is a test fixture or import-matching pattern, not an outgoing network request.
     "http://[",
     // oxlint-disable-next-line eslint/no-script-url -- The validator must reject script URLs.
     "javascript:alert(1)",

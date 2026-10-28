@@ -12,10 +12,12 @@ interface TextareaFieldProps {
   placeholder?: string;
   rows?: number;
 }
+
 export const TextareaField = ({ description, label, placeholder, rows }: TextareaFieldProps) => {
   const field = useFieldContext<string>();
   const fieldId = useId();
   const error = getFieldErrors(field.state.meta.errors);
+
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>

@@ -8,55 +8,69 @@ import { z } from "zod";
 interface DependencyVersions {
   [name: string]: string;
 }
+
 interface Catalogs {
   [name: string]: DependencyVersions;
 }
+
 interface WorkspaceCatalogs {
   catalog?: DependencyVersions;
   catalogs?: Catalogs;
 }
+
 interface PackageManifest extends WorkspaceCatalogs {
   name?: string;
   private: boolean;
   dependencies: DependencyVersions;
   optionalDependencies: DependencyVersions;
   peerDependencies: DependencyVersions;
+  engines: DependencyVersions;
   workspaces: WorkspaceCatalogs;
 }
+
 const isJsonObject = (value: unknown): value is object =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
 const isString = (value: unknown): value is string => typeof value === "string";
+
 const dependencyVersionsSchema = z.unknown().transform((input): DependencyVersions => {
   const entries: [string, unknown][] = isJsonObject(input) ? Object.entries(input) : [];
   const strings = entries.filter((entry): entry is [string, string] => isString(entry[1]));
+
   return Object.fromEntries(strings);
 });
+
 const catalogsSchema = z.unknown().transform((input): Catalogs => {
   const entries: [string, unknown][] = isJsonObject(input) ? Object.entries(input) : [];
+
   return Object.fromEntries(
     entries.map(([name, catalog]) => [name, dependencyVersionsSchema.parse(catalog)]),
   );
 });
-const workspaceCatalogsSchema = z.unknown().transform((input): WorkspaceCatalogs => ({
-  catalog:
-    isJsonObject(input) &&
-    "catalog" in input &&
-    input.catalog !== null &&
-    input.catalog !== undefined
-      ? dependencyVersionsSchema.parse(input.catalog)
-      : undefined,
-  catalogs:
-    isJsonObject(input) &&
-    "catalogs" in input &&
-    input.catalogs !== null &&
-    input.catalogs !== undefined
-      ? catalogsSchema.parse(input.catalogs)
-      : undefined,
-}));
+
+const workspaceCatalogsSchema = z.unknown().transform((input): WorkspaceCatalogs => {
+  if (!isJsonObject(input)) {
+    // oxlint-disable-next-line sonarjs/no-undefined-assignment -- Missing catalogs remain undefined so optional catalog resolution uses its existing fallback.
+    return { catalog: undefined, catalogs: undefined };
+  }
+
+  return {
+    catalog:
+      "catalog" in input && input.catalog !== null && input.catalog !== undefined
+        ? dependencyVersionsSchema.parse(input.catalog)
+        : undefined,
+    catalogs:
+      "catalogs" in input && input.catalogs !== null && input.catalogs !== undefined
+        ? catalogsSchema.parse(input.catalogs)
+        : undefined,
+  };
+});
+
 const packageManifestSchema = z.unknown().transform((input): PackageManifest | null => {
   if (!isJsonObject(input)) {
     return null;
   }
+
   return {
     ...workspaceCatalogsSchema.parse(input),
     name: "name" in input && isString(input.name) ? input.name : undefined,
@@ -70,12 +84,15 @@ const packageManifestSchema = z.unknown().transform((input): PackageManifest | n
     peerDependencies: dependencyVersionsSchema.parse(
       "peerDependencies" in input ? input.peerDependencies : undefined,
     ),
+    engines: dependencyVersionsSchema.parse("engines" in input ? input.engines : undefined),
     workspaces: workspaceCatalogsSchema.parse("workspaces" in input ? input.workspaces : undefined),
   };
 });
 
 const git = (args: string[], options: { input?: string; env?: NodeJS.ProcessEnv } = {}): string =>
+  // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
   execFileSync("git", args, { encoding: "utf-8", ...options }).trim();
+
 const readManifestAt = (ref: string, filePath: string): PackageManifest | null => {
   try {
     return packageManifestSchema.parse(JSON.parse(git(["show", `${ref}:${filePath}`])));
@@ -83,6 +100,7 @@ const readManifestAt = (ref: string, filePath: string): PackageManifest | null =
     return null;
   }
 };
+
 const resolveVersion = (
   depName: string,
   version: string,
@@ -91,38 +109,80 @@ const resolveVersion = (
   if (!version.startsWith("catalog:") || rootPkg === null) {
     return version;
   }
+
   const catalogName = version.slice("catalog:".length);
+
   const catalog =
     catalogName.length === 0
       ? (rootPkg.catalog ?? rootPkg.workspaces.catalog)
       : (rootPkg.catalogs ?? rootPkg.workspaces.catalogs)?.[catalogName];
+
   return catalog?.[depName] ?? version;
 };
+
 const hasDependencyUpdates = (
   before: PackageManifest,
   after: PackageManifest,
   rootBefore: PackageManifest | null,
   rootAfter: PackageManifest | null,
 ): boolean => {
-  for (const key of ["dependencies", "optionalDependencies", "peerDependencies"] as const) {
+  for (const key of ["dependencies", "optionalDependencies"] as const) {
     const prev = before[key];
     const next = after[key];
+
     for (const [name, rawTo] of Object.entries(next)) {
       const rawFrom = prev[name];
+
       if (rawFrom === undefined) {
         continue;
       }
+
       if (resolveVersion(name, rawFrom, rootBefore) !== resolveVersion(name, rawTo, rootAfter)) {
         return true;
       }
     }
   }
+
   return false;
 };
+
+const hasCompatibilityUpdates = (
+  before: PackageManifest,
+  after: PackageManifest,
+  rootBefore: PackageManifest | null,
+  rootAfter: PackageManifest | null,
+): boolean => {
+  if (before.engines.node !== after.engines.node) {
+    return true;
+  }
+
+  const peers = new Set([
+    ...Object.keys(before.peerDependencies),
+    ...Object.keys(after.peerDependencies),
+  ]);
+
+  for (const name of peers) {
+    const from = before.peerDependencies[name];
+    const to = after.peerDependencies[name];
+
+    if (from === undefined || to === undefined) {
+      return true;
+    }
+
+    if (resolveVersion(name, from, rootBefore) !== resolveVersion(name, to, rootAfter)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const rootManifestPath = "package.json";
 
 const main = async (): Promise<void> => {
   const baseSha = process.env.BASE_SHA;
   const headSha = process.env.HEAD_SHA;
+
   if (
     baseSha === undefined ||
     headSha === undefined ||
@@ -134,35 +194,54 @@ const main = async (): Promise<void> => {
   const changedFiles = git(["diff", "--name-only", "-z", `${baseSha}...${headSha}`])
     .split("\0")
     .filter(Boolean);
+
   if (changedFiles.some((path) => path.startsWith(".changeset/") && path.endsWith(".md"))) {
     console.log("PR already contains a changeset file; nothing to do.");
+
     return;
   }
 
-  const rootBefore = readManifestAt(baseSha, "package.json");
-  const rootAfter = readManifestAt(headSha, "package.json");
+  const rootBefore = readManifestAt(baseSha, rootManifestPath);
+  const rootAfter = readManifestAt(headSha, rootManifestPath);
+
   const packagePaths = git(["ls-tree", "-r", "--name-only", "-z", baseSha, "--", "packages"])
     .split("\0")
     .filter((path) => /^packages\/[^/]+\/package\.json$/u.test(path));
+
   const updatedPackages = new Set<string>();
-  for (const path of packagePaths) {
-    if (!changedFiles.includes("package.json") && !changedFiles.includes(path)) {
-      continue;
-    }
+  const compatibilityUpdates = new Set<string>();
+
+  const relevantPaths = changedFiles.includes(rootManifestPath)
+    ? packagePaths
+    : packagePaths.filter((path) => changedFiles.includes(path));
+
+  for (const path of relevantPaths) {
     const before = readManifestAt(baseSha, path);
     const after = readManifestAt(headSha, path);
-    if (before === null || after === null || after.private) {
+
+    if (before === null || after === null || after.private || after.name === undefined) {
       continue;
     }
-    if (after.name === undefined) {
-      continue;
+
+    if (hasCompatibilityUpdates(before, after, rootBefore, rootAfter)) {
+      compatibilityUpdates.add(after.name);
     }
+
     if (hasDependencyUpdates(before, after, rootBefore, rootAfter)) {
       updatedPackages.add(after.name);
     }
   }
+
+  if (compatibilityUpdates.size > 0) {
+    throw new Error(
+      `Published peer dependencies or Node.js engines changed for ${[...compatibilityUpdates].toSorted().join(", ")}. ` +
+        "Add an explicit changeset that classifies and explains the compatibility change.",
+    );
+  }
+
   if (updatedPackages.size === 0) {
     console.log("No published dependency updates detected; nothing to do.");
+
     return;
   }
 
@@ -172,6 +251,7 @@ const main = async (): Promise<void> => {
   const content = `---\n${releases.join("\n")}\n---\n\nUpdate runtime dependencies.\n`;
 
   const directory = await mkdtemp(nodePath.join(tmpdir(), "monque-renovate-index-"));
+
   try {
     const env = {
       ...process.env,
@@ -181,15 +261,19 @@ const main = async (): Promise<void> => {
       GIT_COMMITTER_NAME: "github-actions[bot]",
       GIT_COMMITTER_EMAIL: "41898282+github-actions[bot]@users.noreply.github.com",
     };
+
     git(["read-tree", headSha], { env });
     const blob = git(["hash-object", "-w", "--stdin"], { input: content });
     git(["update-index", "--add", "--cacheinfo", "100644", blob, path], { env });
     const tree = git(["write-tree"], { env });
+
     const commit = git(["commit-tree", tree, "-p", headSha], {
       env,
       input: "chore(changeset): add renovate deps changeset\n",
     });
+
     console.log(`Created changeset commit ${commit}`);
+
     if (process.env.GITHUB_OUTPUT !== undefined && process.env.GITHUB_OUTPUT.length > 0) {
       await appendFile(process.env.GITHUB_OUTPUT, `commit=${commit}\n`);
     }

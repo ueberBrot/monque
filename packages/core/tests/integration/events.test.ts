@@ -44,6 +44,7 @@ describe("Monitor Job Lifecycle Events", () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -205,9 +206,11 @@ describe("Monitor Job Lifecycle Events", () => {
       await monque.cancelJob(job._id.toString());
       expect(cancelledEvents).toHaveLength(1);
       const [event] = cancelledEvents;
+
       if (!event) {
         throw new Error("Event not found");
       }
+
       expect(event.job._id?.toString()).toBe(job._id.toString());
       expect(event.job.status).toBe(JobStatus.CANCELLED);
     });
@@ -237,6 +240,7 @@ describe("Monitor Job Lifecycle Events", () => {
       monque.on("job:retried", (payload) => {
         retriedEvents.push(payload);
       });
+
       // Manually insert a failed job
       const { insertedId } = await db.collection(collectionName).insertOne({
         name: TEST_CONSTANTS.JOB_NAME,
@@ -247,12 +251,15 @@ describe("Monitor Job Lifecycle Events", () => {
         failCount: 1,
         failReason: "Manual failure",
       });
+
       await monque.retryJob(insertedId.toString());
       expect(retriedEvents).toHaveLength(1);
       const [event] = retriedEvents;
+
       if (!event) {
         throw new Error("Event not found");
       }
+
       expect(event.job._id?.toString()).toBe(insertedId.toString());
       expect(event.previousStatus).toBe(JobStatus.FAILED);
     });
@@ -271,9 +278,11 @@ describe("Monitor Job Lifecycle Events", () => {
       await monque.deleteJob(job._id.toString());
       expect(deletedEvents).toHaveLength(1);
       const [event] = deletedEvents;
+
       if (!event) {
         throw new Error("Event not found");
       }
+
       expect(event.jobId).toBe(job._id.toString());
     });
   });
@@ -306,9 +315,11 @@ describe("Monitor Job Lifecycle Events", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const startEvents: Job[] = [];
+
       const listener = (job: Job) => {
         startEvents.push(job);
       };
+
       // Add listener
       monque.on("job:start", listener);
       // Register worker and enqueue job
@@ -324,6 +335,7 @@ describe("Monitor Job Lifecycle Events", () => {
       await waitFor(
         async () => {
           const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+
           return jobs.length >= 2;
         },
         { timeout: 5000 },
@@ -351,6 +363,7 @@ describe("Monitor Job Lifecycle Events", () => {
       await waitFor(
         async () => {
           const jobs = await monque.getJobs({ status: JobStatus.COMPLETED });
+
           return jobs.length >= 3;
         },
         { timeout: 5000 },

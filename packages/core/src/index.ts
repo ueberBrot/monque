@@ -1,5 +1,6 @@
 // Types - Events
 export type { MonqueEventMap } from "@/events";
+
 // Types - Jobs
 export {
   type BulkOperationResult,
@@ -39,10 +40,13 @@ export {
   type QueueViewWorkerSummary,
   type ScheduleOptions,
 } from "@/jobs";
+
 // Types - Scheduler
 export type { MonqueOptions, ProcessingState } from "@/scheduler";
+
 // Main class
 export { Monque } from "@/scheduler";
+
 // Errors
 // Utilities (for advanced use cases)
 export {
@@ -71,5 +75,6 @@ export {
   validateUniqueKey,
   WorkerRegistrationError,
 } from "@/shared";
+
 // Types - Workers
 export type { WorkerOptions } from "@/workers";

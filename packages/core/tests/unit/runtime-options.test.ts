@@ -27,6 +27,7 @@ describe("runtime options", () => {
       for (const value of [Number.NaN, Infinity, -1]) {
         expect(() => new Monque(db, { [name]: value })).toThrow(name);
       }
+
       expect(() => new Monque(db, { [name]: 0.5 })).not.toThrow();
     },
   );
@@ -37,12 +38,14 @@ describe("runtime options", () => {
       for (const value of [0, -1, 0.5, Number.NaN, Infinity, 2_147_483_648]) {
         expect(() => new Monque(db, { [name]: value })).toThrow(name);
       }
+
       expect(() => new Monque(db, { [name]: 1.5 })).not.toThrow();
     },
   );
 
   it("rejects overflowing shutdown and retention timers", () => {
     expect(() => new Monque(db, { shutdownTimeout: 2_147_483_648 })).toThrow("shutdownTimeout");
+
     for (const interval of [0, -1, Infinity, 2_147_483_648]) {
       expect(() => new Monque(db, { jobRetention: { interval } })).toThrow("jobRetention.interval");
     }
@@ -56,6 +59,7 @@ describe("runtime options", () => {
           `jobRetention.${status}`,
         );
       }
+
       expect(() => new Monque(db, { jobRetention: { [status]: 0.5 } })).not.toThrow();
     },
   );
@@ -86,16 +90,19 @@ describe("runtime options", () => {
         "leaseDuration",
       );
     }
+
     expect(() => new Monque(db, { heartbeatInterval: 20, leaseDuration: 1000 })).not.toThrow();
   });
 
   it("validates registration before changing the registered worker", () => {
     const monque = new Monque(db);
+
     for (const concurrency of [Number.NaN, Infinity, -1, 0.5]) {
       expect(() => {
         monque.register("email", handler, { concurrency });
       }).toThrow("concurrency");
     }
+
     expect(() => {
       monque.register("email", handler, { concurrency: 0 });
     }).not.toThrow();

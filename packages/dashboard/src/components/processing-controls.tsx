@@ -23,6 +23,7 @@ const processingControlState = (
   const globalPause = name !== undefined && state.globallyPaused;
   const allowed = capabilities.actions[action] ?? false;
   let reason: string | undefined;
+
   if (capabilities.readOnly) {
     reason = "This dashboard is read-only.";
   } else if (globalPause) {
@@ -30,8 +31,10 @@ const processingControlState = (
   } else if (!allowed) {
     reason = `${state.paused ? "Resuming" : "Pausing"} is not allowed.`;
   }
+
   return { action, disabled: !allowed || globalPause, reason } as const;
 };
+
 export const ProcessingControls = ({
   managementApi,
   name,
@@ -45,6 +48,7 @@ export const ProcessingControls = ({
   const queryClient = useQueryClient();
   const refetchInterval = useDocumentVisiblePollingInterval(pollingIntervalMs, 3);
   const input = name === undefined ? undefined : { name };
+
   const [stateQuery, capabilitiesQuery] = useQueries({
     queries: [
       {
@@ -55,6 +59,7 @@ export const ProcessingControls = ({
       { ...managementApi.orpc.capabilities.queryOptions({ input }), refetchInterval, retry: false },
     ],
   });
+
   const mutation = useMutation({
     mutationFn: async ({
       action,
@@ -76,7 +81,9 @@ export const ProcessingControls = ({
       void capabilitiesQuery.refetch();
     },
   });
+
   const error = stateQuery.error ?? capabilitiesQuery.error;
+
   if (error) {
     return (
       <section className="grid gap-2 rounded-lg border border-border p-4">
@@ -97,13 +104,18 @@ export const ProcessingControls = ({
       </section>
     );
   }
+
   const state = stateQuery.data;
   const capabilities = capabilitiesQuery.data;
+
   if (!state || !capabilities) {
     return <Skeleton className="h-28 w-full" aria-label="Loading processing state" />;
   }
+
   const { action, disabled, reason } = processingControlState(state, capabilities, name);
   const scope = name === undefined ? "instance" : "worker";
+  const actionLabel = state.paused ? "Resume" : "Pause";
+
   return (
     <section className="grid min-w-0 gap-3 rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -122,7 +134,7 @@ export const ProcessingControls = ({
           }}
         >
           {state.paused ? <Play /> : <Pause />}
-          {mutation.isPending ? "Saving…" : `${state.paused ? "Resume" : "Pause"} ${scope}`}
+          {mutation.isPending ? "Saving…" : `${actionLabel} ${scope}`}
         </Button>
       </div>
       <p className="break-all font-mono text-xs text-muted-foreground">

@@ -47,12 +47,14 @@ describe("priority across Job intake and lifecycle", () => {
       },
     );
     await expect(monque.getJobs()).resolves.toStrictEqual([]);
+
     const job = await monque.schedule(
       "0 9 * * *",
       "report",
       {},
       { priority: -7, timezone: "Europe/Berlin" },
     );
+
     expect(job.priority).toBe(-7);
     await expect(monque.getJob(job._id)).resolves.toMatchObject({
       priority: -7,
@@ -65,6 +67,7 @@ describe("priority across Job intake and lifecycle", () => {
       collectionName: uniqueCollectionName("batch"),
       workerConcurrency: 1,
     });
+
     instances.push(monque);
     await monque.initialize();
     await forEachSequential(
@@ -116,6 +119,7 @@ describe("priority across Job intake and lifecycle", () => {
     const monque = new Monque(db, { collectionName: uniqueCollectionName("duplicates") });
     instances.push(monque);
     await monque.initialize();
+
     const original = await monque.schedule(
       "0 9 * * *",
       "work",
@@ -126,6 +130,7 @@ describe("priority across Job intake and lifecycle", () => {
         uniqueKey: "active",
       },
     );
+
     await expect(
       monque.schedule(
         "0 10 * * *",
@@ -158,6 +163,7 @@ describe("priority across Job intake and lifecycle", () => {
     await monque.initialize();
     await db.command({ collMod: collectionName, validator: { "data.reject": { $ne: true } } });
     let failure: unknown;
+
     try {
       await monque.enqueueMany([
         { name: "work", data: { label: "first" }, priority: -4 },
@@ -167,10 +173,13 @@ describe("priority across Job intake and lifecycle", () => {
     } catch (error) {
       failure = error;
     }
+
     expect(failure).toBeInstanceOf(ConnectionError);
+
     if (!(failure instanceof ConnectionError) || !(failure.cause instanceof MongoBulkWriteError)) {
-      throw new Error("Expected native bulk result");
+      throw new TypeError("Expected native bulk result");
     }
+
     expect(failure.cause.result.upsertedCount).toBe(2);
     expect(failure.cause.writeErrors).toMatchObject([{ index: 1, code: 121 }]);
     await expect(monque.getJobs()).resolves.toMatchObject([
@@ -184,19 +193,23 @@ describe("priority across Job intake and lifecycle", () => {
       collectionName: uniqueCollectionName("recurring-runs"),
       pollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-03-28T00:00:00Z"));
+
     const job = await monque.schedule(
       "0 9 * * *",
       "report",
       {},
       { priority: 15, timezone: "Europe/Berlin" },
     );
+
     const seen: (number | undefined)[] = [];
     monque.register("report", (reportJob) => {
       seen.push(reportJob.priority);
+
       if (seen.length === 1) {
         throw new Error("Temporary failure");
       }
@@ -252,6 +265,7 @@ describe("priority across Job intake and lifecycle", () => {
       collectionName: uniqueCollectionName("manual"),
       maxRetries: 0,
     });
+
     instances.push(monque);
     await monque.initialize();
     const job = await monque.now("work", {}, { priority: -6 });
@@ -264,6 +278,7 @@ describe("priority across Job intake and lifecycle", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult2 = await monque.getJob(job._id);
+
       return awaitedResult2?.status === JobStatus.FAILED;
     });
     monque.pause();
@@ -285,6 +300,7 @@ describe("priority across Job intake and lifecycle", () => {
     monque.resume();
     await waitFor(async () => {
       const awaitedResult3 = await monque.getJob(job._id);
+
       return awaitedResult3?.status === JobStatus.COMPLETED;
     });
     const completed = await monque.getJob(job._id);
@@ -328,6 +344,7 @@ describe("priority across Job intake and lifecycle", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult4 = await monque.getJob(id);
+
       return awaitedResult4?.status === JobStatus.COMPLETED;
     });
     expect(handledPriority).toBe(23);

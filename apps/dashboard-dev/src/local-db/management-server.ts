@@ -13,6 +13,7 @@ const COLLECTION_NAME = "monque_dashboard_jobs";
 const SEED_MARKER_COLLECTION = "monque_dashboard_seed";
 const SEED_VERSION = "2026-06-04-atlas-local-v1";
 const MONGO_CONNECT_TIMEOUT_MS = 3000;
+
 class LocalDbConnectionError extends Error {
   constructor(options: { readonly cause: unknown }) {
     super(
@@ -25,33 +26,40 @@ class LocalDbConnectionError extends Error {
     this.name = "LocalDbConnectionError";
   }
 }
+
 interface LocalDbManagementServer {
   readonly middleware: ReturnType<typeof createManagementMiddleware>;
   readonly start: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
+
 interface LocalDbRuntime {
   readonly client: MongoClient;
   readonly monque: Monque;
   readonly management: ManagementSurface;
 }
+
 type DashboardSeedJob = WithId<Document> & {
   readonly name: string;
   readonly uniqueKey: string;
 };
+
 const createSeedJobs = (): DashboardSeedJob[] =>
   [...createScenario("mixed"), ...createScenario("pagination")].map((job, index) => ({
     ...job,
     uniqueKey: `dashboard-dev-seed-${SEED_VERSION}-${index + 1}`,
   }));
+
 const seedDashboardJobs = async (
   collection: Collection,
   markerCollection: Collection,
 ): Promise<void> => {
   const marker = await markerCollection.findOne({ version: SEED_VERSION });
+
   if (marker) {
     return;
   }
+
   const seedJobs = createSeedJobs();
   await collection.bulkWrite(
     seedJobs.map((job) => ({
@@ -74,6 +82,7 @@ const seedDashboardJobs = async (
     { upsert: true },
   );
 };
+
 const createLocalDbRuntime = async (options: {
   readonly mongoUri: string;
   readonly databaseName: string;
@@ -82,13 +91,16 @@ const createLocalDbRuntime = async (options: {
     connectTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
     serverSelectionTimeoutMS: MONGO_CONNECT_TIMEOUT_MS,
   });
+
   try {
     await client.connect();
   } catch (error) {
     await client.close();
     throw new LocalDbConnectionError({ cause: error });
   }
+
   const db = client.db(options.databaseName);
+
   const monque = new Monque(db, {
     collectionName: COLLECTION_NAME,
     workerConcurrency: 2,
@@ -98,6 +110,7 @@ const createLocalDbRuntime = async (options: {
     maxRetries: 2,
     baseRetryInterval: 1000,
   });
+
   try {
     await monque.initialize();
     registerScenarioWorkers(monque, db);
@@ -109,8 +122,10 @@ const createLocalDbRuntime = async (options: {
     } finally {
       await client.close();
     }
+
     throw error;
   }
+
   return {
     client,
     monque,
@@ -119,6 +134,7 @@ const createLocalDbRuntime = async (options: {
     }),
   };
 };
+
 const createLocalDbManagementServer = (options?: {
   readonly mongoUri?: string;
   readonly databaseName?: string;
@@ -127,10 +143,12 @@ const createLocalDbManagementServer = (options?: {
   const databaseName = options?.databaseName ?? DEFAULT_DATABASE_NAME;
   let runtimePromise: Promise<LocalDbRuntime> | null = null;
   let closing: Promise<void> | null = null;
+
   const getRuntime = async (): Promise<LocalDbRuntime> => {
     if (closing) {
       await closing;
     }
+
     const createRuntime = async (): Promise<LocalDbRuntime> => {
       try {
         return await createLocalDbRuntime({ mongoUri, databaseName });
@@ -139,9 +157,12 @@ const createLocalDbManagementServer = (options?: {
         throw error;
       }
     };
+
     runtimePromise ??= createRuntime();
+
     return await runtimePromise;
   };
+
   return {
     start: async () => {
       await getRuntime();
@@ -149,9 +170,11 @@ const createLocalDbManagementServer = (options?: {
     middleware: createManagementMiddleware(async (request) => {
       try {
         const runtime = await getRuntime();
+
         const result = await runtime.management.openApiHandler.handle(request, {
           context: { managementContext: { source: "dashboard-dev-db" } },
         });
+
         return result.matched ? result.response : undefined;
       } catch (error) {
         if (error instanceof LocalDbConnectionError) {
@@ -163,6 +186,7 @@ const createLocalDbManagementServer = (options?: {
             { status: 503 },
           );
         }
+
         throw error;
       }
     }),
@@ -170,6 +194,7 @@ const createLocalDbManagementServer = (options?: {
       closing ??= (async () => {
         try {
           const runtime = await runtimePromise;
+
           if (runtime) {
             try {
               await runtime.monque.stop();
@@ -181,6 +206,7 @@ const createLocalDbManagementServer = (options?: {
           runtimePromise = null;
         }
       })();
+
       try {
         await closing;
       } finally {
@@ -189,4 +215,5 @@ const createLocalDbManagementServer = (options?: {
     },
   };
 };
+
 export { createLocalDbManagementServer, createSeedJobs };

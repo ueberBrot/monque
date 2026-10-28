@@ -30,6 +30,7 @@ describe("non-retryable handler errors", () => {
       maxRetries: 10,
       baseRetryInterval: 10,
     });
+
     instances.push(monque);
     await monque.initialize();
     const error = new NonRetryableError("Account no longer exists");
@@ -72,6 +73,7 @@ describe("non-retryable handler errors", () => {
     await monque.retryJob(job._id.toHexString());
     await waitFor(async () => {
       const awaitedResult1 = await monque.getJob(job._id);
+
       return awaitedResult1?.status === JobStatus.COMPLETED;
     });
     expect(failures).toStrictEqual([false]);
@@ -84,6 +86,7 @@ describe("non-retryable handler errors", () => {
     monque.register("daily", () => {
       throw new NonRetryableError("Invalid subscription");
     });
+
     const job = await monque.schedule(
       "0 9 * * *",
       "daily",
@@ -93,10 +96,12 @@ describe("non-retryable handler errors", () => {
         uniqueKey: "subscription",
       },
     );
+
     await monque.rescheduleJob(job._id.toHexString(), new Date());
     monque.start();
     await waitFor(async () => {
       const awaitedResult2 = await monque.getJob(job._id);
+
       return awaitedResult2?.status === JobStatus.FAILED;
     });
     await monque.stop();
@@ -106,6 +111,7 @@ describe("non-retryable handler errors", () => {
       repeatInterval: "0 9 * * *",
       timezone: "Europe/Berlin",
     });
+
     const replacement = await monque.schedule(
       "0 9 * * *",
       "daily",
@@ -115,7 +121,9 @@ describe("non-retryable handler errors", () => {
         timezone: "Europe/Berlin",
       },
     );
+
     expect(replacement._id.equals(job._id)).toBe(false);
+
     const duplicate = await monque.schedule(
       "0 9 * * *",
       "daily",
@@ -125,6 +133,7 @@ describe("non-retryable handler errors", () => {
         timezone: "Europe/Berlin",
       },
     );
+
     expect(duplicate._id.equals(replacement._id)).toBe(true);
   });
 
@@ -134,6 +143,7 @@ describe("non-retryable handler errors", () => {
       maxRetries: 3,
       baseRetryInterval: 10,
     });
+
     instances.push(monque);
     await monque.initialize();
     const failures: boolean[] = [];
@@ -151,6 +161,7 @@ describe("non-retryable handler errors", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult3 = await monque.getJob(job._id);
+
       return awaitedResult3?.status === JobStatus.COMPLETED;
     });
     expect(failures).toStrictEqual([true]);
@@ -176,11 +187,13 @@ describe("non-retryable handler errors", () => {
     });
     const job = await first.enqueue("owned", {});
     first.start();
+
     try {
       await started.promise;
       await waitFor(async () => {
         const awaitedResult5 = await first.getJob(job._id);
         const lockedAt = awaitedResult5?.lockedAt;
+
         return lockedAt !== null && lockedAt !== undefined && Date.now() - lockedAt.getTime() > 50;
       });
       const second = new Monque(db, { collectionName, lockTimeout: 50, workerConcurrency: 1 });
@@ -190,12 +203,14 @@ describe("non-retryable handler errors", () => {
       second.start();
       await waitFor(async () => {
         const awaitedResult6 = await second.getJob(job._id);
+
         return awaitedResult6?.status === JobStatus.COMPLETED;
       });
     } finally {
       release.resolve();
       await first.stop();
     }
+
     await expect(first.getJob(job._id)).resolves.toMatchObject({
       status: JobStatus.COMPLETED,
       failCount: 0,

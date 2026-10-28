@@ -14,6 +14,7 @@ test("success notifications expire without shifting the jobs table", async ({ pa
   await expect(page.getByText("Job cancelled", { exact: true })).not.toBeVisible();
   expect(await page.locator("thead").boundingBox()).toEqual(before);
 });
+
 test("an open row action menu survives polling and clock ticks", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.base}/dashboard/jobs`);
@@ -26,6 +27,7 @@ test("an open row action menu survives polling and clock ticks", async ({ page, 
   await page.getByRole("menuitem", { name: "Delete job", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
 });
+
 for (const route of ["queue-views/email", "jobs"]) {
   test(`${route} column geometry stays stable when persisted statuses change`, async ({
     page,
@@ -36,15 +38,18 @@ for (const route of ["queue-views/email", "jobs"]) {
     await page.goto(`${app.base}/dashboard/${route}`);
     await expect(page.locator("tbody tr")).toHaveCount(1);
     await expect(page.locator("tbody")).toContainText("Failed");
+
     const geometry = async () =>
       await Promise.resolve(
         page.locator("thead th").evaluateAll((cells) =>
           cells.map((cell) => {
             const { x, width } = cell.getBoundingClientRect();
+
             return { x, width };
           }),
         ),
       );
+
     const before = await geometry();
     await app.jobs.updateOne(
       { _id: job._id },
@@ -54,6 +59,7 @@ for (const route of ["queue-views/email", "jobs"]) {
     expect(await geometry()).toEqual(before);
   });
 }
+
 test("deleting a job returns to its originating queue view", async ({ page, app }) => {
   const job = await app.seed();
   await page.goto(`${app.base}/dashboard/queue-views/email?limit=10`);
@@ -63,6 +69,7 @@ test("deleting a job returns to its originating queue view", async ({ page, app 
   await expect(page).toHaveURL(/\/queue-views\/email\?limit=10$/u);
   await expect(page.getByText("No persisted jobs match this Queue View right now.")).toBeVisible();
 });
+
 test("job detail polls its record without polling the hidden jobs list", async ({ page, app }) => {
   const job = await app.seed();
   const requests: string[] = [];

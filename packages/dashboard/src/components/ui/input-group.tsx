@@ -1,13 +1,13 @@
 import { cva } from "class-variance-authority";
 import type { VariantProps } from "class-variance-authority";
 import { cn } from "cn";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-const InputGroup = ({ className, ...props }: React.ComponentProps<"fieldset">) => (
+const InputGroup = ({ className, ...props }: ComponentProps<"fieldset">) => (
   <fieldset
     data-slot="input-group"
     className={cn(
@@ -17,6 +17,7 @@ const InputGroup = ({ className, ...props }: React.ComponentProps<"fieldset">) =
     {...props}
   />
 );
+
 const inputGroupAddonVariants = cva(
   "flex h-auto cursor-text items-center justify-center gap-2 py-1.5 text-sm font-medium text-muted-foreground select-none group-data-[disabled=true]/input-group:opacity-50 [&>kbd]:rounded-[calc(var(--radius)-5px)] [&>svg:not([class*='size-'])]:size-4",
   {
@@ -35,11 +36,12 @@ const inputGroupAddonVariants = cva(
     },
   },
 );
+
 const InputGroupAddon = ({
   className,
   align = "inline-start",
   ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) => (
+}: ComponentProps<"div"> & VariantProps<typeof inputGroupAddonVariants>) => (
   // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-static-element-interactions -- This generated addon only forwards pointer focus; the input remains directly keyboard accessible.
   <div
     data-slot="input-group-addon"
@@ -49,11 +51,13 @@ const InputGroupAddon = ({
       if (e.target instanceof Element && e.target.closest("button")) {
         return;
       }
+
       e.currentTarget.parentElement?.querySelector("input")?.focus();
     }}
     {...props}
   />
 );
+
 const inputGroupButtonVariants = cva("flex items-center gap-2 text-sm shadow-none", {
   variants: {
     size: {
@@ -67,13 +71,14 @@ const inputGroupButtonVariants = cva("flex items-center gap-2 text-sm shadow-non
     size: "xs",
   },
 });
+
 const InputGroupButton = ({
   className,
   type = "button",
   variant = "ghost",
   size = "xs",
   ...props
-}: Omit<React.ComponentProps<typeof Button>, "size" | "type"> &
+}: Omit<ComponentProps<typeof Button>, "size" | "type"> &
   VariantProps<typeof inputGroupButtonVariants> & {
     type?: "button" | "submit" | "reset";
   }) => (
@@ -85,7 +90,8 @@ const InputGroupButton = ({
     {...props}
   />
 );
-const InputGroupText = ({ className, ...props }: React.ComponentProps<"span">) => (
+
+const InputGroupText = ({ className, ...props }: ComponentProps<"span">) => (
   <span
     className={cn(
       "flex items-center gap-2 text-sm text-muted-foreground [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
@@ -94,7 +100,8 @@ const InputGroupText = ({ className, ...props }: React.ComponentProps<"span">) =
     {...props}
   />
 );
-const InputGroupInput = ({ className, ...props }: React.ComponentProps<"input">) => (
+
+const InputGroupInput = ({ className, ...props }: ComponentProps<"input">) => (
   <Input
     data-slot="input-group-control"
     className={cn(
@@ -104,7 +111,8 @@ const InputGroupInput = ({ className, ...props }: React.ComponentProps<"input">)
     {...props}
   />
 );
-const InputGroupTextarea = ({ className, ...props }: React.ComponentProps<"textarea">) => (
+
+const InputGroupTextarea = ({ className, ...props }: ComponentProps<"textarea">) => (
   <Textarea
     data-slot="input-group-control"
     className={cn(
@@ -114,6 +122,7 @@ const InputGroupTextarea = ({ className, ...props }: React.ComponentProps<"texta
     {...props}
   />
 );
+
 export {
   InputGroup,
   InputGroupAddon,

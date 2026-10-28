@@ -44,6 +44,7 @@ describe("job guards", () => {
         ...baseJob,
         _id: fromAny<ObjectId, unknown>(null),
       };
+
       expect(isPersistedJob(jobWithNullId)).toBe(false);
     });
   });

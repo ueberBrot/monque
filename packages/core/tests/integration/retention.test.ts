@@ -35,6 +35,7 @@ describe("job retention", () => {
 
   it("should delete completed jobs older than specified retention", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
     // Configure retention to clean up every 100ms, keeping completed jobs for 5000ms
     const monque = new Monque(db, {
       collectionName,
@@ -46,6 +47,7 @@ describe("job retention", () => {
         interval: 100,
       },
     });
+
     monqueInstances.push(monque);
     const collection = db.collection<Job>(collectionName);
     const now = new Date();
@@ -73,6 +75,7 @@ describe("job retention", () => {
     await waitFor(
       async () => {
         const count = await collection.countDocuments({ name: "old-job" });
+
         return count === 0;
       },
       { timeout: 2000, interval: 50 },
@@ -85,6 +88,7 @@ describe("job retention", () => {
 
   it("should delete failed jobs older than specified retention", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
     const monque = new Monque(db, {
       collectionName,
       pollInterval: 1000,
@@ -95,6 +99,7 @@ describe("job retention", () => {
         interval: 100,
       },
     });
+
     monqueInstances.push(monque);
     const collection = db.collection<Job>(collectionName);
     const now = new Date();
@@ -117,6 +122,7 @@ describe("job retention", () => {
     await waitFor(
       async () => {
         const count = await collection.countDocuments({ name: "old-failed-job" });
+
         return count === 0;
       },
       { timeout: 2000, interval: 50 },
@@ -129,21 +135,25 @@ describe("job retention", () => {
 
   it("should handle concurrent cleanup from two instances without data corruption", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
     const retentionConfig = {
       completed: 5000,
       failed: 5000,
       interval: 100,
     };
+
     const monque1 = new Monque(db, {
       collectionName,
       pollInterval: 1000,
       jobRetention: retentionConfig,
     });
+
     const monque2 = new Monque(db, {
       collectionName,
       pollInterval: 1000,
       jobRetention: retentionConfig,
     });
+
     monqueInstances.push(monque1, monque2);
     const collection = db.collection<Job>(collectionName);
     const now = new Date();
@@ -179,6 +189,7 @@ describe("job retention", () => {
         const oldCount = await collection.countDocuments({
           name: { $regex: /^old-/u },
         });
+
         return oldCount === 0;
       },
       { timeout: 5000, interval: 50 },
@@ -202,11 +213,13 @@ describe("job retention", () => {
 
   it("should not delete jobs if retention is not configured", async () => {
     collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+
     const monque = new Monque(db, {
       collectionName,
       pollInterval: 1000,
       // No jobRetention
     });
+
     monqueInstances.push(monque);
     const collection = db.collection<Job>(collectionName);
     const oldDate = new Date(Date.now() - 5000);
@@ -229,6 +242,7 @@ describe("job retention", () => {
     const collection = db.collection<Job>(collectionName);
     const oldDate = new Date(Date.now() - 60_000);
     const expired = JobFactoryHelpers.cancelled({ updatedAt: oldDate });
+
     const retained = [
       JobFactoryHelpers.cancelled({ createdAt: oldDate }),
       JobFactoryHelpers.completed({ updatedAt: oldDate }),
@@ -236,11 +250,14 @@ describe("job retention", () => {
       JobFactoryHelpers.pending({ updatedAt: oldDate }),
       JobFactoryHelpers.processing({ updatedAt: oldDate }),
     ];
+
     await collection.insertMany([expired, ...retained]);
+
     const options = {
       collectionName,
       jobRetention: { cancelled: 30_000, interval: 50 },
     };
+
     const first = new Monque(db, options);
     const second = new Monque(db, options);
     monqueInstances.push(first, second);
@@ -252,6 +269,7 @@ describe("job retention", () => {
     await collection.insertOne(JobFactoryHelpers.cancelled({ updatedAt: oldDate }));
     await waitFor(async () => {
       const awaitedResult1 = await first.getJobs({ status: JobStatus.CANCELLED });
+
       return awaitedResult1.length === 1;
     });
     await forEachSequential(retained, async (job) => {

@@ -43,6 +43,7 @@ describe("stop() - Graceful Shutdown", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -79,9 +80,11 @@ describe("stop() - Graceful Shutdown", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const processedJobs: Job[] = [];
+
       const handlerImplementation = (job: Job) => {
         processedJobs.push(job);
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Enqueue first job
@@ -133,6 +136,7 @@ describe("stop() - Graceful Shutdown", () => {
   describe("in-progress job waiting", () => {
     it("should wait for in-progress jobs to complete before resolving", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
         monque = new Monque(db, {
@@ -144,12 +148,14 @@ describe("stop() - Graceful Shutdown", () => {
         await monque.initialize();
         let jobCompleted = false;
         const jobStarted = vi.fn<() => void>();
+
         const handlerImplementation = async () => {
           jobStarted();
           // Hold work until the test releases it
           await release.promise;
           jobCompleted = true;
         };
+
         const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
         monque.register(TEST_CONSTANTS.JOB_NAME, handler);
         await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { data: "test" });
@@ -162,9 +168,12 @@ describe("stop() - Graceful Shutdown", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monque.stop().then(() => {
           stopped = true;
         });
+
         await streamClosed.promise;
         await setImmediate();
         expect(stopped).toBe(false);
@@ -180,6 +189,7 @@ describe("stop() - Graceful Shutdown", () => {
     it("should wait for multiple in-progress jobs to complete", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
       const releaseSecond: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
         monque = new Monque(db, {
@@ -192,6 +202,7 @@ describe("stop() - Graceful Shutdown", () => {
         await monque.initialize();
         const completedJobs: number[] = [];
         const startedJobs = new Set<number>();
+
         const handlerImplementation = async (
           job: Job<{
             order: number;
@@ -202,6 +213,7 @@ describe("stop() - Graceful Shutdown", () => {
           await (job.data.order === 3 ? releaseSecond.promise : release.promise);
           completedJobs.push(job.data.order);
         };
+
         const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
         monque.register(TEST_CONSTANTS.JOB_NAME, handler);
         monque.register("second-worker", handler);
@@ -218,9 +230,12 @@ describe("stop() - Graceful Shutdown", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monque.stop().then(() => {
           stopped = true;
         });
+
         await streamClosed.promise;
         await setImmediate();
         expect(stopped).toBe(false);
@@ -229,6 +244,7 @@ describe("stop() - Graceful Shutdown", () => {
           const completed = await db
             .collection(collectionName)
             .countDocuments({ status: JobStatus.COMPLETED });
+
           return completed === 2;
         });
         await setImmediate();
@@ -277,11 +293,13 @@ describe("stop() - Graceful Shutdown", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const jobStarted = vi.fn<() => void>();
+
       // Job that takes longer than shutdown timeout
       const handlerImplementation = async () => {
         jobStarted();
         await pauseFor(1000);
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Set up event listener before starting
@@ -313,11 +331,13 @@ describe("stop() - Graceful Shutdown", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const jobStarted = vi.fn<() => void>();
+
       // Job that takes longer than shutdown timeout
       const handlerImplementation = async () => {
         jobStarted();
         await pauseFor(1000);
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       // Set up event listener
@@ -360,10 +380,12 @@ describe("stop() - Graceful Shutdown", () => {
       monqueInstances.push(monque);
       await monque.initialize();
       const jobStarted = vi.fn<() => void>();
+
       const handlerImplementation = async () => {
         jobStarted();
         await pauseFor(1000);
       };
+
       const handler = vi.fn<typeof handlerImplementation>(handlerImplementation);
       monque.register(TEST_CONSTANTS.JOB_NAME, handler);
       let errorEmitted = false;

@@ -22,8 +22,11 @@ interface JobDetailViewProps {
   readonly actions?: ReactElement;
   readonly job: JobDto;
 }
+
 type MetadataItem = readonly [label: string, value: ReactNode];
+
 const MAX_INITIAL_PAYLOAD_ENTRIES = 100;
+
 const JsonExpandButton = ({
   "data-expand": expanded = false,
   className,
@@ -41,25 +44,30 @@ const JsonExpandButton = ({
     <ChevronDown className="size-3" />
   </button>
 );
+
 const jsonViewComponents = { arrow: <JsonExpandButton /> };
+const foregroundColor = "var(--foreground)";
+const mutedForegroundColor = "var(--muted-foreground)";
+
 const jsonViewTheme: CSSProperties & Record<`--${string}`, string> = {
-  "--w-rjv-add-color": "var(--foreground)",
-  "--w-rjv-arrow-color": "var(--muted-foreground)",
+  "--w-rjv-add-color": foregroundColor,
+  "--w-rjv-arrow-color": mutedForegroundColor,
   "--w-rjv-background-color": "transparent",
-  "--w-rjv-color": "var(--foreground)",
-  "--w-rjv-curlybraces-color": "var(--muted-foreground)",
+  "--w-rjv-color": foregroundColor,
+  "--w-rjv-curlybraces-color": mutedForegroundColor,
   "--w-rjv-font-family": "var(--font-mono)",
-  "--w-rjv-info-color": "var(--muted-foreground)",
+  "--w-rjv-info-color": mutedForegroundColor,
   "--w-rjv-line-color": "var(--border)",
-  "--w-rjv-type-boolean-color": "var(--foreground)",
-  "--w-rjv-type-date-color": "var(--foreground)",
-  "--w-rjv-type-float-color": "var(--foreground)",
-  "--w-rjv-type-int-color": "var(--foreground)",
-  "--w-rjv-type-null-color": "var(--muted-foreground)",
-  "--w-rjv-type-string-color": "var(--foreground)",
-  "--w-rjv-type-url-color": "var(--foreground)",
-  "--w-rjv-update-color": "var(--foreground)",
+  "--w-rjv-type-boolean-color": foregroundColor,
+  "--w-rjv-type-date-color": foregroundColor,
+  "--w-rjv-type-float-color": foregroundColor,
+  "--w-rjv-type-int-color": foregroundColor,
+  "--w-rjv-type-null-color": mutedForegroundColor,
+  "--w-rjv-type-string-color": foregroundColor,
+  "--w-rjv-type-url-color": foregroundColor,
+  "--w-rjv-update-color": foregroundColor,
 };
+
 const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
   ["Created", <JobTimestamp key="createdAt" value={job.createdAt} />],
   ["Updated", <JobTimestamp key="updatedAt" value={job.updatedAt} />],
@@ -82,14 +90,21 @@ const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
       : "Not set",
   ],
 ];
-const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => [
-  ["Claimed by", job.claimedBy ?? "Unclaimed"],
-  ["Repeat interval", job.repeatInterval ?? "One-time job"],
-  ...(job.repeatInterval === undefined || job.repeatInterval === null || job.repeatInterval === ""
-    ? []
-    : [["Schedule timezone", job.timezone ?? "Server local timezone"] satisfies MetadataItem]),
-  ["Unique key", job.uniqueKey ?? "Not set"],
-];
+
+const getSchedulingMetadataItems = (job: JobDto): readonly MetadataItem[] => {
+  const hasRepeatInterval =
+    job.repeatInterval !== undefined && job.repeatInterval !== null && job.repeatInterval !== "";
+
+  return [
+    ["Claimed by", job.claimedBy ?? "Unclaimed"],
+    ["Repeat interval", job.repeatInterval ?? "One-time job"],
+    ...(hasRepeatInterval
+      ? [["Schedule timezone", job.timezone ?? "Server local timezone"] satisfies MetadataItem]
+      : []),
+    ["Unique key", job.uniqueKey ?? "Not set"],
+  ];
+};
+
 const CopyButton = ({
   label,
   getText,
@@ -109,6 +124,7 @@ const CopyButton = ({
     {label}
   </Button>
 );
+
 const SummaryTile = ({
   label,
   value,
@@ -125,6 +141,7 @@ const SummaryTile = ({
     </div>
   </div>
 );
+
 const renderPayload = (payload: JobDto["payload"]): ReactElement => {
   if (isEmptyPayload(payload)) {
     return (
@@ -133,6 +150,7 @@ const renderPayload = (payload: JobDto["payload"]): ReactElement => {
       </div>
     );
   }
+
   if (isStructuredPayload(payload)) {
     return (
       <div className="max-w-full overflow-x-auto rounded-lg border border-border bg-background/70 p-3">
@@ -147,12 +165,14 @@ const renderPayload = (payload: JobDto["payload"]): ReactElement => {
       </div>
     );
   }
+
   return (
     <pre className="overflow-x-auto rounded-lg border border-border bg-background/70 p-3 font-mono text-xs text-foreground">
       {formatPayloadForDisplay(payload)}
     </pre>
   );
 };
+
 const MetadataList = ({ items }: { readonly items: readonly MetadataItem[] }): ReactElement => (
   <dl className="divide-y divide-border/70">
     {items.map(([label, value]) => (
@@ -163,10 +183,12 @@ const MetadataList = ({ items }: { readonly items: readonly MetadataItem[] }): R
     ))}
   </dl>
 );
+
 const JobDetailView = ({ actions, job }: JobDetailViewProps): ReactElement => {
   const operatorTimeZone = getOperatorTimeZoneLabel();
   const lifecycleItems = getLifecycleMetadataItems(job);
   const schedulingItems = getSchedulingMetadataItems(job);
+
   return (
     <section className="grid min-w-0 gap-6">
       <header className="grid min-w-0 gap-4">
@@ -248,4 +270,5 @@ const JobDetailView = ({ actions, job }: JobDetailViewProps): ReactElement => {
     </section>
   );
 };
+
 export { JobDetailView };

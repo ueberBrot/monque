@@ -27,8 +27,9 @@
     "@monque/management": "workspace:*",
     "@monque/management-express": "workspace:*",
     "@monque/tsed": "workspace:*",
+    "vite": "catalog:",
     "vite-plus": "catalog:",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.12.0"

@@ -37,6 +37,7 @@ describe("runtime options", () => {
     const other = await service.enqueue("pause.other", {});
     await waitFor(async () => {
       const polledJob = await service.getJob(other._id.toString());
+
       return polledJob?.status === JobStatus.COMPLETED;
     });
     const persistedJob = await service.getJob(paused._id.toString());
@@ -48,6 +49,7 @@ describe("runtime options", () => {
     ]);
     await waitFor(async () => {
       const polledJob = await service.getJob(paused._id.toString());
+
       return polledJob?.status === JobStatus.COMPLETED;
     });
     expect(service.isPaused("pause.work")).toBe(false);
@@ -70,10 +72,13 @@ describe("runtime options", () => {
     const invalid = await service.enqueue("schema.work", { count: false });
     await waitFor(async () => {
       const firstPolledJob = await service.getJob(valid._id.toString());
+
       if (firstPolledJob?.status !== JobStatus.COMPLETED) {
         return false;
       }
+
       const secondPolledJob = await service.getJob(invalid._id.toString());
+
       return secondPolledJob?.status === JobStatus.FAILED;
     });
     expect(received).toStrictEqual([3]);
@@ -108,10 +113,13 @@ describe("runtime options", () => {
     const inherited = await service.enqueue("retry.default", {});
     await waitFor(async () => {
       const firstPolledJob = await service.getJob(custom._id.toString());
+
       if (firstPolledJob?.status !== JobStatus.FAILED) {
         return false;
       }
+
       const secondPolledJob = await service.getJob(inherited._id.toString());
+
       return secondPolledJob?.status === JobStatus.FAILED;
     });
     const persistedJob = await service.getJob(custom._id.toString());
@@ -132,6 +140,7 @@ describe("runtime options", () => {
         await release.promise;
       }
     }
+
     try {
       await bootstrapMonque({
         imports: [EphemeralLeaseController],
@@ -146,6 +155,7 @@ describe("runtime options", () => {
       await waitFor(async () => {
         const polledJob = await service.getJob(job._id.toString());
         const current = polledJob?.leaseExpiresAt;
+
         return current instanceof Date && deadline instanceof Date && current > deadline;
       });
       const renewed = await service.getJob(job._id.toString());

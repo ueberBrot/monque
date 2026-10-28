@@ -7,6 +7,7 @@ export {
   getDashboardHtmlEntrypointPath,
   getDashboardManifestPath,
 } from "./asset-metadata.js";
+
 export {
   type DashboardRuntimeConfig,
   DashboardRuntimeConfigSchema,

@@ -85,6 +85,7 @@ export const createManagementExpressRouter = function createManagementExpressRou
 
       if (!result.matched) {
         next();
+
         return;
       }
 

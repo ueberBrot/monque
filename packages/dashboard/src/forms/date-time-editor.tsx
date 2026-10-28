@@ -22,14 +22,18 @@ export const DateTimeEditor = ({
   const [date, setDate] = useState(value.slice(0, 10));
   const [time, setTime] = useState(value.slice(11, 16) || "00:00");
   const [month, setMonth] = useState(() => parseDateTime(date, time) ?? new Date());
+
   const changeDate = useCallback((nextDate: string) => {
     setDate(nextDate);
     const parsed = parseDateTime(nextDate, "12:00");
+
     if (parsed) {
       setMonth(parsed);
     }
   }, []);
+
   const draft = parseDateTime(date, time);
+
   return (
     <>
       <CalendarInput value={date} onChange={changeDate} month={month} onMonthChange={setMonth} />
