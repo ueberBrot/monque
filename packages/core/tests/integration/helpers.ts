@@ -3,6 +3,7 @@ export const requireValue = <T>(value: T | null | undefined): T => {
   if (value === null || value === undefined) {
     throw new Error("Expected a database result or observed value");
   }
+
   return value;
 };
 
@@ -13,14 +14,18 @@ export const forEachSequential = async <T>(
 ): Promise<void> => {
   const iterator = values[Symbol.iterator]();
   let index = 0;
+
   const visitNext = async (): Promise<void> => {
     const next = iterator.next();
+
     if (next.done === true) {
       return;
     }
+
     await action(next.value, index);
     index += 1;
     await visitNext();
   };
+
   await visitNext();
 };

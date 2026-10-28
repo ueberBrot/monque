@@ -11,6 +11,7 @@ interface DashboardDevtoolsProps {
   readonly queryClient: QueryClient;
   readonly router: ReturnType<typeof getRouter>;
 }
+
 const DashboardDevtools = ({ queryClient, router }: DashboardDevtoolsProps) => [
   <TanStackDevtools
     key="tanstack-devtools"
@@ -38,4 +39,5 @@ const DashboardDevtools = ({ queryClient, router }: DashboardDevtoolsProps) => [
     ]}
   />,
 ];
+
 export { DashboardDevtools };

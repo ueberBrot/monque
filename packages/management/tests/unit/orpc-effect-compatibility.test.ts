@@ -19,6 +19,7 @@ describe("management Effect compatibility", () => {
       async (failure) => {
         const job = createManagementJob();
         const rejectFailure = vi.fn<() => Promise<never>>().mockRejectedValue(failure);
+
         const client = createRouterClient(
           createManagementRouter({
             monque: createManagementMonque({
@@ -40,6 +41,7 @@ describe("management Effect compatibility", () => {
       "preserves an arbitrary synchronous failure %j",
       async (failure) => {
         const job = createManagementJob();
+
         const client = createRouterClient(
           createManagementRouter({
             monque: createManagementMonque({
@@ -49,6 +51,7 @@ describe("management Effect compatibility", () => {
                   // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
                   throw failure;
                 }
+
                 // oxlint-disable-next-line unicorn/no-useless-promise-resolve-reject -- The facade's success contract returns a native Promise.
                 return Promise.resolve(job);
               },
@@ -58,6 +61,7 @@ describe("management Effect compatibility", () => {
                 // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
                 throw failure;
               }
+
               return true;
             },
             // oxlint-disable-next-line typescript/promise-function-async -- This fixture must throw synchronously before returning a Promise.
@@ -66,6 +70,7 @@ describe("management Effect compatibility", () => {
                 // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous failure contract.
                 throw failure;
               }
+
               // oxlint-disable-next-line unicorn/no-useless-promise-resolve-reject -- The serializer's success contract returns a native Promise.
               return Promise.resolve(payload);
             },
@@ -81,18 +86,23 @@ describe("management Effect compatibility", () => {
   it("starts every parallel authorization check and returns failures without waiting for the others", async () => {
     const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const checks: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({}, { mutations: true }),
       parallelCapabilityChecks: true,
       authorize: async ({ action }) => {
         checks.push(action);
+
         if (action === "read") {
           throw new ORPCError("FORBIDDEN", { message: "Access revoked" });
         }
+
         await gate.promise;
+
         return true;
       },
     });
+
     try {
       await expectJsonResponse(await handleManagementGet(surface, "/api/v1/capabilities"), 403, {
         error: "Access revoked",
@@ -114,6 +124,7 @@ describe("management Effect compatibility", () => {
 
   it("preserves original authorization failures for direct oRPC consumers", async () => {
     const failure = new ORPCError("FORBIDDEN", { message: "Access revoked" });
+
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque(),
@@ -132,6 +143,7 @@ describe("management Effect compatibility", () => {
     async (mode) => {
       const job = createManagementJob();
       const failure = new Error("Serializer failed");
+
       const options = {
         monque: createManagementMonque({
           getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(job),
@@ -141,9 +153,11 @@ describe("management Effect compatibility", () => {
           if (mode === "synchronous") {
             throw failure;
           }
+
           return vi.fn<() => Promise<never>>().mockRejectedValue(failure)();
         },
       };
+
       const client = createRouterClient(createManagementRouter(options), {
         context: { managementContext: {} },
       });
@@ -159,6 +173,7 @@ describe("management Effect compatibility", () => {
         throw new InvalidCursorError("Cursor metadata unavailable");
       },
     });
+
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
@@ -190,11 +205,13 @@ describe("management Effect compatibility", () => {
         hasNextPage: false,
         hasPreviousPage: false,
       };
+
       Object.defineProperty(page, property, {
         get: () => {
           throw new InvalidCursorError("Cursor page unavailable");
         },
       });
+
       const client = createRouterClient(
         createManagementRouter({
           monque: createManagementMonque({
@@ -219,9 +236,11 @@ describe("management Effect compatibility", () => {
       createManagementJob({ name: "failing" }),
       createManagementJob({ name: "pending-last" }),
     ];
+
     const failure = new Error("Serializer failed");
     const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const serialized: string[] = [];
+
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
@@ -236,9 +255,11 @@ describe("management Effect compatibility", () => {
         }),
         serializePayload: async ({ job, payload }) => {
           serialized.push(job.name);
+
           if (job.name === "failing") {
             throw failure;
           }
+
           return await gate.promise.then(() => payload);
         },
       }),
@@ -258,10 +279,12 @@ describe("management Effect compatibility", () => {
       createManagementJob({ name: "failing" }),
       createManagementJob({ name: "pending" }),
     ];
+
     const failure = new Error("First serializer failed");
     const laterFailure = new Error("Pending serializer failed later");
     const gate: PromiseWithResolvers<void> = Promise.withResolvers();
     const completed: PromiseWithResolvers<void> = Promise.withResolvers();
+
     const client = createRouterClient(
       createManagementRouter({
         monque: createManagementMonque({
@@ -278,6 +301,7 @@ describe("management Effect compatibility", () => {
           if (job.name === "failing") {
             throw failure;
           }
+
           return await gate.promise.then(() => {
             completed.resolve();
             throw laterFailure;
@@ -323,6 +347,7 @@ describe("management Effect compatibility", () => {
     "isolates arbitrary selected action facade failures %j while other jobs succeed",
     async (failure) => {
       const jobs = [createManagementJob(), createManagementJob()];
+
       const monque = createManagementMonque(
         {
           getJob: async (id) =>
@@ -330,15 +355,18 @@ describe("management Effect compatibility", () => {
         },
         { mutations: true },
       );
+
       let reads = 0;
       Object.defineProperty(monque, "deleteJob", {
         get: () => {
           const previousReads = reads;
           reads += 1;
+
           if (previousReads === 0) {
             // oxlint-disable-next-line typescript/only-throw-error -- Exercise the adapter's arbitrary synchronous getter failure contract.
             throw failure;
           }
+
           return async () => await Promise.resolve(true);
         },
       });

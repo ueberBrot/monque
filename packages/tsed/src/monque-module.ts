@@ -48,6 +48,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     this.monqueConfig = configuration.get<MonqueTsedConfig | undefined>("monque") ?? {};
   }
 
+  // oxlint-disable-next-line sonarjs/function-name -- Ts.ED invokes this lifecycle hook by its exact name.
   async $onInit(): Promise<void> {
     const config = this.monqueConfig;
 
@@ -63,6 +64,7 @@ export class MonqueModule implements OnInit, OnDestroy {
       const db = await resolveDatabase(config, (token) => this.injector.get(token));
 
       // We construct the options object carefully to match MonqueOptions
+      // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
       const { db: _db, ...restConfig } = config;
       const options: MonqueOptions = restConfig;
 
@@ -90,6 +92,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     }
   }
 
+  // oxlint-disable-next-line sonarjs/function-name -- Ts.ED invokes this lifecycle hook by its exact name.
   async $onDestroy(): Promise<void> {
     if (this.monque) {
       this.logger.info("Monque: Stopping...");
@@ -109,9 +112,11 @@ export class MonqueModule implements OnInit, OnDestroy {
     }
 
     const { monque } = this;
+
     const jobControllers: Provider<unknown>[] = this.injector.providers.getMany(
       ProviderTypes.JOB_CONTROLLER,
     );
+
     const registeredJobs = new Set<string>();
 
     this.logger.info(`Monque: Found ${jobControllers.length} job controllers`);
@@ -151,12 +156,14 @@ export class MonqueModule implements OnInit, OnDestroy {
             injector: this.injector,
             id: job._id?.toString() ?? "unknown",
           });
+
           $ctx.set("MONQUE_JOB", job);
           $ctx.container.set(DIContext, $ctx);
 
           await runInContext($ctx, async () => {
             try {
               let targetInstance: unknown = instance;
+
               if (
                 provider.scope === ProviderScope.REQUEST ||
                 targetInstance === null ||
@@ -174,6 +181,7 @@ export class MonqueModule implements OnInit, OnDestroy {
                 (typeof targetInstance === "object" || typeof targetInstance === "function")
               ) {
                 const jobMethod: unknown = Reflect.get(targetInstance, method);
+
                 if (typeof jobMethod === "function") {
                   await jobMethod.call(targetInstance, job);
                 }

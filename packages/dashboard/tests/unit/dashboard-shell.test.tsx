@@ -19,6 +19,7 @@ const renderShell = async (path: string) => {
       </DashboardShell>
     ),
   });
+
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [path] }),
     routeTree: root.addChildren(
@@ -27,28 +28,37 @@ const renderShell = async (path: string) => {
       ),
     ),
   });
+
   await router.load();
   render(<RouterProvider router={router} />);
   await screen.findByText("Route content");
+
   return router;
 };
+
 const getThemeButton = (): HTMLElement => {
   const themeButtons = screen.getAllByRole("button", { name: "Change theme" });
   const [firstThemeButton] = themeButtons;
+
   if (!firstThemeButton) {
     throw new Error("Expected at least one theme button.");
   }
+
   return firstThemeButton;
 };
+
 const getDialogContent = (): HTMLElement => {
   const dialogContent = screen
     .getByText("Dashboard navigation")
     .closest('[data-slot="dialog-content"]');
+
   if (!(dialogContent instanceof HTMLElement)) {
-    throw new Error("Expected dashboard navigation to be inside dialog content.");
+    throw new TypeError("Expected dashboard navigation to be inside dialog content.");
   }
+
   return dialogContent;
 };
+
 describe(DashboardShell, () => {
   afterEach(() => {
     cleanup();

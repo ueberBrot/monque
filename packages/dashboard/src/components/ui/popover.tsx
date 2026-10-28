@@ -1,13 +1,15 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { cn } from "cn";
-import type * as React from "react";
+import type { ComponentProps } from "react";
 
 const Popover = ({ ...props }: PopoverPrimitive.Root.Props) => (
   <PopoverPrimitive.Root data-slot="popover" {...props} />
 );
+
 const PopoverTrigger = ({ ...props }: PopoverPrimitive.Trigger.Props) => (
   <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 );
+
 const PopoverContent = ({
   className,
   align = "center",
@@ -41,13 +43,15 @@ const PopoverContent = ({
     </PopoverPrimitive.Positioner>
   </PopoverPrimitive.Portal>
 );
-const PopoverHeader = ({ className, ...props }: React.ComponentProps<"div">) => (
+
+const PopoverHeader = ({ className, ...props }: ComponentProps<"div">) => (
   <div
     data-slot="popover-header"
     className={cn("flex flex-col gap-0.5 text-sm", className)}
     {...props}
   />
 );
+
 const PopoverTitle = ({ className, ...props }: PopoverPrimitive.Title.Props) => (
   <PopoverPrimitive.Title
     data-slot="popover-title"
@@ -55,6 +59,7 @@ const PopoverTitle = ({ className, ...props }: PopoverPrimitive.Title.Props) => 
     {...props}
   />
 );
+
 const PopoverDescription = ({ className, ...props }: PopoverPrimitive.Description.Props) => (
   <PopoverPrimitive.Description
     data-slot="popover-description"
@@ -62,4 +67,5 @@ const PopoverDescription = ({ className, ...props }: PopoverPrimitive.Descriptio
     {...props}
   />
 );
+
 export { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger };

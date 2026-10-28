@@ -6,9 +6,11 @@ import { DashboardState, RetryButton } from "@/components/dashboard-state";
 const DashboardRoutePending = () => (
   <output className="text-sm text-muted-foreground">Loading dashboard route…</output>
 );
+
 const DashboardRouteError = () => {
   const router = useRouter();
   const fetching = useRouterState({ select: (state) => state.isLoading });
+
   return (
     <DashboardState
       title="Dashboard route failed"
@@ -27,6 +29,7 @@ const DashboardRouteError = () => {
     </DashboardState>
   );
 };
+
 const DashboardRouteNotFound = () => (
   <DashboardState
     title="Route not found"
@@ -37,4 +40,5 @@ const DashboardRouteNotFound = () => (
     </ButtonLink>
   </DashboardState>
 );
+
 export { DashboardRouteError, DashboardRouteNotFound, DashboardRoutePending };

@@ -12,8 +12,10 @@ for (const route of [
       const job = await app.seed();
       const path = route === "job-detail" ? `jobs/${String(job._id)}` : route;
       let failed = true;
+
       const { promise: recovery, resolve: release }: PromiseWithResolvers<void> =
         Promise.withResolvers();
+
       await page.route("**/api/v1/**", async (request) => {
         if (failed) {
           await request.fulfill({ status, json: { error: "Host rejected the request." } });
@@ -24,36 +26,45 @@ for (const route of [
       });
       await page.goto(`${app.base}/dashboard/${path}`);
       await expect(page.getByRole("alert")).toContainText("Host rejected the request.");
+
       if (status === 403 && route.startsWith("queue-views")) {
         await expect(page.getByRole("heading", { name: "Access denied" })).toBeVisible();
       }
+
       const url = page.url();
       failed = false;
       await page.getByRole("button", { name: "Retry", exact: true }).click();
       await expect(page.getByRole("status", { name: /^Loading/u })).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
       release();
+
       const heading = (() => {
         if (route === "queue-views") {
           return "Queue Views";
         }
+
         if (route === "health") {
           return "Health";
         }
+
         if (route.startsWith("jobs?")) {
           return "Jobs";
         }
+
         return "email";
       })();
+
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
       await expect(page.getByRole("alert")).toHaveCount(0);
       await expect(page).toHaveURL(url);
+
       if (route === "job-detail") {
         await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeEnabled();
       }
     });
   }
 }
+
 test("invalid route search offers a working way back to Queue Views", async ({ page, app }) => {
   await app.seed();
   await page.goto(`${app.base}/dashboard/queue-views/email?limit=not-a-number`);
@@ -62,12 +73,14 @@ test("invalid route search offers a working way back to Queue Views", async ({ p
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
   await expect(page).toHaveURL(`${app.base}/dashboard/queue-views`);
 });
+
 test("unknown routes offer mount-aware navigation back to Queue Views", async ({ page, app }) => {
   await page.goto(`${app.base}/dashboard/unknown-page`);
   await expect(page.getByRole("heading", { name: "Route not found" })).toBeVisible();
   await page.getByRole("link", { name: "Go to Queue Views" }).click();
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
 });
+
 test("invalid browser configuration renders a startup error instead of a blank page", async ({
   page,
   app,
@@ -79,7 +92,8 @@ test("invalid browser configuration renders a startup error instead of a blank p
         sessionStorage.getItem("configuration-repaired") === undefined ||
         sessionStorage.getItem("configuration-repaired") === null ||
         sessionStorage.getItem("configuration-repaired") === ""
-          ? { apiBaseUrl: "http://[", basePath: "/dashboard" }
+          ? // oxlint-disable-next-line sonarjs/no-clear-text-protocols -- This literal is a test fixture or import-matching pattern, not an outgoing network request.
+            { apiBaseUrl: "http://[", basePath: "/dashboard" }
           : config,
       set: (value: Parameters<typeof JSON.stringify>[0]) => {
         config = value;

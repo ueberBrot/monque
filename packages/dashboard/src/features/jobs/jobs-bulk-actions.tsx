@@ -25,12 +25,14 @@ const JobsBulkActions = ({
   if (!selectedJobs.length) {
     return null;
   }
+
   const actions = JOB_ACTION_ORDER.map((action) => ({
     action,
     label: JOB_ACTION_DEFINITIONS[action].label,
     actionLabel: getJobActionLabels(action, "bulk").actionLabel,
     ...getBulkJobActionAvailability(selectedJobs, capabilities, action),
   }));
+
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-primary/5 px-4 py-3">
       <span className="mr-2 text-xs font-medium">{selectedJobs.length} selected</span>
@@ -53,4 +55,5 @@ const JobsBulkActions = ({
     </div>
   );
 };
+
 export { JobsBulkActions };

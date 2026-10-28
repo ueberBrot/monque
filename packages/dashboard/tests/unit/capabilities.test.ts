@@ -17,6 +17,7 @@ describe("capabilities", () => {
         deleteBulk: false,
       },
     });
+
     expect(states.map((state) => state.label)).toStrictEqual([
       "Read access",
       "Cancel job",

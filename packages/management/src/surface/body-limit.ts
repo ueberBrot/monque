@@ -5,6 +5,7 @@ export const createLimitedRequest = function createLimitedRequest(
   maxBodySize: number,
 ): Request {
   const source = request.body;
+
   if (source === null) {
     return request;
   }
@@ -18,6 +19,7 @@ export const createLimitedRequest = function createLimitedRequest(
     if (abort) {
       request.signal.removeEventListener("abort", abort);
     }
+
     reader?.releaseLock();
   };
 
@@ -28,6 +30,7 @@ export const createLimitedRequest = function createLimitedRequest(
     });
     releaseReader();
   };
+
   const body = new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
@@ -37,28 +40,39 @@ export const createLimitedRequest = function createLimitedRequest(
           controller.error(request.signal.reason);
           void cancelReader(request.signal.reason);
         };
+
         request.signal.addEventListener("abort", abort, { once: true });
+
         if (request.signal.aborted) {
           abort();
+
           return;
         }
+
         try {
           if (Number(request.headers.get("content-length")) > maxBodySize) {
             throw new ORPCError("PAYLOAD_TOO_LARGE");
           }
+
           const { done, value } = await reader.read();
+
           if (stopped) {
             return;
           }
+
           if (done) {
             releaseReader();
             controller.close();
+
             return;
           }
+
           size += value.byteLength;
+
           if (size > maxBodySize) {
             throw new ORPCError("PAYLOAD_TOO_LARGE");
           }
+
           controller.enqueue(value);
         } catch (error) {
           if (!stopped) {
@@ -77,5 +91,6 @@ export const createLimitedRequest = function createLimitedRequest(
   );
 
   const init: RequestInit & { duplex: "half" } = { body, duplex: "half" };
+
   return new Request(request, init);
 };

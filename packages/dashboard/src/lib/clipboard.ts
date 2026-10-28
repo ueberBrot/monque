@@ -14,4 +14,5 @@ const copyToClipboard = async (
     });
   }
 };
+
 export { copyToClipboard };

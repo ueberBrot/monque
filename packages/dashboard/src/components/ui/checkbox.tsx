@@ -19,4 +19,5 @@ const Checkbox = ({ className, ...props }: CheckboxPrimitive.Root.Props) => (
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 );
+
 export { Checkbox };

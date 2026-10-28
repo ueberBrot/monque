@@ -1,6 +1,6 @@
 import type { JobSelector, PersistedJob } from "@monque/core";
 import { ORPCError } from "@orpc/server";
-import * as Effect from "effect/Effect";
+import { Effect } from "effect";
 
 import { concurrently, fromPromise } from "../effects.js";
 import type {
@@ -11,6 +11,8 @@ import type {
   ManagementMonque,
   ManagementOptions,
 } from "./types.js";
+
+const unsupportedActionReason = "Unsupported action";
 
 const DEFAULT_CAPABILITY_ACTIONS = {
   read: false,
@@ -25,6 +27,7 @@ const DEFAULT_CAPABILITY_ACTIONS = {
   pause: false,
   resume: false,
 } satisfies CapabilityActionsDto & Record<ManagementAction, boolean>;
+
 const MANAGEMENT_ACTIONS = [
   "read",
   "cancel",
@@ -63,34 +66,44 @@ const isManagementActionSupported = function isManagementActionSupported(
     case "read": {
       return true;
     }
+
     case "pause":
     case "resume": {
       return monque.getProcessingState !== undefined && monque[action] !== undefined;
     }
+
     case "cancel": {
       return monque.cancelJob !== undefined;
     }
+
     case "cancelBulk": {
       return monque.cancelJobs !== undefined;
     }
+
     case "retry": {
       return monque.retryJob !== undefined;
     }
+
     case "retryBulk": {
       return monque.retryJobs !== undefined;
     }
+
     case "setJobPriority": {
       return monque.setJobPriority !== undefined;
     }
+
     case "reschedule": {
       return monque.rescheduleJob !== undefined;
     }
+
     case "delete": {
       return monque.deleteJob !== undefined;
     }
+
     case "deleteBulk": {
       return monque.deleteJobs !== undefined;
     }
+
     default: {
       return false;
     }
@@ -108,19 +121,23 @@ export const createManagementActionPolicy = function createManagementActionPolic
     if (options.readOnly === true && action !== "read") {
       return "Management surface is read-only";
     }
-    return supported ? undefined : "Unsupported action";
+
+    return supported ? undefined : unsupportedActionReason;
   };
 
   const getActionDenial = Effect.fnUntraced(function* getActionDenial(
     action: ManagementAction,
     context: TContext,
     target: ManagementActionTarget = {},
+    // oxlint-disable-next-line sonarjs/bool-param-default -- Undefined derives support from capabilities; false explicitly marks an unsupported action.
     supported?: boolean,
   ) {
     const denial = getSupportDenial(action, supported ?? true);
+
     if (denial !== undefined) {
       return denial;
     }
+
     if (
       options.authorize &&
       !(yield* fromPromise(async () => {
@@ -131,18 +148,22 @@ export const createManagementActionPolicy = function createManagementActionPolic
           selector: target.selector,
           ids: target.ids,
         };
+
         if (target.name !== undefined) {
           input.name = target.name;
         }
+
         if (target.instanceId !== undefined) {
           input.instanceId = target.instanceId;
         }
+
         // oxlint-disable-next-line typescript/no-non-null-assertion -- Authorization is checked before this callback runs; keep the original receiver.
         return await options.authorize!(input);
       }))
     ) {
       return action === "read" ? "Read access denied" : "Action denied";
     }
+
     return denial;
   });
 
@@ -153,21 +174,26 @@ export const createManagementActionPolicy = function createManagementActionPolic
   ) {
     yield* requireAllowed(yield* getActionDenial(action, context, target));
   });
+
   const requireSupported = Effect.fnUntraced(function* requireSupported(action: ManagementAction) {
     // Processing and selected actions reject missing support before checking read-only mode.
     if (!isManagementActionSupported(options.monque, action)) {
-      return yield* forbidden("Unsupported action");
+      return yield* forbidden(unsupportedActionReason);
     }
+
     return yield* Effect.void;
   });
+
   const requireMutation = Effect.fnUntraced(function* requireMutation<TMutator>(
     action: Exclude<ManagementAction, "read">,
     mutate: TMutator | undefined,
   ): Effect.fn.Return<TMutator, ORPCError<"FORBIDDEN", unknown>> {
     yield* requireAllowed(getSupportDenial(action));
+
     if (mutate === undefined) {
-      return yield* forbidden("Unsupported action");
+      return yield* forbidden(unsupportedActionReason);
     }
+
     return mutate;
   });
 
@@ -177,6 +203,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
   ): Effect.fn.Return<CapabilitiesDto, unknown> {
     const readOnly = options.readOnly ?? false;
     const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
+
     const check = Effect.fnUntraced(function* check(action: ManagementAction) {
       actions[action] =
         (yield* getActionDenial(
@@ -186,10 +213,12 @@ export const createManagementActionPolicy = function createManagementActionPolic
           isManagementActionSupported(options.monque, action),
         )) === undefined;
     });
+
     yield* options.parallelCapabilityChecks === true
       ? concurrently(MANAGEMENT_ACTIONS.map(check))
       : // oxlint-disable-next-line unicorn/no-array-for-each -- Effect.forEach traverses Effects, not an Array callback.
         Effect.forEach(MANAGEMENT_ACTIONS, check, { discard: true });
+
     return { readOnly, actions };
   });
 

@@ -11,9 +11,11 @@ interface TextFieldProps {
   description?: string;
   placeholder?: string;
   id?: string;
+  // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
   type?: "email" | "number" | "password" | "search" | "text" | "url";
   invalid?: boolean;
 }
+
 export const TextField = ({
   description,
   label,
@@ -26,13 +28,17 @@ export const TextField = ({
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const error = getFieldErrors(field.state.meta.errors);
+
   const descriptionId =
     description === undefined || description === null || description === ""
       ? undefined
       : `${fieldId}-description`;
+
   const errorId =
     error === undefined || error === null || error === "" ? undefined : `${fieldId}-error`;
+
   const descriptionIds = [descriptionId, errorId].filter(Boolean).join(" ");
+
   return (
     <Field data-invalid={Boolean(error)}>
       <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>

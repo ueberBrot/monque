@@ -204,6 +204,7 @@ export interface MonqueOptions {
    */
   safetyPollInterval?: number;
 }
+
 /** Processing state on one scheduler instance, optionally scoped to one job name. */
 export interface ProcessingState {
   readonly instanceId: string;

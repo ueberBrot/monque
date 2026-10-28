@@ -28,8 +28,10 @@ import type { JobStore } from "./types.js";
  *
  * @param namespace - Optional namespace prefix for job names
  */
+// oxlint-disable-next-line sonarjs/function-name -- JobController is the public decorator name.
 export const JobController = function JobController(namespace?: string): ClassDecorator {
   const registerProvider = Injectable({ type: ProviderTypes.JOB_CONTROLLER });
+
   return (target) => {
     registerProvider(target);
     const store = Store.from(target);

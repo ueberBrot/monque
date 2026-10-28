@@ -30,6 +30,7 @@ const mockRetryNotificationDocs = (
       yield* docs;
     },
   };
+
   vi.spyOn(context.mockCollection, "find").mockReturnValueOnce(
     fromPartial<ReturnType<typeof context.mockCollection.find>>(mockCursor),
   );
@@ -97,6 +98,7 @@ describe(JobManager, () => {
       Effect.gen(function* effectWorkflow5() {
         const jobId = new ObjectId();
         const previousRunAt = new Date("2025-01-01T00:00:00.000Z");
+
         const failedJob = Object.freeze(
           JobFactoryHelpers.failed({
             _id: jobId,
@@ -109,8 +111,10 @@ describe(JobManager, () => {
             lastHeartbeat: previousRunAt,
           }),
         );
+
         const originalJob = { ...failedJob };
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(failedJob);
+
         const expectedUnset = {
           failReason: "",
           lockedAt: "",
@@ -119,6 +123,7 @@ describe(JobManager, () => {
           leaseExpiresAt: "",
           lastHeartbeat: "",
         };
+
         const job = yield* manager.retryJob(jobId.toString());
         expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
           objectContainingMatcher({ _id: jobId }),
@@ -231,9 +236,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(processingJob);
         const failureResult1 = yield* Effect.result(manager.cancelJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(JobStateError);
         expect(error.message).toMatch(/Cannot cancel job in status 'processing'/u);
@@ -251,9 +258,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(processingJob);
         const failureResult1 = yield* Effect.result(manager.retryJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(JobStateError);
         expect(error.message).toMatch(/Cannot retry job in status 'processing'/u);
@@ -270,13 +279,17 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
         // Fallback findOne returns changed job
         vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(processingJob);
+
         const failureResult1 = yield* Effect.result(
           manager.rescheduleJob(jobId.toString(), newRunAt),
         );
+
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(JobStateError);
         expect(error.message).toMatch(/Cannot reschedule job in status 'processing'/u);
@@ -330,9 +343,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(dbError);
         const failureResult1 = yield* Effect.result(manager.cancelJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect({
@@ -347,18 +362,22 @@ describe(JobManager, () => {
     it.effect("should preserve JobStateError when thrown", () =>
       Effect.gen(function* effectWorkflow19() {
         const jobId = new ObjectId();
+
         const stateError = new JobStateError(
           "Cannot cancel",
           jobId.toString(),
           "processing",
           "cancel",
         );
+
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(stateError);
         const failureResult1 = yield* Effect.result(manager.cancelJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBe(stateError);
         expect(error).not.toBeInstanceOf(ConnectionError);
@@ -373,9 +392,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(dbError);
         const failureResult1 = yield* Effect.result(manager.retryJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect({
@@ -395,9 +416,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(pendingJob);
         const failureResult1 = yield* Effect.result(manager.retryJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(JobStateError);
         expect(error).not.toBeInstanceOf(ConnectionError);
@@ -410,13 +433,17 @@ describe(JobManager, () => {
         const jobId = new ObjectId();
         const dbError = new Error("MongoNetworkError: connection refused");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockRejectedValueOnce(dbError);
+
         const failureResult1 = yield* Effect.result(
           manager.rescheduleJob(jobId.toString(), new Date()),
         );
+
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect({
@@ -434,13 +461,17 @@ describe(JobManager, () => {
         const processingJob = JobFactoryHelpers.processing({ _id: jobId });
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
         vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(processingJob);
+
         const failureResult1 = yield* Effect.result(
           manager.rescheduleJob(jobId.toString(), new Date()),
         );
+
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(JobStateError);
         expect(error).not.toBeInstanceOf(ConnectionError);
@@ -455,9 +486,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "deleteOne").mockRejectedValueOnce(dbError);
         const failureResult1 = yield* Effect.result(manager.deleteJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect({
@@ -475,9 +508,11 @@ describe(JobManager, () => {
         vi.spyOn(ctx.mockCollection, "deleteOne").mockRejectedValueOnce("String error");
         const failureResult1 = yield* Effect.result(manager.deleteJob(jobId.toString()));
         expect(failureResult1._tag).toBe("Failure");
+
         if (Result.isSuccess(failureResult1)) {
           throw new Error("Expected operation to fail");
         }
+
         const error = failureResult1.failure;
         expect(error).toBeInstanceOf(ConnectionError);
         expect(error.message).toBe("Failed to delete job: Unknown error during deleteJob");
@@ -584,6 +619,7 @@ describe(JobManager, () => {
         const firstRunAt = new Date("2026-01-01T00:00:01.000Z");
         const secondRunAt = new Date("2026-01-01T00:00:02.000Z");
         let notificationsBeforeSecondJob = -1;
+
         const mockCursor = {
           async *[Symbol.asyncIterator]() {
             yield { name: "first", nextRunAt: firstRunAt };
@@ -591,6 +627,7 @@ describe(JobManager, () => {
             yield { name: "second", nextRunAt: secondRunAt };
           },
         };
+
         vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
           fromPartial<ReturnType<typeof ctx.mockCollection.find>>(mockCursor),
         );
@@ -609,10 +646,12 @@ describe(JobManager, () => {
     );
     it.effect("closes the retry notification cursor before recovering a callback failure", () => {
       const notificationError = new Error("Notification callback failed");
+
       return Effect.gen(function* effectWorkflow31() {
         const nextRunAt = new Date("2026-01-01T00:00:01.000Z");
         let cursorClosed = false;
         let secondJobRead = false;
+
         const cursor = {
           async *[Symbol.asyncIterator]() {
             try {
@@ -624,6 +663,7 @@ describe(JobManager, () => {
             }
           },
         };
+
         vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
           fromPartial<ReturnType<typeof ctx.mockCollection.find>>(cursor),
         );
@@ -661,10 +701,12 @@ describe(JobManager, () => {
           name: "bulk-email",
           nextRunAt: new Date("2026-01-01T00:00:01.000Z"),
         });
+
         const bulkReport = JobFactory.build({
           name: "bulk-report",
           nextRunAt: new Date("2026-01-01T00:00:02.000Z"),
         });
+
         const notificationJobs = [bulkEmail, bulkReport];
         mockRetryNotificationDocs(ctx, notificationJobs);
         vi.spyOn(ctx.mockCollection, "updateMany").mockResolvedValueOnce({
@@ -767,12 +809,14 @@ describe(JobManager, () => {
     );
     it.effect("should keep bulk retry successful when notification lookup fails", () => {
       const notificationError = new Error("Notification lookup failed");
+
       return Effect.gen(function* effectWorkflow36() {
         const mockCursor = {
           async *[Symbol.asyncIterator]() {
             yield await Promise.reject(notificationError);
           },
         };
+
         vi.spyOn(ctx.mockCollection, "find").mockReturnValueOnce(
           fromPartial<ReturnType<typeof ctx.mockCollection.find>>(mockCursor),
         );

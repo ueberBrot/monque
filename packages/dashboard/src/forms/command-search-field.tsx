@@ -16,6 +16,7 @@ export const CommandSearchField = ({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
   return (
     <CommandInput
       ref={inputRef}

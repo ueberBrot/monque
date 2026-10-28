@@ -10,6 +10,7 @@ import { getStatusLabel, JOB_STATUS_ORDER } from "./job-list-search.js";
 import type { JobsRouteSearch } from "./job-list-search.js";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+
 const JOB_DATE_FILTERS = [
   { field: "createdAtFrom", id: "jobs-created-from-filter", label: "Created from" },
   { field: "createdAtTo", id: "jobs-created-to-filter", label: "Created to" },
@@ -22,6 +23,7 @@ const JOB_DATE_FILTERS = [
   readonly id: string;
   readonly label: string;
 }[];
+
 type JobDateFilterField = keyof Pick<
   JobsRouteSearch,
   | "createdAtFrom"
@@ -31,6 +33,7 @@ type JobDateFilterField = keyof Pick<
   | "nextRunAtFrom"
   | "nextRunAtTo"
 >;
+
 const getFilterValues = (search: JobsRouteSearch) => ({
   name: search.name ?? "",
   limit: String(search.limit),
@@ -48,6 +51,16 @@ const getFilterValues = (search: JobsRouteSearch) => ({
   failed: search.status.includes("failed"),
   cancelled: search.status.includes("cancelled"),
 });
+
+const selectedStatuses = (
+  current: JobsRouteSearch["status"],
+  status: JobsRouteSearch["status"][number],
+  selected: boolean,
+): JobsRouteSearch["status"] =>
+  JOB_STATUS_ORDER.filter((candidate) =>
+    candidate === status ? selected : current.includes(candidate),
+  );
+
 const JobsFilters = ({
   search,
   updateSearch,
@@ -61,6 +74,7 @@ const JobsFilters = ({
   useEffect(() => {
     form.reset(getFilterValues(search));
   }, [form, search]);
+
   return (
     <form.AppForm>
       <div className="grid min-w-0 gap-4 border-b border-border p-4">
@@ -189,9 +203,7 @@ const JobsFilters = ({
                     onChange: ({ value }) => {
                       updateSearch((current) => ({
                         ...current,
-                        status: JOB_STATUS_ORDER.filter((candidate) =>
-                          candidate === status ? value : current.status.includes(candidate),
-                        ),
+                        status: selectedStatuses(current.status, status, value),
                         cursor: undefined,
                       }));
                     },
@@ -208,4 +220,5 @@ const JobsFilters = ({
     </form.AppForm>
   );
 };
+
 export { JobsFilters };

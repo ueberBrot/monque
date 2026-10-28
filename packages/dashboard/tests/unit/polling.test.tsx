@@ -13,12 +13,15 @@ const PollingProbe = ({ requests, started }: { requests: number[]; started: numb
     refetchInterval,
     queryFn: async () => {
       requests.push(Date.now() - started);
+
       if (requests.length < 4) {
         throw new Error("Unavailable");
       }
+
       return await Promise.resolve("recovered");
     },
   });
+
   return null;
 };
 

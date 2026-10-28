@@ -17,17 +17,22 @@ import { copyToClipboard } from "@/lib/clipboard";
 
 const CommandSearch = lazy(async () => {
   const module = await import("./command-search.js");
+
   return { default: module.CommandSearch };
 });
+
 const COMMAND_HOTKEY = "Mod+K";
 const REFRESH_HOTKEY = "Mod+Shift+R";
+
 const CommandMenu = () => {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
   const refresh = () => {
     void queryClient.invalidateQueries();
   };
+
   useHotkey(COMMAND_HOTKEY, () => {
     setOpen((current) => !current);
   });
@@ -35,6 +40,7 @@ const CommandMenu = () => {
   useHotkey({ key: "/", shift: true }, () => {
     setOpen(true);
   });
+
   const commands = [
     {
       label: "Go to Queue Views",
@@ -69,6 +75,7 @@ const CommandMenu = () => {
       },
     },
   ];
+
   return (
     <div className="mb-5 flex min-h-8 items-center justify-end gap-3">
       <Dialog open={open} onOpenChange={setOpen}>
@@ -115,4 +122,5 @@ const CommandMenu = () => {
     </div>
   );
 };
+
 export { CommandMenu };

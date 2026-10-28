@@ -31,6 +31,7 @@ const createJobDetail = (overrides: Partial<JobDto> = {}): JobDto => ({
   updatedAt: "2026-06-03T11:55:00.000Z",
   ...overrides,
 });
+
 const renderJobDetailRoute = async (options: {
   readonly fetch: typeof fetch;
   readonly jobId: string;
@@ -41,22 +42,27 @@ const renderJobDetailRoute = async (options: {
     value: vi.fn<typeof Element.prototype.scrollTo>(),
   });
   window.history.pushState({}, "", `/jobs/${options.jobId}`);
+
   const runtimeConfig = parseDashboardRuntimeConfig({
     apiBaseUrl: "/",
     basePath: "/",
     pollingIntervalMs: 10_000,
   });
+
   const managementApi = createDashboardManagementApi({
     apiBaseUrl: runtimeConfig.apiBaseUrl,
     fetch: options.fetch,
     origin: window.location.origin,
   });
+
   const queryClient = options.queryClient ?? createDashboardQueryClient();
   const router = getRouter({ managementApi, queryClient, runtimeConfig });
   await router.load();
   render(<DashboardProviders queryClient={queryClient} router={router} />);
+
   return router;
 };
+
 const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 200): Response =>
   Response.json(body, {
     status,
@@ -64,11 +70,13 @@ const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 
       "content-type": "application/json",
     },
   });
+
 const createJobDetailFetch =
   (job: JobDto): typeof fetch =>
   async (input) => {
     const request = input instanceof Request ? input : new Request(input);
     const url = new URL(request.url);
+
     if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
       return await Promise.resolve(
         createJsonResponse({
@@ -86,9 +94,11 @@ const createJobDetailFetch =
         }),
       );
     }
+
     if (request.method === "GET" && url.pathname === `/api/v1/jobs/${job.id}`) {
       return await Promise.resolve(createJsonResponse(job));
     }
+
     return await Promise.resolve(
       createJsonResponse(
         {
@@ -104,18 +114,22 @@ const createJobDetailFetch =
       ),
     );
   };
+
 const installClipboardSpy = () => {
   const clipboardWriteText = vi.fn<(text: string) => Promise<void>>(async () => {
     await Promise.resolve();
   });
+
   Object.defineProperty(window.navigator, "clipboard", {
     configurable: true,
     value: {
       writeText: clipboardWriteText,
     },
   });
+
   return clipboardWriteText;
 };
+
 const createOrpcErrorResponse = (code: string, status: number, message: string): Response =>
   createJsonResponse(
     {
@@ -129,19 +143,23 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
     },
     status,
   );
+
 const createStaticFetch =
   (response: Response): typeof fetch =>
   async () =>
     await Promise.resolve(response.clone());
+
 interface CreateJobDetailActionFetchResult {
   readonly deleteCount: number;
   readonly detailRequestCount: number;
   readonly fetch: typeof fetch;
 }
+
 const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResult => {
   let deleted = false;
   let deleteCount = 0;
   let detailRequestCount = 0;
+
   return {
     get deleteCount() {
       return deleteCount;
@@ -152,6 +170,7 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
     fetch: async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const url = new URL(request.url);
+
       if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
         return await Promise.resolve(
           createJsonResponse({
@@ -169,13 +188,17 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
           }),
         );
       }
+
       if (request.method === "GET" && url.pathname === `/api/v1/jobs/${job.id}`) {
         detailRequestCount += 1;
+
         if (deleted) {
           return await Promise.resolve(createOrpcErrorResponse("NOT_FOUND", 404, "Job not found"));
         }
+
         return await Promise.resolve(createJsonResponse(job));
       }
+
       if (request.method === "GET" && url.pathname === "/api/v1/jobs") {
         return await Promise.resolve(
           createJsonResponse({
@@ -186,15 +209,19 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
           }),
         );
       }
+
       if (request.method === "DELETE" && url.pathname === `/api/v1/jobs/${job.id}`) {
         deleteCount += 1;
         deleted = true;
+
         return await Promise.resolve(createJsonResponse({ deleted: true }));
       }
+
       return await Promise.resolve(createOrpcErrorResponse("NOT_FOUND", 404, "Route not found"));
     },
   };
 };
+
 describe("Job detail route", () => {
   afterEach(() => {
     cleanup();
@@ -235,6 +262,7 @@ describe("Job detail route", () => {
       },
       recipient: "person@example.test",
     };
+
     const job = createJobDetail({
       failCount: 2,
       failureReason: "SMTP rejected recipient domain.",
@@ -242,6 +270,7 @@ describe("Job detail route", () => {
       repeatInterval: "*/15 * * * *",
       status: "failed",
     });
+
     const clipboardWriteText = installClipboardSpy();
     await renderJobDetailRoute({
       fetch: createJobDetailFetch(job),
@@ -274,6 +303,7 @@ describe("Job detail route", () => {
       id: "job-empty-payload",
       payload: {},
     });
+
     await renderJobDetailRoute({
       fetch: createJobDetailFetch(job),
       jobId: job.id,
@@ -288,15 +318,19 @@ describe("Job detail route", () => {
     "opens %s payloads on demand while copying their complete contents",
     async (errorFormat) => {
       const records = Array.from({ length: 200 }, (_, id) => ({ name: `payload-record-${id}` }));
+
       const payload = (() => {
         if (errorFormat === "nested") {
           return { records };
         }
+
         if (errorFormat === "array") {
           return records;
         }
+
         return Object.fromEntries(records.map((record, index) => [String(index), record]));
       })();
+
       const job = createJobDetail({ payload });
       const clipboardWriteText = installClipboardSpy();
       await renderJobDetailRoute({ fetch: createJobDetailFetch(job), jobId: job.id });
@@ -307,14 +341,18 @@ describe("Job detail route", () => {
         expect(clipboardWriteText).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
       });
       fireEvent.click(screen.getByRole("button", { name: "Expand JSON value" }));
+
       // Avoid computing visibility and accessible names for every record in the expanded tree.
       const expansionButtons = screen.getAllByLabelText("Expand JSON value", {
         selector: "button",
       });
+
       const lastRecord = expansionButtons.at(-1);
+
       if (!lastRecord) {
         throw new Error("Expected the final payload record to be expandable");
       }
+
       fireEvent.click(lastRecord);
       expect(screen.getByText(/payload-record-199/u)).toBeInstanceOf(HTMLElement);
     },
@@ -346,17 +384,21 @@ describe("Job detail route", () => {
         failCount,
         failureReason: "Account no longer exists",
       });
+
       await renderJobDetailRoute({
         jobId: job.id,
         fetch: async (input, init) => {
           const request = new Request(input, init);
+
           if (
             request.method === "POST" &&
             new URL(request.url).pathname.endsWith("/actions/retry")
           ) {
             job = { ...job, status: "pending", failCount: 0 };
+
             return createJsonResponse(job);
           }
+
           return await createJobDetailFetch(job)(request);
         },
       });
@@ -377,14 +419,17 @@ describe("Job detail route", () => {
     async (action) => {
       const first = createJobDetail({ id: "first-job", name: "first-job" });
       const second = createJobDetail({ id: "second-job", name: "second-job" });
+
       const router = await renderJobDetailRoute({
         jobId: first.id,
         fetch: async (input, init) => {
           const request = new Request(input, init);
           const job = new URL(request.url).pathname.endsWith(second.id) ? second : first;
+
           return await createJobDetailFetch(job)(request);
         },
       });
+
       await expect(screen.findByRole("heading", { name: first.name })).resolves.toBeInstanceOf(
         HTMLElement,
       );
@@ -424,9 +469,11 @@ describe("Job detail route", () => {
         queryClient,
         fetch: async (input, init) => {
           const request = new Request(input, init);
+
           if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
             throw new TypeError("Failed to fetch");
           }
+
           return await createJobDetailFetch(job)(request);
         },
       });
@@ -461,9 +508,11 @@ describe("Job detail route", () => {
         queryClient,
         fetch: async (input, init) => {
           const request = new Request(input, init);
+
           if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
             return createOrpcErrorResponse(code, status, "Host rejected the request.");
           }
+
           return await createJobDetailFetch(job)(request);
         },
       });
@@ -522,6 +571,7 @@ describe("Job detail route", () => {
     const job = createJobDetail({
       id: "job-delete-me",
     });
+
     const fetchState = createJobDetailActionFetch(job);
     await renderJobDetailRoute({
       fetch: fetchState.fetch,

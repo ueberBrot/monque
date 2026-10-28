@@ -21,10 +21,12 @@ const QueryFreshness = ({
   const visible = useDocumentVisible();
   const updated = new Date(updatedAt);
   const age = now.getTime() - updatedAt;
+
   const label =
     age < 30_000
       ? "Updated just now"
       : `Updated ${formatDistanceStrict(updated, now, { addSuffix: true })}`;
+
   return (
     <p className="text-xs text-muted-foreground" aria-live="off" aria-busy={fetching}>
       {updatedAt > 0 ? (
@@ -38,6 +40,7 @@ const QueryFreshness = ({
         if (paused) {
           return " · Updates paused while offline";
         }
+
         if (visible) {
           if (
             pollingIntervalMs !== undefined &&
@@ -46,13 +49,16 @@ const QueryFreshness = ({
           ) {
             return "";
           }
+
           return " · Auto-refresh off";
         }
+
         return " · Updates paused while hidden";
       })()}
     </p>
   );
 };
+
 const RefreshButton = ({
   onRefresh,
   fetching,
@@ -65,4 +71,5 @@ const RefreshButton = ({
     Refresh
   </Button>
 );
+
 export { QueryFreshness, RefreshButton };

@@ -58,6 +58,7 @@
     "express": "^5.2.1",
     "mongodb": "^7.7.0",
     "supertest": "^7.3.1",
+    "vite": "catalog:",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {

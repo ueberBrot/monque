@@ -24,11 +24,13 @@ export const toError = (value: unknown): Error => {
   if (value instanceof Error) {
     return value;
   }
+
   try {
     return new Error(String(value));
   } catch (conversionError: unknown) {
     const detail =
       conversionError instanceof Error ? conversionError.message : "unknown conversion failure";
+
     return new Error(`Unserializable value (${detail})`);
   }
 };

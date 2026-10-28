@@ -14,6 +14,7 @@ const CommandSearch = ({
   readonly onClose: () => void;
 }) => {
   const form = useAppForm({ defaultValues: { query: "" } });
+
   return (
     <Command>
       <Suspense fallback={null}>
@@ -40,4 +41,5 @@ const CommandSearch = ({
     </Command>
   );
 };
+
 export { CommandSearch };

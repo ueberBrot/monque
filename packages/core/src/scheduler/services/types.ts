@@ -6,6 +6,7 @@ import type { PersistedJob } from "@/jobs";
 import type { WorkerRegistration } from "@/workers";
 
 import type { MonqueOptions } from "../types.js";
+
 /**
  * Resolved Monque options with all defaults applied.
  *
@@ -28,6 +29,7 @@ export interface ResolvedMonqueOptions
     >,
     Pick<
       MonqueOptions,
+      // oxlint-disable-next-line sonarjs/max-union-size -- This closed union enumerates the supported domain values without widening the contract.
       | "maxBackoffDelay"
       | "jobRetention"
       | "instanceConcurrency"
@@ -38,6 +40,7 @@ export interface ResolvedMonqueOptions
   workerConcurrency: number;
   safetyPollInterval: number;
 }
+
 /**
  * Shared context provided to all internal Monque services.
  *
@@ -70,5 +73,7 @@ export interface SchedulerContext {
   /** Convert MongoDB document to typed PersistedJob */
   documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }
+
 export const RETRYABLE_JOB_STATUSES = [JobStatus.FAILED, JobStatus.CANCELLED] as const;
+
 export type RetryableJobStatusType = (typeof RETRYABLE_JOB_STATUSES)[number];

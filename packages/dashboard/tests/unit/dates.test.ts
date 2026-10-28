@@ -31,6 +31,7 @@ describe("Dashboard dates", () => {
     for (const value of ["2026-03-29T02:30", "2026-02-30T12:00", "2026-06-03T25:00", ""]) {
       expect(fromDateTimeLocalValue(value, "Europe/Berlin")).toBeUndefined();
     }
+
     expect(fromDateTimeLocalValue("2026-03-29T03:30", "Europe/Berlin")).toBe(
       "2026-03-29T01:30:00.000Z",
     );
@@ -41,6 +42,7 @@ describe("Dashboard dates", () => {
       expect(parseDashboardDate(value)).toBeUndefined();
       expect(formatDashboardDate(value)).toBe("Not available");
     }
+
     expect(toDateTimeLocalValue("invalid")).toBe("");
   });
 
@@ -52,6 +54,7 @@ describe("Dashboard dates", () => {
 
   it("uses just now for sub-second differences without hiding scheduled future times", () => {
     const now = new Date("2026-06-03T12:00:00Z");
+
     for (const value of [
       "2026-06-03T11:59:59.001Z",
       "2026-06-03T12:00:00Z",
@@ -59,6 +62,7 @@ describe("Dashboard dates", () => {
     ]) {
       expect(formatRelativeDate(value, now)).toBe("just now");
     }
+
     expect(formatRelativeDate("2026-06-03T12:00:01Z", now)).toBe("in 1 second");
     expect(formatRelativeDate("2026-06-03T11:59:59Z", now)).toBe("1 second ago");
   });

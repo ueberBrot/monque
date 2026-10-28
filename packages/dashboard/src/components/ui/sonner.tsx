@@ -14,6 +14,7 @@ const toasterStyle: React.CSSProperties & Record<`--${string}`, string> = {
   "--normal-border": "var(--border)",
   "--border-radius": "var(--radius)",
 };
+
 const Toaster = ({ ...props }: ToasterProps) => (
   <Sonner
     theme="system"
@@ -34,4 +35,5 @@ const Toaster = ({ ...props }: ToasterProps) => (
     {...props}
   />
 );
+
 export { Toaster };

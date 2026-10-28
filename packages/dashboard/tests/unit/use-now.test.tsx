@@ -14,10 +14,12 @@ describe("use now", () => {
     it("uses the current time when new job data arrives between clock ticks", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
+
       const { result, rerender, unmount } = renderHook(
         ({ updatedAt }) => formatRelativeDate(updatedAt, useNow()),
         { initialProps: { updatedAt: "2026-06-03T11:59:59Z" } },
       );
+
       vi.setSystemTime(new Date("2026-06-03T12:00:05Z"));
       rerender({ updatedAt: "2026-06-03T12:00:04Z" });
       expect(result.current).toBe("1 second ago");
@@ -27,13 +29,16 @@ describe("use now", () => {
     it("ticks second-level labels locally and preserves future scheduled times", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
+
       const { result, unmount } = renderHook(() => {
         const now = useNow();
+
         return [
           formatRelativeDate("2026-06-03T11:59:59Z", now),
           formatRelativeDate("2026-06-03T12:00:10Z", now),
         ];
       });
+
       await act(() => vi.advanceTimersByTime(1000));
       expect(result.current).toStrictEqual(["2 seconds ago", "in 9 seconds"]);
       unmount();
@@ -42,9 +47,11 @@ describe("use now", () => {
     it("updates unchanged job timestamps and cleans up its timer on unmount", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
+
       const { result, unmount } = renderHook(() =>
         formatRelativeDate("2026-06-03T11:54:00Z", useNow()),
       );
+
       expect(result.current).toBe("6 minutes ago");
       await act(() => vi.advanceTimersByTime(60_000));
       expect(result.current).toBe("7 minutes ago");
@@ -68,9 +75,11 @@ describe("use now", () => {
       vi.useFakeTimers();
       const reference = Date.parse("2026-06-03T12:00:40Z");
       vi.setSystemTime(reference + 59_000);
+
       const { result, unmount } = renderHook(() =>
         formatRelativeDate(new Date(reference).toISOString(), useNow(reference)),
       );
+
       expect(result.current).toBe("59 seconds ago");
       await act(() => vi.advanceTimersByTime(2000));
       expect(result.current).toBe("1 minute ago");

@@ -14,6 +14,7 @@ import { JOB_STATUS_META } from "./job-status.js";
 const JOB_STATUS_ORDER = ["pending", "processing", "completed", "failed", "cancelled"] as const;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
+
 interface JobsRouteSearch {
   readonly createdAtFrom: string | undefined;
   readonly createdAtTo: string | undefined;
@@ -28,32 +29,46 @@ interface JobsRouteSearch {
   readonly updatedAtFrom: string | undefined;
   readonly updatedAtTo: string | undefined;
 }
+
 type JobListSortByDto = NonNullable<JobListQueryDto["sortBy"]>;
+
 type JobListSortDirectionDto = NonNullable<JobListQueryDto["sortDirection"]>;
+
 type JobStatusDto = JobDto["status"];
+
 const getOptionalStringSchema = z
   .unknown()
   .transform((value) => (isString(value) && value.length > 0 ? value : undefined));
+
 const getOptionalString = getOptionalStringSchema.parse.bind(getOptionalStringSchema);
+
 const normalizeLimit = (value: number): number => {
   if (!Number.isInteger(value) || value <= 0) {
     return DEFAULT_LIMIT;
   }
+
   return Math.min(value, MAX_LIMIT);
 };
+
 const parseLimitSchema = z.unknown().transform((value) => {
   if (isNumber(value)) {
     return normalizeLimit(value);
   }
+
   if (isString(value)) {
     const prefix = /^[+-]?\d+/u.exec(value.trimStart());
+
     return normalizeLimit(prefix === null ? Number.NaN : Number(prefix[0]));
   }
+
   return DEFAULT_LIMIT;
 });
+
 const parseLimit = parseLimitSchema.parse.bind(parseLimitSchema);
+
 const parseStatusFilterSchema = z.unknown().transform((value) => {
   const values: unknown[] = Array.isArray(value) ? value : [value];
+
   const parsedStatuses = new Set(
     values
       .flatMap((candidate) => (isString(candidate) ? [candidate] : []))
@@ -61,25 +76,36 @@ const parseStatusFilterSchema = z.unknown().transform((value) => {
         (candidate): candidate is JobStatusDto => JobStatusDtoSchema.safeParse(candidate).success,
       ),
   );
+
   return JOB_STATUS_ORDER.filter((status) => parsedStatuses.has(status));
 });
+
 const parseStatusFilter = parseStatusFilterSchema.parse.bind(parseStatusFilterSchema);
+
 const getOptionalIsoDateSchema = z
   .unknown()
   .transform((value) =>
     isString(value) && value.length > 0 ? parseDashboardDate(value)?.toISOString() : undefined,
   );
+
 const getOptionalIsoDate = getOptionalIsoDateSchema.parse.bind(getOptionalIsoDateSchema);
+
 const parseSortBySchema = z.unknown().transform((value) => {
   const parsed = JobListSortByDtoSchema.safeParse(value);
+
   return parsed.success ? parsed.data : "createdAt";
 });
+
 const parseSortBy = parseSortBySchema.parse.bind(parseSortBySchema);
+
 const parseSortDirectionSchema = z.unknown().transform((value) => {
   const parsed = JobListSortDirectionDtoSchema.safeParse(value);
+
   return parsed.success ? parsed.data : "desc";
 });
+
 const parseSortDirection = parseSortDirectionSchema.parse.bind(parseSortDirectionSchema);
+
 const parseJobsRouteSearchSchema = z
   .object({
     cursor: z.unknown().optional(),
@@ -109,23 +135,30 @@ const parseJobsRouteSearchSchema = z
     sortBy: parseSortBy(search.sortBy),
     sortDirection: parseSortDirection(search.sortDirection),
   }));
+
 const parseJobsRouteSearch = parseJobsRouteSearchSchema.parse.bind(parseJobsRouteSearchSchema);
+
 const toJobListStatusQuery = (status: readonly JobStatusDto[]): JobListQueryDto["status"] => {
   if (status.length === 0) {
     return undefined;
   }
+
   if (status.length === 1) {
     return status[0];
   }
+
   return [...status];
 };
+
 const toJobListQueryInput = (search: JobsRouteSearch): JobListQueryDto => ({
   ...search,
   limit: String(search.limit),
   status: toJobListStatusQuery(search.status),
 });
+
 const getJobsSearchIdentity = ({ cursor: _cursor, ...filters }: JobsRouteSearch): string =>
   JSON.stringify(filters);
+
 const getNextSort = (
   currentSortBy: JobListSortByDto,
   currentSortDirection: JobListSortDirectionDto,
@@ -137,12 +170,15 @@ const getNextSort = (
       sortDirection: nextSortBy === "identifier" ? "asc" : "desc",
     };
   }
+
   return {
     sortBy: nextSortBy,
     sortDirection: currentSortDirection === "asc" ? "desc" : "asc",
   };
 };
+
 const getStatusLabel = (status: JobStatusDto): string => JOB_STATUS_META[status].label;
+
 export {
   getJobsSearchIdentity,
   getNextSort,

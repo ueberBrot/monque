@@ -12,8 +12,10 @@ import { TextareaField } from "./textarea-field.js";
 
 const CommandSearchField = lazy(async () => {
   const module = await import("./command-search-field.js");
+
   return { default: module.CommandSearchField };
 });
+
 export const { useAppForm, withForm } = createFormHook({
   fieldComponents: {
     CalendarField,
