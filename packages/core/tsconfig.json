@@ -30,6 +30,12 @@
         },
         "overrides": [
           {
+            "include": ["tests/**/*.ts"],
+            "options": {
+              "allowedUnstableApis": ["@effect/vitest#it"]
+            }
+          },
+          {
             "include": ["src/scheduler/effects.ts"],
             "options": {
               "diagnosticSeverity": {
