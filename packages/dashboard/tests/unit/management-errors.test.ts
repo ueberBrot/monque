@@ -67,6 +67,7 @@ describe("Management error presentation", () => {
       title: "Job not found",
       tone: "default",
     });
+
     for (const resource of ["health", "jobs", "queue-views"] as const) {
       expect(resolveDashboardApiErrorState({ status: 404 }, resource).code).toBe("error");
     }

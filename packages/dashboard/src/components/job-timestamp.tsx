@@ -4,12 +4,15 @@ import { useNow } from "@/lib/use-now";
 const RelativeTimestamp = ({ value }: { readonly value: string }) => {
   const reference = parseDashboardDate(value)?.getTime();
   const now = useNow(reference);
+
   return <>{formatRelativeDate(value, now)}</>;
 };
+
 const JobTimestamp = ({ value }: { readonly value: string | null | undefined }) => {
   if (value === undefined || value === null || value === "") {
     return <span>Not available</span>;
   }
+
   return (
     <time dateTime={value} className="block text-xs tabular-nums">
       <span className="block">{formatDashboardDate(value)}</span>
@@ -19,4 +22,5 @@ const JobTimestamp = ({ value }: { readonly value: string | null | undefined }) 
     </time>
   );
 };
+
 export { JobTimestamp, RelativeTimestamp };

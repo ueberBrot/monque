@@ -16,31 +16,40 @@ import { nativeAsyncMock } from "@tests/setup/native-async-mock.js";
 
 const structuredCursor = (payload: { id: string | number | null; sort?: unknown }): string =>
   `F${Buffer.from(JSON.stringify(payload), "utf-8").toString("base64url")}`;
+
 describe(CursorListing, () => {
   let ctx: ReturnType<typeof createMockContext>;
+
   const returnJobs = (jobs: WithId<Document>[]) => {
     const cursor = {
       sort: vi.fn<MockFunction<FindCursor["sort"]>>().mockReturnThis(),
       limit: vi.fn<MockFunction<FindCursor["limit"]>>().mockReturnThis(),
       toArray: nativeAsyncMock<FindCursor["toArray"]>(() => [...jobs]),
     };
+
     vi.spyOn(ctx.mockCollection, "find").mockReturnValue(
       fromAny<ReturnType<typeof ctx.mockCollection.find>, unknown>(cursor),
     );
+
     return cursor;
   };
+
   let listing: CursorListing;
   beforeEach(() => {
     ctx = createMockContext();
     listing = new CursorListing(ctx);
   });
+
   const issueCursor = Effect.fnUntraced(function* effectWorkflow1(options: CursorOptions = {}) {
     const page = yield* listing.getJobsWithCursor(options);
+
     if (page.cursor === null || page.cursor === "") {
       throw new Error("Expected cursor");
     }
+
     return page.cursor;
   });
+
   describe("cursor compatibility", () => {
     it.effect.each([
       [CursorDirection.FORWARD, "F"],
@@ -116,10 +125,12 @@ describe(CursorListing, () => {
       Effect.gen(function* effectWorkflow7() {
         const id = new ObjectId("507f1f77bcf86cd799439011");
         const updatedAt = new Date("2026-02-01T12:00:00.000Z");
+
         const sort = {
           by: JobCursorSortField.UPDATED_AT,
           direction: JobCursorSortDirection.DESC,
         };
+
         returnJobs([JobFactory.build({ _id: id, updatedAt })]);
         const cursor = yield* issueCursor({ sort });
         expect(
@@ -138,10 +149,12 @@ describe(CursorListing, () => {
     it.effect("round trips a structured identifier cursor for descending listings", () =>
       Effect.gen(function* effectWorkflow8() {
         const id = new ObjectId("507f1f77bcf86cd799439011");
+
         const sort = {
           by: JobCursorSortField.IDENTIFIER,
           direction: JobCursorSortDirection.DESC,
         };
+
         returnJobs([JobFactory.build({ _id: id })]);
         const cursor = yield* issueCursor({ sort });
         yield* listing.getJobsWithCursor({ cursor, sort });
@@ -174,6 +187,7 @@ describe(CursorListing, () => {
           id,
           sort: { by: "updatedAt", direction: "desc", value: "2026-02-01T12:00:00.000Z" },
         });
+
         expect(yield* Effect.result(listing.getJobsWithCursor({ cursor }))).toMatchObject({
           _tag: "Failure",
           failure: anyMatcher(InvalidCursorError),
@@ -184,9 +198,11 @@ describe(CursorListing, () => {
     it.effect("rejects a cursor used with a different sort", () =>
       Effect.gen(function* effectWorkflow11() {
         returnJobs([JobFactory.build()]);
+
         const cursor = yield* issueCursor({
           sort: { by: JobCursorSortField.UPDATED_AT, direction: JobCursorSortDirection.DESC },
         });
+
         vi.mocked(ctx.mockCollection.find).mockClear();
         expect(
           yield* Effect.result(
@@ -224,14 +240,18 @@ describe(CursorListing, () => {
       Effect.gen(function* effectWorkflow13() {
         const jobs = JobFactory.buildList(4);
         const thirdJob = jobs.at(2);
+
         if (thirdJob === undefined) {
           throw new Error("Expected at least three fixture jobs");
         }
+
         returnJobs(jobs);
+
         const page = yield* listing.getJobsWithCursor({
           limit: 3,
           direction: CursorDirection.BACKWARD,
         });
+
         expect({
           pageJobsMapJobJob_id: page.jobs.map((job) => job._id),
           pageHasPreviousPage: page.hasPreviousPage,
@@ -323,6 +343,7 @@ describe(CursorListing, () => {
         const jobs = JobFactory.buildList(2, {
           updatedAt: new Date("2026-02-01T00:00:00.000Z"),
         });
+
         const mockCursor = returnJobs(jobs);
         yield* listing.getJobsWithCursor({
           limit: 10,

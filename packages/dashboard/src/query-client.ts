@@ -14,4 +14,5 @@ const createDashboardQueryClient = (): QueryClient =>
       },
     },
   });
+
 export { createDashboardQueryClient };

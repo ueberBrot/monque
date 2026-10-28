@@ -16,6 +16,7 @@ class DeliveryError extends Error {
   override name = "DeliveryError";
   readonly code = "DELIVERY_REJECTED";
 }
+
 describe("Promise worker compatibility", () => {
   let db: Db;
   const instances: Monque[] = [];
@@ -46,6 +47,7 @@ describe("Promise worker compatibility", () => {
         safetyPollInterval: 20,
         maxRetries,
       });
+
       instances.push(monque);
       await monque.initialize();
       const failures: MonqueEventMap["job:fail"][] = [];
@@ -86,6 +88,7 @@ describe("Promise worker compatibility", () => {
       workerConcurrency: 1,
       statsCacheTtlMs: 0,
     });
+
     instances.push(monque);
     await monque.initialize();
     const releaseFirst: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -112,6 +115,7 @@ describe("Promise worker compatibility", () => {
       started.push(job.data.sequence);
       active += 1;
       peakActive = Math.max(peakActive, active);
+
       try {
         if (job.data.sequence === 1) {
           await releaseFirst.promise;
@@ -126,6 +130,7 @@ describe("Promise worker compatibility", () => {
     monque.register("checkpoint", vi.fn<() => Promise<void>>().mockResolvedValue(undefined));
     const first = await monque.enqueue("delivery", { sequence: 1 });
     monque.start();
+
     try {
       await waitFor(() => started.length === 1);
       await expect(monque.stop()).resolves.toBeUndefined();
@@ -151,6 +156,7 @@ describe("Promise worker compatibility", () => {
       monque.start();
       await waitFor(async () => {
         const awaitedResult1 = await monque.getJob(checkpoint._id);
+
         return awaitedResult1?.status === JobStatus.COMPLETED;
       });
       const waitingJob = await monque.getJob(second._id);
@@ -183,6 +189,7 @@ describe("Promise worker compatibility", () => {
       await waitFor(async () => {
         const awaitedResult2 = await monque.getQueueViewSummaries({ name: "delivery" });
         const [summary] = awaitedResult2;
+
         return summary?.stats.completed === 2 && summary.worker?.activeCount === 0;
       });
       expect({
@@ -203,6 +210,7 @@ describe("Promise worker compatibility", () => {
       await waitFor(async () => {
         const awaitedResult3 = await monque.getQueueViewSummaries({ name: "delivery" });
         const [summary] = awaitedResult3;
+
         return active === 0 && summary?.worker?.activeCount === 0;
       });
     }

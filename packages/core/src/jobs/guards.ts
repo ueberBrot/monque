@@ -1,5 +1,6 @@
 import type { Job, JobStatusType, PersistedJob } from "./types.js";
 import { JobStatus } from "./types.js";
+
 /**
  * Type guard to check if a job has been persisted to MongoDB.
  *
@@ -35,6 +36,7 @@ import { JobStatus } from "./types.js";
  */
 export const isPersistedJob = <T>(job: Job<T>): job is PersistedJob<T> =>
   "_id" in job && job._id !== undefined && job._id !== null;
+
 /**
  * Type guard to check if a value is a valid job status.
  *
@@ -69,6 +71,7 @@ export const isPersistedJob = <T>(job: Job<T>): job is PersistedJob<T> =>
  */
 export const isValidJobStatus = (value: unknown): value is JobStatusType =>
   typeof value === "string" && Object.values(JobStatus).some((status) => status === value);
+
 /**
  * Type guard to check if a job is in pending status.
  *
@@ -94,6 +97,7 @@ export const isValidJobStatus = (value: unknown): value is JobStatusType =>
  * ```
  */
 export const isPendingJob = <T>(job: Job<T>): boolean => job.status === JobStatus.PENDING;
+
 /**
  * Type guard to check if a job is currently being processed.
  *
@@ -112,6 +116,7 @@ export const isPendingJob = <T>(job: Job<T>): boolean => job.status === JobStatu
  * ```
  */
 export const isProcessingJob = <T>(job: Job<T>): boolean => job.status === JobStatus.PROCESSING;
+
 /**
  * Type guard to check if a job has completed successfully.
  *
@@ -130,6 +135,7 @@ export const isProcessingJob = <T>(job: Job<T>): boolean => job.status === JobSt
  * ```
  */
 export const isCompletedJob = <T>(job: Job<T>): boolean => job.status === JobStatus.COMPLETED;
+
 /**
  * Type guard to check if a job has permanently failed.
  *
@@ -152,6 +158,7 @@ export const isCompletedJob = <T>(job: Job<T>): boolean => job.status === JobSta
  * ```
  */
 export const isFailedJob = <T>(job: Job<T>): boolean => job.status === JobStatus.FAILED;
+
 /**
  * Type guard to check if a job has been manually cancelled.
  *
@@ -170,6 +177,7 @@ export const isFailedJob = <T>(job: Job<T>): boolean => job.status === JobStatus
  * ```
  */
 export const isCancelledJob = <T>(job: Job<T>): boolean => job.status === JobStatus.CANCELLED;
+
 /**
  * Type guard to check if a job is a recurring scheduled job.
  *

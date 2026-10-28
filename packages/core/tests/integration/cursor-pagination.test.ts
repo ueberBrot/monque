@@ -20,13 +20,18 @@ const createJobs = async (
   name = "pagination-test",
 ) => {
   const jobs = JobFactory.buildList(count, { name });
+
   const jobsWithIndex = jobs.map((job, i) => {
     const { _id, ...rest } = job;
+
     return { ...rest, data: { index: i } };
   });
+
   await db.collection(collectionName).insertMany(jobsWithIndex);
+
   return jobsWithIndex;
 };
+
 describe("Management APIs: Cursor Pagination", () => {
   let db: Db;
   let monque: Monque;
@@ -57,9 +62,11 @@ describe("Management APIs: Cursor Pagination", () => {
         jobs: full.jobs.map(({ data: _data, ...job }) => job),
       });
       expect(summary.jobs.every((job) => !("data" in job))).toBe(true);
+
       if (summary.cursor === null) {
         throw new Error("Expected cursor");
       }
+
       const next = await monque.getJobsWithCursor({ limit: 2, cursor: summary.cursor });
       expect(next.jobs[0]?.data).toStrictEqual({ index: 2 });
       const indexes = await db.collection(collectionName).indexes();
@@ -116,14 +123,17 @@ describe("Management APIs: Cursor Pagination", () => {
         page1Jobs: 3,
         page1Jobs0Data: { index: 0 },
       });
+
       if (page1.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       // Page 2
       const page2 = await monque.getJobsWithCursor({
         limit: 3,
         cursor: page1.cursor,
       });
+
       expect({
         hasCursor: page2.cursor !== null,
         page2Jobs: page2.jobs.length,
@@ -137,14 +147,17 @@ describe("Management APIs: Cursor Pagination", () => {
         page2HasNextPage: true,
         page2HasPreviousPage: true,
       });
+
       if (page2.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       // Page 3
       const page3 = await monque.getJobsWithCursor({
         limit: 3,
         cursor: page2.cursor,
       });
+
       expect({
         hasCursor: page3.cursor !== null,
         page3Jobs: page3.jobs.length,
@@ -154,14 +167,17 @@ describe("Management APIs: Cursor Pagination", () => {
         page3Jobs: 3,
         page3Jobs0Data: { index: 6 },
       });
+
       if (page3.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       // Page 4 (last item)
       const page4 = await monque.getJobsWithCursor({
         limit: 3,
         cursor: page3.cursor,
       });
+
       expect({
         page4Jobs: page4.jobs.length,
         page4Jobs0Data: page4.jobs[0]?.data,
@@ -181,20 +197,25 @@ describe("Management APIs: Cursor Pagination", () => {
       await createJobs(db, collectionName, 10, queueName);
       const page1 = await monque.getJobsWithCursor({ limit: 3 });
       expect(page1.cursor).not.toBeNull();
+
       if (page1.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       const page2 = await monque.getJobsWithCursor({ limit: 3, cursor: page1.cursor });
       expect(page2.cursor).not.toBeNull();
+
       if (page2.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       // Now go backwards from page2's cursor
       const backResult = await monque.getJobsWithCursor({
         limit: 3,
         cursor: page2.cursor,
         direction: CursorDirection.BACKWARD,
       });
+
       // Check standard backward pagination result: items before the cursor in reverse order (so index 2, 3, 4)
       // Can go forward
       // Can go backward (0, 1 exist)
@@ -213,14 +234,17 @@ describe("Management APIs: Cursor Pagination", () => {
         backResultHasNextPage: true,
         backResultHasPreviousPage: true,
       });
+
       if (backResult.cursor === null) {
         throw new Error("Expected backward cursor");
       }
+
       const earlier = await monque.getJobsWithCursor({
         limit: 3,
         cursor: backResult.cursor,
         direction: CursorDirection.BACKWARD,
       });
+
       expect({
         earlierJobsMapJobJobData: earlier.jobs.map((job) => job.data),
         earlierHasPreviousPage: earlier.hasPreviousPage,
@@ -235,25 +259,32 @@ describe("Management APIs: Cursor Pagination", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const pendingJobs = JobFactory.buildList(5, {
         name: queueName,
         status: JobStatus.PENDING,
       }).map((job, i) => {
         const { _id, ...rest } = job;
+
         return { ...rest, data: { i } };
       });
+
       const completedJobs = JobFactory.buildList(5, {
         name: queueName,
         status: JobStatus.COMPLETED,
       }).map((job, i) => {
         const { _id, ...rest } = job;
+
         return { ...rest, data: { i: i + 5 } };
       });
+
       await db.collection(collectionName).insertMany([...pendingJobs, ...completedJobs]);
+
       const result = await monque.getJobsWithCursor({
         filter: { status: JobStatus.COMPLETED },
         limit: 3,
       });
+
       expect({
         resultJobs: result.jobs.length,
         resultJobsEveryJJStatusJobStatusCOMPLETED: result.jobs.every(
@@ -282,14 +313,17 @@ describe("Management APIs: Cursor Pagination", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       // Insert 1000 docs directly
       const largeDocs = JobFactory.buildList(1000, {
         name: queueName,
         status: JobStatus.PENDING,
       }).map((job, i) => {
         const { _id, ...rest } = job;
+
         return { ...rest, data: { index: i } };
       });
+
       await db.collection(collectionName).insertMany(largeDocs);
       const start = performance.now();
       const result = await monque.getJobsWithCursor({ limit: 100 });
@@ -304,6 +338,7 @@ describe("Management APIs: Cursor Pagination", () => {
       monque = new Monque(db, { collectionName });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobs = [
         JobFactory.build({
           _id: new ObjectId("000000000000000000000001"),
@@ -327,12 +362,15 @@ describe("Management APIs: Cursor Pagination", () => {
         }),
       ].map((job) => {
         const { _id, ...rest } = job;
+
         return {
           _id,
           ...rest,
         };
       });
+
       await db.collection(collectionName).insertMany(jobs);
+
       const page1 = await monque.getJobsWithCursor({
         limit: 2,
         sort: {
@@ -340,14 +378,17 @@ describe("Management APIs: Cursor Pagination", () => {
           direction: JobCursorSortDirection.DESC,
         },
       });
+
       expect(page1.jobs.map((job) => job._id.toHexString())).toStrictEqual([
         "000000000000000000000004",
         "000000000000000000000003",
       ]);
       expect(page1.cursor).not.toBeNull();
+
       if (page1.cursor === null) {
         throw new Error("Cursor should not be null");
       }
+
       const page2 = await monque.getJobsWithCursor({
         limit: 2,
         cursor: page1.cursor,
@@ -356,32 +397,39 @@ describe("Management APIs: Cursor Pagination", () => {
           direction: JobCursorSortDirection.DESC,
         },
       });
+
       expect(page2.jobs.map((job) => job._id.toHexString())).toStrictEqual([
         "000000000000000000000002",
         "000000000000000000000001",
       ]);
+
       if (page2.cursor === null) {
         throw new Error("Expected cursor");
       }
+
       const back = await monque.getJobSummariesWithCursor({
         limit: 2,
         cursor: page2.cursor,
         direction: CursorDirection.BACKWARD,
         sort: { by: JobCursorSortField.UPDATED_AT, direction: JobCursorSortDirection.DESC },
       });
+
       expect(back.jobs.map((job) => job._id.toHexString())).toStrictEqual([
         "000000000000000000000003",
         "000000000000000000000002",
       ]);
+
       if (back.cursor === null) {
         throw new Error("Expected backward cursor");
       }
+
       const earlier = await monque.getJobSummariesWithCursor({
         limit: 2,
         cursor: back.cursor,
         direction: CursorDirection.BACKWARD,
         sort: { by: JobCursorSortField.UPDATED_AT, direction: JobCursorSortDirection.DESC },
       });
+
       expect(earlier.jobs.map((job) => job._id.toHexString())).toStrictEqual([
         "000000000000000000000004",
       ]);

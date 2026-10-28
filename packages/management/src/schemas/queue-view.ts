@@ -28,6 +28,7 @@ export type JobStatsQueryDto = z.infer<typeof JobStatsQueryDtoSchema>;
 
 /** Optional exact Job Name scope for `GET /api/v1/queue-views`. */
 export const QueueViewQueryDtoSchema = z.strictObject({ name: z.string().min(1).optional() });
+
 export type QueueViewQueryDto = z.infer<typeof QueueViewQueryDtoSchema>;
 
 /** Local worker state for a queue view, when this scheduler has a worker registered. */

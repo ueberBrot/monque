@@ -1,5 +1,4 @@
-import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
+import { Cause, Effect } from "effect";
 import type { Document, ObjectId } from "mongodb";
 
 import { isValidJobStatus, JobStatus } from "@/jobs";
@@ -38,21 +37,26 @@ const createEmptyQueueStats = (): QueueStats => ({
   cancelled: 0,
   total: 0,
 });
+
 type MongoErrorWithTimeoutCode = Error & {
   code?: unknown;
   writeConcernError?: {
     code?: unknown;
   };
 };
+
 const MONGO_MAX_TIME_MS_EXPIRED_CODE = 50;
+
 const isMongoMaxTimeMSExpiredError = (error: Error): boolean => {
   // SAFETY: Optional timeout metadata is inspected without trusting any field value.
   const mongoError = error as MongoErrorWithTimeoutCode;
+
   return (
     mongoError.code === MONGO_MAX_TIME_MS_EXPIRED_CODE ||
     mongoError.writeConcernError?.code === MONGO_MAX_TIME_MS_EXPIRED_CODE
   );
 };
+
 interface QueueViewStatsDocument {
   _id: string;
   pending?: number;
@@ -64,13 +68,16 @@ interface QueueViewStatsDocument {
   completedDurationTotal?: number;
   completedDurationCount?: number;
 }
+
 const prepareJobQuery = (filter: GetJobsFilter) => {
   const query = buildSelectorQuery(filter);
   const limit = resolveQueryLimit(filter.limit, 100);
   const { skip = 0 } = filter;
+
   if (!Number.isSafeInteger(skip) || skip < 0) {
     throw new InvalidJobQueryError("skip must be a non-negative safe integer");
   }
+
   return { query, limit, skip };
 };
 
@@ -134,14 +141,17 @@ export class JobQueryService {
   ): Effect.fn.Return<PersistedJob<T> | null, ConnectionError> {
     return yield* Effect.gen({ self: this }, function* readSingleJob() {
       const doc = yield* fromPromise(async () => await this.ctx.collection.findOne({ _id: id }));
+
       if (!doc) {
         return null;
       }
+
       return this.ctx.documentToPersistedJob<T>(doc);
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
         const message = error instanceof Error ? error.message : "Unknown error during getJob";
+
         return Effect.fail(
           new ConnectionError(
             `Failed to get job: ${message}`,
@@ -197,6 +207,7 @@ export class JobQueryService {
     filter: GetJobsFilter = {},
   ): Effect.fn.Return<PersistedJob<T>[], unknown> {
     const { query, limit, skip } = yield* attempt(() => prepareJobQuery(filter));
+
     return yield* Effect.gen({ self: this }, function* readMatchingJobs() {
       const docs = yield* fromPromise(
         async () =>
@@ -207,11 +218,13 @@ export class JobQueryService {
             .limit(limit)
             .toArray(),
       );
+
       return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
         const message = error instanceof Error ? error.message : "Unknown error during getJobs";
+
         return Effect.fail(
           new ConnectionError(
             `Failed to query jobs: ${message}`,
@@ -300,9 +313,11 @@ export class JobQueryService {
     filter: Pick<JobSelector, "name"> = {},
   ): Effect.fn.Return<QueueStats, unknown> {
     const name = yield* attempt(() => parseJobNameFilter(filter));
+
     const stats = yield* this.statsCache.get(name ?? "", this.ctx.options.statsCacheTtlMs, () =>
       this.loadQueueStats(name),
     );
+
     return { ...stats };
   });
   private readonly loadQueueStats = Effect.fnUntraced(function* loadQueueStatistics(
@@ -349,6 +364,7 @@ export class JobQueryService {
         },
       },
     ];
+
     return yield* Effect.gen({ self: this }, function* aggregateQueueStatistics() {
       const results = yield* fromPromise(
         async () =>
@@ -367,28 +383,36 @@ export class JobQueryService {
             }>(pipeline, { maxTimeMS: 30_000 })
             .toArray(),
       );
+
       const [result] = results;
       const stats = createEmptyQueueStats();
+
       if (!result) {
         return stats;
       }
+
       for (const { _id, count } of result.statusCounts) {
         if (isValidJobStatus(_id)) {
           stats[_id] = count;
         }
       }
+
       stats.total = result.total[0]?.count ?? 0;
       const avgMs = result.avgDuration[0]?.avgMs;
+
       if (isProcessingDuration(avgMs)) {
         stats.avgProcessingDurationMs = Math.round(avgMs);
       }
+
       return stats;
     }).pipe(
       Effect.catchCause((cause) => {
         const err = toError(Cause.squash(cause));
+
         if (isMongoMaxTimeMSExpiredError(err)) {
           return Effect.fail(new AggregationTimeoutError());
         }
+
         return Effect.fail(
           new ConnectionError(`Failed to get queue stats: ${err.message}`, { cause: err }),
         );
@@ -407,20 +431,26 @@ export class JobQueryService {
     filter: Pick<JobSelector, "name"> = {},
   ): Effect.fn.Return<readonly QueueViewSummary[], unknown> {
     const nameFilter = yield* attempt(() => parseJobNameFilter(filter));
+
     const persistedStats = yield* this.queueViewCache.get(
       JSON.stringify(nameFilter ?? null),
       this.ctx.options.statsCacheTtlMs,
       () => this.loadQueueViewStats(nameFilter),
     );
+
     let workerNames: Iterable<string> = this.ctx.workers.keys();
+
     if (nameFilter !== undefined) {
       workerNames = this.ctx.workers.has(nameFilter) ? [nameFilter] : [];
     }
+
     const names = new Set([...persistedStats.keys(), ...workerNames]);
+
     const summaries = [...names]
       .toSorted((a, b) => a.localeCompare(b))
       .map((name): QueueViewSummary => {
         const worker = this.ctx.workers.get(name);
+
         const workerSummary = worker
           ? {
               concurrency: worker.concurrency,
@@ -436,6 +466,7 @@ export class JobQueryService {
                 DEFAULT_MAX_BACKOFF_DELAY,
             }
           : null;
+
         return Object.freeze({
           name,
           hasPersistedJobs: persistedStats.has(name),
@@ -444,6 +475,7 @@ export class JobQueryService {
           worker: workerSummary ? Object.freeze(workerSummary) : null,
         });
       });
+
     return Object.freeze(summaries);
   });
   private readonly loadQueueViewStats = Effect.fnUntraced(function* loadQueueViewStatistics(
@@ -451,6 +483,7 @@ export class JobQueryService {
     name?: string,
   ): Effect.fn.Return<ReadonlyMap<string, QueueStats>, ConnectionError | AggregationTimeoutError> {
     const persistedStats = new Map<string, QueueStats>();
+
     return yield* Effect.gen({ self: this }, function* aggregateQueueViewStatistics() {
       const results = yield* fromPromise(
         async () =>
@@ -496,6 +529,7 @@ export class JobQueryService {
             )
             .toArray(),
       );
+
       for (const result of results) {
         const stats: QueueStats = {
           pending: result.pending ?? 0,
@@ -505,22 +539,28 @@ export class JobQueryService {
           cancelled: result.cancelled ?? 0,
           total: result.total ?? 0,
         };
+
         const completedDurationCount = result.completedDurationCount ?? 0;
         const completedDurationTotal = result.completedDurationTotal ?? 0;
+
         if (completedDurationCount > 0) {
           stats.avgProcessingDurationMs = Math.round(
             completedDurationTotal / completedDurationCount,
           );
         }
+
         persistedStats.set(result._id, stats);
       }
+
       return persistedStats;
     }).pipe(
       Effect.catchCause((cause) => {
         const err = toError(Cause.squash(cause));
+
         if (isMongoMaxTimeMSExpiredError(err)) {
           return Effect.fail(new AggregationTimeoutError());
         }
+
         return Effect.fail(
           new ConnectionError(`Failed to get queue view summaries: ${err.message}`, {
             cause: err,

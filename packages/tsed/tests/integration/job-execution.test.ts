@@ -35,6 +35,7 @@ class ExecutionController {
       ExecutionController.failCount += 1;
       throw new Error("Intentional failure");
     }
+
     if (job._id) {
       ExecutionController.processed.push(job._id.toString());
     }
@@ -66,6 +67,7 @@ describe("Job Execution Flow", () => {
     // Wait for completion via DB polling
     await waitFor(async () => {
       const persistedJob = await monqueService.getJob(job._id.toString());
+
       return persistedJob?.status === JobStatus.COMPLETED && persistedJob?.updatedAt !== undefined;
     });
 
@@ -93,6 +95,7 @@ describe("Job Execution Flow", () => {
     await waitFor(
       async () => {
         const persistedJob = await monqueService.getJob(job._id.toString());
+
         return persistedJob?.status === JobStatus.COMPLETED;
       },
       {
@@ -117,6 +120,7 @@ describe("Job Execution Flow", () => {
     const job = await service.enqueue("execution.permanent-failure", {});
     await waitFor(async () => {
       const polledJob = await service.getJob(job._id.toHexString());
+
       return polledJob?.status === JobStatus.FAILED;
     });
     await expect(service.getJob(job._id.toHexString())).resolves.toMatchObject({

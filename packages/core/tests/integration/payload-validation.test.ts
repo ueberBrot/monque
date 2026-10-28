@@ -31,6 +31,7 @@ describe("payload validation", () => {
       collectionName: uniqueCollectionName("validation"),
       maxRetries: 10,
     });
+
     instances.push(monque);
     await monque.initialize();
     const job = await monque.enqueue("send", { email: "invalid" });
@@ -44,6 +45,7 @@ describe("payload validation", () => {
     monque.start();
     await waitFor(async () => {
       const current = await monque.getJob(job._id);
+
       return current?.status === JobStatus.FAILED || current?.status === JobStatus.COMPLETED;
     });
     await monque.stop();
@@ -54,9 +56,11 @@ describe("payload validation", () => {
     expect(handler).not.toHaveBeenCalled();
     expect(failures[0]).toBeInstanceOf(PayloadValidationError);
     const [failure] = failures;
+
     if (!(failure instanceof PayloadValidationError)) {
-      throw new Error("Expected a payload validation failure");
+      throw new TypeError("Expected a payload validation failure");
     }
+
     expect(failure.issues[0]?.path).toStrictEqual(["email"]);
   });
 
@@ -67,16 +71,20 @@ describe("payload validation", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     const received: number[] = [];
+
     const schema = z.object({
       count: z.string().transform(vi.fn<(value: string) => Promise<number>>().mockResolvedValue(3)),
     });
+
     monque.register(
       "work",
       (job) => {
         received.push(job.data.count);
+
         if (received.length === 1) {
           throw new Error("Try again");
         }
@@ -87,6 +95,7 @@ describe("payload validation", () => {
     monque.start();
     await waitFor(async () => {
       const awaitedResult1 = await monque.getJob(job._id);
+
       return awaitedResult1?.status === JobStatus.COMPLETED;
     });
     expect(received).toStrictEqual([3, 3]);
@@ -102,9 +111,11 @@ describe("payload validation", () => {
       pollInterval: 20,
       safetyPollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     let attempts = 0;
+
     const schema: StandardSchemaV1 = {
       "~standard": {
         version: 1,
@@ -113,16 +124,19 @@ describe("payload validation", () => {
           if ((attempts += 1) === 1) {
             throw new Error("Validation service unavailable");
           }
+
           return { value };
         },
       },
     };
+
     const handler = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
     monque.register("work", handler, { schema, maxRetries: 2, baseRetryInterval: 0 });
     const job = await monque.enqueue("work", "input");
     monque.start();
     await waitFor(async () => {
       const awaitedResult2 = await monque.getJob(job._id);
+
       return awaitedResult2?.status === JobStatus.COMPLETED;
     });
     expect(handler).toHaveBeenCalledOnce();

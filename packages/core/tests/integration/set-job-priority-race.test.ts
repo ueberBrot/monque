@@ -11,6 +11,7 @@ import { stopMonqueInstances, uniqueCollectionName, waitFor } from "@test-utils/
 
 describe("priority edits racing with another Scheduler Instance", () => {
   let db: Db;
+
   const blockNextWrite = async (appName: string): Promise<() => Promise<void>> => {
     const response = await db.admin().command({
       configureFailPoint: "failCommand",
@@ -22,7 +23,9 @@ describe("priority edits racing with another Scheduler Instance", () => {
         blockTimeMS: 5000,
       },
     });
+
     const { count } = z.object({ count: z.number() }).parse(response);
+
     return async () => {
       await db.admin().command({
         waitForFailPoint: "failCommand",
@@ -31,21 +34,27 @@ describe("priority edits racing with another Scheduler Instance", () => {
       });
     };
   };
+
   let claimerClient: MongoClient;
   const instances: Monque[] = [];
+
   const createSchedulers = async () => {
     const collectionName = uniqueCollectionName("priority-race");
     const editor = new Monque(db, { collectionName });
+
     const claimer = new Monque(claimerClient.db(db.databaseName), {
       collectionName,
       workerConcurrency: 1,
       heartbeatInterval: 60_000,
     });
+
     instances.push(editor, claimer);
     await editor.initialize();
     await claimer.initialize();
+
     return { editor, claimer };
   };
+
   let container: StartedMongoDBContainer;
   let editorClient: MongoClient;
   beforeAll(async () => {
@@ -90,6 +99,7 @@ describe("priority edits racing with another Scheduler Instance", () => {
     });
     const waitUntilBlocked = await blockNextWrite("priority-claimer");
     claimer.start();
+
     try {
       await waitUntilBlocked();
       const updated = await editor.setJobPriority(promoted._id.toHexString(), 5);
@@ -107,8 +117,10 @@ describe("priority edits racing with another Scheduler Instance", () => {
     } finally {
       release.resolve();
     }
+
     await waitFor(async () => {
       const awaitedResult1 = await editor.getJob(routine._id);
+
       return awaitedResult1?.status === "completed";
     });
     expect(received.map((job) => job.data)).toStrictEqual(["promoted", "routine"]);
@@ -127,9 +139,11 @@ describe("priority edits racing with another Scheduler Instance", () => {
     });
     const waitUntilBlocked = await blockNextWrite("priority-editor");
     let editSettled = false;
+
     const edit = editor.setJobPriority(job._id.toHexString(), -9).then(
       (value) => {
         editSettled = true;
+
         return { value };
       },
       // oxlint-disable-next-line promise/prefer-await-to-callbacks, anti-slop/no-unknown-parameters -- Record settlement immediately and narrow the native Promise rejection while the server failpoint holds the edit.
@@ -137,10 +151,13 @@ describe("priority edits racing with another Scheduler Instance", () => {
         if (!(error instanceof Error)) {
           throw error;
         }
+
         editSettled = true;
+
         return { error };
       },
     );
+
     try {
       // This server barrier is after any preliminary read but before the write:
       // checking pending first and then updating unconditionally cannot pass.
@@ -156,9 +173,11 @@ describe("priority edits racing with another Scheduler Instance", () => {
         claimId: claimed?.claimId,
       });
       const outcome = await edit;
+
       if (!("error" in outcome)) {
         throw new Error("Expected a rejected priority edit");
       }
+
       expect(outcome.error).toBeInstanceOf(JobStateError);
       await expect(editor.getJob(job._id)).resolves.toStrictEqual(claimed);
       expect(running).toMatchObject({ priority: 3, status: "processing" });
@@ -166,8 +185,10 @@ describe("priority edits racing with another Scheduler Instance", () => {
       release.resolve();
       await edit;
     }
+
     await waitFor(async () => {
       const awaitedResult3 = await editor.getJob(job._id);
+
       return awaitedResult3?.status === "completed";
     });
     const awaitedResult4 = await editor.getJob(job._id);

@@ -35,6 +35,7 @@ describe("Stale Job Recovery", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -80,13 +81,16 @@ describe("Stale Job Recovery", () => {
     });
     monqueInstances.push(monque);
     await monque.initialize();
+
     // Check jobs
     const staleJob = await findJobByQuery<{
       id: number;
     }>(collection, { "data.id": 1 });
+
     const freshJob = await findJobByQuery<{
       id: number;
     }>(collection, { "data.id": 2 });
+
     // Stale job should be reset to pending
     expect(staleJob).not.toBeNull();
     expect({
@@ -126,10 +130,12 @@ describe("Stale Job Recovery", () => {
     });
     monqueInstances.push(monque);
     await monque.initialize();
+
     // Check job
     const staleJob = await findJobByQuery<{
       id: number;
     }>(collection, { "data.id": 1 });
+
     // Stale job should remain processing
     expect(staleJob).not.toBeNull();
     expect(staleJob?.status).toBe(JobStatus.PROCESSING);
@@ -172,13 +178,16 @@ describe("Stale Job Recovery", () => {
     });
     monqueInstances.push(monque);
     await monque.initialize();
+
     // Check jobs
     const staleJob = await findJobByQuery<{
       id: number;
     }>(collection, { "data.id": 1 });
+
     const notStaleJob = await findJobByQuery<{
       id: number;
     }>(collection, { "data.id": 2 });
+
     // Stale job should be reset
     // Not stale job should remain processing
     expect({

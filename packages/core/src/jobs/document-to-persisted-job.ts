@@ -14,6 +14,7 @@ const OPTIONAL_JOB_FIELDS = [
   "timezone",
   "uniqueKey",
 ] as const satisfies readonly (keyof PersistedJob)[];
+
 type OptionalJobField = (typeof OPTIONAL_JOB_FIELDS)[number];
 
 const copyOptionalField = <T, K extends OptionalJobField>(
@@ -41,6 +42,7 @@ export const documentToPersistedJob = <T = unknown>(doc: WithId<Document>): Pers
   // This projection preserves legacy stored values instead of adding validation here.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The MongoDB Document boundary erases the persisted job and generic payload types.
   const source = doc as PersistedJob<T>;
+
   const job: PersistedJob<T> = {
     _id: source._id,
     name: source.name,
@@ -52,11 +54,13 @@ export const documentToPersistedJob = <T = unknown>(doc: WithId<Document>): Pers
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
   };
+
   // Only set optional properties if they exist
   for (const field of OPTIONAL_JOB_FIELDS) {
     if (source[field] !== undefined) {
       copyOptionalField(job, field, source[field]);
     }
   }
+
   return job;
 };

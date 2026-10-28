@@ -56,12 +56,14 @@ describe("Timezone scheduling through Ts.ED", () => {
 
   it("forwards service schedule timezone options and returns saved metadata", async () => {
     const service = PlatformTest.get<MonqueService>(MonqueService);
+
     const job = await service.schedule(
       "0 9 * * *",
       "service-report",
       {},
       { timezone: "Europe/Berlin", priority: -9 },
     );
+
     await expect(service.getJob(job._id)).resolves.toMatchObject({
       timezone: "Europe/Berlin",
       priority: -9,

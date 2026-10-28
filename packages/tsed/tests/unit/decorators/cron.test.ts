@@ -72,6 +72,7 @@ describe("@Cron", () => {
     // Mock existing store
     // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class TestTarget {}
+
     const store = Store.from(TestTarget);
     store.set(MONQUE, {
       type: "controller",
@@ -94,6 +95,7 @@ describe("@Cron", () => {
   it("should handle missing cronJobs array in existing store", () => {
     // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class TestClass {}
+
     const store = Store.from(TestClass);
     // Seed store with partial object missing 'cronJobs'
     store.set(MONQUE, { type: "controller" });

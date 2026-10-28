@@ -28,6 +28,7 @@ import {
 import { JobFactoryHelpers } from "@tests/factories/job.factory.js";
 
 import { requireValue } from "./helpers";
+
 // removed calculateBackoffDelay import
 describe("Retry Logic", () => {
   let db: Db;
@@ -40,6 +41,7 @@ describe("Retry Logic", () => {
 
   afterEach(async () => {
     await stopMonqueInstances(monqueInstances);
+
     if (collectionName) {
       await clearCollection(db, collectionName);
     }
@@ -71,6 +73,7 @@ describe("Retry Logic", () => {
         test: boolean;
       }>(TEST_CONSTANTS.JOB_NAME, () => {
         callCount += 1;
+
         if (callCount === 1) {
           failureTime = Date.now();
           throw new Error("First attempt fails");
@@ -81,6 +84,7 @@ describe("Retry Logic", () => {
       // Wait for the job to fail and be rescheduled
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
         return doc !== null && doc.failCount === 1;
       });
       // Stop the scheduler to prevent retry processing
@@ -127,6 +131,7 @@ describe("Retry Logic", () => {
       });
       // Insert a job that already has failCount=1
       const collection = db.collection<Job>(collectionName);
+
       const result = await collection.insertOne(
         JobFactoryHelpers.withData(
           { test: true },
@@ -136,12 +141,14 @@ describe("Retry Logic", () => {
           },
         ),
       );
+
       monque.start();
       // Wait for the job to fail again
       await waitFor(async () => {
         const doc = await collection.findOne({
           _id: result.insertedId,
         });
+
         return doc !== null && doc.failCount === 2;
       });
       await monque.stop();
@@ -186,6 +193,7 @@ describe("Retry Logic", () => {
       monque.start();
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
         return doc !== null && doc.failCount === 1;
       });
       await monque.stop();
@@ -219,6 +227,7 @@ describe("Retry Logic", () => {
       // Wait for first failure
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
         return doc !== null && doc.failCount === 1;
       });
       await monque.stop();
@@ -244,6 +253,7 @@ describe("Retry Logic", () => {
       monque.start();
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
         return doc !== null && doc.failCount === 1;
       });
       await monque.stop();
@@ -298,18 +308,22 @@ describe("Retry Logic", () => {
         if (job.data.type === "sync") {
           throw new Error("Sync error");
         }
+
         throw new Error("Async error");
       });
       const syncJob = await monque.enqueue(TEST_CONSTANTS.JOB_NAME, { type: "sync" });
       monque.start();
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: syncJob._id });
+
         return doc !== null && doc.failCount === 1;
       });
       await monque.stop();
+
       const syncDoc = requireValue(
         await db.collection<Job>(collectionName).findOne({ _id: syncJob._id }),
       );
+
       expect({
         syncDocFailCount: syncDoc.failCount,
         syncDocFailReason: syncDoc.failReason,
@@ -339,6 +353,7 @@ describe("Retry Logic", () => {
       monque.start();
       await waitFor(async () => {
         const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
         return doc !== null && doc.failCount === 1;
       });
       await monque.stop();
@@ -376,6 +391,7 @@ describe("Retry Logic", () => {
       await waitFor(
         async () => {
           const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
           return doc !== null && doc.status === JobStatus.FAILED;
         },
         { timeout: 5000 },
@@ -416,6 +432,7 @@ describe("Retry Logic", () => {
       await waitFor(
         async () => {
           const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
           return doc !== null && doc.status === JobStatus.FAILED;
         },
         { timeout: 5000 },
@@ -470,11 +487,13 @@ describe("Retry Logic", () => {
       });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const jobData = {
         userId: "user-123",
         action: "important-action",
         metadata: { key: "value" },
       };
+
       monque.register<typeof jobData>(TEST_CONSTANTS.JOB_NAME, () => {
         throw new Error("Failure");
       });
@@ -483,6 +502,7 @@ describe("Retry Logic", () => {
       await waitFor(
         async () => {
           const doc = await db.collection<Job>(collectionName).findOne({ _id: job._id });
+
           return doc !== null && doc.status === JobStatus.FAILED;
         },
         { timeout: 5000 },
@@ -509,11 +529,13 @@ describe("Retry Logic", () => {
       });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const failEvents: {
         job: Job;
         error: Error;
         willRetry: boolean;
       }[] = [];
+
       monque.on("job:fail", (event) => {
         failEvents.push(event);
       });
@@ -528,9 +550,11 @@ describe("Retry Logic", () => {
       await monque.stop();
       expect(failEvents.length).toBeGreaterThanOrEqual(1);
       const [firstEvent] = failEvents;
+
       if (!firstEvent) {
         throw new Error("Expected failEvents[0] to be defined");
       }
+
       expect({
         firstEventWillRetry: firstEvent.willRetry,
         firstEventErrorMessage: firstEvent.error.message,
@@ -550,11 +574,13 @@ describe("Retry Logic", () => {
       });
       monqueInstances.push(monque);
       await monque.initialize();
+
       const failEvents: {
         job: Job;
         error: Error;
         willRetry: boolean;
       }[] = [];
+
       monque.on("job:fail", (event) => {
         failEvents.push(event);
       });
@@ -575,9 +601,11 @@ describe("Retry Logic", () => {
       await monque.stop();
       // Should have exactly maxRetries fail events
       const finalEvent = failEvents.find((e) => !e.willRetry);
+
       if (!finalEvent) {
         throw new Error("Expected finalEvent to be defined");
       }
+
       expect(finalEvent.willRetry).toBe(false);
     });
   });

@@ -6,6 +6,7 @@ import { ObjectId } from "mongodb";
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
 import { TEST_CONSTANTS } from "@tests/setup/constants.js";
+
 /**
  * Transient parameters for JobFactory.
  * These don't end up in the built object but control factory behavior.
@@ -14,6 +15,7 @@ interface JobTransientParams {
   /** Generate custom data shape instead of default email/userId */
   withData?: object;
 }
+
 /**
  * Factory for creating test Job objects with realistic fake data.
  *
@@ -39,6 +41,7 @@ export const JobFactory = Factory.define<PersistedJob, JobTransientParams>(
       email: faker.internet.email(),
       userId: faker.string.uuid(),
     };
+
     return {
       _id: new ObjectId(faker.database.mongodbObjectId()),
       name: TEST_CONSTANTS.JOB_NAME,
@@ -52,6 +55,7 @@ export const JobFactory = Factory.define<PersistedJob, JobTransientParams>(
     };
   },
 );
+
 /** Convenience builders for common job states */
 export const JobFactoryHelpers = {
   /** Build a job in PENDING state */

@@ -16,19 +16,23 @@ import {
 describe("oRPC Management single Job action routes", () => {
   it("cancels one Job through public core API with target authorization", async () => {
     const jobId = new ObjectId();
+
     const target = createManagementJob({
       _id: jobId,
       repeatInterval: "0 9 * * *",
       timezone: "Europe/Berlin",
     });
+
     const cancelled = createManagementJob({
       ...target,
       _id: jobId,
       status: "cancelled",
       updatedAt: new Date("2026-01-01T00:02:00.000Z"),
     });
+
     const coreCalls: string[] = [];
     const authorizeCalls: unknown[] = [];
+
     const surface = createManagementSurface<{ userId: string }>({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -40,6 +44,7 @@ describe("oRPC Management single Job action routes", () => {
       }),
       authorize: ({ action, context, job }) => {
         authorizeCalls.push({ action, context, job });
+
         return true;
       },
     });
@@ -82,6 +87,7 @@ describe("oRPC Management single Job action routes", () => {
     "manually retries a failed Job with %i failures through public core API",
     async (failCount) => {
       const jobId = new ObjectId();
+
       const target = createManagementJob({
         _id: jobId,
         status: "failed",
@@ -89,13 +95,16 @@ describe("oRPC Management single Job action routes", () => {
         failReason: "Account no longer exists",
         updatedAt: new Date("2026-01-01T00:02:00.000Z"),
       });
+
       const retried = createManagementJob({
         _id: jobId,
         status: "pending",
         failCount: 0,
         updatedAt: new Date("2026-01-01T00:03:00.000Z"),
       });
+
       const coreCalls: string[] = [];
+
       const surface = createManagementSurface({
         monque: createManagementMonque({
           getJob: getManagementJobById(target),
@@ -130,6 +139,7 @@ describe("oRPC Management single Job action routes", () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "failed" });
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -154,6 +164,7 @@ describe("oRPC Management single Job action routes", () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -176,6 +187,7 @@ describe("oRPC Management single Job action routes", () => {
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
     let deleted = false;
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: async (id) => {
@@ -206,6 +218,7 @@ describe("oRPC Management single Job action routes", () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId, status: "completed" });
     const coreCalls: string[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -226,12 +239,15 @@ describe("oRPC Management single Job action routes", () => {
   it("reschedules one Job with an ISO date DTO mapped to core Date", async () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId });
+
     const rescheduled = createManagementJob({
       _id: jobId,
       nextRunAt: new Date("2026-02-01T10:30:00.000Z"),
       updatedAt: new Date("2026-01-01T00:04:00.000Z"),
     });
+
     const coreCalls: { id: string; runAt: Date }[] = [];
+
     const surface = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -270,6 +286,7 @@ describe("oRPC Management single Job action routes", () => {
     const jobId = new ObjectId();
     const target = createManagementJob({ _id: jobId });
     const coreCalls: string[] = [];
+
     const readOnly = createManagementSurface({
       monque: createManagementMonque({
         cancelJob: async () => {
@@ -280,9 +297,11 @@ describe("oRPC Management single Job action routes", () => {
       }),
       readOnly: true,
     });
+
     const unsupported = createManagementSurface({
       monque: createManagementMonque(),
     });
+
     const denied = createManagementSurface<{ role: string }>({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -302,6 +321,7 @@ describe("oRPC Management single Job action routes", () => {
         return false;
       },
     });
+
     const validatesBeforeCore = createManagementSurface({
       monque: createManagementMonque({
         getJob: async () => {
@@ -321,6 +341,7 @@ describe("oRPC Management single Job action routes", () => {
         },
       }),
     });
+
     const missing = createManagementSurface({
       monque: createManagementMonque({
         getJob: vi.fn<NonNullable<ManagementMonque["getJob"]>>().mockResolvedValue(null),
@@ -331,6 +352,7 @@ describe("oRPC Management single Job action routes", () => {
         },
       }),
     });
+
     const conflict = createManagementSurface({
       monque: createManagementMonque({
         getJob: getManagementJobById(target),
@@ -352,29 +374,35 @@ describe("oRPC Management single Job action routes", () => {
       readOnly,
       `/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
     );
+
     const unsupportedResponse = await handleManagementPost(
       unsupported,
       `/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
     );
+
     const deniedResponse = await handleManagementPost(
       denied,
       `/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
       undefined,
       { managementContext: { role: "viewer" } },
     );
+
     const invalidId = await handleManagementPost(
       validatesBeforeCore,
       "/api/v1/jobs/not-an-object-id/actions/cancel",
     );
+
     const invalidRescheduleBody = await handleManagementPost(
       validatesBeforeCore,
       `/api/v1/jobs/${jobId.toHexString()}/actions/reschedule`,
       { nextRunAt: "February 1, 2026 10:30:00" },
     );
+
     const missingResponse = await handleManagementPost(
       missing,
       `/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,
     );
+
     const conflictResponse = await handleManagementPost(
       conflict,
       `/api/v1/jobs/${jobId.toHexString()}/actions/cancel`,

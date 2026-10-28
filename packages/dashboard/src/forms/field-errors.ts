@@ -6,11 +6,14 @@ export const getFieldErrors = (errors: readonly unknown[]): string | undefined =
       if (isString(issue)) {
         return [issue];
       }
+
       if (issue !== null && isObject(issue) && "message" in issue && isString(issue.message)) {
         return [issue.message];
       }
+
       return [];
     })
     .filter(Boolean);
+
   return messages.length > 0 ? messages.join(", ") : undefined;
 };

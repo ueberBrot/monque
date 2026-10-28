@@ -8,6 +8,11 @@ import type {
 
 import { isString } from "../../../../packages/dashboard/src/lib/type-guards.js";
 
+const emailJobName = "send-email";
+const billingJobName = "sync-billing";
+const webhookJobName = "dispatch-webhook";
+const searchJobName = "rebuild-search";
+
 const dashboardDevScenarioIds = [
   "empty-state",
   "pending-jobs",
@@ -19,7 +24,9 @@ const dashboardDevScenarioIds = [
   "api-error",
   "mutation-conflict",
 ] as const;
+
 type DashboardDevScenarioId = (typeof dashboardDevScenarioIds)[number];
+
 interface DashboardDevScenario {
   readonly id: DashboardDevScenarioId;
   readonly label: string;
@@ -33,10 +40,12 @@ interface DashboardDevScenario {
   readonly apiError?: string;
   readonly mutationConflict?: boolean;
 }
+
 const isDashboardDevScenarioId = (
   value: string | null | undefined,
 ): value is DashboardDevScenarioId =>
   isString(value) && dashboardDevScenarioIds.some((scenarioId) => scenarioId === value);
+
 const createScenarioCapabilities = ({
   readOnly,
 }: {
@@ -57,6 +66,7 @@ const createScenarioCapabilities = ({
     resume: !readOnly,
   },
 });
+
 const createQueueStats = (jobs: readonly JobDto[]): QueueStatsDto => {
   const counts: Pick<QueueStatsDto, JobDto["status"]> = {
     pending: 0,
@@ -65,32 +75,38 @@ const createQueueStats = (jobs: readonly JobDto[]): QueueStatsDto => {
     failed: 0,
     cancelled: 0,
   };
+
   for (const { status } of jobs) {
     if (Object.hasOwn(counts, status)) {
       counts[status] += 1;
     }
   }
+
   return {
     ...counts,
     total: jobs.length,
     avgProcessingDurationMs: counts.processing > 0 ? 42_000 : undefined,
   };
 };
+
 const buildQueueViews = (
   jobs: readonly JobDto[],
   workerNames: readonly string[],
 ): readonly QueueViewSummaryDto[] => {
   const registeredWorkers = new Set(workerNames);
   const queueNames = new Set(registeredWorkers);
+
   for (const job of jobs) {
     queueNames.add(job.name);
   }
+
   return [...queueNames]
     .toSorted((left, right) => left.localeCompare(right))
     .map((name, index) => {
       const queueJobs = jobs.filter((job) => job.name === name);
       const stats = createQueueStats(queueJobs);
       const hasRegisteredWorker = registeredWorkers.has(name);
+
       return {
         name,
         hasPersistedJobs: queueJobs.length > 0,
@@ -110,6 +126,7 @@ const buildQueueViews = (
       };
     });
 };
+
 const createScenario = (options: {
   readonly id: DashboardDevScenarioId;
   readonly label: string;
@@ -131,19 +148,22 @@ const createScenario = (options: {
   jobs: options.jobs,
   queueViews: buildQueueViews(options.jobs, options.workerNames ?? []),
 });
+
 const createMulberry32 = (seed: number): (() => number) => {
   let current = seed;
+
   return () => {
     /* oxlint-disable eslint/no-bitwise, unicorn/prefer-math-trunc -- Mulberry32 uses exact signed 32-bit wrapping, XOR, and unsigned shifts. */
     current |= 0;
     current = (current + 1_831_565_813) | 0;
     let mixed = Math.imul(current ^ (current >>> 15), current | 1);
     mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
-    const value = ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
+
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
     /* oxlint-enable eslint/no-bitwise, unicorn/prefer-math-trunc */
-    return value;
   };
 };
+
 const createGeneratedJobs = (options: {
   readonly seed: number;
   readonly count: number;
@@ -153,9 +173,10 @@ const createGeneratedJobs = (options: {
   const random = createMulberry32(options.seed);
   const baseTime = Date.parse("2026-06-01T08:00:00.000Z");
   const jobs: JobDto[] = [];
+
   for (let index = 0; index < options.count; index += 1) {
     const status = options.statuses[index % options.statuses.length] ?? "pending";
-    const name = options.queueNames[index % options.queueNames.length] ?? "send-email";
+    const name = options.queueNames[index % options.queueNames.length] ?? emailJobName;
     const createdAt = new Date(baseTime - index * 3_600_000 - Math.floor(random() * 900_000));
     const updatedAt = new Date(createdAt.getTime() + 60_000 + Math.floor(random() * 120_000));
     const nextRunAt = new Date(baseTime + index * 90_000 + Math.floor(random() * 45_000));
@@ -186,8 +207,10 @@ const createGeneratedJobs = (options: {
       updatedAt: updatedAt.toISOString(),
     });
   }
+
   return jobs;
 };
+
 const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
   createScenario({
     id: "empty-state",
@@ -202,10 +225,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
     jobs: createGeneratedJobs({
       seed: 46_001,
       count: 24,
-      queueNames: ["send-email", "sync-billing", "dispatch-webhook"],
+      queueNames: [emailJobName, billingJobName, webhookJobName],
       statuses: ["pending", "pending", "pending", "processing", "completed"],
     }),
-    workerNames: ["send-email", "sync-billing"],
+    workerNames: [emailJobName, billingJobName],
   }),
   createScenario({
     id: "failed-jobs",
@@ -214,10 +237,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
     jobs: createGeneratedJobs({
       seed: 46_002,
       count: 18,
-      queueNames: ["rebuild-search", "dispatch-webhook", "sync-billing"],
+      queueNames: [searchJobName, webhookJobName, billingJobName],
       statuses: ["failed", "failed", "failed", "pending", "completed"],
     }),
-    workerNames: ["rebuild-search"],
+    workerNames: [searchJobName],
   }),
   createScenario({
     id: "large-dataset",
@@ -227,16 +250,16 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       seed: 46_003,
       count: 180,
       queueNames: [
-        "send-email",
-        "sync-billing",
-        "dispatch-webhook",
-        "rebuild-search",
+        emailJobName,
+        billingJobName,
+        webhookJobName,
+        searchJobName,
         "expire-tokens",
         "settle-invoices",
       ],
       statuses: ["pending", "processing", "completed", "failed", "cancelled"],
     }),
-    workerNames: ["send-email", "sync-billing", "dispatch-webhook", "rebuild-search"],
+    workerNames: [emailJobName, billingJobName, webhookJobName, searchJobName],
   }),
   {
     ...createScenario({
@@ -246,10 +269,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       jobs: createGeneratedJobs({
         seed: 46_004,
         count: 8,
-        queueNames: ["send-email", "sync-billing"],
+        queueNames: [emailJobName, billingJobName],
         statuses: ["pending", "failed"],
       }),
-      workerNames: ["send-email"],
+      workerNames: [emailJobName],
     }),
     unauthorized: true,
   },
@@ -261,10 +284,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       jobs: createGeneratedJobs({
         seed: 46_006,
         count: 8,
-        queueNames: ["send-email", "sync-billing"],
+        queueNames: [emailJobName, billingJobName],
         statuses: ["pending", "failed"],
       }),
-      workerNames: ["send-email"],
+      workerNames: [emailJobName],
     }),
     forbidden: true,
   },
@@ -276,10 +299,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       jobs: createGeneratedJobs({
         seed: 46_007,
         count: 10,
-        queueNames: ["dispatch-webhook", "sync-billing"],
+        queueNames: [webhookJobName, billingJobName],
         statuses: ["pending", "processing", "completed"],
       }),
-      workerNames: ["dispatch-webhook"],
+      workerNames: [webhookJobName],
     }),
     capabilities: createScenarioCapabilities({ readOnly: true }),
   },
@@ -291,10 +314,10 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       jobs: createGeneratedJobs({
         seed: 46_008,
         count: 6,
-        queueNames: ["send-email"],
+        queueNames: [emailJobName],
         statuses: ["pending", "failed"],
       }),
-      workerNames: ["send-email"],
+      workerNames: [emailJobName],
     }),
     apiError: "Management API unavailable for the current dashboard scenario.",
   },
@@ -306,18 +329,20 @@ const getDashboardDevScenarioCatalog = (): readonly DashboardDevScenario[] => [
       jobs: createGeneratedJobs({
         seed: 46_005,
         count: 14,
-        queueNames: ["dispatch-webhook", "rebuild-search", "sync-billing"],
+        queueNames: [webhookJobName, searchJobName, billingJobName],
         statuses: ["failed", "pending", "processing", "completed"],
       }),
-      workerNames: ["dispatch-webhook", "sync-billing"],
+      workerNames: [webhookJobName, billingJobName],
     }),
     mutationConflict: true,
   },
 ];
+
 const getDashboardDevScenario = (
   scenarioId: DashboardDevScenarioId,
 ): DashboardDevScenario | undefined =>
   getDashboardDevScenarioCatalog().find((scenario) => scenario.id === scenarioId);
+
 export {
   createQueueStats,
   type DashboardDevScenario,

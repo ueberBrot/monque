@@ -18,12 +18,14 @@ class EmailJobs {
   @MonqueJob("send")
   sendEmail(job: Job<{ to: string }>) {
     this.processed.push(job.data.to);
+
     return { sent: true };
   }
 
   @MonqueJob("welcome", { concurrency: 5 })
   sendWelcome(job: Job<{ userId: string }>) {
     this.processed.push(`welcome:${job.data.userId}`);
+
     return "welcome";
   }
 }
@@ -104,6 +106,7 @@ describe("Job Registration Integration", () => {
       await waitFor(
         async () => {
           const persistedJob = await monqueService.getJob(job._id.toString());
+
           return persistedJob?.status === JobStatus.FAILED;
         },
         { timeout: 10_000 },
@@ -119,6 +122,7 @@ describe("Job Registration Integration", () => {
   describe("Lifecycle Integration", () => {
     it("should wait for active jobs during stop()", async () => {
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
+
       try {
         @JobController("lifecycle")
         class LifecycleJob {
@@ -151,9 +155,12 @@ describe("Job Registration Integration", () => {
         const streamClosed: PromiseWithResolvers<void> = Promise.withResolvers();
         monqueService.monque.once("changestream:closed", streamClosed.resolve);
         let stopped = false;
+
+        // oxlint-disable-next-line promise/always-return -- Observe Promise<void> completion in this reaction; the chain is awaited below.
         const stopping = monqueService.monque.stop().then(() => {
           stopped = true;
         });
+
         await streamClosed.promise;
         await setImmediate();
         expect(stopped).toBe(false);

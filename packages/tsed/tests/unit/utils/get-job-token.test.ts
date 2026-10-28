@@ -10,6 +10,7 @@ describe(getJobToken, () => {
   it("should return a unique symbol based on class name", () => {
     // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class TestJob {}
+
     const token = getJobToken(TestJob);
 
     expect(token).toBeTypeOf("symbol");
@@ -24,6 +25,7 @@ describe(getJobToken, () => {
   it("should return the same symbol for the same class", () => {
     // oxlint-disable-next-line typescript/no-extraneous-class -- TsED metadata and DI tokens require a distinct constructor.
     class SameJob {}
+
     const token1 = getJobToken(SameJob);
     const token2 = getJobToken(SameJob);
 

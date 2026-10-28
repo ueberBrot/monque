@@ -99,6 +99,7 @@ describe("recurring schedule timezones", () => {
       await worker.initialize();
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date(now));
+
       const job = await producer.schedule(
         cron,
         "daily-report",
@@ -107,6 +108,7 @@ describe("recurring schedule timezones", () => {
           timezone: "Europe/Berlin",
         },
       );
+
       const handled = vi.fn<() => void>();
       worker.register("daily-report", handled);
       const completedResult: PromiseWithResolvers<void> = Promise.withResolvers();
@@ -147,6 +149,7 @@ describe("recurring schedule timezones", () => {
       collectionName: uniqueCollectionName("timezone"),
       pollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -172,6 +175,7 @@ describe("recurring schedule timezones", () => {
     const monque = new Monque(db, { collectionName: uniqueCollectionName("timezone") });
     instances.push(monque);
     await monque.initialize();
+
     const original = await monque.schedule(
       "0 9 * * *",
       "daily-report",
@@ -181,6 +185,7 @@ describe("recurring schedule timezones", () => {
         uniqueKey: "daily-report",
       },
     );
+
     const duplicate = await monque.schedule(
       "0 10 * * *",
       "daily-report",
@@ -190,6 +195,7 @@ describe("recurring schedule timezones", () => {
         uniqueKey: "daily-report",
       },
     );
+
     expect(duplicate).toStrictEqual(original);
     await expect(monque.getJob(original._id)).resolves.toStrictEqual(original);
   });
@@ -199,19 +205,23 @@ describe("recurring schedule timezones", () => {
       collectionName: uniqueCollectionName("timezone"),
       pollInterval: 20,
     });
+
     instances.push(monque);
     await monque.initialize();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-03-28T00:00:00Z"));
+
     const job = await monque.schedule(
       "0 9 * * *",
       "daily-report",
       {},
       { timezone: "Europe/Berlin" },
     );
+
     let attempts = 0;
     monque.register("daily-report", () => {
       attempts += 1;
+
       if (attempts === 1) {
         throw new Error("Temporary failure");
       }
@@ -231,9 +241,11 @@ describe("recurring schedule timezones", () => {
     await failed;
     const retry = await monque.getJob(job._id);
     expect(retry).toMatchObject({ timezone: "Europe/Berlin", failCount: 1, status: "pending" });
+
     if (!retry) {
       throw new Error("Expected the recurring job to remain available for retry");
     }
+
     vi.setSystemTime(retry.nextRunAt);
     await completed;
     expect(attempts).toBe(2);

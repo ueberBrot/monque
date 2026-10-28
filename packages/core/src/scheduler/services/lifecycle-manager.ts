@@ -1,12 +1,5 @@
-import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
+import { Cause, Clock, Effect, Exit, Fiber, Schedule, Scope, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
-import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as Fiber from "effect/Fiber";
-import * as Schedule from "effect/Schedule";
-import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import type { DeleteResult } from "mongodb";
 
 import { JobStatus } from "@/jobs";
@@ -21,18 +14,22 @@ const monotonicFixed = (interval: number): Schedule.Schedule<number> =>
     Effect.gen(function* advanceMonotonicInterval() {
       const clock = yield* Clock.Clock;
       const step = yield* Schedule.toStep(Schedule.fixed(interval));
+
       return (_now: number, input: Parameters<typeof step>[1]) =>
         step(Number(clock.monotonicTimeNanosUnsafe()) / 1_000_000, input);
     }),
   );
+
 /**
  * Default retention check interval (1 hour).
  */
 const DEFAULT_RETENTION_INTERVAL = 3_600_000;
+
 /**
  * Statuses covered by the completed/failed retention index.
  */
 export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const;
+
 interface LifecycleTimers {
   heartbeat: Scope.Closeable | null;
   cleanup: Scope.Closeable | null;
@@ -70,14 +67,17 @@ export class LifecycleManager {
    */
   startTimers(): void {
     this.stopTimers();
+
     // Start heartbeat interval for claimed jobs
     const heartbeat = Effect.gen({ self: this }, function* runHeartbeatSchedule() {
       if (this.heartbeatRunning) {
         return;
       }
+
       this.heartbeatRunning = true;
       yield* Effect.gen({ self: this }, function* refreshOwnedHeartbeats() {
         yield* this.lifecycle.updateOwnedHeartbeats();
+
         if (
           this.ctx.isRunning() &&
           this.ctx.options.leaseDuration !== undefined &&
@@ -98,6 +98,7 @@ export class LifecycleManager {
         ),
       );
     });
+
     const heartbeatScope = Scope.makeUnsafe();
     this.timers = { heartbeat: heartbeatScope, cleanup: null };
     Fiber.runIn(
@@ -114,9 +115,11 @@ export class LifecycleManager {
       ),
       heartbeatScope,
     );
+
     // Start cleanup interval if retention is configured
     if (this.ctx.options.jobRetention) {
       const interval = this.ctx.options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL;
+
       const cleanup = this.cleanupJobs().pipe(
         Effect.catchCause((cause) =>
           Effect.sync(() => {
@@ -124,6 +127,7 @@ export class LifecycleManager {
           }),
         ),
       );
+
       // Run immediately on start
       const cleanupScope = Scope.makeUnsafe();
       this.timers = { heartbeat: heartbeatScope, cleanup: cleanupScope };
@@ -150,9 +154,11 @@ export class LifecycleManager {
       heartbeat: keepHeartbeat ? timers.heartbeat : null,
       cleanup: null,
     };
+
     if (timers.cleanup) {
       this.runFork(Scope.close(timers.cleanup, Exit.void));
     }
+
     if (timers.heartbeat && !keepHeartbeat) {
       this.runFork(Scope.close(timers.heartbeat, Exit.void));
     }
@@ -167,13 +173,17 @@ export class LifecycleManager {
     if (!this.ctx.options.jobRetention) {
       return;
     }
+
     const now = yield* Clock.currentTimeMillis;
     const deletions: Effect.Effect<DeleteResult, unknown>[] = [];
+
     for (const status of [...CLEANUP_STATUSES, JobStatus.CANCELLED]) {
       const age = this.ctx.options.jobRetention[status];
+
       if (age === null || age === undefined) {
         continue;
       }
+
       deletions.push(
         fromPromise(
           async () =>
@@ -184,10 +194,12 @@ export class LifecycleManager {
         ),
       );
     }
+
     if (deletions.length > 0 && (yield* this.cleanupPermit.takeIfAvailable(1))) {
       const fibers = yield* forEachEffect(deletions, (deletion) =>
         Effect.forkDetach(deletion, { startImmediately: true, uninterruptible: true }),
       );
+
       yield* Effect.forkDetach(
         Fiber.awaitAll(fibers).pipe(Effect.andThen(this.cleanupPermit.release(1))),
         { startImmediately: true, uninterruptible: true },

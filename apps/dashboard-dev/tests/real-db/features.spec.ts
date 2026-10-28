@@ -2,6 +2,7 @@ import { setTimeout } from "node:timers/promises";
 
 import { forEachSequential } from "../setup/sequential.js";
 import { expect, test } from "./fixture.js";
+
 // Run the same real-data workflows anonymously and after host login, on both viewport sizes.
 test("queue overview and detail counts match mixed persisted states and live mutations", async ({
   page,
@@ -30,9 +31,11 @@ test("queue overview and detail counts match mixed persisted states and live mut
     },
   );
   const pending = jobs.find((job) => job.name === "email" && job.status === "pending");
+
   if (!pending) {
     throw new Error("Mixed scenario missing pending email");
   }
+
   await app.monque.cancelJob(pending._id.toHexString());
   await expect(
     page.getByText("Pending", { exact: true }).first().locator("../..").locator("p"),
@@ -41,6 +44,7 @@ test("queue overview and detail counts match mixed persisted states and live mut
   await expect(page.getByLabel("Job name", { exact: true })).toHaveValue("email");
   await expect(page.locator("tbody tr")).toHaveCount(15);
 });
+
 test("health follows scheduler start/stop and shows actual permissions", async ({ page, app }) => {
   await app.seedScenario("mutations");
   await page.goto(`${app.base}/dashboard/health`);
@@ -55,6 +59,7 @@ test("health follows scheduler start/stop and shows actual permissions", async (
   await expect(page.getByRole("heading", { name: "Read-only access" })).toBeVisible();
   await expect(page.getByText("1 of 9 available")).toBeVisible();
 });
+
 for (const field of ["Created", "Updated", "Next run"]) {
   test(`${field} date range controls include boundary values and restore from URL`, async ({
     page,
@@ -84,6 +89,7 @@ for (const field of ["Created", "Updated", "Next run"]) {
     await expect(page.locator("tbody tr")).toHaveCount(5);
   });
 }
+
 test("all sort fields order seeded records; visible headers change sort direction", async ({
   page,
   app,
@@ -92,9 +98,11 @@ test("all sort fields order seeded records; visible headers change sort directio
   const jobs = await app.seedScenario("dates");
   const [first] = jobs;
   const last = jobs.at(-1);
+
   if (!first || !last) {
     throw new Error("Date scenario is empty");
   }
+
   await forEachSequential(
     [
       ["createdAt", "Created time"],
@@ -118,6 +126,7 @@ test("all sort fields order seeded records; visible headers change sort directio
     },
   );
 });
+
 test("page sizes, previous page, and changing filters clear stale selection", async ({
   page,
   app,
@@ -144,24 +153,31 @@ test("page sizes, previous page, and changing filters clear stale selection", as
   await expect(page.getByRole("heading", { name: "No jobs found" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete selected jobs" })).toHaveCount(0);
 });
+
 test("row menus cancel, retry, reschedule and delete persisted jobs", async ({ page, app }) => {
   const jobs = await app.seedScenario("mutations");
   const target = jobs.at(-1);
+
   if (!target) {
     throw new Error("Mutation scenario is empty");
   }
+
   await page.goto(`${app.base}/dashboard/jobs`);
+
   const row = page
     .locator("tbody tr")
     .filter({ has: page.locator(`a[href*="${String(target._id)}"]`) });
+
   const menu = async () => {
     await Promise.resolve(row.getByRole("button", { name: /^Actions for/u }).click());
   };
+
   await menu();
   await page.getByRole("menuitem", { name: "Cancel job", exact: true }).click();
   await expect
     .poll(async () => {
       const awaitedResult1 = await app.jobs.findOne({ _id: target._id });
+
       return awaitedResult1?.status;
     })
     .toBe("cancelled");
@@ -170,6 +186,7 @@ test("row menus cancel, retry, reschedule and delete persisted jobs", async ({ p
   await expect
     .poll(async () => {
       const awaitedResult2 = await app.jobs.findOne({ _id: target._id });
+
       return awaitedResult2?.status;
     })
     .toBe("pending");
@@ -183,6 +200,7 @@ test("row menus cancel, retry, reschedule and delete persisted jobs", async ({ p
   await expect
     .poll(async () => {
       const awaitedResult3 = await app.jobs.findOne({ _id: target._id });
+
       return awaitedResult3?.nextRunAt.toISOString();
     })
     .toBe("2035-01-02T11:00:00.000Z");
@@ -192,15 +210,18 @@ test("row menus cancel, retry, reschedule and delete persisted jobs", async ({ p
   await expect(row).toHaveCount(0);
   expect(await app.jobs.countDocuments()).toBe(11);
 });
+
 test("bulk retry and reschedule operate on several selected records", async ({ page, app }) => {
   const jobs = await app.seedScenario("mutations");
   const failed = jobs.filter((job) => job.status === "failed");
   const selected = failed.slice(0, 3);
   const selectedIds = selected.map((job) => job._id);
+
   const untouched = await app.jobs
     .find({ _id: { $nin: selectedIds } })
     .sort({ _id: 1 })
     .toArray();
+
   await page.goto(`${app.base}/dashboard/jobs?status=failed`);
   await forEachSequential(selected, async (job) => {
     await page
@@ -251,6 +272,7 @@ test("bulk retry and reschedule operate on several selected records", async ({ p
       .toArray(),
   ).toEqual(untouched);
 });
+
 test("clipboard controls copy persisted payload, ID, and mounted share URL", async ({
   page,
   app,
@@ -258,13 +280,17 @@ test("clipboard controls copy persisted payload, ID, and mounted share URL", asy
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const jobs = await app.seedScenario("mixed");
+
   const job = jobs.find((currentJob1) => {
     const repeats = Boolean(currentJob1.repeatInterval);
+
     return currentJob1.name === "email" && repeats;
   });
+
   if (!job) {
     throw new Error("Mixed scenario missing recurring job");
   }
+
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
   await expect(page.getByText("*/5 * * * *", { exact: true }).first()).toBeVisible();
   await forEachSequential(
@@ -290,6 +316,7 @@ test("clipboard controls copy persisted payload, ID, and mounted share URL", asy
     },
   );
 });
+
 for (const clipboardState of ["unavailable", "denied"] as const) {
   test(`copy controls handle ${clipboardState} clipboard access without breaking commands`, async ({
     page,
@@ -326,6 +353,7 @@ for (const clipboardState of ["unavailable", "denied"] as const) {
     await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
   });
 }
+
 test("commands, shortcuts, navigation and themes persist on the real server", async ({
   page,
   app,
@@ -338,13 +366,17 @@ test("commands, shortcuts, navigation and themes persist on the real server", as
   await page.getByRole("combobox", { name: "Search commands" }).fill("Health");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
+
   if (isMobile) {
     await page.getByRole("button", { name: "Open navigation" }).click();
   }
+
   await page.getByRole("link", { name: "Queue Views", exact: true }).click();
+
   if (isMobile) {
     await expect(page.getByRole("dialog", { name: "Dashboard navigation" })).toHaveCount(0);
   }
+
   await expect(page.getByRole("heading", { name: "Queue Views", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Change theme" }).click();
   await page.getByRole("menuitem", { name: "Dark theme", exact: true }).click();
@@ -367,6 +399,7 @@ test("commands, shortcuts, navigation and themes persist on the real server", as
   await page.keyboard.press("ControlOrMeta+Shift+r");
   await expect(page.getByRole("link", { name: /^new-queue/u })).toBeVisible();
 });
+
 test("real retry backoff recovers and records attempts without duplicate effects", async ({
   page,
   app,
@@ -383,6 +416,7 @@ test("real retry backoff recovers and records attempts without duplicate effects
   await expect
     .poll(async () => {
       const awaitedResult4 = await app.monque.getJob(job._id);
+
       return awaitedResult4?.failCount;
     })
     .toBe(1);
@@ -394,6 +428,7 @@ test("real retry backoff recovers and records attempts without duplicate effects
   expect(await app.db.collection("attempts").countDocuments({ jobId: job._id })).toBe(2);
   expect(await app.db.collection("effects").countDocuments({ jobId: job._id })).toBe(1);
 });
+
 test("slow work shows its claim and completes without duplicate execution", async ({
   page,
   app,
@@ -405,6 +440,7 @@ test("slow work shows its claim and completes without duplicate execution", asyn
   await expect
     .poll(async () => {
       const awaitedResult5 = await app.monque.getJob(job._id);
+
       return awaitedResult5?.claimedBy;
     })
     .toBeTruthy();
@@ -414,6 +450,7 @@ test("slow work shows its claim and completes without duplicate execution", asyn
   const awaitedResult6 = await app.monque.getJob(job._id);
   expect(awaitedResult6?.claimedBy).toBeUndefined();
 });
+
 test("recurring work keeps its identity and schedules its next run after execution", async ({
   page,
   app,
@@ -423,6 +460,7 @@ test("recurring work keeps its identity and schedules its next run after executi
     uniqueKey: "annual",
     nextRunAt: new Date(0),
   });
+
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
   await expect(page.getByText("0 0 1 1 *", { exact: true }).first()).toBeVisible();
   app.monque.start();
@@ -435,6 +473,7 @@ test("recurring work keeps its identity and schedules its next run after executi
   await expect
     .poll(async () => {
       const currentJob = await app.monque.getJob(job._id);
+
       return currentJob?.nextRunAt.getTime() ?? 0;
     })
     .toBeGreaterThan(Date.now());
@@ -442,6 +481,7 @@ test("recurring work keeps its identity and schedules its next run after executi
   await expect(page.getByText("Pending", { exact: true })).toBeVisible();
   expect(await app.jobs.countDocuments({ uniqueKey: "annual" })).toBe(1);
 });
+
 test("calendar day selection validates time, discards drafts and clears its filter", async ({
   page,
   app,
@@ -471,6 +511,7 @@ test("calendar day selection validates time, discards drafts and clears its filt
     page.locator('input[type="datetime-local"], input[type="date"], input[type="time"]'),
   ).toHaveCount(0);
 });
+
 test.describe("Operator timezone", () => {
   test.use({ timezoneId: "America/New_York" });
   test("queue views, jobs, details and rescheduling use the same local timestamp", async ({
@@ -498,6 +539,7 @@ test.describe("Operator timezone", () => {
     await expect(page.getByRole("button", { name: "Apply", exact: true })).toBeDisabled();
   });
 });
+
 test("select all and deselect all apply only to the current page", async ({
   page,
   app,
@@ -505,10 +547,12 @@ test("select all and deselect all apply only to the current page", async ({
   await app.seedScenario("pagination");
   await page.goto(`${app.base}/dashboard/jobs?limit=25`);
   await expect(page.locator("tbody tr")).toHaveCount(25);
+
   const selectAll = page.getByRole("checkbox", {
     name: "Select all jobs on this page",
     exact: true,
   });
+
   await selectAll.check();
   await expect(
     page.getByRole("checkbox", { name: /^Select job row /u, checked: true }),
@@ -531,6 +575,7 @@ test("select all and deselect all apply only to the current page", async ({
     .toBe(25);
   expect(await app.jobs.countDocuments({ status: "pending" })).toBe(100);
 });
+
 test("copied filter and cursor URL opens the same results in a fresh browser session", async ({
   page,
   app,
@@ -544,10 +589,12 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
     if (new URL(route.request().url()).searchParams.has("cursor")) {
       await setTimeout(800);
     }
+
     await route.continue();
   });
   const jobs = await app.seedScenario("pagination");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+
   const search = new URLSearchParams({
     sortBy: "identifier",
     sortDirection: "asc",
@@ -558,6 +605,7 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
     nextRunAtFrom: "2035-06-01T10:00:00.000Z",
     nextRunAtTo: "2035-06-01T10:00:00.000Z",
   });
+
   await page.goto(`${app.base}/dashboard/jobs?${search}`);
   await page.getByLabel("Job name", { exact: true }).fill("email");
   await page.getByRole("checkbox", { name: "Pending", exact: true }).check();
@@ -582,9 +630,11 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
         ),
     )
     .toEqual(expectedIds);
+
   const links = await page
     .locator("tbody a")
     .evaluateAll((elements) => elements.map((element) => element.getAttribute("href")));
+
   await page
     .getByRole("checkbox", { name: /^Select job row /u })
     .first()
@@ -593,25 +643,32 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
   await page.getByRole("combobox", { name: "Search commands" }).fill("Copy page URL");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Page URL copied", { exact: true })).toBeVisible();
+
   const copied = await page.evaluate(
     async () => await Promise.resolve(navigator.clipboard.readText()),
   );
+
   expect(copied).toBe(page.url());
   expect(new URL(copied).searchParams.has("cursor")).toBe(true);
+
   const recipient = await browser.newContext({
     viewport: page.viewportSize(),
     isMobile,
     timezoneId: "Europe/Berlin",
   });
+
   try {
     if (authenticated) {
       const awaitedResult7 = await recipient.request.get(copied);
       expect(awaitedResult7.status()).toBe(401);
+
       const awaitedResult8 = await recipient.request.post(`${app.origin}/auth/login`, {
         data: { username: "viewer", password: "fixture-password" },
       });
+
       expect(awaitedResult8.status()).toBe(204);
     }
+
     const sharedPage = await recipient.newPage();
     await sharedPage.goto(copied);
     await expect(sharedPage.locator("tbody tr")).toHaveCount(25);
@@ -638,6 +695,7 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
     await recipient.close();
   }
 });
+
 test("preserves the investigation filters and cursor through job detail and reload", async ({
   page,
   app,
@@ -658,6 +716,7 @@ test("preserves the investigation filters and cursor through job detail and relo
   await expect(page.getByLabel("Job name", { exact: true })).toHaveValue("email");
   await expect(page.locator("tbody tr")).toHaveCount(10);
 });
+
 test("queue job inspection returns to the originating queue page", async ({ page, app }) => {
   await app.seedScenario("pagination");
   await page.goto(`${app.base}/dashboard/queue-views/email?limit=10`);
@@ -670,6 +729,7 @@ test("queue job inspection returns to the originating queue page", async ({ page
   expect(Object.fromEntries(new URL(page.url()).searchParams)).toEqual(query);
   await expect(page.locator("tbody tr")).toHaveCount(10);
 });
+
 test("job identity, failure diagnosis and disabled action explanations remain accessible", async ({
   page,
   app,
@@ -677,19 +737,25 @@ test("job identity, failure diagnosis and disabled action explanations remain ac
 }) => {
   const jobs = await app.seedScenario("mixed");
   const job = jobs.find((entry) => entry.status === "failed" && entry.name === "email");
+
   if (!job) {
     throw new Error("Missing failed job");
   }
+
   const id = job._id.toHexString();
   await page.goto(`${app.base}/dashboard/jobs?name=email&status=%5B%22failed%22%5D`);
+
   const row = page
     .locator("tbody tr")
     .filter({ has: page.getByRole("checkbox", { name: `Select job row email ${id}` }) });
+
   await expect(row).toBeVisible();
+
   if (isMobile) {
     await expect(row.getByText(`…${id.slice(-8)}`, { exact: true })).toBeVisible();
     await expect(row.getByTitle("Created", { exact: true })).toBeVisible();
   }
+
   await row.getByRole("link").click();
   const failure = page.getByRole("heading", { name: "Failure reason", exact: true });
   await expect(failure).toBeInViewport();
@@ -704,6 +770,7 @@ test("job identity, failure diagnosis and disabled action explanations remain ac
   await page.getByRole("button", { name: "Keep current state" }).click();
   expect(await app.jobs.countDocuments({ _id: job._id })).toBe(1);
 });
+
 test("workspace keeps navigation and theme visible while the job list scrolls", async ({
   page,
   app,
@@ -715,6 +782,7 @@ test("workspace keeps navigation and theme visible while the job list scrolls", 
   const theme = page.getByRole("button", { name: "Change theme", exact: true });
   await expect(theme).toBeInViewport();
   const before = await theme.boundingBox();
+
   if (!isMobile) {
     await page.locator("#app").evaluate((root) => {
       const toolbar = document.createElement("div");
@@ -724,6 +792,7 @@ test("workspace keeps navigation and theme visible while the job list scrolls", 
     });
     await expect(theme).toBeInViewport();
   }
+
   await page.locator("#main-content").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
@@ -733,12 +802,14 @@ test("workspace keeps navigation and theme visible while the job list scrolls", 
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(
     true,
   );
+
   if (isMobile) {
     const menu = await page.getByRole("button", { name: "Open navigation" }).boundingBox();
     expect(menu?.width).toBeGreaterThanOrEqual(44);
     expect(menu?.height).toBeGreaterThanOrEqual(44);
   }
 });
+
 test("health exposes refresh progress and preserves last observation while offline", async ({
   page,
   app,

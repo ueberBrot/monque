@@ -8,4 +8,5 @@ interface DashboardRouterContext {
   readonly queryClient: QueryClient;
   readonly runtimeConfig: DashboardRuntimeConfig;
 }
+
 export type { DashboardRouterContext };

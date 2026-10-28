@@ -41,11 +41,13 @@ describe("selector query builder", () => {
 
     it("should combine multiple filters", () => {
       const date = new Date("2023-01-01");
+
       const query = buildSelectorQuery({
         name: "cleanup",
         status: JobStatus.COMPLETED,
         olderThan: date,
       });
+
       expect(query).toStrictEqual({
         name: "cleanup",
         status: "completed",
@@ -56,10 +58,12 @@ describe("selector query builder", () => {
     it("should combine olderThan and newerThan", () => {
       const start = new Date("2023-01-01");
       const end = new Date("2023-01-31");
+
       const query = buildSelectorQuery({
         newerThan: start,
         olderThan: end,
       });
+
       expect(query["createdAt"]).toStrictEqual({
         $gt: start,
         $lt: end,
@@ -71,12 +75,14 @@ describe("selector query builder", () => {
       const createdAtTo = new Date("2023-01-31T00:00:00.000Z");
       const updatedAtFrom = new Date("2023-02-01T00:00:00.000Z");
       const nextRunAtTo = new Date("2023-03-01T00:00:00.000Z");
+
       const query = buildSelectorQuery({
         createdAtFrom,
         createdAtTo,
         updatedAtFrom,
         nextRunAtTo,
       });
+
       expect(query).toStrictEqual({
         createdAt: {
           $gte: createdAtFrom,

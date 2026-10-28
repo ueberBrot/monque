@@ -35,10 +35,12 @@ export const mountOpenApiRoute = function mountOpenApiRoute(
       try {
         // The management package caches the canonical document; clone before adding mount metadata.
         const document = structuredClone(await generateManagementOpenApiDocument());
+
         // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Dispatch the documented string-or-resolver adapter option.
         const serverUrl = await (typeof openApiOptions.serverUrl === "string"
           ? openApiOptions.serverUrl
           : openApiOptions.serverUrl({ req, res }));
+
         document.servers = [{ url: normalizeServerUrl(serverUrl) }];
         res.json(document);
       } catch (error) {

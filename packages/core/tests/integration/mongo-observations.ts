@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireValue } from "./helpers";
 
 const bsonDocument = z.record(z.string(), z.unknown());
+
 const commandSchema = z.object({
   find: z.string().optional(),
   findAndModify: z.string().optional(),
@@ -29,6 +30,7 @@ const executionStatsSchema = z.object({
   totalDocsExamined: z.number(),
   executionStages: z.object({ nWouldModify: z.number().optional() }).optional(),
 });
+
 const explainSchema = z.object({
   queryPlanner: z.object({ winningPlan: z.unknown() }).optional(),
   executionStats: executionStatsSchema.optional(),
@@ -45,6 +47,7 @@ const explainSchema = z.object({
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This parser validates MongoDB explain output before inspecting it.
 export const readExplanation = (value: unknown) => {
   const result = explainSchema.parse(value);
+
   return {
     winningPlan: result.queryPlanner?.winningPlan,
     stats: requireValue(result.executionStats ?? result.stages?.[0]?.$cursor?.executionStats),
@@ -67,7 +70,9 @@ const streamNotificationSchema = z.object({
     })
     .optional(),
 });
+
 export type StreamNotification = z.infer<typeof streamNotificationSchema>;
+
 const streamReplySchema = z.object({
   cursor: z
     .object({
@@ -77,5 +82,6 @@ const streamReplySchema = z.object({
     })
     .optional(),
 });
+
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- This parser validates MongoDB change stream replies at the observation boundary.
 export const readStreamReply = (value: unknown) => streamReplySchema.parse(value);

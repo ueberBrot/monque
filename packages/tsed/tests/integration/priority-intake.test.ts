@@ -51,11 +51,13 @@ describe("prioritized intake through Ts.ED", () => {
   it("changes a pending Job priority through the public service", async () => {
     await bootstrapMonque({ connectionStrategy: "dbFactory" });
     const service = PlatformTest.get<MonqueService>(MonqueService);
+
     const job = await service.enqueue(
       "pending-priority",
       { preserved: true },
       { runAt: new Date(Date.now() + 60_000) },
     );
+
     const updated = await service.setJobPriority(job._id.toHexString(), -8);
     expect(updated).toMatchObject({
       priority: -8,

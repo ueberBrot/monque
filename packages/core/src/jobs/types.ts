@@ -1,4 +1,5 @@
 import type { ClientSession, ObjectId } from "mongodb";
+
 /**
  * Represents the lifecycle states of a job in the queue.
  *
@@ -28,10 +29,12 @@ export const JobStatus = {
   /** Job was manually cancelled */
   CANCELLED: "cancelled",
 } as const;
+
 /**
  * Union type of all possible job status values: `'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'`
  */
 export type JobStatusType = (typeof JobStatus)[keyof typeof JobStatus];
+
 /**
  * Represents a job in the Monque queue.
  *
@@ -107,6 +110,7 @@ export interface Job<T = unknown> {
   /** Last modification timestamp */
   updatedAt: Date;
 }
+
 /**
  * A job that has been persisted to MongoDB and has a guaranteed `_id`.
  * This is returned by `enqueue()`, `now()`, and `schedule()` methods.
@@ -116,6 +120,7 @@ export interface Job<T = unknown> {
 export type PersistedJob<T = unknown> = Job<T> & {
   _id: ObjectId;
 };
+
 /** Options shared by job writes. */
 export interface JobWriteOptions {
   /**
@@ -124,6 +129,7 @@ export interface JobWriteOptions {
    */
   session?: ClientSession;
 }
+
 /**
  * Options for enqueueing a job.
  *
@@ -148,18 +154,22 @@ export interface EnqueueOptions extends JobWriteOptions {
    */
   runAt?: Date;
 }
+
 /** Options for immediate enqueueing, preserving caller-owned sessions. */
 export type NowOptions = Pick<EnqueueOptions, "priority" | "session">;
+
 /** One job in an enqueueMany() call, with the same scheduling and deduplication options. */
 export interface EnqueueJob<T = unknown> extends Omit<EnqueueOptions, "session"> {
   name: string;
   data: T;
 }
+
 /** Counts acknowledged by a successful enqueueMany() call. */
 export interface EnqueueManyResult {
   insertedCount: number;
   deduplicatedCount: number;
 }
+
 /**
  * Options for scheduling a recurring job.
  *
@@ -184,6 +194,7 @@ export interface ScheduleOptions extends JobWriteOptions {
    */
   uniqueKey?: string;
 }
+
 /**
  * Filter options for querying jobs.
  *
@@ -215,6 +226,7 @@ export interface GetJobsFilter {
   /** Number of jobs to skip for pagination: non-negative safe integer (default: 0). */
   skip?: number;
 }
+
 /**
  * Handler function signature for processing jobs.
  *
@@ -228,6 +240,7 @@ export interface GetJobsFilter {
  * ```
  */
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void;
+
 /**
  * Valid cursor directions for pagination.
  *
@@ -240,20 +253,26 @@ export const CursorDirection = {
   FORWARD: "forward",
   BACKWARD: "backward",
 } as const;
+
 export type CursorDirectionType = (typeof CursorDirection)[keyof typeof CursorDirection];
+
 export const JobCursorSortField = {
   IDENTIFIER: "identifier",
   CREATED_AT: "createdAt",
   UPDATED_AT: "updatedAt",
   NEXT_RUN_AT: "nextRunAt",
 } as const;
+
 export type JobCursorSortFieldType = (typeof JobCursorSortField)[keyof typeof JobCursorSortField];
+
 export const JobCursorSortDirection = {
   ASC: "asc",
   DESC: "desc",
 } as const;
+
 export type JobCursorSortDirectionType =
   (typeof JobCursorSortDirection)[keyof typeof JobCursorSortDirection];
+
 /**
  * Selector options for bulk operations.
  *
@@ -274,6 +293,7 @@ export interface JobSelector {
   olderThan?: Date;
   newerThan?: Date;
 }
+
 export interface JobCursorFilter {
   name?: string;
   status?: JobStatusType | JobStatusType[];
@@ -284,10 +304,12 @@ export interface JobCursorFilter {
   nextRunAtFrom?: Date;
   nextRunAtTo?: Date;
 }
+
 export interface JobCursorSort {
   by: JobCursorSortFieldType;
   direction: JobCursorSortDirectionType;
 }
+
 /**
  * Options for cursor-based pagination.
  *
@@ -308,6 +330,7 @@ export interface CursorOptions {
   filter?: JobCursorFilter;
   sort?: JobCursorSort;
 }
+
 /**
  * Response structure for cursor-based pagination.
  *
@@ -329,12 +352,15 @@ export interface CursorPage<T = unknown> {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
 }
+
 /** Persisted metadata without the job payload. */
 export type JobSummary = Omit<PersistedJob, "data">;
+
 /** Cursor page of job metadata. */
 export type JobSummaryPage = Omit<CursorPage, "jobs"> & {
   jobs: JobSummary[];
 };
+
 /**
  * Aggregated statistics for the job queue.
  *
@@ -357,6 +383,7 @@ export interface QueueStats {
   total: number;
   avgProcessingDurationMs?: number;
 }
+
 /**
  * Local Worker observability exposed through Queue View summaries.
  *
@@ -379,6 +406,7 @@ export interface QueueViewWorkerSummary {
   /** Maximum retry delay in milliseconds, when configured. */
   readonly maxBackoffDelay?: number;
 }
+
 /**
  * Operator-facing summary for one Job Name.
  *
@@ -397,6 +425,7 @@ export interface QueueViewSummary {
   /** Local Worker observability, or null when no local Worker is registered */
   readonly worker: Readonly<QueueViewWorkerSummary> | null;
 }
+
 /**
  * Result of a bulk operation.
  *

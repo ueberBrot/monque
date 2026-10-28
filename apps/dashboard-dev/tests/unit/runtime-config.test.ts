@@ -29,6 +29,7 @@ describe("dashboard dev configuration", () => {
       MONQUE_DASHBOARD_DEV_MONGO_URI: "mongodb://operator:secret@localhost:27018",
       MONQUE_DASHBOARD_DEV_DATABASE_NAME: "custom_dashboard",
     });
+
     expect(config.mongoUri).toBe("mongodb://operator:secret@localhost:27018");
     expect(config.databaseName).toBe("custom_dashboard");
     expect(config.environment).toStrictEqual({ mode: "db", scenarioId: "failed-jobs" });
@@ -46,6 +47,7 @@ describe("dashboard dev configuration", () => {
         MONQUE_DASHBOARD_DEV_MODE: "live",
         MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL: liveApiBaseUrl,
       });
+
       expect(config.liveApiBaseUrl).toBe(liveApiBaseUrl);
       expect(config.environment).toStrictEqual({ mode: "live", scenarioId: "pending-jobs" });
       expect(DashboardDevEnvironmentSchema.parse(config.environment)).toStrictEqual(
