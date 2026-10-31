@@ -1,37 +1,15 @@
-# Dependencies
-node_modules
-
-# Build outputs
-dist
-out
-*.tgz
-
-# Git
-.git
-.gitignore
-
-# Docker
-Dockerfile*
-.dockerignore
-docker-compose*.yml
-
-# IDE
-.idea
-.vscode
-
-# Logs
-*.log
-
-# Environment
-.env*
-!.env.example
-
-# Specs and docs (not needed in container)
-specs
-starting-files
-.specify
-.github
-
-# OS
-.DS_Store
-Thumbs.db
+**
+!package.json
+!bun.lock
+!.node-version
+!tsconfig.json
+!vite.config.ts
+!packages/
+!packages/**
+!apps/
+!apps/*/
+!apps/*/package.json
+**/node_modules
+**/dist
+**/.env*
+**/*.log

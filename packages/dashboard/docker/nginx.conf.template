@@ -1,0 +1,72 @@
+pid /tmp/nginx.pid;
+error_log /dev/stderr warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    access_log /dev/stdout;
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path /tmp/proxy_temp;
+    fastcgi_temp_path /tmp/fastcgi_temp;
+    uwsgi_temp_path /tmp/uwsgi_temp;
+    scgi_temp_path /tmp/scgi_temp;
+    gzip on;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types application/javascript text/javascript text/css image/svg+xml;
+
+    server {
+        listen ${PORT};
+        charset utf-8;
+
+        if ($request_method !~ ^(GET|HEAD)$) {
+            return 405;
+        }
+
+        location = /healthz {
+            default_type application/json;
+            add_header Cache-Control no-store;
+            return 200 '{"status":"ok"}';
+        }
+
+        location = /__monque_dashboard_index {
+            internal;
+            default_type text/html;
+            add_header Cache-Control no-store;
+            alias /tmp/dashboard-index.html;
+        }
+
+        location = ${DASHBOARD_PREFIX}index.html {
+            rewrite ^ /__monque_dashboard_index last;
+        }
+
+        location = ${MONQUE_DASHBOARD_BASE_PATH} {
+            rewrite ^ /__monque_dashboard_index last;
+        }
+
+        location = ${DASHBOARD_PREFIX}assets { return 404; }
+        location = ${DASHBOARD_PREFIX}api { return 404; }
+        location ^~ ${DASHBOARD_PREFIX}api/ { return 404; }
+
+        location ^~ ${DASHBOARD_PREFIX}assets/ {
+            alias /usr/share/nginx/html/assets/;
+            add_header Cache-Control "public, max-age=31536000, immutable";
+        }
+
+        location ~ "^${DASHBOARD_PREFIX_PATTERN}" {
+            if ($uri ~ "^${DASHBOARD_PREFIX_PATTERN}(jobs|queue-views)/") {
+                rewrite ^ /__monque_dashboard_index last;
+            }
+            if ($uri ~ "^${DASHBOARD_PREFIX_PATTERN}.*\.") { return 404; }
+            rewrite ^ /__monque_dashboard_index last;
+        }
+
+        location / { return 404; }
+    }
+}

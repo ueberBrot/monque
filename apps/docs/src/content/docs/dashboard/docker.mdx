@@ -1,0 +1,56 @@
+---
+title: Run the dashboard in Docker
+description: Serve the Dashboard independently and connect it to a backend Management API.
+---
+
+The Dashboard image serves the built UI and assets with Nginx Alpine.
+Your backend keeps the Management API, scheduler, authentication, and permissions.
+
+The container does not authenticate requests. Dashboard pages and assets are publicly
+accessible to anyone who can reach it. Connecting an authenticated Management API
+protects API access; it does not protect the container's pages or assets.
+
+## Run
+
+```bash
+docker pull ghcr.io/ueberbrot/monque-dashboard:latest
+docker run --rm --name dashboard -p 127.0.0.1:3000:3000 \
+  --read-only --tmpfs /tmp \
+  -e MONQUE_DASHBOARD_BASE_PATH=/dashboard \
+  -e MONQUE_DASHBOARD_API_BASE_URL=https://api.example.com/ops \
+  ghcr.io/ueberbrot/monque-dashboard:latest
+```
+
+Open `http://localhost:3000/dashboard`. Replace the API URL with your browser-accessible
+Management mount. The container serves no API or login service. To build locally, run
+this from the repository root and use `monque-dashboard` as the image name:
+
+```bash
+docker build -f packages/dashboard/Dockerfile -t monque-dashboard .
+```
+
+Images are published from the release commit after Changesets publishes
+`@monque/dashboard` to npm. Release images have `<dashboard-version>` and
+`sha-<full-commit-sha>` tags; `latest` follows the latest Dashboard npm release.
+Pin a version tag or image digest for a fixed
+deployment. Anonymous pulls require a public GHCR package; private packages require
+registry authentication and pull permission.
+
+## Configure at startup
+
+| Variable                               | Default  | Purpose                                                                                                  |
+| -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `MONQUE_DASHBOARD_API_BASE_URL`        | Required | Browser-accessible Management mount, such as `/ops` or `https://api.example.com/ops`. Exclude `/api/v1`. |
+| `MONQUE_DASHBOARD_BASE_PATH`           | `/`      | Absolute Dashboard mount path, such as `/dashboard`.                                                     |
+| `MONQUE_DASHBOARD_POLLING_INTERVAL_MS` | Unset    | Positive integer milliseconds. Unset disables periodic polling.                                          |
+| `PORT`                                 | `3000`   | Container HTTP port. Update the port mapping if changed.                                                 |
+
+Configuration changes require restarting the container, without rebuilding. Base paths
+accept letters, numbers, `/`, `.`, `_`, `~`, and `-`, without repeated slashes or dot
+segments. `/healthz` and `/__monque_dashboard_index` are reserved. The browser resolves
+the API URL, so it must be reachable from the browser. Configuration is public and must
+not contain credentials or secrets.
+
+`GET /healthz` checks UI liveness independently of its mount path. It does not check the
+API or scheduler. `/tmp` holds generated configuration and Nginx temporary files; the
+assets remain read-only.

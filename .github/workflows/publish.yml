@@ -21,6 +21,7 @@ jobs:
     timeout-minutes: 15
     outputs:
       published: ${{ steps.changesets.outputs.published }}
+      dashboard-version: ${{ steps.dashboard.outputs.version }}
     steps:
       - name: Generate App Token
         id: app-token
@@ -56,6 +57,25 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Select published Dashboard version
+        id: dashboard
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.published-packages }}
+        run: |
+          version=$(jq -r '.[] | select(.name == "@monque/dashboard") | .version' <<< "$PUBLISHED_PACKAGES")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  dashboard-image:
+    needs: release
+    if: github.ref == 'refs/heads/main' && needs.release.outputs.dashboard-version != ''
+    uses: ./.github/workflows/dashboard-image.yml
+    with:
+      version: ${{ needs.release.outputs.dashboard-version }}
+    permissions:
+      contents: read
+      packages: write
 
   deploy-docs:
     needs: release

@@ -125,6 +125,7 @@ export default defineConfig({
           label: "Dashboard",
           items: [
             { label: "Express Setup", slug: "dashboard/express" },
+            { label: "Docker", slug: "dashboard/docker" },
             { label: "Configuration", slug: "dashboard/configuration" },
             { label: "Screenshots", slug: "dashboard/screenshots" },
           ],
