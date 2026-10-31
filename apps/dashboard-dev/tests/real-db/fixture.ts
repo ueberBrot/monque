@@ -6,7 +6,7 @@ import { createDashboardExpressRouter } from "@monque/dashboard-express";
 import { createManagementExpressRouter } from "@monque/management-express";
 import { test as base, expect } from "@playwright/test";
 import express from "express";
-import type { Request } from "express";
+import type { Request, RequestHandler } from "express";
 import { MongoClient } from "mongodb";
 import { z } from "zod";
 
@@ -121,7 +121,7 @@ const createApp = async () => {
     );
   }
 
-  app.use("/private", (req, res, next) => {
+  const requireSession: RequestHandler = (req, res, next) => {
     if (!sessionFor(req)) {
       res.status(401).json({ error: "Sign in required" });
 
@@ -129,25 +129,33 @@ const createApp = async () => {
     }
 
     next();
-  });
-  app.use(
-    "/private",
-    createManagementExpressRouter({
-      monque,
-      context: ({ req }) => sessionFor(req)?.role,
-      authorize: ({ action, context, job }) => {
-        if (context !== "operator" && !(context === "viewer" && action === "read")) {
-          return false;
-        }
+  };
 
-        return !(
-          action === "setJobPriority" &&
-          job &&
-          deniedPriorityJobIds.has(job._id.toHexString())
-        );
-      },
-    }),
+  const authenticatedManagementRouter = createManagementExpressRouter({
+    monque,
+    context: ({ req }) => sessionFor(req)?.role,
+    authorize: ({ action, context, job }) => {
+      if (context !== "operator" && !(context === "viewer" && action === "read")) {
+        return false;
+      }
+
+      return !(
+        action === "setJobPriority" &&
+        job &&
+        deniedPriorityJobIds.has(job._id.toHexString())
+      );
+    },
+  });
+
+  app.use(
+    "/api-auth/dashboard",
+    createDashboardExpressRouter({ apiBaseUrl: "/api-auth", pollingIntervalMs: 500 }),
   );
+
+  for (const mount of ["/private", "/api-auth"]) {
+    app.use(mount, requireSession, authenticatedManagementRouter);
+  }
+
   app.use(
     "/private/dashboard",
     createDashboardExpressRouter({ apiBaseUrl: "/private", pollingIntervalMs: 500 }),

@@ -4,6 +4,9 @@ Serve the Monque dashboard from your Express application alongside its Managemen
 The router serves the built dashboard, including nested mount paths and direct job links.
 Mount the Management API separately; this package serves the UI and its assets.
 
+For a separate UI deployment, use the
+[Nginx Docker image](https://ueberbrot.github.io/monque/dashboard/docker/).
+
 [View screenshots](../dashboard/README.md#screenshots).
 
 ## Installation

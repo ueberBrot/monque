@@ -65,6 +65,10 @@ handles browser configuration, assets, and direct links automatically.
 See the [Express README](../dashboard-express/README.md) for a complete server example,
 authentication, and configuration options.
 
+To serve the Dashboard independently from your backend, use the
+[Docker image](https://ueberbrot.github.io/monque/dashboard/docker/), which serves these
+assets with Nginx Alpine.
+
 ## Screenshots
 
 <table>
