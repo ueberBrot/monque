@@ -923,6 +923,85 @@ describe(Monque, () => {
       expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
     });
 
+    it.each([
+      "getJobs",
+      "getJobsWithCursor",
+      "getJobSummariesWithCursor",
+      "getQueueStats",
+      "getQueueViewSummaries",
+    ] as const)("%s keeps the native failure when cursor cleanup also fails", async (operation) => {
+      const failure = new MongoServerError({ message: "Read unavailable", code: 91 });
+      failure.addErrorLabel("RetryableReadError");
+
+      const close = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValue(new Error("Cleanup unavailable"));
+
+      const cursor = fromPartial<ReturnType<Collection["find"]>>({
+        sort: vi.fn<MockFunction<FindCursor["sort"]>>().mockReturnThis(),
+        skip: vi.fn<MockFunction<FindCursor["skip"]>>().mockReturnThis(),
+        limit: vi.fn<MockFunction<FindCursor["limit"]>>().mockReturnThis(),
+        toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValue(failure),
+        close,
+      });
+
+      Object.assign(mockCollection, {
+        find: vi.fn<MockFunction<Collection["find"]>>().mockReturnValue(cursor),
+      });
+      mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<Collection["aggregate"]>>({
+          toArray: cursor.toArray.bind(cursor),
+          close: cursor.close.bind(cursor),
+        }),
+      );
+      const [result] = await Promise.allSettled<unknown>([monque[operation]()]);
+
+      if (result?.status !== "rejected") {
+        throw new Error("Expected read to reject");
+      }
+
+      const error: unknown = result.reason;
+
+      if (!(error instanceof ConnectionError)) {
+        throw new TypeError("Expected ConnectionError");
+      }
+
+      expect(error.cause).toBe(failure);
+      expect(close).toHaveBeenCalledOnce();
+      expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+    });
+
+    it.each(["getJobs", "getJobsWithCursor", "getJobSummariesWithCursor"] as const)(
+      "%s releases its cursor when native query setup throws",
+      async (operation) => {
+        const failure = new MongoServerError({ message: "Cursor setup unavailable", code: 91 });
+        failure.addErrorLabel("RetryableReadError");
+        const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+        const find = vi.fn<MockFunction<Collection["find"]>>().mockReturnValue(
+          fromPartial<ReturnType<Collection["find"]>>({
+            sort: () => {
+              throw failure;
+            },
+            close,
+          }),
+        );
+
+        Object.assign(mockCollection, { find });
+        const [result] = await Promise.allSettled<unknown>([monque[operation]()]);
+
+        if (result?.status !== "rejected") {
+          throw new Error("Expected read to reject");
+        }
+
+        const error: unknown = result.reason;
+        expect(error).toBeInstanceOf(ConnectionError);
+        expect(error).toHaveProperty("cause", failure);
+        expect(close).toHaveBeenCalledOnce();
+        expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+      },
+    );
+
     it("keeps the established read error for non-Error rejections", async () => {
       mockCollection.findOne.mockRejectedValueOnce("Read unavailable");
       await expect(monque.getJob(new ObjectId())).rejects.toStrictEqual(

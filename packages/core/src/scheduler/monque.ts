@@ -37,9 +37,9 @@ import type { WorkerOptions, WorkerRegistration } from "@/workers";
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
 import type { JobManager } from "./services/job-manager.js";
-import type { JobOwnership } from "./services/job-ownership.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
+import { JobQueries } from "./services/job-queries.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
 import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
@@ -68,7 +68,7 @@ const DEFAULTS = {
 } as const;
 
 type SchedulerRuntime = ManagedRuntime.ManagedRuntime<
-  SchedulerServices | JobPersistence | JobOwnership,
+  Layer.Success<ReturnType<typeof makeSchedulerLayer>>,
   never
 >;
 
@@ -864,9 +864,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJobs}
    */
   async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-    return await this.#runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getJobs<T>(filter)),
-    );
+    return await this.#runtime.runPromise(JobQueries.use((query) => query.getJobs<T>(filter)));
   }
   /**
    * Get a paginated list of jobs using opaque cursors.
@@ -901,13 +899,13 @@ export class Monque extends EventEmitter {
    */
   async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getJobsWithCursor<T>(options)),
+      JobQueries.use((query) => query.getJobsWithCursor<T>(options)),
     );
   }
   /** List job metadata without reading payloads; shares the full listing cursor format. */
   async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getJobSummariesWithCursor(options)),
+      JobQueries.use((query) => query.getJobSummariesWithCursor(options)),
     );
   }
   /**
@@ -939,9 +937,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getQueueStats}
    */
   async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    return await this.#runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getQueueStats(filter)),
-    );
+    return await this.#runtime.runPromise(JobQueries.use((query) => query.getQueueStats(filter)));
   }
   /**
    * Get operator-facing Queue View summaries grouped by Job Name.
@@ -968,7 +964,7 @@ export class Monque extends EventEmitter {
     filter?: Pick<JobSelector, "name">,
   ): Promise<readonly QueueViewSummary[]> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getQueueViewSummaries(filter)),
+      JobQueries.use((query) => query.getQueueViewSummaries(filter)),
     );
   }
   // ─────────────────────────────────────────────────────────────────────────────

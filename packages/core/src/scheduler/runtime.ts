@@ -9,7 +9,7 @@ import { JobOwnership, makeNativeJobOwnershipLayer } from "./services/job-owners
 import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
 import type { JobPersistence } from "./services/job-persistence.js";
 import { JobProcessor } from "./services/job-processor.js";
-import { JobQueryService } from "./services/job-query.js";
+import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { LifecycleManager } from "./services/lifecycle-manager.js";
 import { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
@@ -24,7 +24,7 @@ export class SchedulerServices extends Context.Service<
   {
     readonly intake: JobIntake;
     readonly manager: JobManager;
-    readonly queries: JobQueryService;
+    readonly queries: JobQueries["Service"];
     readonly notifications: PendingNotificationRouter;
     readonly streams: ChangeStreamHandler;
     readonly timers: LifecycleManager;
@@ -34,7 +34,7 @@ export class SchedulerServices extends Context.Service<
 const makeLegacySchedulerLayer = (
   environment: SchedulerContext,
   execution: SchedulerExecution,
-): Layer.Layer<SchedulerServices, unknown, JobOwnership> =>
+): Layer.Layer<SchedulerServices, unknown, JobOwnership | JobQueries> =>
   Layer.effect(
     SchedulerServices,
     Effect.gen(function* constructSchedulerServices() {
@@ -59,7 +59,7 @@ const makeLegacySchedulerLayer = (
       return {
         intake: new JobIntake(environment),
         manager: new JobManager(environment),
-        queries: new JobQueryService(environment),
+        queries: yield* JobQueries,
         notifications,
         streams: new ChangeStreamHandler(environment, notifications, execution.runFork),
         timers: new LifecycleManager(environment, lifecycle, execution.runFork),
@@ -78,13 +78,16 @@ export const makeSchedulerLayer = (
   persistence: Layer.Layer<JobPersistence, unknown> = makeNativeJobPersistenceLayer(
     environment.collection,
   ),
-): Layer.Layer<SchedulerServices | JobPersistence | JobOwnership, unknown> =>
+) =>
   Layer.merge(makeLegacySchedulerLayer(environment, execution), persistence).pipe(
     Layer.provideMerge(
-      makeNativeJobOwnershipLayer(
-        environment.collection,
-        environment.instanceId,
-        environment.options,
+      Layer.merge(
+        makeNativeJobOwnershipLayer(
+          environment.collection,
+          environment.instanceId,
+          environment.options,
+        ),
+        makeJobQueriesLayer(environment),
       ),
     ),
   );
