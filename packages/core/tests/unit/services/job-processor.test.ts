@@ -1,11 +1,5 @@
 import { it } from "@effect/vitest";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
-/**
- * Unit tests for JobProcessor service.
- *
- * Tests job polling, acquisition, processing, completion, and failure handling.
- * Uses mock service dependencies to test processing logic in isolation.
- */
 import { Clock, Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { map as mapEffect } from "effect/Effect";
 import { isString } from "effect/Predicate";
@@ -755,7 +749,6 @@ describe(JobProcessor, () => {
 
         ctx.registerWorker("worker-1", createWorker({ concurrency: 5, handler }));
         ctx.registerWorker("worker-2", createWorker({ concurrency: 5, handler }));
-        // Occupy instance capacity with two admitted executions.
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
           .mockResolvedValueOnce(job1)
           .mockResolvedValueOnce(job2)
@@ -1585,7 +1578,6 @@ describe(JobProcessor, () => {
           (args) => args[0]["status"] === JobStatus.PENDING,
         );
 
-        // The instance budget permits two claims across this worker.
         expect(acquireCalls).toHaveLength(2);
       }),
     );

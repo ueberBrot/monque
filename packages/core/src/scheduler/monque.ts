@@ -559,9 +559,6 @@ export class Monque extends EventEmitter {
       ),
     );
   }
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Public API - Job Management (delegates to JobManagement)
-  // ─────────────────────────────────────────────────────────────────────────────
   /**
    * Cancel a pending or scheduled job.
    *

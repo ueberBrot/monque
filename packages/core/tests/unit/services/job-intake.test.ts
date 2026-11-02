@@ -472,9 +472,6 @@ describe("Native Job intake", () => {
   );
 });
 
-// vi.mock hoisted to top of file - mock the mongodb module so we can control BSON.calculateObjectSize.
-// We wrap calculateObjectSize in a vi.fn so tests can temporarily override it with mockImplementationOnce.
-// The real function is captured inside importOriginal to avoid circular reference from the mock itself.
 vi.mock(import("mongodb"), async (importOriginal) => {
   const actual = await importOriginal();
   const realCalculateObjectSize = actual.BSON.calculateObjectSize;
@@ -501,7 +498,6 @@ describe("payload size validation", () => {
       const ctx = createMockContext();
       ctx.options.maxPayloadSize = 100;
       const intake = makeNativeJobIntake(ctx);
-      // Large data that will exceed 100 bytes in BSON
       const largeData = { content: "x".repeat(200) };
       const error = yield* Effect.flip(intake.enqueue("test-job", largeData));
       expect(error).toBeInstanceOf(PayloadTooLargeError);
@@ -530,7 +526,6 @@ describe("payload size validation", () => {
       const ctx = createMockContext();
       const intake = makeNativeJobIntake(ctx);
       const testData = { key: "value" };
-      // Mirror what validatePayloadSize computes: BSON.calculateObjectSize({ data })
       const exactSize = BSON.calculateObjectSize({ data: testData });
       ctx.options.maxPayloadSize = exactSize;
       const insertedId = new ObjectId();
@@ -546,7 +541,6 @@ describe("payload size validation", () => {
   it.effect("skips validation when maxPayloadSize is undefined", () =>
     Effect.gen(function* payloadSize() {
       const ctx = createMockContext();
-      // maxPayloadSize is undefined by default
       expect(ctx.options.maxPayloadSize).toBeUndefined();
       const intake = makeNativeJobIntake(ctx);
       const insertedId = new ObjectId();
@@ -554,7 +548,6 @@ describe("payload size validation", () => {
         insertedId,
         acknowledged: true,
       });
-      // Even large data should be accepted when maxPayloadSize is undefined
       const largeData = { content: "x".repeat(10_000) };
       const result = yield* intake.enqueue("test-job", largeData);
       expect(result._id).toStrictEqual(insertedId);

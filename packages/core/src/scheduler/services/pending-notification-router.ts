@@ -20,11 +20,7 @@ export type PendingWorkDispatch = (
   isCurrent?: () => boolean,
 ) => Effect.Effect<void, unknown>;
 
-/**
- * #634 owns stream cursors/listeners/reconnects and fences obsolete callbacks.
- * Deliver synchronously to this sink; stream closure only changes availability,
- * while the run owner calls close(). Local writes keep using the same sink.
- */
+/** Notification delivery is synchronous; stream closure changes availability, not routing. */
 export type PendingNotificationSink = Pick<
   PendingNotificationRouter,
   "notifyPendingJob" | "notifyRunnableJob" | "setChangeStreamActive"

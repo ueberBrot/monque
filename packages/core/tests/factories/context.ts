@@ -1,10 +1,4 @@
 import { fromPartial } from "@total-typescript/shoehorn";
-/**
- * Factory for creating mock service dependencies and WorkerRegistration for service unit tests.
- *
- * Provides a reusable mock context with vi.fn() stubs for all methods,
- * allowing tests to verify internal service behavior without MongoDB.
- */
 import type { Collection } from "mongodb";
 import { vi } from "vite-plus/test";
 
@@ -16,9 +10,6 @@ import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerRegistration } from "@/workers";
 import type { MockFunction } from "@tests/setup/mock-function.js";
 
-/**
- * Create a mock MongoDB collection with vi.fn() stubs.
- */
 const createMockCollection = () => ({
   insertOne: vi.fn<MockFunction<Collection["insertOne"]>>(),
   insertMany: vi.fn<MockFunction<Collection["insertMany"]>>(),
@@ -37,9 +28,6 @@ const createMockCollection = () => ({
   createIndexes: vi.fn<MockFunction<Collection["createIndexes"]>>(),
 });
 
-/**
- * Default resolved options for tests.
- */
 const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
   collectionName: "test_jobs",
   pollInterval: 1000,
@@ -71,22 +59,6 @@ interface FixtureDependencies {
   notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
   notifyJobFinished: (name: string) => void;
 }
-
-/**
- * Create mock service dependencies for testing internal services.
- *
- * @example
- * ```typescript
- * const ctx = createMockContext();
- * const intake = makeNativeJobIntake(ctx);
- *
- * // Mock collection responses using vi.spyOn and JobFactory
- * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
- *
- * // Assert on emitted events
- * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });
- * ```
- */
 
 export const createMockContext = (overrides: Partial<FixtureDependencies> = {}) => {
   const mockCollection = createMockCollection();

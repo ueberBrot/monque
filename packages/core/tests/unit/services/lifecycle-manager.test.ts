@@ -1,8 +1,3 @@
-/**
- * Tests for scoped scheduler maintenance.
- *
- * Tests timer setup/teardown, cleanup logic, and error emission.
- */
 import { it as effectIt } from "@effect/vitest";
 import { Clock, Effect, Exit, Scope } from "effect";
 import { map as mapEffect } from "effect/Effect";

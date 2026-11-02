@@ -1,12 +1,6 @@
 import { it } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Effect, Result } from "effect";
-/**
- * Native tests for Job management.
- *
- * Tests job management operations: cancel, retry, reschedule, delete.
- * Uses the native driver boundary to exercise state transitions and callback failures.
- */
 import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 

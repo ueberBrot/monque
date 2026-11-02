@@ -15,12 +15,6 @@ import {
 import { map as mapEffect, forEach as forEachEffect } from "effect/Effect";
 import { TestClock } from "effect/testing";
 import type { FindCursor } from "mongodb";
-/**
- * Unit tests for JobQueryService.
- *
- * Tests job lookup, offset listing, statistics, and Queue Views.
- * Uses mock service dependencies to test query building in isolation.
- */
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";

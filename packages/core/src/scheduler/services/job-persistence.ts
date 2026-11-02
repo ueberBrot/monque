@@ -6,7 +6,7 @@ import type { PersistedJob } from "@/jobs";
 
 import { JobPersistenceError } from "./job-persistence-error.js";
 
-/** Semantic persistence capabilities, expanded as each behavior migrates. @internal */
+/** @internal */
 export class JobPersistence extends Context.Service<
   JobPersistence,
   {
