@@ -1,17 +1,23 @@
 import { Cause, Clock, Effect } from "effect";
+import type { Collection } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";
 
 import { fromPromise } from "../effects.js";
-import type { SchedulerContext } from "./types.js";
+import { readJobCursor } from "./read-job-cursor.js";
 
 const DISCOVERY_READ_OPTIONS = {
   readPreference: "primary",
   readConcern: { level: "local" },
 } as const;
 
-type DiscoveryContext = Pick<SchedulerContext, "collection" | "emit" | "notifyPendingJob">;
+interface DiscoveryContext {
+  readonly collection: Collection;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+}
 
 const hasSimpleCollation = (value: unknown): value is { locale: "simple" } =>
   typeof value === "object" && value !== null && "locale" in value && value.locale === "simple";
@@ -36,6 +42,7 @@ export class JobDiscovery {
     this: JobDiscovery,
     names: ReadonlySet<string>,
     targetNames?: ReadonlySet<string>,
+    isCurrent: () => boolean = () => true,
   ): Effect.fn.Return<ReadonlySet<string>> {
     // Notification and grouped names only match registered names under binary comparison.
     // Other collations retain the database's matching semantics through atomic claims.
@@ -48,24 +55,28 @@ export class JobDiscovery {
     }
 
     return yield* Effect.gen({ self: this }, function* queryDueJobNames() {
-      const pending = yield* fromPromise(
-        async () =>
-          await this.ctx.collection
-            .aggregate<{
-              _id: string;
-              nextRunAt: Date;
-            }>(
-              [
-                { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
-                { $sort: { name: 1, nextRunAt: 1 } },
-                { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
-              ],
-              DISCOVERY_READ_OPTIONS,
-            )
-            .toArray(),
-      );
+      const pending = yield* readJobCursor(
+        () =>
+          this.ctx.collection.aggregate<{
+            _id: string;
+            nextRunAt: Date;
+          }>(
+            [
+              { $match: { name: { $in: [...names] }, status: JobStatus.PENDING } },
+              { $sort: { name: 1, nextRunAt: 1 } },
+              { $group: { _id: "$name", nextRunAt: { $first: "$nextRunAt" } } },
+            ],
+            DISCOVERY_READ_OPTIONS,
+          ),
+        async (cursor) => await cursor.toArray(),
+      ).pipe(Effect.mapError((failure) => failure.cause));
 
       const dueNames = new Set<string>();
+
+      if (!isCurrent()) {
+        return dueNames;
+      }
+
       const now = yield* Clock.currentTimeMillis;
 
       for (const job of pending) {
@@ -79,12 +90,14 @@ export class JobDiscovery {
       return dueNames;
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          // Discovery is an optimization; atomic claims remain the fallback on read failure.
-          this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.sync(() => {
+              // Discovery is an optimization; atomic claims remain the fallback on read failure.
+              this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
 
-          return names;
-        }),
+              return names;
+            }),
       ),
     );
   });
@@ -108,13 +121,15 @@ export class JobDiscovery {
       return this.binaryNameMatching;
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          // Metadata access is optional; retain database matching without retrying every poll.
-          this.binaryNameMatching = false;
-          this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.sync(() => {
+              // Metadata access is optional; retain database matching without retrying every poll.
+              this.binaryNameMatching = false;
+              this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
 
-          return this.binaryNameMatching;
-        }),
+              return this.binaryNameMatching;
+            }),
       ),
     );
   });
@@ -122,6 +137,7 @@ export class JobDiscovery {
   notifyNextRun = Effect.fnUntraced(function* notifyNextScheduledRun(
     this: JobDiscovery,
     name: string,
+    isCurrent: () => boolean = () => true,
   ): Effect.fn.Return<void> {
     return yield* Effect.gen({ self: this }, function* readNextScheduledRun() {
       const job = yield* fromPromise(
@@ -138,14 +154,16 @@ export class JobDiscovery {
           ),
       );
 
-      if (job) {
+      if (job && isCurrent()) {
         this.ctx.notifyPendingJob(name, job.nextRunAt);
       }
     }).pipe(
       Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
-        }),
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.sync(() => {
+              this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
+            }),
       ),
     );
   });

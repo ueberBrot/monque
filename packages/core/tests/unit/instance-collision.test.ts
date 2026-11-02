@@ -19,24 +19,6 @@ type FindOne = (
   options?: FindOptions,
 ) => Promise<Partial<WithId<Document>> | null>;
 
-// Mock the services to avoid instantiating them
-vi.mock(import("@/scheduler/services/index.js"), async (importOriginal) => {
-  const actual = await importOriginal();
-
-  return {
-    ...actual,
-    JobIntake: fromPartial<typeof actual.JobIntake>(vi.fn<typeof actual.JobIntake>()),
-    JobManager: fromPartial<typeof actual.JobManager>(vi.fn<typeof actual.JobManager>()),
-    JobQueryService: fromPartial<typeof actual.JobQueryService>(
-      vi.fn<typeof actual.JobQueryService>(),
-    ),
-    JobProcessor: fromPartial<typeof actual.JobProcessor>(vi.fn<typeof actual.JobProcessor>()),
-    ChangeStreamHandler: fromPartial<typeof actual.ChangeStreamHandler>(
-      vi.fn<typeof actual.ChangeStreamHandler>(),
-    ),
-  };
-});
-
 describe("Instance Collision Detection", () => {
   let mockDb: NativeMock<Db>;
   let mockCollection: NativeMock<Collection>;

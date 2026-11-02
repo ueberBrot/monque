@@ -1,6 +1,17 @@
 import { it } from "@effect/vitest";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
-import { Clock, Deferred, Effect, Exit, Fiber, Result } from "effect";
+import {
+  Clock,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Result,
+  Scope,
+} from "effect";
 import { map as mapEffect, forEach as forEachEffect } from "effect/Effect";
 import { TestClock } from "effect/testing";
 import type { FindCursor } from "mongodb";
@@ -8,11 +19,11 @@ import type { FindCursor } from "mongodb";
  * Unit tests for JobQueryService.
  *
  * Tests job lookup, offset listing, statistics, and Queue Views.
- * Uses mock SchedulerContext to test query building in isolation.
+ * Uses mock service dependencies to test query building in isolation.
  */
-import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
+import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";
 import { JobQueryService } from "@/scheduler/services/job-query.js";
 import { AggregationTimeoutError, ConnectionError } from "@/shared";
 import { createMockContext, createWorker, JobFactory } from "@tests/factories";
@@ -48,42 +59,55 @@ describe(JobQueryService, () => {
   };
 
   let queryService: JobQueryService;
+  let owner: Scope.Closeable;
   beforeEach(() => {
     ctx = createMockContext();
-    queryService = new JobQueryService(ctx);
+    owner = Scope.makeUnsafe();
+    queryService = new JobQueryService(ctx, owner);
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await Effect.runPromise(Scope.close(owner, Exit.void));
     vi.clearAllMocks();
     vi.useRealTimers();
   });
-  describe("getJob", () => {
-    it.effect("should throw ConnectionError when database operation fails", () =>
-      Effect.gen(function* effectWorkflow1() {
-        vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce(
-          new Error("Database connection lost"),
-        );
-        const failureResult1 = yield* Effect.result(queryService.getJob(new ObjectId()));
-        expect(failureResult1._tag).toBe("Failure");
+  it.effect("releases a shared read cursor when its initialized owner closes", () =>
+    Effect.gen(function* closeReadOwner() {
+      const readOwner = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(makeJobQueriesLayer(ctx), readOwner);
+      const reads = Context.get(context, JobQueries);
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const runPromise = Effect.runPromiseWith(yield* Effect.context());
+      const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
+        fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+          toArray: async () => {
+            await runPromise(Deferred.succeed(started, undefined));
 
-        if (Result.isSuccess(failureResult1)) {
-          throw new Error("Expected operation to fail");
-        }
-
-        const error = failureResult1.failure;
-        expect(error).toBeInstanceOf(ConnectionError);
-        expect(error.message).toMatch(/Failed to get job/u);
-      }),
-    );
-    it.effect("should wrap non-Error thrown values in ConnectionError", () =>
-      Effect.gen(function* effectWorkflow2() {
-        vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce("String error");
-        expect(yield* Effect.result(queryService.getJob(new ObjectId()))).toMatchObject({
-          _tag: "Failure",
-          failure: anyMatcher(ConnectionError),
-        });
-      }),
-    );
-  });
+            return await Promise.withResolvers<never>().promise;
+          },
+          close,
+        }),
+      );
+      const waiter = yield* Effect.forkChild(reads.getQueueStats());
+      yield* Deferred.await(started);
+      yield* Scope.close(readOwner, Exit.void);
+      expect(close).toHaveBeenCalledOnce();
+      expect(Exit.hasInterrupts(yield* Fiber.await(waiter))).toBe(true);
+    }),
+  );
+  it.effect("settles a read waiter when its owner closes before the shared load starts", () =>
+    Effect.gen(function* closeBeforeReadStarts() {
+      const readOwner = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(makeJobQueriesLayer(ctx), readOwner);
+      const reads = Context.get(context, JobQueries);
+      const waiter = yield* Effect.forkChild(reads.getQueueStats(), { startImmediately: true });
+      yield* Scope.close(readOwner, Exit.void);
+      const completion = yield* Effect.forkChild(Fiber.await(waiter).pipe(Effect.timeoutOption(1)));
+      yield* TestClock.adjust(1);
+      const exit = yield* Fiber.join(completion);
+      expect(Option.isSome(exit) && Exit.hasInterrupts(exit.value)).toBe(true);
+    }),
+  );
   describe("getJobs", () => {
     it.effect("should throw ConnectionError when database operation fails", () =>
       Effect.gen(function* effectWorkflow3() {
@@ -417,10 +441,16 @@ describe(JobQueryService, () => {
       it.effect("shares concurrent statistics reads without sharing mutable results", () =>
         Effect.gen(function* effectWorkflow15() {
           const pending = yield* Deferred.make<unknown[]>();
+          const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
           const runPromise = Effect.runPromiseWith(yield* Effect.context());
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
-              toArray: async () => await runPromise(Deferred.await(pending)),
+              toArray: async () =>
+                await runPromise(
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Deferred.await(pending)),
+                  ),
+                ),
             }),
           );
 
@@ -428,6 +458,7 @@ describe(JobQueryService, () => {
             Effect.forkChild(queryService.getQueueStats(), { startImmediately: true }),
           );
 
+          yield* Deferred.await(started);
           expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
           yield* Deferred.succeed(pending, [
             {
@@ -444,10 +475,16 @@ describe(JobQueryService, () => {
       it.effect("does not let an in-flight read repopulate an invalidated snapshot", () =>
         Effect.gen(function* effectWorkflow16() {
           const pending = yield* Deferred.make<unknown[]>();
+          const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
           const runPromise = Effect.runPromiseWith(yield* Effect.context());
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
-              toArray: async () => await runPromise(Deferred.await(pending)),
+              toArray: async () =>
+                await runPromise(
+                  Deferred.succeed(started, undefined).pipe(
+                    Effect.andThen(Deferred.await(pending)),
+                  ),
+                ),
             }),
           );
 
@@ -455,6 +492,7 @@ describe(JobQueryService, () => {
             startImmediately: true,
           });
 
+          yield* Deferred.await(started);
           expect(ctx.mockCollection.aggregate).toHaveBeenCalledOnce();
           queryService.clearStatsCache();
           mockStatsResult({ pending: 2, total: 2 });
@@ -769,7 +807,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set("image-resize", createWorker({ concurrency: 7 }));
+        ctx.registerWorker("image-resize", createWorker({ concurrency: 7 }));
         const summaries = yield* queryService.getQueueViewSummaries();
         expect(summaries).toMatchObject([
           {
@@ -873,7 +911,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set(
+        ctx.registerWorker(
           "email-send",
           createWorker({
             concurrency: 3,
@@ -924,7 +962,7 @@ describe(JobQueryService, () => {
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
           );
-          ctx.workers.set(
+          ctx.registerWorker(
             "email-send",
             createWorker({
               concurrency: 3,

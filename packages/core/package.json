@@ -54,10 +54,10 @@
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "cron-parser": "^5.10.2",
-    "effect": "4.0.6"
+    "effect": "4.1.2"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.6",
+    "@effect/vitest": "4.1.2",
     "@faker-js/faker": "^10.6.0",
     "@testcontainers/mongodb": "^12.2.1",
     "@total-typescript/shoehorn": "0.1.2",
