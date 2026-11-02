@@ -30,41 +30,51 @@ const writeResult = {
   upsertedId: null,
 };
 
+const maintenanceFixture = (ctx: ReturnType<typeof createMockContext>) =>
+  makeSchedulerMaintenance({
+    options: ctx.options,
+    collection: ctx.collection,
+    ownership: makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options),
+    activeClaimIds: () => {
+      const claimIds: string[] = [];
+
+      for (const worker of ctx.workers.values()) {
+        for (const job of worker.activeJobs.values()) {
+          if (job.claimId !== undefined && job.claimId !== "") {
+            claimIds.push(job.claimId);
+          }
+        }
+      }
+
+      return claimIds;
+    },
+    emit: ctx.emit,
+    notifyPendingJob: ctx.notifyPendingJob,
+  });
+
+effectIt.effect("skips heartbeat writes when no claims are active", () =>
+  Effect.gen(function* noActiveClaims() {
+    const ctx = createMockContext();
+    const manager = yield* maintenanceFixture(ctx);
+    yield* manager.start;
+    yield* TestClock.adjust(ctx.options.heartbeatInterval * 3);
+    expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
+  }),
+);
+
 describe("scheduler maintenance", () => {
   let ctx: ReturnType<typeof createMockContext>;
   let manager: SchedulerMaintenance;
   let run: MaintenanceRun;
   let scope: Scope.Closeable;
-  let releaseExecution: () => void;
 
   beforeEach(() => {
     ctx = createMockContext();
     scope = Scope.makeUnsafe();
-    manager = Effect.runSync(
-      makeSchedulerMaintenance({
-        options: ctx.options,
-        collection: ctx.collection,
-        ownership: makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options),
-        activeClaimIds: () => {
-          const claimIds: string[] = [];
-
-          for (const worker of ctx.workers.values()) {
-            for (const job of worker.activeJobs.values()) {
-              if (job.claimId !== undefined && job.claimId !== "") {
-                claimIds.push(job.claimId);
-              }
-            }
-          }
-
-          return claimIds;
-        },
-        emit: ctx.emit,
-        notifyPendingJob: ctx.notifyPendingJob,
-      }).pipe(Scope.provide(scope)),
-    );
+    manager = Effect.runSync(maintenanceFixture(ctx).pipe(Scope.provide(scope)));
     const job = JobFactoryHelpers.processing({ claimId: "owned-claim" });
     ctx.admission.register(job.name, () => {});
-    releaseExecution = ctx.admission.beginExecution(job.name, job);
+    ctx.admission.beginExecution(job.name, job);
     vi.mocked(ctx.mockCollection.updateMany).mockResolvedValue(writeResult);
   });
   afterEach(async () => {
@@ -114,13 +124,6 @@ describe("scheduler maintenance", () => {
         cleanupMockCallsLength: 1,
         getTimerCount: 0,
       });
-    });
-
-    it("skips heartbeat writes when no claims are active", async () => {
-      releaseExecution();
-      run = Effect.runSync(manager.start);
-      await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
-      expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
     });
 
     it("should set up heartbeat interval", async () => {

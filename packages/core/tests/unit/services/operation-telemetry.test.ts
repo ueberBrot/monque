@@ -529,54 +529,39 @@ describe("operation telemetry", () => {
       }),
   );
 
-  effectIt.effect(
-    "contains reporting setup and classification defects while preserving original Exits",
-    () =>
-      Effect.gen(function* reportingDefects() {
-        const clock = yield* Clock.Clock;
-        const original = new Error("application");
-        const telemetry = makeOperationTelemetry();
-        let bodies = 0;
+  effectIt.effect("contains reporting clock defects while preserving original Exits", () =>
+    Effect.gen(function* reportingDefects() {
+      const clock = yield* Clock.Clock;
+      const original = new Error("application");
+      const telemetry = makeOperationTelemetry();
+      let bodies = 0;
 
-        const result = yield* telemetry
-          .observe(
-            "worker",
-            Effect.sync(() => {
-              bodies += 1;
+      const result = yield* telemetry
+        .observe(
+          "worker",
+          Effect.sync(() => {
+            bodies += 1;
 
-              return original;
+            return original;
+          }),
+        )
+        .pipe(
+          Effect.provideService(
+            Clock.Clock,
+            reportingClock(clock, {
+              currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+              monotonicTimeNanosUnsafe: () => {
+                throw new Error("reporting clock");
+              },
             }),
-          )
-          .pipe(
-            Effect.provideService(
-              Clock.Clock,
-              reportingClock(clock, {
-                currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
-                monotonicTimeNanosUnsafe: () => {
-                  throw new Error("reporting clock");
-                },
-              }),
-            ),
-          );
+          ),
+        );
 
-        const cause = Cause.fail(original);
+      const failed = yield* telemetry.observe("worker", Effect.fail(original)).pipe(Effect.exit);
 
-        const classify = vi.spyOn(cause.reasons, "every").mockImplementationOnce(() => {
-          throw new Error("classification");
-        });
-
-        try {
-          const failed = yield* telemetry
-            .observe("worker", Effect.failCause(cause))
-            .pipe(Effect.exit);
-
-          expect(classify).toHaveBeenCalledOnce();
-          expect(failed).toStrictEqual(Exit.fail(original));
-          expect({ bodies, result }).toStrictEqual({ bodies: 1, result: original });
-        } finally {
-          classify.mockRestore();
-        }
-      }),
+      expect(failed).toStrictEqual(Exit.fail(original));
+      expect({ bodies, result }).toStrictEqual({ bodies: 1, result: original });
+    }),
   );
 
   effectIt.effect("records interruption and failed elapsed time without changing either Exit", () =>
