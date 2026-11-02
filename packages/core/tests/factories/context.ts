@@ -12,6 +12,8 @@ import type { MonqueEventMap } from "@/events";
 import { documentToPersistedJob } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
 import type { ResolvedMonqueOptions, SchedulerContext } from "@/scheduler/services/types.js";
+import { WorkerAdmissionState } from "@/scheduler/services/worker-admission.js";
+import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerRegistration } from "@/workers";
 import type { MockFunction } from "@tests/setup/mock-function.js";
 
@@ -82,13 +84,39 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
     payload: unknown;
   }[] = [];
 
-  const workers = new Map<string, WorkerRegistration>();
+  const options = overrides.options ?? { ...DEFAULT_TEST_OPTIONS };
+  const admission = overrides.admission ?? new WorkerAdmissionState(options);
+  admission.start();
+
+  const registerWorker = (name: string, worker: WorkerRegistration) => {
+    const { activeJobs } = worker;
+    admission.register(name, worker.handler, {
+      concurrency: worker.concurrency,
+      ...worker.retryOptions,
+      ...definedProperty(worker, "schema"),
+      replace: true,
+    });
+
+    for (const job of activeJobs.values()) {
+      admission.beginExecution(name, job);
+    }
+
+    // Existing fixture references observe the owner's current execution records.
+    Object.defineProperty(worker, "activeJobs", {
+      get: () => admission.workers.get(name)?.activeJobs ?? new Map(),
+      configurable: true,
+    });
+  };
 
   const ctx = {
     collection: fromPartial<Collection>(mockCollection),
-    options: { ...DEFAULT_TEST_OPTIONS },
+    options,
     instanceId: "test-instance-id",
-    workers,
+    admission,
+    registerWorker,
+    get workers() {
+      return admission.workers;
+    },
 
     documentToPersistedJob,
     ...overrides,
@@ -114,7 +142,7 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
     ),
   };
 
-  return { ...ctx, mockCollection, emitHistory };
+  return Object.assign(ctx, { mockCollection, emitHistory });
 };
 
 /**
@@ -137,5 +165,7 @@ export const createWorker = (overrides: Partial<WorkerRegistration> = {}): Worke
     overrides.handler ??
     vi.fn<MockFunction<WorkerRegistration["handler"]>>().mockResolvedValue(undefined),
   concurrency: overrides.concurrency ?? 1,
+  ...definedProperty(overrides, "schema"),
+  ...definedProperty(overrides, "retryOptions"),
   activeJobs: overrides.activeJobs ?? new Map<string, PersistedJob>(),
 });

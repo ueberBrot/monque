@@ -32,7 +32,7 @@ describe(LifecycleManager, () => {
     ctx = createMockContext();
     manager = new LifecycleManager(ctx);
     const job = JobFactoryHelpers.processing({ claimId: "owned-claim" });
-    ctx.workers.set(job.name, createWorker({ activeJobs: new Map([["owned-claim", job]]) }));
+    ctx.registerWorker(job.name, createWorker({ activeJobs: new Map([["owned-claim", job]]) }));
     vi.mocked(ctx.mockCollection.updateMany).mockResolvedValue(writeResult);
   });
   afterEach(() => {

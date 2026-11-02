@@ -13,6 +13,7 @@ import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { LifecycleManager } from "./services/lifecycle-manager.js";
 import { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
+import { WorkerAdmission } from "./services/worker-admission.js";
 
 interface SchedulerExecution {
   readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
@@ -79,7 +80,11 @@ export const makeSchedulerLayer = (
     environment.collection,
   ),
 ) =>
-  Layer.merge(makeLegacySchedulerLayer(environment, execution), persistence).pipe(
+  Layer.mergeAll(
+    makeLegacySchedulerLayer(environment, execution),
+    persistence,
+    Layer.succeed(WorkerAdmission, environment.admission),
+  ).pipe(
     Layer.provideMerge(
       Layer.merge(
         makeNativeJobOwnershipLayer(
