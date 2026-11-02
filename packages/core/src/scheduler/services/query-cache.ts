@@ -1,4 +1,5 @@
-import { Clock, Deferred, Effect } from "effect";
+import { Clock, Effect, Fiber } from "effect";
+import type { Scope } from "effect";
 
 /** Bounded snapshots with shared in-flight reads. Failed reads are never cached. */
 export class QueryCache<T, E = unknown> {
@@ -10,8 +11,12 @@ export class QueryCache<T, E = unknown> {
       ttl: number;
     }
   >();
-  private readonly pending = new Map<string, Deferred.Deferred<T, E>>();
+  private readonly pending = new Map<string, Fiber.Fiber<T, E>>();
   private generation = 0;
+  private readonly owner: Scope.Scope;
+  constructor(owner: Scope.Scope) {
+    this.owner = owner;
+  }
   get(key: string, ttl: number, load: () => Effect.Effect<T, E>): Effect.Effect<T, E> {
     return Effect.uninterruptibleMask((restore) =>
       Effect.gen({ self: this }, function* readCachedQuery() {
@@ -28,52 +33,50 @@ export class QueryCache<T, E = unknown> {
         const pending = this.pending.get(key);
 
         if (pending) {
-          return yield* restore(Deferred.await(pending));
+          return yield* restore(Fiber.join(pending));
         }
 
         const { generation } = this;
-        const request = yield* Deferred.make<T, E>();
-        this.pending.set(key, request);
-        yield* Effect.forkDetach(
-          Effect.gen({ self: this }, function* loadUncachedQuery() {
-            const result = yield* Effect.exit(
-              Effect.suspend(load).pipe(
-                // oxlint-disable-next-line sonarjs/no-nested-functions -- The cache write captures this request's generation and TTL inside its uninterruptible load.
-                Effect.tap((value) =>
-                  Effect.gen({ self: this }, function* storeQueryResult() {
-                    const completedAt = yield* Clock.monotonicTimeNanos;
 
-                    if (ttl > 0 && generation === this.generation) {
-                      this.entries.delete(key);
-
-                      if (this.entries.size >= 100) {
-                        const oldest = this.entries.keys().next().value;
-
-                        if (oldest !== undefined) {
-                          this.entries.delete(oldest);
-                        }
-                      }
-
-                      this.entries.set(key, { value, completedAt, ttl });
-                    }
-                  }),
-                ),
-              ),
-            );
-
-            if (this.pending.get(key) === request) {
-              this.pending.delete(key);
-            }
-
-            yield* Deferred.done(request, result);
-          }),
-          { startImmediately: true, uninterruptible: true },
+        const request = yield* Effect.forkIn(
+          Effect.suspend(load).pipe(Effect.tap((value) => this.store(key, ttl, generation, value))),
+          this.owner,
         );
 
-        return yield* restore(Deferred.await(request));
+        this.pending.set(key, request);
+        request.addObserver(() => {
+          if (this.pending.get(key) === request) {
+            this.pending.delete(key);
+          }
+        });
+
+        return yield* restore(Fiber.join(request));
       }),
     );
   }
+  private readonly store = Effect.fnUntraced(function* storeQueryResult(
+    this: QueryCache<T, E>,
+    key: string,
+    ttl: number,
+    generation: number,
+    value: T,
+  ) {
+    const completedAt = yield* Clock.monotonicTimeNanos;
+
+    if (ttl > 0 && generation === this.generation) {
+      this.entries.delete(key);
+
+      if (this.entries.size >= 100) {
+        const oldest = this.entries.keys().next().value;
+
+        if (oldest !== undefined) {
+          this.entries.delete(oldest);
+        }
+      }
+
+      this.entries.set(key, { value, completedAt, ttl });
+    }
+  });
   clear(): void {
     this.generation += 1;
     this.entries.clear();

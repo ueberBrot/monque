@@ -37,7 +37,7 @@ describe(CursorListing, () => {
   let listing: CursorListing;
   beforeEach(() => {
     ctx = createMockContext();
-    listing = new CursorListing(ctx);
+    listing = new CursorListing(ctx.collection);
   });
 
   const issueCursor = Effect.fnUntraced(function* effectWorkflow1(options: CursorOptions = {}) {
