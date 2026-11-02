@@ -1,17 +1,23 @@
+import { ok } from "node:assert/strict";
 import { it as effectIt } from "@effect/vitest";
-import { DateTime, Effect, Layer, Random } from "effect";
+import { Context, DateTime, Effect, Layer, Random } from "effect";
 import { TestClock } from "effect/testing";
-import type { Db } from "mongodb";
+import { Binary, Decimal128, MongoBulkWriteError, ObjectId } from "mongodb";
+import type { Collection, Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { z } from "zod";
 
 import { JobStatus, Monque, NonRetryableError, ShutdownTimeoutError } from "@/index";
 import type { MonqueEventMap } from "@/index";
+import { JobIntake, makeNativeJobIntakeLayer } from "@/scheduler/services/job-intake.js";
+import { JobManagement, makeJobManagementLayer } from "@/scheduler/services/job-manager.js";
 import { JobOwnership, makeNativeJobOwnershipLayer } from "@/scheduler/services/job-ownership.js";
 import {
   JobPersistence,
   makeNativeJobPersistenceLayer,
 } from "@/scheduler/services/job-persistence.js";
+import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";
+import { ConnectionError } from "@/shared";
 import {
   cleanupTestDb,
   getTestDb,
@@ -20,6 +26,7 @@ import {
   waitFor,
 } from "@test-utils/test-utils";
 import { JobFactoryHelpers } from "@tests/factories";
+import { getMongoClient } from "@tests/setup/mongodb";
 
 class DeliveryError extends Error {
   override name = "DeliveryError";
@@ -244,6 +251,140 @@ describe("ownership with controlled Effect services", () => {
     await cleanupTestDb(db);
   });
 
+  effectIt.effect(
+    "preserves management retry dates, jitter, priority and synchronous notification order",
+    () =>
+      Effect.gen(function* managementRetryClock() {
+        const collection = db.collection(uniqueCollectionName("management-clock"));
+        const past = new Date("2025-01-01T00:00:00.000Z");
+
+        const jobs = [-7, 0, 19].map((priority) =>
+          JobFactoryHelpers.failed({
+            name: "retry",
+            priority,
+            createdAt: past,
+            updatedAt: past,
+            claimId: "old-claim",
+            claimedBy: "old-owner",
+            lockedAt: past,
+            lastHeartbeat: past,
+            leaseExpiresAt: past,
+          }),
+        );
+
+        yield* Effect.promise(async () => await collection.insertMany(jobs));
+        const order: string[] = [];
+        const notifications: { name: string | undefined; nextRunAt: Date }[] = [];
+
+        const fixture = Layer.merge(
+          makeJobManagementLayer({
+            collection,
+            emit: (event) => {
+              order.push(event);
+
+              return true;
+            },
+            notifyPendingJob: (name, nextRunAt) => {
+              order.push("pending");
+              notifications.push({ name, nextRunAt });
+            },
+          }),
+          makeNativeJobPersistenceLayer(collection),
+        ).pipe(
+          Layer.provideMerge(
+            makeJobQueriesLayer({
+              collection,
+              options: { ...ownershipOptions, statsCacheTtlMs: 60_000 },
+              workers: new Map(),
+              isPaused: () => false,
+            }),
+          ),
+        );
+
+        yield* Effect.gen(function* retryManagement() {
+          const management = yield* JobManagement;
+          const reads = yield* JobQueries;
+          const store = yield* JobPersistence;
+          yield* TestClock.setTime(Date.UTC(2030, 0, 1));
+          const [first] = jobs;
+
+          if (!first) {
+            throw new Error("Expected retry fixture");
+          }
+
+          const single = yield* management.retryJob(first._id.toHexString());
+          expect({ single, order }).toMatchObject({
+            single: {
+              status: JobStatus.PENDING,
+              priority: -7,
+              nextRunAt: new Date("2030-01-01T00:00:00.000Z"),
+              failCount: 0,
+            },
+            order: ["pending", "job:retried"],
+          });
+          yield* TestClock.adjust(60_000);
+          const result = yield* management.retryJobs({ name: "retry", status: JobStatus.FAILED });
+          const retried = yield* reads.getJobs({ name: "retry", status: JobStatus.PENDING });
+          const bulk = retried.filter((job) => !job._id.equals(first._id));
+          expect({
+            result,
+            order,
+            priorities: retried.map((job) => job.priority ?? 0).toSorted((a, b) => a - b),
+          }).toStrictEqual({
+            result: { count: 2, errors: [] },
+            order: ["pending", "job:retried", "jobs:retried", "pending", "pending"],
+            priorities: [-7, 0, 19],
+          });
+          const dates = bulk.map((job) => job.nextRunAt.getTime());
+          expect({
+            jitterInWindow: dates.every(
+              (date) => date >= Date.UTC(2030, 0, 1, 0, 1) && date < Date.UTC(2030, 0, 1, 0, 1, 30),
+            ),
+            notifications: notifications
+              .map(({ nextRunAt }) => nextRunAt.getTime())
+              .toSorted((a, b) => a - b),
+            metadata: retried.map(
+              ({
+                claimId,
+                claimedBy,
+                lockedAt,
+                lastHeartbeat,
+                leaseExpiresAt,
+                failReason,
+                failCount,
+              }) => ({
+                claimId,
+                claimedBy,
+                lockedAt,
+                lastHeartbeat,
+                leaseExpiresAt,
+                failReason,
+                failCount,
+              }),
+            ),
+          }).toMatchObject({
+            jitterInWindow: true,
+            metadata: [0, 1, 2].map(() => ({
+              claimId: undefined,
+              claimedBy: undefined,
+              lockedAt: undefined,
+              lastHeartbeat: undefined,
+              leaseExpiresAt: undefined,
+              failReason: undefined,
+              failCount: 0,
+            })),
+            notifications: retried
+              .map(({ nextRunAt }) => nextRunAt.getTime())
+              .toSorted((a, b) => a - b),
+          });
+          expect(yield* store.getJob(first._id)).toMatchObject({
+            nextRunAt: single?.nextRunAt,
+            priority: -7,
+          });
+        }).pipe(Effect.provide(fixture));
+      }),
+  );
+
   effectIt.effect("uses server time for renewable authority despite local clock changes", () =>
     Effect.gen(function* serverAuthority() {
       const collection = db.collection(uniqueCollectionName("clock-skew"));
@@ -401,5 +542,210 @@ describe("ownership with controlled Effect services", () => {
         }),
       );
     }),
+  );
+});
+
+const IntakeFixture = Context.Service<{
+  readonly collection: Collection;
+  readonly notifications: [string, Date][];
+}>("test/IntakeFixture");
+
+// Each provision acquires an isolated database; the client remains owned by test setup.
+const fixture = Layer.unwrap(
+  Effect.gen(function* acquireIntakeFixture() {
+    const db = yield* Effect.acquireRelease(
+      Effect.promise(async () => await getTestDb("intake-effects")),
+      (database) =>
+        Effect.promise(async () => {
+          await cleanupTestDb(database);
+        }),
+    );
+
+    const monque = new Monque(db);
+    yield* Effect.acquireRelease(
+      Effect.promise(async () => {
+        await monque.initialize();
+      }),
+      () =>
+        Effect.promise(async () => {
+          await monque.stop();
+        }),
+    );
+    const collection = db.collection("monque_jobs");
+    const notifications: [string, Date][] = [];
+
+    return Layer.mergeAll(
+      Layer.succeed(IntakeFixture, { collection, notifications }),
+      makeNativeJobIntakeLayer({
+        collection,
+        options: { maxPayloadSize: 1024 },
+        notifyPendingJob: (name, due) => {
+          notifications.push([name, due]);
+        },
+      }),
+      makeNativeJobPersistenceLayer(collection),
+    );
+  }),
+);
+
+describe("native intake with controlled Effect time", () => {
+  effectIt.effect("persists BSON, initial metadata and due dates across all intake paths", () =>
+    Effect.gen(function* nativeIntakeTime() {
+      const intake = yield* JobIntake;
+      const reads = yield* JobPersistence;
+      const { notifications } = yield* IntakeFixture;
+      yield* TestClock.setTime(Date.UTC(2026, 2, 28, 12));
+      const createdAt = new Date("2026-03-28T12:00:00.000Z");
+
+      const data = {
+        id: new ObjectId(),
+        amount: Decimal128.fromString("12.34"),
+        bytes: new Binary(Buffer.from([0, 127, 255])),
+        date: new Date(42),
+      };
+
+      const immediate = yield* intake.now("immediate", data, { priority: 8 });
+      yield* TestClock.adjust(1000);
+
+      const delayed = yield* intake.enqueue("delayed", data, {
+        runAt: new Date("2026-03-29T10:00:00.000Z"),
+        priority: -3,
+      });
+
+      const recurring = yield* intake.schedule("0 9 * * *", "recurring", data, {
+        timezone: "Europe/Berlin",
+        uniqueKey: "daily",
+        priority: 5,
+      });
+
+      const batch = yield* intake.enqueueMany([
+        { name: "batch", data, uniqueKey: "one", priority: 2 },
+        { name: "batch", data: {}, uniqueKey: "one", priority: 99 },
+      ]);
+
+      expect({ immediate, delayed, recurring, batch }).toMatchObject({
+        immediate: { nextRunAt: createdAt, createdAt, updatedAt: createdAt, priority: 8 },
+        delayed: {
+          nextRunAt: new Date("2026-03-29T10:00:00.000Z"),
+          createdAt: new Date("2026-03-28T12:00:01.000Z"),
+          priority: -3,
+        },
+        recurring: {
+          nextRunAt: new Date("2026-03-29T07:00:00.000Z"),
+          repeatInterval: "0 9 * * *",
+          timezone: "Europe/Berlin",
+          priority: 5,
+        },
+        batch: { insertedCount: 1, deduplicatedCount: 1 },
+      });
+
+      for (const job of [immediate, delayed, recurring]) {
+        const stored = yield* reads.getJob(job._id);
+        expect(stored).toMatchObject({ data, status: JobStatus.PENDING, failCount: 0 });
+        expect(stored).not.toHaveProperty("claimId");
+      }
+
+      expect(notifications).toStrictEqual([
+        ["immediate", createdAt],
+        ["delayed", new Date("2026-03-29T10:00:00.000Z")],
+        ["recurring", new Date("2026-03-29T07:00:00.000Z")],
+        ["batch", new Date("2026-03-28T12:00:01.000Z")],
+      ]);
+    }).pipe(Effect.provide(fixture)),
+  );
+  effectIt.effect(
+    "borrows the caller session and suppresses local notifications until commit",
+    () =>
+      Effect.gen(function* nativeTransactionIntake() {
+        const intake = yield* JobIntake;
+        const reads = yield* JobPersistence;
+        const { collection, notifications } = yield* IntakeFixture;
+        const client = yield* Effect.promise(async () => await getMongoClient());
+
+        const session = yield* Effect.acquireRelease(
+          Effect.sync(() => client.startSession()),
+          (ownedSession) =>
+            Effect.promise(async () => {
+              await ownedSession.endSession();
+            }),
+        );
+
+        session.startTransaction();
+        const first = yield* intake.enqueue("work", {}, { session, uniqueKey: "one" });
+        yield* intake.now("work", {}, { session });
+        yield* intake.schedule("@daily", "work", {}, { session, timezone: "UTC" });
+        yield* intake.enqueueMany([{ name: "work", data: {} }], { session });
+
+        const inSession = yield* Effect.promise(
+          async () => await collection.countDocuments({}, { session }),
+        );
+
+        expect({
+          inSession,
+          visible: yield* reads.getJob(first._id),
+          active: session.inTransaction(),
+          ended: session.hasEnded,
+          notifications,
+        }).toStrictEqual({
+          inSession: 4,
+          visible: null,
+          active: true,
+          ended: false,
+          notifications: [],
+        });
+        // Only the caller controls commit. Notification delivery afterward belongs to streams/polling.
+        yield* Effect.promise(async () => {
+          await session.commitTransaction();
+        });
+        expect(yield* reads.getJob(first._id)).toMatchObject({ name: "work", uniqueKey: "one" });
+        yield* intake.enqueue("outside", {}, { session });
+        expect({ ended: session.hasEnded, notifications }).toStrictEqual({
+          ended: false,
+          notifications: [["outside", new Date(0)]],
+        });
+      }).pipe(Effect.provide(fixture)),
+  );
+
+  effectIt.effect(
+    "notifies successful pending writes before returning native partial batch details",
+    () =>
+      Effect.gen(function* partialBatchNotifications() {
+        const intake = yield* JobIntake;
+        const { collection, notifications } = yield* IntakeFixture;
+        yield* Effect.promise(
+          async () =>
+            await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true }),
+        );
+        yield* intake.enqueue("existing", { email: "taken" });
+        notifications.length = 0;
+
+        const failure = yield* Effect.flip(
+          intake.enqueueMany([
+            { name: "first", data: {}, priority: 7 },
+            { name: "rejected", data: { email: "taken" }, uniqueKey: "unrelated-index" },
+            { name: "last", data: {}, runAt: new Date(60_000), priority: -2 },
+          ]),
+        );
+
+        ok(failure instanceof ConnectionError);
+        ok(failure.cause instanceof MongoBulkWriteError);
+
+        expect({
+          indices: failure.cause.result.getWriteErrors().map((error) => error.index),
+          inserted: failure.cause.result.upsertedCount,
+          matched: failure.cause.result.matchedCount,
+          upsertedIndices: Object.keys(failure.cause.result.upsertedIds),
+          notifications,
+        }).toStrictEqual({
+          indices: [1],
+          inserted: 2,
+          matched: 0,
+          upsertedIndices: ["0", "2"],
+          notifications: [
+            ["first", new Date(0)],
+            ["last", new Date(60_000)],
+          ],
+        });
+      }).pipe(Effect.provide(fixture)),
   );
 });

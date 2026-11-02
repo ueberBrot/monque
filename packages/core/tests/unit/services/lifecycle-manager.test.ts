@@ -1,17 +1,22 @@
 /**
- * Unit tests for LifecycleManager service.
+ * Tests for scoped scheduler maintenance.
  *
  * Tests timer setup/teardown, cleanup logic, and error emission.
  */
 import { it as effectIt } from "@effect/vitest";
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Exit, Scope } from "effect";
 import { map as mapEffect } from "effect/Effect";
 import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { LifecycleManager } from "@/scheduler/services/lifecycle-manager.js";
-import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
+import { makeNativeJobOwnership } from "@/scheduler/services/job-ownership.js";
+import { makeSchedulerMaintenance } from "@/scheduler/services/lifecycle-manager.js";
+import type {
+  MaintenanceRun,
+  SchedulerMaintenance,
+} from "@/scheduler/services/lifecycle-manager.js";
+import { createMockContext, JobFactoryHelpers } from "@tests/factories";
 import { clockWithWallTime } from "@tests/setup/clock.js";
 import { anyMatcher, anythingMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
@@ -25,22 +30,59 @@ const writeResult = {
   upsertedId: null,
 };
 
-describe(LifecycleManager, () => {
+const maintenanceFixture = (ctx: ReturnType<typeof createMockContext>) =>
+  makeSchedulerMaintenance({
+    options: ctx.options,
+    collection: ctx.collection,
+    ownership: makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options),
+    activeClaimIds: () => {
+      const claimIds: string[] = [];
+
+      for (const worker of ctx.workers.values()) {
+        for (const job of worker.activeJobs.values()) {
+          if (job.claimId !== undefined && job.claimId !== "") {
+            claimIds.push(job.claimId);
+          }
+        }
+      }
+
+      return claimIds;
+    },
+    emit: ctx.emit,
+    notifyPendingJob: ctx.notifyPendingJob,
+  });
+
+effectIt.effect("skips heartbeat writes when no claims are active", () =>
+  Effect.gen(function* noActiveClaims() {
+    const ctx = createMockContext();
+    const manager = yield* maintenanceFixture(ctx);
+    yield* manager.start;
+    yield* TestClock.adjust(ctx.options.heartbeatInterval * 3);
+    expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
+  }),
+);
+
+describe("scheduler maintenance", () => {
   let ctx: ReturnType<typeof createMockContext>;
-  let manager: LifecycleManager;
+  let manager: SchedulerMaintenance;
+  let run: MaintenanceRun;
+  let scope: Scope.Closeable;
+
   beforeEach(() => {
     ctx = createMockContext();
-    manager = new LifecycleManager(ctx);
+    scope = Scope.makeUnsafe();
+    manager = Effect.runSync(maintenanceFixture(ctx).pipe(Scope.provide(scope)));
     const job = JobFactoryHelpers.processing({ claimId: "owned-claim" });
-    ctx.registerWorker(job.name, createWorker({ activeJobs: new Map([["owned-claim", job]]) }));
+    ctx.admission.register(job.name, () => {});
+    ctx.admission.beginExecution(job.name, job);
     vi.mocked(ctx.mockCollection.updateMany).mockResolvedValue(writeResult);
   });
-  afterEach(() => {
-    manager.stopTimers();
+  afterEach(async () => {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
-  describe("startTimers", () => {
+  describe("start", () => {
     beforeEach(() => {
       vi.useFakeTimers();
       vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
@@ -56,10 +98,10 @@ describe(LifecycleManager, () => {
         deletedCount: 0,
       });
 
-      manager.startTimers();
-      manager.stopTimers(true);
-      manager.startTimers();
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
+      Effect.runSync(run.beginDrain(true));
+      run = Effect.runSync(manager.start);
+      run = Effect.runSync(manager.start);
       cleanup.mockClear();
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect({
@@ -71,7 +113,7 @@ describe(LifecycleManager, () => {
         cleanupMockCallsLength: 1,
         getTimerCount: 2,
       });
-      manager.stopTimers();
+      Effect.runSync(run.stop);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect({
         collectionUpdateManyMockCallsLength: ctx.mockCollection.updateMany.mock.calls.length,
@@ -85,7 +127,7 @@ describe(LifecycleManager, () => {
     });
 
     it("should set up heartbeat interval", async () => {
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Advance by one heartbeat interval
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledExactlyOnceWith(
@@ -101,7 +143,7 @@ describe(LifecycleManager, () => {
     it("waits for in-flight heartbeat maintenance before starting another call", async () => {
       const pending = Promise.withResolvers<typeof writeResult>();
       vi.mocked(ctx.mockCollection.updateMany).mockReturnValueOnce(pending.promise);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
       pending.resolve(writeResult);
@@ -116,7 +158,7 @@ describe(LifecycleManager, () => {
       vi.mocked(ctx.mockCollection.updateMany)
         .mockReturnValueOnce(heartbeat.promise)
         .mockReturnValueOnce(recovery.promise);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
       heartbeat.resolve(writeResult);
@@ -150,9 +192,9 @@ describe(LifecycleManager, () => {
       ctx.options.leaseDuration = 3000;
       const heartbeat = Promise.withResolvers<typeof writeResult>();
       vi.mocked(ctx.mockCollection.updateMany).mockReturnValueOnce(heartbeat.promise);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
-      manager.stopTimers(true);
+      Effect.runSync(run.beginDrain(true));
       vi.mocked(ctx.isRunning).mockReturnValue(false);
       heartbeat.resolve(writeResult);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
@@ -170,7 +212,7 @@ describe(LifecycleManager, () => {
     it("skips stale recovery when recovery is disabled", async () => {
       ctx.options.leaseDuration = 3000;
       ctx.options.recoverStaleJobs = false;
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
     });
@@ -181,7 +223,7 @@ describe(LifecycleManager, () => {
       vi.mocked(ctx.mockCollection.updateMany)
         .mockResolvedValueOnce(writeResult)
         .mockRejectedValueOnce(recoveryError);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect(ctx.emitHistory).toContainEqual({
         event: "job:error",
@@ -193,12 +235,11 @@ describe(LifecycleManager, () => {
 
     it("should set up cleanup interval when jobRetention is configured", () => {
       ctx.options.jobRetention = { completed: 60_000, failed: 120_000 };
-      manager = new LifecycleManager(ctx);
       vi.spyOn(ctx.mockCollection, "deleteMany").mockResolvedValue({
         acknowledged: true,
         deletedCount: 0,
       });
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // cleanupJobs should run immediately on start
       expect(vi.mocked(ctx.mockCollection.deleteMany).mock.calls.length).toBeGreaterThan(0);
     });
@@ -210,12 +251,11 @@ describe(LifecycleManager, () => {
         failed: 120_000,
         interval: retentionInterval,
       };
-      manager = new LifecycleManager(ctx);
       vi.spyOn(ctx.mockCollection, "deleteMany").mockResolvedValue({
         acknowledged: true,
         deletedCount: 0,
       });
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Clear the immediate call
       vi.mocked(ctx.mockCollection.deleteMany).mockClear();
       // Advance by the retention interval
@@ -227,7 +267,7 @@ describe(LifecycleManager, () => {
       // Default ctx has no jobRetention — spy must be in place before
       // startTimers so any immediate cleanup call would be observed.
       vi.spyOn(ctx.mockCollection, "deleteMany");
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       await vi.advanceTimersByTimeAsync(10_000);
       // With no jobRetention, cleanupJobs is never called
       expect(ctx.mockCollection.deleteMany).not.toHaveBeenCalled();
@@ -236,7 +276,7 @@ describe(LifecycleManager, () => {
     it("emits job:error and retries on the next interval when heartbeat updates reject", async () => {
       const heartbeatError = new Error("Heartbeat failed");
       vi.mocked(ctx.mockCollection.updateMany).mockRejectedValueOnce(heartbeatError);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Advance past one heartbeat interval
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval);
       expect(ctx.emitHistory).toContainEqual(
@@ -251,10 +291,9 @@ describe(LifecycleManager, () => {
 
     it("should emit job:error when initial cleanupJobs rejects", async () => {
       ctx.options.jobRetention = { completed: 60_000, failed: 120_000 };
-      manager = new LifecycleManager(ctx);
       const cleanupError = new Error("Cleanup failed");
       vi.spyOn(ctx.mockCollection, "deleteMany").mockRejectedValue(cleanupError);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Wait for the initial cleanupJobs rejection to be handled
       await vi.advanceTimersByTimeAsync(0);
       expect(ctx.emitHistory).toContainEqual(
@@ -272,12 +311,11 @@ describe(LifecycleManager, () => {
         failed: 120_000,
         interval: retentionInterval,
       };
-      manager = new LifecycleManager(ctx);
       const cleanupError = new Error("Cleanup failed");
       vi.spyOn(ctx.mockCollection, "deleteMany")
         .mockResolvedValueOnce({ acknowledged: true, deletedCount: 0 })
         .mockRejectedValueOnce(cleanupError);
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Advance by the retention interval to trigger the failing cleanup
       await vi.advanceTimersByTimeAsync(retentionInterval);
       expect(ctx.emitHistory).toContainEqual(
@@ -288,7 +326,7 @@ describe(LifecycleManager, () => {
       );
     });
   });
-  describe("stopTimers", () => {
+  describe("stop", () => {
     beforeEach(() => {
       vi.useFakeTimers();
       vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
@@ -297,10 +335,10 @@ describe(LifecycleManager, () => {
     });
 
     it("should clear all intervals so callbacks stop firing", async () => {
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       // Clear initial call counts
       vi.mocked(ctx.mockCollection.updateMany).mockClear();
-      manager.stopTimers();
+      Effect.runSync(run.stop);
       // Advance time — no callbacks should fire
       await vi.advanceTimersByTimeAsync(ctx.options.pollInterval * 5);
       await vi.advanceTimersByTimeAsync(ctx.options.heartbeatInterval * 5);
@@ -308,16 +346,60 @@ describe(LifecycleManager, () => {
     });
 
     it("should be safe to call multiple times", () => {
-      manager.startTimers();
+      run = Effect.runSync(manager.start);
       expect(() => {
-        manager.stopTimers();
-        manager.stopTimers();
+        Effect.runSync(run.stop);
+        Effect.runSync(run.stop);
       }).not.toThrow();
     });
   });
+  effectIt.effect(
+    "keeps a later drain renewing after an earlier run stops with a slow heartbeat",
+    () =>
+      Effect.gen(function* drainAcrossRestart() {
+        ctx.options.heartbeatInterval = 1000;
+        ctx.options.leaseDuration = 3000;
+        ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
+        const heartbeat = Promise.withResolvers<typeof writeResult>();
+        vi.mocked(ctx.mockCollection.updateMany).mockReturnValueOnce(heartbeat.promise);
+        vi.mocked(ctx.mockCollection.deleteMany).mockResolvedValue({
+          acknowledged: true,
+          deletedCount: 0,
+        });
+        const earlier = yield* manager.start;
+
+        try {
+          yield* TestClock.adjust(1000);
+          yield* earlier.beginDrain(true);
+          yield* TestClock.adjust(2000);
+          expect(ctx.mockCollection.updateMany).toHaveBeenCalledOnce();
+          const later = yield* manager.start;
+          yield* later.beginDrain(true);
+          heartbeat.resolve(writeResult);
+          yield* TestClock.adjust(1000);
+          expect(ctx.mockCollection.updateMany).toHaveBeenCalledTimes(2);
+          yield* earlier.stop;
+          yield* earlier.beginDrain(false);
+          yield* TestClock.adjust(1000);
+          expect({
+            heartbeats: ctx.mockCollection.updateMany.mock.calls.length,
+            cleanups: ctx.mockCollection.deleteMany.mock.calls.length,
+          }).toStrictEqual({ heartbeats: 3, cleanups: 3 });
+          expect(ctx.mockCollection.updateMany).not.toHaveBeenCalledWith(
+            objectContainingMatcher({ $or: anyMatcher(Array) }),
+            anythingMatcher(),
+          );
+          yield* later.stop;
+          yield* TestClock.adjust(5000);
+          expect(ctx.mockCollection.updateMany).toHaveBeenCalledTimes(3);
+        } finally {
+          heartbeat.resolve(writeResult);
+        }
+      }),
+  );
+
   effectIt.effect("skips retention ticks until the previous cleanup settles across restart", () =>
     Effect.gen(function* effectWorkflow1() {
-      const context = yield* Effect.context();
       ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
       const result = { acknowledged: true, deletedCount: 0 };
       const pending = Promise.withResolvers<typeof result>();
@@ -327,25 +409,23 @@ describe(LifecycleManager, () => {
         .mockResolvedValue(result)
         .mockReturnValueOnce(pending.promise);
 
-      manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
-
       try {
-        manager.startTimers();
+        run = yield* manager.start;
         yield* TestClock.adjust(5000);
         expect(deletion).toHaveBeenCalledOnce();
-        manager.stopTimers();
-        manager.startTimers();
+        yield* run.stop;
+        run = yield* manager.start;
         yield* TestClock.adjust(2000);
         expect(deletion).toHaveBeenCalledOnce();
         pending.resolve(result);
         yield* TestClock.adjust(1000);
         expect(deletion).toHaveBeenCalledTimes(2);
-        manager.stopTimers();
+        yield* run.stop;
         yield* TestClock.adjust(5000);
         expect(deletion).toHaveBeenCalledTimes(2);
       } finally {
         pending.resolve(result);
-        manager.stopTimers();
+        yield* run.stop;
       }
     }),
   );
@@ -353,7 +433,6 @@ describe(LifecycleManager, () => {
     "keeps retention single-flight after an early failure until its sibling settles, sibling rejects: %s",
     (siblingRejects) =>
       Effect.gen(function* effectWorkflow2() {
-        const context = yield* Effect.context();
         ctx.options.jobRetention = { completed: 60_000, failed: 120_000, interval: 1000 };
         const result = { acknowledged: true, deletedCount: 0 };
         const pending = Promise.withResolvers<typeof result>();
@@ -365,16 +444,14 @@ describe(LifecycleManager, () => {
           .mockRejectedValueOnce(error)
           .mockReturnValueOnce(pending.promise);
 
-        manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
-
         try {
-          manager.startTimers();
+          run = yield* manager.start;
           yield* TestClock.adjust(0);
           expect(ctx.emitHistory).toStrictEqual([{ event: "job:error", payload: { error } }]);
           yield* TestClock.adjust(5000);
           expect(deletion).toHaveBeenCalledTimes(2);
-          manager.stopTimers();
-          manager.startTimers();
+          yield* run.stop;
+          run = yield* manager.start;
           yield* TestClock.adjust(1000);
           expect(deletion).toHaveBeenCalledTimes(2);
 
@@ -394,7 +471,7 @@ describe(LifecycleManager, () => {
           });
         } finally {
           pending.resolve(result);
-          manager.stopTimers();
+          yield* run.stop;
         }
       }),
   );
@@ -406,7 +483,6 @@ describe(LifecycleManager, () => {
         const clock = yield* Clock.Clock;
         let offset = 60_000;
         yield* Effect.gen(function* effectWorkflow4() {
-          const context = yield* Effect.context();
           ctx.options.heartbeatInterval = 1000;
           ctx.options.leaseDuration = 1100;
           ctx.options.recoverStaleJobs = false;
@@ -417,10 +493,8 @@ describe(LifecycleManager, () => {
             deletedCount: 0,
           });
 
-          manager = new LifecycleManager(ctx, undefined, Effect.runForkWith(context));
-
           try {
-            manager.startTimers();
+            run = yield* manager.start;
             yield* testClock.adjust(1000);
             expect({
               collectionUpdateManyMockCallsLength: ctx.mockCollection.updateMany.mock.calls.length,
@@ -457,7 +531,7 @@ describe(LifecycleManager, () => {
               updatedAt: { $lt: new Date(54_000 + shift) },
             });
           } finally {
-            manager.stopTimers();
+            yield* run.stop;
           }
         }).pipe(
           Effect.provideService(
@@ -484,7 +558,7 @@ describe(LifecycleManager, () => {
           deletedCount: 3,
         });
         yield* TestClock.setTime(new Date("2025-06-01T12:00:00.000Z").getTime());
-        yield* manager.cleanupJobs();
+        yield* manager.cleanupJobs;
         expect(ctx.mockCollection.deleteMany).toHaveBeenCalledExactlyOnceWith({
           status,
           updatedAt: { $lt: new Date(cutoff) },
@@ -501,10 +575,10 @@ describe(LifecycleManager, () => {
             deletedCount: 0,
           });
           yield* TestClock.setTime(new Date("2025-06-01T12:00:00.000Z").getTime());
-          yield* manager.cleanupJobs();
+          yield* manager.cleanupJobs;
           vi.mocked(ctx.mockCollection.deleteMany).mockClear();
           yield* TestClock.setTime(new Date("2025-06-01T12:05:00.000Z").getTime());
-          yield* manager.cleanupJobs();
+          yield* manager.cleanupJobs;
           expect(ctx.mockCollection.deleteMany).toHaveBeenCalledTimes(3);
           expect(ctx.mockCollection.deleteMany).toHaveBeenCalledWith({
             status: JobStatus.COMPLETED,
@@ -522,7 +596,7 @@ describe(LifecycleManager, () => {
     );
     effectIt.effect("does not delete jobs when retention is not configured", () =>
       Effect.gen(function* effectWorkflow7() {
-        yield* manager.cleanupJobs();
+        yield* manager.cleanupJobs;
         expect(ctx.mockCollection.deleteMany).not.toHaveBeenCalled();
       }),
     );

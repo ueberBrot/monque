@@ -1,6 +1,6 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 /**
- * Factory for creating mock SchedulerContext and WorkerRegistration for service unit tests.
+ * Factory for creating mock service dependencies and WorkerRegistration for service unit tests.
  *
  * Provides a reusable mock context with vi.fn() stubs for all methods,
  * allowing tests to verify internal service behavior without MongoDB.
@@ -9,9 +9,8 @@ import type { Collection } from "mongodb";
 import { vi } from "vite-plus/test";
 
 import type { MonqueEventMap } from "@/events";
-import { documentToPersistedJob } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
-import type { ResolvedMonqueOptions, SchedulerContext } from "@/scheduler/services/types.js";
+import type { ResolvedMonqueOptions } from "@/scheduler/services/types.js";
 import { WorkerAdmissionState } from "@/scheduler/services/worker-admission.js";
 import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerRegistration } from "@/workers";
@@ -61,13 +60,25 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
   statsCacheTtlMs: 5000,
 };
 
+interface FixtureDependencies {
+  collection: Collection;
+  options: ResolvedMonqueOptions;
+  instanceId: string;
+  admission: WorkerAdmissionState;
+  isRunning: () => boolean;
+  isPaused: (name?: string) => boolean;
+  emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+  notifyJobFinished: (name: string) => void;
+}
+
 /**
- * Create a mock SchedulerContext for testing internal services.
+ * Create mock service dependencies for testing internal services.
  *
  * @example
  * ```typescript
  * const ctx = createMockContext();
- * const intake = new JobIntake(ctx);
+ * const intake = makeNativeJobIntake(ctx);
  *
  * // Mock collection responses using vi.spyOn and JobFactory
  * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
@@ -76,7 +87,8 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
  * expect(ctx.emitHistory).toContainEqual({ event: 'job:cancelled', payload: ... });
  * ```
  */
-export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => {
+
+export const createMockContext = (overrides: Partial<FixtureDependencies> = {}) => {
   const mockCollection = createMockCollection();
 
   const emitHistory: {
@@ -118,15 +130,14 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
       return admission.workers;
     },
 
-    documentToPersistedJob,
     ...overrides,
-    isRunning: vi.fn<MockFunction<SchedulerContext["isRunning"]>>(
+    isRunning: vi.fn<MockFunction<FixtureDependencies["isRunning"]>>(
       overrides.isRunning ?? (() => true),
     ),
-    isPaused: vi.fn<MockFunction<SchedulerContext["isPaused"]>>(
+    isPaused: vi.fn<MockFunction<FixtureDependencies["isPaused"]>>(
       overrides.isPaused ?? (() => false),
     ),
-    emit: vi.fn<MockFunction<SchedulerContext["emit"]>>(
+    emit: vi.fn<MockFunction<FixtureDependencies["emit"]>>(
       overrides.emit ??
         (<K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => {
           emitHistory.push({ event, payload });
@@ -134,10 +145,10 @@ export const createMockContext = (overrides: Partial<SchedulerContext> = {}) => 
           return true;
         }),
     ),
-    notifyPendingJob: vi.fn<MockFunction<SchedulerContext["notifyPendingJob"]>>(
+    notifyPendingJob: vi.fn<MockFunction<FixtureDependencies["notifyPendingJob"]>>(
       overrides.notifyPendingJob,
     ),
-    notifyJobFinished: vi.fn<MockFunction<SchedulerContext["notifyJobFinished"]>>(
+    notifyJobFinished: vi.fn<MockFunction<FixtureDependencies["notifyJobFinished"]>>(
       overrides.notifyJobFinished,
     ),
   };

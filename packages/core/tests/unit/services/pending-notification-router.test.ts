@@ -5,7 +5,10 @@ import type { Mock } from "vite-plus/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { fromPromise } from "@/scheduler/effects.js";
-import { PendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
+import {
+  makePendingNotificationRouter,
+  PendingNotificationRouter,
+} from "@/scheduler/services/pending-notification-router.js";
 import { createMockContext } from "@tests/factories";
 import { clockWithWallTime } from "@tests/setup/clock.js";
 import { nativeAsyncMock } from "@tests/setup/native-async-mock.js";
@@ -27,9 +30,9 @@ describe(PendingNotificationRouter, () => {
     onPoll = vi
       .fn<(targetNames?: ReadonlySet<string>) => Promise<void>>()
       .mockResolvedValue(undefined);
-    router = new PendingNotificationRouter(ctx, (...args) =>
+    router = new PendingNotificationRouter(ctx, (names) =>
       fromPromise(async () => {
-        await onPoll(...args);
+        await onPoll(names);
       }),
     );
   });
@@ -93,7 +96,7 @@ describe(PendingNotificationRouter, () => {
     }
 
     vi.advanceTimersByTime(1200);
-    expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
   });
 
   it("keeps a wakeup when too many names share one deadline, then restores targeting", () => {
@@ -104,7 +107,7 @@ describe(PendingNotificationRouter, () => {
     }
 
     vi.advanceTimersByTime(1200);
-    expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
     router.notifyPendingJob("email", new Date(Date.now() + 1000));
     vi.advanceTimersByTime(1200);
     expect(onPoll).toHaveBeenLastCalledWith(new Set(["email"]));
@@ -192,9 +195,9 @@ describe(PendingNotificationRouter, () => {
       .mockRejectedValueOnce(pollError)
       .mockResolvedValueOnce(undefined);
     router.close();
-    router = new PendingNotificationRouter(ctx, (...args) =>
+    router = new PendingNotificationRouter(ctx, (names) =>
       fromPromise(async () => {
-        await onPoll(...args);
+        await onPoll(names);
       }),
     );
     router.notifyPendingJob("email", new Date(Date.now() - 1000));
@@ -312,9 +315,9 @@ describe(PendingNotificationRouter, () => {
       .mockResolvedValue(undefined)
       .mockRejectedValueOnce(pollError);
     router.close();
-    router = new PendingNotificationRouter(ctx, (...args) =>
+    router = new PendingNotificationRouter(ctx, (names) =>
       fromPromise(async () => {
-        await onPoll(...args);
+        await onPoll(names);
       }),
     );
     router.notifyPendingJob("email", new Date(Date.now() + 1000));
@@ -347,7 +350,7 @@ describe(PendingNotificationRouter, () => {
 
   it("polls immediately on start and uses the fallback interval without streams", async () => {
     router.start();
-    expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+    expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
     await vi.advanceTimersByTimeAsync(999);
     expect(onPoll).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
@@ -403,6 +406,78 @@ describe(PendingNotificationRouter, () => {
 });
 
 describe("PendingNotificationRouter Effect scheduling", () => {
+  effectIt.effect.each([-500, 2000])(
+    "rechecks persisted wakeup deadlines after a wall-clock correction of %s ms",
+    (correction) =>
+      Effect.gen(function* moveDeadlineClock() {
+        const clock = yield* Clock.Clock;
+        const testClock = yield* TestClock.testClockWith(Effect.succeed);
+        let offset = 0;
+        const wallTime = () => clock.currentTimeMillisUnsafe() + offset;
+        const names: string[] = [];
+
+        const dispatch = (targets?: ReadonlySet<string>) =>
+          Effect.sync(() => {
+            names.push(...(targets ?? []));
+          });
+
+        yield* Effect.gen(function* wakeWithCorrectedTime() {
+          const router = yield* makePendingNotificationRouter(createMockContext(), dispatch);
+          router.notifyPendingJob("email", new Date(1000));
+          offset = correction;
+          yield* testClock.adjust(1200);
+
+          if (correction < 0) {
+            expect(names).toStrictEqual([]);
+            yield* testClock.adjust(500);
+          }
+
+          expect(names).toStrictEqual(["email"]);
+        }).pipe(
+          Effect.provideService(
+            Clock.Clock,
+            clockWithWallTime(clock, Effect.sync(wallTime), wallTime),
+          ),
+        );
+      }),
+  );
+  effectIt.effect("cancels discovery from a closed run before a restarted run dispatches", () =>
+    Effect.gen(function* restartDuringDiscovery() {
+      const context = yield* Effect.context();
+      const dispatched: number[] = [];
+      let run = 0;
+
+      const router = new PendingNotificationRouter(
+        createMockContext(),
+        () => {
+          run += 1;
+          const generation = run;
+
+          return Effect.sleep(1000).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                dispatched.push(generation);
+              }),
+            ),
+          );
+        },
+        Effect.runForkWith(context),
+        yield* Clock.Clock,
+      );
+
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          router.close();
+        }),
+      );
+      router.start();
+      yield* TestClock.adjust(500);
+      router.close();
+      router.start();
+      yield* TestClock.adjust(1000);
+      expect(dispatched).toStrictEqual([2]);
+    }),
+  );
   effectIt.effect.each([false, true])(
     "keeps full polling on elapsed time after a backward clock correction, stream active: %s",
     (streamActive) =>
