@@ -1,5 +1,5 @@
 import { Cause, Effect } from "effect";
-import type { Document, ObjectId } from "mongodb";
+import type { Document } from "mongodb";
 
 import { isValidJobStatus, JobStatus } from "@/jobs";
 import type {
@@ -105,62 +105,6 @@ export class JobQueryService {
     this.ctx = ctx;
     this.cursorListing = new CursorListing(ctx);
   }
-  /**
-   * Get a single job by its MongoDB ObjectId.
-   *
-   * Useful for retrieving job details when you have a job ID from events,
-   * logs, or stored references.
-   *
-   * @template T - The expected type of the job data payload
-   * @param id - The job's ObjectId
-   * @throws {ConnectionError} If scheduler not initialized
-   *
-   * @example Look up job from event
-   * ```typescript
-   * monque.on('job:fail', async ({ job }) => {
-   *   // Later, retrieve the job to check its status
-   *   const currentJob = await monque.getJob(job._id);
-   *   console.log(`Job status: ${currentJob?.status}`);
-   * });
-   * ```
-   *
-   * @example Admin endpoint
-   * ```typescript
-   * app.get('/jobs/:id', async (req, res) => {
-   *   const job = await monque.getJob(new ObjectId(req.params.id));
-   *   if (!job) {
-   *     return res.status(404).json({ error: 'Job not found' });
-   *   }
-   *   res.json(job);
-   * });
-   * ```
-   */
-  getJob = Effect.fnUntraced(function* getSingleJob<T = unknown>(
-    this: JobQueryService,
-    id: ObjectId,
-  ): Effect.fn.Return<PersistedJob<T> | null, ConnectionError> {
-    return yield* Effect.gen({ self: this }, function* readSingleJob() {
-      const doc = yield* fromPromise(async () => await this.ctx.collection.findOne({ _id: id }));
-
-      if (!doc) {
-        return null;
-      }
-
-      return this.ctx.documentToPersistedJob<T>(doc);
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const error = Cause.squash(cause);
-        const message = error instanceof Error ? error.message : "Unknown error during getJob";
-
-        return Effect.fail(
-          new ConnectionError(
-            `Failed to get job: ${message}`,
-            error instanceof Error ? { cause: error } : undefined,
-          ),
-        );
-      }),
-    );
-  });
   /**
    * Query jobs from the queue with optional filters.
    *

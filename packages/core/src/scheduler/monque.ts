@@ -37,6 +37,8 @@ import type { WorkerOptions, WorkerRegistration } from "@/workers";
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
 import type { JobManager } from "./services/job-manager.js";
+import { JobPersistenceError } from "./services/job-persistence-error.js";
+import { JobPersistence } from "./services/job-persistence.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
 import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
@@ -64,7 +66,7 @@ const DEFAULTS = {
   heartbeatInterval: 30_000,
 } as const;
 
-type SchedulerRuntime = ManagedRuntime.ManagedRuntime<SchedulerServices, never>;
+type SchedulerRuntime = ManagedRuntime.ManagedRuntime<SchedulerServices | JobPersistence, never>;
 
 interface LegacyConcurrencyOptions {
   defaultConcurrency?: number | undefined;
@@ -788,7 +790,6 @@ export class Monque extends EventEmitter {
    * });
    * ```
    *
-   * @see {@link JobQueryService.getJob}
    */
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
     const runtime = this.#runtime;
@@ -798,7 +799,20 @@ export class Monque extends EventEmitter {
     }
 
     return await runtime.runPromise(
-      SchedulerServices.use(({ queries: query }) => query.getJob<T>(new ObjectId(id))),
+      JobPersistence.use((persistence) => persistence.getJob<T>(new ObjectId(id))).pipe(
+        Effect.catchCause((cause) => {
+          const failure = Cause.squash(cause);
+          const error = failure instanceof JobPersistenceError ? failure.cause : failure;
+          const message = error instanceof Error ? error.message : "Unknown error during getJob";
+
+          return Effect.fail(
+            new ConnectionError(
+              `Failed to get job: ${message}`,
+              error instanceof Error ? { cause: error } : undefined,
+            ),
+          );
+        }),
+      ),
     );
   }
   /**

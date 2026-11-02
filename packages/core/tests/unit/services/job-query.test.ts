@@ -10,7 +10,6 @@ import type { FindCursor } from "mongodb";
  * Tests job lookup, offset listing, statistics, and Queue Views.
  * Uses mock SchedulerContext to test query building in isolation.
  */
-import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobQueryService } from "@/scheduler/services/job-query.js";
@@ -55,34 +54,6 @@ describe(JobQueryService, () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-  });
-  describe("getJob", () => {
-    it.effect("should throw ConnectionError when database operation fails", () =>
-      Effect.gen(function* effectWorkflow1() {
-        vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce(
-          new Error("Database connection lost"),
-        );
-        const failureResult1 = yield* Effect.result(queryService.getJob(new ObjectId()));
-        expect(failureResult1._tag).toBe("Failure");
-
-        if (Result.isSuccess(failureResult1)) {
-          throw new Error("Expected operation to fail");
-        }
-
-        const error = failureResult1.failure;
-        expect(error).toBeInstanceOf(ConnectionError);
-        expect(error.message).toMatch(/Failed to get job/u);
-      }),
-    );
-    it.effect("should wrap non-Error thrown values in ConnectionError", () =>
-      Effect.gen(function* effectWorkflow2() {
-        vi.spyOn(ctx.mockCollection, "findOne").mockRejectedValueOnce("String error");
-        expect(yield* Effect.result(queryService.getJob(new ObjectId()))).toMatchObject({
-          _tag: "Failure",
-          failure: anyMatcher(ConnectionError),
-        });
-      }),
-    );
   });
   describe("getJobs", () => {
     it.effect("should throw ConnectionError when database operation fails", () =>

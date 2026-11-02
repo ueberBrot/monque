@@ -5,6 +5,8 @@ import { ChangeStreamHandler } from "./services/change-stream-handler.js";
 import { JobIntake } from "./services/job-intake.js";
 import { JobLifecycle } from "./services/job-lifecycle.js";
 import { JobManager } from "./services/job-manager.js";
+import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
+import type { JobPersistence } from "./services/job-persistence.js";
 import { JobProcessor } from "./services/job-processor.js";
 import { JobQueryService } from "./services/job-query.js";
 import { LifecycleManager } from "./services/lifecycle-manager.js";
@@ -15,6 +17,7 @@ interface SchedulerExecution {
   readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
 }
 
+/** Temporary adapter for behavior not yet migrated to focused core services. */
 export class SchedulerServices extends Context.Service<
   SchedulerServices,
   {
@@ -27,7 +30,7 @@ export class SchedulerServices extends Context.Service<
   }
 >()("@monque/core/scheduler/Services") {}
 
-export const makeSchedulerLayer = (
+const makeLegacySchedulerLayer = (
   environment: SchedulerContext,
   execution: SchedulerExecution,
 ): Layer.Layer<SchedulerServices, unknown> =>
@@ -61,3 +64,17 @@ export const makeSchedulerLayer = (
       };
     }),
   );
+
+/**
+ * Instance composition only: building these Layers must not start a processing run.
+ * The Node adapter supplies the runner for legacy background work and owns the
+ * runtime. Focused services compose Effects directly; they do not use that runner.
+ */
+export const makeSchedulerLayer = (
+  environment: SchedulerContext,
+  execution: SchedulerExecution,
+  persistence: Layer.Layer<JobPersistence, unknown> = makeNativeJobPersistenceLayer(
+    environment.collection,
+  ),
+): Layer.Layer<SchedulerServices | JobPersistence, unknown> =>
+  Layer.merge(makeLegacySchedulerLayer(environment, execution), persistence);
