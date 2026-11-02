@@ -4,24 +4,24 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { JobLifecycle } from "@/scheduler/services/job-lifecycle.js";
-import { ConnectionError } from "@/shared";
+import { makeNativeJobOwnership } from "@/scheduler/services/job-ownership.js";
+import type { JobOwnership } from "@/scheduler/services/job-ownership.js";
 import { createMockContext, JobFactory, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
-describe(JobLifecycle, () => {
+describe(makeNativeJobOwnership, () => {
   let ctx: ReturnType<typeof createMockContext>;
-  let lifecycle: JobLifecycle;
+  let ownership: JobOwnership["Service"];
   beforeEach(() => {
     ctx = createMockContext();
-    lifecycle = new JobLifecycle(ctx);
+    ownership = makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options);
   });
   describe("claimNext acquisition", () => {
     it.effect("claims the highest-priority due pending job for this scheduler instance", () =>
       Effect.gen(function* effectWorkflow1() {
         const pendingJob = JobFactory.build({ name: "email" });
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(pendingJob);
-        const job = yield* lifecycle.claimNext("email");
+        const job = yield* ownership.claimNext("email");
         expect(job?.name).toBe("email");
         expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
           objectContainingMatcher({
@@ -59,7 +59,7 @@ describe(JobLifecycle, () => {
         });
 
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
-        const result = yield* lifecycle.completeOwned(job);
+        const result = yield* ownership.completeOwned(job);
         expect({
           result,
           notifyPendingJobMockCallsLength: ctx.notifyPendingJob.mock.calls.length,
@@ -70,66 +70,11 @@ describe(JobLifecycle, () => {
       }),
     );
   });
-  describe("recoverStaleJobs", () => {
-    it.effect("resets stale processing jobs to pending and emits the recovered count", () =>
-      Effect.gen(function* effectWorkflow3() {
-        vi.spyOn(ctx.mockCollection, "updateMany").mockResolvedValueOnce({
-          acknowledged: true,
-          matchedCount: 2,
-          modifiedCount: 2,
-          upsertedCount: 0,
-          upsertedId: null,
-        });
-        yield* lifecycle.recoverStaleJobs();
-        expect(ctx.emitHistory).toContainEqual({
-          event: "stale:recovered",
-          payload: { count: 2 },
-        });
-      }),
-    );
-  });
-  describe("assertNoActiveInstanceCollision", () => {
-    it.effect(
-      "throws when another processing job has this scheduler id and a recent heartbeat",
-      () =>
-        Effect.gen(function* effectWorkflow4() {
-          const activeJob = JobFactory.build({
-            name: "email",
-            status: JobStatus.PROCESSING,
-            claimedBy: "test-instance-id",
-            lastHeartbeat: new Date(),
-          });
-
-          vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(activeJob);
-          const error = yield* Effect.flip(lifecycle.assertNoActiveInstanceCollision());
-          expect(error).toBeInstanceOf(ConnectionError);
-          expect(ctx.mockCollection.findOne).toHaveBeenCalledWith({
-            claimedBy: "test-instance-id",
-            status: JobStatus.PROCESSING,
-            lastHeartbeat: { $gte: anyMatcher(Date) },
-          });
-        }),
-    );
-  });
   describe("claimNext", () => {
-    it.effect("should return null if scheduler is not running", () =>
-      Effect.gen(function* effectWorkflow5() {
-        vi.spyOn(ctx, "isRunning").mockReturnValue(false);
-        const job = yield* lifecycle.claimNext("test-job");
-        expect({
-          job,
-          mockCollectionFindOneAndUpdateMockCallsLength:
-            ctx.mockCollection.findOneAndUpdate.mock.calls.length,
-        }).toStrictEqual({
-          job: null,
-          mockCollectionFindOneAndUpdateMockCallsLength: 0,
-        });
-      }),
-    );
     it.effect("should return null when no jobs available", () =>
       Effect.gen(function* effectWorkflow6() {
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
-        const job = yield* lifecycle.claimNext("test-job");
+        const job = yield* ownership.claimNext("test-job");
         expect(job).toBeNull();
       }),
     );
@@ -146,7 +91,7 @@ describe(JobLifecycle, () => {
         });
 
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(completedJob);
-        const result = yield* lifecycle.completeOwned(job);
+        const result = yield* ownership.completeOwned(job);
         expect(result).not.toBeNull();
         expect({
           resultStatus: result?.status,
@@ -182,13 +127,9 @@ describe(JobLifecycle, () => {
         });
 
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(rescheduledJob);
-        const result = yield* lifecycle.completeOwned(job);
+        const result = yield* ownership.completeOwned(job);
         expect(result).not.toBeNull();
         expect(result?.status).toBe(JobStatus.PENDING);
-        expect(ctx.notifyPendingJob).toHaveBeenCalledWith(
-          rescheduledJob.name,
-          rescheduledJob.nextRunAt,
-        );
         expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
           {
             _id: job._id,
@@ -207,7 +148,7 @@ describe(JobLifecycle, () => {
       Effect.gen(function* effectWorkflow9() {
         const job = JobFactoryHelpers.processing();
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
-        const result = yield* lifecycle.completeOwned(job);
+        const result = yield* ownership.completeOwned(job);
         expect(result).toBeNull();
         expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
           {
@@ -226,11 +167,11 @@ describe(JobLifecycle, () => {
         // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
 
-        const nonPersistedJob = fromAny<Parameters<typeof lifecycle.completeOwned>[0], unknown>(
+        const nonPersistedJob = fromAny<Parameters<typeof ownership.completeOwned>[0], unknown>(
           jobWithoutId,
         );
 
-        const result = yield* lifecycle.completeOwned(nonPersistedJob);
+        const result = yield* ownership.completeOwned(nonPersistedJob);
         expect({
           result,
           mockCollectionFindOneAndUpdateMockCallsLength:
@@ -257,7 +198,7 @@ describe(JobLifecycle, () => {
 
         const error = new Error("Test failure");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(retriedJob);
-        const result = yield* lifecycle.failOwned(job, error);
+        const result = yield* ownership.failOwned(job, error);
         expect(result).not.toBeNull();
         expect({
           resultStatus: result?.status,
@@ -266,10 +207,6 @@ describe(JobLifecycle, () => {
           resultStatus: JobStatus.PENDING,
           resultFailCount: 1,
         });
-        expect(ctx.notifyPendingJob).toHaveBeenCalledExactlyOnceWith(
-          retriedJob.name,
-          retriedJob.nextRunAt,
-        );
         expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledWith(
           {
             _id: job._id,
@@ -302,7 +239,7 @@ describe(JobLifecycle, () => {
 
         const error = new Error("Final failure");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(failedJob);
-        const result = yield* lifecycle.failOwned(job, error);
+        const result = yield* ownership.failOwned(job, error);
         expect(result).not.toBeNull();
         expect({
           resultStatus: result?.status,
@@ -336,7 +273,7 @@ describe(JobLifecycle, () => {
         const job = JobFactoryHelpers.processing({ failCount: 0 });
         const error = new Error("Test failure");
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValueOnce(null);
-        const result = yield* lifecycle.failOwned(job, error);
+        const result = yield* ownership.failOwned(job, error);
         expect({
           result,
           notifyPendingJobMockCallsLength: ctx.notifyPendingJob.mock.calls.length,
@@ -361,12 +298,12 @@ describe(JobLifecycle, () => {
         // oxlint-disable-next-line sonarjs/no-unused-vars -- Destructuring excludes this property from the rest object.
         const { _id: _, ...jobWithoutId } = JobFactory.build();
 
-        const nonPersistedJob = fromAny<Parameters<typeof lifecycle.failOwned>[0], unknown>(
+        const nonPersistedJob = fromAny<Parameters<typeof ownership.failOwned>[0], unknown>(
           jobWithoutId,
         );
 
         const error = new Error("Test error");
-        const result = yield* lifecycle.failOwned(nonPersistedJob, error);
+        const result = yield* ownership.failOwned(nonPersistedJob, error);
         expect({
           result,
           notifyPendingJobMockCallsLength: ctx.notifyPendingJob.mock.calls.length,
@@ -377,14 +314,6 @@ describe(JobLifecycle, () => {
           notifyPendingJobMockCallsLength: 0,
           mockCollectionFindOneAndUpdateMockCallsLength: 0,
         });
-      }),
-    );
-  });
-  describe("updateOwnedHeartbeats", () => {
-    it.effect("skips heartbeat writes when no claims are active", () =>
-      Effect.gen(function* effectWorkflow15() {
-        yield* lifecycle.updateOwnedHeartbeats();
-        expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
       }),
     );
   });

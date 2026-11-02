@@ -1,13 +1,15 @@
 import { Cause, Clock, Effect, Exit, Fiber, Schedule, Scope, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
-import type { DeleteResult } from "mongodb";
+import type { Collection } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";
 
-import { fromPromise, observeBackgroundFailure } from "../effects.js";
-import { JobLifecycle } from "./job-lifecycle.js";
-import type { SchedulerContext } from "./types.js";
+import { attempt, observeBackgroundFailure } from "../effects.js";
+import type { JobOwnership } from "./job-ownership.js";
+import { JobPersistenceError } from "./job-persistence-error.js";
+import type { ResolvedMonqueOptions } from "./types.js";
 
 const monotonicFixed = (interval: number): Schedule.Schedule<number> =>
   Schedule.fromStep(
@@ -20,191 +22,175 @@ const monotonicFixed = (interval: number): Schedule.Schedule<number> =>
     }),
   );
 
-/**
- * Default retention check interval (1 hour).
- */
 const DEFAULT_RETENTION_INTERVAL = 3_600_000;
 
-/**
- * Statuses covered by the completed/failed retention index.
- */
+/** Statuses covered by the completed/failed retention index. */
 export const CLEANUP_STATUSES = [JobStatus.COMPLETED, JobStatus.FAILED] as const;
 
-interface LifecycleTimers {
-  heartbeat: Scope.Closeable | null;
-  cleanup: Scope.Closeable | null;
+/** A stop call keeps this handle across its execution drain, including restarts. */
+export interface MaintenanceRun {
+  readonly beginDrain: (keepHeartbeat: boolean) => Effect.Effect<void>;
+  readonly stop: Effect.Effect<void>;
+}
+
+export interface SchedulerMaintenance {
+  readonly start: Effect.Effect<MaintenanceRun>;
+  readonly cleanupJobs: Effect.Effect<void, JobPersistenceError>;
+}
+
+interface MaintenanceDependencies {
+  readonly options: Pick<
+    ResolvedMonqueOptions,
+    "heartbeatInterval" | "leaseDuration" | "recoverStaleJobs" | "jobRetention"
+  >;
+  readonly collection: Collection;
+  readonly ownership: JobOwnership["Service"];
+  /** The execution owner supplies a fresh snapshot; maintenance owns no Claim registry. */
+  readonly activeClaimIds: () => readonly string[];
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
 }
 
 /**
- * Manages scheduler lifecycle timers and job cleanup.
- *
- * Owns the heartbeat interval, cleanup interval, and the
- * cleanupJobs logic. Extracted from Monque to keep the facade thin.
- *
- * Not part of public API.
- * @internal
+ * Composed once in the instance Layer. Run scopes own schedules; the instance
+ * scope owns already-started writes, which finish even after a run stops. Closing
+ * a run never waits for a database write or a Promise Worker. Native Db, client
+ * and sessions are borrowed and are never finalized here.
  */
-export class LifecycleManager {
-  private timers: LifecycleTimers = { heartbeat: null, cleanup: null };
-  private heartbeatRunning = false;
-  private readonly cleanupPermit = Semaphore.makeUnsafe(1);
-  private readonly ctx: SchedulerContext;
-  private readonly lifecycle;
-  private readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
-  constructor(
-    ctx: SchedulerContext,
-    lifecycle = new JobLifecycle(ctx),
-    runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E> = Effect.runFork,
-  ) {
-    this.ctx = ctx;
-    this.lifecycle = lifecycle;
-    this.runFork = runFork;
-  }
-  /**
-   * Start all lifecycle timers.
-   *
-   * Sets up the heartbeat interval and optional retention cleanup interval.
-   */
-  startTimers(): void {
-    this.stopTimers();
+export const makeSchedulerMaintenance = Effect.fnUntraced(function* makeSchedulerMaintenance(
+  dependencies: MaintenanceDependencies,
+): Effect.fn.Return<SchedulerMaintenance, never, Scope.Scope> {
+  const { options, ownership, collection, activeClaimIds, emit, notifyPendingJob } = dependencies;
+  const instanceScope = yield* Scope.Scope;
+  const heartbeatPermit = yield* Semaphore.make(1);
+  const cleanupPermit = yield* Semaphore.make(1);
+  let current: MaintenanceRun | undefined;
 
-    // Start heartbeat interval for claimed jobs
-    const heartbeat = Effect.gen({ self: this }, function* runHeartbeatSchedule() {
-      if (this.heartbeatRunning) {
-        return;
-      }
-
-      this.heartbeatRunning = true;
-      yield* Effect.gen({ self: this }, function* refreshOwnedHeartbeats() {
-        yield* this.lifecycle.updateOwnedHeartbeats();
-
-        if (
-          this.ctx.isRunning() &&
-          this.ctx.options.leaseDuration !== undefined &&
-          this.ctx.options.recoverStaleJobs
-        ) {
-          yield* this.lifecycle.recoverStaleJobs();
-        }
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
-          }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            this.heartbeatRunning = false;
-          }),
-        ),
-      );
-    });
-
-    const heartbeatScope = Scope.makeUnsafe();
-    this.timers = { heartbeat: heartbeatScope, cleanup: null };
-    Fiber.runIn(
-      this.runFork(
-        Effect.sleep(this.ctx.options.heartbeatInterval).pipe(
-          Effect.andThen(
-            Effect.forkDetach(heartbeat, { startImmediately: true, uninterruptible: true }).pipe(
-              Effect.tap((fiber) => Effect.sync(() => observeBackgroundFailure(fiber))),
-              Effect.repeat(monotonicFixed(this.ctx.options.heartbeatInterval)),
-              Effect.asVoid,
-            ),
-          ),
-        ),
+  const reportFailure = <A, E>(operation: Effect.Effect<A, E>) =>
+    operation.pipe(
+      Effect.mapError((failure) =>
+        failure instanceof JobPersistenceError ? failure.cause : failure,
       ),
-      heartbeatScope,
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          emit("job:error", { error: toError(Cause.squash(cause)) });
+        }),
+      ),
     );
 
-    // Start cleanup interval if retention is configured
-    if (this.ctx.options.jobRetention) {
-      const interval = this.ctx.options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL;
+  const forkOperation = <A, E>(operation: Effect.Effect<A, E>) =>
+    Effect.forkIn(operation, instanceScope, { startImmediately: true, uninterruptible: true });
 
-      const cleanup = this.cleanupJobs().pipe(
-        Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            this.ctx.emit("job:error", { error: toError(Cause.squash(cause)) });
-          }),
-        ),
-      );
+  const dispatch = <A, E>(operation: Effect.Effect<A, E>) =>
+    forkOperation(operation).pipe(
+      Effect.tap((fiber) => Effect.sync(() => observeBackgroundFailure(fiber))),
+    );
 
-      // Run immediately on start
-      const cleanupScope = Scope.makeUnsafe();
-      this.timers = { heartbeat: heartbeatScope, cleanup: cleanupScope };
-      Fiber.runIn(
-        this.runFork(
-          Effect.forkDetach(cleanup, { startImmediately: true, uninterruptible: true }).pipe(
-            Effect.tap((fiber) => Effect.sync(() => observeBackgroundFailure(fiber))),
-            Effect.repeat(monotonicFixed(interval)),
-            Effect.asVoid,
-          ),
-        ),
-        cleanupScope,
-      );
-    }
-  }
-  /**
-   * Stop all lifecycle timers.
-   *
-   * Clears heartbeat and cleanup intervals.
-   */
-  stopTimers(keepHeartbeat = false): void {
-    const { timers } = this;
-    this.timers = {
-      heartbeat: keepHeartbeat ? timers.heartbeat : null,
-      cleanup: null,
-    };
-
-    if (timers.cleanup) {
-      this.runFork(Scope.close(timers.cleanup, Exit.void));
-    }
-
-    if (timers.heartbeat && !keepHeartbeat) {
-      this.runFork(Scope.close(timers.heartbeat, Exit.void));
-    }
-  }
-  /**
-   * Clean up terminal jobs based on each status's configured retention period.
-   *
-   */
-  cleanupJobs = Effect.fnUntraced(function* cleanExpiredJobs(
-    this: LifecycleManager,
-  ): Effect.fn.Return<void, unknown> {
-    if (!this.ctx.options.jobRetention) {
+  const cleanupJobs = Effect.gen(function* cleanExpiredJobs() {
+    if (!options.jobRetention) {
       return;
     }
 
     const now = yield* Clock.currentTimeMillis;
-    const deletions: Effect.Effect<DeleteResult, unknown>[] = [];
 
-    for (const status of [...CLEANUP_STATUSES, JobStatus.CANCELLED]) {
-      const age = this.ctx.options.jobRetention[status];
+    const deletions = [...CLEANUP_STATUSES, JobStatus.CANCELLED].flatMap((status) => {
+      const age = options.jobRetention?.[status];
 
-      if (age === null || age === undefined) {
-        continue;
-      }
-
-      deletions.push(
-        fromPromise(
-          async () =>
-            await this.ctx.collection.deleteMany({
-              status,
-              updatedAt: { $lt: new Date(now - age) },
+      return age === null || age === undefined
+        ? []
+        : [
+            Effect.tryPromise({
+              try: async () =>
+                await collection.deleteMany({ status, updatedAt: { $lt: new Date(now - age) } }),
+              catch: (cause) => new JobPersistenceError({ cause }),
             }),
-        ),
-      );
-    }
+          ];
+    });
 
-    if (deletions.length > 0 && (yield* this.cleanupPermit.takeIfAvailable(1))) {
-      const fibers = yield* forEachEffect(deletions, (deletion) =>
-        Effect.forkDetach(deletion, { startImmediately: true, uninterruptible: true }),
-      );
+    if (deletions.length > 0 && (yield* cleanupPermit.takeIfAvailable(1))) {
+      const fibers = yield* forEachEffect(deletions, forkOperation);
 
-      yield* Effect.forkDetach(
-        Fiber.awaitAll(fibers).pipe(Effect.andThen(this.cleanupPermit.release(1))),
-        { startImmediately: true, uninterruptible: true },
-      );
+      // Report the first failure promptly, but retain the permit until every
+      // native deletion settles. Later ticks (also after restart) are skipped.
+      yield* forkOperation(Fiber.awaitAll(fibers).pipe(Effect.andThen(cleanupPermit.release(1))));
       yield* Fiber.joinAll(fibers);
     }
-  }, Effect.uninterruptible);
-}
+  }).pipe(Effect.asVoid, Effect.uninterruptible);
+
+  const notifyRecovery = (count: number, now: Date) =>
+    attempt(() => {
+      emit("stale:recovered", { count });
+      notifyPendingJob(undefined, now);
+    });
+
+  const start = Effect.gen(function* startMaintenanceRun() {
+    if (current) {
+      yield* current.stop;
+    }
+
+    const heartbeatScope = yield* Scope.fork(instanceScope);
+    const cleanupScope = yield* Scope.fork(instanceScope);
+    let recovering = true;
+
+    const stop = Effect.gen(function* stopMaintenanceRun() {
+      recovering = false;
+      yield* Scope.close(cleanupScope, Exit.void);
+      yield* Scope.close(heartbeatScope, Exit.void);
+    });
+
+    const run: MaintenanceRun = {
+      beginDrain: Effect.fnUntraced(function* beginMaintenanceDrain(keepHeartbeat: boolean) {
+        recovering = false;
+        yield* Scope.close(cleanupScope, Exit.void);
+
+        if (!keepHeartbeat) {
+          yield* Scope.close(heartbeatScope, Exit.void);
+        }
+      }),
+      stop,
+    };
+
+    // Publish before immediate cleanup can synchronously reenter the adapter.
+    current = run;
+
+    const heartbeat = Effect.gen(function* refreshOwnedHeartbeats() {
+      const claimIds = yield* Effect.sync(activeClaimIds);
+      yield* ownership.updateOwnedHeartbeats(claimIds);
+
+      if (recovering && options.leaseDuration !== undefined && options.recoverStaleJobs) {
+        const count = yield* ownership.recoverStaleJobs;
+
+        if (count > 0) {
+          const now = yield* Clock.currentTimeMillis;
+          yield* notifyRecovery(count, new Date(now));
+        }
+      }
+    }).pipe(heartbeatPermit.withPermitsIfAvailable(1), reportFailure);
+
+    yield* Effect.forkIn(
+      Effect.sleep(options.heartbeatInterval).pipe(
+        Effect.andThen(
+          dispatch(heartbeat).pipe(Effect.repeat(monotonicFixed(options.heartbeatInterval))),
+        ),
+      ),
+      heartbeatScope,
+      { startImmediately: true, uninterruptible: false },
+    );
+
+    if (options.jobRetention) {
+      yield* Effect.forkIn(
+        dispatch(reportFailure(cleanupJobs)).pipe(
+          Effect.repeat(
+            monotonicFixed(options.jobRetention.interval ?? DEFAULT_RETENTION_INTERVAL),
+          ),
+        ),
+        cleanupScope,
+        { startImmediately: true, uninterruptible: false },
+      );
+    }
+
+    return run;
+  }).pipe(Effect.uninterruptible);
+
+  return { start, cleanupJobs };
+});

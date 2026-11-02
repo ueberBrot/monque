@@ -19,7 +19,7 @@ import type { FindCursor } from "mongodb";
  * Unit tests for JobQueryService.
  *
  * Tests job lookup, offset listing, statistics, and Queue Views.
- * Uses mock SchedulerContext to test query building in isolation.
+ * Uses mock service dependencies to test query building in isolation.
  */
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
@@ -807,7 +807,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set("image-resize", createWorker({ concurrency: 7 }));
+        ctx.registerWorker("image-resize", createWorker({ concurrency: 7 }));
         const summaries = yield* queryService.getQueueViewSummaries();
         expect(summaries).toMatchObject([
           {
@@ -911,7 +911,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set(
+        ctx.registerWorker(
           "email-send",
           createWorker({
             concurrency: 3,
@@ -962,7 +962,7 @@ describe(JobQueryService, () => {
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
           );
-          ctx.workers.set(
+          ctx.registerWorker(
             "email-send",
             createWorker({
               concurrency: 3,
