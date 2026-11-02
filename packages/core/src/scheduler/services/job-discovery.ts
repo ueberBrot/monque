@@ -1,18 +1,23 @@
 import { Cause, Clock, Effect } from "effect";
+import type { Collection } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 import { toError } from "@/shared";
 
 import { fromPromise } from "../effects.js";
 import { readJobCursor } from "./read-job-cursor.js";
-import type { SchedulerContext } from "./types.js";
 
 const DISCOVERY_READ_OPTIONS = {
   readPreference: "primary",
   readConcern: { level: "local" },
 } as const;
 
-type DiscoveryContext = Pick<SchedulerContext, "collection" | "emit" | "notifyPendingJob">;
+interface DiscoveryContext {
+  readonly collection: Collection;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+}
 
 const hasSimpleCollation = (value: unknown): value is { locale: "simple" } =>
   typeof value === "object" && value !== null && "locale" in value && value.locale === "simple";

@@ -30,6 +30,7 @@ import { validateJobPriority } from "../../shared/utils/job-priority.js";
 import { attempt, fromPromise } from "../effects.js";
 import type { MonqueOptions } from "../types.js";
 import { JobPersistenceError } from "./job-persistence-error.js";
+import { makeOperationTelemetry } from "./operation-telemetry.js";
 
 const isUniqueJobIndexPattern = (value: unknown): value is { name: 1; uniqueKey: 1 } => {
   if (typeof value !== "object" || value === null || !("name" in value)) {
@@ -81,7 +82,10 @@ const validateJobIdentifiers = (name: string, uniqueKey?: string): void => {
 };
 
 /** One native intake policy for immediate, delayed, batch and recurring Jobs. @internal */
-export const makeNativeJobIntake = (dependencies: JobIntakeDependencies) => {
+export const makeNativeJobIntake = (
+  dependencies: JobIntakeDependencies,
+  telemetry = makeOperationTelemetry(),
+) => {
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Job payloads intentionally accept every BSON-serializable value; size validation must not add a payload schema.
   const validatePayloadSize = (data: unknown): void => {
     const maxSize = dependencies.options.maxPayloadSize;
@@ -218,50 +222,56 @@ export const makeNativeJobIntake = (dependencies: JobIntakeDependencies) => {
     );
   });
 
-  const schedule = Effect.fnUntraced(function* scheduleJob<T>(
-    cron: string,
-    name: string,
-    data: T,
-    options: ScheduleOptions = {},
-  ): Effect.fn.Return<PersistedJob<T>, unknown> {
-    yield* attempt(() => {
-      validateJobIdentifiers(name, options.uniqueKey);
-      validatePayloadSize(data);
-      validateJobPriority(options.priority);
-    });
+  const schedule = Effect.fnUntraced(
+    function* scheduleJob<T>(
+      cron: string,
+      name: string,
+      data: T,
+      options: ScheduleOptions = {},
+    ): Effect.fn.Return<PersistedJob<T>, unknown> {
+      yield* attempt(() => {
+        validateJobIdentifiers(name, options.uniqueKey);
+        validatePayloadSize(data);
+        validateJobPriority(options.priority);
+      });
 
-    const referenceDate = yield* DateTime.nowAsDate;
+      const referenceDate = yield* DateTime.nowAsDate;
 
-    const nextRunAt = yield* attempt(() => getNextCronDate(cron, referenceDate, options.timezone));
+      const nextRunAt = yield* attempt(() =>
+        getNextCronDate(cron, referenceDate, options.timezone),
+      );
 
-    const now = yield* DateTime.nowAsDate;
+      const now = yield* DateTime.nowAsDate;
 
-    const job = yield* attempt(() => {
-      const pendingJob: Omit<Job<T>, "_id"> = {
-        name,
-        data,
-        status: JobStatus.PENDING,
-        nextRunAt,
-        priority: options.priority ?? 0,
-        repeatInterval: cron,
-        failCount: 0,
-        createdAt: now,
-        updatedAt: now,
-      };
+      const job = yield* attempt(() => {
+        const pendingJob: Omit<Job<T>, "_id"> = {
+          name,
+          data,
+          status: JobStatus.PENDING,
+          nextRunAt,
+          priority: options.priority ?? 0,
+          repeatInterval: cron,
+          failCount: 0,
+          createdAt: now,
+          updatedAt: now,
+        };
 
-      if (options.timezone !== undefined) {
-        pendingJob.timezone = options.timezone;
-      }
+        if (options.timezone !== undefined) {
+          pendingJob.timezone = options.timezone;
+        }
 
-      if (options.uniqueKey !== undefined) {
-        pendingJob.uniqueKey = options.uniqueKey;
-      }
+        if (options.uniqueKey !== undefined) {
+          pendingJob.uniqueKey = options.uniqueKey;
+        }
 
-      return pendingJob;
-    });
+        return pendingJob;
+      });
 
-    return yield* persistPendingJob("schedule", job, options);
-  }, Effect.mapError(intakeFailure));
+      return yield* persistPendingJob("schedule", job, options);
+    },
+    Effect.mapError(intakeFailure),
+    (body) => telemetry.observe("intake.schedule", body),
+  );
 
   const createEnqueuedJob = Effect.fnUntraced(function* constructEnqueuedJob<T>(
     name: string,
@@ -294,15 +304,19 @@ export const makeNativeJobIntake = (dependencies: JobIntakeDependencies) => {
     return job;
   });
 
-  const enqueue = Effect.fnUntraced(function* enqueueJob<T>(
-    name: string,
-    data: T,
-    options: EnqueueOptions = {},
-  ): Effect.fn.Return<PersistedJob<T>, unknown> {
-    const job = yield* createEnqueuedJob(name, data, options);
+  const enqueue = Effect.fnUntraced(
+    function* enqueueJob<T>(
+      name: string,
+      data: T,
+      options: EnqueueOptions = {},
+    ): Effect.fn.Return<PersistedJob<T>, unknown> {
+      const job = yield* createEnqueuedJob(name, data, options);
 
-    return yield* persistPendingJob("enqueue", job, options);
-  }, Effect.mapError(intakeFailure));
+      return yield* persistPendingJob("enqueue", job, options);
+    },
+    Effect.mapError(intakeFailure),
+    (body) => telemetry.observe("intake.enqueue", body),
+  );
 
   const reconcileBulkConflict = Effect.fnUntraced(function* reconcileConflictingJobs(
     failure: MongoBulkWriteError,
@@ -370,85 +384,89 @@ export const makeNativeJobIntake = (dependencies: JobIntakeDependencies) => {
     };
   });
 
-  const enqueueMany = Effect.fnUntraced(function* enqueueJobBatch(
-    inputs: readonly EnqueueJob[],
-    options: JobWriteOptions = {},
-  ): Effect.fn.Return<EnqueueManyResult, unknown> {
-    const { session } = options;
+  const enqueueMany = Effect.fnUntraced(
+    function* enqueueJobBatch(
+      inputs: readonly EnqueueJob[],
+      options: JobWriteOptions = {},
+    ): Effect.fn.Return<EnqueueManyResult, unknown> {
+      const { session } = options;
 
-    const jobs = yield* forEachEffect(inputs, (input) =>
-      createEnqueuedJob(input.name, input.data, input),
-    );
+      const jobs = yield* forEachEffect(inputs, (input) =>
+        createEnqueuedJob(input.name, input.data, input),
+      );
 
-    if (jobs.length === 0) {
-      return { insertedCount: 0, deduplicatedCount: 0 };
-    }
-
-    let result: BulkWriteResult | undefined;
-
-    const outcome = yield* fromPromise(
-      async () =>
-        await dependencies.collection.bulkWrite(
-          jobs.map((job) => ({
-            updateOne: {
-              filter:
-                job.uniqueKey === undefined
-                  ? { _id: new ObjectId() }
-                  : {
-                      name: job.name,
-                      uniqueKey: job.uniqueKey,
-                      status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
-                    },
-              update: { $setOnInsert: job },
-              upsert: true,
-            },
-          })),
-          { ordered: false, ...(session && { session }) },
-        ),
-    ).pipe(
-      Effect.map((written) => {
-        result = written;
-
-        return { insertedCount: written.upsertedCount, deduplicatedCount: written.matchedCount };
-      }),
-      Effect.catch((error) =>
-        Effect.gen(function* recoverBulkConflict() {
-          if (session?.inTransaction() === true) {
-            return yield* Effect.fail(error);
-          }
-
-          if (error instanceof MongoBulkWriteError) {
-            ({ result } = error);
-
-            const reconciled = yield* reconcileBulkConflict(error, jobs, options);
-
-            if (reconciled) {
-              return reconciled;
-            }
-          }
-
-          const cause = toError(error);
-
-          return yield* Effect.fail(
-            new ConnectionError(`Failed to enqueue jobs: ${cause.message}`, { cause }),
-          );
-        }),
-      ),
-      Effect.exit,
-    );
-
-    yield* attempt(() => {
-      for (const index of Object.keys(result?.upsertedIds ?? {})) {
-        const job = jobs[Number(index)];
-
-        if (job && session?.inTransaction() !== true) {
-          dependencies.notifyPendingJob(job.name, job.nextRunAt);
-        }
+      if (jobs.length === 0) {
+        return { insertedCount: 0, deduplicatedCount: 0 };
       }
-    });
 
-    return yield* outcome;
-  }, Effect.mapError(intakeFailure));
+      let result: BulkWriteResult | undefined;
+
+      const outcome = yield* fromPromise(
+        async () =>
+          await dependencies.collection.bulkWrite(
+            jobs.map((job) => ({
+              updateOne: {
+                filter:
+                  job.uniqueKey === undefined
+                    ? { _id: new ObjectId() }
+                    : {
+                        name: job.name,
+                        uniqueKey: job.uniqueKey,
+                        status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
+                      },
+                update: { $setOnInsert: job },
+                upsert: true,
+              },
+            })),
+            { ordered: false, ...(session && { session }) },
+          ),
+      ).pipe(
+        Effect.map((written) => {
+          result = written;
+
+          return { insertedCount: written.upsertedCount, deduplicatedCount: written.matchedCount };
+        }),
+        Effect.catch((error) =>
+          Effect.gen(function* recoverBulkConflict() {
+            if (session?.inTransaction() === true) {
+              return yield* Effect.fail(error);
+            }
+
+            if (error instanceof MongoBulkWriteError) {
+              ({ result } = error);
+
+              const reconciled = yield* reconcileBulkConflict(error, jobs, options);
+
+              if (reconciled) {
+                return reconciled;
+              }
+            }
+
+            const cause = toError(error);
+
+            return yield* Effect.fail(
+              new ConnectionError(`Failed to enqueue jobs: ${cause.message}`, { cause }),
+            );
+          }),
+        ),
+        Effect.exit,
+      );
+
+      yield* attempt(() => {
+        for (const index of Object.keys(result?.upsertedIds ?? {})) {
+          const job = jobs[Number(index)];
+
+          if (job && session?.inTransaction() !== true) {
+            dependencies.notifyPendingJob(job.name, job.nextRunAt);
+          }
+        }
+      });
+
+      return yield* outcome;
+    },
+    Effect.mapError(intakeFailure),
+    (body) => telemetry.observe("intake.batch", body),
+  );
 
   const now = Effect.fnUntraced(function* enqueueImmediateJob<T>(
     name: string,
@@ -467,5 +485,7 @@ export class JobIntake extends Context.Service<JobIntake, ReturnType<typeof make
   "@monque/core/scheduler/JobIntake",
 ) {}
 
-export const makeNativeJobIntakeLayer = (dependencies: JobIntakeDependencies) =>
-  Layer.succeed(JobIntake, makeNativeJobIntake(dependencies));
+export const makeNativeJobIntakeLayer = (
+  dependencies: JobIntakeDependencies,
+  telemetry = makeOperationTelemetry(),
+) => Layer.succeed(JobIntake, makeNativeJobIntake(dependencies, telemetry));

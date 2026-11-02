@@ -3,7 +3,7 @@ import { Schema } from "effect";
 import { MonqueError } from "@/shared";
 import type { RetryOptions } from "@/workers";
 
-import type { ResolvedMonqueOptions } from "./services/index.js";
+import type { ResolvedMonqueOptions } from "./services/types.js";
 
 const isNonNegativeSafeInteger = Schema.is(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
 
