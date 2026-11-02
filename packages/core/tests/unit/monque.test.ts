@@ -16,6 +16,7 @@ import type { MonqueOptions } from "@/scheduler/types.js";
 import {
   ConnectionError,
   InvalidJobIdentifierError,
+  MonqueError,
   ShutdownTimeoutError,
   WorkerRegistrationError,
 } from "@/shared";
@@ -51,6 +52,9 @@ describe(Monque, () => {
         upsertedCount: 0,
         upsertedId: null,
       }),
+      deleteOne: vi
+        .fn<MockFunction<Collection["deleteOne"]>>()
+        .mockResolvedValue({ acknowledged: true, deletedCount: 0 }),
       deleteMany: vi
         .fn<MockFunction<Collection["deleteMany"]>>()
         .mockResolvedValue({ acknowledged: true, deletedCount: 0 }),
@@ -77,6 +81,45 @@ describe(Monque, () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
+
+  it("retains native callback cause identity after a successful management write", async () => {
+    await monque.initialize();
+    const failure = new MongoServerError({ message: "Observer failed", code: 91 });
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on("job:cancelled", () => {
+      throw failure;
+    });
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toMatchObject({
+      message: "Failed to cancel job: Observer failed",
+      cause: failure,
+    });
+  });
+
+  it("preserves a domain error thrown by a synchronous management listener", async () => {
+    await monque.initialize();
+    const failure = new MonqueError("Observer domain failure");
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on("job:cancelled", () => {
+      throw failure;
+    });
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toBe(failure);
+  });
+
+  it("retains the non-Error callback fallback after a successful management write", async () => {
+    await monque.initialize();
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on(
+      "job:cancelled",
+      vi.fn<() => void>().mockImplementationOnce(() => {
+        // oxlint-disable-next-line typescript/only-throw-error, no-throw-literal -- Exercise arbitrary values thrown by public callbacks.
+        throw "Observer unavailable";
+      }),
+    );
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toStrictEqual(
+      new ConnectionError("Failed to cancel job: Unknown error during cancelJob"),
+    );
+  });
+
   describe("constructor", () => {
     it("should set maxListeners to 20", () => {
       expect(monque.getMaxListeners()).toBe(20);
@@ -1034,6 +1077,58 @@ describe(Monque, () => {
         new ConnectionError("Failed to get job: Unknown error during getJob"),
       );
     });
+
+    it.each([
+      "cancelJob",
+      "retryJob",
+      "rescheduleJob",
+      "setJobPriority",
+      "deleteJob",
+      "cancelJobs",
+      "retryJobs",
+      "deleteJobs",
+    ] as const)(
+      "invalidates shared statistics after %s rejects a driver failure",
+      async (action) => {
+        const toArray = vi
+          .fn<MockFunction<FindCursor["toArray"]>>()
+          .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 1 }] }])
+          .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
+
+        mockCollection.aggregate.mockReturnValue(
+          fromPartial<ReturnType<typeof mockCollection.aggregate>>({ toArray }),
+        );
+        const before = await monque.getQueueStats();
+        expect(before.total).toBe(1);
+        const failure = new MongoServerError({ message: "Partial write", code: 91 });
+        mockCollection.findOneAndUpdate.mockRejectedValueOnce(failure);
+        mockCollection.updateMany.mockRejectedValueOnce(failure);
+        mockCollection.deleteOne.mockRejectedValueOnce(failure);
+        mockCollection.deleteMany.mockRejectedValueOnce(failure);
+        const id = new ObjectId().toHexString();
+
+        const actions = {
+          cancelJob: async () => await monque.cancelJob(id),
+          retryJob: async () => await monque.retryJob(id),
+          rescheduleJob: async () => await monque.rescheduleJob(id, new Date()),
+          setJobPriority: async () => await monque.setJobPriority(id, 5),
+          deleteJob: async () => await monque.deleteJob(id),
+          cancelJobs: async () => await monque.cancelJobs({}),
+          retryJobs: async () => await monque.retryJobs({}),
+          deleteJobs: async () => await monque.deleteJobs({}),
+        };
+
+        const [result] = await Promise.allSettled([actions[action]()]);
+
+        if (result?.status !== "rejected" || !(result.reason instanceof ConnectionError)) {
+          throw new Error("Expected driver failure");
+        }
+
+        expect(result.reason.cause).toBe(failure);
+        const after = await monque.getQueueStats();
+        expect(after.total).toBe(2);
+      },
+    );
 
     it.each([false, true])(
       "refreshes cached statistics after a mutation (failed: %s)",
