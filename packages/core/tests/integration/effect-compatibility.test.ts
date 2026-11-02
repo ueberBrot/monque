@@ -7,11 +7,13 @@ import { z } from "zod";
 
 import { JobStatus, Monque, NonRetryableError, ShutdownTimeoutError } from "@/index";
 import type { MonqueEventMap } from "@/index";
+import { JobManagement, makeJobManagementLayer } from "@/scheduler/services/job-manager.js";
 import { JobOwnership, makeNativeJobOwnershipLayer } from "@/scheduler/services/job-ownership.js";
 import {
   JobPersistence,
   makeNativeJobPersistenceLayer,
 } from "@/scheduler/services/job-persistence.js";
+import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";
 import {
   cleanupTestDb,
   getTestDb,
@@ -243,6 +245,140 @@ describe("ownership with controlled Effect services", () => {
   afterAll(async () => {
     await cleanupTestDb(db);
   });
+
+  effectIt.effect(
+    "preserves management retry dates, jitter, priority and synchronous notification order",
+    () =>
+      Effect.gen(function* managementRetryClock() {
+        const collection = db.collection(uniqueCollectionName("management-clock"));
+        const past = new Date("2025-01-01T00:00:00.000Z");
+
+        const jobs = [-7, 0, 19].map((priority) =>
+          JobFactoryHelpers.failed({
+            name: "retry",
+            priority,
+            createdAt: past,
+            updatedAt: past,
+            claimId: "old-claim",
+            claimedBy: "old-owner",
+            lockedAt: past,
+            lastHeartbeat: past,
+            leaseExpiresAt: past,
+          }),
+        );
+
+        yield* Effect.promise(async () => await collection.insertMany(jobs));
+        const order: string[] = [];
+        const notifications: { name: string | undefined; nextRunAt: Date }[] = [];
+
+        const fixture = Layer.merge(
+          makeJobManagementLayer({
+            collection,
+            emit: (event) => {
+              order.push(event);
+
+              return true;
+            },
+            notifyPendingJob: (name, nextRunAt) => {
+              order.push("pending");
+              notifications.push({ name, nextRunAt });
+            },
+          }),
+          makeNativeJobPersistenceLayer(collection),
+        ).pipe(
+          Layer.provideMerge(
+            makeJobQueriesLayer({
+              collection,
+              options: { ...ownershipOptions, statsCacheTtlMs: 60_000 },
+              workers: new Map(),
+              isPaused: () => false,
+            }),
+          ),
+        );
+
+        yield* Effect.gen(function* retryManagement() {
+          const management = yield* JobManagement;
+          const reads = yield* JobQueries;
+          const store = yield* JobPersistence;
+          yield* TestClock.setTime(Date.UTC(2030, 0, 1));
+          const [first] = jobs;
+
+          if (!first) {
+            throw new Error("Expected retry fixture");
+          }
+
+          const single = yield* management.retryJob(first._id.toHexString());
+          expect({ single, order }).toMatchObject({
+            single: {
+              status: JobStatus.PENDING,
+              priority: -7,
+              nextRunAt: new Date("2030-01-01T00:00:00.000Z"),
+              failCount: 0,
+            },
+            order: ["pending", "job:retried"],
+          });
+          yield* TestClock.adjust(60_000);
+          const result = yield* management.retryJobs({ name: "retry", status: JobStatus.FAILED });
+          const retried = yield* reads.getJobs({ name: "retry", status: JobStatus.PENDING });
+          const bulk = retried.filter((job) => !job._id.equals(first._id));
+          expect({
+            result,
+            order,
+            priorities: retried.map((job) => job.priority ?? 0).toSorted((a, b) => a - b),
+          }).toStrictEqual({
+            result: { count: 2, errors: [] },
+            order: ["pending", "job:retried", "jobs:retried", "pending", "pending"],
+            priorities: [-7, 0, 19],
+          });
+          const dates = bulk.map((job) => job.nextRunAt.getTime());
+          expect({
+            jitterInWindow: dates.every(
+              (date) => date >= Date.UTC(2030, 0, 1, 0, 1) && date < Date.UTC(2030, 0, 1, 0, 1, 30),
+            ),
+            notifications: notifications
+              .map(({ nextRunAt }) => nextRunAt.getTime())
+              .toSorted((a, b) => a - b),
+            metadata: retried.map(
+              ({
+                claimId,
+                claimedBy,
+                lockedAt,
+                lastHeartbeat,
+                leaseExpiresAt,
+                failReason,
+                failCount,
+              }) => ({
+                claimId,
+                claimedBy,
+                lockedAt,
+                lastHeartbeat,
+                leaseExpiresAt,
+                failReason,
+                failCount,
+              }),
+            ),
+          }).toMatchObject({
+            jitterInWindow: true,
+            metadata: [0, 1, 2].map(() => ({
+              claimId: undefined,
+              claimedBy: undefined,
+              lockedAt: undefined,
+              lastHeartbeat: undefined,
+              leaseExpiresAt: undefined,
+              failReason: undefined,
+              failCount: 0,
+            })),
+            notifications: retried
+              .map(({ nextRunAt }) => nextRunAt.getTime())
+              .toSorted((a, b) => a - b),
+          });
+          expect(yield* store.getJob(first._id)).toMatchObject({
+            nextRunAt: single?.nextRunAt,
+            priority: -7,
+          });
+        }).pipe(Effect.provide(fixture));
+      }),
+  );
 
   effectIt.effect("uses server time for renewable authority despite local clock changes", () =>
     Effect.gen(function* serverAuthority() {

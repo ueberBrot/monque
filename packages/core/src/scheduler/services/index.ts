@@ -5,8 +5,6 @@ export { JobIntake } from "./job-intake.js";
 
 export { JobLifecycle } from "./job-lifecycle.js";
 
-export { JobManager } from "./job-manager.js";
-
 export { JobProcessor } from "./job-processor.js";
 
 export { JobQueryService } from "./job-query.js";
