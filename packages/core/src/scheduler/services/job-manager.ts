@@ -16,7 +16,7 @@ import { validateJobPriority } from "@/shared/utils/job-priority.js";
 
 import { attempt, fromPromise } from "../effects.js";
 import { buildSelectorQuery } from "../helpers.js";
-import { CLAIM_CLEANUP_FIELDS } from "./job-lifecycle.js";
+import { CLAIM_CLEANUP_FIELDS } from "./job-ownership.js";
 import { RETRYABLE_JOB_STATUSES } from "./types.js";
 import type { RetryableJobStatusType, SchedulerContext } from "./types.js";
 

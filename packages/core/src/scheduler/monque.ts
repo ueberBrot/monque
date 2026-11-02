@@ -37,6 +37,7 @@ import type { WorkerOptions, WorkerRegistration } from "@/workers";
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
 import type { JobManager } from "./services/job-manager.js";
+import type { JobOwnership } from "./services/job-ownership.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
@@ -66,7 +67,10 @@ const DEFAULTS = {
   heartbeatInterval: 30_000,
 } as const;
 
-type SchedulerRuntime = ManagedRuntime.ManagedRuntime<SchedulerServices | JobPersistence, never>;
+type SchedulerRuntime = ManagedRuntime.ManagedRuntime<
+  SchedulerServices | JobPersistence | JobOwnership,
+  never
+>;
 
 interface LegacyConcurrencyOptions {
   defaultConcurrency?: number | undefined;
