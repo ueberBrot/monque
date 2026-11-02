@@ -4,20 +4,16 @@ import { Effect } from "effect";
 import { beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { JobLifecycle } from "@/scheduler/services/job-lifecycle.js";
 import { makeNativeJobOwnership } from "@/scheduler/services/job-ownership.js";
 import type { JobOwnership } from "@/scheduler/services/job-ownership.js";
-import { ConnectionError } from "@/shared";
 import { createMockContext, JobFactory, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
-describe(JobLifecycle, () => {
+describe(makeNativeJobOwnership, () => {
   let ctx: ReturnType<typeof createMockContext>;
-  let lifecycle: JobLifecycle;
   let ownership: JobOwnership["Service"];
   beforeEach(() => {
     ctx = createMockContext();
-    lifecycle = new JobLifecycle(ctx);
     ownership = makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options);
   });
   describe("claimNext acquisition", () => {
@@ -72,47 +68,6 @@ describe(JobLifecycle, () => {
           notifyPendingJobMockCallsLength: 0,
         });
       }),
-    );
-  });
-  describe("recoverStaleJobs", () => {
-    it.effect("resets stale processing jobs to pending and emits the recovered count", () =>
-      Effect.gen(function* effectWorkflow3() {
-        vi.spyOn(ctx.mockCollection, "updateMany").mockResolvedValueOnce({
-          acknowledged: true,
-          matchedCount: 2,
-          modifiedCount: 2,
-          upsertedCount: 0,
-          upsertedId: null,
-        });
-        yield* lifecycle.recoverStaleJobs();
-        expect(ctx.emitHistory).toContainEqual({
-          event: "stale:recovered",
-          payload: { count: 2 },
-        });
-      }),
-    );
-  });
-  describe("assertNoActiveInstanceCollision", () => {
-    it.effect(
-      "throws when another processing job has this scheduler id and a recent heartbeat",
-      () =>
-        Effect.gen(function* effectWorkflow4() {
-          const activeJob = JobFactory.build({
-            name: "email",
-            status: JobStatus.PROCESSING,
-            claimedBy: "test-instance-id",
-            lastHeartbeat: new Date(),
-          });
-
-          vi.spyOn(ctx.mockCollection, "findOne").mockResolvedValueOnce(activeJob);
-          const error = yield* Effect.flip(lifecycle.assertNoActiveInstanceCollision());
-          expect(error).toBeInstanceOf(ConnectionError);
-          expect(ctx.mockCollection.findOne).toHaveBeenCalledWith({
-            claimedBy: "test-instance-id",
-            status: JobStatus.PROCESSING,
-            lastHeartbeat: { $gte: anyMatcher(Date) },
-          });
-        }),
     );
   });
   describe("claimNext", () => {
