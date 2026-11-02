@@ -67,7 +67,7 @@ const DEFAULT_TEST_OPTIONS: ResolvedMonqueOptions = {
  * @example
  * ```typescript
  * const ctx = createMockContext();
- * const intake = new JobIntake(ctx);
+ * const intake = makeNativeJobIntake(ctx);
  *
  * // Mock collection responses using vi.spyOn and JobFactory
  * vi.spyOn(ctx.mockCollection, 'findOne').mockResolvedValueOnce(JobFactory.build());
