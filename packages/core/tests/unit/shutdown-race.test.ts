@@ -162,6 +162,10 @@ describe("Monque Shutdown Race Condition", () => {
 
     // 1st call hangs (simulating long DB op), subsequent calls return null (to stop poll loop)
     collection.findOneAndUpdate.mockReturnValueOnce(firstCallPromise).mockResolvedValue(null);
+    const started = vi.fn<() => void>();
+    monque.on("job:start", () => {
+      started();
+    });
     // Start Monque (triggers poll via setInterval)
     monque.start();
     // Allow initial discovery to finish and begin the first claim.
@@ -186,10 +190,8 @@ describe("Monque Shutdown Race Condition", () => {
       await Promise.resolve();
     }
 
-    // Ensure the job was not absorbed into regular active job tracking
-    // oxlint-disable-next-line typescript/dot-notation -- Bracket access retains Monque's declared private worker type for this shutdown invariant without asserting a replacement object shape.
-    const worker = monque["workers"].get("test-job");
-    expect(worker?.activeJobs.has("job-1")).toBe(false);
+    // No public execution event may escape for a claim arriving after stop.
+    expect(started).not.toHaveBeenCalled();
     // Ensure the claim was reverted correctly
     expect(collection.updateOne).toHaveBeenCalledWith(
       { _id: "job-1", status: JobStatus.PROCESSING, claimedBy: anyMatcher(String), claimId: null },
@@ -201,5 +203,83 @@ describe("Monque Shutdown Race Condition", () => {
     await stopPromise;
     // Shutdown must prevent the next acquisition batch after this claim resolves.
     expect(collection.findOneAndUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("applies synchronous pause and inspection while a Claim is pending", async () => {
+    monque = new Monque(fromPartial<Db>(db), { recoverStaleJobs: false });
+    await monque.initialize();
+    const claim = Promise.withResolvers<WithId<Document> | null>();
+    const handler = vi.fn<() => void>();
+    monque.register("test-job", () => {
+      handler();
+    });
+    collection.findOneAndUpdate.mockReturnValueOnce(claim.promise).mockResolvedValue(null);
+    monque.start();
+
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(collection.findOneAndUpdate).toHaveBeenCalledOnce();
+      monque.pause("test-job");
+      expect(monque.getProcessingState("test-job")).toMatchObject({
+        paused: true,
+        globallyPaused: false,
+      });
+      monque.resume("test-job");
+      expect(monque.isPaused("test-job")).toBe(false);
+      monque.pause();
+      expect({
+        state: monque.getProcessingState("test-job"),
+        healthy: monque.isHealthy(),
+      }).toMatchObject({
+        state: { paused: true, globallyPaused: true },
+        healthy: true,
+      });
+      claim.resolve(JobFactoryHelpers.processing({ name: "test-job" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect({
+        executions: handler.mock.calls.length,
+        releases: collection.updateOne.mock.calls.length,
+      }).toStrictEqual({
+        executions: 0,
+        releases: 1,
+      });
+    } finally {
+      claim.resolve(null);
+      await monque.stop();
+    }
+  });
+
+  it("releases capacity when a synchronous start listener changes the delivered Claim", async () => {
+    monque = new Monque(fromPartial<Db>(db), {
+      recoverStaleJobs: false,
+      workerConcurrency: 1,
+      shutdownTimeout: 0,
+    });
+    await monque.initialize();
+    const first = JobFactoryHelpers.processing({ name: "work", claimId: "first" });
+    const second = JobFactoryHelpers.processing({ name: "work", claimId: "second" });
+    const claims = [first, second];
+    collection.findOneAndUpdate.mockImplementation(
+      async (filter) =>
+        await Promise.resolve(
+          filter["status"] === JobStatus.PENDING ? (claims.shift() ?? null) : null,
+        ),
+    );
+    const started: string[] = [];
+    monque.on("job:start", (job) => {
+      started.push(job.claimId ?? "missing");
+      job.claimId = "listener-changed";
+    });
+    monque.register("work", () => {});
+    monque.start();
+
+    try {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(started).toStrictEqual(["first", "second"]);
+    } finally {
+      const stopping = monque.stop();
+      await vi.advanceTimersByTimeAsync(0);
+      await stopping;
+    }
   });
 });

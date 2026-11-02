@@ -17,8 +17,6 @@ interface ProcessingState {
   repollRequested: boolean;
   repollIsCurrent: () => boolean;
   repollTargetNames: Set<string> | undefined;
-  totalActiveJobs: number;
-  lastServedWorker: string | undefined;
 }
 
 export class JobProcessor {
@@ -27,8 +25,6 @@ export class JobProcessor {
     repollRequested: false,
     repollIsCurrent: () => true,
     repollTargetNames: undefined,
-    totalActiveJobs: 0,
-    lastServedWorker: undefined,
   };
   private readonly discovery: JobDiscovery;
   private readonly ctx: SchedulerContext;
@@ -96,30 +92,15 @@ export class JobProcessor {
       _isCurrent?: () => boolean,
     ) => Effect.uninterruptible(effect),
   );
-  // oxlint-disable-next-line sonarjs/cognitive-complexity -- Round-robin worker selection and exponential claim batches share the instance concurrency budget.
   private readonly doPoll = Effect.fnUntraced(function* claimAvailableJobs(
     this: JobProcessor,
     targetNames: ReadonlySet<string> | undefined,
     isCurrent: () => boolean,
   ): Effect.fn.Return<void, unknown> {
     const { instanceConcurrency } = this.ctx.options;
-    const { state } = this;
     const canClaim = () => isCurrent() && this.ctx.isRunning();
-
-    if (instanceConcurrency !== undefined && state.totalActiveJobs >= instanceConcurrency) {
-      return;
-    }
-
-    let names = [...this.ctx.workers.keys()];
-    let requestedNames = targetNames;
-
-    if (instanceConcurrency !== undefined) {
-      const next =
-        state.lastServedWorker === undefined ? 0 : names.indexOf(state.lastServedWorker) + 1;
-
-      names = [...names.slice(next), ...names.slice(0, next)];
-      requestedNames = undefined;
-    }
+    const names = this.ctx.admission.orderedNames();
+    const requestedNames = instanceConcurrency === undefined ? targetNames : undefined;
 
     const eligibleNames = new Set(
       names.filter((name) => {
@@ -145,20 +126,16 @@ export class JobProcessor {
     for (const name of names) {
       const worker = this.ctx.workers.get(name);
 
-      if (!worker || this.ctx.isPaused(name) || !dueNames.has(name)) {
+      if (
+        !worker ||
+        this.ctx.isPaused(name) ||
+        !dueNames.has(name) ||
+        worker.activeJobs.size >= worker.concurrency
+      ) {
         continue;
       }
 
-      const workerAvailableSlots = worker.concurrency - worker.activeJobs.size;
-
-      if (workerAvailableSlots <= 0) {
-        continue;
-      }
-
-      const availableSlots =
-        instanceConcurrency === undefined
-          ? workerAvailableSlots
-          : Math.min(workerAvailableSlots, instanceConcurrency - this.state.totalActiveJobs);
+      const availableSlots = this.ctx.admission.availableSlots(name);
 
       if (availableSlots <= 0 || !canClaim()) {
         return;
@@ -181,7 +158,7 @@ export class JobProcessor {
                 }
 
                 found += 1;
-                this.state.lastServedWorker = name;
+                this.ctx.admission.noteClaim(name);
 
                 return this.dispatchClaim(job, worker, name, isCurrent);
               }),
@@ -229,11 +206,10 @@ export class JobProcessor {
       return;
     }
 
-    worker.activeJobs.set(job.claimId ?? job._id.toString(), job);
-    this.state.totalActiveJobs += 1;
+    const finishExecution = this.ctx.admission.beginExecution(name, job);
 
     const fiber = yield* Effect.forkDetach(
-      this.processJob(job, worker).pipe(
+      this.processJob(job, worker, finishExecution).pipe(
         Effect.catchCause((cause) =>
           attempt(() => {
             this.ctx.emit("job:error", { error: toError(Cause.squash(cause)), job });
@@ -245,9 +221,11 @@ export class JobProcessor {
 
     observeBackgroundFailure(fiber);
   });
-  private processJob(job: PersistedJob, worker: WorkerRegistration): Effect.Effect<void, unknown> {
-    const claimId = job.claimId ?? job._id.toString();
-
+  private processJob(
+    job: PersistedJob,
+    worker: WorkerRegistration,
+    finishExecution: () => void,
+  ): Effect.Effect<void, unknown> {
     return Effect.gen({ self: this }, function* executeClaimedJob() {
       const [duration] = yield* Effect.gen({ self: this }, function* measureWorkerExecution() {
         yield* attempt(() => this.ctx.emit("job:start", job));
@@ -299,8 +277,7 @@ export class JobProcessor {
       ),
       Effect.ensuring(
         Effect.sync(() => {
-          worker.activeJobs.delete(claimId);
-          this.state.totalActiveJobs -= 1;
+          finishExecution();
           this.ctx.notifyJobFinished(job.name);
         }),
       ),
