@@ -1,9 +1,17 @@
+import { it as effectIt } from "@effect/vitest";
+import { DateTime, Effect, Layer, Random } from "effect";
+import { TestClock } from "effect/testing";
 import type { Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { z } from "zod";
 
 import { JobStatus, Monque, NonRetryableError, ShutdownTimeoutError } from "@/index";
 import type { MonqueEventMap } from "@/index";
+import { JobOwnership, makeNativeJobOwnershipLayer } from "@/scheduler/services/job-ownership.js";
+import {
+  JobPersistence,
+  makeNativeJobPersistenceLayer,
+} from "@/scheduler/services/job-persistence.js";
 import {
   cleanupTestDb,
   getTestDb,
@@ -11,6 +19,7 @@ import {
   uniqueCollectionName,
   waitFor,
 } from "@test-utils/test-utils";
+import { JobFactoryHelpers } from "@tests/factories";
 
 class DeliveryError extends Error {
   override name = "DeliveryError";
@@ -215,4 +224,182 @@ describe("Promise worker compatibility", () => {
       });
     }
   });
+});
+
+const ownershipOptions = {
+  heartbeatInterval: 1000,
+  lockTimeout: 30_000,
+  maxRetries: 3,
+  baseRetryInterval: 1000,
+  maxBackoffDelay: 10_000,
+};
+
+describe("ownership with controlled Effect services", () => {
+  let db: Db;
+  beforeAll(async () => {
+    db = await getTestDb("ownership-clock");
+  });
+
+  afterAll(async () => {
+    await cleanupTestDb(db);
+  });
+
+  effectIt.effect("uses server time for renewable authority despite local clock changes", () =>
+    Effect.gen(function* serverAuthority() {
+      const collection = db.collection(uniqueCollectionName("clock-skew"));
+      const pending = JobFactoryHelpers.pending({ name: "work", nextRunAt: new Date(0) });
+      yield* Effect.promise(async () => await collection.insertOne(pending));
+
+      const layer = Layer.merge(
+        makeNativeJobOwnershipLayer(collection, "$clock-owner", {
+          ...ownershipOptions,
+          leaseDuration: 30_000,
+        }),
+        makeNativeJobPersistenceLayer(collection),
+      );
+
+      yield* Effect.gen(function* renewableTransitions() {
+        const store = yield* JobOwnership;
+        const reads = yield* JobPersistence;
+        yield* TestClock.setTime(Date.UTC(2099, 0, 1));
+        const before = Date.now();
+        const claimed = yield* store.claimNext("work");
+
+        if (claimed?.claimId === undefined || !claimed.lockedAt || !claimed.leaseExpiresAt) {
+          throw new Error("Expected a renewable Claim");
+        }
+
+        expect({
+          status: claimed.status,
+          instance: claimed.claimedBy,
+          usesServerTime:
+            claimed.lockedAt.getTime() >= before && claimed.lockedAt.getTime() <= Date.now(),
+          duration: claimed.leaseExpiresAt.getTime() - claimed.lockedAt.getTime(),
+        }).toStrictEqual({
+          status: JobStatus.PROCESSING,
+          instance: "$clock-owner",
+          usesServerTime: true,
+          duration: 30_000,
+        });
+        yield* TestClock.setTime(0);
+        yield* store.updateOwnedHeartbeats([claimed.claimId]);
+        const renewed = yield* reads.getJob(pending._id);
+        expect({
+          heartbeatUsesServerTime: (renewed?.lastHeartbeat?.getTime() ?? 0) >= before,
+          renewedDeadline:
+            (renewed?.leaseExpiresAt?.getTime() ?? 0) >= claimed.leaseExpiresAt.getTime(),
+        }).toStrictEqual({ heartbeatUsesServerTime: true, renewedDeadline: true });
+
+        // Native fixture mutation establishes expiry without a wall-clock wait.
+        yield* Effect.promise(
+          async () =>
+            await collection.updateOne(
+              { _id: pending._id },
+              { $set: { leaseExpiresAt: new Date(0) } },
+            ),
+        );
+        yield* store.updateOwnedHeartbeats([claimed.claimId]);
+        expect({
+          completion: yield* store.completeOwned(claimed),
+          failure: yield* store.failOwned(claimed, new Error("late")),
+        }).toStrictEqual({ completion: null, failure: null });
+        yield* store.releaseOwnedClaim(claimed);
+        const expired = yield* reads.getJob(pending._id);
+        const count = yield* store.recoverStaleJobs;
+        const recovered = yield* reads.getJob(pending._id);
+        expect({ expired, count, recovered }).toMatchObject({
+          expired: {
+            status: JobStatus.PROCESSING,
+            claimId: claimed.claimId,
+            leaseExpiresAt: new Date(0),
+            failCount: 0,
+          },
+          count: 1,
+          recovered: { status: JobStatus.PENDING },
+        });
+        const replacement = yield* store.claimNext("work");
+
+        if (replacement?.claimId === undefined) {
+          throw new Error("Expected a replacement Claim");
+        }
+
+        yield* store.releaseOwnedClaim(claimed);
+        const afterLateRelease = yield* reads.getJob(pending._id);
+        expect({
+          recoveredClaim: recovered?.claimId,
+          replacementClaim: afterLateRelease?.claimId,
+          status: afterLateRelease?.status,
+        }).toStrictEqual({
+          recoveredClaim: undefined,
+          replacementClaim: replacement.claimId,
+          status: JobStatus.PROCESSING,
+        });
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  effectIt.effect("persists deterministic retry jitter and recurring timezone metadata", () =>
+    Effect.gen(function* durableSchedules() {
+      const collection = db.collection(uniqueCollectionName("retry-clock"));
+
+      const pending = JobFactoryHelpers.pending({
+        name: "work",
+        nextRunAt: new Date(0),
+        priority: 7,
+        repeatInterval: "0 9 * * *",
+        timezone: "Europe/Berlin",
+      });
+
+      yield* Effect.promise(async () => await collection.insertOne(pending));
+      yield* Effect.gen(function* scheduledTransitions() {
+        const store = yield* JobOwnership;
+        yield* TestClock.setTime(Date.UTC(2026, 0, 1, 7));
+        const claimed = yield* store.claimNext("work");
+
+        if (!claimed) {
+          throw new Error("Expected a Claim");
+        }
+
+        const retried = yield* store.failOwned(claimed, new Error("retry me"));
+        expect(retried).toMatchObject({
+          status: JobStatus.PENDING,
+          priority: 7,
+          failCount: 1,
+          failReason: "retry me",
+          nextRunAt: new Date("2026-01-01T07:00:02.250Z"),
+        });
+        expect(retried?.claimId).toBeUndefined();
+        yield* TestClock.adjust(2250);
+        const nextClaim = yield* store.claimNext("work");
+
+        if (!nextClaim) {
+          throw new Error("Expected the retry Claim");
+        }
+
+        const completed = yield* store.completeOwned(nextClaim);
+        expect(completed).toMatchObject({
+          status: JobStatus.PENDING,
+          priority: 7,
+          failCount: 0,
+          nextRunAt: new Date("2026-01-01T08:00:00.000Z"),
+          timezone: "Europe/Berlin",
+        });
+        expect({
+          failReason: completed?.failReason,
+          claimId: completed?.claimId,
+          updatedAt: completed?.updatedAt,
+        }).toStrictEqual({
+          failReason: undefined,
+          claimId: undefined,
+          updatedAt: yield* DateTime.nowAsDate,
+        });
+      }).pipe(
+        Effect.provide(makeNativeJobOwnershipLayer(collection, "clock-owner", ownershipOptions)),
+        Effect.provideService(Random.Random, {
+          nextDoubleUnsafe: () => 0.75,
+          nextIntUnsafe: () => 0,
+        }),
+      );
+    }),
+  );
 });
