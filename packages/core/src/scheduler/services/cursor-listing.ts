@@ -1,8 +1,13 @@
-import { Cause, Effect, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { ObjectId } from "mongodb";
-import type { Document, Filter, FindOptions, WithId } from "mongodb";
+import type { Collection, Document, Filter, FindOptions, WithId } from "mongodb";
 
-import { CursorDirection, JobCursorSortDirection, JobCursorSortField } from "@/jobs";
+import {
+  documentToPersistedJob,
+  CursorDirection,
+  JobCursorSortDirection,
+  JobCursorSortField,
+} from "@/jobs";
 import type {
   CursorDirectionType,
   CursorOptions,
@@ -13,9 +18,9 @@ import type {
 } from "@/jobs";
 import { ConnectionError, InvalidCursorError } from "@/shared";
 
-import { attempt, fromPromise } from "../effects.js";
+import { attempt } from "../effects.js";
 import { buildSelectorQuery, resolveQueryLimit } from "../helpers.js";
-import type { SchedulerContext } from "./types.js";
+import { readJobCursor } from "./read-job-cursor.js";
 
 type MongoSortDirection = 1 | -1;
 
@@ -286,9 +291,9 @@ const cursorFindOptions = (includePayload: boolean): FindOptions => {
  * @internal
  */
 export class CursorListing {
-  private readonly ctx: Pick<SchedulerContext, "collection" | "documentToPersistedJob">;
-  constructor(ctx: Pick<SchedulerContext, "collection" | "documentToPersistedJob">) {
-    this.ctx = ctx;
+  private readonly collection: Collection;
+  constructor(collection: Collection) {
+    this.collection = collection;
   }
   getJobsWithCursor<T = unknown>(
     options: CursorOptions = {},
@@ -313,19 +318,22 @@ export class CursorListing {
       prepareCursorQuery(options),
     );
 
-    const docs: WithId<Document>[] = yield* fromPromise(async () => {
-      const { collection } = this.ctx;
-      const findJobs = collection.find.bind(collection);
-      const cursor = findJobs(query, cursorFindOptions(includePayload));
-      const sortCursor = cursor.sort.bind(cursor);
+    const docs: WithId<Document>[] = yield* readJobCursor(
+      () => {
+        const { collection } = this;
+        const findJobs = collection.find.bind(collection);
 
-      return await sortCursor(mongoSort)
-        .limit(limit + 1)
-        .toArray();
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const error = Cause.squash(cause);
+        return findJobs(query, cursorFindOptions(includePayload));
+      },
+      async (cursor) => {
+        const sortCursor = cursor.sort.bind(cursor);
 
+        return await sortCursor(mongoSort)
+          .limit(limit + 1)
+          .toArray();
+      },
+    ).pipe(
+      Effect.catch(({ cause: error }) => {
         const message =
           error instanceof Error ? error.message : "Unknown error during getJobsWithCursor";
 
@@ -348,7 +356,7 @@ export class CursorListing {
       docs.reverse();
     }
 
-    const jobs = docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
+    const jobs = docs.map((doc) => documentToPersistedJob<T>(doc));
 
     return {
       jobs,

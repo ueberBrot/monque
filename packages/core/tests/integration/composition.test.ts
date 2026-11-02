@@ -57,6 +57,8 @@ describe("per-instance core composition", () => {
     await db
       .collection(collectionName)
       .updateOne({ _id: legacy._id }, { $unset: { priority: "" } });
+    monque.pause();
+    monque.start();
     await monque.stop();
 
     const read = await monque.getJob<typeof data>(queued._id.toHexString());
@@ -72,6 +74,64 @@ describe("per-instance core composition", () => {
       Promise.all([monque.getJob(new ObjectId()), monque.getJob("invalid-id")]),
     ).resolves.toStrictEqual([null, null]);
     await expect(db.command({ ping: 1 })).resolves.toMatchObject({ ok: 1 });
+  });
+
+  it("keeps BSON listing snapshots independent and all read interfaces usable after a run stops", async () => {
+    const monque = new Monque(db, { collectionName });
+    instances.push(monque);
+    await monque.initialize();
+
+    const data = {
+      reference: new ObjectId(),
+      amount: Decimal128.fromString("1234.50"),
+      bytes: new Binary(Buffer.from([0, 127, 255])),
+      at: new Date("2026-01-02T03:04:05.000Z"),
+    };
+
+    const queued = await monque.enqueue("bson", data);
+    monque.pause();
+    monque.start();
+    await monque.stop();
+
+    const [first, second, page, summaries] = await Promise.all([
+      monque.getJobs<typeof data>({ name: "bson" }),
+      monque.getJobs<typeof data>({ name: "bson" }),
+      monque.getJobsWithCursor<typeof data>({ filter: { name: "bson" } }),
+      monque.getJobSummariesWithCursor({ filter: { name: "bson" } }),
+    ]);
+
+    expect({ first, second, pageJobs: page.jobs }).toStrictEqual({
+      first: [queued],
+      second: [queued],
+      pageJobs: [queued],
+    });
+    expect(summaries).toMatchObject({
+      cursor: page.cursor,
+      jobs: [{ _id: queued._id, name: "bson", priority: 0 }],
+    });
+    expect(summaries.jobs[0]).not.toHaveProperty("data");
+    const [firstJob] = first;
+
+    if (!firstJob) {
+      throw new Error("Expected persisted Job");
+    }
+
+    firstJob.data.at.setFullYear(2000);
+    firstJob.data.bytes.buffer[0] = 42;
+    expect({
+      at: second[0]?.data.at.toISOString(),
+      byte: second[0]?.data.bytes.buffer[0],
+    }).toStrictEqual({ at: "2026-01-02T03:04:05.000Z", byte: 0 });
+
+    const [stats, views] = await Promise.all([
+      monque.getQueueStats({ name: "bson" }),
+      monque.getQueueViewSummaries({ name: "bson" }),
+    ]);
+
+    expect({ stats, views }).toMatchObject({
+      stats: { pending: 1, total: 1 },
+      views: [{ name: "bson", stats: { pending: 1, total: 1 } }],
+    });
   });
 
   it("keeps registration and immediate controls isolated for instances sharing a collection", async () => {

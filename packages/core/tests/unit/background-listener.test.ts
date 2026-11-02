@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { setImmediate as yieldImmediate } from "node:timers/promises";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import type { Db, Collection } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -15,7 +15,13 @@ describe("background listener rejection delivery", () => {
     "exposes a throwing %s error listener as the original unhandled rejection",
     async (mode) => {
       const listenerError = new Error("Job error listener failed");
-      const sourceError = new Error("Background operation failed");
+
+      const sourceError = new MongoServerError({
+        message: "Background operation failed",
+        code: 91,
+      });
+
+      sourceError.addErrorLabel("RetryableWriteError");
       const release: PromiseWithResolvers<void> = Promise.withResolvers();
       // oxlint-disable-next-line unicorn/prefer-event-target -- Mongo ChangeStream uses Node EventEmitter methods and synchronous event callbacks.
       const stream = Object.assign(new EventEmitter(), { close: async () => {} });
@@ -140,6 +146,8 @@ describe("background listener rejection delivery", () => {
         }
       }
 
+      expect(onJobError.mock.calls[0]?.[0].error).toBe(sourceError);
+      expect(sourceError.hasErrorLabel("RetryableWriteError")).toBe(true);
       expect({
         rejectionsLength: rejections.length,
         rejections0: Object.is(rejections[0], listenerError),
