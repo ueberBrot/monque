@@ -6,6 +6,7 @@ import type { PersistedJob } from "@/jobs";
 import type { WorkerRegistration } from "@/workers";
 
 import type { MonqueOptions } from "../types.js";
+import type { WorkerAdmissionState } from "./worker-admission.js";
 
 /**
  * Resolved Monque options with all defaults applied.
@@ -59,7 +60,8 @@ export interface SchedulerContext {
   /** Unique identifier for this scheduler instance (for claiming jobs) */
   instanceId: string;
   /** Registered workers by job name */
-  workers: Map<string, WorkerRegistration>;
+  readonly admission: WorkerAdmissionState;
+  readonly workers: ReadonlyMap<string, WorkerRegistration>;
   /** Whether the scheduler is currently running */
   isRunning: () => boolean;
   /** Whether new executions are paused locally for the instance or job name */

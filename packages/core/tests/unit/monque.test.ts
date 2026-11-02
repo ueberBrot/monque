@@ -828,6 +828,32 @@ describe(Monque, () => {
     );
   });
   describe("worker registration", () => {
+    it("applies registration and pause changes immediately while initialization is pending", async () => {
+      const indexes = Promise.withResolvers<string[]>();
+      mockCollection.createIndexes.mockReturnValueOnce(indexes.promise);
+      const initializing = monque.initialize();
+      monque.register("work", () => {}, { concurrency: 2, maxRetries: 4 });
+      monque.pause("work");
+      monque.pause();
+      monque.resume();
+      expect(monque.getProcessingState("work")).toMatchObject({
+        paused: true,
+        globallyPaused: false,
+      });
+      expect(monque.isHealthy()).toBe(false);
+      expect(() => {
+        monque.register("work", () => {});
+      }).toThrow(WorkerRegistrationError);
+      monque.register("work", () => {}, { replace: true, concurrency: 3 });
+      indexes.resolve([]);
+      await initializing;
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
+        { name: "work", worker: { concurrency: 3, paused: true, maxRetries: 10 } },
+      ]);
+      monque.resume("work");
+      expect(monque.isPaused("work")).toBe(false);
+    });
+
     it("should throw WorkerRegistrationError on duplicate registration", () => {
       const handler = vi.fn<JobHandler>().mockResolvedValue(undefined);
       monque.register("test-job", handler);

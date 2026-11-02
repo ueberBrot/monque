@@ -740,7 +740,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set("image-resize", createWorker({ concurrency: 7 }));
+        ctx.registerWorker("image-resize", createWorker({ concurrency: 7 }));
         const summaries = yield* queryService.getQueueViewSummaries();
         expect(summaries).toMatchObject([
           {
@@ -844,7 +844,7 @@ describe(JobQueryService, () => {
         vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
           fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
         );
-        ctx.workers.set(
+        ctx.registerWorker(
           "email-send",
           createWorker({
             concurrency: 3,
@@ -895,7 +895,7 @@ describe(JobQueryService, () => {
           vi.spyOn(ctx.mockCollection, "aggregate").mockReturnValueOnce(
             fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>(mockAggregateCursor),
           );
-          ctx.workers.set(
+          ctx.registerWorker(
             "email-send",
             createWorker({
               concurrency: 3,
