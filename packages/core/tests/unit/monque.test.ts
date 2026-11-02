@@ -6,7 +6,7 @@
 import { EventEmitter } from "node:events";
 import { fromPartial } from "@total-typescript/shoehorn";
 import type { ChangeStream, FindCursor, Collection, Db } from "mongodb";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { MonqueEventMap } from "@/events";
@@ -899,6 +899,35 @@ describe(Monque, () => {
     it("returns null for invalid string IDs without querying MongoDB", async () => {
       await expect(monque.getJob("invalid-id")).resolves.toBeNull();
       expect(mockCollection.findOne).not.toHaveBeenCalled();
+    });
+
+    it("retains the original native read failure as the public ConnectionError cause", async () => {
+      const failure = new MongoServerError({ message: "Read unavailable", code: 91 });
+      failure.addErrorLabel("RetryableReadError");
+      mockCollection.findOne.mockRejectedValueOnce(failure);
+
+      const [result] = await Promise.allSettled([monque.getJob(new ObjectId())]);
+
+      if (result?.status !== "rejected") {
+        throw new Error("Expected read to reject");
+      }
+
+      const error: unknown = result.reason;
+
+      if (!(error instanceof ConnectionError)) {
+        throw new TypeError("Expected ConnectionError");
+      }
+
+      expect(error.message).toBe("Failed to get job: Read unavailable");
+      expect(error.cause).toBe(failure);
+      expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+    });
+
+    it("keeps the established read error for non-Error rejections", async () => {
+      mockCollection.findOne.mockRejectedValueOnce("Read unavailable");
+      await expect(monque.getJob(new ObjectId())).rejects.toStrictEqual(
+        new ConnectionError("Failed to get job: Unknown error during getJob"),
+      );
     });
 
     it.each([false, true])(
