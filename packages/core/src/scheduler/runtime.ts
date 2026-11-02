@@ -5,6 +5,7 @@ import { ChangeStreamHandler } from "./services/change-stream-handler.js";
 import { JobIntake } from "./services/job-intake.js";
 import { JobLifecycle } from "./services/job-lifecycle.js";
 import { JobManager } from "./services/job-manager.js";
+import { JobOwnership, makeNativeJobOwnershipLayer } from "./services/job-ownership.js";
 import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
 import type { JobPersistence } from "./services/job-persistence.js";
 import { JobProcessor } from "./services/job-processor.js";
@@ -34,11 +35,12 @@ export class SchedulerServices extends Context.Service<
 const makeLegacySchedulerLayer = (
   environment: SchedulerContext,
   execution: SchedulerExecution,
-): Layer.Layer<SchedulerServices, unknown> =>
+): Layer.Layer<SchedulerServices, unknown, JobOwnership> =>
   Layer.effect(
     SchedulerServices,
     Effect.gen(function* constructSchedulerServices() {
-      const lifecycle = new JobLifecycle(environment);
+      const ownership = yield* JobOwnership;
+      const lifecycle = new JobLifecycle(environment, ownership);
 
       if (environment.options.recoverStaleJobs) {
         yield* lifecycle.recoverStaleJobs();
@@ -77,9 +79,17 @@ export const makeSchedulerLayer = (
   persistence: Layer.Layer<JobPersistence, unknown> = makeNativeJobPersistenceLayer(
     environment.collection,
   ),
-): Layer.Layer<SchedulerServices | JobPersistence | WorkerAdmission, unknown> =>
+) =>
   Layer.mergeAll(
     makeLegacySchedulerLayer(environment, execution),
     persistence,
     Layer.succeed(WorkerAdmission, environment.admission),
+  ).pipe(
+    Layer.provideMerge(
+      makeNativeJobOwnershipLayer(
+        environment.collection,
+        environment.instanceId,
+        environment.options,
+      ),
+    ),
   );

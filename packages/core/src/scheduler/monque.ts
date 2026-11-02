@@ -35,7 +35,6 @@ import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
 import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
-import type { WorkerAdmission } from "./services/worker-admission.js";
 import { WorkerAdmissionState } from "./services/worker-admission.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
 import { validateOptions } from "./validate-options.js";
@@ -59,7 +58,7 @@ const DEFAULTS = {
 } as const;
 
 type SchedulerRuntime = ManagedRuntime.ManagedRuntime<
-  SchedulerServices | JobPersistence | WorkerAdmission,
+  Layer.Success<ReturnType<typeof makeSchedulerLayer>>,
   never
 >;
 
