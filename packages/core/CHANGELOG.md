@@ -1,5 +1,21 @@
 # @monque/core
 
+## 1.20.0
+
+### Minor Changes
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Update runtime dependencies.
+
+### Patch Changes
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Share the shutdown timeout between change-stream cleanup and active Job draining, so a pending MongoDB cursor close cannot indefinitely delay `stop()`.
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Fence new Job execution before capturing the shutdown drain, releasing late Claims instead of starting Workers outside the snapshot. Preserve a restarted run's notifications and change stream while an earlier stop finishes.
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Preserve unrelated unique-index failures in `enqueueMany()` instead of counting them as deduplicated Jobs. Native error details, original operation indices and successful partial writes remain available.
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Prevent obsolete startup work from installing processing resources after an event listener synchronously stops or restarts Monque.
+
 ## 1.19.0
 
 ### Minor Changes
