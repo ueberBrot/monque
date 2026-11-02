@@ -10,7 +10,8 @@ import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
 import type { JobPersistence } from "./services/job-persistence.js";
 import { JobProcessor } from "./services/job-processor.js";
 import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
-import { LifecycleManager } from "./services/lifecycle-manager.js";
+import { makeSchedulerMaintenance } from "./services/lifecycle-manager.js";
+import type { SchedulerMaintenance } from "./services/lifecycle-manager.js";
 import { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
 import { WorkerAdmission } from "./services/worker-admission.js";
@@ -28,7 +29,7 @@ export class SchedulerServices extends Context.Service<
     readonly queries: JobQueries["Service"];
     readonly notifications: PendingNotificationRouter;
     readonly streams: ChangeStreamHandler;
-    readonly timers: LifecycleManager;
+    readonly timers: SchedulerMaintenance;
   }
 >()("@monque/core/scheduler/Services") {}
 
@@ -63,7 +64,26 @@ const makeLegacySchedulerLayer = (
         queries: yield* JobQueries,
         notifications,
         streams: new ChangeStreamHandler(environment, notifications, execution.runFork),
-        timers: new LifecycleManager(environment, lifecycle, execution.runFork),
+        timers: yield* makeSchedulerMaintenance({
+          options: environment.options,
+          collection: environment.collection,
+          ownership,
+          activeClaimIds: () => {
+            const claimIds: string[] = [];
+
+            for (const worker of environment.workers.values()) {
+              for (const job of worker.activeJobs.values()) {
+                if (job.claimId !== undefined && job.claimId !== "") {
+                  claimIds.push(job.claimId);
+                }
+              }
+            }
+
+            return claimIds;
+          },
+          emit: environment.emit,
+          notifyPendingJob: environment.notifyPendingJob,
+        }),
       };
     }),
   );

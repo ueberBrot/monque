@@ -1,14 +1,27 @@
 import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { Context, Deferred, Effect, Fiber, Layer, ManagedRuntime, Result } from "effect";
+import {
+  Context,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  ManagedRuntime,
+  Result,
+  Exit,
+  Scope,
+} from "effect";
+import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { JobStatus } from "@/jobs";
 import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { JobQueries } from "@/scheduler/services/job-queries.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
 import { createMockContext, JobFactoryHelpers } from "@tests/factories";
+import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
   effectIt.effect(
@@ -135,6 +148,177 @@ describe("composed initialization", () => {
       admission.resume("work");
       expect(ctx.admission.isPaused("work")).toBe(false);
     }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect("renews fresh admission records across replacement, drain and restart", () =>
+    Effect.gen(function* renewLiveExecutions() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.options.leaseDuration = 3000;
+      ctx.options.instanceConcurrency = 1;
+      ctx.mockCollection.updateMany.mockResolvedValue({
+        acknowledged: true,
+        matchedCount: 1,
+        modifiedCount: 1,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+      const environment = { ...ctx, workers: ctx.workers };
+
+      const context = yield* makeSchedulerLayer(environment, { runFork: Effect.runFork }).pipe(
+        Layer.build,
+      );
+
+      const { timers } = Context.get(context, SchedulerServices);
+      const admission = Context.get(context, WorkerAdmission);
+      const earlier = yield* timers.start;
+      admission.register("work", () => {});
+
+      const releaseEarlier = admission.beginExecution(
+        "work",
+        JobFactoryHelpers.processing({ name: "work", claimId: "earlier" }),
+      );
+
+      yield* TestClock.adjust(1000);
+      expect(ctx.mockCollection.updateMany).toHaveBeenNthCalledWith(
+        1,
+        objectContainingMatcher({ claimId: { $in: ["earlier"] }, status: JobStatus.PROCESSING }),
+        anyMatcher(Array),
+      );
+      yield* earlier.beginDrain(true);
+      admission.stop();
+      admission.start();
+      admission.register("work", () => {}, { replace: true });
+      expect(admission.availableSlots("work")).toBe(0);
+      const later = yield* timers.start;
+      yield* later.beginDrain(true);
+      yield* earlier.stop;
+      yield* earlier.beginDrain(false);
+      yield* TestClock.adjust(1000);
+      expect(ctx.mockCollection.updateMany).toHaveBeenNthCalledWith(
+        2,
+        objectContainingMatcher({ claimId: { $in: ["earlier"] } }),
+        anyMatcher(Array),
+      );
+      releaseEarlier();
+
+      const releaseLater = admission.beginExecution(
+        "work",
+        JobFactoryHelpers.processing({ name: "work", claimId: "later" }),
+      );
+
+      releaseEarlier();
+      yield* TestClock.adjust(1000);
+      expect(ctx.mockCollection.updateMany).toHaveBeenNthCalledWith(
+        3,
+        objectContainingMatcher({ claimId: { $in: ["later"] } }),
+        anyMatcher(Array),
+      );
+      releaseLater();
+      yield* TestClock.adjust(1000);
+      expect({
+        writes: ctx.mockCollection.updateMany.mock.calls.length,
+        slots: admission.availableSlots("work"),
+      }).toStrictEqual({ writes: 3, slots: 1 });
+      yield* later.stop;
+    }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect(
+    "keeps started native maintenance writes owned by their initialized instance",
+    () =>
+      Effect.gen(function* awaitOwnedWrites() {
+        const ctx = createMockContext();
+        ctx.options.recoverStaleJobs = false;
+        ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
+        const deletion = Promise.withResolvers<{ acknowledged: boolean; deletedCount: number }>();
+        ctx.mockCollection.deleteMany.mockReturnValueOnce(deletion.promise);
+        const scope = yield* Scope.make();
+        let closed = false;
+
+        try {
+          const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
+            Layer.build,
+            Scope.provide(scope),
+          );
+
+          const run = yield* Context.get(context, SchedulerServices).timers.start;
+          yield* run.stop;
+
+          const closing = yield* Scope.close(scope, Exit.void).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                closed = true;
+              }),
+            ),
+            Effect.forkChild,
+          );
+
+          yield* TestClock.adjust(0);
+          expect(closed).toBe(false);
+
+          const other = createMockContext();
+          other.options.recoverStaleJobs = false;
+          other.options.jobRetention = { completed: 60_000, interval: 1000 };
+          other.mockCollection.deleteMany.mockResolvedValue({
+            acknowledged: true,
+            deletedCount: 0,
+          });
+
+          const otherContext = yield* makeSchedulerLayer(other, { runFork: Effect.runFork }).pipe(
+            Layer.build,
+          );
+
+          const otherRun = yield* Context.get(otherContext, SchedulerServices).timers.start;
+          yield* TestClock.adjust(1000);
+          expect({
+            first: ctx.mockCollection.deleteMany.mock.calls.length,
+            other: other.mockCollection.deleteMany.mock.calls.length,
+          }).toStrictEqual({ first: 1, other: 2 });
+          deletion.resolve({ acknowledged: true, deletedCount: 1 });
+          yield* Fiber.join(closing);
+          yield* otherRun.stop;
+          yield* TestClock.adjust(1000);
+          expect({ closed, first: ctx.mockCollection.deleteMany.mock.calls.length }).toStrictEqual({
+            closed: true,
+            first: 1,
+          });
+        } finally {
+          deletion.resolve({ acknowledged: true, deletedCount: 1 });
+          yield* Scope.close(scope, Exit.void);
+        }
+      }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect("releases maintenance schedules with their owning instance scope", () =>
+    Effect.gen(function* releaseMaintenance() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
+      const context = yield* Effect.context();
+      let maintenanceWrites = 0;
+      ctx.mockCollection.deleteMany.mockImplementation(async () => {
+        maintenanceWrites += 1;
+
+        return await Promise.resolve({ acknowledged: true, deletedCount: 0 });
+      });
+
+      yield* Effect.gen(function* startMaintenance() {
+        const services = yield* makeSchedulerLayer(ctx, {
+          runFork: Effect.runForkWith(context),
+        }).pipe(
+          Layer.build,
+          Effect.map((built) => Context.get(built, SchedulerServices)),
+        );
+
+        yield* services.timers.start;
+        yield* TestClock.adjust(1000);
+        expect(maintenanceWrites).toBe(2);
+      }).pipe(Effect.scoped);
+
+      yield* TestClock.adjust(3000);
+      expect(maintenanceWrites).toBe(2);
+    }),
   );
 
   it("shares acquisition across concurrent reads and waits for full readiness", async () => {

@@ -81,24 +81,6 @@ export class JobLifecycle {
     return result;
   });
 
-  updateOwnedHeartbeats = Effect.fnUntraced(function* refreshOwnedJobHeartbeats(
-    this: JobLifecycle,
-  ) {
-    const claimIds: string[] = [];
-
-    for (const worker of this.ctx.workers.values()) {
-      for (const job of worker.activeJobs.values()) {
-        if (job.claimId !== undefined && job.claimId !== "") {
-          claimIds.push(job.claimId);
-        }
-      }
-    }
-
-    yield* this.ownership
-      .updateOwnedHeartbeats(claimIds)
-      .pipe(Effect.mapError((failure) => failure.cause));
-  });
-
   recoverStaleJobs = Effect.fnUntraced(function* recoverStaleClaims(this: JobLifecycle) {
     const count = yield* this.ownership.recoverStaleJobs.pipe(
       Effect.mapError((failure) => failure.cause),
