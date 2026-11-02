@@ -3,13 +3,13 @@ import type { Fiber } from "effect";
 
 import { makeChangeStreamHandler } from "./services/change-stream-handler.js";
 import type { ChangeStreamHandler } from "./services/change-stream-handler.js";
+import { JobExecution, makeJobExecutionLayer } from "./services/job-execution.js";
 import { makeNativeJobIntakeLayer } from "./services/job-intake.js";
 import { JobLifecycle } from "./services/job-lifecycle.js";
 import { makeJobManagementLayer } from "./services/job-manager.js";
 import { JobOwnership, makeNativeJobOwnershipLayer } from "./services/job-ownership.js";
 import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
 import type { JobPersistence } from "./services/job-persistence.js";
-import { JobProcessor } from "./services/job-processor.js";
 import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { makeSchedulerMaintenance } from "./services/lifecycle-manager.js";
 import type { SchedulerMaintenance } from "./services/lifecycle-manager.js";
@@ -35,7 +35,7 @@ export class SchedulerServices extends Context.Service<
 
 const makeLegacySchedulerLayer = (
   environment: SchedulerContext,
-): Layer.Layer<SchedulerServices, unknown, JobOwnership | JobQueries> =>
+): Layer.Layer<SchedulerServices, unknown, JobOwnership | JobQueries | JobExecution> =>
   Layer.effect(
     SchedulerServices,
     Effect.gen(function* constructSchedulerServices() {
@@ -47,7 +47,7 @@ const makeLegacySchedulerLayer = (
       }
 
       yield* lifecycle.assertNoActiveInstanceCollision();
-      const processing = new JobProcessor(environment, lifecycle);
+      const processing = yield* JobExecution;
 
       const notifications = yield* makePendingNotificationRouter(
         environment,
@@ -99,10 +99,11 @@ export const makeSchedulerLayer = (
     persistence,
     makeJobManagementLayer(environment),
     makeNativeJobIntakeLayer(environment),
-    Layer.succeed(WorkerAdmission, environment.admission),
   ).pipe(
+    Layer.provideMerge(makeJobExecutionLayer(environment)),
     Layer.provideMerge(
-      Layer.merge(
+      Layer.mergeAll(
+        Layer.succeed(WorkerAdmission, environment.admission),
         makeNativeJobOwnershipLayer(
           environment.collection,
           environment.instanceId,

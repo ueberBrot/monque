@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import {
@@ -13,6 +14,7 @@ import {
 } from "effect";
 import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
+import type { ChangeStream } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
@@ -25,6 +27,71 @@ import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/facto
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect("retains an active Promise execution until its initialized owner can close", () =>
+    Effect.gen(function* closeExecutionOwner() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const release = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+      ctx.admission.register("email", async () => {
+        Deferred.doneUnsafe(started, Effect.void);
+        await release.promise;
+      });
+      ctx.notifyJobFinished.mockImplementation(() => {
+        Deferred.doneUnsafe(finished, Effect.void);
+      });
+      ctx.mockCollection.aggregate.mockReturnValue(
+        fromPartial({
+          toArray: async () => await Promise.resolve([{ _id: "email", nextRunAt: new Date(0) }]),
+          close: async () => {
+            await Promise.resolve();
+          },
+        }),
+      );
+      ctx.mockCollection.findOneAndUpdate
+        .mockResolvedValueOnce(JobFactoryHelpers.processing({ name: "email" }))
+        .mockResolvedValue(null);
+      const owner = yield* Scope.make();
+
+      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
+        Layer.buildWithScope(owner),
+      );
+
+      const { notifications } = Context.get(context, SchedulerServices);
+      let closed = false;
+
+      try {
+        notifications.start();
+        yield* Deferred.await(started);
+
+        const closing = yield* Scope.close(owner, Exit.void).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              closed = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+
+        yield* TestClock.adjust(1);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: false,
+          active: 1,
+        });
+        release.resolve();
+        yield* Deferred.await(finished);
+        yield* Fiber.join(closing);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: true,
+          active: 0,
+        });
+      } finally {
+        release.resolve();
+        yield* Scope.close(owner, Exit.void);
+      }
+    }),
+  );
   effectIt.effect("invalidates shared reads after a persisted mutation whose listener fails", () =>
     Effect.gen(function* managementInvalidation() {
       const ctx = createMockContext();
@@ -54,7 +121,7 @@ describe("composed initialization", () => {
   );
 
   effectIt.effect(
-    "keeps reads, maintenance and Promise Workers alive after notifications close",
+    "keeps reads, maintenance and Promise Workers alive across stream replacement and notification close",
     () =>
       Effect.gen(function* closeOnlyNotifications() {
         const ctx = createMockContext();
@@ -67,6 +134,26 @@ describe("composed initialization", () => {
         const query = Promise.withResolvers<never[]>();
         const closeRead = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
         const job = JobFactoryHelpers.processing({ name: "email", claimId: "surviving" });
+        const streamClosing = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const streamClosed = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB Change Streams use EventEmitter listeners.
+        const oldStream = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>(async () => {
+            Deferred.doneUnsafe(streamClosing, Effect.void);
+
+            await streamClosed.promise;
+          }),
+        });
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB Change Streams use EventEmitter listeners.
+        const replacement = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        });
+
+        ctx.mockCollection.watch
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement));
 
         ctx.admission.register(
           "email",
@@ -111,14 +198,18 @@ describe("composed initialization", () => {
           Layer.build,
         );
 
-        const { notifications, timers, queries } = Context.get(context, SchedulerServices);
+        const { notifications, timers, queries, streams } = Context.get(context, SchedulerServices);
         const run = yield* timers.start;
 
         try {
+          streams.setup();
           notifications.start();
           yield* Deferred.await(started);
           const read = yield* queries.getQueueViewSummaries().pipe(Effect.forkChild);
           yield* Deferred.await(reading);
+          const closing = yield* streams.close().pipe(Effect.forkChild);
+          yield* Deferred.await(streamClosing);
+          streams.setup();
           notifications.close();
           yield* TestClock.adjust(1000);
           expect({
@@ -129,6 +220,8 @@ describe("composed initialization", () => {
             objectContainingMatcher({ claimId: { $in: ["surviving"] } }),
             anyMatcher(Array),
           );
+          streamClosed.resolve();
+          yield* Fiber.join(closing);
           query.resolve([]);
           expect(yield* Fiber.join(read)).toMatchObject([
             { name: "email", worker: { activeCount: 1 } },
@@ -143,11 +236,22 @@ describe("composed initialization", () => {
           expect({
             claims: ctx.mockCollection.findOneAndUpdate.mock.calls.length,
             heartbeats: ctx.mockCollection.updateMany.mock.calls.length,
-          }).toStrictEqual({ claims: 1, heartbeats: 1 });
+            oldListeners: oldStream.listenerCount("change"),
+            replacementListeners: replacement.listenerCount("change"),
+            replacementCloses: replacement.close.mock.calls.length,
+          }).toStrictEqual({
+            claims: 1,
+            heartbeats: 1,
+            oldListeners: 0,
+            replacementListeners: 1,
+            replacementCloses: 0,
+          });
         } finally {
+          streamClosed.resolve();
           query.resolve([]);
           completion.resolve();
           notifications.close();
+          yield* streams.close();
           yield* run.stop;
         }
       }).pipe(Effect.scoped),
