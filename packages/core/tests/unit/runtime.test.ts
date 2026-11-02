@@ -18,15 +18,112 @@ import type { ChangeStream } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
 import { JobManagement } from "@/scheduler/services/job-manager.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { JobQueries } from "@/scheduler/services/job-queries.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
+import { ConnectionError } from "@/shared";
 import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect("recovers before checking collisions and routes recovery synchronously", () =>
+    Effect.gen(function* initializeRecovery() {
+      const order: string[] = [];
+      const ctx = createMockContext();
+      ctx.mockCollection.updateMany.mockImplementationOnce(async () => {
+        order.push("recover");
+
+        return await Promise.resolve({
+          acknowledged: true,
+          matchedCount: 2,
+          modifiedCount: 2,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+      });
+      ctx.emit.mockImplementation((event) => {
+        order.push(event);
+
+        return true;
+      });
+      ctx.notifyPendingJob.mockImplementation((name, nextRunAt) => {
+        expect({ name, nextRunAt }).toStrictEqual({ name: undefined, nextRunAt: new Date(1234) });
+        order.push("pending");
+      });
+      ctx.mockCollection.findOne.mockImplementationOnce(async () => {
+        order.push("collision");
+
+        return await Promise.resolve(JobFactoryHelpers.processing({ name: "email" }));
+      });
+      yield* TestClock.setTime(1234);
+      const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.flip);
+      expect(order).toStrictEqual(["recover", "stale:recovered", "pending", "collision"]);
+      expect(ctx.emit).toHaveBeenCalledExactlyOnceWith("stale:recovered", { count: 2 });
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect(error).toHaveProperty(
+        "message",
+        'Another active Monque instance is using schedulerInstanceId "test-instance-id". ' +
+          'Found processing job "email" with recent heartbeat. ' +
+          "Use a unique schedulerInstanceId or wait for the other instance to stop.",
+      );
+    }),
+  );
+
+  effectIt.effect.each(["native", "listener"] as const)(
+    "preserves %s recovery failure and allows a fresh initialization attempt",
+    (stage) =>
+      Effect.gen(function* retryRecovery() {
+        const ctx = createMockContext();
+        const failure = new Error("recovery failed");
+        ctx.mockCollection.updateMany.mockResolvedValue({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+
+        if (stage === "native") {
+          ctx.mockCollection.updateMany.mockRejectedValueOnce(failure);
+        } else {
+          ctx.emit.mockImplementationOnce(() => {
+            throw failure;
+          });
+        }
+
+        const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.scoped, Effect.flip);
+        expect(error).toBe(failure);
+        expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+        expect(ctx.mockCollection.findOne).not.toHaveBeenCalled();
+        ctx.mockCollection.findOne.mockResolvedValueOnce(null);
+        yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+        expect(ctx.notifyPendingJob).toHaveBeenCalledOnce();
+        expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
+      }),
+  );
+
+  effectIt.effect.each([0, null])("initializes without recovery notification for %s", (count) =>
+    Effect.gen(function* noRecoveryNotification() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = count !== null;
+      ctx.mockCollection.updateMany.mockResolvedValue({
+        acknowledged: true,
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+      ctx.mockCollection.findOne.mockResolvedValueOnce(null);
+      yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+      expect(ctx.mockCollection.updateMany).toHaveBeenCalledTimes(count === null ? 0 : 1);
+      expect(ctx.emit).not.toHaveBeenCalled();
+      expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
+    }),
+  );
+
   effectIt.effect("retains an active Promise execution until its initialized owner can close", () =>
     Effect.gen(function* closeExecutionOwner() {
       const ctx = createMockContext();
@@ -54,11 +151,9 @@ describe("composed initialization", () => {
         .mockResolvedValue(null);
       const owner = yield* Scope.make();
 
-      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
-        Layer.buildWithScope(owner),
-      );
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.buildWithScope(owner));
 
-      const { notifications } = Context.get(context, SchedulerServices);
+      const { notifications } = Context.get(context, ProcessingResources);
       let closed = false;
 
       try {
@@ -105,7 +200,7 @@ describe("composed initialization", () => {
       ctx.mockCollection.aggregate.mockReturnValue(
         fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({ toArray }),
       );
-      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(Layer.build);
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
       const reads = Context.get(context, JobQueries);
       const management = Context.get(context, JobManagement);
       const failure = new Error("Listener failed after persistence");
@@ -194,11 +289,10 @@ describe("composed initialization", () => {
             }),
           );
 
-        const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
-          Layer.build,
-        );
+        const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
-        const { notifications, timers, queries, streams } = Context.get(context, SchedulerServices);
+        const { notifications, timers, streams } = Context.get(context, ProcessingResources);
+        const queries = Context.get(context, JobQueries);
         const run = yield* timers.start;
 
         try {
@@ -264,12 +358,9 @@ describe("composed initialization", () => {
       ctx.registerWorker("email", createWorker());
       const owner = yield* Scope.make();
 
-      const context = yield* Layer.buildWithScope(
-        makeSchedulerLayer(ctx, { runFork: Effect.runFork }),
-        owner,
-      );
+      const context = yield* Layer.buildWithScope(makeSchedulerLayer(ctx), owner);
 
-      const { notifications } = Context.get(context, SchedulerServices);
+      const { notifications } = Context.get(context, ProcessingResources);
       yield* TestClock.adjust(10_000);
       expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
       notifications.notifyRunnableJob("email");
@@ -297,20 +388,11 @@ describe("composed initialization", () => {
           }),
         );
 
-        const environment = {
-          ...ctx,
-          workers: ctx.workers,
-          isPaused: (name?: string) => ctx.admission.isPaused(name),
-        };
-
-        const context = yield* makeSchedulerLayer(environment, { runFork: Effect.runFork }).pipe(
-          Layer.build,
-        );
+        const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
         const reads = Context.get(context, JobQueries);
         const admission = Context.get(context, WorkerAdmission);
 
-        expect(Context.get(context, SchedulerServices).queries).toBe(reads);
         expect(yield* reads.getQueueViewSummaries()).toStrictEqual([]);
 
         admission.register("work", () => {}, { concurrency: 2 });
@@ -388,10 +470,7 @@ describe("composed initialization", () => {
         }),
       );
 
-      const build = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }, persistence).pipe(
-        Layer.build,
-        Effect.forkChild,
-      );
+      const build = yield* makeSchedulerLayer(ctx, persistence).pipe(Layer.build, Effect.forkChild);
 
       yield* Deferred.await(acquiring);
       ctx.admission.register("work", () => {}, { concurrency: 2 });
@@ -422,13 +501,9 @@ describe("composed initialization", () => {
         upsertedCount: 0,
         upsertedId: null,
       });
-      const environment = { ...ctx, workers: ctx.workers };
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
-      const context = yield* makeSchedulerLayer(environment, { runFork: Effect.runFork }).pipe(
-        Layer.build,
-      );
-
-      const { timers } = Context.get(context, SchedulerServices);
+      const { timers } = Context.get(context, ProcessingResources);
       const admission = Context.get(context, WorkerAdmission);
       const earlier = yield* timers.start;
       admission.register("work", () => {});
@@ -496,12 +571,9 @@ describe("composed initialization", () => {
         let closed = false;
 
         try {
-          const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
-            Layer.build,
-            Scope.provide(scope),
-          );
+          const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
 
-          const run = yield* Context.get(context, SchedulerServices).timers.start;
+          const run = yield* Context.get(context, ProcessingResources).timers.start;
           yield* run.stop;
 
           const closing = yield* Scope.close(scope, Exit.void).pipe(
@@ -524,11 +596,9 @@ describe("composed initialization", () => {
             deletedCount: 0,
           });
 
-          const otherContext = yield* makeSchedulerLayer(other, { runFork: Effect.runFork }).pipe(
-            Layer.build,
-          );
+          const otherContext = yield* makeSchedulerLayer(other).pipe(Layer.build);
 
-          const otherRun = yield* Context.get(otherContext, SchedulerServices).timers.start;
+          const otherRun = yield* Context.get(otherContext, ProcessingResources).timers.start;
           yield* TestClock.adjust(1000);
           expect({
             first: ctx.mockCollection.deleteMany.mock.calls.length,
@@ -554,7 +624,6 @@ describe("composed initialization", () => {
       const ctx = createMockContext();
       ctx.options.recoverStaleJobs = false;
       ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
-      const context = yield* Effect.context();
       let maintenanceWrites = 0;
       ctx.mockCollection.deleteMany.mockImplementation(async () => {
         maintenanceWrites += 1;
@@ -563,11 +632,9 @@ describe("composed initialization", () => {
       });
 
       yield* Effect.gen(function* startMaintenance() {
-        const services = yield* makeSchedulerLayer(ctx, {
-          runFork: Effect.runForkWith(context),
-        }).pipe(
+        const services = yield* makeSchedulerLayer(ctx).pipe(
           Layer.build,
-          Effect.map((built) => Context.get(built, SchedulerServices)),
+          Effect.map((built) => Context.get(built, ProcessingResources)),
         );
 
         yield* services.timers.start;
@@ -619,9 +686,7 @@ describe("composed initialization", () => {
 
     ctx.options.recoverStaleJobs = false;
 
-    const runtime = ManagedRuntime.make(
-      makeSchedulerLayer(ctx, { runFork: Effect.runFork }, persistence).pipe(Layer.orDie),
-    );
+    const runtime = ManagedRuntime.make(makeSchedulerLayer(ctx, persistence).pipe(Layer.orDie));
 
     try {
       const read = JobPersistence.use((store) => store.getJob(new ObjectId()));
@@ -681,21 +746,17 @@ describe("composed initialization", () => {
         const ctx = createMockContext();
         ctx.options.recoverStaleJobs = false;
 
-        const failed = yield* makeSchedulerLayer(
-          ctx,
-          { runFork: Effect.runFork },
-          persistence,
-        ).pipe(Layer.build, Effect.scoped, Effect.result);
+        const failed = yield* makeSchedulerLayer(ctx, persistence).pipe(
+          Layer.build,
+          Effect.scoped,
+          Effect.result,
+        );
 
         expect(failed).toStrictEqual(Result.fail(failure));
         expect({ acquisitions, releases }).toStrictEqual({ acquisitions: 1, releases: 1 });
 
         yield* Effect.gen(function* readAfterRetry() {
-          const context = yield* makeSchedulerLayer(
-            ctx,
-            { runFork: Effect.runFork },
-            persistence,
-          ).pipe(Layer.build);
+          const context = yield* makeSchedulerLayer(ctx, persistence).pipe(Layer.build);
 
           const job = yield* JobPersistence.use((store) => store.getJob(new ObjectId())).pipe(
             Effect.provideContext(context),

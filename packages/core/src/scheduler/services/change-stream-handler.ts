@@ -1,13 +1,17 @@
 import { Effect, Exit, Fiber, Predicate, Scope } from "effect";
-import type { ChangeStreamDocument } from "mongodb";
+import type { Collection, ChangeStreamDocument } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 
 import { fromPromise, observeTimerFailure } from "../effects.js";
 import type { PendingNotificationSink } from "./pending-notification-router.js";
-import type { SchedulerContext } from "./types.js";
 
-type StreamDependencies = Pick<SchedulerContext, "collection" | "isRunning" | "emit">;
+interface StreamDependencies {
+  readonly collection: Collection;
+  readonly isRunning: () => boolean;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+}
 
 interface StreamLifetime {
   readonly scope: Scope.Closeable;

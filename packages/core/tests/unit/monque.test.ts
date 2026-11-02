@@ -5,6 +5,7 @@
  */
 import { EventEmitter } from "node:events";
 import { fromPartial } from "@total-typescript/shoehorn";
+import { Clock, Effect } from "effect";
 import type { ChangeStream, FindCursor, Collection, Db } from "mongodb";
 import { MongoServerError, ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -27,6 +28,8 @@ import {
   arrayContainingMatcher,
 } from "@tests/setup/matchers.js";
 import type { MockFunction, NativeMock } from "@tests/setup/mock-function.js";
+
+const readMonotonicNanos = (): bigint => BigInt(Math.round(performance.now() * 1_000_000));
 
 const createStream = (closing = Promise.resolve()) =>
   // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB cursors use Node EventEmitter delivery and error-listener semantics.
@@ -426,6 +429,110 @@ describe(Monque, () => {
     afterEach(() => {
       vi.clearAllTimers();
       vi.useRealTimers();
+    });
+
+    it("leaves no maintenance after a connected listener stops synchronously", async () => {
+      const stream = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValue(fromPartial<ChangeStream>(stream)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      monque.once("changestream:connected", () => {
+        stopping = monque.stop();
+      });
+      monque.start();
+      await stopping;
+      expect(monque.isHealthy()).toBe(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).not.toHaveBeenCalled();
+      expect(stream.close).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("preserves replacement maintenance cadence after a connected listener stops and restarts", async () => {
+      const monotonic = vi
+        .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+        .mockImplementation(readMonotonicNanos);
+
+      const oldStream = createStream();
+      const replacement = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      monque.once("changestream:connected", () => {
+        stopping = monque.stop();
+        monque.start();
+        // Synchronous application work must not move the successor's retention deadline.
+        vi.advanceTimersByTime(500);
+      });
+
+      try {
+        monque.start();
+        await stopping;
+        expect(monque.isHealthy()).toBe(true);
+        expect(replacement.close).not.toHaveBeenCalled();
+        expect(mockCollection.deleteMany).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(500);
+        expect(mockCollection.deleteMany).toHaveBeenCalledTimes(2);
+      } finally {
+        await monque.stop();
+        monotonic.mockRestore();
+      }
+
+      const deletionsAfterStop = mockCollection.deleteMany.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).toHaveBeenCalledTimes(deletionsAfterStop);
+      expect(oldStream.close).toHaveBeenCalledOnce();
+      expect(replacement.close).toHaveBeenCalledOnce();
+      expect(monque.isHealthy()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("releases maintenance acquired while a native retention callback stops synchronously", async () => {
+      const stream = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValue(fromPartial<ChangeStream>(stream)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      const deletion = Promise.withResolvers<Awaited<ReturnType<Collection["deleteMany"]>>>();
+      mockCollection.deleteMany.mockImplementationOnce(async () => {
+        stopping = monque.stop();
+
+        return await deletion.promise;
+      });
+      monque.start();
+      await stopping;
+      deletion.resolve({ acknowledged: true, deletedCount: 0 });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).toHaveBeenCalledOnce();
+      expect(monque.isHealthy()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it("keeps a replacement stream active when an error listener restarts synchronously", async () => {

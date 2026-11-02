@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { JobStatus } from "@/jobs";
 import { fromPromise } from "@/scheduler/effects.js";
-import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
 import {
   ChangeStreamHandler,
   makeChangeStreamHandler,
@@ -70,12 +70,9 @@ describe(ChangeStreamHandler, () => {
 
       ctx.options.recoverStaleJobs = false;
 
-      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
-        Layer.build,
-        Scope.provide(scope),
-      );
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
 
-      const { streams: owned } = Context.get(context, SchedulerServices);
+      const { streams: owned } = Context.get(context, ProcessingResources);
 
       expect(streams).toHaveLength(0);
       owned.setup();

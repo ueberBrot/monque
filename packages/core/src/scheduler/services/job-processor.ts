@@ -1,7 +1,9 @@
 import type { Scope } from "effect";
 import { Cause, Deferred, Duration, Effect, Exit, Option, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
+import type { Collection } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
 import { PayloadValidationError, toError } from "@/shared";
@@ -12,7 +14,7 @@ import { JobDiscovery } from "./job-discovery.js";
 import type { JobOwnership } from "./job-ownership.js";
 import { JobPersistenceError } from "./job-persistence-error.js";
 import { makeOperationTelemetry } from "./operation-telemetry.js";
-import type { SchedulerContext } from "./types.js";
+import type { ResolvedMonqueOptions } from "./types.js";
 import type { WorkerAdmission } from "./worker-admission.js";
 
 const MAX_REPOLL_TARGET_NAMES = 1024;
@@ -36,10 +38,13 @@ interface ProcessingState {
   repollTargetNames: Set<string> | undefined;
 }
 
-export type ExecutionDependencies = Pick<
-  SchedulerContext,
-  "collection" | "emit" | "notifyPendingJob" | "notifyJobFinished"
-> & { readonly options: Pick<SchedulerContext["options"], "instanceConcurrency"> };
+export interface ExecutionDependencies {
+  readonly collection: Collection;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+  readonly notifyJobFinished: (name: string) => void;
+  readonly options: Pick<ResolvedMonqueOptions, "instanceConcurrency">;
+}
 
 /** A stop captures its original admission identities before any asynchronous wait. */
 export interface ExecutionDrain {

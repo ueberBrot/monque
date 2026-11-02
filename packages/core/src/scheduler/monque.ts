@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
 import { ObjectId } from "mongodb";
-import type { Collection, Db, Document, WithId } from "mongodb";
+import type { Collection, Db } from "mongodb";
 
 import type { MonqueEventMap } from "@/events";
-import { documentToPersistedJob, JobStatus } from "@/jobs";
+import { JobStatus } from "@/jobs";
 import type {
   BulkOperationResult,
   CursorOptions,
@@ -29,7 +29,7 @@ import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
-import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
+import { makeSchedulerLayer, ProcessingResources } from "./runtime.js";
 import { JobExecution } from "./services/job-execution.js";
 import { JobIntake } from "./services/job-intake.js";
 import { JobManagement } from "./services/job-manager.js";
@@ -38,7 +38,7 @@ import { JobPersistence } from "./services/job-persistence.js";
 import { JobQueries } from "./services/job-queries.js";
 import type { MaintenanceRun } from "./services/lifecycle-manager.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
-import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
+import type { ResolvedMonqueOptions } from "./services/types.js";
 import { WorkerAdmissionState } from "./services/worker-admission.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
 import { validateOptions } from "./validate-options.js";
@@ -149,7 +149,7 @@ export class Monque extends EventEmitter {
   /** Published together after initialization succeeds. */
   #initialized: {
     runtime: SchedulerRuntime;
-    services: SchedulerServices["Service"];
+    services: ProcessingResources["Service"];
   } | null = null;
   #initialization: Promise<void> | null = null;
   constructor(db: Db, options: MonqueOptions = {}) {
@@ -235,17 +235,27 @@ export class Monque extends EventEmitter {
         async () =>
           await collection.updateMany({ priority: { $exists: false } }, { $set: { priority: 0 } }),
       );
-      const ctx = yield* attempt(() => this.buildContext());
 
       const runtime: SchedulerRuntime = ManagedRuntime.make(
-        makeSchedulerLayer(ctx, {
-          runFork: (effect) => runtime.runFork(effect),
+        makeSchedulerLayer({
+          collection,
+          options: this.options,
+          admission: this.#admission,
+          emit: (event, payload) => this.emit(event, payload),
+          notifyPendingJob: (name, nextRunAt) => {
+            if (this.#admission.running) {
+              this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
+            }
+          },
+          notifyJobFinished: (name) => {
+            this.onJobFinished(name);
+          },
         }).pipe(Layer.orDie),
       );
 
       candidate = runtime;
       const context = yield* runtime.contextEffect;
-      this.#initialized = { runtime, services: Context.get(context, SchedulerServices) };
+      this.#initialized = { runtime, services: Context.get(context, ProcessingResources) };
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
@@ -273,39 +283,6 @@ export class Monque extends EventEmitter {
     }
 
     return this.#initialized.runtime;
-  }
-  /**
-   * Build the shared context for internal services.
-   */
-  private buildContext(): SchedulerContext {
-    if (!this.collection) {
-      throw new ConnectionError("Collection not initialized");
-    }
-
-    return {
-      collection: this.collection,
-      options: this.options,
-      instanceId: this.options.schedulerInstanceId,
-      admission: this.#admission,
-      get workers() {
-        return this.admission.workers;
-      },
-      isRunning: () => this.#admission.running,
-      isPaused: (name?: string) => this.isPaused(name),
-      emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
-        this.emit(event, payload),
-      notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
-        if (!this.#admission.running) {
-          return;
-        }
-
-        this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
-      },
-      notifyJobFinished: (name) => {
-        this.onJobFinished(name);
-      },
-      documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
-    };
   }
   /**
    * Create required MongoDB indexes for efficient job processing.
@@ -1101,11 +1078,29 @@ export class Monque extends EventEmitter {
 
     const { services } = this.#initialized;
     this.#admission.start();
+    const { generation } = this.#admission;
+    const isCurrent = () => this.#admission.running && this.#admission.generation === generation;
     // Set up change streams as the primary notification mechanism
     services.streams.setup();
+
+    if (!isCurrent()) {
+      return;
+    }
+
     services.notifications.start();
-    // Start heartbeat and retention timers
-    this.#maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (!isCurrent()) {
+      return;
+    }
+
+    // Start heartbeat and retention timers. Immediate maintenance can reenter too.
+    const maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (isCurrent()) {
+      this.#maintenanceRun = maintenanceRun;
+    } else {
+      this.#runtime.runSync(maintenanceRun.stop);
+    }
   }
   /**
    * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
@@ -1153,7 +1148,8 @@ export class Monque extends EventEmitter {
     const execution = yield* JobExecution;
     const drain = execution.captureDrain();
 
-    const { notifications, queries: query, streams } = yield* SchedulerServices;
+    const { notifications, streams } = yield* ProcessingResources;
+    const query = yield* JobQueries;
 
     if (maintenanceRun) {
       yield* maintenanceRun.beginDrain(this.options.leaseDuration !== undefined);
