@@ -93,10 +93,16 @@ export class JobProcessor {
       }),
     };
   }
-  readonly poll = Effect.fnUntraced(function* pollRegisteredWorkers(
-    this: JobProcessor,
+  readonly poll = (
     targetNames?: ReadonlySet<string>,
     isCurrent: () => boolean = () => this.admission.running,
+  ): Effect.Effect<void, unknown> =>
+    Effect.uninterruptibleMask((restore) => this.pollRegistered(targetNames, isCurrent, restore));
+  private readonly pollRegistered = Effect.fnUntraced(function* pollRegisteredWorkers(
+    this: JobProcessor,
+    targetNames: ReadonlySet<string> | undefined,
+    isCurrent: () => boolean,
+    restore: Parameters<Parameters<typeof Effect.uninterruptibleMask>[0]>[0],
   ): Effect.fn.Return<void, unknown> {
     if (!isCurrent() || !this.admission.running || this.admission.isPaused()) {
       return;
@@ -125,24 +131,26 @@ export class JobProcessor {
 
     let requestedNames = targetNames;
     let currentRun = isCurrent;
-    yield* Effect.gen({ self: this }, function* runSerializedPoll() {
-      do {
-        this.state.repollRequested = false;
-        this.state.repollTargetNames = new Set<string>();
+    yield* restore(
+      Effect.gen({ self: this }, function* runSerializedPoll() {
+        do {
+          this.state.repollRequested = false;
+          this.state.repollTargetNames = new Set<string>();
 
-        if (currentRun()) {
-          yield* this.doPoll(requestedNames, currentRun);
-        }
+          if (currentRun()) {
+            yield* this.doPoll(requestedNames, currentRun);
+          }
 
-        requestedNames = this.state.repollTargetNames;
-        currentRun = this.state.repollIsCurrent;
-      } while (
-        this.state.repollRequested &&
-        currentRun() &&
-        this.admission.running &&
-        !this.admission.isPaused()
-      );
-    }).pipe(
+          requestedNames = this.state.repollTargetNames;
+          currentRun = this.state.repollIsCurrent;
+        } while (
+          this.state.repollRequested &&
+          currentRun() &&
+          this.admission.running &&
+          !this.admission.isPaused()
+        );
+      }),
+    ).pipe(
       Effect.onExit((exit) =>
         Effect.gen({ self: this }, function* finishPoll() {
           yield* this.polling.release(1);
@@ -175,7 +183,10 @@ export class JobProcessor {
     isCurrent: () => boolean,
   ): Effect.fn.Return<void, unknown> {
     const { instanceConcurrency } = this.ctx.options;
-    const canClaim = () => isCurrent() && this.admission.running;
+
+    const canClaim = () =>
+      isCurrent() && this.admission.running && this.executionScope.state._tag !== "Closed";
+
     const names = this.admission.orderedNames();
     const requestedNames = instanceConcurrency === undefined ? targetNames : undefined;
 
@@ -273,7 +284,12 @@ export class JobProcessor {
     name: string,
     isCurrent: () => boolean,
   ): Effect.fn.Return<void, unknown> {
-    if (!isCurrent() || !this.admission.running || this.admission.isPaused(name)) {
+    if (
+      !isCurrent() ||
+      !this.admission.running ||
+      this.admission.isPaused(name) ||
+      this.executionScope.state._tag === "Closed"
+    ) {
       yield* this.ownership.releaseOwnedClaim(job).pipe(
         Effect.mapError((failure) => failure.cause),
         Effect.catchCause((cause) =>

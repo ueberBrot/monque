@@ -6,7 +6,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
  * Tests job polling, acquisition, processing, completion, and failure handling.
  * Uses mock SchedulerContext to test processing logic in isolation.
  */
-import { Clock, Context, Deferred, Effect, Fiber, Layer } from "effect";
+import { Clock, Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { map as mapEffect } from "effect/Effect";
 import { isString } from "effect/Predicate";
 import { TestClock } from "effect/testing";
@@ -156,6 +156,44 @@ describe(JobProcessor, () => {
         } finally {
           result.resolve([]);
           yield* Fiber.interrupt(poll);
+        }
+      }),
+    );
+
+    it.effect("releases a late native Claim when its initialized execution owner has closed", () =>
+      Effect.gen(function* closeOwnerDuringClaim() {
+        const owner = yield* Scope.make();
+        processor = yield* makeProcessor().pipe(Effect.provideService(Scope.Scope, owner));
+        const handler = vi.fn<WorkerRegistration["handler"]>();
+        ctx.admission.register("email", handler);
+        const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const claim = Promise.withResolvers<PersistedJob>();
+        const job = JobFactoryHelpers.processing({ name: "email", claimId: "closed-owner" });
+        ctx.mockCollection.findOneAndUpdate.mockImplementationOnce(async () => {
+          Deferred.doneUnsafe(acquiring, Effect.void);
+
+          return await claim.promise;
+        });
+        const polling = yield* processor.poll(new Set(["email"])).pipe(Effect.forkChild);
+
+        try {
+          yield* Deferred.await(acquiring);
+          yield* Scope.close(owner, Exit.void);
+          claim.resolve(job);
+          yield* Fiber.join(polling);
+          expect({
+            executions: handler.mock.calls.length,
+            active: ctx.admission.activeJobs(),
+          }).toStrictEqual({ executions: 0, active: [] });
+          expect(ctx.mockCollection.updateOne).toHaveBeenCalledExactlyOnceWith(
+            objectContainingMatcher({ claimId: "closed-owner", claimedBy: ctx.instanceId }),
+            objectContainingMatcher({
+              $set: objectContainingMatcher({ status: JobStatus.PENDING }),
+            }),
+          );
+        } finally {
+          claim.resolve(job);
+          yield* Scope.close(owner, Exit.void);
         }
       }),
     );
