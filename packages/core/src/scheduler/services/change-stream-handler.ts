@@ -5,7 +5,7 @@ import type { ChangeStream, ChangeStreamDocument } from "mongodb";
 import { JobStatus } from "@/jobs";
 
 import { attempt, fromPromise, observeTimerFailure } from "../effects.js";
-import type { PendingNotificationRouter } from "./pending-notification-router.js";
+import type { PendingNotificationSink } from "./pending-notification-router.js";
 import type { SchedulerContext } from "./types.js";
 
 /**
@@ -39,11 +39,11 @@ export class ChangeStreamHandler {
   /** Whether the scheduler is currently using change streams */
   private usingChangeStreams = false;
   private readonly ctx: SchedulerContext;
-  private readonly pendingNotifications: PendingNotificationRouter;
+  private readonly pendingNotifications: PendingNotificationSink;
   private readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
   constructor(
     ctx: SchedulerContext,
-    pendingNotifications: PendingNotificationRouter,
+    pendingNotifications: PendingNotificationSink,
     runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E> = Effect.runFork,
   ) {
     this.ctx = ctx;

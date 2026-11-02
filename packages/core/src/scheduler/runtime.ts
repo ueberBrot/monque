@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer } from "effect";
 import type { Fiber } from "effect";
 
 import { ChangeStreamHandler } from "./services/change-stream-handler.js";
@@ -11,7 +11,8 @@ import type { JobPersistence } from "./services/job-persistence.js";
 import { JobProcessor } from "./services/job-processor.js";
 import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { LifecycleManager } from "./services/lifecycle-manager.js";
-import { PendingNotificationRouter } from "./services/pending-notification-router.js";
+import { makePendingNotificationRouter } from "./services/pending-notification-router.js";
+import type { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
 
 interface SchedulerExecution {
@@ -46,14 +47,11 @@ const makeLegacySchedulerLayer = (
       }
 
       yield* lifecycle.assertNoActiveInstanceCollision();
-      const clock = yield* Clock.Clock;
       const processing = new JobProcessor(environment, lifecycle);
 
-      const notifications = new PendingNotificationRouter(
+      const notifications = yield* makePendingNotificationRouter(
         environment,
-        (targetNames) => processing.poll(targetNames),
-        execution.runFork,
-        clock,
+        (targetNames, isCurrent) => processing.poll(targetNames, isCurrent),
       );
 
       return {

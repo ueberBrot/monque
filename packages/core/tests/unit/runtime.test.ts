@@ -1,13 +1,40 @@
 import { it as effectIt } from "@effect/vitest";
-import { Effect, Layer, ManagedRuntime, Result } from "effect";
+import { Context, Effect, Exit, Layer, ManagedRuntime, Result, Scope } from "effect";
+import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeSchedulerLayer } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
-import { createMockContext } from "@tests/factories";
+import { createMockContext, createWorker } from "@tests/factories";
 
 describe("composed initialization", () => {
+  effectIt.effect("owns notification scheduling without starting it during Layer acquisition", () =>
+    Effect.gen(function* closeNotificationLayer() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.workers.set("email", createWorker());
+      const owner = yield* Scope.make();
+
+      const context = yield* Layer.buildWithScope(
+        makeSchedulerLayer(ctx, { runFork: Effect.runFork }),
+        owner,
+      );
+
+      const { notifications } = Context.get(context, SchedulerServices);
+      yield* TestClock.adjust(10_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      notifications.notifyRunnableJob("email");
+      notifications.notifyPendingJob("email", new Date(20_000));
+      yield* Scope.close(owner, Exit.void);
+      notifications.start();
+      notifications.notifyRunnableJob("email");
+      yield* TestClock.adjust(30_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    }),
+  );
+
   it("shares acquisition across concurrent reads and waits for full readiness", async () => {
     const acquired: PromiseWithResolvers<void> = Promise.withResolvers();
     const ready: PromiseWithResolvers<void> = Promise.withResolvers();

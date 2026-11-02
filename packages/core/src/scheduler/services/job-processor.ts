@@ -15,6 +15,7 @@ const MAX_REPOLL_TARGET_NAMES = 1024;
 
 interface ProcessingState {
   repollRequested: boolean;
+  repollIsCurrent: () => boolean;
   repollTargetNames: Set<string> | undefined;
   totalActiveJobs: number;
   lastServedWorker: string | undefined;
@@ -24,6 +25,7 @@ export class JobProcessor {
   private readonly polling = Semaphore.makeUnsafe(1);
   private readonly state: ProcessingState = {
     repollRequested: false,
+    repollIsCurrent: () => true,
     repollTargetNames: undefined,
     totalActiveJobs: 0,
     lastServedWorker: undefined,
@@ -40,8 +42,9 @@ export class JobProcessor {
     function* pollRegisteredWorkers(
       this: JobProcessor,
       targetNames?: ReadonlySet<string>,
+      isCurrent: () => boolean = this.ctx.isRunning,
     ): Effect.fn.Return<void, unknown> {
-      if (!this.ctx.isRunning() || this.ctx.isPaused()) {
+      if (!isCurrent() || !this.ctx.isRunning() || this.ctx.isPaused()) {
         return;
       }
 
@@ -59,6 +62,7 @@ export class JobProcessor {
           }
         }
 
+        this.state.repollIsCurrent = isCurrent;
         this.state.repollRequested = true;
         this.state.repollTargetNames = names;
 
@@ -66,25 +70,41 @@ export class JobProcessor {
       }
 
       let requestedNames = targetNames;
+      let currentRun = isCurrent;
       yield* Effect.gen({ self: this }, function* runSerializedPoll() {
         do {
           this.state.repollRequested = false;
           this.state.repollTargetNames = new Set<string>();
-          yield* this.doPoll(requestedNames);
+
+          if (currentRun()) {
+            yield* this.doPoll(requestedNames, currentRun);
+          }
+
           requestedNames = this.state.repollTargetNames;
-        } while (this.state.repollRequested && this.ctx.isRunning() && !this.ctx.isPaused());
+          currentRun = this.state.repollIsCurrent;
+        } while (
+          this.state.repollRequested &&
+          currentRun() &&
+          this.ctx.isRunning() &&
+          !this.ctx.isPaused()
+        );
       }).pipe(Effect.ensuring(this.polling.release(1)));
     },
-    (effect: Effect.Effect<void, unknown>, _targetNames?: ReadonlySet<string>) =>
-      Effect.uninterruptible(effect),
+    (
+      effect: Effect.Effect<void, unknown>,
+      _targetNames?: ReadonlySet<string>,
+      _isCurrent?: () => boolean,
+    ) => Effect.uninterruptible(effect),
   );
   // oxlint-disable-next-line sonarjs/cognitive-complexity -- Round-robin worker selection and exponential claim batches share the instance concurrency budget.
   private readonly doPoll = Effect.fnUntraced(function* claimAvailableJobs(
     this: JobProcessor,
-    targetNames?: ReadonlySet<string>,
+    targetNames: ReadonlySet<string> | undefined,
+    isCurrent: () => boolean,
   ): Effect.fn.Return<void, unknown> {
     const { instanceConcurrency } = this.ctx.options;
     const { state } = this;
+    const canClaim = () => isCurrent() && this.ctx.isRunning();
 
     if (instanceConcurrency !== undefined && state.totalActiveJobs >= instanceConcurrency) {
       return;
@@ -117,7 +137,9 @@ export class JobProcessor {
       return;
     }
 
-    const dueNames = yield* this.discovery.discoverDue(eligibleNames, requestedNames);
+    // Legacy claim dispatch stays uninterruptible until #632 owns its handoff.
+    // The run guard fences discovery results without interrupting a Claim write.
+    const dueNames = yield* this.discovery.discoverDue(eligibleNames, requestedNames, isCurrent);
 
     // oxlint-disable-next-line sonarjs/too-many-break-or-continue-in-loop -- Guard clauses skip unavailable workers before claiming their slots.
     for (const name of names) {
@@ -138,14 +160,14 @@ export class JobProcessor {
           ? workerAvailableSlots
           : Math.min(workerAvailableSlots, instanceConcurrency - this.state.totalActiveJobs);
 
-      if (availableSlots <= 0 || !this.ctx.isRunning()) {
+      if (availableSlots <= 0 || !canClaim()) {
         return;
       }
 
       let remaining = availableSlots;
 
       // oxlint-disable-next-line sonarjs/misplaced-loop-counter -- Batch size doubles independently while successful claims consume remaining slots.
-      for (let batchSize = 1; remaining > 0 && this.ctx.isRunning(); batchSize *= 2) {
+      for (let batchSize = 1; remaining > 0 && canClaim(); batchSize *= 2) {
         const size = Math.min(batchSize, remaining);
         let found = 0;
         let acquisitionFailed = false;
@@ -161,7 +183,7 @@ export class JobProcessor {
                 found += 1;
                 this.state.lastServedWorker = name;
 
-                return this.dispatchClaim(job, worker, name);
+                return this.dispatchClaim(job, worker, name, isCurrent);
               }),
               Effect.catchCause((cause) =>
                 attempt(() => {
@@ -175,8 +197,8 @@ export class JobProcessor {
         );
 
         if (found < size) {
-          if (!acquisitionFailed && this.ctx.isRunning() && !this.ctx.isPaused(name)) {
-            yield* this.discovery.notifyNextRun(name);
+          if (!acquisitionFailed && canClaim() && !this.ctx.isPaused(name)) {
+            yield* this.discovery.notifyNextRun(name, isCurrent);
           }
 
           break;
@@ -191,8 +213,9 @@ export class JobProcessor {
     job: PersistedJob,
     worker: WorkerRegistration,
     name: string,
+    isCurrent: () => boolean,
   ): Effect.fn.Return<void, unknown> {
-    if (!this.ctx.isRunning() || this.ctx.isPaused(name)) {
+    if (!isCurrent() || !this.ctx.isRunning() || this.ctx.isPaused(name)) {
       yield* this.lifecycle.releaseOwnedClaim(job).pipe(
         Effect.catchCause((cause) =>
           attempt(() => {
