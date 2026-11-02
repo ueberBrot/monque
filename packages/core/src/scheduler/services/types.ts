@@ -1,12 +1,6 @@
-import type { Collection, Document, WithId } from "mongodb";
-
-import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
-import type { PersistedJob } from "@/jobs";
-import type { WorkerRegistration } from "@/workers";
 
 import type { MonqueOptions } from "../types.js";
-import type { WorkerAdmissionState } from "./worker-admission.js";
 
 /**
  * Resolved Monque options with all defaults applied.
@@ -40,40 +34,6 @@ export interface ResolvedMonqueOptions
   // Ensure resolved options use the new naming convention
   workerConcurrency: number;
   safetyPollInterval: number;
-}
-
-/**
- * Shared context provided to all internal Monque services.
- *
- * Contains references to shared state, configuration, and utilities
- * needed by service methods. Passed to service constructors to enable
- * access to the collection, options, and event emission.
- *
- * Not part of public API.
- * @internal
- */
-export interface SchedulerContext {
-  /** MongoDB collection for jobs */
-  collection: Collection;
-  /** Resolved scheduler options with defaults applied */
-  options: ResolvedMonqueOptions;
-  /** Unique identifier for this scheduler instance (for claiming jobs) */
-  instanceId: string;
-  /** Registered workers by job name */
-  readonly admission: WorkerAdmissionState;
-  readonly workers: ReadonlyMap<string, WorkerRegistration>;
-  /** Whether the scheduler is currently running */
-  isRunning: () => boolean;
-  /** Whether new executions are paused locally for the instance or job name */
-  isPaused: (name?: string) => boolean;
-  /** Type-safe event emitter */
-  emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
-  /** Notify the local scheduler about a pending job transition */
-  notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
-  /** Notify that local worker capacity is available and update shutdown draining */
-  notifyJobFinished: (name: string) => void;
-  /** Convert MongoDB document to typed PersistedJob */
-  documentToPersistedJob: <T>(doc: WithId<Document>) => PersistedJob<T>;
 }
 
 export const RETRYABLE_JOB_STATUSES = [JobStatus.FAILED, JobStatus.CANCELLED] as const;

@@ -15,6 +15,7 @@ import {
 import type { RetryOptions } from "@/workers";
 
 import { JobPersistenceError } from "./job-persistence-error.js";
+import { makeOperationTelemetry } from "./operation-telemetry.js";
 import type { ResolvedMonqueOptions } from "./types.js";
 
 /** Native driver boundary. Never retries ownership writes or application side effects. */
@@ -74,6 +75,7 @@ export const makeNativeJobOwnership = (
   collection: Collection,
   instanceId: string,
   defaults: OwnershipOptions,
+  telemetry = makeOperationTelemetry(),
 ): JobOwnership["Service"] => {
   /**
    * MongoDB precondition for mutating a job owned by this scheduler.
@@ -115,164 +117,174 @@ export const makeNativeJobOwnership = (
     /**
      * Atomically claim the highest-priority due pending Job for a Worker.
      */
-    claimNext: Effect.fnUntraced(function* claimNextJob(
-      name: string,
-    ): Effect.fn.Return<PersistedJob | null, JobPersistenceError> {
-      const now = yield* DateTime.nowAsDate;
-      const { leaseDuration } = defaults;
+    claimNext: Effect.fnUntraced(
+      function* claimNextJob(
+        name: string,
+      ): Effect.fn.Return<PersistedJob | null, JobPersistenceError> {
+        const now = yield* DateTime.nowAsDate;
+        const { leaseDuration } = defaults;
 
-      const claim = {
-        status: JobStatus.PROCESSING,
-        claimedBy: instanceId,
-        claimId: randomUUID(),
-        lockedAt: now,
-        lastHeartbeat: now,
-        heartbeatInterval: defaults.heartbeatInterval,
-        updatedAt: now,
-      };
+        const claim = {
+          status: JobStatus.PROCESSING,
+          claimedBy: instanceId,
+          claimId: randomUUID(),
+          lockedAt: now,
+          lastHeartbeat: now,
+          heartbeatInterval: defaults.heartbeatInterval,
+          updatedAt: now,
+        };
 
-      const result = yield* persist(
-        async () =>
-          await collection.findOneAndUpdate(
-            {
-              name,
-              status: JobStatus.PENDING,
-              nextRunAt: { $lte: now },
-            },
-            leaseDuration === undefined
-              ? { $set: claim, $unset: { leaseExpiresAt: "" } }
-              : [
-                  {
-                    $set: {
-                      ...claim,
-                      claimedBy: { $literal: instanceId },
-                      lockedAt: "$$NOW",
-                      lastHeartbeat: "$$NOW",
-                      updatedAt: "$$NOW",
-                      leaseExpiresAt: { $add: ["$$NOW", leaseDuration] },
+        const result = yield* persist(
+          async () =>
+            await collection.findOneAndUpdate(
+              {
+                name,
+                status: JobStatus.PENDING,
+                nextRunAt: { $lte: now },
+              },
+              leaseDuration === undefined
+                ? { $set: claim, $unset: { leaseExpiresAt: "" } }
+                : [
+                    {
+                      $set: {
+                        ...claim,
+                        claimedBy: { $literal: instanceId },
+                        lockedAt: "$$NOW",
+                        lastHeartbeat: "$$NOW",
+                        updatedAt: "$$NOW",
+                        leaseExpiresAt: { $add: ["$$NOW", leaseDuration] },
+                      },
                     },
-                  },
-                ],
-            {
-              sort: { priority: -1, nextRunAt: 1, _id: 1 },
-              returnDocument: "after",
-            },
-          ),
-      );
+                  ],
+              {
+                sort: { priority: -1, nextRunAt: 1, _id: 1 },
+                returnDocument: "after",
+              },
+            ),
+        );
 
-      return result ? documentToPersistedJob(result) : null;
-    }),
+        return result ? documentToPersistedJob(result) : null;
+      },
+      (body) => telemetry.observe("claim.acquire", body),
+    ),
     /**
      * Release a just-claimed job when processing cannot start.
      */
-    releaseOwnedClaim: Effect.fnUntraced(function* releaseOwnedJob(
-      job: PersistedJob,
-    ): Effect.fn.Return<void, JobPersistenceError> {
-      const now = yield* DateTime.nowAsDate;
-      yield* persist(
-        async () =>
-          await collection.updateOne(ownedJobFilter(job), {
-            $set: {
-              status: JobStatus.PENDING,
-              updatedAt: now,
-            },
-            $unset: CLAIM_CLEANUP_FIELDS,
-          }),
-      );
-    }),
+    releaseOwnedClaim: Effect.fnUntraced(
+      function* releaseOwnedJob(job: PersistedJob): Effect.fn.Return<void, JobPersistenceError> {
+        const now = yield* DateTime.nowAsDate;
+        yield* persist(
+          async () =>
+            await collection.updateOne(ownedJobFilter(job), {
+              $set: {
+                status: JobStatus.PENDING,
+                updatedAt: now,
+              },
+              $unset: CLAIM_CLEANUP_FIELDS,
+            }),
+        );
+      },
+      (body) => telemetry.observe("claim.release", body),
+    ),
     /**
      * Complete an Owned Job or reschedule its recurring next run.
      */
-    completeOwned: Effect.fnUntraced(function* completeOwnedJob(
-      job: Job,
-    ): Effect.fn.Return<PersistedJob | null, JobPersistenceError | InvalidCronError> {
-      if (!isPersistedJob(job)) {
-        return null;
-      }
+    completeOwned: Effect.fnUntraced(
+      function* completeOwnedJob(
+        job: Job,
+      ): Effect.fn.Return<PersistedJob | null, JobPersistenceError | InvalidCronError> {
+        if (!isPersistedJob(job)) {
+          return null;
+        }
 
-      const now = yield* DateTime.nowAsDate;
-      const { repeatInterval } = job;
+        const now = yield* DateTime.nowAsDate;
+        const { repeatInterval } = job;
 
-      const completion =
-        repeatInterval !== undefined && repeatInterval
-          ? {
-              status: JobStatus.PENDING,
-              nextRunAt: yield* Effect.try({
-                try: () => getNextCronDate(repeatInterval, now, job.timezone),
-                catch: (cause) =>
-                  cause instanceof InvalidCronError ? cause : new JobPersistenceError({ cause }),
-              }),
-              failCount: 0,
-            }
-          : { status: JobStatus.COMPLETED };
+        const completion =
+          repeatInterval !== undefined && repeatInterval
+            ? {
+                status: JobStatus.PENDING,
+                nextRunAt: yield* Effect.try({
+                  try: () => getNextCronDate(repeatInterval, now, job.timezone),
+                  catch: (cause) =>
+                    cause instanceof InvalidCronError ? cause : new JobPersistenceError({ cause }),
+                }),
+                failCount: 0,
+              }
+            : { status: JobStatus.COMPLETED };
 
-      const result = yield* persist(
-        async () =>
-          await collection.findOneAndUpdate(
-            ownedJobFilter(job),
-            {
-              $set: { ...completion, updatedAt: now },
-              $unset: { ...CLAIM_CLEANUP_FIELDS, failReason: "" },
-            },
-            { returnDocument: "after" },
-          ),
-      );
+        const result = yield* persist(
+          async () =>
+            await collection.findOneAndUpdate(
+              ownedJobFilter(job),
+              {
+                $set: { ...completion, updatedAt: now },
+                $unset: { ...CLAIM_CLEANUP_FIELDS, failReason: "" },
+              },
+              { returnDocument: "after" },
+            ),
+        );
 
-      if (!result) {
-        return null;
-      }
+        if (!result) {
+          return null;
+        }
 
-      return documentToPersistedJob(result);
-    }),
+        return documentToPersistedJob(result);
+      },
+      (body) => telemetry.observe("result.complete", body),
+    ),
     /**
      * Fail an Owned Job, either scheduling a retry or marking it terminal.
      */
-    failOwned: Effect.fnUntraced(function* failOwnedJob(
-      job: Job,
-      error: Error,
-      options: RetryOptions = {},
-    ): Effect.fn.Return<PersistedJob | null, JobPersistenceError> {
-      if (!isPersistedJob(job)) {
-        return null;
-      }
+    failOwned: Effect.fnUntraced(
+      function* failOwnedJob(
+        job: Job,
+        error: Error,
+        options: RetryOptions = {},
+      ): Effect.fn.Return<PersistedJob | null, JobPersistenceError> {
+        if (!isPersistedJob(job)) {
+          return null;
+        }
 
-      const now = yield* DateTime.now;
-      const newFailCount = job.failCount + 1;
+        const now = yield* DateTime.now;
+        const newFailCount = job.failCount + 1;
 
-      const terminal =
-        error instanceof NonRetryableError ||
-        newFailCount >= (options.maxRetries ?? defaults.maxRetries);
+        const terminal =
+          error instanceof NonRetryableError ||
+          newFailCount >= (options.maxRetries ?? defaults.maxRetries);
 
-      const retry = terminal
-        ? { status: JobStatus.FAILED }
-        : {
-            status: JobStatus.PENDING,
-            nextRunAt: yield* retryDate(newFailCount, options),
-          };
+        const retry = terminal
+          ? { status: JobStatus.FAILED }
+          : {
+              status: JobStatus.PENDING,
+              nextRunAt: yield* retryDate(newFailCount, options),
+            };
 
-      const result = yield* persist(
-        async () =>
-          await collection.findOneAndUpdate(
-            ownedJobFilter(job),
-            {
-              $set: {
-                ...retry,
-                failCount: newFailCount,
-                failReason: error.message,
-                updatedAt: DateTime.toDateUtc(now),
+        const result = yield* persist(
+          async () =>
+            await collection.findOneAndUpdate(
+              ownedJobFilter(job),
+              {
+                $set: {
+                  ...retry,
+                  failCount: newFailCount,
+                  failReason: error.message,
+                  updatedAt: DateTime.toDateUtc(now),
+                },
+                $unset: CLAIM_CLEANUP_FIELDS,
               },
-              $unset: CLAIM_CLEANUP_FIELDS,
-            },
-            { returnDocument: "after" },
-          ),
-      );
+              { returnDocument: "after" },
+            ),
+        );
 
-      if (!result) {
-        return null;
-      }
+        if (!result) {
+          return null;
+        }
 
-      return documentToPersistedJob(result);
-    }),
+        return documentToPersistedJob(result);
+      },
+      (body) => telemetry.observe("result.fail", body),
+    ),
     /**
      * Refresh heartbeat timestamps for jobs owned by this scheduler instance.
      */
@@ -352,7 +364,7 @@ export const makeNativeJobOwnership = (
       );
 
       return result.modifiedCount;
-    }),
+    }).pipe((body) => telemetry.observe("recovery", body)),
     /**
      * Guard startup against another active scheduler using this instance id.
      */
@@ -384,5 +396,6 @@ export const makeNativeJobOwnershipLayer = (
   collection: Collection,
   instanceId: string,
   options: OwnershipOptions,
+  telemetry = makeOperationTelemetry(),
 ): Layer.Layer<JobOwnership> =>
-  Layer.succeed(JobOwnership, makeNativeJobOwnership(collection, instanceId, options));
+  Layer.succeed(JobOwnership, makeNativeJobOwnership(collection, instanceId, options, telemetry));

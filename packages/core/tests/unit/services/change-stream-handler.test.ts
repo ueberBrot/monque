@@ -3,15 +3,21 @@
  * the cursor adapter, observing emitted events and scheduled polls.
  */
 import { EventEmitter } from "node:events";
+import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { Clock, Effect } from "effect";
+import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
+import { TestClock } from "effect/testing";
 import type { ChangeStream } from "mongodb";
 import type { Mock } from "vite-plus/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
 import { fromPromise } from "@/scheduler/effects.js";
-import { ChangeStreamHandler } from "@/scheduler/services/change-stream-handler.js";
+import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
+import {
+  ChangeStreamHandler,
+  makeChangeStreamHandler,
+} from "@/scheduler/services/change-stream-handler.js";
 import { PendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
 import { createMockContext } from "@tests/factories";
 import { objectContainingMatcher, stringContainingMatcher } from "@tests/setup/matchers.js";
@@ -58,7 +64,103 @@ describe(ChangeStreamHandler, () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
+  effectIt.effect("owns lazy acquisition, cursor listeners and backoff through its scope", () =>
+    Effect.gen(function* ownedStreamScope() {
+      const scope = yield* Scope.fork(yield* Effect.scope);
+
+      ctx.options.recoverStaleJobs = false;
+
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
+
+      const { streams: owned } = Context.get(context, ProcessingResources);
+
+      expect(streams).toHaveLength(0);
+      owned.setup();
+      const nativeError = new Error("Disconnected");
+      stream.emit("error", nativeError);
+      yield* TestClock.adjust(999);
+      expect(streams).toHaveLength(1);
+      yield* TestClock.adjust(1);
+      expect(streams).toHaveLength(2);
+      const [, replacement] = streams;
+
+      if (replacement === undefined) {
+        throw new Error("Expected a replacement cursor");
+      }
+
+      yield* Scope.close(scope, Exit.void);
+      expect({
+        closures: replacement.close.mock.calls.length,
+        changes: replacement.listenerCount("change"),
+        tokens: replacement.listenerCount("resumeTokenChanged"),
+        errors: replacement.listenerCount("error"),
+      }).toStrictEqual({ closures: 1, changes: 0, tokens: 0, errors: 0 });
+      owned.setup();
+      yield* TestClock.adjust(10_000);
+      expect(streams).toHaveLength(2);
+    }),
+  );
+
+  effectIt.effect("cancels scoped backoff while retaining the synchronous retry policy", () =>
+    Effect.gen(function* ownedBackoff() {
+      const scope = yield* Scope.fork(yield* Effect.scope);
+
+      const owned = yield* makeChangeStreamHandler(ctx, pendingNotifications).pipe(
+        Scope.provide(scope),
+      );
+
+      owned.setup();
+      stream.emit("error", new Error("First failure"));
+      yield* TestClock.adjust(1000);
+      streams.at(-1)?.emit("error", new Error("Second failure"));
+      yield* TestClock.adjust(1999);
+      expect(streams).toHaveLength(2);
+      yield* TestClock.adjust(1);
+      expect(streams).toHaveLength(3);
+      streams.at(-1)?.emit("error", new Error("Third failure"));
+      yield* TestClock.adjust(3999);
+      expect(streams).toHaveLength(3);
+      yield* Scope.close(scope, Exit.void);
+      yield* TestClock.adjust(10_000);
+      expect(streams).toHaveLength(3);
+      expect(streams.every((cursor) => cursor.listenerCount("error") === 0)).toBe(true);
+    }),
+  );
+
   describe("setup", () => {
+    it("does not retain a listener registered during synchronous cursor replacement", async () => {
+      let replaced = false;
+      stream.on("newListener", (event) => {
+        if (event === "change" && !replaced) {
+          replaced = true;
+          handler.setup();
+        }
+      });
+      handler.setup();
+      await Promise.resolve();
+      expect(stream.close).toHaveBeenCalledOnce();
+      expect(stream.listenerCount("change")).toBe(0);
+      expect(
+        ctx.emitHistory.filter(({ event }) => event === "changestream:connected"),
+      ).toHaveLength(1);
+    });
+
+    it("closes and detaches the replaced cursor before delivering from its replacement", async () => {
+      handler.setup();
+      const [staleChange] = stream.listeners("change");
+      const [staleError] = stream.listeners("error");
+      handler.setup();
+      await Promise.resolve();
+      expect(stream.close).toHaveBeenCalledOnce();
+      expect(stream.listenerCount("change")).toBe(0);
+      expect(stream.listenerCount("resumeTokenChanged")).toBe(0);
+      ctx.emitHistory.length = 0;
+      staleChange?.({ operationType: "insert", fullDocument: { status: JobStatus.PENDING } });
+      staleError?.(new Error("Obsolete cursor"));
+      expect(ctx.emitHistory).toStrictEqual([]);
+      expect(streams[1]?.close).not.toHaveBeenCalled();
+    });
+
     it.each(["changestream:connected", "changestream:fallback"])(
       "preserves a replacement opened by the %s callback after failed setup",
       async (replacementEvent) => {
@@ -333,6 +435,35 @@ describe(ChangeStreamHandler, () => {
     });
   });
   describe("cursor errors", () => {
+    it("preserves a synchronous error listener throw without scheduling a reconnect", () => {
+      vi.useFakeTimers();
+      handler.setup();
+      const nativeError = new Error("Native cursor failure");
+      const listenerError = new Error("Application listener failure");
+
+      const emit = vi.spyOn(ctx, "emit").mockImplementation((event) => {
+        if (event === "changestream:error") {
+          throw listenerError;
+        }
+
+        return true;
+      });
+
+      let escaped: unknown;
+
+      try {
+        stream.emit("error", nativeError);
+      } catch (error) {
+        escaped = error;
+      }
+
+      expect(escaped).toBe(listenerError);
+      expect(emit).toHaveBeenCalledWith("changestream:error", { error: nativeError });
+      vi.advanceTimersByTime(8000);
+      expect(stream.close).not.toHaveBeenCalled();
+      expect(streams).toHaveLength(1);
+    });
+
     it("lets a throwing fallback listener escape the reconnect timer callback", () => {
       vi.useFakeTimers();
       const listenerError = new Error("Fallback listener failed");
@@ -498,19 +629,6 @@ describe(ChangeStreamHandler, () => {
       expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
     });
 
-    it("should abort reconnect when scheduler stops after closing the stream", () => {
-      vi.useFakeTimers();
-      handler.setup();
-      vi.spyOn(ctx, "isRunning")
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValueOnce(true)
-        .mockReturnValue(false);
-      stream.emit("error", new Error("Connection lost"));
-      vi.advanceTimersByTime(1000);
-      expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
-    });
-
     it("should emit fallback event after exhausting reconnection attempts", () => {
       vi.useFakeTimers();
       handler.setup();
@@ -571,6 +689,71 @@ describe(ChangeStreamHandler, () => {
     });
   });
   describe("close", () => {
+    it.each([false, true])(
+      "keeps a fenced error listener until native close settles (rejects: %s)",
+      async (rejects) => {
+        const closed: PromiseWithResolvers<void> = Promise.withResolvers();
+        stream.close.mockReturnValue(closed.promise);
+        const foreignChange = vi.fn<() => void>();
+        const foreignToken = vi.fn<() => void>();
+        const foreignError = vi.fn<() => void>();
+        stream.on("change", foreignChange);
+        stream.on("resumeTokenChanged", foreignToken);
+        stream.on("error", foreignError);
+        handler.setup();
+        const closing = Effect.runPromise(handler.close());
+
+        try {
+          expect({
+            changes: stream.listeners("change"),
+            tokens: stream.listeners("resumeTokenChanged"),
+            errors: stream.listenerCount("error"),
+          }).toStrictEqual({ changes: [foreignChange], tokens: [foreignToken], errors: 2 });
+          ctx.emitHistory.length = 0;
+          stream.emit("error", new Error("Late native close error"));
+          expect(foreignError).toHaveBeenCalledOnce();
+          expect(ctx.emitHistory).toStrictEqual([]);
+        } finally {
+          if (rejects) {
+            closed.reject(new Error("Native close rejected"));
+          } else {
+            closed.resolve();
+          }
+
+          await closing;
+        }
+
+        expect({
+          changes: stream.listeners("change"),
+          tokens: stream.listeners("resumeTokenChanged"),
+          errors: stream.listeners("error"),
+          closures: stream.close.mock.calls.length,
+        }).toStrictEqual({
+          changes: [foreignChange],
+          tokens: [foreignToken],
+          errors: [foreignError],
+          closures: 1,
+        });
+      },
+    );
+
+    it("clears the native reconnect timer immediately and detaches all owned listeners", async () => {
+      vi.useFakeTimers();
+      handler.setup();
+      stream.emit("error", new Error("Disconnected"));
+      expect(vi.getTimerCount()).toBe(1);
+      const closing = Effect.runPromise(handler.close());
+      expect(vi.getTimerCount()).toBe(0);
+      await closing;
+      expect({
+        changes: stream.listenerCount("change"),
+        tokens: stream.listenerCount("resumeTokenChanged"),
+        errors: stream.listenerCount("error"),
+      }).toStrictEqual({ changes: 0, tokens: 0, errors: 0 });
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(streams).toHaveLength(1);
+    });
+
     it.each(["changestream:error", "changestream:closed"])(
       "preserves a replacement opened by the %s callback",
       async (restartEvent) => {
