@@ -30,6 +30,7 @@ import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
+import { JobIntake } from "./services/job-intake.js";
 import type { JobManager } from "./services/job-manager.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
@@ -450,7 +451,11 @@ export class Monque extends EventEmitter {
    */
   async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.enqueue(name, data, options)),
+      JobIntake.use((intake) => intake.enqueue(name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -464,7 +469,11 @@ export class Monque extends EventEmitter {
     options: JobWriteOptions = {},
   ): Promise<EnqueueManyResult> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.enqueueMany(jobs, options)),
+      JobIntake.use((intake) => intake.enqueueMany(jobs, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -500,7 +509,11 @@ export class Monque extends EventEmitter {
    */
   async now<T>(name: string, data: T, options: NowOptions = {}): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.now(name, data, options)),
+      JobIntake.use((intake) => intake.now(name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -560,7 +573,11 @@ export class Monque extends EventEmitter {
     options: ScheduleOptions = {},
   ): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.schedule(cron, name, data, options)),
+      JobIntake.use((intake) => intake.schedule(cron, name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   // ─────────────────────────────────────────────────────────────────────────────
