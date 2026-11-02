@@ -5,8 +5,9 @@
  */
 import { EventEmitter } from "node:events";
 import { fromPartial } from "@total-typescript/shoehorn";
+import { Clock, Effect } from "effect";
 import type { ChangeStream, FindCursor, Collection, Db } from "mongodb";
-import { ObjectId } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { MonqueEventMap } from "@/events";
@@ -16,6 +17,7 @@ import type { MonqueOptions } from "@/scheduler/types.js";
 import {
   ConnectionError,
   InvalidJobIdentifierError,
+  MonqueError,
   ShutdownTimeoutError,
   WorkerRegistrationError,
 } from "@/shared";
@@ -26,6 +28,8 @@ import {
   arrayContainingMatcher,
 } from "@tests/setup/matchers.js";
 import type { MockFunction, NativeMock } from "@tests/setup/mock-function.js";
+
+const readMonotonicNanos = (): bigint => BigInt(Math.round(performance.now() * 1_000_000));
 
 const createStream = (closing = Promise.resolve()) =>
   // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB cursors use Node EventEmitter delivery and error-listener semantics.
@@ -51,6 +55,9 @@ describe(Monque, () => {
         upsertedCount: 0,
         upsertedId: null,
       }),
+      deleteOne: vi
+        .fn<MockFunction<Collection["deleteOne"]>>()
+        .mockResolvedValue({ acknowledged: true, deletedCount: 0 }),
       deleteMany: vi
         .fn<MockFunction<Collection["deleteMany"]>>()
         .mockResolvedValue({ acknowledged: true, deletedCount: 0 }),
@@ -77,6 +84,45 @@ describe(Monque, () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
+
+  it("retains native callback cause identity after a successful management write", async () => {
+    await monque.initialize();
+    const failure = new MongoServerError({ message: "Observer failed", code: 91 });
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on("job:cancelled", () => {
+      throw failure;
+    });
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toMatchObject({
+      message: "Failed to cancel job: Observer failed",
+      cause: failure,
+    });
+  });
+
+  it("preserves a domain error thrown by a synchronous management listener", async () => {
+    await monque.initialize();
+    const failure = new MonqueError("Observer domain failure");
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on("job:cancelled", () => {
+      throw failure;
+    });
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toBe(failure);
+  });
+
+  it("retains the non-Error callback fallback after a successful management write", async () => {
+    await monque.initialize();
+    mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+    monque.on(
+      "job:cancelled",
+      vi.fn<() => void>().mockImplementationOnce(() => {
+        // oxlint-disable-next-line typescript/only-throw-error, no-throw-literal -- Exercise arbitrary values thrown by public callbacks.
+        throw "Observer unavailable";
+      }),
+    );
+    await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toStrictEqual(
+      new ConnectionError("Failed to cancel job: Unknown error during cancelJob"),
+    );
+  });
+
   describe("constructor", () => {
     it("should set maxListeners to 20", () => {
       expect(monque.getMaxListeners()).toBe(20);
@@ -376,6 +422,67 @@ describe(Monque, () => {
       });
     });
   });
+  describe("replacement during an in-progress poll", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
+        readMonotonicNanos,
+      );
+      Object.assign(mockCollection, {
+        options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+      });
+      mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<Collection["aggregate"]>>({
+          toArray: async () => await Promise.resolve([{ _id: "work", nextRunAt: new Date(0) }]),
+          close: async () => {},
+        }),
+      );
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        workerConcurrency: 5,
+      });
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    it("lets an in-progress poll finish with its captured registration after replacement", async () => {
+      const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+
+      const original = vi.fn<JobHandler>(async () => {
+        await completion.promise;
+      });
+
+      const replacement = vi.fn<JobHandler>(async () => {});
+      const jobs = Array.from({ length: 5 }, () => JobFactoryHelpers.processing({ name: "work" }));
+
+      for (const job of jobs) {
+        mockCollection.findOneAndUpdate.mockResolvedValueOnce(job);
+      }
+
+      monque.register("work", original);
+      monque.once("job:start", () => {
+        monque.register("work", replacement, { replace: true, concurrency: 1 });
+      });
+      await monque.initialize();
+
+      try {
+        monque.start();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect({
+          claims: mockCollection.findOneAndUpdate.mock.calls.length,
+          original: original.mock.calls.length,
+          replacement: replacement.mock.calls.length,
+        }).toStrictEqual({ claims: 5, original: 5, replacement: 0 });
+      } finally {
+        const stopping = monque.stop();
+        completion.resolve();
+        await stopping;
+      }
+    });
+  });
   describe("restart during shutdown", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -383,6 +490,304 @@ describe(Monque, () => {
     afterEach(() => {
       vi.clearAllTimers();
       vi.useRealTimers();
+    });
+
+    it.each([
+      { closeWork: 0, timeout: 10 },
+      { closeWork: 5, timeout: 10 },
+      { closeWork: 0, timeout: 10.5 },
+      { closeWork: 0, timeout: 0 },
+    ])(
+      "bounds stop with pending cleanup, $closeWork ms of close work and timeout $timeout",
+      async ({ closeWork, timeout }) => {
+        const monotonic = vi
+          .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+          .mockImplementation(readMonotonicNanos);
+
+        const closing = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const stream = createStream(closing.promise);
+        stream.close.mockImplementation(async () => {
+          vi.advanceTimersByTime(closeWork);
+          await closing.promise;
+        });
+        Object.assign(mockCollection, {
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValue(fromPartial<ChangeStream>(stream)),
+        });
+        monque = new Monque(fromPartial<Db>(mockDb), { shutdownTimeout: timeout });
+        const errors = vi.fn<(payload: MonqueEventMap["job:error"]) => void>();
+        monque.on("job:error", errors);
+        await monque.initialize();
+        monque.start();
+        let stopped = false;
+
+        const stopping = monque.stop().then(() => {
+          stopped = true;
+
+          return true;
+        });
+
+        try {
+          await vi.advanceTimersByTimeAsync(Math.ceil(timeout) + 1 - closeWork);
+          expect({
+            stopped,
+            errors: errors.mock.calls.length,
+            closes: stream.close.mock.calls.length,
+            changeListeners: stream.listenerCount("change"),
+            errorListeners: stream.listenerCount("error"),
+            timers: vi.getTimerCount(),
+          }).toStrictEqual({
+            stopped: true,
+            errors: 0,
+            closes: 1,
+            changeListeners: 0,
+            errorListeners: 1,
+            timers: 0,
+          });
+        } finally {
+          closing.resolve();
+          await stopping;
+          await vi.advanceTimersByTimeAsync(0);
+          monotonic.mockRestore();
+        }
+
+        expect(stream.listenerCount("error")).toBe(0);
+      },
+    );
+
+    it.each([false, true])(
+      "bounds renewable draining across native cleanup (close early: %s)",
+      async (closeEarly) => {
+        const monotonic = vi
+          .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+          .mockImplementation(readMonotonicNanos);
+
+        const closing = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const oldStream = createStream(closing.promise);
+        const replacement = createStream();
+        Object.assign(mockCollection, {
+          options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+            .mockReturnValue(fromPartial<ChangeStream>(replacement)),
+        });
+        mockCollection.aggregate.mockReturnValue(
+          fromPartial<ReturnType<Collection["aggregate"]>>({
+            toArray: async () => await Promise.resolve([{ _id: "work", nextRunAt: new Date(0) }]),
+            close: async () => {},
+          }),
+        );
+        const first = JobFactoryHelpers.processing({ name: "work", claimId: "first" });
+        const later = JobFactoryHelpers.processing({ name: "work", claimId: "later" });
+        const claims = [first, later];
+        mockCollection.findOneAndUpdate.mockImplementation(
+          async (filter) =>
+            await Promise.resolve(filter["status"] === "pending" ? (claims.shift() ?? null) : null),
+        );
+        monque = new Monque(fromPartial<Db>(mockDb), {
+          recoverStaleJobs: false,
+          workerConcurrency: 1,
+          heartbeatInterval: 1000,
+          leaseDuration: 3000,
+          shutdownTimeout: 3000,
+        });
+
+        const handler = vi.fn<JobHandler>(async (job) => {
+          if (job.claimId === "first") {
+            await completion.promise;
+          }
+        });
+
+        monque.register("work", handler);
+        const errors = vi.fn<(payload: MonqueEventMap["job:error"]) => void>();
+        monque.on("job:error", errors);
+        await monque.initialize();
+        mockCollection.updateMany.mockClear();
+        monque.start();
+        await vi.advanceTimersByTimeAsync(0);
+        let stopped = false;
+
+        const stopping = monque.stop().then(() => {
+          stopped = true;
+
+          return true;
+        });
+
+        try {
+          await vi.advanceTimersByTimeAsync(2000);
+          expect({
+            stopped,
+            renewals: mockCollection.updateMany.mock.calls.length,
+            filter: mockCollection.updateMany.mock.lastCall?.[0],
+          }).toMatchObject({
+            stopped: false,
+            renewals: 2,
+            filter: { claimId: { $in: ["first"] } },
+          });
+
+          if (closeEarly) {
+            closing.resolve();
+            await vi.advanceTimersByTimeAsync(0);
+          }
+
+          await vi.advanceTimersByTimeAsync(1000);
+          expect({ stopped, errors: errors.mock.calls }).toStrictEqual({
+            stopped: true,
+            errors: [
+              [
+                {
+                  error: new ShutdownTimeoutError(
+                    "Shutdown timed out after 3000ms with 1 incomplete jobs",
+                    [first],
+                  ),
+                },
+              ],
+            ],
+          });
+          const renewals = mockCollection.updateMany.mock.calls.length;
+          await vi.advanceTimersByTimeAsync(2000);
+          const postStopRead = await monque.getJob(new ObjectId());
+          monque.start();
+          await vi.advanceTimersByTimeAsync(0);
+          expect({
+            renewals: mockCollection.updateMany.mock.calls.length,
+            postStopRead,
+            executions: handler.mock.calls.length,
+          }).toStrictEqual({ renewals, postStopRead: null, executions: 1 });
+          closing.resolve();
+          await vi.advanceTimersByTimeAsync(1000);
+          expect({
+            healthy: monque.isHealthy(),
+            replacementCloses: replacement.close.mock.calls.length,
+            renewals: mockCollection.updateMany.mock.calls.length,
+          }).toStrictEqual({ healthy: true, replacementCloses: 0, renewals: renewals + 1 });
+          completion.resolve();
+          await vi.advanceTimersByTimeAsync(200);
+          expect({
+            executions: handler.mock.calls.map(([job]) => job.claimId),
+            completion: mockCollection.findOneAndUpdate.mock.calls.find(
+              ([filter]) => filter["claimId"] === "first",
+            )?.[0],
+          }).toMatchObject({
+            executions: ["first", "later"],
+            completion: { _id: first._id, claimId: "first", status: "processing" },
+          });
+        } finally {
+          closing.resolve();
+          completion.resolve();
+          await vi.advanceTimersByTimeAsync(0);
+          await stopping;
+          await monque.stop();
+          monotonic.mockRestore();
+        }
+      },
+    );
+
+    it("leaves no maintenance after a connected listener stops synchronously", async () => {
+      const stream = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValue(fromPartial<ChangeStream>(stream)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      monque.once("changestream:connected", () => {
+        stopping = monque.stop();
+      });
+      monque.start();
+      await stopping;
+      expect(monque.isHealthy()).toBe(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).not.toHaveBeenCalled();
+      expect(stream.close).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("preserves replacement maintenance cadence after a connected listener stops and restarts", async () => {
+      const monotonic = vi
+        .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+        .mockImplementation(readMonotonicNanos);
+
+      const oldStream = createStream();
+      const replacement = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      monque.once("changestream:connected", () => {
+        stopping = monque.stop();
+        monque.start();
+        // Synchronous application work must not move the successor's retention deadline.
+        vi.advanceTimersByTime(500);
+      });
+
+      try {
+        monque.start();
+        await stopping;
+        expect(monque.isHealthy()).toBe(true);
+        expect(replacement.close).not.toHaveBeenCalled();
+        expect(mockCollection.deleteMany).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(500);
+        expect(mockCollection.deleteMany).toHaveBeenCalledTimes(2);
+      } finally {
+        await monque.stop();
+        monotonic.mockRestore();
+      }
+
+      const deletionsAfterStop = mockCollection.deleteMany.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).toHaveBeenCalledTimes(deletionsAfterStop);
+      expect(oldStream.close).toHaveBeenCalledOnce();
+      expect(replacement.close).toHaveBeenCalledOnce();
+      expect(monque.isHealthy()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("releases maintenance acquired while a native retention callback stops synchronously", async () => {
+      const stream = createStream();
+      Object.assign(mockCollection, {
+        watch: vi
+          .fn<MockFunction<Collection["watch"]>>()
+          .mockReturnValue(fromPartial<ChangeStream>(stream)),
+      });
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        heartbeatInterval: 1000,
+        jobRetention: { completed: 0, interval: 1000 },
+      });
+      await monque.initialize();
+      let stopping: Promise<void> | undefined;
+      const deletion = Promise.withResolvers<Awaited<ReturnType<Collection["deleteMany"]>>>();
+      mockCollection.deleteMany.mockImplementationOnce(async () => {
+        stopping = monque.stop();
+
+        return await deletion.promise;
+      });
+      monque.start();
+      await stopping;
+      deletion.resolve({ acknowledged: true, deletedCount: 0 });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(mockCollection.deleteMany).toHaveBeenCalledOnce();
+      expect(monque.isHealthy()).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
     });
 
     it("keeps a replacement stream active when an error listener restarts synchronously", async () => {
@@ -828,6 +1233,32 @@ describe(Monque, () => {
     );
   });
   describe("worker registration", () => {
+    it("applies registration and pause changes immediately while initialization is pending", async () => {
+      const indexes = Promise.withResolvers<string[]>();
+      mockCollection.createIndexes.mockReturnValueOnce(indexes.promise);
+      const initializing = monque.initialize();
+      monque.register("work", () => {}, { concurrency: 2, maxRetries: 4 });
+      monque.pause("work");
+      monque.pause();
+      monque.resume();
+      expect(monque.getProcessingState("work")).toMatchObject({
+        paused: true,
+        globallyPaused: false,
+      });
+      expect(monque.isHealthy()).toBe(false);
+      expect(() => {
+        monque.register("work", () => {});
+      }).toThrow(WorkerRegistrationError);
+      monque.register("work", () => {}, { replace: true, concurrency: 3 });
+      indexes.resolve([]);
+      await initializing;
+      await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
+        { name: "work", worker: { concurrency: 3, paused: true, maxRetries: 10 } },
+      ]);
+      monque.resume("work");
+      expect(monque.isPaused("work")).toBe(false);
+    });
+
     it("should throw WorkerRegistrationError on duplicate registration", () => {
       const handler = vi.fn<JobHandler>().mockResolvedValue(undefined);
       monque.register("test-job", handler);
@@ -900,6 +1331,166 @@ describe(Monque, () => {
       await expect(monque.getJob("invalid-id")).resolves.toBeNull();
       expect(mockCollection.findOne).not.toHaveBeenCalled();
     });
+
+    it("retains the original native read failure as the public ConnectionError cause", async () => {
+      const failure = new MongoServerError({ message: "Read unavailable", code: 91 });
+      failure.addErrorLabel("RetryableReadError");
+      mockCollection.findOne.mockRejectedValueOnce(failure);
+
+      const [result] = await Promise.allSettled([monque.getJob(new ObjectId())]);
+
+      if (result?.status !== "rejected") {
+        throw new Error("Expected read to reject");
+      }
+
+      const error: unknown = result.reason;
+
+      if (!(error instanceof ConnectionError)) {
+        throw new TypeError("Expected ConnectionError");
+      }
+
+      expect(error.message).toBe("Failed to get job: Read unavailable");
+      expect(error.cause).toBe(failure);
+      expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+    });
+
+    it.each([
+      "getJobs",
+      "getJobsWithCursor",
+      "getJobSummariesWithCursor",
+      "getQueueStats",
+      "getQueueViewSummaries",
+    ] as const)("%s keeps the native failure when cursor cleanup also fails", async (operation) => {
+      const failure = new MongoServerError({ message: "Read unavailable", code: 91 });
+      failure.addErrorLabel("RetryableReadError");
+
+      const close = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValue(new Error("Cleanup unavailable"));
+
+      const cursor = fromPartial<ReturnType<Collection["find"]>>({
+        sort: vi.fn<MockFunction<FindCursor["sort"]>>().mockReturnThis(),
+        skip: vi.fn<MockFunction<FindCursor["skip"]>>().mockReturnThis(),
+        limit: vi.fn<MockFunction<FindCursor["limit"]>>().mockReturnThis(),
+        toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValue(failure),
+        close,
+      });
+
+      Object.assign(mockCollection, {
+        find: vi.fn<MockFunction<Collection["find"]>>().mockReturnValue(cursor),
+      });
+      mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<Collection["aggregate"]>>({
+          toArray: cursor.toArray.bind(cursor),
+          close: cursor.close.bind(cursor),
+        }),
+      );
+      const [result] = await Promise.allSettled<unknown>([monque[operation]()]);
+
+      if (result?.status !== "rejected") {
+        throw new Error("Expected read to reject");
+      }
+
+      const error: unknown = result.reason;
+
+      if (!(error instanceof ConnectionError)) {
+        throw new TypeError("Expected ConnectionError");
+      }
+
+      expect(error.cause).toBe(failure);
+      expect(close).toHaveBeenCalledOnce();
+      expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+    });
+
+    it.each(["getJobs", "getJobsWithCursor", "getJobSummariesWithCursor"] as const)(
+      "%s releases its cursor when native query setup throws",
+      async (operation) => {
+        const failure = new MongoServerError({ message: "Cursor setup unavailable", code: 91 });
+        failure.addErrorLabel("RetryableReadError");
+        const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+
+        const find = vi.fn<MockFunction<Collection["find"]>>().mockReturnValue(
+          fromPartial<ReturnType<Collection["find"]>>({
+            sort: () => {
+              throw failure;
+            },
+            close,
+          }),
+        );
+
+        Object.assign(mockCollection, { find });
+        const [result] = await Promise.allSettled<unknown>([monque[operation]()]);
+
+        if (result?.status !== "rejected") {
+          throw new Error("Expected read to reject");
+        }
+
+        const error: unknown = result.reason;
+        expect(error).toBeInstanceOf(ConnectionError);
+        expect(error).toHaveProperty("cause", failure);
+        expect(close).toHaveBeenCalledOnce();
+        expect(failure.hasErrorLabel("RetryableReadError")).toBe(true);
+      },
+    );
+
+    it("keeps the established read error for non-Error rejections", async () => {
+      mockCollection.findOne.mockRejectedValueOnce("Read unavailable");
+      await expect(monque.getJob(new ObjectId())).rejects.toStrictEqual(
+        new ConnectionError("Failed to get job: Unknown error during getJob"),
+      );
+    });
+
+    it.each([
+      "cancelJob",
+      "retryJob",
+      "rescheduleJob",
+      "setJobPriority",
+      "deleteJob",
+      "cancelJobs",
+      "retryJobs",
+      "deleteJobs",
+    ] as const)(
+      "invalidates shared statistics after %s rejects a driver failure",
+      async (action) => {
+        const toArray = vi
+          .fn<MockFunction<FindCursor["toArray"]>>()
+          .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 1 }] }])
+          .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
+
+        mockCollection.aggregate.mockReturnValue(
+          fromPartial<ReturnType<typeof mockCollection.aggregate>>({ toArray }),
+        );
+        const before = await monque.getQueueStats();
+        expect(before.total).toBe(1);
+        const failure = new MongoServerError({ message: "Partial write", code: 91 });
+        mockCollection.findOneAndUpdate.mockRejectedValueOnce(failure);
+        mockCollection.updateMany.mockRejectedValueOnce(failure);
+        mockCollection.deleteOne.mockRejectedValueOnce(failure);
+        mockCollection.deleteMany.mockRejectedValueOnce(failure);
+        const id = new ObjectId().toHexString();
+
+        const actions = {
+          cancelJob: async () => await monque.cancelJob(id),
+          retryJob: async () => await monque.retryJob(id),
+          rescheduleJob: async () => await monque.rescheduleJob(id, new Date()),
+          setJobPriority: async () => await monque.setJobPriority(id, 5),
+          deleteJob: async () => await monque.deleteJob(id),
+          cancelJobs: async () => await monque.cancelJobs({}),
+          retryJobs: async () => await monque.retryJobs({}),
+          deleteJobs: async () => await monque.deleteJobs({}),
+        };
+
+        const [result] = await Promise.allSettled([actions[action]()]);
+
+        if (result?.status !== "rejected" || !(result.reason instanceof ConnectionError)) {
+          throw new Error("Expected driver failure");
+        }
+
+        expect(result.reason.cause).toBe(failure);
+        const after = await monque.getQueueStats();
+        expect(after.total).toBe(2);
+      },
+    );
 
     it.each([false, true])(
       "refreshes cached statistics after a mutation (failed: %s)",

@@ -156,7 +156,7 @@ export default defineConfig({
         files: [
           "packages/core/tests/unit/services/cursor-listing.test.ts",
           "packages/core/tests/unit/services/job-intake.test.ts",
-          "packages/core/tests/unit/services/job-lifecycle.test.ts",
+          "packages/core/tests/unit/services/job-ownership-transitions.test.ts",
           "packages/core/tests/unit/services/job-manager.test.ts",
           "packages/core/tests/unit/services/job-processor.test.ts",
           "packages/core/tests/unit/services/job-query.test.ts",
@@ -200,7 +200,6 @@ export default defineConfig({
           "packages/core/src/scheduler/monque.ts",
           "packages/core/src/scheduler/services/cursor-listing.ts",
           "packages/core/src/scheduler/services/job-intake.ts",
-          "packages/core/src/scheduler/services/job-lifecycle.ts",
           "packages/core/src/scheduler/services/job-query.ts",
           "packages/core/tests/unit/services/job-processor.test.ts",
         ],

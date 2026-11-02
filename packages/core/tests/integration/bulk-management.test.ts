@@ -1,9 +1,11 @@
+import { MongoServerError } from "mongodb";
 import type { Db } from "mongodb";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
 import type { Job } from "@/jobs";
 import { Monque } from "@/scheduler";
+import { ConnectionError } from "@/shared";
 import {
   cleanupTestDb,
   getTestDb,
@@ -30,6 +32,83 @@ describe("Management APIs: Bulk Operations", () => {
   afterAll(async () => {
     await cleanupTestDb(db);
   });
+
+  it("invalidates both read caches after a server-side retry partially succeeds", async () => {
+    const collectionName = uniqueCollectionName("partial_retry");
+    monque = new Monque(db, { collectionName, statsCacheTtlMs: 60_000 });
+    monqueInstances.push(monque);
+    await monque.initialize();
+    const first = await monque.enqueue(queueName, {}, { uniqueKey: "shared" });
+    await monque.cancelJob(first._id.toHexString());
+    const second = await monque.enqueue(queueName, {}, { uniqueKey: "shared" });
+    await monque.cancelJob(second._id.toHexString());
+    await expect(monque.getQueueStats()).resolves.toMatchObject({ pending: 0, cancelled: 2 });
+    await expect(monque.getQueueViewSummaries()).resolves.toMatchObject([
+      { stats: { pending: 0, cancelled: 2 } },
+    ]);
+    const events: number[] = [];
+    monque.on("jobs:retried", ({ count }) => {
+      events.push(count);
+    });
+    const [result] = await Promise.allSettled([monque.retryJobs({ name: queueName })]);
+
+    if (result?.status !== "rejected" || !(result.reason instanceof ConnectionError)) {
+      throw new Error("Expected a partial retry failure");
+    }
+
+    const jobs = await monque.getJobs({ name: queueName });
+    expect({
+      native: result.reason.cause instanceof MongoServerError,
+      cause: result.reason.cause,
+      events,
+      stats: await monque.getQueueStats(),
+      views: await monque.getQueueViewSummaries(),
+      statuses: jobs.map((job) => job.status).toSorted(),
+    }).toMatchObject({
+      native: true,
+      cause: { code: 11_000 },
+      events: [],
+      stats: { pending: 1, cancelled: 1 },
+      views: [{ stats: { pending: 1, cancelled: 1 } }],
+      statuses: ["cancelled", "pending"],
+    });
+  });
+
+  it("delivers cancellation synchronously after persistence and permits reentry before rejecting a listener failure", async () => {
+    monque = new Monque(db, { collectionName: uniqueCollectionName("reentrant_cancel") });
+    monqueInstances.push(monque);
+    await monque.initialize();
+    const pending = await monque.enqueue(queueName, {});
+    await expect(monque.getQueueStats()).resolves.toMatchObject({ pending: 1, cancelled: 0 });
+    const failure = new Error("Cancellation observer failed");
+    const order: string[] = [];
+    let read: ReturnType<Monque["getJob"]> | undefined;
+    let repeated: ReturnType<Monque["cancelJob"]> | undefined;
+    monque.on("job:cancelled", ({ job }) => {
+      order.push(job.status);
+      read = monque.getJob(pending._id);
+      repeated = monque.cancelJob(pending._id.toHexString());
+      throw failure;
+    });
+    monque.on("job:cancelled", () => {
+      order.push("later listener");
+    });
+    await expect(monque.cancelJob(pending._id.toHexString())).rejects.toMatchObject({
+      cause: failure,
+    });
+    order.push("rejected");
+    expect(order).toStrictEqual(["cancelled", "rejected"]);
+    expect({
+      read: await read,
+      repeated: await repeated,
+      stats: await monque.getQueueStats(),
+    }).toMatchObject({
+      read: { status: JobStatus.CANCELLED },
+      repeated: { status: JobStatus.CANCELLED },
+      stats: { pending: 0, cancelled: 1 },
+    });
+  });
+
   describe("cancelJobs", () => {
     it("cancels all matching jobs by name and status", async () => {
       const collectionName = uniqueCollectionName("bulk_cancel_match");

@@ -1,187 +1,218 @@
-import { Effect, Exit, FiberHandle, Predicate, Scope } from "effect";
-import type { Fiber } from "effect";
-import type { ChangeStream, ChangeStreamDocument } from "mongodb";
+import { Effect, Exit, Fiber, Predicate, Scope } from "effect";
+import type { Collection, ChangeStreamDocument } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 
-import { attempt, fromPromise, observeTimerFailure } from "../effects.js";
-import type { PendingNotificationRouter } from "./pending-notification-router.js";
-import type { SchedulerContext } from "./types.js";
+import { fromPromise, observeTimerFailure } from "../effects.js";
+import type { PendingNotificationSink } from "./pending-notification-router.js";
 
-/**
- * Internal service for MongoDB Change Stream lifecycle.
- *
- * Provides real-time job notifications when available, with automatic
- * reconnection and graceful fallback to polling-only mode.
- *
- * Leverages the full document from change stream events to:
- * - Trigger **targeted polls** for specific workers (using the job `name`)
- * - Schedule **precise wakeup timers** for future-dated jobs (using `nextRunAt`)
- *
- * Not part of public API.
- * @internal
- */
+interface StreamDependencies {
+  readonly collection: Collection;
+  readonly isRunning: () => boolean;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+}
+
+interface StreamLifetime {
+  readonly scope: Scope.Closeable;
+  attempts: number;
+  cursor: CursorResource | null;
+}
+
+interface CursorResource {
+  readonly scope: Scope.Closeable;
+  active: boolean;
+}
+
+const pipeline = [
+  {
+    $match: {
+      $or: [
+        { operationType: "insert" },
+        {
+          operationType: "update",
+          $or: [
+            {
+              "updateDescription.updatedFields.status": {
+                $in: [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED],
+              },
+            },
+            { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
+            { "updateDescription.updatedFields.priority": { $exists: true } },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    $project: {
+      _id: 1,
+      operationType: 1,
+      "fullDocument.name": 1,
+      "fullDocument.status": 1,
+      "fullDocument.nextRunAt": 1,
+      "updateDescription.updatedFields.status": 1,
+      "updateDescription.updatedFields.nextRunAt": 1,
+    },
+  },
+];
+
+/** Owns native cursors and reconnect resources; admission and polling live elsewhere. */
 export class ChangeStreamHandler {
-  /** MongoDB Change Stream for real-time job notifications */
-  private changeStream: {
-    cursor: ChangeStream;
-    scope: Scope.Closeable;
-  } | null = null;
-  /** Number of consecutive reconnection attempts */
-  private reconnectAttempts = 0;
-  /** Maximum reconnection attempts before falling back to polling-only mode */
-  private readonly maxReconnectAttempts = 3;
-  /** Timer ID for reconnection with exponential backoff */
-  private reconnectTimer: {
-    scope: Scope.Closeable;
-    handle: FiberHandle.FiberHandle<void>;
-  } | null = null;
-  /** Whether the scheduler is currently using change streams */
-  private usingChangeStreams = false;
-  private readonly ctx: SchedulerContext;
-  private readonly pendingNotifications: PendingNotificationRouter;
+  private lifetime: StreamLifetime | null = null;
+  private disposed = false;
+
+  private readonly ctx: StreamDependencies;
+  private readonly pendingNotifications: PendingNotificationSink;
+  private readonly cleanupScope: Scope.Closeable;
   private readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
+
   constructor(
-    ctx: SchedulerContext,
-    pendingNotifications: PendingNotificationRouter,
+    ctx: StreamDependencies,
+    pendingNotifications: PendingNotificationSink,
     runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E> = Effect.runFork,
+    cleanupScope: Scope.Closeable = Scope.makeUnsafe("parallel"),
   ) {
+    this.cleanupScope = cleanupScope;
     this.ctx = ctx;
     this.pendingNotifications = pendingNotifications;
     this.runFork = runFork;
   }
-  /**
-   * Set up MongoDB Change Stream for real-time job notifications.
-   *
-   * Change streams provide instant notifications when jobs are inserted or when
-   * job status changes to pending (e.g., after a retry). This eliminates the
-   * polling delay for reactive job processing.
-   *
-   * The change stream watches for:
-   * - Insert operations (new jobs)
-   * - Update operations where status field changes
-   *
-   * If change streams are unavailable (e.g., standalone MongoDB), the system
-   * gracefully falls back to polling-only mode.
-   */
+
+  /** Synchronous Node callback boundary. Constructing the service never starts a cursor. */
   setup(): void {
-    if (!this.ctx.isRunning()) {
+    if (this.disposed || !this.ctx.isRunning()) {
       return;
     }
 
-    this.clearReconnectTimer();
-    const scope = Scope.makeUnsafe();
+    const previous = this.lifetime;
+
+    const lifetime: StreamLifetime = {
+      scope: Scope.makeUnsafe("parallel"),
+      attempts: 0,
+      cursor: null,
+    };
+
+    // Publish the fence before closing: native close/listener hooks can reenter.
+    this.lifetime = lifetime;
+
+    if (previous) {
+      this.closeScope(previous.scope);
+    }
+
+    if (this.isCurrent(lifetime)) {
+      this.open(lifetime);
+    }
+  }
+
+  private closeScope(scope: Scope.Closeable): void {
+    Fiber.runIn(this.runFork(Scope.close(scope, Exit.void)), this.cleanupScope);
+  }
+
+  private isCurrent(lifetime: StreamLifetime, resource: CursorResource | null = null): boolean {
+    return this.lifetime === lifetime && (resource === null || lifetime.cursor === resource);
+  }
+
+  private open(lifetime: StreamLifetime): void {
+    const scope = Scope.forkUnsafe(lifetime.scope);
+    let resource: CursorResource | null = null;
 
     try {
-      // Create change stream with pipeline to filter relevant events
-      const pipeline = [
-        {
-          $match: {
-            $or: [
-              { operationType: "insert" },
-              {
-                operationType: "update",
-                $or: [
-                  {
-                    "updateDescription.updatedFields.status": {
-                      $in: [JobStatus.PENDING, JobStatus.COMPLETED, JobStatus.FAILED],
-                    },
-                  },
-                  { "updateDescription.updatedFields.nextRunAt": { $exists: true } },
-                  { "updateDescription.updatedFields.priority": { $exists: true } },
-                ],
-              },
-            ],
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            operationType: 1,
-            "fullDocument.name": 1,
-            "fullDocument.status": 1,
-            "fullDocument.nextRunAt": 1,
-            "updateDescription.updatedFields.status": 1,
-            "updateDescription.updatedFields.nextRunAt": 1,
-          },
-        },
-      ];
+      const cursor = this.ctx.collection.watch(pipeline, { fullDocument: "updateLookup" });
+      resource = { scope, active: false };
+      const current = resource;
 
-      const changeStream = Effect.runSync(
-        Effect.acquireRelease(
-          attempt(() => this.ctx.collection.watch(pipeline, { fullDocument: "updateLookup" })),
-          (cursor) =>
-            fromPromise(async () => {
-              await cursor.close();
-            }).pipe(Effect.ignore),
-        ).pipe(Effect.provideService(Scope.Scope, scope)),
-      );
-
-      this.changeStream = { cursor: changeStream, scope };
-      // watch() is lazy: a token or change confirms a successful server response.
-      changeStream.on("resumeTokenChanged", () => {
-        if (this.changeStream?.cursor === changeStream) {
-          this.reconnectAttempts = 0;
+      const onToken = () => {
+        // watch() is lazy; only a server response acknowledges recovery.
+        if (this.isCurrent(lifetime, current)) {
+          lifetime.attempts = 0;
         }
-      });
-      // Handle change events
-      changeStream.on("change", (change) => {
-        if (this.changeStream?.cursor !== changeStream) {
-          return;
-        }
+      };
 
-        this.reconnectAttempts = 0;
-        this.handleEvent(change);
-      });
-      // Handle errors with reconnection
-      changeStream.on("error", (error: Error) => {
-        if (this.changeStream?.cursor !== changeStream) {
+      const onChange = (change: ChangeStreamDocument) => {
+        if (this.isCurrent(lifetime, current)) {
+          lifetime.attempts = 0;
+          this.handleEvent(change);
+        }
+      };
+
+      const onError = (error: Error) => {
+        if (!this.isCurrent(lifetime, current)) {
           return;
         }
 
         this.ctx.emit("changestream:error", { error });
 
-        if (this.changeStream?.cursor === changeStream) {
-          this.handleError(error);
+        if (this.isCurrent(lifetime, current)) {
+          this.handleError(lifetime, current, error);
         }
-      });
-      // Mark as connected
-      this.usingChangeStreams = true;
+      };
+
+      const detachChanges = () => {
+        cursor.removeListener("change", onChange);
+        cursor.removeListener("resumeTokenChanged", onToken);
+      };
+
+      Effect.runSync(
+        Scope.addFinalizer(
+          scope,
+          fromPromise(async () => {
+            try {
+              detachChanges();
+            } finally {
+              try {
+                await cursor.close();
+              } finally {
+                // Closing emitters may still report errors until close settles.
+                cursor.removeListener("error", onError);
+              }
+            }
+          }).pipe(Effect.ignore),
+        ),
+      );
+
+      if (!this.isCurrent(lifetime)) {
+        this.closeScope(scope);
+
+        return;
+      }
+
+      lifetime.cursor = current;
+
+      // Install the error listener before change starts MongoDB emitter mode.
+      for (const attach of [
+        () => cursor.on("error", onError),
+        () => cursor.on("resumeTokenChanged", onToken),
+        () => cursor.on("change", onChange),
+      ]) {
+        attach();
+
+        if (!this.isCurrent(lifetime, current)) {
+          // EventEmitter newListener runs before the new listener is added.
+          detachChanges();
+
+          return;
+        }
+      }
+
+      current.active = true;
       this.pendingNotifications.setChangeStreamActive(true);
-      this.ctx.emit("changestream:connected", undefined);
+
+      if (this.isCurrent(lifetime, current)) {
+        this.ctx.emit("changestream:connected", undefined);
+      }
     } catch (error) {
-      // Change streams not available (e.g., standalone MongoDB)
-      if (this.changeStream?.scope === scope) {
-        this.changeStream = null;
+      if (this.isCurrent(lifetime, resource)) {
+        lifetime.cursor = null;
+        this.pendingNotifications.setChangeStreamActive(false);
       }
 
-      if (!this.changeStream) {
-        this.resetActiveState();
-      }
-
-      this.runFork(Scope.close(scope, Exit.void));
+      this.closeScope(scope);
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.ctx.emit("changestream:fallback", { reason });
     }
   }
-  /**
-   * Handle a change stream event using the full document for intelligent routing.
-   *
-   * For **immediate jobs** (`nextRunAt <= now`): collects the job name and triggers
-   * a debounced targeted poll for only the relevant workers.
-   *
-   * For **future jobs** (`nextRunAt > now`): schedules a precise wakeup timer so
-   * the job is picked up near its scheduled time without blind polling.
-   *
-   * For **completed/failed jobs** (slot freed): triggers a targeted re-poll for that
-   * worker so the next pending job is picked up immediately, maintaining continuous
-   * throughput without waiting for the safety poll interval.
-   *
-   * Falls back to a full poll (no target names) if the document is missing
-   * required fields.
-   *
-   * @param change - The change stream event document
-   */
+
   private handleEvent(change: ChangeStreamDocument): void {
     if (!this.ctx.isRunning()) {
       return;
@@ -234,130 +265,103 @@ export class ChangeStreamHandler {
     // Immediate job or missing metadata — collect for targeted/full poll
     this.pendingNotifications.notifyRunnableJob(jobName);
   }
-  /**
-   * Handle change stream errors with exponential backoff reconnection.
-   *
-   * Attempts to reconnect up to `maxReconnectAttempts` times with
-   * exponential backoff (base 1000ms). After exhausting retries, falls back to
-   * polling-only mode.
-   *
-   * @param error - The error that caused the change stream failure
-   */
-  private handleError(error: Error): void {
+  private handleError(lifetime: StreamLifetime, resource: CursorResource, error: Error): void {
     if (!this.ctx.isRunning()) {
       return;
     }
 
-    this.reconnectAttempts += 1;
-    // Reset stream state without discarding shared Pending Notifications.
-    this.resetActiveState();
-    this.closeChangeStream();
+    lifetime.attempts += 1;
+    lifetime.cursor = null;
+    this.pendingNotifications.setChangeStreamActive(false);
+    this.closeScope(resource.scope);
 
-    if (this.reconnectAttempts > this.maxReconnectAttempts) {
-      // Permanent fallback to polling-only mode
-      this.clearReconnectTimer();
+    if (!this.isCurrent(lifetime) || !this.ctx.isRunning()) {
+      return;
+    }
+
+    if (lifetime.attempts > 3) {
       this.ctx.emit("changestream:fallback", {
-        reason: `Exhausted ${this.maxReconnectAttempts} reconnection attempts: ${error.message}`,
+        reason: `Exhausted 3 reconnection attempts: ${error.message}`,
       });
 
       return;
     }
 
-    // Exponential backoff: 1s, 2s, 4s
-    const delay = 2 ** (this.reconnectAttempts - 1) * 1000;
-    // Clear any existing reconnect timer before scheduling a new one
-    this.clearReconnectTimer();
+    const delay = 2 ** (lifetime.attempts - 1) * 1000;
 
-    if (!this.ctx.isRunning()) {
-      return;
-    }
-
-    const scope = Scope.makeUnsafe();
-
-    const handle = Effect.runSync(
-      FiberHandle.make<Effect.Success<typeof Effect.void>>().pipe(
-        Effect.provideService(Scope.Scope, scope),
-      ),
-    );
-
-    this.reconnectTimer = { scope, handle };
-
+    // The same lifetime owns backoff and its next cursor. Fiber.runIn removes
+    // finished fibers; there is no separate timer scope or processing authority.
     const fiber = this.runFork(
-      Effect.gen({ self: this }, function* restartChangeStream() {
+      Effect.gen({ self: this }, function* reconnect() {
         yield* Effect.sleep(delay);
 
-        if (this.reconnectTimer?.handle !== handle) {
-          return;
+        if (this.isCurrent(lifetime) && this.ctx.isRunning()) {
+          this.open(lifetime);
         }
-
-        this.reconnectTimer = null;
-        this.reconnect();
       }),
     );
 
-    FiberHandle.setUnsafe(handle, fiber);
-    fiber.addObserver(() => {
-      this.runFork(Scope.close(scope, Exit.void));
-    });
+    Fiber.runIn(fiber, lifetime.scope);
     observeTimerFailure(fiber);
   }
-  private reconnect(): void {
-    if (!this.ctx.isRunning()) {
-      return;
-    }
 
-    this.closeChangeStream();
-    this.setup();
-  }
-  private clearReconnectTimer(): void {
-    const timer = this.reconnectTimer;
-
-    if (!timer) {
-      return;
-    }
-
-    this.reconnectTimer = null;
-    this.runFork(Scope.close(timer.scope, Exit.void));
-  }
-  /**
-   * Mark the change stream inactive; scheduling belongs to the notification router.
-   *
-   * Does NOT close the cursor (callers handle sync vs async close) or clear
-   * the reconnect timer/attempts (callers manage reconnection lifecycle).
-   */
-  private resetActiveState(): void {
-    this.usingChangeStreams = false;
-    this.pendingNotifications.setChangeStreamActive(false);
-  }
-  private closeChangeStream(): void {
-    const { changeStream } = this;
-    this.changeStream = null;
-
-    if (changeStream) {
-      this.runFork(Scope.close(changeStream.scope, Exit.void));
-    }
-  }
-  /**
-   * Close the change stream cursor and emit closed event.
-   */
+  /** Restartable stream shutdown changes availability, never closes the router. */
   close = Effect.fnUntraced(function* closeChangeStream(
     this: ChangeStreamHandler,
-  ): Effect.fn.Return<void, unknown> {
-    const wasActive = this.usingChangeStreams;
-    const { changeStream } = this;
-    this.changeStream = null;
-    this.reconnectAttempts = 0;
-    // Stop stream delivery and reconnection.
-    this.resetActiveState();
-    this.clearReconnectTimer();
+    isCurrent: () => boolean = () => true,
+  ) {
+    if (!isCurrent()) {
+      return;
+    }
 
-    if (changeStream) {
-      // Ignore close errors during shutdown
-      yield* Scope.close(changeStream.scope, Exit.void);
+    const { lifetime } = this;
+    this.lifetime = null;
+    this.pendingNotifications.setChangeStreamActive(false);
 
-      if (wasActive) {
-        this.ctx.emit("changestream:closed", undefined);
-      }
+    if (lifetime) {
+      const wasActive = lifetime.cursor?.active === true;
+
+      const closing = yield* Effect.forkIn(
+        Effect.gen({ self: this }, function* releaseStreamLifetime() {
+          yield* Scope.close(lifetime.scope, Exit.void);
+
+          if (wasActive) {
+            this.ctx.emit("changestream:closed", undefined);
+          }
+        }),
+        this.cleanupScope,
+        { startImmediately: true, uninterruptible: true },
+      );
+
+      yield* Fiber.join(closing);
     }
   });
+
+  /** Initialized-instance release; ordinary stop remains restartable. */
+  readonly dispose = Effect.suspend(() => {
+    this.disposed = true;
+
+    return this.close().pipe(Effect.ensuring(Scope.close(this.cleanupScope, Exit.void)));
+  });
 }
+
+export const makeChangeStreamHandler = Effect.fnUntraced(function* makeChangeStreamHandler(
+  dependencies: StreamDependencies,
+  notifications: PendingNotificationSink,
+) {
+  const context = yield* Effect.context();
+  const cleanupScope = yield* Scope.fork(yield* Scope.Scope, "parallel");
+
+  return yield* Effect.acquireRelease(
+    Effect.sync(
+      () =>
+        new ChangeStreamHandler(
+          dependencies,
+          notifications,
+          Effect.runForkWith(context),
+          cleanupScope,
+        ),
+    ),
+    (streams) => streams.dispose,
+  );
+});

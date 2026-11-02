@@ -1,7 +1,9 @@
 import { Cause, Effect } from "effect";
-import type { Document, ObjectId } from "mongodb";
+import type { Scope } from "effect";
+import { ObjectId } from "mongodb";
+import type { Collection, Document } from "mongodb";
 
-import { isValidJobStatus, JobStatus } from "@/jobs";
+import { documentToPersistedJob, isValidJobStatus, JobStatus } from "@/jobs";
 import type {
   CursorOptions,
   CursorPage,
@@ -12,19 +14,24 @@ import type {
   QueueStats,
   QueueViewSummary,
 } from "@/jobs";
-import {
-  AggregationTimeoutError,
-  ConnectionError,
-  DEFAULT_MAX_BACKOFF_DELAY,
-  InvalidJobQueryError,
-  toError,
-} from "@/shared";
+import { AggregationTimeoutError, ConnectionError, InvalidJobQueryError, toError } from "@/shared";
 
-import { attempt, fromPromise } from "../effects.js";
+import { attempt } from "../effects.js";
 import { buildSelectorQuery, parseJobNameFilter, resolveQueryLimit } from "../helpers.js";
 import { CursorListing } from "./cursor-listing.js";
+import { JobPersistenceError } from "./job-persistence-error.js";
+import { JobPersistence } from "./job-persistence.js";
 import { QueryCache } from "./query-cache.js";
-import type { SchedulerContext } from "./types.js";
+import { readJobCursor } from "./read-job-cursor.js";
+import type { ResolvedMonqueOptions } from "./types.js";
+import type { WorkerObservation } from "./worker-admission-state.js";
+
+/** Borrowed read-only inputs; local Worker/admission state has a separate owner. */
+export interface JobQueryDependencies {
+  readonly collection: Collection;
+  readonly options: Pick<ResolvedMonqueOptions, "statsCacheTtlMs">;
+  readonly workerObservations: (name?: string) => readonly WorkerObservation[];
+}
 
 const isProcessingDuration = (value: number | null | undefined): value is number =>
   typeof value === "number" && !Number.isNaN(value);
@@ -81,6 +88,29 @@ const prepareJobQuery = (filter: GetJobsFilter) => {
   return { query, limit, skip };
 };
 
+export const readJob = <T = unknown>(
+  id: ObjectId | string,
+): Effect.Effect<PersistedJob<T> | null, ConnectionError, JobPersistence> => {
+  if (!ObjectId.isValid(id)) {
+    return Effect.succeed(null);
+  }
+
+  return JobPersistence.use((persistence) => persistence.getJob<T>(new ObjectId(id))).pipe(
+    Effect.catchCause((cause) => {
+      const failure = Cause.squash(cause);
+      const error = failure instanceof JobPersistenceError ? failure.cause : failure;
+      const message = error instanceof Error ? error.message : "Unknown error during getJob";
+
+      return Effect.fail(
+        new ConnectionError(
+          `Failed to get job: ${message}`,
+          error instanceof Error ? { cause: error } : undefined,
+        ),
+      );
+    }),
+  );
+};
+
 /**
  * Internal service for job query operations.
  *
@@ -91,76 +121,19 @@ const prepareJobQuery = (filter: GetJobsFilter) => {
  * @internal
  */
 export class JobQueryService {
-  private readonly statsCache = new QueryCache<
-    QueueStats,
-    ConnectionError | AggregationTimeoutError
-  >();
-  private readonly queueViewCache = new QueryCache<
+  private readonly statsCache: QueryCache<QueueStats, ConnectionError | AggregationTimeoutError>;
+  private readonly queueViewCache: QueryCache<
     ReadonlyMap<string, QueueStats>,
     ConnectionError | AggregationTimeoutError
-  >();
+  >;
   private readonly cursorListing: CursorListing;
-  private readonly ctx: SchedulerContext;
-  constructor(ctx: SchedulerContext) {
+  private readonly ctx: JobQueryDependencies;
+  constructor(ctx: JobQueryDependencies, owner: Scope.Scope) {
+    this.statsCache = new QueryCache(owner);
+    this.queueViewCache = new QueryCache(owner);
     this.ctx = ctx;
-    this.cursorListing = new CursorListing(ctx);
+    this.cursorListing = new CursorListing(ctx.collection);
   }
-  /**
-   * Get a single job by its MongoDB ObjectId.
-   *
-   * Useful for retrieving job details when you have a job ID from events,
-   * logs, or stored references.
-   *
-   * @template T - The expected type of the job data payload
-   * @param id - The job's ObjectId
-   * @throws {ConnectionError} If scheduler not initialized
-   *
-   * @example Look up job from event
-   * ```typescript
-   * monque.on('job:fail', async ({ job }) => {
-   *   // Later, retrieve the job to check its status
-   *   const currentJob = await monque.getJob(job._id);
-   *   console.log(`Job status: ${currentJob?.status}`);
-   * });
-   * ```
-   *
-   * @example Admin endpoint
-   * ```typescript
-   * app.get('/jobs/:id', async (req, res) => {
-   *   const job = await monque.getJob(new ObjectId(req.params.id));
-   *   if (!job) {
-   *     return res.status(404).json({ error: 'Job not found' });
-   *   }
-   *   res.json(job);
-   * });
-   * ```
-   */
-  getJob = Effect.fnUntraced(function* getSingleJob<T = unknown>(
-    this: JobQueryService,
-    id: ObjectId,
-  ): Effect.fn.Return<PersistedJob<T> | null, ConnectionError> {
-    return yield* Effect.gen({ self: this }, function* readSingleJob() {
-      const doc = yield* fromPromise(async () => await this.ctx.collection.findOne({ _id: id }));
-
-      if (!doc) {
-        return null;
-      }
-
-      return this.ctx.documentToPersistedJob<T>(doc);
-    }).pipe(
-      Effect.catchCause((cause) => {
-        const error = Cause.squash(cause);
-        const message = error instanceof Error ? error.message : "Unknown error during getJob";
-
-        return Effect.fail(
-          new ConnectionError(
-            `Failed to get job: ${message}`,
-            error instanceof Error ? { cause: error } : undefined,
-          ),
-        );
-      }),
-    );
-  });
   /**
    * Query jobs from the queue with optional filters.
    *
@@ -209,20 +182,14 @@ export class JobQueryService {
     const { query, limit, skip } = yield* attempt(() => prepareJobQuery(filter));
 
     return yield* Effect.gen({ self: this }, function* readMatchingJobs() {
-      const docs = yield* fromPromise(
-        async () =>
-          await this.ctx.collection
-            .find(query)
-            .sort({ nextRunAt: 1 })
-            .skip(skip)
-            .limit(limit)
-            .toArray(),
+      const docs = yield* readJobCursor(
+        () => this.ctx.collection.find(query),
+        async (cursor) => await cursor.sort({ nextRunAt: 1 }).skip(skip).limit(limit).toArray(),
       );
 
-      return docs.map((doc) => this.ctx.documentToPersistedJob<T>(doc));
+      return docs.map((doc) => documentToPersistedJob<T>(doc));
     }).pipe(
-      Effect.catchCause((cause) => {
-        const error = Cause.squash(cause);
+      Effect.catch(({ cause: error }) => {
         const message = error instanceof Error ? error.message : "Unknown error during getJobs";
 
         return Effect.fail(
@@ -366,22 +333,21 @@ export class JobQueryService {
     ];
 
     return yield* Effect.gen({ self: this }, function* aggregateQueueStatistics() {
-      const results = yield* fromPromise(
-        async () =>
-          await this.ctx.collection
-            .aggregate<{
-              statusCounts: {
-                _id: string;
-                count: number;
-              }[];
-              total: {
-                count: number;
-              }[];
-              avgDuration: {
-                avgMs: number | null;
-              }[];
-            }>(pipeline, { maxTimeMS: 30_000 })
-            .toArray(),
+      const results = yield* readJobCursor(
+        () =>
+          this.ctx.collection.aggregate<{
+            statusCounts: {
+              _id: string;
+              count: number;
+            }[];
+            total: {
+              count: number;
+            }[];
+            avgDuration: {
+              avgMs: number | null;
+            }[];
+          }>(pipeline, { maxTimeMS: 30_000 }),
+        async (cursor) => await cursor.toArray(),
       );
 
       const [result] = results;
@@ -406,8 +372,8 @@ export class JobQueryService {
 
       return stats;
     }).pipe(
-      Effect.catchCause((cause) => {
-        const err = toError(Cause.squash(cause));
+      Effect.catch(({ cause: error }) => {
+        const err = toError(error);
 
         if (isMongoMaxTimeMSExpiredError(err)) {
           return Effect.fail(new AggregationTimeoutError());
@@ -438,32 +404,26 @@ export class JobQueryService {
       () => this.loadQueueViewStats(nameFilter),
     );
 
-    let workerNames: Iterable<string> = this.ctx.workers.keys();
+    const workers = new Map(
+      this.ctx.workerObservations(nameFilter).map((worker) => [worker.name, worker]),
+    );
 
-    if (nameFilter !== undefined) {
-      workerNames = this.ctx.workers.has(nameFilter) ? [nameFilter] : [];
-    }
-
-    const names = new Set([...persistedStats.keys(), ...workerNames]);
+    const names = new Set([...persistedStats.keys(), ...workers.keys()]);
 
     const summaries = [...names]
       .toSorted((a, b) => a.localeCompare(b))
       .map((name): QueueViewSummary => {
-        const worker = this.ctx.workers.get(name);
+        const worker = workers.get(name);
 
         const workerSummary = worker
           ? {
               concurrency: worker.concurrency,
-              activeCount: worker.activeJobs.size,
-              paused: this.ctx.isPaused(name),
-              hasSchema: worker.schema !== undefined,
-              maxRetries: worker.retryOptions?.maxRetries ?? this.ctx.options.maxRetries,
-              baseRetryInterval:
-                worker.retryOptions?.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
-              maxBackoffDelay:
-                worker.retryOptions?.maxBackoffDelay ??
-                this.ctx.options.maxBackoffDelay ??
-                DEFAULT_MAX_BACKOFF_DELAY,
+              activeCount: worker.activeCount,
+              paused: worker.paused,
+              hasSchema: worker.hasSchema,
+              maxRetries: worker.maxRetries,
+              baseRetryInterval: worker.baseRetryInterval,
+              maxBackoffDelay: worker.maxBackoffDelay,
             }
           : null;
 
@@ -485,49 +445,48 @@ export class JobQueryService {
     const persistedStats = new Map<string, QueueStats>();
 
     return yield* Effect.gen({ self: this }, function* aggregateQueueViewStatistics() {
-      const results = yield* fromPromise(
-        async () =>
-          await this.ctx.collection
-            .aggregate<QueueViewStatsDocument>(
-              [
-                ...(name === undefined ? [] : [{ $match: { name } }]),
-                {
-                  $group: {
-                    _id: "$name",
-                    pending: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.PENDING] }, 1, 0] },
-                    },
-                    processing: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.PROCESSING] }, 1, 0] },
-                    },
-                    completed: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
-                    },
-                    failed: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.FAILED] }, 1, 0] },
-                    },
-                    cancelled: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.CANCELLED] }, 1, 0] },
-                    },
-                    total: { $sum: 1 },
-                    completedDurationTotal: {
-                      $sum: {
-                        $cond: [
-                          { $eq: ["$status", JobStatus.COMPLETED] },
-                          { $subtract: ["$updatedAt", "$createdAt"] },
-                          0,
-                        ],
-                      },
-                    },
-                    completedDurationCount: {
-                      $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
+      const results = yield* readJobCursor(
+        () =>
+          this.ctx.collection.aggregate<QueueViewStatsDocument>(
+            [
+              ...(name === undefined ? [] : [{ $match: { name } }]),
+              {
+                $group: {
+                  _id: "$name",
+                  pending: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.PENDING] }, 1, 0] },
+                  },
+                  processing: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.PROCESSING] }, 1, 0] },
+                  },
+                  completed: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
+                  },
+                  failed: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.FAILED] }, 1, 0] },
+                  },
+                  cancelled: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.CANCELLED] }, 1, 0] },
+                  },
+                  total: { $sum: 1 },
+                  completedDurationTotal: {
+                    $sum: {
+                      $cond: [
+                        { $eq: ["$status", JobStatus.COMPLETED] },
+                        { $subtract: ["$updatedAt", "$createdAt"] },
+                        0,
+                      ],
                     },
                   },
+                  completedDurationCount: {
+                    $sum: { $cond: [{ $eq: ["$status", JobStatus.COMPLETED] }, 1, 0] },
+                  },
                 },
-              ],
-              { maxTimeMS: 30_000 },
-            )
-            .toArray(),
+              },
+            ],
+            { maxTimeMS: 30_000 },
+          ),
+        async (cursor) => await cursor.toArray(),
       );
 
       for (const result of results) {
@@ -554,8 +513,8 @@ export class JobQueryService {
 
       return persistedStats;
     }).pipe(
-      Effect.catchCause((cause) => {
-        const err = toError(Cause.squash(cause));
+      Effect.catch(({ cause: error }) => {
+        const err = toError(error);
 
         if (isMongoMaxTimeMSExpiredError(err)) {
           return Effect.fail(new AggregationTimeoutError());
