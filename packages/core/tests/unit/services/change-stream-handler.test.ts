@@ -37,9 +37,9 @@ describe(ChangeStreamHandler, () => {
     onPoll = vi
       .fn<(targetNames?: ReadonlySet<string>) => Promise<void>>()
       .mockResolvedValue(undefined);
-    pendingNotifications = new PendingNotificationRouter(ctx, (...args) =>
+    pendingNotifications = new PendingNotificationRouter(ctx, (names) =>
       fromPromise(async () => {
-        await onPoll(...args);
+        await onPoll(names);
       }),
     );
     handler = new ChangeStreamHandler(ctx, pendingNotifications);
@@ -388,7 +388,7 @@ describe(ChangeStreamHandler, () => {
       await vi.advanceTimersByTimeAsync(999);
       expect(onPoll).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith();
+      expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
       await Effect.runPromise(handler.close());
     });
 

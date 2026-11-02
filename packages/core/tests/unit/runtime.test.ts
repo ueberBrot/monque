@@ -4,11 +4,11 @@ import {
   Context,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   Layer,
   ManagedRuntime,
   Result,
-  Exit,
   Scope,
 } from "effect";
 import { TestClock } from "effect/testing";
@@ -20,10 +20,136 @@ import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { JobQueries } from "@/scheduler/services/job-queries.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
-import { createMockContext, JobFactoryHelpers } from "@tests/factories";
+import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect(
+    "keeps reads, maintenance and Promise Workers alive after notifications close",
+    () =>
+      Effect.gen(function* closeOnlyNotifications() {
+        const ctx = createMockContext();
+        ctx.options.recoverStaleJobs = false;
+        ctx.options.leaseDuration = 3000;
+        const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const reading = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const query = Promise.withResolvers<never[]>();
+        const closeRead = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const job = JobFactoryHelpers.processing({ name: "email", claimId: "surviving" });
+
+        ctx.admission.register(
+          "email",
+          async () => {
+            Deferred.doneUnsafe(started, Effect.void);
+            await completion.promise;
+          },
+          { concurrency: 1 },
+        );
+        ctx.notifyJobFinished.mockImplementation(() => {
+          Deferred.doneUnsafe(finished, Effect.void);
+        });
+        ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(job).mockResolvedValue(null);
+        ctx.mockCollection.updateMany.mockResolvedValue({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+        ctx.mockCollection.aggregate
+          .mockReturnValue(
+            fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+              toArray: async () => {
+                Deferred.doneUnsafe(reading, Effect.void);
+
+                return await query.promise;
+              },
+              close: closeRead,
+            }),
+          )
+          .mockReturnValueOnce(
+            fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+              toArray: vi
+                .fn<() => Promise<{ _id: string; nextRunAt: Date }[]>>()
+                .mockResolvedValue([{ _id: "email", nextRunAt: new Date(0) }]),
+              close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+            }),
+          );
+
+        const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
+          Layer.build,
+        );
+
+        const { notifications, timers, queries } = Context.get(context, SchedulerServices);
+        const run = yield* timers.start;
+
+        try {
+          notifications.start();
+          yield* Deferred.await(started);
+          const read = yield* queries.getQueueViewSummaries().pipe(Effect.forkChild);
+          yield* Deferred.await(reading);
+          notifications.close();
+          yield* TestClock.adjust(1000);
+          expect({
+            slots: ctx.admission.availableSlots("email"),
+            readClosures: closeRead.mock.calls.length,
+          }).toStrictEqual({ slots: 0, readClosures: 0 });
+          expect(ctx.mockCollection.updateMany).toHaveBeenCalledExactlyOnceWith(
+            objectContainingMatcher({ claimId: { $in: ["surviving"] } }),
+            anyMatcher(Array),
+          );
+          query.resolve([]);
+          expect(yield* Fiber.join(read)).toMatchObject([
+            { name: "email", worker: { activeCount: 1 } },
+          ]);
+          yield* run.stop;
+          completion.resolve();
+          yield* Deferred.await(finished);
+          expect(ctx.admission.availableSlots("email")).toBe(1);
+          ctx.mockCollection.findOneAndUpdate.mockClear();
+          notifications.notifyRunnableJob("email");
+          yield* TestClock.adjust(1000);
+          expect({
+            claims: ctx.mockCollection.findOneAndUpdate.mock.calls.length,
+            heartbeats: ctx.mockCollection.updateMany.mock.calls.length,
+          }).toStrictEqual({ claims: 1, heartbeats: 1 });
+        } finally {
+          query.resolve([]);
+          completion.resolve();
+          notifications.close();
+          yield* run.stop;
+        }
+      }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect("owns notification scheduling without starting it during Layer acquisition", () =>
+    Effect.gen(function* closeNotificationLayer() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.registerWorker("email", createWorker());
+      const owner = yield* Scope.make();
+
+      const context = yield* Layer.buildWithScope(
+        makeSchedulerLayer(ctx, { runFork: Effect.runFork }),
+        owner,
+      );
+
+      const { notifications } = Context.get(context, SchedulerServices);
+      yield* TestClock.adjust(10_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      notifications.notifyRunnableJob("email");
+      notifications.notifyPendingJob("email", new Date(20_000));
+      yield* Scope.close(owner, Exit.void);
+      notifications.start();
+      notifications.notifyRunnableJob("email");
+      yield* TestClock.adjust(30_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    }),
+  );
+
   effectIt.effect(
     "keeps captured Worker observations current through replacement and release",
     () =>
