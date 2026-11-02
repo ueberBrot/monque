@@ -2,14 +2,17 @@ import { Clock, Effect, Exit, FiberHandle, FiberSet, Scope } from "effect";
 import type { Fiber } from "effect";
 import { catch as catchFailure } from "effect/Effect";
 
+import type { MonqueEventMap } from "@/events";
 import { toError } from "@/shared";
 
 import { observeBackgroundFailure, observeTimerFailure } from "../effects.js";
-import type { SchedulerContext } from "./types.js";
+import type { ResolvedMonqueOptions } from "./types.js";
 
-type NotificationDependencies = Pick<SchedulerContext, "isRunning" | "emit"> & {
-  readonly options: Pick<SchedulerContext["options"], "pollInterval" | "safetyPollInterval">;
-};
+interface NotificationDependencies {
+  readonly isRunning: () => boolean;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly options: Pick<ResolvedMonqueOptions, "pollInterval" | "safetyPollInterval">;
+}
 
 /** The admission owner must recheck isCurrent after waits and before dispatch. */
 export type PendingWorkDispatch = (
@@ -28,7 +31,7 @@ export type PendingNotificationSink = Pick<
 >;
 
 const makeTimers = () => {
-  // Closing a legacy uninterruptible Claim handoff must not delay timer cleanup.
+  // Closing an uninterruptible Claim handoff must not delay timer cleanup.
   const scope = Scope.makeUnsafe("parallel");
 
   const handles = Effect.runSync(

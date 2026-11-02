@@ -72,7 +72,6 @@ const fixture = Effect.fnUntraced(function* telemetryFixture(
 
   const context = yield* makeSchedulerLayer(
     ctx,
-    { runFork: Effect.runFork },
     undefined,
     makeOperationTelemetryLayer.pipe(Layer.provide(Layer.succeed(Tracer.Tracer, observer.tracer))),
   ).pipe(Layer.buildWithScope(scope));
@@ -175,7 +174,6 @@ describe("operation telemetry", () => {
 
       const context = yield* makeSchedulerLayer(
         ctx,
-        { runFork: Effect.runFork },
         undefined,
         makeOperationTelemetryLayer.pipe(Layer.provide(Layer.succeed(Tracer.Tracer, tracer))),
       ).pipe(Layer.buildWithScope(owner));
@@ -637,7 +635,6 @@ describe("operation telemetry", () => {
 
         const context = yield* makeSchedulerLayer(
           ctx,
-          { runFork: Effect.runFork },
           undefined,
           Layer.mergeAll(
             Layer.succeed(OperationTelemetry, makeOperationTelemetry(faulty, registry)),
