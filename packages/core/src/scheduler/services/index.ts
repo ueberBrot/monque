@@ -11,7 +11,7 @@ export { JobProcessor } from "./job-processor.js";
 
 export { JobQueryService } from "./job-query.js";
 
-export { CLEANUP_STATUSES, LifecycleManager } from "./lifecycle-manager.js";
+export { CLEANUP_STATUSES, makeSchedulerMaintenance } from "./lifecycle-manager.js";
 
 export { PendingNotificationRouter } from "./pending-notification-router.js";
 

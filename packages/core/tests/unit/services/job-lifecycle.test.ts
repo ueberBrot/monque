@@ -380,12 +380,4 @@ describe(JobLifecycle, () => {
       }),
     );
   });
-  describe("updateOwnedHeartbeats", () => {
-    it.effect("skips heartbeat writes when no claims are active", () =>
-      Effect.gen(function* effectWorkflow15() {
-        yield* lifecycle.updateOwnedHeartbeats();
-        expect(ctx.mockCollection.updateMany).not.toHaveBeenCalled();
-      }),
-    );
-  });
 });

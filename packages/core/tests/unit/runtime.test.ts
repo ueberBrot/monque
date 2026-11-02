@@ -1,13 +1,45 @@
 import { it as effectIt } from "@effect/vitest";
-import { Effect, Layer, ManagedRuntime, Result } from "effect";
+import { Context, Effect, Layer, ManagedRuntime, Result } from "effect";
+import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vite-plus/test";
 
-import { makeSchedulerLayer } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { createMockContext } from "@tests/factories";
 
 describe("composed initialization", () => {
+  effectIt.effect("releases maintenance schedules with their owning instance scope", () =>
+    Effect.gen(function* releaseMaintenance() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
+      const context = yield* Effect.context();
+      let maintenanceWrites = 0;
+      ctx.mockCollection.deleteMany.mockImplementation(async () => {
+        maintenanceWrites += 1;
+
+        return await Promise.resolve({ acknowledged: true, deletedCount: 0 });
+      });
+
+      yield* Effect.gen(function* startMaintenance() {
+        const services = yield* makeSchedulerLayer(ctx, {
+          runFork: Effect.runForkWith(context),
+        }).pipe(
+          Layer.build,
+          Effect.map((built) => Context.get(built, SchedulerServices)),
+        );
+
+        yield* services.timers.start;
+        yield* TestClock.adjust(1000);
+        expect(maintenanceWrites).toBe(2);
+      }).pipe(Effect.scoped);
+
+      yield* TestClock.adjust(3000);
+      expect(maintenanceWrites).toBe(2);
+    }),
+  );
+
   it("shares acquisition across concurrent reads and waits for full readiness", async () => {
     const acquired: PromiseWithResolvers<void> = Promise.withResolvers();
     const ready: PromiseWithResolvers<void> = Promise.withResolvers();

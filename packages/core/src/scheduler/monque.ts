@@ -40,6 +40,7 @@ import type { JobManager } from "./services/job-manager.js";
 import type { JobOwnership } from "./services/job-ownership.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
+import type { MaintenanceRun } from "./services/lifecycle-manager.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
 import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
@@ -162,7 +163,7 @@ export class Monque extends EventEmitter {
   };
   /** Each shutdown tracks its own in-progress jobs across synchronous restarts. */
   readonly #drainChecks = new Set<() => void>();
-  #runGeneration = 0;
+  #maintenanceRun: MaintenanceRun | undefined;
   /** Published together after initialization succeeds. */
   #initialized: {
     runtime: SchedulerRuntime;
@@ -1171,13 +1172,12 @@ export class Monque extends EventEmitter {
     }
 
     const { services } = this.#initialized;
-    this.#runGeneration += 1;
     this.#state.running = true;
     // Set up change streams as the primary notification mechanism
     services.streams.setup();
     services.notifications.start();
     // Start heartbeat and retention timers
-    services.timers.startTimers();
+    this.#maintenanceRun = this.#runtime.runSync(services.timers.start);
   }
   /**
    * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
@@ -1221,11 +1221,15 @@ export class Monque extends EventEmitter {
     await this.#runtime.runPromise(this.#stopScheduler());
   }
   readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
-    const generation = this.#runGeneration;
+    const maintenanceRun = this.#maintenanceRun;
     const drainingJobs = new Set(this.getActiveJobsList());
     const getIncompleteJobs = () => this.getActiveJobsList().filter((job) => drainingJobs.has(job));
-    const { timers, notifications, queries: query, streams } = yield* SchedulerServices;
-    timers.stopTimers(this.options.leaseDuration !== undefined);
+    const { notifications, queries: query, streams } = yield* SchedulerServices;
+
+    if (maintenanceRun) {
+      yield* maintenanceRun.beginDrain(this.options.leaseDuration !== undefined);
+    }
+
     notifications.close();
     this.#state.running = false;
     query.clearStatsCache();
@@ -1252,8 +1256,8 @@ export class Monque extends EventEmitter {
       timedOut = Option.isNone(result);
     }
 
-    if (generation === this.#runGeneration) {
-      timers.stopTimers();
+    if (maintenanceRun) {
+      yield* maintenanceRun.stop;
     }
 
     if (timedOut) {
