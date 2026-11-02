@@ -41,13 +41,13 @@ export interface WorkerOptions<T = unknown> extends RetryOptions {
  */
 export interface WorkerRegistration<T = unknown> {
   /** The job handler function */
-  handler: JobHandler<T>;
+  readonly handler: JobHandler<T>;
   /** Maximum concurrent jobs for this worker */
-  concurrency: number;
+  readonly concurrency: number;
   /** Retry settings captured when this worker was registered */
-  retryOptions?: RetryOptions;
+  readonly retryOptions?: RetryOptions;
   /** Optional payload validator for this worker's executions */
-  schema?: StandardSchemaV1<unknown, T>;
+  readonly schema?: StandardSchemaV1<unknown, T>;
   /** Map of active claim IDs to their job data */
-  activeJobs: Map<string, PersistedJob<T>>;
+  readonly activeJobs: ReadonlyMap<string, PersistedJob<T>>;
 }
