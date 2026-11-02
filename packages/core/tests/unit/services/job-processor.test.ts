@@ -4,7 +4,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
  * Unit tests for JobProcessor service.
  *
  * Tests job polling, acquisition, processing, completion, and failure handling.
- * Uses mock SchedulerContext to test processing logic in isolation.
+ * Uses mock service dependencies to test processing logic in isolation.
  */
 import { Clock, Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import { map as mapEffect } from "effect/Effect";

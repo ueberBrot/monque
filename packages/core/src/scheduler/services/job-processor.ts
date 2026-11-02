@@ -1,7 +1,9 @@
 import type { Scope } from "effect";
 import { Cause, Deferred, Duration, Effect, Exit, Option, Semaphore } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
+import type { Collection } from "mongodb";
 
+import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
 import { PayloadValidationError, toError } from "@/shared";
@@ -11,10 +13,24 @@ import { attempt, fromPromise, observeBackgroundFailure } from "../effects.js";
 import { JobDiscovery } from "./job-discovery.js";
 import type { JobOwnership } from "./job-ownership.js";
 import { JobPersistenceError } from "./job-persistence-error.js";
-import type { SchedulerContext } from "./types.js";
+import { makeOperationTelemetry } from "./operation-telemetry.js";
+import type { ResolvedMonqueOptions } from "./types.js";
 import type { WorkerAdmission } from "./worker-admission.js";
 
 const MAX_REPOLL_TARGET_NAMES = 1024;
+
+const validatePayload = Effect.fnUntraced(function* validatePayload(
+  job: PersistedJob,
+  schema: NonNullable<WorkerRegistration["schema"]>,
+) {
+  const result = yield* fromPromise(async () => await schema["~standard"].validate(job.data));
+
+  if (result.issues) {
+    return yield* Effect.fail(new PayloadValidationError(job.name, result.issues));
+  }
+
+  return result.value;
+});
 
 interface ProcessingState {
   repollRequested: boolean;
@@ -22,10 +38,13 @@ interface ProcessingState {
   repollTargetNames: Set<string> | undefined;
 }
 
-export type ExecutionDependencies = Pick<
-  SchedulerContext,
-  "collection" | "emit" | "notifyPendingJob" | "notifyJobFinished"
-> & { readonly options: Pick<SchedulerContext["options"], "instanceConcurrency"> };
+export interface ExecutionDependencies {
+  readonly collection: Collection;
+  readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+  readonly notifyJobFinished: (name: string) => void;
+  readonly options: Pick<ResolvedMonqueOptions, "instanceConcurrency">;
+}
 
 /** A stop captures its original admission identities before any asynchronous wait. */
 export interface ExecutionDrain {
@@ -52,12 +71,15 @@ export class JobProcessor {
   private readonly ownership: JobOwnership["Service"];
   private readonly admission: WorkerAdmission["Service"];
   private readonly executionScope: Scope.Scope;
+  private readonly telemetry: ReturnType<typeof makeOperationTelemetry>;
   constructor(
     ctx: ExecutionDependencies,
     ownership: JobOwnership["Service"],
     admission: WorkerAdmission["Service"],
     executionScope: Scope.Scope,
+    telemetry = makeOperationTelemetry(),
   ) {
+    this.telemetry = telemetry;
     this.ctx = ctx;
     this.ownership = ownership;
     this.admission = admission;
@@ -254,6 +276,7 @@ export class JobProcessor {
 
                 return this.dispatchClaim(job, worker, name, isCurrent);
               }),
+              (body) => this.telemetry.observe("dispatch", body),
               Effect.catchCause((cause) =>
                 attempt(() => {
                   acquisitionFailed = true;
@@ -339,20 +362,20 @@ export class JobProcessor {
         const { schema } = worker;
 
         if (schema !== undefined) {
-          const result = yield* fromPromise(
-            async () => await schema["~standard"].validate(job.data),
+          const validated = yield* this.telemetry.observe(
+            "validation",
+            validatePayload(job, schema),
           );
 
-          if (result.issues) {
-            return yield* Effect.fail(new PayloadValidationError(job.name, result.issues));
-          }
-
-          handlerJob = { ...job, data: result.value };
+          handlerJob = { ...job, data: validated };
         }
 
-        yield* fromPromise(async () => {
-          await worker.handler(handlerJob);
-        });
+        yield* this.telemetry.observe(
+          "worker",
+          fromPromise(async () => {
+            await worker.handler(handlerJob);
+          }),
+        );
 
         return yield* Effect.void;
       }).pipe(Effect.timed);
@@ -402,6 +425,7 @@ export class JobProcessor {
           }
         }),
       ),
+      (body) => this.telemetry.observe("execution", body),
     );
   }
 }
