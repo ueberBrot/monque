@@ -422,6 +422,67 @@ describe(Monque, () => {
       });
     });
   });
+  describe("replacement during an in-progress poll", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
+        readMonotonicNanos,
+      );
+      Object.assign(mockCollection, {
+        options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+      });
+      mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<Collection["aggregate"]>>({
+          toArray: async () => await Promise.resolve([{ _id: "work", nextRunAt: new Date(0) }]),
+          close: async () => {},
+        }),
+      );
+      monque = new Monque(fromPartial<Db>(mockDb), {
+        recoverStaleJobs: false,
+        workerConcurrency: 5,
+      });
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    });
+
+    it("lets an in-progress poll finish with its captured registration after replacement", async () => {
+      const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+
+      const original = vi.fn<JobHandler>(async () => {
+        await completion.promise;
+      });
+
+      const replacement = vi.fn<JobHandler>(async () => {});
+      const jobs = Array.from({ length: 5 }, () => JobFactoryHelpers.processing({ name: "work" }));
+
+      for (const job of jobs) {
+        mockCollection.findOneAndUpdate.mockResolvedValueOnce(job);
+      }
+
+      monque.register("work", original);
+      monque.once("job:start", () => {
+        monque.register("work", replacement, { replace: true, concurrency: 1 });
+      });
+      await monque.initialize();
+
+      try {
+        monque.start();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect({
+          claims: mockCollection.findOneAndUpdate.mock.calls.length,
+          original: original.mock.calls.length,
+          replacement: replacement.mock.calls.length,
+        }).toStrictEqual({ claims: 5, original: 5, replacement: 0 });
+      } finally {
+        const stopping = monque.stop();
+        completion.resolve();
+        await stopping;
+      }
+    });
+  });
   describe("restart during shutdown", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -430,6 +491,200 @@ describe(Monque, () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     });
+
+    it.each([
+      { closeWork: 0, timeout: 10 },
+      { closeWork: 5, timeout: 10 },
+      { closeWork: 0, timeout: 10.5 },
+      { closeWork: 0, timeout: 0 },
+    ])(
+      "bounds stop with pending cleanup, $closeWork ms of close work and timeout $timeout",
+      async ({ closeWork, timeout }) => {
+        const monotonic = vi
+          .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+          .mockImplementation(readMonotonicNanos);
+
+        const closing = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const stream = createStream(closing.promise);
+        stream.close.mockImplementation(async () => {
+          vi.advanceTimersByTime(closeWork);
+          await closing.promise;
+        });
+        Object.assign(mockCollection, {
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValue(fromPartial<ChangeStream>(stream)),
+        });
+        monque = new Monque(fromPartial<Db>(mockDb), { shutdownTimeout: timeout });
+        const errors = vi.fn<(payload: MonqueEventMap["job:error"]) => void>();
+        monque.on("job:error", errors);
+        await monque.initialize();
+        monque.start();
+        let stopped = false;
+
+        const stopping = monque.stop().then(() => {
+          stopped = true;
+
+          return true;
+        });
+
+        try {
+          await vi.advanceTimersByTimeAsync(Math.ceil(timeout) + 1 - closeWork);
+          expect({
+            stopped,
+            errors: errors.mock.calls.length,
+            closes: stream.close.mock.calls.length,
+            changeListeners: stream.listenerCount("change"),
+            errorListeners: stream.listenerCount("error"),
+            timers: vi.getTimerCount(),
+          }).toStrictEqual({
+            stopped: true,
+            errors: 0,
+            closes: 1,
+            changeListeners: 0,
+            errorListeners: 1,
+            timers: 0,
+          });
+        } finally {
+          closing.resolve();
+          await stopping;
+          await vi.advanceTimersByTimeAsync(0);
+          monotonic.mockRestore();
+        }
+
+        expect(stream.listenerCount("error")).toBe(0);
+      },
+    );
+
+    it.each([false, true])(
+      "bounds renewable draining across native cleanup (close early: %s)",
+      async (closeEarly) => {
+        const monotonic = vi
+          .spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe")
+          .mockImplementation(readMonotonicNanos);
+
+        const closing = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const oldStream = createStream(closing.promise);
+        const replacement = createStream();
+        Object.assign(mockCollection, {
+          options: vi.fn<() => Promise<Record<string, never>>>().mockResolvedValue({}),
+          watch: vi
+            .fn<MockFunction<Collection["watch"]>>()
+            .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+            .mockReturnValue(fromPartial<ChangeStream>(replacement)),
+        });
+        mockCollection.aggregate.mockReturnValue(
+          fromPartial<ReturnType<Collection["aggregate"]>>({
+            toArray: async () => await Promise.resolve([{ _id: "work", nextRunAt: new Date(0) }]),
+            close: async () => {},
+          }),
+        );
+        const first = JobFactoryHelpers.processing({ name: "work", claimId: "first" });
+        const later = JobFactoryHelpers.processing({ name: "work", claimId: "later" });
+        const claims = [first, later];
+        mockCollection.findOneAndUpdate.mockImplementation(
+          async (filter) =>
+            await Promise.resolve(filter["status"] === "pending" ? (claims.shift() ?? null) : null),
+        );
+        monque = new Monque(fromPartial<Db>(mockDb), {
+          recoverStaleJobs: false,
+          workerConcurrency: 1,
+          heartbeatInterval: 1000,
+          leaseDuration: 3000,
+          shutdownTimeout: 3000,
+        });
+
+        const handler = vi.fn<JobHandler>(async (job) => {
+          if (job.claimId === "first") {
+            await completion.promise;
+          }
+        });
+
+        monque.register("work", handler);
+        const errors = vi.fn<(payload: MonqueEventMap["job:error"]) => void>();
+        monque.on("job:error", errors);
+        await monque.initialize();
+        mockCollection.updateMany.mockClear();
+        monque.start();
+        await vi.advanceTimersByTimeAsync(0);
+        let stopped = false;
+
+        const stopping = monque.stop().then(() => {
+          stopped = true;
+
+          return true;
+        });
+
+        try {
+          await vi.advanceTimersByTimeAsync(2000);
+          expect({
+            stopped,
+            renewals: mockCollection.updateMany.mock.calls.length,
+            filter: mockCollection.updateMany.mock.lastCall?.[0],
+          }).toMatchObject({
+            stopped: false,
+            renewals: 2,
+            filter: { claimId: { $in: ["first"] } },
+          });
+
+          if (closeEarly) {
+            closing.resolve();
+            await vi.advanceTimersByTimeAsync(0);
+          }
+
+          await vi.advanceTimersByTimeAsync(1000);
+          expect({ stopped, errors: errors.mock.calls }).toStrictEqual({
+            stopped: true,
+            errors: [
+              [
+                {
+                  error: new ShutdownTimeoutError(
+                    "Shutdown timed out after 3000ms with 1 incomplete jobs",
+                    [first],
+                  ),
+                },
+              ],
+            ],
+          });
+          const renewals = mockCollection.updateMany.mock.calls.length;
+          await vi.advanceTimersByTimeAsync(2000);
+          const postStopRead = await monque.getJob(new ObjectId());
+          monque.start();
+          await vi.advanceTimersByTimeAsync(0);
+          expect({
+            renewals: mockCollection.updateMany.mock.calls.length,
+            postStopRead,
+            executions: handler.mock.calls.length,
+          }).toStrictEqual({ renewals, postStopRead: null, executions: 1 });
+          closing.resolve();
+          await vi.advanceTimersByTimeAsync(1000);
+          expect({
+            healthy: monque.isHealthy(),
+            replacementCloses: replacement.close.mock.calls.length,
+            renewals: mockCollection.updateMany.mock.calls.length,
+          }).toStrictEqual({ healthy: true, replacementCloses: 0, renewals: renewals + 1 });
+          completion.resolve();
+          await vi.advanceTimersByTimeAsync(200);
+          expect({
+            executions: handler.mock.calls.map(([job]) => job.claimId),
+            completion: mockCollection.findOneAndUpdate.mock.calls.find(
+              ([filter]) => filter["claimId"] === "first",
+            )?.[0],
+          }).toMatchObject({
+            executions: ["first", "later"],
+            completion: { _id: first._id, claimId: "first", status: "processing" },
+          });
+        } finally {
+          closing.resolve();
+          completion.resolve();
+          await vi.advanceTimersByTimeAsync(0);
+          await stopping;
+          await monque.stop();
+          monotonic.mockRestore();
+        }
+      },
+    );
 
     it("leaves no maintenance after a connected listener stops synchronously", async () => {
       const stream = createStream();

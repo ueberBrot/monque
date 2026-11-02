@@ -34,6 +34,7 @@ import {
   uniqueCollectionName,
   waitFor,
 } from "@test-utils/test-utils.js";
+import { stringContainingMatcher } from "@tests/setup/matchers.js";
 
 import { requireValue } from "./helpers";
 
@@ -188,6 +189,68 @@ describe("enqueue()", () => {
         ]),
       ).rejects.toThrow(ConnectionError);
       await expect(db.collection(collectionName).countDocuments({ name: "work" })).resolves.toBe(0);
+    });
+
+    it("preserves an unrelated index failure when a later input creates the same active key", async () => {
+      const collection = db.collection(collectionName);
+      await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true });
+      await monque.enqueue("existing", { email: "taken@example.test" });
+      // oxlint-disable-next-line typescript/unbound-method -- Invoke the native method with its original Collection receiver through apply.
+      const original = Collection.prototype.bulkWrite;
+      let nativeFailure: unknown;
+
+      const bulkWrite = vi
+        .spyOn(Collection.prototype, "bulkWrite")
+        .mockImplementation(async function captureNativeBulkFailure(this: Collection, ...args) {
+          try {
+            return await original.apply(this, args);
+          } catch (error) {
+            nativeFailure = error;
+            throw error;
+          }
+        });
+
+      let failure: unknown;
+
+      try {
+        await monque.enqueueMany([
+          { name: "work", data: { email: "taken@example.test" }, uniqueKey: "shared" },
+          { name: "work", data: { email: "free@example.test" }, uniqueKey: "shared" },
+        ]);
+      } catch (error) {
+        failure = error;
+      } finally {
+        bulkWrite.mockRestore();
+      }
+
+      if (!(nativeFailure instanceof MongoBulkWriteError)) {
+        throw new TypeError("Expected a native bulk failure");
+      }
+
+      expect(failure).toBeInstanceOf(ConnectionError);
+
+      if (!(failure instanceof ConnectionError)) {
+        throw new TypeError("Expected the partial failure to reject intake");
+      }
+
+      expect(failure.cause).toBe(nativeFailure);
+      expect({
+        errors: nativeFailure.result.getWriteErrors().map(({ index, code, errInfo, errmsg }) => ({
+          index,
+          code,
+          errInfo,
+          errmsg,
+        })),
+        inserted: nativeFailure.result.upsertedCount,
+        insertedIndices: Object.keys(nativeFailure.result.upsertedIds),
+      }).toMatchObject({
+        errors: [{ index: 0, code: 11_000, errmsg: stringContainingMatcher("data.email_1") }],
+        inserted: 1,
+        insertedIndices: ["1"],
+      });
+      await expect(
+        collection.findOne({ name: "work", uniqueKey: "shared" }),
+      ).resolves.toMatchObject({ data: { email: "free@example.test" } });
     });
 
     it("preserves successful writes and native error details when another job is rejected", async () => {

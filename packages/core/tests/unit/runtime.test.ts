@@ -351,6 +351,76 @@ describe("composed initialization", () => {
       }).pipe(Effect.scoped),
   );
 
+  effectIt.effect("retains native cleanup in the instance after its close waiter times out", () =>
+    Effect.gen(function* retainNativeCleanup() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
+      // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB cursors deliver Node EventEmitter callbacks.
+      const stream = Object.assign(new EventEmitter(), {
+        close: vi.fn<() => Promise<void>>(async () => {
+          Deferred.doneUnsafe(started, Effect.void);
+          await completion.promise;
+        }),
+      });
+
+      ctx.mockCollection.watch.mockReturnValue(fromPartial<ChangeStream>(stream));
+      const owner = yield* Scope.make();
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.buildWithScope(owner));
+      const { streams } = Context.get(context, ProcessingResources);
+      streams.setup();
+      let returned = false;
+
+      const closing = yield* streams.close().pipe(
+        Effect.timeoutOption(10),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            returned = true;
+          }),
+        ),
+        Effect.forkChild,
+      );
+
+      let disposed = false;
+
+      try {
+        yield* Deferred.await(started);
+        yield* TestClock.adjust(10);
+        expect(returned).toBe(true);
+
+        const disposing = yield* Scope.close(owner, Exit.void).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              disposed = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+
+        yield* TestClock.adjust(10);
+        expect({
+          disposed,
+          changeListeners: stream.listenerCount("change"),
+          errorListeners: stream.listenerCount("error"),
+        }).toStrictEqual({ disposed: false, changeListeners: 0, errorListeners: 1 });
+        completion.resolve();
+        yield* Fiber.join(disposing);
+        expect({
+          disposed,
+          errorListeners: stream.listenerCount("error"),
+          closes: stream.close.mock.calls.length,
+        }).toStrictEqual({ disposed: true, errorListeners: 0, closes: 1 });
+        expect(ctx.emit).toHaveBeenCalledWith("changestream:closed", undefined);
+      } finally {
+        completion.resolve();
+        yield* Fiber.join(closing);
+        yield* Scope.close(owner, Exit.void);
+      }
+    }),
+  );
+
   effectIt.effect("owns notification scheduling without starting it during Layer acquisition", () =>
     Effect.gen(function* closeNotificationLayer() {
       const ctx = createMockContext();

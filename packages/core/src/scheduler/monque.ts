@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
+import { Cause, Clock, Context, Effect, Layer, ManagedRuntime } from "effect";
 import { ObjectId } from "mongodb";
 import type { Collection, Db } from "mongodb";
 
@@ -1141,6 +1141,15 @@ export class Monque extends EventEmitter {
     await this.#runtime.runPromise(this.#stopScheduler());
   }
   readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
+    const clock = yield* Clock.Clock;
+
+    const deadline =
+      clock.monotonicTimeNanosUnsafe() +
+      BigInt(Math.ceil(this.options.shutdownTimeout * 1_000_000));
+
+    const remaining = () =>
+      Math.max(0, Number(deadline - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
+
     const maintenanceRun = this.#maintenanceRun;
     const execution = yield* JobExecution;
     const drain = execution.captureDrain();
@@ -1155,8 +1164,12 @@ export class Monque extends EventEmitter {
     notifications.close();
     this.#admission.stop();
     query.clearStatsCache();
-    yield* streams.close().pipe(Effect.ignoreCause);
-    const drained = yield* drain.await(this.options.shutdownTimeout);
+    yield* Effect.raceFirst(
+      streams.close().pipe(Effect.ignoreCause),
+      Effect.suspend(() => Effect.sleep(remaining())),
+    );
+    const budget = remaining();
+    const drained = budget > 0 ? yield* drain.await(budget) : drain.incompleteJobs().length === 0;
 
     if (maintenanceRun) {
       yield* maintenanceRun.stop;

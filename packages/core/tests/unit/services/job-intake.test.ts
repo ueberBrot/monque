@@ -1,9 +1,15 @@
 import { ok } from "node:assert/strict";
+import { createRequire } from "node:module";
 import { it } from "@effect/vitest";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import { DateTime, Effect } from "effect";
 import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
-import type { BulkWriteResult, ClientSession } from "mongodb";
+import type {
+  BulkWriteResult,
+  BulkWriteOperationError,
+  WriteError as NativeWriteError,
+  ClientSession,
+} from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
@@ -17,6 +23,29 @@ import {
 } from "@/shared";
 import { createMockContext, JobFactory } from "@tests/factories";
 import { anyMatcher, stringMatchingMatcher } from "@tests/setup/matchers.js";
+
+interface BulkResultFixture {
+  ok: number;
+  nInserted: number;
+  nUpserted: number;
+  nMatched: number;
+  nModified: number;
+  nRemoved: number;
+  upserted: { index: number; _id: ObjectId }[];
+  insertedIds: { index: number; _id: ObjectId }[];
+  writeErrors: NativeWriteError[];
+  writeConcernErrors: [];
+}
+
+const nativeBulk: unknown = createRequire(import.meta.url)("mongodb/lib/bulk/common.js");
+
+const { BulkWriteResult: NativeBulkWriteResult, WriteError } = fromAny<
+  {
+    BulkWriteResult: new (result: BulkResultFixture, ordered: boolean) => BulkWriteResult;
+    WriteError: new (error: BulkWriteOperationError) => NativeWriteError;
+  },
+  unknown
+>(nativeBulk);
 
 describe("Native Job intake", () => {
   let ctx: ReturnType<typeof createMockContext>;
@@ -81,6 +110,146 @@ describe("Native Job intake", () => {
         notifyPendingJobMockCallsLength: 1,
       });
     }),
+  );
+  it.effect.each([
+    {
+      label: "unrelated index",
+      message: "E11000 duplicate key error index: data.email_1 dup key: { data.email: taken }",
+      metadata: { keyPattern: { "data.email": 1 }, keyValue: { "data.email": "taken" } },
+    },
+    { label: "unattributed duplicate", message: "E11000 duplicate key error", metadata: {} },
+    {
+      label: "an unrelated index with a misleading key value",
+      metadata: {},
+      message:
+        'E11000 duplicate key error collection: test.jobs index: data.email_1 dup key: { data.email: " index: name_1_uniqueKey_1 dup key: " }',
+    },
+    {
+      label: "a similarly named index",
+      metadata: {},
+      message:
+        "E11000 duplicate key error collection: test.jobs index: other_name_1_uniqueKey_1 dup key: { other: 1 }",
+    },
+  ])(
+    "retains a native bulk rejection for $label despite a later matching active key",
+    ({ metadata, message }) =>
+      Effect.gen(function* unrelatedBulkConflict() {
+        const writeError = new WriteError({
+          code: 11_000,
+          index: 0,
+          errmsg: message,
+          errInfo: metadata,
+          op: {},
+        });
+
+        const result = new NativeBulkWriteResult(
+          {
+            ok: 1,
+            nInserted: 0,
+            nUpserted: 1,
+            nMatched: 0,
+            nModified: 0,
+            nRemoved: 0,
+            upserted: [{ index: 1, _id: new ObjectId() }],
+            insertedIds: [],
+            writeErrors: [writeError],
+            writeConcernErrors: [],
+          },
+          false,
+        );
+
+        const native = new MongoBulkWriteError(
+          { message: writeError.errmsg ?? "Duplicate", code: 11_000, writeErrors: [writeError] },
+          result,
+        );
+
+        ctx.mockCollection.bulkWrite.mockRejectedValueOnce(native);
+        ctx.mockCollection.find.mockReturnValue(
+          fromPartial<ReturnType<typeof ctx.mockCollection.find>>({
+            toArray: async () => await Promise.resolve([{ name: "work", uniqueKey: "shared" }]),
+          }),
+        );
+
+        const failure = yield* Effect.flip(
+          intake.enqueueMany([
+            { name: "work", uniqueKey: "shared", data: { email: "taken" } },
+            { name: "work", uniqueKey: "shared", data: { email: "free" }, runAt: new Date(1000) },
+          ]),
+        );
+
+        ok(failure instanceof ConnectionError);
+        expect(failure.cause).toBe(native);
+        expect({
+          result: native.result,
+          errors: native.result.getWriteErrors(),
+          upsertedIndices: Object.keys(native.result.upsertedIds),
+        }).toStrictEqual({ result, errors: [writeError], upsertedIndices: ["1"] });
+        expect(ctx.notifyPendingJob).toHaveBeenCalledExactlyOnceWith("work", new Date(1000));
+        expect(ctx.mockCollection.find).not.toHaveBeenCalled();
+      }),
+  );
+  it.effect.each([
+    {
+      label: "key pattern",
+      metadata: {
+        keyPattern: { name: 1, uniqueKey: 1 },
+        keyValue: { name: "work", uniqueKey: "shared" },
+      },
+      message: "Duplicate key",
+    },
+    {
+      label: "native index name",
+      metadata: {},
+      message:
+        "E11000 duplicate key error collection: test.jobs index: name_1_uniqueKey_1 dup key: { name: work, uniqueKey: shared }",
+    },
+  ])(
+    "reconciles a bulk conflict attributed to the active Unique Key by $label",
+    ({ metadata, message }) =>
+      Effect.gen(function* intendedBulkConflict() {
+        const writeError = new WriteError({
+          code: 11_000,
+          index: 0,
+          errmsg: message,
+          errInfo: metadata,
+          op: {},
+        });
+
+        const result = new NativeBulkWriteResult(
+          {
+            ok: 1,
+            nInserted: 0,
+            nUpserted: 1,
+            nMatched: 0,
+            nModified: 0,
+            nRemoved: 0,
+            upserted: [{ index: 1, _id: new ObjectId() }],
+            insertedIds: [],
+            writeErrors: [writeError],
+            writeConcernErrors: [],
+          },
+          false,
+        );
+
+        const native = new MongoBulkWriteError(
+          { message, code: 11_000, writeErrors: [writeError] },
+          result,
+        );
+
+        ctx.mockCollection.bulkWrite.mockRejectedValueOnce(native);
+        ctx.mockCollection.find.mockReturnValue(
+          fromPartial<ReturnType<typeof ctx.mockCollection.find>>({
+            toArray: async () => await Promise.resolve([{ name: "work", uniqueKey: "shared" }]),
+          }),
+        );
+        expect(
+          yield* intake.enqueueMany([
+            { name: "work", uniqueKey: "shared", data: {} },
+            { name: "work", uniqueKey: "shared", data: {}, runAt: new Date(1000) },
+          ]),
+        ).toStrictEqual({ insertedCount: 1, deduplicatedCount: 1 });
+        expect(ctx.notifyPendingJob).toHaveBeenCalledExactlyOnceWith("work", new Date(1000));
+      }),
   );
   it.effect.each([JobStatus.PENDING, JobStatus.PROCESSING])(
     "returns the competing %s job after an active-key upsert race",

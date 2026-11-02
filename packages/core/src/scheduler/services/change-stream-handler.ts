@@ -64,13 +64,16 @@ export class ChangeStreamHandler {
 
   private readonly ctx: StreamDependencies;
   private readonly pendingNotifications: PendingNotificationSink;
+  private readonly cleanupScope: Scope.Closeable;
   private readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
 
   constructor(
     ctx: StreamDependencies,
     pendingNotifications: PendingNotificationSink,
     runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E> = Effect.runFork,
+    cleanupScope: Scope.Closeable = Scope.makeUnsafe("parallel"),
   ) {
+    this.cleanupScope = cleanupScope;
     this.ctx = ctx;
     this.pendingNotifications = pendingNotifications;
     this.runFork = runFork;
@@ -94,12 +97,16 @@ export class ChangeStreamHandler {
     this.lifetime = lifetime;
 
     if (previous) {
-      this.runFork(Scope.close(previous.scope, Exit.void));
+      this.closeScope(previous.scope);
     }
 
     if (this.isCurrent(lifetime)) {
       this.open(lifetime);
     }
+  }
+
+  private closeScope(scope: Scope.Closeable): void {
+    Fiber.runIn(this.runFork(Scope.close(scope, Exit.void)), this.cleanupScope);
   }
 
   private isCurrent(lifetime: StreamLifetime, resource: CursorResource | null = null): boolean {
@@ -165,7 +172,7 @@ export class ChangeStreamHandler {
       );
 
       if (!this.isCurrent(lifetime)) {
-        this.runFork(Scope.close(scope, Exit.void));
+        this.closeScope(scope);
 
         return;
       }
@@ -200,7 +207,7 @@ export class ChangeStreamHandler {
         this.pendingNotifications.setChangeStreamActive(false);
       }
 
-      this.runFork(Scope.close(scope, Exit.void));
+      this.closeScope(scope);
       const reason = error instanceof Error ? error.message : "Unknown error";
       this.ctx.emit("changestream:fallback", { reason });
     }
@@ -266,7 +273,7 @@ export class ChangeStreamHandler {
     lifetime.attempts += 1;
     lifetime.cursor = null;
     this.pendingNotifications.setChangeStreamActive(false);
-    this.runFork(Scope.close(resource.scope, Exit.void));
+    this.closeScope(resource.scope);
 
     if (!this.isCurrent(lifetime) || !this.ctx.isRunning()) {
       return;
@@ -306,11 +313,20 @@ export class ChangeStreamHandler {
 
     if (lifetime) {
       const wasActive = lifetime.cursor?.active === true;
-      yield* Scope.close(lifetime.scope, Exit.void);
 
-      if (wasActive) {
-        this.ctx.emit("changestream:closed", undefined);
-      }
+      const closing = yield* Effect.forkIn(
+        Effect.gen({ self: this }, function* releaseStreamLifetime() {
+          yield* Scope.close(lifetime.scope, Exit.void);
+
+          if (wasActive) {
+            this.ctx.emit("changestream:closed", undefined);
+          }
+        }),
+        this.cleanupScope,
+        { startImmediately: true, uninterruptible: true },
+      );
+
+      yield* Fiber.join(closing);
     }
   });
 
@@ -318,7 +334,7 @@ export class ChangeStreamHandler {
   readonly dispose = Effect.suspend(() => {
     this.disposed = true;
 
-    return this.close();
+    return this.close().pipe(Effect.ensuring(Scope.close(this.cleanupScope, Exit.void)));
   });
 }
 
@@ -327,10 +343,17 @@ export const makeChangeStreamHandler = Effect.fnUntraced(function* makeChangeStr
   notifications: PendingNotificationSink,
 ) {
   const context = yield* Effect.context();
+  const cleanupScope = yield* Scope.fork(yield* Scope.Scope, "parallel");
 
   return yield* Effect.acquireRelease(
     Effect.sync(
-      () => new ChangeStreamHandler(dependencies, notifications, Effect.runForkWith(context)),
+      () =>
+        new ChangeStreamHandler(
+          dependencies,
+          notifications,
+          Effect.runForkWith(context),
+          cleanupScope,
+        ),
     ),
     (streams) => streams.dispose,
   );

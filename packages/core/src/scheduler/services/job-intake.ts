@@ -1,7 +1,14 @@
 import { Context, DateTime, Effect, Layer } from "effect";
 import { forEach as forEachEffect } from "effect/Effect";
 import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
-import type { BulkWriteResult, ClientSession, Collection, Document, Filter } from "mongodb";
+import type {
+  BulkWriteResult,
+  ClientSession,
+  Collection,
+  Document,
+  Filter,
+  WriteError,
+} from "mongodb";
 
 import { documentToPersistedJob, JobStatus } from "@/jobs";
 import type {
@@ -43,6 +50,18 @@ const isUniqueJobIndexPattern = (value: unknown): value is { name: 1; uniqueKey:
     value.uniqueKey === 1 &&
     Object.keys(value).length === 2
   );
+};
+
+const isUniqueJobBulkConflict = (error: WriteError): boolean => {
+  const pattern: unknown = error.errInfo?.["keyPattern"];
+
+  if (pattern !== undefined) {
+    return isUniqueJobIndexPattern(pattern);
+  }
+
+  const [description, key] = error.errmsg?.split(" dup key: ", 2) ?? [];
+
+  return key !== undefined && description?.endsWith(" index: name_1_uniqueKey_1") === true;
 };
 
 /** Native intake borrows the collection and caller sessions; routing remains synchronous. */
@@ -328,10 +347,12 @@ export const makeNativeJobIntake = (
     const conflicts = yield* attempt(() => {
       const writeErrors = result.getWriteErrors();
 
-      const duplicateJobs = writeErrors.flatMap(({ code, index }) => {
-        const job = jobs[index];
+      const duplicateJobs = writeErrors.flatMap((error) => {
+        const job = jobs[error.index];
 
-        return code === 11_000 && job?.uniqueKey !== undefined
+        return error.code === 11_000 &&
+          job?.uniqueKey !== undefined &&
+          isUniqueJobBulkConflict(error)
           ? [{ name: job.name, uniqueKey: job.uniqueKey }]
           : [];
       });

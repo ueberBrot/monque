@@ -748,4 +748,41 @@ describe("native intake with controlled Effect time", () => {
         });
       }).pipe(Effect.provide(fixture)),
   );
+  effectIt.effect(
+    "notifies a successful same-key input while retaining an unrelated native bulk failure",
+    () =>
+      Effect.gen(function* sameKeyPartialNotification() {
+        const intake = yield* JobIntake;
+        const { collection, notifications } = yield* IntakeFixture;
+        yield* Effect.promise(
+          async () =>
+            await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true }),
+        );
+        yield* intake.enqueue("existing", { email: "taken" });
+        notifications.length = 0;
+
+        const failure = yield* Effect.flip(
+          intake.enqueueMany([
+            { name: "work", uniqueKey: "shared", data: { email: "taken" } },
+            { name: "work", uniqueKey: "shared", data: { email: "free" }, runAt: new Date(60_000) },
+          ]),
+        );
+
+        ok(failure instanceof ConnectionError);
+        ok(failure.cause instanceof MongoBulkWriteError);
+        expect({
+          indices: failure.cause.result.getWriteErrors().map((error) => error.index),
+          inserted: failure.cause.result.upsertedCount,
+          matched: failure.cause.result.matchedCount,
+          upsertedIndices: Object.keys(failure.cause.result.upsertedIds),
+          notifications,
+        }).toStrictEqual({
+          indices: [0],
+          inserted: 1,
+          matched: 0,
+          upsertedIndices: ["1"],
+          notifications: [["work", new Date(60_000)]],
+        });
+      }).pipe(Effect.provide(fixture)),
+  );
 });
