@@ -24,6 +24,71 @@ import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/facto
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect("retains an active Promise execution until its initialized owner can close", () =>
+    Effect.gen(function* closeExecutionOwner() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const release = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+      ctx.admission.register("email", async () => {
+        Deferred.doneUnsafe(started, Effect.void);
+        await release.promise;
+      });
+      ctx.notifyJobFinished.mockImplementation(() => {
+        Deferred.doneUnsafe(finished, Effect.void);
+      });
+      ctx.mockCollection.aggregate.mockReturnValue(
+        fromPartial({
+          toArray: async () => await Promise.resolve([{ _id: "email", nextRunAt: new Date(0) }]),
+          close: async () => {
+            await Promise.resolve();
+          },
+        }),
+      );
+      ctx.mockCollection.findOneAndUpdate
+        .mockResolvedValueOnce(JobFactoryHelpers.processing({ name: "email" }))
+        .mockResolvedValue(null);
+      const owner = yield* Scope.make();
+
+      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
+        Layer.buildWithScope(owner),
+      );
+
+      const { notifications } = Context.get(context, SchedulerServices);
+      let closed = false;
+
+      try {
+        notifications.start();
+        yield* Deferred.await(started);
+
+        const closing = yield* Scope.close(owner, Exit.void).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              closed = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+
+        yield* TestClock.adjust(1);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: false,
+          active: 1,
+        });
+        release.resolve();
+        yield* Deferred.await(finished);
+        yield* Fiber.join(closing);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: true,
+          active: 0,
+        });
+      } finally {
+        release.resolve();
+        yield* Scope.close(owner, Exit.void);
+      }
+    }),
+  );
   effectIt.effect(
     "keeps reads, maintenance and Promise Workers alive after notifications close",
     () =>

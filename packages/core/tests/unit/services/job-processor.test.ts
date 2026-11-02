@@ -6,7 +6,7 @@ import { fromAny, fromPartial } from "@total-typescript/shoehorn";
  * Tests job polling, acquisition, processing, completion, and failure handling.
  * Uses mock SchedulerContext to test processing logic in isolation.
  */
-import { Clock, Deferred, Effect, Fiber } from "effect";
+import { Clock, Context, Deferred, Effect, Fiber, Layer } from "effect";
 import { map as mapEffect } from "effect/Effect";
 import { isString } from "effect/Predicate";
 import { TestClock } from "effect/testing";
@@ -17,8 +17,10 @@ import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
 import { JobDiscovery } from "@/scheduler/services/job-discovery.js";
-import { JobLifecycle } from "@/scheduler/services/job-lifecycle.js";
+import { makeJobExecutionLayer, JobExecution } from "@/scheduler/services/job-execution.js";
+import { JobOwnership, makeNativeJobOwnership } from "@/scheduler/services/job-ownership.js";
 import { JobProcessor } from "@/scheduler/services/job-processor.js";
+import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
 import type { WorkerRegistration } from "@/workers";
 import { createMockContext, createWorker, JobFactory, JobFactoryHelpers } from "@tests/factories";
 import { clockWithWallTime } from "@tests/setup/clock.js";
@@ -53,7 +55,25 @@ describe(JobProcessor, () => {
     return Deferred.await(finished);
   };
 
-  let processor: JobProcessor;
+  let processor: JobExecution["Service"];
+
+  const makeProcessor = Effect.fnUntraced(function* makeProcessorFixture() {
+    const context = yield* makeJobExecutionLayer(ctx).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.succeed(
+            JobOwnership,
+            makeNativeJobOwnership(ctx.collection, ctx.instanceId, ctx.options),
+          ),
+          Layer.succeed(WorkerAdmission, ctx.admission),
+        ),
+      ),
+      Layer.build,
+    );
+
+    return Context.get(context, JobExecution);
+  });
+
   beforeEach(() => {
     ctx = createMockContext();
     // Discovery may race another instance's claims; acquisition fixtures remain authoritative.
@@ -65,13 +85,13 @@ describe(JobProcessor, () => {
         ),
       }),
     );
-    processor = new JobProcessor(ctx);
   });
   afterEach(() => {
     vi.clearAllMocks();
   });
   it.effect("closes its cursor without reporting an error when its run is interrupted", () =>
     Effect.gen(function* interruptDiscovery() {
+      processor = yield* makeProcessor();
       const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
       const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
       vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
@@ -93,8 +113,96 @@ describe(JobProcessor, () => {
     }),
   );
   describe("poll", () => {
+    it.effect("closes obsolete discovery and transfers the current repoll after interruption", () =>
+      Effect.gen(function* interruptObsoletePoll() {
+        processor = yield* makeProcessor();
+        ctx.admission.register("email", () => {});
+        ctx.admission.register("sms", () => {});
+        const discovering = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const claimedCurrent = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const result = Promise.withResolvers<never[]>();
+        const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        ctx.mockCollection.aggregate.mockReturnValueOnce(
+          fromPartial({
+            toArray: async () => {
+              Deferred.doneUnsafe(discovering, Effect.void);
+
+              return await result.promise;
+            },
+            close,
+          }),
+        );
+        ctx.mockCollection.findOneAndUpdate.mockImplementationOnce(async () => {
+          Deferred.doneUnsafe(claimedCurrent, Effect.void);
+
+          return await Promise.resolve(null);
+        });
+        let current = true;
+        const poll = yield* processor.poll(undefined, () => current).pipe(Effect.forkChild);
+
+        try {
+          yield* Deferred.await(discovering);
+          current = false;
+          yield* processor.poll(new Set(["sms"]), () => true);
+          const interrupted = yield* Fiber.interrupt(poll).pipe(Effect.forkChild);
+          yield* TestClock.adjust(1);
+          expect(close).toHaveBeenCalledOnce();
+          yield* Fiber.join(interrupted);
+          yield* Deferred.await(claimedCurrent);
+          expect(
+            ctx.mockCollection.findOneAndUpdate.mock.calls.map(([filter]) => claimName(filter)),
+          ).toStrictEqual(["sms"]);
+          expect(ctx.emitHistory).toStrictEqual([]);
+        } finally {
+          result.resolve([]);
+          yield* Fiber.interrupt(poll);
+        }
+      }),
+    );
+
+    it.effect("settles a native Claim through fenced release before polling interruption", () =>
+      Effect.gen(function* interruptClaimHandoff() {
+        processor = yield* makeProcessor();
+        const handler = vi.fn<WorkerRegistration["handler"]>();
+        ctx.admission.register("email", handler);
+        const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const claim = Promise.withResolvers<PersistedJob>();
+        const job = JobFactoryHelpers.processing({ name: "email", claimId: "late-interrupted" });
+        ctx.mockCollection.findOneAndUpdate.mockImplementationOnce(async () => {
+          Deferred.doneUnsafe(acquiring, Effect.void);
+
+          return await claim.promise;
+        });
+        const polling = yield* processor.poll(new Set(["email"])).pipe(Effect.forkChild);
+
+        try {
+          yield* Deferred.await(acquiring);
+          ctx.admission.stop();
+          const interrupting = yield* Fiber.interrupt(polling).pipe(Effect.forkChild);
+          yield* TestClock.adjust(1);
+          expect(ctx.mockCollection.updateOne).not.toHaveBeenCalled();
+          claim.resolve(job);
+          yield* Fiber.join(interrupting);
+          expect(ctx.mockCollection.updateOne).toHaveBeenCalledExactlyOnceWith(
+            objectContainingMatcher({ claimId: "late-interrupted", claimedBy: ctx.instanceId }),
+            objectContainingMatcher({
+              $set: objectContainingMatcher({ status: JobStatus.PENDING }),
+            }),
+          );
+          expect({
+            executions: handler.mock.calls.length,
+            active: ctx.admission.activeJobs(),
+          }).toStrictEqual({ executions: 0, active: [] });
+        } finally {
+          claim.resolve(job);
+          yield* Fiber.interrupt(polling);
+        }
+      }),
+    );
+
     it.effect("releases an obsolete in-flight Claim and runs the current repoll", () =>
       Effect.gen(function* replaceRunDuringClaim() {
+        processor = yield* makeProcessor();
         const handler = vi.fn<WorkerRegistration["handler"]>();
         ctx.admission.register("email", handler);
         ctx.admission.register("sms", handler);
@@ -139,6 +247,7 @@ describe(JobProcessor, () => {
 
     it.effect("does not claim after its run closes while discovery is awaiting MongoDB", () =>
       Effect.gen(function* stopDuringDiscovery() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("email", createWorker());
         const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const pending = Promise.withResolvers<{ _id: string; nextRunAt: Date }[]>();
@@ -163,6 +272,8 @@ describe(JobProcessor, () => {
     );
     it.effect("discovers an idle collection once without probing every registered name", () =>
       Effect.gen(function* effectWorkflow1() {
+        processor = yield* makeProcessor();
+
         for (let i = 0; i < 100; i += 1) {
           ctx.registerWorker(`worker-${i}`, createWorker());
         }
@@ -186,6 +297,7 @@ describe(JobProcessor, () => {
     );
     it.effect("arms persisted future deadlines without trying to claim them early", () =>
       Effect.gen(function* effectWorkflow2() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("work", createWorker());
         const runAt = new Date(Date.now() + 5000);
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
@@ -205,6 +317,8 @@ describe(JobProcessor, () => {
       "keeps binary notifications targeted without a preliminary discovery read, locale: %s",
       (locale) =>
         Effect.gen(function* effectWorkflow3() {
+          processor = yield* makeProcessor();
+
           for (const name of ["work", "unrelated"]) {
             ctx.registerWorker(name, createWorker());
           }
@@ -232,6 +346,7 @@ describe(JobProcessor, () => {
       "does not retry jobs already claimed on the primary, targeted poll: %s",
       (targeted) =>
         Effect.gen(function* effectWorkflow4() {
+          processor = yield* makeProcessor();
           ctx.registerWorker("work", createWorker());
           const staleJob = { _id: "work", nextRunAt: new Date(0) };
           vi.mocked(ctx.mockCollection.aggregate).mockImplementation((_pipeline, options) =>
@@ -267,6 +382,7 @@ describe(JobProcessor, () => {
     );
     it.effect("does not turn failed claims into immediate retry notifications", () =>
       Effect.gen(function* effectWorkflow5() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("work", createWorker());
         vi.mocked(ctx.mockCollection.findOneAndUpdate).mockRejectedValue(
           new Error("Write unavailable"),
@@ -281,6 +397,7 @@ describe(JobProcessor, () => {
     );
     it.effect("falls back to atomic claims when discovery fails", () =>
       Effect.gen(function* effectWorkflow6() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("work", createWorker());
         const error = new Error("Read unavailable");
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
@@ -299,6 +416,7 @@ describe(JobProcessor, () => {
       "keeps atomic discovery when indexed discovery is unsafe: %s",
       (reason) =>
         Effect.gen(function* effectWorkflow7() {
+          processor = yield* makeProcessor();
           ctx.registerWorker("work", createWorker());
           const metadata = vi.mocked(ctx.mockCollection.options);
 
@@ -331,6 +449,8 @@ describe(JobProcessor, () => {
       "discovers registered names from case-variant notifications with %s",
       (reason) =>
         Effect.gen(function* effectWorkflow8() {
+          processor = yield* makeProcessor();
+
           for (const name of ["email", "unrelated"]) {
             ctx.registerWorker(name, createWorker());
           }
@@ -367,6 +487,7 @@ describe(JobProcessor, () => {
       "uses an available collation-equivalent worker when the notified worker is full",
       () =>
         Effect.gen(function* effectWorkflow9() {
+          processor = yield* makeProcessor();
           const job = JobFactoryHelpers.processing({ name: "EMAIL" });
           ctx.registerWorker(
             "EMAIL",
@@ -383,6 +504,7 @@ describe(JobProcessor, () => {
     );
     it.effect.each(["stop", "pause"])("does not claim after %s during discovery", (action) =>
       Effect.gen(function* effectWorkflow10() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("work", createWorker());
 
         const discovery = yield* Deferred.make<
@@ -411,9 +533,9 @@ describe(JobProcessor, () => {
         yield* Deferred.await(discovering);
 
         if (action === "stop") {
-          vi.mocked(ctx.isRunning).mockReturnValue(false);
+          ctx.admission.stop();
         } else {
-          vi.mocked(ctx.isPaused).mockReturnValue(true);
+          ctx.admission.pause();
         }
 
         yield* Deferred.succeed(discovery, [{ _id: "work", nextRunAt: new Date(0) }]);
@@ -427,9 +549,8 @@ describe(JobProcessor, () => {
         const releaseError = new Error("Release failed");
 
         return Effect.gen(function* effectWorkflow11() {
-          const lifecycle = new JobLifecycle(ctx);
-          processor = new JobProcessor(ctx, lifecycle);
-          const acquisition = yield* Deferred.make<PersistedJob | null>();
+          processor = yield* makeProcessor();
+          const acquisition = Promise.withResolvers<PersistedJob | null>();
           const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
           const claimed = JobFactoryHelpers.processing({ name: "work" });
 
@@ -439,28 +560,26 @@ describe(JobProcessor, () => {
 
           ctx.registerWorker("work", createWorker({ handler }));
 
-          const claim = vi
-            .spyOn(lifecycle, "claimNext")
-            .mockReturnValueOnce(
-              Deferred.succeed(acquiring, undefined).pipe(
-                Effect.andThen(Deferred.await(acquisition)),
-              ),
-            );
+          const claim = ctx.mockCollection.findOneAndUpdate.mockImplementationOnce(async () => {
+            Deferred.doneUnsafe(acquiring, Effect.void);
 
-          const release = vi.spyOn(lifecycle, "releaseOwnedClaim").mockReturnValue(Effect.void);
+            return await acquisition.promise;
+          });
+
+          const release = ctx.mockCollection.updateOne;
 
           if (releaseFails) {
-            release.mockReturnValue(Effect.fail(releaseError));
+            release.mockRejectedValue(releaseError);
           }
 
           const polling = yield* Effect.forkChild(processor.poll());
           yield* Deferred.await(acquiring);
           expect(vi.mocked(claim).mock.calls.length).toBeGreaterThan(0);
-          vi.mocked(ctx.isPaused).mockReturnValue(true);
-          yield* Deferred.succeed(acquisition, claimed);
+          ctx.admission.pause();
+          acquisition.resolve(claimed);
           yield* Fiber.join(polling);
           expect(handler).not.toHaveBeenCalled();
-          expect(release).toHaveBeenCalledExactlyOnceWith(claimed);
+          expect(release).toHaveBeenCalledOnce();
 
           if (releaseFails) {
             expect(ctx.emit).toHaveBeenCalledWith("job:error", {
@@ -473,6 +592,7 @@ describe(JobProcessor, () => {
     );
     it.effect("continues processing after a job:start listener throws with one global slot", () =>
       Effect.gen(function* effectWorkflow12() {
+        processor = yield* makeProcessor();
         ctx.options.instanceConcurrency = 1;
         const first = JobFactoryHelpers.processing({ name: "test-job" });
         const next = JobFactoryHelpers.processing({ name: "test-job" });
@@ -513,15 +633,44 @@ describe(JobProcessor, () => {
         });
       }),
     );
+    it.effect(
+      "does not issue another Claim after a synchronous start listener pauses its Worker",
+      () =>
+        Effect.gen(function* pauseBetweenClaimBatches() {
+          processor = yield* makeProcessor();
+          ctx.admission.register("work", () => {}, { concurrency: 5 });
+          ctx.emit.mockImplementation((event) => {
+            if (event === "job:start") {
+              ctx.admission.pause("work");
+            }
+
+            return true;
+          });
+          const finished = observeJobCompletion();
+          ctx.mockCollection.findOneAndUpdate
+            .mockResolvedValueOnce(JobFactoryHelpers.processing({ name: "work" }))
+            .mockResolvedValue(null);
+          yield* processor.poll(new Set(["work"]));
+          yield* finished;
+          expect(
+            ctx.mockCollection.findOneAndUpdate.mock.calls.filter(
+              ([filter]) => filter["status"] === JobStatus.PENDING,
+            ),
+          ).toHaveLength(1);
+        }),
+    );
+
     it.effect("should not poll if scheduler is not running", () =>
       Effect.gen(function* effectWorkflow13() {
-        vi.spyOn(ctx, "isRunning").mockReturnValue(false);
+        processor = yield* makeProcessor();
+        ctx.admission.stop();
         yield* processor.poll();
         expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
       }),
     );
     it.effect("should poll for each registered worker with available capacity", () =>
       Effect.gen(function* effectWorkflow14() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("test-job", createWorker({ concurrency: 2 }));
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate").mockResolvedValue(null);
         yield* processor.poll();
@@ -530,6 +679,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should skip workers at max concurrency", () =>
       Effect.gen(function* effectWorkflow15() {
+        processor = yield* makeProcessor();
         const job = JobFactory.build();
         ctx.registerWorker(
           "test-job",
@@ -553,6 +703,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should exit early when instanceConcurrency is reached", () =>
       Effect.gen(function* effectWorkflow16() {
+        processor = yield* makeProcessor();
         ctx.options.instanceConcurrency = 2;
         const job1 = JobFactory.build({ name: "worker-1" });
         const job2 = JobFactory.build({ name: "worker-2" });
@@ -590,6 +741,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should limit job acquisition to available global slots", () =>
       Effect.gen(function* effectWorkflow17() {
+        processor = yield* makeProcessor();
         ctx.options.instanceConcurrency = 3;
         const seedJob = JobFactory.build({ name: "worker-1" });
         const newJob = JobFactory.build({ name: "worker-2" });
@@ -608,6 +760,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should stop acquiring jobs when global limit is reached mid-poll", () =>
       Effect.gen(function* effectWorkflow18() {
+        processor = yield* makeProcessor();
         ctx.options.instanceConcurrency = 2;
         const newJob1 = JobFactory.build({ name: "test-job" });
         const newJob2 = JobFactory.build({ name: "test-job" });
@@ -633,6 +786,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should stop claiming after an empty result even with high concurrency", () =>
       Effect.gen(function* effectWorkflow19() {
+        processor = yield* makeProcessor();
         // instanceConcurrency is undefined by default
         expect(ctx.options.instanceConcurrency).toBeUndefined();
         ctx.registerWorker("test-job", createWorker({ concurrency: 100 }));
@@ -643,6 +797,7 @@ describe(JobProcessor, () => {
     );
     it.effect("fills available slots when jobs are waiting", () =>
       Effect.gen(function* effectWorkflow20() {
+        processor = yield* makeProcessor();
         const jobs = Array.from({ length: 8 }, () => JobFactoryHelpers.processing());
 
         const { promise: handlerPromise, resolve: finishHandlers }: PromiseWithResolvers<void> =
@@ -673,6 +828,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should re-poll when a poll request arrives while already polling", () =>
       Effect.gen(function* effectWorkflow21() {
+        processor = yield* makeProcessor();
         ctx.registerWorker("test-job", createWorker({ concurrency: 1 }));
         const acquisition = yield* Deferred.make<null>();
         const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
@@ -714,6 +870,8 @@ describe(JobProcessor, () => {
       "retains overlapping discovery scope, full requested: %s",
       (full) =>
         Effect.gen(function* effectWorkflow22() {
+          processor = yield* makeProcessor();
+
           for (const name of ["first", "second", "unrelated"]) {
             ctx.registerWorker(name, createWorker());
           }
@@ -752,6 +910,8 @@ describe(JobProcessor, () => {
     );
     it.effect("bounds overlapping notifications with full discovery, then restores targeting", () =>
       Effect.gen(function* effectWorkflow23() {
+        processor = yield* makeProcessor();
+
         for (const name of ["first", "second", "unrelated"]) {
           ctx.registerWorker(name, createWorker());
         }
@@ -800,8 +960,60 @@ describe(JobProcessor, () => {
     );
   });
   describe("worker execution through poll", () => {
+    it.effect("drains only its captured executions and retains a later timed-out execution", () =>
+      Effect.gen(function* drainExecutionGenerations() {
+        processor = yield* makeProcessor();
+        const first = JobFactoryHelpers.processing({ name: "work", claimId: "first" });
+        const second = JobFactoryHelpers.processing({ name: "work", claimId: "second" });
+        const releaseFirst = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const releaseSecond = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        ctx.admission.register(
+          "work",
+          async (job) => {
+            await (job.claimId === "first" ? releaseFirst.promise : releaseSecond.promise);
+          },
+          { concurrency: 2 },
+        );
+        ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(first).mockResolvedValue(null);
+
+        try {
+          yield* processor.poll(new Set(["work"]));
+          const original = processor.captureDrain();
+          const stopping = yield* original.await(1000).pipe(Effect.forkChild);
+          ctx.admission.stop();
+          ctx.admission.start();
+          ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(second);
+          yield* processor.poll(new Set(["work"]));
+          releaseFirst.resolve();
+          expect({
+            drained: yield* Fiber.join(stopping),
+            incomplete: original.incompleteJobs(),
+          }).toStrictEqual({ drained: true, incomplete: [] });
+          const later = processor.captureDrain();
+          const laterStop = yield* later.await(1000).pipe(Effect.forkChild);
+          yield* TestClock.adjust(1000);
+          expect({
+            drained: yield* Fiber.join(laterStop),
+            incomplete: later.incompleteJobs(),
+            slots: ctx.admission.availableSlots("work"),
+          }).toStrictEqual({ drained: false, incomplete: [second], slots: 1 });
+          const finished = observeJobCompletion();
+          releaseSecond.resolve();
+          yield* finished;
+          expect({
+            incomplete: later.incompleteJobs(),
+            slots: ctx.admission.availableSlots("work"),
+          }).toStrictEqual({ incomplete: [], slots: 2 });
+        } finally {
+          releaseFirst.resolve();
+          releaseSecond.resolve();
+        }
+      }),
+    );
+
     it.effect("includes payload validation but excludes persistence from job duration", () =>
       Effect.gen(function* effectWorkflow24() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
         const completedJob = { ...job, status: JobStatus.COMPLETED };
 
@@ -873,10 +1085,12 @@ describe(JobProcessor, () => {
       "measures Promise handler elapsed time when wall time shifts by %i ms",
       (shift) =>
         Effect.gen(function* effectWorkflow25() {
+          processor = yield* makeProcessor();
           const testClock = yield* TestClock.testClockWith(Effect.succeed);
           const clock = yield* Clock.Clock;
           let offset = 0;
           yield* Effect.gen(function* effectWorkflow26() {
+            processor = yield* makeProcessor();
             yield* testClock.setTime(10_000);
             const job = JobFactoryHelpers.processing();
 
@@ -932,6 +1146,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should execute handler and emit job:start and job:complete events", () =>
       Effect.gen(function* effectWorkflow27() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
 
         const completedJob = JobFactoryHelpers.completed({
@@ -962,6 +1177,7 @@ describe(JobProcessor, () => {
       "should emit job:complete with the actual DB document, not the stale in-memory job",
       () =>
         Effect.gen(function* effectWorkflow28() {
+          processor = yield* makeProcessor();
           const job = JobFactoryHelpers.processing();
 
           const completedJob = JobFactoryHelpers.completed({
@@ -1000,6 +1216,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should call failJob and emit job:fail on handler error", () =>
       Effect.gen(function* effectWorkflow29() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing({ failCount: 0 });
 
         const failedJob = JobFactoryHelpers.pending({
@@ -1038,6 +1255,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should coerce non-Error thrown values to Error objects", () =>
       Effect.gen(function* effectWorkflow30() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing({ failCount: 0 });
 
         const failedJob = JobFactoryHelpers.pending({
@@ -1078,6 +1296,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should track job in activeJobs during processing and remove after", () =>
       Effect.gen(function* effectWorkflow31() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
 
         const completedJob = JobFactoryHelpers.completed({
@@ -1105,6 +1324,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should not emit job:complete when completeJob returns null (race condition)", () =>
       Effect.gen(function* effectWorkflow32() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
         const worker = createWorker();
         // completeJob returns null (job was deleted or status changed concurrently)
@@ -1124,6 +1344,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should not emit job:fail when failJob returns null (race condition)", () =>
       Effect.gen(function* effectWorkflow33() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing({ failCount: 0 });
 
         const worker = createWorker({
@@ -1149,6 +1370,7 @@ describe(JobProcessor, () => {
       "should derive willRetry from actual DB status (PENDING = retry, FAILED = no retry)",
       () =>
         Effect.gen(function* effectWorkflow34() {
+          processor = yield* makeProcessor();
           // Case 1: Job will retry (status reset to PENDING)
           const job1 = JobFactoryHelpers.processing({ failCount: 0 });
 
@@ -1221,6 +1443,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should still remove job from activeJobs even when transition returns null", () =>
       Effect.gen(function* effectWorkflow35() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
         const worker = createWorker();
         vi.spyOn(ctx.mockCollection, "findOneAndUpdate")
@@ -1241,6 +1464,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should call notifyJobFinished after successful completion", () =>
       Effect.gen(function* effectWorkflow36() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing();
 
         const completedJob = JobFactoryHelpers.completed({
@@ -1268,6 +1492,7 @@ describe(JobProcessor, () => {
     );
     it.effect("should call notifyJobFinished after failure", () =>
       Effect.gen(function* effectWorkflow37() {
+        processor = yield* makeProcessor();
         const job = JobFactoryHelpers.processing({ failCount: 0 });
 
         const failedJob = JobFactoryHelpers.pending({
@@ -1304,6 +1529,7 @@ describe(JobProcessor, () => {
   describe("instance capacity", () => {
     it.effect("caps acquisitions at instanceConcurrency", () =>
       Effect.gen(function* effectWorkflow41() {
+        processor = yield* makeProcessor();
         ctx.options.instanceConcurrency = 2;
         ctx.registerWorker("test-job", createWorker({ concurrency: 10 }));
         const job1 = JobFactory.build({ name: "test-job" });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { Cause, Context, Deferred, Effect, Layer, ManagedRuntime, Option } from "effect";
+import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
 import { ObjectId } from "mongodb";
 import type { Collection, Db, Document, WithId } from "mongodb";
 
@@ -30,6 +30,7 @@ import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
+import { JobExecution } from "./services/job-execution.js";
 import type { JobManager } from "./services/job-manager.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
@@ -142,8 +143,7 @@ export class Monque extends EventEmitter {
   private readonly options: ResolvedMonqueOptions;
   private collection: Collection | null = null;
   readonly #admission: WorkerAdmissionState;
-  /** Each shutdown tracks its own in-progress jobs across synchronous restarts. */
-  readonly #drainChecks = new Set<() => void>();
+  /** Each shutdown retains the maintenance handle of its original processing run. */
   #maintenanceRun: MaintenanceRun | undefined;
   /** Published together after initialization succeeds. */
   #initialized: {
@@ -1147,10 +1147,8 @@ export class Monque extends EventEmitter {
   }
   readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
     const maintenanceRun = this.#maintenanceRun;
-    const drainingJobs = new Set(this.#admission.activeJobs());
-
-    const getIncompleteJobs = () =>
-      this.#admission.activeJobs().filter((job) => drainingJobs.has(job));
+    const execution = yield* JobExecution;
+    const drain = execution.captureDrain();
 
     const { notifications, queries: query, streams } = yield* SchedulerServices;
 
@@ -1162,34 +1160,14 @@ export class Monque extends EventEmitter {
     this.#admission.stop();
     query.clearStatsCache();
     yield* streams.close().pipe(Effect.ignoreCause);
-    let timedOut = false;
-
-    if (getIncompleteJobs().length > 0) {
-      const drain = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
-
-      const checkDrain = () => {
-        if (getIncompleteJobs().length === 0) {
-          Deferred.doneUnsafe(drain, Effect.void);
-        }
-      };
-
-      this.#drainChecks.add(checkDrain);
-      checkDrain();
-
-      const result = yield* Deferred.await(drain).pipe(
-        Effect.timeoutOption(this.options.shutdownTimeout),
-        Effect.ensuring(Effect.sync(() => this.#drainChecks.delete(checkDrain))),
-      );
-
-      timedOut = Option.isNone(result);
-    }
+    const drained = yield* drain.await(this.options.shutdownTimeout);
 
     if (maintenanceRun) {
       yield* maintenanceRun.stop;
     }
 
-    if (timedOut) {
-      const incompleteJobs = getIncompleteJobs();
+    if (!drained) {
+      const incompleteJobs = drain.incompleteJobs();
 
       const error = new ShutdownTimeoutError(
         `Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
@@ -1268,16 +1246,12 @@ export class Monque extends EventEmitter {
     );
   }
   /**
-   * Wake polling when local capacity is freed and check each shutdown's drain.
+   * Wake polling when local capacity is freed.
    *
    * @private
    */
   private onJobFinished(name: string): void {
     this.#initialized?.services.notifications.notifyRunnableJob(name);
-
-    for (const checkDrain of this.#drainChecks) {
-      checkDrain();
-    }
   }
   /**
    * Type-safe event emitter methods
