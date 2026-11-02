@@ -1078,11 +1078,29 @@ export class Monque extends EventEmitter {
 
     const { services } = this.#initialized;
     this.#admission.start();
+    const { generation } = this.#admission;
+    const isCurrent = () => this.#admission.running && this.#admission.generation === generation;
     // Set up change streams as the primary notification mechanism
     services.streams.setup();
+
+    if (!isCurrent()) {
+      return;
+    }
+
     services.notifications.start();
-    // Start heartbeat and retention timers
-    this.#maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (!isCurrent()) {
+      return;
+    }
+
+    // Start heartbeat and retention timers. Immediate maintenance can reenter too.
+    const maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (isCurrent()) {
+      this.#maintenanceRun = maintenanceRun;
+    } else {
+      this.#runtime.runSync(maintenanceRun.stop);
+    }
   }
   /**
    * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
