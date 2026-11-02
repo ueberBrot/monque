@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Scope } from "effect";
 import { JobOwnership } from "./job-ownership.js";
 import { JobProcessor } from "./job-processor.js";
 import type { ExecutionDependencies, ExecutionDrain } from "./job-processor.js";
+import { makeOperationTelemetry } from "./operation-telemetry.js";
 import { WorkerAdmission } from "./worker-admission.js";
 
 export class JobExecution extends Context.Service<
@@ -18,14 +19,18 @@ export class JobExecution extends Context.Service<
 
 export const makeJobExecution = Effect.fnUntraced(function* makeJobExecution(
   dependencies: ExecutionDependencies,
+  telemetry: ReturnType<typeof makeOperationTelemetry> = makeOperationTelemetry(),
 ) {
   return new JobProcessor(
     dependencies,
     yield* JobOwnership,
     yield* WorkerAdmission,
     yield* Scope.Scope,
+    telemetry,
   );
 });
 
-export const makeJobExecutionLayer = (dependencies: ExecutionDependencies) =>
-  Layer.effect(JobExecution, makeJobExecution(dependencies));
+export const makeJobExecutionLayer = (
+  dependencies: ExecutionDependencies,
+  telemetry: ReturnType<typeof makeOperationTelemetry> = makeOperationTelemetry(),
+) => Layer.effect(JobExecution, makeJobExecution(dependencies, telemetry));

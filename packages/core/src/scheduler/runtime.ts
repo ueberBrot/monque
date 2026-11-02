@@ -13,6 +13,7 @@ import type { JobPersistence } from "./services/job-persistence.js";
 import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { makeSchedulerMaintenance } from "./services/lifecycle-manager.js";
 import type { SchedulerMaintenance } from "./services/lifecycle-manager.js";
+import { OperationTelemetry, makeOperationTelemetryLayer } from "./services/operation-telemetry.js";
 import { makePendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { PendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { SchedulerContext } from "./services/types.js";
@@ -93,23 +94,31 @@ export const makeSchedulerLayer = (
   persistence: Layer.Layer<JobPersistence, unknown> = makeNativeJobPersistenceLayer(
     environment.collection,
   ),
+  telemetryLayer = makeOperationTelemetryLayer,
 ) =>
-  Layer.mergeAll(
-    makeLegacySchedulerLayer(environment),
-    persistence,
-    makeJobManagementLayer(environment),
-    makeNativeJobIntakeLayer(environment),
-  ).pipe(
-    Layer.provideMerge(makeJobExecutionLayer(environment)),
-    Layer.provideMerge(
-      Layer.mergeAll(
-        Layer.succeed(WorkerAdmission, environment.admission),
-        makeNativeJobOwnershipLayer(
-          environment.collection,
-          environment.instanceId,
-          environment.options,
+  Layer.unwrap(
+    Effect.gen(function* composeScheduler() {
+      const telemetry = yield* OperationTelemetry;
+
+      return Layer.mergeAll(
+        makeLegacySchedulerLayer(environment),
+        persistence,
+        makeJobManagementLayer(environment),
+        makeNativeJobIntakeLayer(environment, telemetry),
+      ).pipe(
+        Layer.provideMerge(makeJobExecutionLayer(environment, telemetry)),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(WorkerAdmission, environment.admission),
+            makeNativeJobOwnershipLayer(
+              environment.collection,
+              environment.instanceId,
+              environment.options,
+              telemetry,
+            ),
+            makeJobQueriesLayer(environment),
+          ),
         ),
-        makeJobQueriesLayer(environment),
-      ),
-    ),
-  );
+      );
+    }),
+  ).pipe(Layer.provideMerge(telemetryLayer));
