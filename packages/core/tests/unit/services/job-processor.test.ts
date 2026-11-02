@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
 import type { PersistedJob } from "@/jobs";
+import { JobDiscovery } from "@/scheduler/services/job-discovery.js";
 import { JobLifecycle } from "@/scheduler/services/job-lifecycle.js";
 import { JobProcessor } from "@/scheduler/services/job-processor.js";
 import type { WorkerRegistration } from "@/workers";
@@ -58,6 +59,7 @@ describe(JobProcessor, () => {
     // Discovery may race another instance's claims; acquisition fixtures remain authoritative.
     vi.mocked(ctx.mockCollection.aggregate).mockImplementation(() =>
       fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>({
+        close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
         toArray: nativeAsyncMock<FindCursor["toArray"]>(() =>
           [...ctx.workers.keys()].map((name) => ({ _id: name, nextRunAt: new Date(0) })),
         ),
@@ -68,7 +70,97 @@ describe(JobProcessor, () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
+  it.effect("closes its cursor without reporting an error when its run is interrupted", () =>
+    Effect.gen(function* interruptDiscovery() {
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const close = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+      vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+        fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+          toArray: async () => {
+            Deferred.doneUnsafe(started, Effect.void);
+
+            return await Promise.withResolvers<never>().promise;
+          },
+          close,
+        }),
+      );
+      const discovery = new JobDiscovery(ctx);
+      const poll = yield* Effect.forkChild(discovery.discoverDue(new Set(["email"])));
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(poll);
+      expect(close).toHaveBeenCalledOnce();
+      expect(ctx.emitHistory).toStrictEqual([]);
+    }),
+  );
   describe("poll", () => {
+    it.effect("releases an obsolete in-flight Claim and runs the current repoll", () =>
+      Effect.gen(function* replaceRunDuringClaim() {
+        const handler = vi.fn<WorkerRegistration["handler"]>();
+        ctx.admission.register("email", handler);
+        ctx.admission.register("sms", handler);
+        const claimed = JobFactoryHelpers.processing({ name: "email", claimId: "obsolete" });
+        const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const acquisition = Promise.withResolvers<PersistedJob>();
+        ctx.mockCollection.findOneAndUpdate
+          .mockImplementationOnce(async () => {
+            Deferred.doneUnsafe(acquiring, Effect.void);
+
+            return await acquisition.promise;
+          })
+          .mockResolvedValue(null);
+        let oldCurrent = true;
+
+        const poll = yield* processor
+          .poll(new Set(["email"]), () => oldCurrent)
+          .pipe(Effect.forkChild);
+
+        yield* Deferred.await(acquiring);
+        oldCurrent = false;
+
+        yield* processor.poll(new Set(["sms"]), () => true);
+        acquisition.resolve(claimed);
+        yield* Fiber.join(poll);
+        expect(handler).not.toHaveBeenCalled();
+        expect(
+          ctx.mockCollection.findOneAndUpdate.mock.calls
+            .filter(([filter]) => filter["status"] === JobStatus.PENDING)
+            .map(([filter]) => claimName(filter)),
+        ).toStrictEqual(["email", "sms"]);
+        expect(ctx.mockCollection.updateOne).toHaveBeenCalledExactlyOnceWith(
+          objectContainingMatcher({
+            status: JobStatus.PROCESSING,
+            claimedBy: ctx.instanceId,
+            claimId: "obsolete",
+          }),
+          objectContainingMatcher({ $set: objectContainingMatcher({ status: JobStatus.PENDING }) }),
+        );
+      }),
+    );
+
+    it.effect("does not claim after its run closes while discovery is awaiting MongoDB", () =>
+      Effect.gen(function* stopDuringDiscovery() {
+        ctx.registerWorker("email", createWorker());
+        const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const pending = Promise.withResolvers<{ _id: string; nextRunAt: Date }[]>();
+        vi.mocked(ctx.mockCollection.aggregate).mockReturnValueOnce(
+          fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+            close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+            toArray: async () => {
+              Deferred.doneUnsafe(started, Effect.void);
+
+              return await pending.promise;
+            },
+          }),
+        );
+        let current = true;
+        const poll = yield* Effect.forkChild(processor.poll(undefined, () => current));
+        yield* Deferred.await(started);
+        current = false;
+        pending.resolve([{ _id: "email", nextRunAt: new Date(0) }]);
+        yield* Fiber.join(poll);
+        expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+      }),
+    );
     it.effect("discovers an idle collection once without probing every registered name", () =>
       Effect.gen(function* effectWorkflow1() {
         for (let i = 0; i < 100; i += 1) {
@@ -77,6 +169,7 @@ describe(JobProcessor, () => {
 
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
           fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+            close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
             toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockResolvedValue([]),
           }),
         );
@@ -97,6 +190,7 @@ describe(JobProcessor, () => {
         const runAt = new Date(Date.now() + 5000);
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
           fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+            close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
             toArray: vi
               .fn<MockFunction<FindCursor["toArray"]>>()
               .mockResolvedValue([{ _id: "work", nextRunAt: runAt }]),
@@ -142,6 +236,7 @@ describe(JobProcessor, () => {
           const staleJob = { _id: "work", nextRunAt: new Date(0) };
           vi.mocked(ctx.mockCollection.aggregate).mockImplementation((_pipeline, options) =>
             fromAny<ReturnType<typeof ctx.mockCollection.aggregate>, unknown>({
+              close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
               toArray: nativeAsyncMock<FindCursor["toArray"]>(() =>
                 options?.readPreference === "primary" &&
                 ReadConcern.fromOptions(options)?.level === "local"
@@ -190,6 +285,7 @@ describe(JobProcessor, () => {
         const error = new Error("Read unavailable");
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
           fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+            close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
             toArray: vi.fn<MockFunction<FindCursor["toArray"]>>().mockRejectedValue(error),
           }),
         );
@@ -300,6 +396,7 @@ describe(JobProcessor, () => {
         const runPromise = Effect.runPromiseWith(yield* Effect.context());
         vi.mocked(ctx.mockCollection.aggregate).mockReturnValue(
           fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+            close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
             toArray: vi.fn<MockFunction<FindCursor["toArray"]>>(
               async () =>
                 await runPromise(
