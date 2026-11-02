@@ -1,10 +1,20 @@
-import { Collection, MongoServerError } from "mongodb";
+import { Collection, MongoError, MongoServerError } from "mongodb";
 import type { Db } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { Monque } from "@/scheduler";
 import { getMongoClient } from "@tests/setup/mongodb";
 import { cleanupTestDb, getTestDb, waitFor } from "@tests/setup/test-utils";
+
+// Runs synchronously inside withTransaction, before the driver inspects the rejection.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Assert the exact unknown rejection at the native transaction callback boundary before the driver handles it.
+const assertNativeTransactionFailure = (failure: unknown, original: MongoServerError) => {
+  expect({
+    original: Object.is(failure, original),
+    nativeClass: failure instanceof MongoError,
+    retryable: failure instanceof MongoError && failure.hasErrorLabel("TransientTransactionError"),
+  }).toStrictEqual({ original: true, nativeClass: true, retryable: true });
+};
 
 describe("transactional intake", () => {
   let db: Db;
@@ -93,6 +103,34 @@ describe("transactional intake", () => {
     ).resolves.toBe(0);
   });
 
+  it.each([new Error("Caller aborted"), { reason: "Caller aborted" }])(
+    "preserves the caller transaction callback rejection %j without retrying",
+    async (failure) => {
+      let attempts = 0;
+      const client = await getMongoClient();
+      await client.withSession(async (session) => {
+        await expect(
+          session.withTransaction(async () => {
+            attempts += 1;
+            await db.collection("orders").insertOne({ reference: "caller-abort" }, { session });
+            await monque.enqueue("work", {}, { session });
+            await monque.now("work", {}, { session });
+            await monque.enqueueMany([{ name: "work", data: {} }], { session });
+            await monque.schedule("@daily", "work", {}, { session, timezone: "UTC" });
+            // oxlint-disable-next-line typescript/only-throw-error -- Caller callbacks may reject with arbitrary JavaScript values.
+            throw failure;
+          }),
+        ).rejects.toBe(failure);
+        expect(session.hasEnded).toBe(false);
+      });
+      expect({
+        attempts,
+        orders: await db.collection("orders").countDocuments(),
+        jobs: await monque.getJobs(),
+      }).toStrictEqual({ attempts: 1, orders: 0, jobs: [] });
+    },
+  );
+
   it("rolls back all jobs and business data when a batch write fails", async () => {
     await db.command({ collMod: "monque_jobs", validator: { "data.reject": { $ne: true } } });
     const client = await getMongoClient();
@@ -157,7 +195,7 @@ describe("transactional intake", () => {
     await expect(monque.getJobs()).resolves.toMatchObject([{ priority: 9 }]);
   });
 
-  it.each(["batch", "recurring"] as const)(
+  it.each(["enqueue", "immediate", "batch", "recurring"] as const)(
     "preserves native transaction retry labels for prioritized %s writes",
     async (kind) => {
       const transient = new MongoServerError({
@@ -168,7 +206,7 @@ describe("transactional intake", () => {
 
       if (kind === "batch") {
         vi.spyOn(Collection.prototype, "bulkWrite").mockRejectedValueOnce(transient);
-      } else {
+      } else if (kind === "recurring") {
         vi.spyOn(Collection.prototype, "findOneAndUpdate").mockRejectedValueOnce(transient);
       }
 
@@ -180,16 +218,32 @@ describe("transactional intake", () => {
           attempts += 1;
           await monque.now("transaction-companion", {}, { session, priority: -1 });
 
+          if (attempts === 1 && (kind === "enqueue" || kind === "immediate")) {
+            vi.spyOn(Collection.prototype, "insertOne").mockRejectedValueOnce(transient);
+          }
+
           try {
-            await (kind === "batch"
-              ? monque.enqueueMany([{ name: "work", data: {}, priority: 17 }], { session })
-              : monque.schedule(
-                  "0 9 * * *",
-                  "work",
-                  {},
-                  { session, priority: 17, uniqueKey: "recurring" },
-                ));
+            if (kind === "enqueue") {
+              await monque.enqueue("work", {}, { session, priority: 17 });
+            } else if (kind === "immediate") {
+              await monque.now("work", {}, { session, priority: 17 });
+            } else if (kind === "batch") {
+              await monque.enqueueMany([{ name: "work", data: {}, priority: 17 }], { session });
+            } else {
+              await monque.schedule(
+                "0 9 * * *",
+                "work",
+                {},
+                {
+                  session,
+                  priority: 17,
+                  uniqueKey: "recurring",
+                },
+              );
+            }
           } catch (error) {
+            // These assertions execute inside the driver's callback, before its retry decision.
+            assertNativeTransactionFailure(error, transient);
             caughtErrors.push(error);
             throw error;
           }

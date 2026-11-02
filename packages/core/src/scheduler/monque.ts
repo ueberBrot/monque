@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { Cause, Context, Deferred, Effect, Layer, ManagedRuntime, Option } from "effect";
+import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
 import { ObjectId } from "mongodb";
-import type { Collection, Db, Document, WithId } from "mongodb";
+import type { Collection, Db } from "mongodb";
 
 import type { MonqueEventMap } from "@/events";
-import { documentToPersistedJob, JobStatus } from "@/jobs";
+import { JobStatus } from "@/jobs";
 import type {
   BulkOperationResult,
   CursorOptions,
@@ -29,14 +29,16 @@ import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
-import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
-import type { JobManager } from "./services/job-manager.js";
+import { makeSchedulerLayer, ProcessingResources } from "./runtime.js";
+import { JobExecution } from "./services/job-execution.js";
+import { JobIntake } from "./services/job-intake.js";
+import { JobManagement } from "./services/job-manager.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
 import { JobQueries } from "./services/job-queries.js";
 import type { MaintenanceRun } from "./services/lifecycle-manager.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
-import type { ResolvedMonqueOptions, SchedulerContext } from "./services/types.js";
+import type { ResolvedMonqueOptions } from "./services/types.js";
 import { WorkerAdmissionState } from "./services/worker-admission.js";
 import type { MonqueOptions, ProcessingState } from "./types.js";
 import { validateOptions } from "./validate-options.js";
@@ -142,13 +144,12 @@ export class Monque extends EventEmitter {
   private readonly options: ResolvedMonqueOptions;
   private collection: Collection | null = null;
   readonly #admission: WorkerAdmissionState;
-  /** Each shutdown tracks its own in-progress jobs across synchronous restarts. */
-  readonly #drainChecks = new Set<() => void>();
+  /** Each shutdown retains the maintenance handle of its original processing run. */
   #maintenanceRun: MaintenanceRun | undefined;
   /** Published together after initialization succeeds. */
   #initialized: {
     runtime: SchedulerRuntime;
-    services: SchedulerServices["Service"];
+    services: ProcessingResources["Service"];
   } | null = null;
   #initialization: Promise<void> | null = null;
   constructor(db: Db, options: MonqueOptions = {}) {
@@ -234,17 +235,27 @@ export class Monque extends EventEmitter {
         async () =>
           await collection.updateMany({ priority: { $exists: false } }, { $set: { priority: 0 } }),
       );
-      const ctx = yield* attempt(() => this.buildContext());
 
       const runtime: SchedulerRuntime = ManagedRuntime.make(
-        makeSchedulerLayer(ctx, {
-          runFork: (effect) => runtime.runFork(effect),
+        makeSchedulerLayer({
+          collection,
+          options: this.options,
+          admission: this.#admission,
+          emit: (event, payload) => this.emit(event, payload),
+          notifyPendingJob: (name, nextRunAt) => {
+            if (this.#admission.running) {
+              this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
+            }
+          },
+          notifyJobFinished: (name) => {
+            this.onJobFinished(name);
+          },
         }).pipe(Layer.orDie),
       );
 
       candidate = runtime;
       const context = yield* runtime.contextEffect;
-      this.#initialized = { runtime, services: Context.get(context, SchedulerServices) };
+      this.#initialized = { runtime, services: Context.get(context, ProcessingResources) };
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
@@ -272,39 +283,6 @@ export class Monque extends EventEmitter {
     }
 
     return this.#initialized.runtime;
-  }
-  /**
-   * Build the shared context for internal services.
-   */
-  private buildContext(): SchedulerContext {
-    if (!this.collection) {
-      throw new ConnectionError("Collection not initialized");
-    }
-
-    return {
-      collection: this.collection,
-      options: this.options,
-      instanceId: this.options.schedulerInstanceId,
-      admission: this.#admission,
-      get workers() {
-        return this.admission.workers;
-      },
-      isRunning: () => this.#admission.running,
-      isPaused: (name?: string) => this.isPaused(name),
-      emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) =>
-        this.emit(event, payload),
-      notifyPendingJob: (name: string | undefined, nextRunAt: Date) => {
-        if (!this.#admission.running) {
-          return;
-        }
-
-        this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
-      },
-      notifyJobFinished: (name) => {
-        this.onJobFinished(name);
-      },
-      documentToPersistedJob: <T>(doc: WithId<Document>) => documentToPersistedJob<T>(doc),
-    };
   }
   /**
    * Create required MongoDB indexes for efficient job processing.
@@ -452,7 +430,11 @@ export class Monque extends EventEmitter {
    */
   async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.enqueue(name, data, options)),
+      JobIntake.use((intake) => intake.enqueue(name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -466,7 +448,11 @@ export class Monque extends EventEmitter {
     options: JobWriteOptions = {},
   ): Promise<EnqueueManyResult> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.enqueueMany(jobs, options)),
+      JobIntake.use((intake) => intake.enqueueMany(jobs, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -502,7 +488,11 @@ export class Monque extends EventEmitter {
    */
   async now<T>(name: string, data: T, options: NowOptions = {}): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.now(name, data, options)),
+      JobIntake.use((intake) => intake.now(name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   /**
@@ -562,11 +552,15 @@ export class Monque extends EventEmitter {
     options: ScheduleOptions = {},
   ): Promise<PersistedJob<T>> {
     return await this.#runtime.runPromise(
-      SchedulerServices.use(({ intake }) => intake.schedule(cron, name, data, options)),
+      JobIntake.use((intake) => intake.schedule(cron, name, data, options)).pipe(
+        Effect.mapError((failure) =>
+          failure instanceof JobPersistenceError ? failure.cause : failure,
+        ),
+      ),
     );
   }
   // ─────────────────────────────────────────────────────────────────────────────
-  // Public API - Job Management (delegates to JobManager)
+  // Public API - Job Management (delegates to JobManagement)
   // ─────────────────────────────────────────────────────────────────────────────
   /**
    * Cancel a pending or scheduled job.
@@ -585,8 +579,6 @@ export class Monque extends EventEmitter {
    * const job = await monque.enqueue('report', { type: 'daily' });
    * await monque.cancelJob(job._id.toString());
    * ```
-   *
-   * @see {@link JobManager.cancelJob}
    */
   async cancelJob(jobId: string): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.cancelJob(jobId));
@@ -608,8 +600,6 @@ export class Monque extends EventEmitter {
    *   await monque.retryJob(job._id.toString());
    * });
    * ```
-   *
-   * @see {@link JobManager.retryJob}
    */
   async retryJob(jobId: string): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.retryJob(jobId));
@@ -629,8 +619,6 @@ export class Monque extends EventEmitter {
    * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
    * await monque.rescheduleJob(jobId, nextHour);
    * ```
-   *
-   * @see {@link JobManager.rescheduleJob}
    */
   async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.rescheduleJob(jobId, runAt));
@@ -666,8 +654,6 @@ export class Monque extends EventEmitter {
    *   console.log('Job permanently removed');
    * }
    * ```
-   *
-   * @see {@link JobManager.deleteJob}
    */
   async deleteJob(jobId: string): Promise<boolean> {
     return await this.#runJobMutation((manager) => manager.deleteJob(jobId));
@@ -691,8 +677,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Cancelled ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.cancelJobs}
    */
   async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.cancelJobs(filter));
@@ -715,8 +699,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Retried ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.retryJobs}
    */
   async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.retryJobs(filter));
@@ -740,8 +722,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Deleted ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.deleteJobs}
    */
   async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.deleteJobs(filter));
@@ -1098,11 +1078,29 @@ export class Monque extends EventEmitter {
 
     const { services } = this.#initialized;
     this.#admission.start();
+    const { generation } = this.#admission;
+    const isCurrent = () => this.#admission.running && this.#admission.generation === generation;
     // Set up change streams as the primary notification mechanism
     services.streams.setup();
+
+    if (!isCurrent()) {
+      return;
+    }
+
     services.notifications.start();
-    // Start heartbeat and retention timers
-    this.#maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (!isCurrent()) {
+      return;
+    }
+
+    // Start heartbeat and retention timers. Immediate maintenance can reenter too.
+    const maintenanceRun = this.#runtime.runSync(services.timers.start);
+
+    if (isCurrent()) {
+      this.#maintenanceRun = maintenanceRun;
+    } else {
+      this.#runtime.runSync(maintenanceRun.stop);
+    }
   }
   /**
    * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
@@ -1147,12 +1145,11 @@ export class Monque extends EventEmitter {
   }
   readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
     const maintenanceRun = this.#maintenanceRun;
-    const drainingJobs = new Set(this.#admission.activeJobs());
+    const execution = yield* JobExecution;
+    const drain = execution.captureDrain();
 
-    const getIncompleteJobs = () =>
-      this.#admission.activeJobs().filter((job) => drainingJobs.has(job));
-
-    const { notifications, queries: query, streams } = yield* SchedulerServices;
+    const { notifications, streams } = yield* ProcessingResources;
+    const query = yield* JobQueries;
 
     if (maintenanceRun) {
       yield* maintenanceRun.beginDrain(this.options.leaseDuration !== undefined);
@@ -1162,34 +1159,14 @@ export class Monque extends EventEmitter {
     this.#admission.stop();
     query.clearStatsCache();
     yield* streams.close().pipe(Effect.ignoreCause);
-    let timedOut = false;
-
-    if (getIncompleteJobs().length > 0) {
-      const drain = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
-
-      const checkDrain = () => {
-        if (getIncompleteJobs().length === 0) {
-          Deferred.doneUnsafe(drain, Effect.void);
-        }
-      };
-
-      this.#drainChecks.add(checkDrain);
-      checkDrain();
-
-      const result = yield* Deferred.await(drain).pipe(
-        Effect.timeoutOption(this.options.shutdownTimeout),
-        Effect.ensuring(Effect.sync(() => this.#drainChecks.delete(checkDrain))),
-      );
-
-      timedOut = Option.isNone(result);
-    }
+    const drained = yield* drain.await(this.options.shutdownTimeout);
 
     if (maintenanceRun) {
       yield* maintenanceRun.stop;
     }
 
-    if (timedOut) {
-      const incompleteJobs = getIncompleteJobs();
+    if (!drained) {
+      const incompleteJobs = drain.incompleteJobs();
 
       const error = new ShutdownTimeoutError(
         `Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
@@ -1251,33 +1228,18 @@ export class Monque extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Invalidate query caches after every management mutation, including partial failures. */
   async #runJobMutation<T>(
-    operation: (manager: JobManager) => Effect.Effect<T, unknown>,
+    operation: (management: JobManagement["Service"]) => Effect.Effect<T, unknown>,
   ): Promise<T> {
-    return await this.#runtime.runPromise(
-      SchedulerServices.use(({ manager, queries }) =>
-        Effect.suspend(() => operation(manager)).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              queries.clearStatsCache();
-            }),
-          ),
-        ),
-      ),
-    );
+    return await this.#runtime.runPromise(JobManagement.use(operation));
   }
   /**
-   * Wake polling when local capacity is freed and check each shutdown's drain.
+   * Wake polling when local capacity is freed.
    *
    * @private
    */
   private onJobFinished(name: string): void {
     this.#initialized?.services.notifications.notifyRunnableJob(name);
-
-    for (const checkDrain of this.#drainChecks) {
-      checkDrain();
-    }
   }
   /**
    * Type-safe event emitter methods

@@ -1,29 +1,379 @@
+import { EventEmitter } from "node:events";
 import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import {
   Context,
   Deferred,
   Effect,
+  Exit,
   Fiber,
   Layer,
   ManagedRuntime,
   Result,
-  Exit,
   Scope,
 } from "effect";
 import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
+import type { ChangeStream } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
+import { JobManagement } from "@/scheduler/services/job-manager.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { JobQueries } from "@/scheduler/services/job-queries.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
-import { createMockContext, JobFactoryHelpers } from "@tests/factories";
+import { ConnectionError } from "@/shared";
+import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect("recovers before checking collisions and routes recovery synchronously", () =>
+    Effect.gen(function* initializeRecovery() {
+      const order: string[] = [];
+      const ctx = createMockContext();
+      ctx.mockCollection.updateMany.mockImplementationOnce(async () => {
+        order.push("recover");
+
+        return await Promise.resolve({
+          acknowledged: true,
+          matchedCount: 2,
+          modifiedCount: 2,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+      });
+      ctx.emit.mockImplementation((event) => {
+        order.push(event);
+
+        return true;
+      });
+      ctx.notifyPendingJob.mockImplementation((name, nextRunAt) => {
+        expect({ name, nextRunAt }).toStrictEqual({ name: undefined, nextRunAt: new Date(1234) });
+        order.push("pending");
+      });
+      ctx.mockCollection.findOne.mockImplementationOnce(async () => {
+        order.push("collision");
+
+        return await Promise.resolve(JobFactoryHelpers.processing({ name: "email" }));
+      });
+      yield* TestClock.setTime(1234);
+      const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.flip);
+      expect(order).toStrictEqual(["recover", "stale:recovered", "pending", "collision"]);
+      expect(ctx.emit).toHaveBeenCalledExactlyOnceWith("stale:recovered", { count: 2 });
+      expect(error).toBeInstanceOf(ConnectionError);
+      expect(error).toHaveProperty(
+        "message",
+        'Another active Monque instance is using schedulerInstanceId "test-instance-id". ' +
+          'Found processing job "email" with recent heartbeat. ' +
+          "Use a unique schedulerInstanceId or wait for the other instance to stop.",
+      );
+    }),
+  );
+
+  effectIt.effect.each(["native", "listener"] as const)(
+    "preserves %s recovery failure and allows a fresh initialization attempt",
+    (stage) =>
+      Effect.gen(function* retryRecovery() {
+        const ctx = createMockContext();
+        const failure = new Error("recovery failed");
+        ctx.mockCollection.updateMany.mockResolvedValue({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+
+        if (stage === "native") {
+          ctx.mockCollection.updateMany.mockRejectedValueOnce(failure);
+        } else {
+          ctx.emit.mockImplementationOnce(() => {
+            throw failure;
+          });
+        }
+
+        const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.scoped, Effect.flip);
+        expect(error).toBe(failure);
+        expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+        expect(ctx.mockCollection.findOne).not.toHaveBeenCalled();
+        ctx.mockCollection.findOne.mockResolvedValueOnce(null);
+        yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+        expect(ctx.notifyPendingJob).toHaveBeenCalledOnce();
+        expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
+      }),
+  );
+
+  effectIt.effect.each([0, null])("initializes without recovery notification for %s", (count) =>
+    Effect.gen(function* noRecoveryNotification() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = count !== null;
+      ctx.mockCollection.updateMany.mockResolvedValue({
+        acknowledged: true,
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+      ctx.mockCollection.findOne.mockResolvedValueOnce(null);
+      yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+      expect(ctx.mockCollection.updateMany).toHaveBeenCalledTimes(count === null ? 0 : 1);
+      expect(ctx.emit).not.toHaveBeenCalled();
+      expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
+    }),
+  );
+
+  effectIt.effect("retains an active Promise execution until its initialized owner can close", () =>
+    Effect.gen(function* closeExecutionOwner() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const release = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+      ctx.admission.register("email", async () => {
+        Deferred.doneUnsafe(started, Effect.void);
+        await release.promise;
+      });
+      ctx.notifyJobFinished.mockImplementation(() => {
+        Deferred.doneUnsafe(finished, Effect.void);
+      });
+      ctx.mockCollection.aggregate.mockReturnValue(
+        fromPartial({
+          toArray: async () => await Promise.resolve([{ _id: "email", nextRunAt: new Date(0) }]),
+          close: async () => {
+            await Promise.resolve();
+          },
+        }),
+      );
+      ctx.mockCollection.findOneAndUpdate
+        .mockResolvedValueOnce(JobFactoryHelpers.processing({ name: "email" }))
+        .mockResolvedValue(null);
+      const owner = yield* Scope.make();
+
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.buildWithScope(owner));
+
+      const { notifications } = Context.get(context, ProcessingResources);
+      let closed = false;
+
+      try {
+        notifications.start();
+        yield* Deferred.await(started);
+
+        const closing = yield* Scope.close(owner, Exit.void).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              closed = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+
+        yield* TestClock.adjust(1);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: false,
+          active: 1,
+        });
+        release.resolve();
+        yield* Deferred.await(finished);
+        yield* Fiber.join(closing);
+        expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
+          closed: true,
+          active: 0,
+        });
+      } finally {
+        release.resolve();
+        yield* Scope.close(owner, Exit.void);
+      }
+    }),
+  );
+  effectIt.effect("invalidates shared reads after a persisted mutation whose listener fails", () =>
+    Effect.gen(function* managementInvalidation() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+
+      const toArray = vi
+        .fn<() => Promise<unknown[]>>()
+        .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 1 }] }])
+        .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
+
+      ctx.mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({ toArray }),
+      );
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+      const reads = Context.get(context, JobQueries);
+      const management = Context.get(context, JobManagement);
+      const failure = new Error("Listener failed after persistence");
+      ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+      vi.mocked(ctx.emit).mockImplementationOnce(() => {
+        throw failure;
+      });
+      expect((yield* reads.getQueueStats()).total).toBe(1);
+      const result = yield* Effect.result(management.cancelJob(new ObjectId().toHexString()));
+      expect(result).toMatchObject({ _tag: "Failure", failure: { cause: failure } });
+      expect((yield* reads.getQueueStats()).total).toBe(2);
+    }),
+  );
+
+  effectIt.effect(
+    "keeps reads, maintenance and Promise Workers alive across stream replacement and notification close",
+    () =>
+      Effect.gen(function* closeOnlyNotifications() {
+        const ctx = createMockContext();
+        ctx.options.recoverStaleJobs = false;
+        ctx.options.leaseDuration = 3000;
+        const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const reading = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+        const query = Promise.withResolvers<never[]>();
+        const closeRead = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+        const job = JobFactoryHelpers.processing({ name: "email", claimId: "surviving" });
+        const streamClosing = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const streamClosed = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB Change Streams use EventEmitter listeners.
+        const oldStream = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>(async () => {
+            Deferred.doneUnsafe(streamClosing, Effect.void);
+
+            await streamClosed.promise;
+          }),
+        });
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB Change Streams use EventEmitter listeners.
+        const replacement = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        });
+
+        ctx.mockCollection.watch
+          .mockReturnValueOnce(fromPartial<ChangeStream>(oldStream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement));
+
+        ctx.admission.register(
+          "email",
+          async () => {
+            Deferred.doneUnsafe(started, Effect.void);
+            await completion.promise;
+          },
+          { concurrency: 1 },
+        );
+        ctx.notifyJobFinished.mockImplementation(() => {
+          Deferred.doneUnsafe(finished, Effect.void);
+        });
+        ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(job).mockResolvedValue(null);
+        ctx.mockCollection.updateMany.mockResolvedValue({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        });
+        ctx.mockCollection.aggregate
+          .mockReturnValue(
+            fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+              toArray: async () => {
+                Deferred.doneUnsafe(reading, Effect.void);
+
+                return await query.promise;
+              },
+              close: closeRead,
+            }),
+          )
+          .mockReturnValueOnce(
+            fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({
+              toArray: vi
+                .fn<() => Promise<{ _id: string; nextRunAt: Date }[]>>()
+                .mockResolvedValue([{ _id: "email", nextRunAt: new Date(0) }]),
+              close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+            }),
+          );
+
+        const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+
+        const { notifications, timers, streams } = Context.get(context, ProcessingResources);
+        const queries = Context.get(context, JobQueries);
+        const run = yield* timers.start;
+
+        try {
+          streams.setup();
+          notifications.start();
+          yield* Deferred.await(started);
+          const read = yield* queries.getQueueViewSummaries().pipe(Effect.forkChild);
+          yield* Deferred.await(reading);
+          const closing = yield* streams.close().pipe(Effect.forkChild);
+          yield* Deferred.await(streamClosing);
+          streams.setup();
+          notifications.close();
+          yield* TestClock.adjust(1000);
+          expect({
+            slots: ctx.admission.availableSlots("email"),
+            readClosures: closeRead.mock.calls.length,
+          }).toStrictEqual({ slots: 0, readClosures: 0 });
+          expect(ctx.mockCollection.updateMany).toHaveBeenCalledExactlyOnceWith(
+            objectContainingMatcher({ claimId: { $in: ["surviving"] } }),
+            anyMatcher(Array),
+          );
+          streamClosed.resolve();
+          yield* Fiber.join(closing);
+          query.resolve([]);
+          expect(yield* Fiber.join(read)).toMatchObject([
+            { name: "email", worker: { activeCount: 1 } },
+          ]);
+          yield* run.stop;
+          completion.resolve();
+          yield* Deferred.await(finished);
+          expect(ctx.admission.availableSlots("email")).toBe(1);
+          ctx.mockCollection.findOneAndUpdate.mockClear();
+          notifications.notifyRunnableJob("email");
+          yield* TestClock.adjust(1000);
+          expect({
+            claims: ctx.mockCollection.findOneAndUpdate.mock.calls.length,
+            heartbeats: ctx.mockCollection.updateMany.mock.calls.length,
+            oldListeners: oldStream.listenerCount("change"),
+            replacementListeners: replacement.listenerCount("change"),
+            replacementCloses: replacement.close.mock.calls.length,
+          }).toStrictEqual({
+            claims: 1,
+            heartbeats: 1,
+            oldListeners: 0,
+            replacementListeners: 1,
+            replacementCloses: 0,
+          });
+        } finally {
+          streamClosed.resolve();
+          query.resolve([]);
+          completion.resolve();
+          notifications.close();
+          yield* streams.close();
+          yield* run.stop;
+        }
+      }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect("owns notification scheduling without starting it during Layer acquisition", () =>
+    Effect.gen(function* closeNotificationLayer() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+      ctx.registerWorker("email", createWorker());
+      const owner = yield* Scope.make();
+
+      const context = yield* Layer.buildWithScope(makeSchedulerLayer(ctx), owner);
+
+      const { notifications } = Context.get(context, ProcessingResources);
+      yield* TestClock.adjust(10_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      notifications.notifyRunnableJob("email");
+      notifications.notifyPendingJob("email", new Date(20_000));
+      yield* Scope.close(owner, Exit.void);
+      notifications.start();
+      notifications.notifyRunnableJob("email");
+      yield* TestClock.adjust(30_000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    }),
+  );
+
   effectIt.effect(
     "keeps captured Worker observations current through replacement and release",
     () =>
@@ -38,20 +388,11 @@ describe("composed initialization", () => {
           }),
         );
 
-        const environment = {
-          ...ctx,
-          workers: ctx.workers,
-          isPaused: (name?: string) => ctx.admission.isPaused(name),
-        };
-
-        const context = yield* makeSchedulerLayer(environment, { runFork: Effect.runFork }).pipe(
-          Layer.build,
-        );
+        const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
         const reads = Context.get(context, JobQueries);
         const admission = Context.get(context, WorkerAdmission);
 
-        expect(Context.get(context, SchedulerServices).queries).toBe(reads);
         expect(yield* reads.getQueueViewSummaries()).toStrictEqual([]);
 
         admission.register("work", () => {}, { concurrency: 2 });
@@ -129,10 +470,7 @@ describe("composed initialization", () => {
         }),
       );
 
-      const build = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }, persistence).pipe(
-        Layer.build,
-        Effect.forkChild,
-      );
+      const build = yield* makeSchedulerLayer(ctx, persistence).pipe(Layer.build, Effect.forkChild);
 
       yield* Deferred.await(acquiring);
       ctx.admission.register("work", () => {}, { concurrency: 2 });
@@ -163,13 +501,9 @@ describe("composed initialization", () => {
         upsertedCount: 0,
         upsertedId: null,
       });
-      const environment = { ...ctx, workers: ctx.workers };
+      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
-      const context = yield* makeSchedulerLayer(environment, { runFork: Effect.runFork }).pipe(
-        Layer.build,
-      );
-
-      const { timers } = Context.get(context, SchedulerServices);
+      const { timers } = Context.get(context, ProcessingResources);
       const admission = Context.get(context, WorkerAdmission);
       const earlier = yield* timers.start;
       admission.register("work", () => {});
@@ -237,12 +571,9 @@ describe("composed initialization", () => {
         let closed = false;
 
         try {
-          const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(
-            Layer.build,
-            Scope.provide(scope),
-          );
+          const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
 
-          const run = yield* Context.get(context, SchedulerServices).timers.start;
+          const run = yield* Context.get(context, ProcessingResources).timers.start;
           yield* run.stop;
 
           const closing = yield* Scope.close(scope, Exit.void).pipe(
@@ -265,11 +596,9 @@ describe("composed initialization", () => {
             deletedCount: 0,
           });
 
-          const otherContext = yield* makeSchedulerLayer(other, { runFork: Effect.runFork }).pipe(
-            Layer.build,
-          );
+          const otherContext = yield* makeSchedulerLayer(other).pipe(Layer.build);
 
-          const otherRun = yield* Context.get(otherContext, SchedulerServices).timers.start;
+          const otherRun = yield* Context.get(otherContext, ProcessingResources).timers.start;
           yield* TestClock.adjust(1000);
           expect({
             first: ctx.mockCollection.deleteMany.mock.calls.length,
@@ -295,7 +624,6 @@ describe("composed initialization", () => {
       const ctx = createMockContext();
       ctx.options.recoverStaleJobs = false;
       ctx.options.jobRetention = { completed: 60_000, interval: 1000 };
-      const context = yield* Effect.context();
       let maintenanceWrites = 0;
       ctx.mockCollection.deleteMany.mockImplementation(async () => {
         maintenanceWrites += 1;
@@ -304,11 +632,9 @@ describe("composed initialization", () => {
       });
 
       yield* Effect.gen(function* startMaintenance() {
-        const services = yield* makeSchedulerLayer(ctx, {
-          runFork: Effect.runForkWith(context),
-        }).pipe(
+        const services = yield* makeSchedulerLayer(ctx).pipe(
           Layer.build,
-          Effect.map((built) => Context.get(built, SchedulerServices)),
+          Effect.map((built) => Context.get(built, ProcessingResources)),
         );
 
         yield* services.timers.start;
@@ -360,9 +686,7 @@ describe("composed initialization", () => {
 
     ctx.options.recoverStaleJobs = false;
 
-    const runtime = ManagedRuntime.make(
-      makeSchedulerLayer(ctx, { runFork: Effect.runFork }, persistence).pipe(Layer.orDie),
-    );
+    const runtime = ManagedRuntime.make(makeSchedulerLayer(ctx, persistence).pipe(Layer.orDie));
 
     try {
       const read = JobPersistence.use((store) => store.getJob(new ObjectId()));
@@ -422,21 +746,17 @@ describe("composed initialization", () => {
         const ctx = createMockContext();
         ctx.options.recoverStaleJobs = false;
 
-        const failed = yield* makeSchedulerLayer(
-          ctx,
-          { runFork: Effect.runFork },
-          persistence,
-        ).pipe(Layer.build, Effect.scoped, Effect.result);
+        const failed = yield* makeSchedulerLayer(ctx, persistence).pipe(
+          Layer.build,
+          Effect.scoped,
+          Effect.result,
+        );
 
         expect(failed).toStrictEqual(Result.fail(failure));
         expect({ acquisitions, releases }).toStrictEqual({ acquisitions: 1, releases: 1 });
 
         yield* Effect.gen(function* readAfterRetry() {
-          const context = yield* makeSchedulerLayer(
-            ctx,
-            { runFork: Effect.runFork },
-            persistence,
-          ).pipe(Layer.build);
+          const context = yield* makeSchedulerLayer(ctx, persistence).pipe(Layer.build);
 
           const job = yield* JobPersistence.use((store) => store.getJob(new ObjectId())).pipe(
             Effect.provideContext(context),
