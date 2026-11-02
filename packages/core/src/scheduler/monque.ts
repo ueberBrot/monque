@@ -30,7 +30,7 @@ import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
 import { makeSchedulerLayer, SchedulerServices } from "./runtime.js";
-import type { JobManager } from "./services/job-manager.js";
+import { JobManagement } from "./services/job-manager.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobPersistence } from "./services/job-persistence.js";
 import { JobQueries } from "./services/job-queries.js";
@@ -566,7 +566,7 @@ export class Monque extends EventEmitter {
     );
   }
   // ─────────────────────────────────────────────────────────────────────────────
-  // Public API - Job Management (delegates to JobManager)
+  // Public API - Job Management (delegates to JobManagement)
   // ─────────────────────────────────────────────────────────────────────────────
   /**
    * Cancel a pending or scheduled job.
@@ -585,8 +585,6 @@ export class Monque extends EventEmitter {
    * const job = await monque.enqueue('report', { type: 'daily' });
    * await monque.cancelJob(job._id.toString());
    * ```
-   *
-   * @see {@link JobManager.cancelJob}
    */
   async cancelJob(jobId: string): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.cancelJob(jobId));
@@ -608,8 +606,6 @@ export class Monque extends EventEmitter {
    *   await monque.retryJob(job._id.toString());
    * });
    * ```
-   *
-   * @see {@link JobManager.retryJob}
    */
   async retryJob(jobId: string): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.retryJob(jobId));
@@ -629,8 +625,6 @@ export class Monque extends EventEmitter {
    * const nextHour = new Date(Date.now() + 60 * 60 * 1000);
    * await monque.rescheduleJob(jobId, nextHour);
    * ```
-   *
-   * @see {@link JobManager.rescheduleJob}
    */
   async rescheduleJob(jobId: string, runAt: Date): Promise<PersistedJob | null> {
     return await this.#runJobMutation((manager) => manager.rescheduleJob(jobId, runAt));
@@ -666,8 +660,6 @@ export class Monque extends EventEmitter {
    *   console.log('Job permanently removed');
    * }
    * ```
-   *
-   * @see {@link JobManager.deleteJob}
    */
   async deleteJob(jobId: string): Promise<boolean> {
     return await this.#runJobMutation((manager) => manager.deleteJob(jobId));
@@ -691,8 +683,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Cancelled ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.cancelJobs}
    */
   async cancelJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.cancelJobs(filter));
@@ -715,8 +705,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Retried ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.retryJobs}
    */
   async retryJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.retryJobs(filter));
@@ -740,8 +728,6 @@ export class Monque extends EventEmitter {
    * });
    * console.log(`Deleted ${result.count} jobs`);
    * ```
-   *
-   * @see {@link JobManager.deleteJobs}
    */
   async deleteJobs(filter: JobSelector): Promise<BulkOperationResult> {
     return await this.#runJobMutation((manager) => manager.deleteJobs(filter));
@@ -1251,21 +1237,10 @@ export class Monque extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────────────────────
-  /** Invalidate query caches after every management mutation, including partial failures. */
   async #runJobMutation<T>(
-    operation: (manager: JobManager) => Effect.Effect<T, unknown>,
+    operation: (management: JobManagement["Service"]) => Effect.Effect<T, unknown>,
   ): Promise<T> {
-    return await this.#runtime.runPromise(
-      SchedulerServices.use(({ manager, queries }) =>
-        Effect.suspend(() => operation(manager)).pipe(
-          Effect.ensuring(
-            Effect.sync(() => {
-              queries.clearStatsCache();
-            }),
-          ),
-        ),
-      ),
-    );
+    return await this.#runtime.runPromise(JobManagement.use(operation));
   }
   /**
    * Wake polling when local capacity is freed and check each shutdown's drain.

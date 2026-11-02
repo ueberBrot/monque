@@ -2,16 +2,16 @@ import { it } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Effect, Result } from "effect";
 /**
- * Unit tests for JobManager service.
+ * Native tests for Job management.
  *
  * Tests job management operations: cancel, retry, reschedule, delete.
- * Uses mock SchedulerContext to test state transition logic in isolation.
+ * Uses the native driver boundary to exercise state transitions and callback failures.
  */
 import { ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { JobManager } from "@/scheduler/services/job-manager.js";
+import { makeJobManagement } from "@/scheduler/services/job-manager.js";
 import { ConnectionError, JobStateError } from "@/shared";
 import { createMockContext, JobFactory, JobFactoryHelpers } from "@tests/factories";
 import {
@@ -36,12 +36,12 @@ const mockRetryNotificationDocs = (
   );
 };
 
-describe(JobManager, () => {
+describe("Job management", () => {
   let ctx: ReturnType<typeof createMockContext>;
-  let manager: JobManager;
+  let manager: ReturnType<typeof makeJobManagement>;
   beforeEach(() => {
     ctx = createMockContext();
-    manager = new JobManager(ctx);
+    manager = makeJobManagement(ctx, { clearStatsCache: () => {} });
   });
   afterEach(() => {
     vi.clearAllMocks();

@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
 import { makeSchedulerLayer, SchedulerServices } from "@/scheduler/runtime.js";
+import { JobManagement } from "@/scheduler/services/job-manager.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
 import { JobQueries } from "@/scheduler/services/job-queries.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
@@ -24,6 +25,34 @@ import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/facto
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
+  effectIt.effect("invalidates shared reads after a persisted mutation whose listener fails", () =>
+    Effect.gen(function* managementInvalidation() {
+      const ctx = createMockContext();
+      ctx.options.recoverStaleJobs = false;
+
+      const toArray = vi
+        .fn<() => Promise<unknown[]>>()
+        .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 1 }] }])
+        .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
+
+      ctx.mockCollection.aggregate.mockReturnValue(
+        fromPartial<ReturnType<typeof ctx.mockCollection.aggregate>>({ toArray }),
+      );
+      const context = yield* makeSchedulerLayer(ctx, { runFork: Effect.runFork }).pipe(Layer.build);
+      const reads = Context.get(context, JobQueries);
+      const management = Context.get(context, JobManagement);
+      const failure = new Error("Listener failed after persistence");
+      ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(JobFactoryHelpers.cancelled());
+      vi.mocked(ctx.emit).mockImplementationOnce(() => {
+        throw failure;
+      });
+      expect((yield* reads.getQueueStats()).total).toBe(1);
+      const result = yield* Effect.result(management.cancelJob(new ObjectId().toHexString()));
+      expect(result).toMatchObject({ _tag: "Failure", failure: { cause: failure } });
+      expect((yield* reads.getQueueStats()).total).toBe(2);
+    }),
+  );
+
   effectIt.effect(
     "keeps reads, maintenance and Promise Workers alive after notifications close",
     () =>
