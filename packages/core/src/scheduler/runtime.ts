@@ -2,7 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import type { Fiber } from "effect";
 
 import { ChangeStreamHandler } from "./services/change-stream-handler.js";
-import { JobIntake } from "./services/job-intake.js";
+import { makeNativeJobIntakeLayer } from "./services/job-intake.js";
 import { JobLifecycle } from "./services/job-lifecycle.js";
 import { makeJobManagementLayer } from "./services/job-manager.js";
 import { JobOwnership, makeNativeJobOwnershipLayer } from "./services/job-ownership.js";
@@ -25,7 +25,6 @@ interface SchedulerExecution {
 export class SchedulerServices extends Context.Service<
   SchedulerServices,
   {
-    readonly intake: JobIntake;
     readonly queries: JobQueries["Service"];
     readonly notifications: PendingNotificationRouter;
     readonly streams: ChangeStreamHandler;
@@ -56,7 +55,6 @@ const makeLegacySchedulerLayer = (
       );
 
       return {
-        intake: new JobIntake(environment),
         queries: yield* JobQueries,
         notifications,
         streams: new ChangeStreamHandler(environment, notifications, execution.runFork),
@@ -100,6 +98,7 @@ export const makeSchedulerLayer = (
     makeLegacySchedulerLayer(environment, execution),
     persistence,
     makeJobManagementLayer(environment),
+    makeNativeJobIntakeLayer(environment),
     Layer.succeed(WorkerAdmission, environment.admission),
   ).pipe(
     Layer.provideMerge(

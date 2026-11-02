@@ -25,7 +25,6 @@ vi.mock(import("@/scheduler/services/index.js"), async (importOriginal) => {
 
   return {
     ...actual,
-    JobIntake: fromPartial<typeof actual.JobIntake>(vi.fn<typeof actual.JobIntake>()),
     JobQueryService: fromPartial<typeof actual.JobQueryService>(
       vi.fn<typeof actual.JobQueryService>(),
     ),
