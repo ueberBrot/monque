@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { Cause, Clock, Context, Effect, Layer, ManagedRuntime } from "effect";
-import { ObjectId } from "mongodb";
-import type { Collection, Db } from "mongodb";
+import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
+import type { ObjectId, Collection, Db } from "mongodb";
 
 import type { MonqueEventMap } from "@/events";
 import { JobStatus } from "@/jobs";
@@ -24,19 +23,17 @@ import type {
   QueueViewSummary,
   ScheduleOptions,
 } from "@/jobs";
-import { ConnectionError, ShutdownTimeoutError } from "@/shared";
+import { ConnectionError } from "@/shared";
 import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerOptions } from "@/workers";
 
 import { attempt, fromPromise } from "./effects.js";
-import { makeSchedulerLayer, ProcessingResources } from "./runtime.js";
-import { JobExecution } from "./services/job-execution.js";
+import { makeSchedulerLayer, Processing } from "./runtime.js";
 import { JobIntake } from "./services/job-intake.js";
 import { JobManagement } from "./services/job-manager.js";
 import { JobPersistenceError } from "./services/job-persistence-error.js";
-import { JobPersistence } from "./services/job-persistence.js";
 import { JobQueries } from "./services/job-queries.js";
-import type { MaintenanceRun } from "./services/lifecycle-manager.js";
+import { readJob } from "./services/job-query.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
 import type { ResolvedMonqueOptions } from "./services/types.js";
 import { WorkerAdmissionState } from "./services/worker-admission.js";
@@ -144,12 +141,10 @@ export class Monque extends EventEmitter {
   private readonly options: ResolvedMonqueOptions;
   private collection: Collection | null = null;
   readonly #admission: WorkerAdmissionState;
-  /** Each shutdown retains the maintenance handle of its original processing run. */
-  #maintenanceRun: MaintenanceRun | undefined;
   /** Published together after initialization succeeds. */
   #initialized: {
     runtime: SchedulerRuntime;
-    services: ProcessingResources["Service"];
+    processing: Processing["Service"];
   } | null = null;
   #initialization: Promise<void> | null = null;
   constructor(db: Db, options: MonqueOptions = {}) {
@@ -242,20 +237,12 @@ export class Monque extends EventEmitter {
           options: this.options,
           admission: this.#admission,
           emit: (event, payload) => this.emit(event, payload),
-          notifyPendingJob: (name, nextRunAt) => {
-            if (this.#admission.running) {
-              this.#initialized?.services.notifications.notifyPendingJob(name, nextRunAt);
-            }
-          },
-          notifyJobFinished: (name) => {
-            this.onJobFinished(name);
-          },
         }).pipe(Layer.orDie),
       );
 
       candidate = runtime;
       const context = yield* runtime.contextEffect;
-      this.#initialized = { runtime, services: Context.get(context, ProcessingResources) };
+      this.#initialized = { runtime, processing: Context.get(context, Processing) };
     }).pipe(
       Effect.catchCause((cause) => {
         const error = Cause.squash(cause);
@@ -761,26 +748,7 @@ export class Monque extends EventEmitter {
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
     const runtime = this.#runtime;
 
-    if (!ObjectId.isValid(id)) {
-      return null;
-    }
-
-    return await runtime.runPromise(
-      JobPersistence.use((persistence) => persistence.getJob<T>(new ObjectId(id))).pipe(
-        Effect.catchCause((cause) => {
-          const failure = Cause.squash(cause);
-          const error = failure instanceof JobPersistenceError ? failure.cause : failure;
-          const message = error instanceof Error ? error.message : "Unknown error during getJob";
-
-          return Effect.fail(
-            new ConnectionError(
-              `Failed to get job: ${message}`,
-              error instanceof Error ? { cause: error } : undefined,
-            ),
-          );
-        }),
-      ),
-    );
+    return await runtime.runPromise(readJob<T>(id));
   }
   /**
    * Query jobs from the queue with optional filters.
@@ -1011,7 +979,7 @@ export class Monque extends EventEmitter {
   /** Resume local executions. Resuming the instance preserves individually paused workers. */
   resume(name?: string): void {
     this.#admission.resume(name);
-    this.#initialized?.services.notifications.notifyRunnableJob(name);
+    this.#initialized?.processing.notifyRunnableJob(name);
   }
   /** Whether the local instance, or the named worker, is effectively paused. */
   isPaused(name?: string): boolean {
@@ -1073,31 +1041,7 @@ export class Monque extends EventEmitter {
       throw new ConnectionError("Monque not initialized. Call initialize() before start().");
     }
 
-    const { services } = this.#initialized;
-    this.#admission.start();
-    const { generation } = this.#admission;
-    const isCurrent = () => this.#admission.running && this.#admission.generation === generation;
-    // Set up change streams as the primary notification mechanism
-    services.streams.setup();
-
-    if (!isCurrent()) {
-      return;
-    }
-
-    services.notifications.start();
-
-    if (!isCurrent()) {
-      return;
-    }
-
-    // Start heartbeat and retention timers. Immediate maintenance can reenter too.
-    const maintenanceRun = this.#runtime.runSync(services.timers.start);
-
-    if (isCurrent()) {
-      this.#maintenanceRun = maintenanceRun;
-    } else {
-      this.#runtime.runSync(maintenanceRun.stop);
-    }
+    this.#initialized.processing.start();
   }
   /**
    * Stop the scheduler gracefully, waiting for in-progress jobs to complete.
@@ -1138,54 +1082,8 @@ export class Monque extends EventEmitter {
       return;
     }
 
-    await this.#runtime.runPromise(this.#stopScheduler());
+    await this.#runtime.runPromise(Processing.use((processing) => processing.stop));
   }
-  readonly #stopScheduler = Effect.fnUntraced(function* stopSchedulerRuntime(this: Monque) {
-    const clock = yield* Clock.Clock;
-
-    const deadline =
-      clock.monotonicTimeNanosUnsafe() +
-      BigInt(Math.ceil(this.options.shutdownTimeout * 1_000_000));
-
-    const remaining = () =>
-      Math.max(0, Number(deadline - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
-
-    const maintenanceRun = this.#maintenanceRun;
-    const execution = yield* JobExecution;
-    const drain = execution.captureDrain();
-
-    const { notifications, streams } = yield* ProcessingResources;
-    const query = yield* JobQueries;
-
-    if (maintenanceRun) {
-      yield* maintenanceRun.beginDrain(this.options.leaseDuration !== undefined);
-    }
-
-    notifications.close();
-    this.#admission.stop();
-    query.clearStatsCache();
-    yield* Effect.raceFirst(
-      streams.close().pipe(Effect.ignoreCause),
-      Effect.suspend(() => Effect.sleep(remaining())),
-    );
-    const budget = remaining();
-    const drained = budget > 0 ? yield* drain.await(budget) : drain.incompleteJobs().length === 0;
-
-    if (maintenanceRun) {
-      yield* maintenanceRun.stop;
-    }
-
-    if (!drained) {
-      const incompleteJobs = drain.incompleteJobs();
-
-      const error = new ShutdownTimeoutError(
-        `Shutdown timed out after ${this.options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
-        incompleteJobs,
-      );
-
-      this.emit("job:error", { error });
-    }
-  });
   /**
    * Check if the scheduler is healthy (running and connected).
    *
@@ -1242,14 +1140,6 @@ export class Monque extends EventEmitter {
     operation: (management: JobManagement["Service"]) => Effect.Effect<T, unknown>,
   ): Promise<T> {
     return await this.#runtime.runPromise(JobManagement.use(operation));
-  }
-  /**
-   * Wake polling when local capacity is freed.
-   *
-   * @private
-   */
-  private onJobFinished(name: string): void {
-    this.#initialized?.services.notifications.notifyRunnableJob(name);
   }
   /**
    * Type-safe event emitter methods

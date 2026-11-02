@@ -1,7 +1,7 @@
 import { MutableRef } from "effect";
 
 import type { JobHandler, PersistedJob } from "@/jobs";
-import { validateJobName, WorkerRegistrationError } from "@/shared";
+import { DEFAULT_MAX_BACKOFF_DELAY, validateJobName, WorkerRegistrationError } from "@/shared";
 import { definedProperty } from "@/shared/utils/defined-property.js";
 import type { WorkerOptions, WorkerRegistration } from "@/workers";
 
@@ -18,6 +18,17 @@ type AdmissionOptions = Pick<
   | "maxBackoffDelay"
   | "schedulerInstanceId"
 >;
+
+export interface WorkerObservation {
+  readonly name: string;
+  readonly concurrency: number;
+  readonly activeCount: number;
+  readonly paused: boolean;
+  readonly hasSchema: boolean;
+  readonly maxRetries: number;
+  readonly baseRetryInterval: number;
+  readonly maxBackoffDelay: number;
+}
 
 interface ProcessingScope {
   instanceId: ProcessingState["instanceId"];
@@ -171,6 +182,29 @@ export class WorkerAdmissionState {
       paused: this.isPaused(name),
       globallyPaused: this.#state.current.paused,
     };
+  }
+  workerObservations(name?: string): readonly WorkerObservation[] {
+    const state = this.#state.current;
+    let selected: Iterable<readonly [string, WorkerRegistration]> = state.workers;
+
+    if (name !== undefined) {
+      const registration = state.workers.get(name);
+      selected = registration ? [[name, registration]] : [];
+    }
+
+    return [...selected].map(([workerName, worker]) => ({
+      name: workerName,
+      concurrency: worker.concurrency,
+      activeCount: worker.activeJobs.size,
+      paused: state.paused || state.pausedWorkers.has(workerName),
+      hasSchema: worker.schema !== undefined,
+      maxRetries: worker.retryOptions?.maxRetries ?? this.options.maxRetries,
+      baseRetryInterval: worker.retryOptions?.baseRetryInterval ?? this.options.baseRetryInterval,
+      maxBackoffDelay:
+        worker.retryOptions?.maxBackoffDelay ??
+        this.options.maxBackoffDelay ??
+        DEFAULT_MAX_BACKOFF_DELAY,
+    }));
   }
   /** Registration order, rotated after the last successful Claim when capped. */
   orderedNames(): string[] {

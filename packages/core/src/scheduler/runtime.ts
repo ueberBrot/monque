@@ -1,21 +1,20 @@
-import { Context, DateTime, Effect, Layer } from "effect";
+import { Clock, Context, DateTime, Effect, Layer } from "effect";
 import type { Collection } from "mongodb";
 
 import type { MonqueEventMap } from "@/events";
-import { ConnectionError } from "@/shared";
+import { ConnectionError, ShutdownTimeoutError } from "@/shared";
 
 import { attempt } from "./effects.js";
 import { makeChangeStreamHandler } from "./services/change-stream-handler.js";
-import type { ChangeStreamHandler } from "./services/change-stream-handler.js";
 import { JobExecution, makeJobExecutionLayer } from "./services/job-execution.js";
 import { makeNativeJobIntakeLayer } from "./services/job-intake.js";
 import { makeJobManagementLayer } from "./services/job-manager.js";
 import { JobOwnership, makeNativeJobOwnershipLayer } from "./services/job-ownership.js";
 import { makeNativeJobPersistenceLayer } from "./services/job-persistence.js";
 import type { JobPersistence } from "./services/job-persistence.js";
-import { makeJobQueriesLayer } from "./services/job-queries.js";
+import { JobQueries, makeJobQueriesLayer } from "./services/job-queries.js";
 import { makeSchedulerMaintenance } from "./services/lifecycle-manager.js";
-import type { SchedulerMaintenance } from "./services/lifecycle-manager.js";
+import type { MaintenanceRun } from "./services/lifecycle-manager.js";
 import { OperationTelemetry, makeOperationTelemetryLayer } from "./services/operation-telemetry.js";
 import { makePendingNotificationRouter } from "./services/pending-notification-router.js";
 import type { PendingNotificationRouter } from "./services/pending-notification-router.js";
@@ -28,29 +27,30 @@ interface SchedulerDependencies {
   readonly options: ResolvedMonqueOptions;
   readonly admission: WorkerAdmission["Service"];
   readonly emit: <K extends keyof MonqueEventMap>(event: K, payload: MonqueEventMap[K]) => boolean;
-  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
-  readonly notifyJobFinished: (name: string) => void;
 }
 
-/** Instance-owned handles giving the synchronous facade control of processing resources. */
-export class ProcessingResources extends Context.Service<
-  ProcessingResources,
+export class Processing extends Context.Service<
+  Processing,
   {
-    readonly notifications: PendingNotificationRouter;
-    readonly streams: ChangeStreamHandler;
-    readonly timers: SchedulerMaintenance;
+    readonly start: () => void;
+    readonly stop: Effect.Effect<void>;
+    readonly notifyRunnableJob: (name?: string) => void;
   }
->()("@monque/core/scheduler/ProcessingResources") {}
+>()("@monque/core/scheduler/Processing") {}
 
-const makeProcessingResourcesLayer = ({
+const makeProcessingLayer = ({
   collection,
   options,
   emit,
   notifyPendingJob,
-}: Pick<SchedulerDependencies, "collection" | "options" | "emit" | "notifyPendingJob">) =>
+  publishRouter,
+}: Pick<SchedulerDependencies, "collection" | "options" | "emit"> & {
+  readonly notifyPendingJob: (name: string | undefined, nextRunAt: Date) => void;
+  readonly publishRouter: (router: PendingNotificationRouter) => void;
+}) =>
   Layer.effect(
-    ProcessingResources,
-    Effect.gen(function* acquireProcessingResources() {
+    Processing,
+    Effect.gen(function* acquireProcessing() {
       const ownership = yield* JobOwnership;
 
       if (options.recoverStaleJobs) {
@@ -67,15 +67,15 @@ const makeProcessingResourcesLayer = ({
         }
       }
 
-      const name = yield* ownership.findActiveInstanceJob.pipe(
+      const activeName = yield* ownership.findActiveInstanceJob.pipe(
         Effect.mapError((failure) => failure.cause),
       );
 
       yield* attempt(() => {
-        if (name !== null) {
+        if (activeName !== null) {
           throw new ConnectionError(
             `Another active Monque instance is using schedulerInstanceId "${options.schedulerInstanceId}". ` +
-              `Found processing job "${name}" with recent heartbeat. ` +
+              `Found processing job "${activeName}" with recent heartbeat. ` +
               `Use a unique schedulerInstanceId or wait for the other instance to stop.`,
           );
         }
@@ -90,45 +90,151 @@ const makeProcessingResourcesLayer = ({
         (targetNames, isCurrent) => processing.poll(targetNames, isCurrent),
       );
 
-      return {
+      const streams = yield* makeChangeStreamHandler(
+        { collection, isRunning, emit },
         notifications,
-        streams: yield* makeChangeStreamHandler({ collection, isRunning, emit }, notifications),
-        timers: yield* makeSchedulerMaintenance({
-          options,
-          collection,
-          ownership,
-          activeClaimIds: () =>
-            admission
-              .activeJobs()
-              .flatMap((job) =>
-                job.claimId !== undefined && job.claimId !== "" ? [job.claimId] : [],
-              ),
-          emit,
-          notifyPendingJob,
-        }),
+      );
+
+      const timers = yield* makeSchedulerMaintenance({
+        options,
+        collection,
+        ownership,
+        activeClaimIds: () =>
+          admission
+            .activeJobs()
+            .flatMap((job) =>
+              job.claimId !== undefined && job.claimId !== "" ? [job.claimId] : [],
+            ),
+        emit,
+        notifyPendingJob,
+      });
+
+      const query = yield* JobQueries;
+      const runSync = Effect.runSyncWith(yield* Effect.context());
+      let maintenanceRun: MaintenanceRun | undefined;
+      publishRouter(notifications);
+
+      const start = () => {
+        if (admission.running) {
+          return;
+        }
+
+        admission.start();
+        const { generation } = admission;
+        const isCurrent = () => admission.running && admission.generation === generation;
+        streams.setup();
+
+        if (!isCurrent()) {
+          return;
+        }
+
+        notifications.start();
+
+        if (!isCurrent()) {
+          return;
+        }
+
+        const acquiredRun = runSync(timers.start);
+
+        if (isCurrent()) {
+          maintenanceRun = acquiredRun;
+        } else {
+          runSync(acquiredRun.stop);
+        }
+      };
+
+      const stop = Effect.gen(function* stopProcessing() {
+        if (!admission.running) {
+          return;
+        }
+
+        const clock = yield* Clock.Clock;
+
+        const deadline =
+          clock.monotonicTimeNanosUnsafe() + BigInt(Math.ceil(options.shutdownTimeout * 1_000_000));
+
+        const remaining = () =>
+          Math.max(0, Number(deadline - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
+
+        const capturedMaintenance = maintenanceRun;
+        const drain = processing.captureDrain();
+
+        if (capturedMaintenance) {
+          yield* capturedMaintenance.beginDrain(options.leaseDuration !== undefined);
+        }
+
+        notifications.close();
+        admission.stop();
+        query.clearStatsCache();
+        yield* Effect.raceFirst(
+          streams.close().pipe(Effect.ignoreCause),
+          Effect.suspend(() => Effect.sleep(remaining())),
+        );
+        const budget = remaining();
+
+        const drained =
+          budget > 0 ? yield* drain.await(budget) : drain.incompleteJobs().length === 0;
+
+        if (capturedMaintenance) {
+          yield* capturedMaintenance.stop;
+        }
+
+        if (!drained) {
+          const incompleteJobs = drain.incompleteJobs();
+
+          const error = new ShutdownTimeoutError(
+            `Shutdown timed out after ${options.shutdownTimeout}ms with ${incompleteJobs.length} incomplete jobs`,
+            incompleteJobs,
+          );
+
+          emit("job:error", { error });
+        }
+      });
+
+      return {
+        start,
+        stop,
+        notifyRunnableJob: (name?: string) => {
+          notifications.notifyRunnableJob(name);
+        },
       };
     }),
   );
 
 /** Instance composition acquires owners without starting a processing generation. */
 export const makeSchedulerLayer = (
-  {
-    collection,
-    options,
-    admission,
-    emit,
-    notifyPendingJob,
-    notifyJobFinished,
-  }: SchedulerDependencies,
+  { collection, options, admission, emit }: SchedulerDependencies,
   persistence: Layer.Layer<JobPersistence, unknown> = makeNativeJobPersistenceLayer(collection),
   telemetryLayer = makeOperationTelemetryLayer,
 ) =>
   Layer.unwrap(
     Effect.gen(function* composeScheduler() {
       const telemetry = yield* OperationTelemetry;
+      let router: PendingNotificationRouter | undefined;
+      let ready = false;
+
+      const notifyPendingJob = (name: string | undefined, nextRunAt: Date) => {
+        if (ready && admission.running) {
+          router?.notifyPendingJob(name, nextRunAt);
+        }
+      };
+
+      const notifyJobFinished = (name: string) => {
+        if (ready) {
+          router?.notifyRunnableJob(name);
+        }
+      };
 
       return Layer.mergeAll(
-        makeProcessingResourcesLayer({ collection, options, emit, notifyPendingJob }),
+        makeProcessingLayer({
+          collection,
+          options,
+          emit,
+          notifyPendingJob,
+          publishRouter: (acquired) => {
+            router = acquired;
+          },
+        }),
         persistence,
         makeJobManagementLayer({ collection, emit, notifyPendingJob }),
         makeNativeJobIntakeLayer({ collection, options, notifyPendingJob }, telemetry),
@@ -151,10 +257,14 @@ export const makeSchedulerLayer = (
             makeJobQueriesLayer({
               collection,
               options,
-              workers: admission.workers,
-              isPaused: (name) => admission.isPaused(name),
+              workerObservations: (name) => admission.workerObservations(name),
             }),
           ),
+        ),
+        Layer.tap(() =>
+          Effect.sync(() => {
+            ready = true;
+          }),
         ),
       );
     }),

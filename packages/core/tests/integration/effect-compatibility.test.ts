@@ -295,8 +295,7 @@ describe("ownership with controlled Effect services", () => {
             makeJobQueriesLayer({
               collection,
               options: { ...ownershipOptions, statsCacheTtlMs: 60_000 },
-              workers: new Map(),
-              isPaused: () => false,
+              workerObservations: () => [],
             }),
           ),
         );

@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";
 import { JobQueryService } from "@/scheduler/services/job-query.js";
 import { AggregationTimeoutError, ConnectionError } from "@/shared";
-import { createMockContext, createWorker, JobFactory } from "@tests/factories";
+import { JobFactoryHelpers, createMockContext, createWorker, JobFactory } from "@tests/factories";
 import { clockWithWallTime } from "@tests/setup/clock.js";
 import {
   anyMatcher,
@@ -824,6 +824,64 @@ describe(JobQueryService, () => {
         ]);
       }),
     );
+    it.effect(
+      "observes replacement policy and surviving capacity after persisted stats finish",
+      () =>
+        Effect.gen(function* observationsAfterStats() {
+          const loading = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+          const stats = Promise.withResolvers<never[]>();
+          ctx.mockCollection.aggregate.mockReturnValueOnce(
+            fromPartial({
+              toArray: async () => {
+                Deferred.doneUnsafe(loading, Effect.void);
+
+                return await stats.promise;
+              },
+              close: async () => {
+                await Promise.resolve();
+              },
+            }),
+          );
+          ctx.admission.register("email", () => {}, { concurrency: 2, maxRetries: 1 });
+
+          const release = ctx.admission.beginExecution(
+            "email",
+            JobFactoryHelpers.processing({ name: "email" }),
+          );
+
+          const pending = yield* queryService
+            .getQueueViewSummaries({ name: "email" })
+            .pipe(Effect.forkChild);
+
+          yield* Deferred.await(loading);
+          ctx.admission.register("email", () => {}, {
+            replace: true,
+            concurrency: 3,
+            maxRetries: 7,
+          });
+          ctx.admission.pause();
+          stats.resolve([]);
+          const beforeRelease = yield* Fiber.join(pending);
+          release();
+          expect(beforeRelease).toMatchObject([
+            {
+              name: "email",
+              worker: {
+                concurrency: 3,
+                activeCount: 1,
+                paused: true,
+                maxRetries: 7,
+                baseRetryInterval: ctx.options.baseRetryInterval,
+              },
+            },
+          ]);
+          expect(yield* queryService.getQueueViewSummaries({ name: "email" })).toMatchObject([
+            { worker: { activeCount: 0 } },
+          ]);
+          expect(beforeRelease[0]?.worker?.activeCount).toBe(1);
+        }),
+    );
+
     it.effect("should return an empty immutable list when no jobs or workers exist", () =>
       Effect.gen(function* effectWorkflow28() {
         const mockAggregateCursor = {

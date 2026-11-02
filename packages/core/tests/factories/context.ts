@@ -98,6 +98,7 @@ export const createMockContext = (overrides: Partial<FixtureDependencies> = {}) 
     instanceId: "test-instance-id",
     admission,
     registerWorker,
+    workerObservations: (name?: string) => admission.workerObservations(name),
     get workers() {
       return admission.workers;
     },

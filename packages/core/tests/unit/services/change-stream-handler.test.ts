@@ -1,11 +1,11 @@
 /**
  * Tests Change Stream setup, event delivery, reconnection, and shutdown through
- * the cursor adapter, observing emitted events and scheduled polls.
+ * the cursor adapter, observing emitted events and notification delivery.
  */
 import { EventEmitter } from "node:events";
 import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { Clock, Context, Effect, Exit, Layer, Scope } from "effect";
+import { Clock, Effect, Exit, Scope } from "effect";
 import { TestClock } from "effect/testing";
 import type { ChangeStream } from "mongodb";
 import type { Mock } from "vite-plus/test";
@@ -13,11 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { JobStatus } from "@/jobs";
 import { fromPromise } from "@/scheduler/effects.js";
-import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
 import {
   ChangeStreamHandler,
   makeChangeStreamHandler,
 } from "@/scheduler/services/change-stream-handler.js";
+import type { PendingNotificationSink } from "@/scheduler/services/pending-notification-router.js";
 import { PendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
 import { createMockContext } from "@tests/factories";
 import { objectContainingMatcher, stringContainingMatcher } from "@tests/setup/matchers.js";
@@ -29,13 +29,32 @@ const createStream = (closing = Promise.resolve()) =>
     close: vi.fn<MockFunction<ChangeStream["close"]>>().mockReturnValue(closing),
   });
 
+const recordingSink = () => ({
+  notifyPendingJob: vi.fn<PendingNotificationSink["notifyPendingJob"]>(),
+  notifyRunnableJob: vi.fn<PendingNotificationSink["notifyRunnableJob"]>(),
+  setChangeStreamActive: vi.fn<PendingNotificationSink["setChangeStreamActive"]>(),
+});
+
 const nativeMonotonicTime = (): bigint => BigInt(Math.round(performance.now() * 1_000_000));
 
 describe(ChangeStreamHandler, () => {
   let ctx: ReturnType<typeof createMockContext>;
   let onPoll: Mock<(targetNames?: ReadonlySet<string>) => Promise<void>>;
-  let pendingNotifications: PendingNotificationRouter;
+  let pendingNotifications: ReturnType<typeof recordingSink>;
+  let router: PendingNotificationRouter | undefined;
   let handler: ChangeStreamHandler;
+
+  const composeRouter = () => {
+    router = new PendingNotificationRouter(ctx, (names) =>
+      fromPromise(async () => {
+        await onPoll(names);
+      }),
+    );
+    handler = new ChangeStreamHandler(ctx, router);
+
+    return router;
+  };
+
   let streams: ReturnType<typeof createStream>[];
   let stream: ReturnType<typeof createStream>;
   beforeEach(() => {
@@ -43,11 +62,8 @@ describe(ChangeStreamHandler, () => {
     onPoll = vi
       .fn<(targetNames?: ReadonlySet<string>) => Promise<void>>()
       .mockResolvedValue(undefined);
-    pendingNotifications = new PendingNotificationRouter(ctx, (names) =>
-      fromPromise(async () => {
-        await onPoll(names);
-      }),
-    );
+    router = undefined;
+    pendingNotifications = recordingSink();
     handler = new ChangeStreamHandler(ctx, pendingNotifications);
     streams = [];
     stream = createStream();
@@ -60,7 +76,7 @@ describe(ChangeStreamHandler, () => {
   });
   afterEach(async () => {
     await Effect.runPromise(handler.close());
-    pendingNotifications.close();
+    router?.close();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -70,9 +86,9 @@ describe(ChangeStreamHandler, () => {
 
       ctx.options.recoverStaleJobs = false;
 
-      const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
-
-      const { streams: owned } = Context.get(context, ProcessingResources);
+      const owned = yield* makeChangeStreamHandler(ctx, pendingNotifications).pipe(
+        Scope.provide(scope),
+      );
 
       expect(streams).toHaveLength(0);
       owned.setup();
@@ -203,8 +219,9 @@ describe(ChangeStreamHandler, () => {
           operationType: "insert",
           fullDocument: { status: JobStatus.PENDING, name: "replacement" },
         });
-        await vi.advanceTimersByTimeAsync(150);
-        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+        expect(pendingNotifications.notifyRunnableJob).toHaveBeenCalledExactlyOnceWith(
+          "replacement",
+        );
         expect({
           streamCloseMockCallsLength: stream.close.mock.calls.length,
           replacementCloseMockCallsLength: replacement.close.mock.calls.length,
@@ -258,10 +275,10 @@ describe(ChangeStreamHandler, () => {
       });
       await vi.advanceTimersByTimeAsync(150);
       expect({
-        onPollMockCallsLength: onPoll.mock.calls.length,
+        notifications: pendingNotifications.notifyRunnableJob.mock.calls.length,
         streamCloseMockCallsLength: stream.close.mock.calls.length,
       }).toStrictEqual({
-        onPollMockCallsLength: 0,
+        notifications: 0,
         streamCloseMockCallsLength: 1,
       });
       await Effect.runPromise(handler.close());
@@ -321,22 +338,6 @@ describe(ChangeStreamHandler, () => {
       );
     });
 
-    it("should forward change events from the stream to the handler", () => {
-      vi.useFakeTimers();
-      handler.setup();
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "test-job",
-          nextRunAt: new Date(Date.now() - 1000),
-        },
-      });
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["test-job"]));
-    });
-
     it("should emit fallback event when watch throws", () => {
       vi.spyOn(ctx.mockCollection, "watch").mockImplementation(() => {
         throw new Error("Change streams not available");
@@ -348,91 +349,118 @@ describe(ChangeStreamHandler, () => {
     });
   });
   describe("cursor changes", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
+    const due = new Date(0);
+    const future = new Date(8_640_000_000_000_000);
 
-    it("should not trigger poll if scheduler is not running", () => {
-      vi.useFakeTimers();
-      vi.spyOn(ctx, "isRunning").mockReturnValue(false);
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: { status: JobStatus.PENDING },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(200);
-      expect(onPoll).not.toHaveBeenCalled();
-    });
-
-    it("should trigger poll on insert event (debounced)", () => {
-      vi.useFakeTimers();
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: { status: JobStatus.PENDING },
-      };
-
-      stream.emit("change", changeEvent);
-      // Debounce should prevent immediate call
-      expect(onPoll).not.toHaveBeenCalled();
-      // After debounce window, poll should be called
-      vi.advanceTimersByTime(150);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("should trigger poll on update event with status change to pending", () => {
-      vi.useFakeTimers();
-
-      const changeEvent = {
-        operationType: "update" as const,
-        fullDocument: { status: JobStatus.PENDING },
-        updateDescription: { updatedFields: { status: JobStatus.PENDING } },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("should trigger poll on update event with nextRunAt change for pending job", () => {
-      vi.useFakeTimers();
-
-      const changeEvent = {
-        operationType: "update" as const,
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "retry-job",
-          nextRunAt: new Date(Date.now() - 1000),
+    it.each([
+      {
+        label: "named insert",
+        event: { operationType: "insert", fullDocument: { name: "email", nextRunAt: due } },
+        name: "email",
+        date: due,
+      },
+      {
+        label: "insert without date",
+        event: { operationType: "insert", fullDocument: { name: "email" } },
+        name: "email",
+      },
+      {
+        label: "insert without name",
+        event: { operationType: "insert", fullDocument: { nextRunAt: due } },
+      },
+      {
+        label: "pending update without metadata",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { status: JobStatus.PENDING } },
+          fullDocument: { status: JobStatus.PENDING },
         },
-        updateDescription: { updatedFields: { nextRunAt: new Date(Date.now() - 1000) } },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["retry-job"]));
+      },
+      {
+        label: "pending update with metadata",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { status: JobStatus.PENDING } },
+          fullDocument: { status: JobStatus.PENDING, name: "retry", nextRunAt: due },
+        },
+        name: "retry",
+        date: due,
+      },
+      {
+        label: "nextRunAt update",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { nextRunAt: due } },
+          fullDocument: { status: JobStatus.PENDING, name: "retry", nextRunAt: due },
+        },
+        name: "retry",
+        date: due,
+      },
+      {
+        label: "future insert",
+        event: { operationType: "insert", fullDocument: { name: "scheduled", nextRunAt: future } },
+        name: "scheduled",
+        date: future,
+      },
+      {
+        label: "completed update",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { status: JobStatus.COMPLETED } },
+          fullDocument: { status: JobStatus.COMPLETED, name: "email", nextRunAt: future },
+        },
+        name: "email",
+      },
+      {
+        label: "failed update",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { status: JobStatus.FAILED } },
+          fullDocument: { status: JobStatus.FAILED, name: "sms", nextRunAt: due },
+        },
+        name: "sms",
+      },
+      {
+        label: "unnamed completed update",
+        event: {
+          operationType: "update",
+          updateDescription: { updatedFields: { status: JobStatus.COMPLETED } },
+          fullDocument: { status: JobStatus.COMPLETED },
+        },
+      },
+    ])("forwards $label synchronously", ({ event, name, date }) => {
+      handler.setup();
+      stream.emit("change", event);
+      expect(pendingNotifications.notifyPendingJob.mock.calls).toStrictEqual(
+        date ? [[name, date]] : [],
+      );
+      expect(pendingNotifications.notifyRunnableJob.mock.calls).toStrictEqual(date ? [] : [[name]]);
+      expect(pendingNotifications.notifyPendingJob.mock.calls[0]?.[1]).toBe(date);
     });
 
-    it("should debounce multiple rapid events", () => {
-      vi.useFakeTimers();
+    it.each(["stopped", "processing"])(
+      "filters %s events before notification delivery",
+      (state) => {
+        handler.setup();
 
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: { status: JobStatus.PENDING },
-      };
+        if (state === "stopped") {
+          vi.mocked(ctx.isRunning).mockReturnValue(false);
+        }
 
-      // Trigger multiple events within one bounded batching window.
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(25);
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(25);
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-      // Should only call once due to debouncing
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
+        stream.emit(
+          "change",
+          state === "stopped"
+            ? { operationType: "insert", fullDocument: { name: "email", nextRunAt: due } }
+            : {
+                operationType: "update",
+                updateDescription: { updatedFields: { status: JobStatus.PROCESSING } },
+                fullDocument: { status: JobStatus.PROCESSING, name: "email", nextRunAt: due },
+              },
+        );
+        expect(pendingNotifications.notifyPendingJob).not.toHaveBeenCalled();
+        expect(pendingNotifications.notifyRunnableJob).not.toHaveBeenCalled();
+      },
+    );
   });
   describe("cursor errors", () => {
     it("preserves a synchronous error listener throw without scheduling a reconnect", () => {
@@ -506,34 +534,6 @@ describe(ChangeStreamHandler, () => {
       });
     });
 
-    it("shortens the full-poll deadline on disconnect without needing a notification", async () => {
-      vi.useFakeTimers();
-      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
-        nativeMonotonicTime,
-      );
-      handler.setup();
-      pendingNotifications.start();
-      await vi.advanceTimersByTimeAsync(200);
-      vi.mocked(onPoll).mockClear();
-      stream.emit("error", new Error("Disconnected"));
-      await vi.advanceTimersByTimeAsync(999);
-      expect(onPoll).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
-      await Effect.runPromise(handler.close());
-    });
-
-    it("preserves local-write wakeups across disconnect and reconnect", async () => {
-      vi.useFakeTimers();
-      handler.setup();
-      pendingNotifications.notifyPendingJob("local", new Date(Date.now() + 1500));
-      stream.emit("error", new Error("Disconnected"));
-      await vi.advanceTimersByTimeAsync(1000);
-      await vi.advanceTimersByTimeAsync(700);
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["local"]));
-      await Effect.runPromise(handler.close());
-    });
-
     it("resets backoff only after a successful server response", async () => {
       vi.useFakeTimers();
       handler.setup();
@@ -548,10 +548,10 @@ describe(ChangeStreamHandler, () => {
       vi.advanceTimersByTime(1000);
       expect({
         streamsLength: streams.length,
-        onPollMockCallsLength: onPoll.mock.calls.length,
+        notifications: pendingNotifications.notifyRunnableJob.mock.calls.length,
       }).toStrictEqual({
         streamsLength: 2,
-        onPollMockCallsLength: 0,
+        notifications: 0,
       });
       vi.advanceTimersByTime(1000);
       expect(streams).toHaveLength(3);
@@ -649,43 +649,6 @@ describe(ChangeStreamHandler, () => {
           }),
         }),
       );
-    });
-
-    it("preserves scheduled wakeups on stream error", () => {
-      vi.useFakeTimers();
-      handler.setup();
-      // Schedule a wakeup timer via a future-dated job event
-      const futureDate = new Date(Date.now() + 5000);
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          name: "test-job",
-          status: JobStatus.PENDING,
-          nextRunAt: futureDate,
-        },
-      });
-      stream.emit("error", new Error("Connection lost"));
-      // Advance past when the wakeup would have fired
-      vi.advanceTimersByTime(6000);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("preserves batched notifications on stream error", () => {
-      vi.useFakeTimers();
-      handler.setup();
-      // Trigger an event that starts the debounce timer
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          name: "test-job",
-          status: JobStatus.PENDING,
-          nextRunAt: new Date(Date.now() - 1000),
-        },
-      });
-      stream.emit("error", new Error("Connection lost"));
-      // Advance past the debounce window (100ms)
-      vi.advanceTimersByTime(150);
-      expect(onPoll).toHaveBeenCalledOnce();
     });
   });
   describe("close", () => {
@@ -791,8 +754,9 @@ describe(ChangeStreamHandler, () => {
           operationType: "insert",
           fullDocument: { status: JobStatus.PENDING, name: "replacement" },
         });
-        await vi.advanceTimersByTimeAsync(100);
-        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+        expect(pendingNotifications.notifyRunnableJob).toHaveBeenCalledExactlyOnceWith(
+          "replacement",
+        );
       },
     );
 
@@ -814,7 +778,8 @@ describe(ChangeStreamHandler, () => {
         });
         oldStream.emit("error", new Error("Closing cursor failed"));
         await vi.advanceTimersByTimeAsync(100);
-        expect(onPoll).not.toHaveBeenCalled();
+        expect(pendingNotifications.notifyPendingJob).not.toHaveBeenCalled();
+        expect(pendingNotifications.notifyRunnableJob).not.toHaveBeenCalled();
         expect(ctx.emitHistory).not.toContainEqual(
           objectContainingMatcher({ event: "changestream:error" }),
         );
@@ -825,8 +790,9 @@ describe(ChangeStreamHandler, () => {
           operationType: "insert",
           fullDocument: { status: JobStatus.PENDING, name: "replacement" },
         });
-        await vi.advanceTimersByTimeAsync(100);
-        expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["replacement"]));
+        expect(pendingNotifications.notifyRunnableJob).toHaveBeenCalledExactlyOnceWith(
+          "replacement",
+        );
         expect(replacement.close).not.toHaveBeenCalled();
       } finally {
         closed.resolve();
@@ -902,372 +868,64 @@ describe(ChangeStreamHandler, () => {
         objectContainingMatcher({ event: "changestream:closed" }),
       );
     });
-
-    it("preserves batched notifications when only the stream closes", async () => {
-      vi.useFakeTimers();
-      handler.setup();
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: { status: JobStatus.PENDING },
-      });
-      await Effect.runPromise(handler.close());
-      vi.advanceTimersByTime(150);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
   });
-  describe("cursor changes - targeted polling", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
-
-    it("should pass job name to onPoll for immediate jobs", () => {
+  describe("composed notification ownership", () => {
+    it("shortens the full-poll deadline on disconnect without needing a notification", async () => {
       vi.useFakeTimers();
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "email",
-          nextRunAt: new Date(Date.now() - 1000),
-        },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email"]));
-    });
-
-    it("should collect multiple job names during debounce window", () => {
-      vi.useFakeTimers();
-      const pastDate = new Date(Date.now() - 1000);
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: { status: JobStatus.PENDING, name: "email", nextRunAt: pastDate },
-      });
-      vi.advanceTimersByTime(50);
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: { status: JobStatus.PENDING, name: "sms", nextRunAt: pastDate },
-      });
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email", "sms"]));
-    });
-
-    it("should fall back to full poll when fullDocument has no name", () => {
-      vi.useFakeTimers();
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: { status: JobStatus.PENDING },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-
-      // No target names — falls back to full poll with undefined
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
-    });
-
-    it("should trigger poll on update event with status change to pending", () => {
-      vi.useFakeTimers();
-      const pastDate = new Date(Date.now() - 1000);
-
-      const changeEvent = {
-        operationType: "update" as const,
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "retry-job",
-          nextRunAt: pastDate,
-        },
-        updateDescription: { updatedFields: { status: JobStatus.PENDING } },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["retry-job"]));
-    });
-  });
-  describe("cursor changes - future job wakeup", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
-
-    it("should schedule wakeup timer for future jobs", () => {
-      vi.useFakeTimers();
-      const futureDate = new Date(Date.now() + 5000);
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "scheduled",
-          nextRunAt: futureDate,
-        },
-      };
-
-      stream.emit("change", changeEvent);
-      // Should NOT have polled immediately
-      vi.advanceTimersByTime(150);
-      expect(onPoll).not.toHaveBeenCalled();
-      // Should NOT fire before delay + grace period (5000 + 200 = 5200ms)
-      vi.advanceTimersByTime(4900);
-      expect(onPoll).not.toHaveBeenCalled();
-      // Should fire after the grace period
-      vi.advanceTimersByTime(200);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("should use earliest nextRunAt when multiple future jobs arrive", () => {
-      vi.useFakeTimers();
-      // First job at +10s
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "late",
-          nextRunAt: new Date(Date.now() + 10_000),
-        },
-      });
-      // Second job at +3s (earlier — should replace timer)
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "early",
-          nextRunAt: new Date(Date.now() + 3000),
-        },
-      });
-      // Should fire at ~3200ms, not 10200ms
-      vi.advanceTimersByTime(3200);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("should not replace timer when later job arrives", () => {
-      vi.useFakeTimers();
-      // First job at +3s
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "early",
-          nextRunAt: new Date(Date.now() + 3000),
-        },
-      });
-      // Second job at +10s (later — should NOT replace timer)
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "late",
-          nextRunAt: new Date(Date.now() + 10_000),
-        },
-      });
-      // Should still fire at ~3200ms
-      vi.advanceTimersByTime(3200);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-
-    it("should check the scheduled job name when its wakeup fires", () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "scheduled",
-          nextRunAt: new Date(Date.now() + 1000),
-        },
-      });
-      vi.advanceTimersByTime(1200);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["scheduled"]));
-    });
-
-    it("preserves scheduled wakeups when only the stream closes", async () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "scheduled",
-          nextRunAt: new Date(Date.now() + 5000),
-        },
-      });
-      await Effect.runPromise(handler.close());
-      // Advance past the wakeup time
-      vi.advanceTimersByTime(6000);
-      expect(onPoll).toHaveBeenCalledOnce();
-    });
-  });
-  describe("cursor changes - mixed immediate and future", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
-
-    it("should handle immediate and future jobs independently", () => {
-      vi.useFakeTimers();
-      const pastDate = new Date(Date.now() - 1000);
-      // Immediate job — triggers targeted debounced poll
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "immediate",
-          nextRunAt: pastDate,
-        },
-      });
-      // Future job — schedules wakeup
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "future",
-          nextRunAt: new Date(Date.now() + 5000),
-        },
-      });
-      // Debounced poll fires for the immediate job
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["immediate"]));
-      // Wakeup fires for the future job
-      vi.advanceTimersByTime(5200);
-      expect(onPoll).toHaveBeenCalledTimes(2);
-    });
-  });
-  describe("cursor changes - slot freed (completed/failed)", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
-
-    it("should trigger targeted poll when job status changes to completed", () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "update",
-        updateDescription: { updatedFields: { status: "completed" } },
-        fullDocument: {
-          status: JobStatus.COMPLETED,
-          name: "email",
-          nextRunAt: new Date(),
-        },
-      });
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email"]));
-    });
-
-    it("should trigger targeted poll when job status changes to failed", () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "update",
-        updateDescription: { updatedFields: { status: "failed" } },
-        fullDocument: {
-          status: JobStatus.FAILED,
-          name: "sms",
-          nextRunAt: new Date(),
-        },
-      });
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["sms"]));
-    });
-
-    it("should coalesce slot-freed events with insert events during debounce", () => {
-      vi.useFakeTimers();
-      // Insert event for a new pending job
-      stream.emit("change", {
-        operationType: "insert",
-        fullDocument: {
-          status: JobStatus.PENDING,
-          name: "email",
-          nextRunAt: new Date(Date.now() - 1000),
-        },
-      });
-      // Slot freed by completed job for same worker
-      stream.emit("change", {
-        operationType: "update",
-        updateDescription: { updatedFields: { status: "completed" } },
-        fullDocument: {
-          status: JobStatus.COMPLETED,
-          name: "email",
-          nextRunAt: new Date(),
-        },
-      });
-      vi.advanceTimersByTime(150);
-      // Single debounced poll with the worker name
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email"]));
-    });
-
-    it("should fall back to full poll when completed event has no name", () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "update",
-        updateDescription: { updatedFields: { status: "completed" } },
-        fullDocument: {
-          status: JobStatus.COMPLETED,
-        },
-      });
-      vi.advanceTimersByTime(150);
-
-      expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
-    });
-
-    it("should not trigger on status change to processing", () => {
-      vi.useFakeTimers();
-      stream.emit("change", {
-        operationType: "update",
-        updateDescription: { updatedFields: { status: "processing" } },
-        fullDocument: {
-          status: JobStatus.PROCESSING,
-          name: "email",
-          nextRunAt: new Date(),
-        },
-      });
-      vi.advanceTimersByTime(150);
-      expect(onPoll).not.toHaveBeenCalled();
-    });
-  });
-  describe("cursor changes - error handling", () => {
-    beforeEach(() => {
-      handler.setup();
-    });
-
-    it("should emit job:error if poll throws", async () => {
-      vi.useFakeTimers();
-      const pollError = new Error("Poll failed");
-      vi.mocked(onPoll).mockRejectedValue(pollError);
-
-      const changeEvent = {
-        operationType: "insert" as const,
-        fullDocument: { status: JobStatus.PENDING },
-      };
-
-      stream.emit("change", changeEvent);
-      vi.advanceTimersByTime(150);
-      // Wait for the promise rejection to be handled
-      await vi.runAllTimersAsync();
-      expect(ctx.emitHistory).toContainEqual(
-        objectContainingMatcher({
-          event: "job:error",
-          payload: objectContainingMatcher({ error: pollError }),
-        }),
+      const notifications = composeRouter();
+      vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
+        nativeMonotonicTime,
       );
-    });
-  });
-  describe("close with active timers", () => {
-    it("should clear reconnect timer during close", async () => {
-      vi.useFakeTimers();
       handler.setup();
-      // Trigger an error to start reconnect timer
-      stream.emit("error", new Error("Connection lost"));
-      // Close before reconnect timer fires
+      notifications.start();
+      await vi.advanceTimersByTimeAsync(200);
+      vi.mocked(onPoll).mockClear();
+      stream.emit("error", new Error("Disconnected"));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(onPoll).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onPoll).toHaveBeenCalledExactlyOnceWith(undefined);
       await Effect.runPromise(handler.close());
-      // Advance past the reconnect delay to verify timer was cleared
-      vi.advanceTimersByTime(5000);
-      // Should not have tried to setup again
-      expect(ctx.mockCollection.watch).toHaveBeenCalledOnce();
+    });
+
+    it("preserves local-write wakeups across disconnect and reconnect", async () => {
+      vi.useFakeTimers();
+      const notifications = composeRouter();
+      handler.setup();
+      notifications.notifyPendingJob("local", new Date(Date.now() + 1500));
+      stream.emit("error", new Error("Disconnected"));
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(700);
+      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["local"]));
+      await Effect.runPromise(handler.close());
+    });
+
+    it.each([
+      { action: "error", future: false },
+      { action: "error", future: true },
+      { action: "close", future: false },
+      { action: "close", future: true },
+    ])("preserves router work after $action (future: $future)", async ({ action, future }) => {
+      vi.useFakeTimers();
+      composeRouter();
+      handler.setup();
+      stream.emit("change", {
+        operationType: "insert",
+        fullDocument: {
+          name: "email",
+          status: JobStatus.PENDING,
+          nextRunAt: new Date(Date.now() + (future ? 5000 : -1000)),
+        },
+      });
+
+      if (action === "error") {
+        stream.emit("error", new Error("Disconnected"));
+      } else {
+        await Effect.runPromise(handler.close());
+      }
+
+      await vi.advanceTimersByTimeAsync(future ? 6000 : 150);
+      expect(onPoll).toHaveBeenCalledExactlyOnceWith(new Set(["email"]));
     });
   });
 });

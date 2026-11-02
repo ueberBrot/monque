@@ -18,17 +18,23 @@ import type { ChangeStream } from "mongodb";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { makeSchedulerLayer, ProcessingResources } from "@/scheduler/runtime.js";
+import { makeSchedulerLayer, Processing } from "@/scheduler/runtime.js";
+import { makeChangeStreamHandler } from "@/scheduler/services/change-stream-handler.js";
+import { JobExecution, makeJobExecution } from "@/scheduler/services/job-execution.js";
+import { JobIntake } from "@/scheduler/services/job-intake.js";
 import { JobManagement } from "@/scheduler/services/job-manager.js";
+import { JobOwnership, makeNativeJobOwnershipLayer } from "@/scheduler/services/job-ownership.js";
 import { JobPersistence } from "@/scheduler/services/job-persistence.js";
-import { JobQueries } from "@/scheduler/services/job-queries.js";
+import { JobQueries, makeJobQueriesLayer } from "@/scheduler/services/job-queries.js";
+import { makeSchedulerMaintenance } from "@/scheduler/services/lifecycle-manager.js";
+import { makePendingNotificationRouter } from "@/scheduler/services/pending-notification-router.js";
 import { WorkerAdmission } from "@/scheduler/services/worker-admission.js";
 import { ConnectionError } from "@/shared";
 import { createMockContext, createWorker, JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 
 describe("composed initialization", () => {
-  effectIt.effect("recovers before checking collisions and routes recovery synchronously", () =>
+  effectIt.effect("recovers before checking collisions without publishing processing", () =>
     Effect.gen(function* initializeRecovery() {
       const order: string[] = [];
       const ctx = createMockContext();
@@ -48,10 +54,6 @@ describe("composed initialization", () => {
 
         return true;
       });
-      ctx.notifyPendingJob.mockImplementation((name, nextRunAt) => {
-        expect({ name, nextRunAt }).toStrictEqual({ name: undefined, nextRunAt: new Date(1234) });
-        order.push("pending");
-      });
       ctx.mockCollection.findOne.mockImplementationOnce(async () => {
         order.push("collision");
 
@@ -59,7 +61,7 @@ describe("composed initialization", () => {
       });
       yield* TestClock.setTime(1234);
       const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.flip);
-      expect(order).toStrictEqual(["recover", "stale:recovered", "pending", "collision"]);
+      expect(order).toStrictEqual(["recover", "stale:recovered", "collision"]);
       expect(ctx.emit).toHaveBeenCalledExactlyOnceWith("stale:recovered", { count: 2 });
       expect(error).toBeInstanceOf(ConnectionError);
       expect(error).toHaveProperty(
@@ -95,11 +97,9 @@ describe("composed initialization", () => {
 
         const error = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Effect.scoped, Effect.flip);
         expect(error).toBe(failure);
-        expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
         expect(ctx.mockCollection.findOne).not.toHaveBeenCalled();
         ctx.mockCollection.findOne.mockResolvedValueOnce(null);
         yield* makeSchedulerLayer(ctx).pipe(Layer.build);
-        expect(ctx.notifyPendingJob).toHaveBeenCalledOnce();
         expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
       }),
   );
@@ -119,8 +119,73 @@ describe("composed initialization", () => {
       yield* makeSchedulerLayer(ctx).pipe(Layer.build);
       expect(ctx.mockCollection.updateMany).toHaveBeenCalledTimes(count === null ? 0 : 1);
       expect(ctx.emit).not.toHaveBeenCalled();
-      expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
       expect(ctx.mockCollection.findOne).toHaveBeenCalledOnce();
+    }),
+  );
+
+  effectIt.effect("keeps recovery unpublished while the whole graph acquires", () =>
+    Effect.gen(function* recoveryReadiness() {
+      const ctx = createMockContext();
+      ctx.admission.register("email", () => {});
+      ctx.mockCollection.findOneAndUpdate.mockResolvedValue(null);
+      ctx.mockCollection.updateMany.mockResolvedValue({
+        acknowledged: true,
+        matchedCount: 1,
+        modifiedCount: 1,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+      const acquiring = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+      const ready = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
+      const persistence = Layer.effect(
+        JobPersistence,
+        Effect.gen(function* acquireReads() {
+          yield* Deferred.succeed(acquiring, undefined);
+          yield* Deferred.await(ready);
+
+          return JobPersistence.of({ getJob: () => Effect.succeed(null) });
+        }),
+      );
+
+      const building = yield* makeSchedulerLayer(ctx, persistence).pipe(
+        Layer.build,
+        Effect.forkChild,
+      );
+
+      yield* Deferred.await(acquiring);
+      yield* TestClock.adjust(1000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      yield* Deferred.succeed(ready, undefined);
+      const context = yield* Fiber.join(building);
+      yield* TestClock.adjust(1000);
+      expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
+      Context.get(context, Processing).notifyRunnableJob("email");
+      yield* TestClock.adjust(100);
+      expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+    }),
+  );
+
+  effectIt.effect("isolates local producer routing when the same Layer is acquired twice", () =>
+    Effect.gen(function* isolatedProducerRouting() {
+      const ctx = createMockContext();
+      ctx.admission.register("email", () => {});
+      ctx.mockCollection.findOneAndUpdate.mockResolvedValue(null);
+      ctx.options.recoverStaleJobs = false;
+      const layer = makeSchedulerLayer(ctx);
+      const firstOwner = yield* Scope.fork(yield* Effect.scope);
+      const secondOwner = yield* Scope.fork(yield* Effect.scope);
+      const first = yield* layer.pipe(Layer.buildWithScope(firstOwner));
+      yield* layer.pipe(Layer.buildWithScope(secondOwner));
+      yield* Scope.close(secondOwner, Exit.void);
+      ctx.mockCollection.insertOne.mockResolvedValue({
+        acknowledged: true,
+        insertedId: new ObjectId(),
+      });
+      yield* Context.get(first, JobIntake).enqueue("email", {});
+      yield* TestClock.adjust(100);
+      expect(ctx.mockCollection.findOneAndUpdate).toHaveBeenCalledOnce();
+      expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
     }),
   );
 
@@ -129,15 +194,12 @@ describe("composed initialization", () => {
       const ctx = createMockContext();
       ctx.options.recoverStaleJobs = false;
       const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
-      const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
       const release = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
       ctx.admission.register("email", async () => {
         Deferred.doneUnsafe(started, Effect.void);
         await release.promise;
       });
-      ctx.notifyJobFinished.mockImplementation(() => {
-        Deferred.doneUnsafe(finished, Effect.void);
-      });
+
       ctx.mockCollection.aggregate.mockReturnValue(
         fromPartial({
           toArray: async () => await Promise.resolve([{ _id: "email", nextRunAt: new Date(0) }]),
@@ -153,11 +215,12 @@ describe("composed initialization", () => {
 
       const context = yield* makeSchedulerLayer(ctx).pipe(Layer.buildWithScope(owner));
 
-      const { notifications } = Context.get(context, ProcessingResources);
+      const processing = Context.get(context, Processing);
       let closed = false;
 
       try {
-        notifications.start();
+        ctx.admission.stop();
+        processing.start();
         yield* Deferred.await(started);
 
         const closing = yield* Scope.close(owner, Exit.void).pipe(
@@ -175,7 +238,7 @@ describe("composed initialization", () => {
           active: 1,
         });
         release.resolve();
-        yield* Deferred.await(finished);
+        yield* Context.get(context, JobExecution).captureDrain().await(1000);
         yield* Fiber.join(closing);
         expect({ closed, active: ctx.admission.activeJobs().length }).toStrictEqual({
           closed: true,
@@ -223,7 +286,6 @@ describe("composed initialization", () => {
         ctx.options.recoverStaleJobs = false;
         ctx.options.leaseDuration = 3000;
         const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
-        const finished = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const reading = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
         const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
         const query = Promise.withResolvers<never[]>();
@@ -258,9 +320,7 @@ describe("composed initialization", () => {
           },
           { concurrency: 1 },
         );
-        ctx.notifyJobFinished.mockImplementation(() => {
-          Deferred.doneUnsafe(finished, Effect.void);
-        });
+
         ctx.mockCollection.findOneAndUpdate.mockResolvedValueOnce(job).mockResolvedValue(null);
         ctx.mockCollection.updateMany.mockResolvedValue({
           acknowledged: true,
@@ -289,9 +349,33 @@ describe("composed initialization", () => {
             }),
           );
 
-        const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
+        const context = yield* Layer.mergeAll(
+          makeNativeJobOwnershipLayer(ctx.collection, ctx.options.schedulerInstanceId, ctx.options),
+          makeJobQueriesLayer(ctx),
+        ).pipe(Layer.build);
 
-        const { notifications, timers, streams } = Context.get(context, ProcessingResources);
+        const execution = yield* makeJobExecution(ctx).pipe(
+          Effect.provideService(JobOwnership, Context.get(context, JobOwnership)),
+          Effect.provideService(WorkerAdmission, ctx.admission),
+        );
+
+        const notifications = yield* makePendingNotificationRouter(ctx, (names, isCurrent) =>
+          execution.poll(names, isCurrent),
+        );
+
+        const streams = yield* makeChangeStreamHandler(ctx, notifications);
+
+        const timers = yield* makeSchedulerMaintenance({
+          ...ctx,
+          ownership: Context.get(context, JobOwnership),
+          activeClaimIds: () =>
+            ctx.admission
+              .activeJobs()
+              .flatMap((active) =>
+                active.claimId !== undefined && active.claimId !== "" ? [active.claimId] : [],
+              ),
+        });
+
         const queries = Context.get(context, JobQueries);
         const run = yield* timers.start;
 
@@ -322,7 +406,7 @@ describe("composed initialization", () => {
           ]);
           yield* run.stop;
           completion.resolve();
-          yield* Deferred.await(finished);
+          yield* execution.captureDrain().await(1000);
           expect(ctx.admission.availableSlots("email")).toBe(1);
           ctx.mockCollection.findOneAndUpdate.mockClear();
           notifications.notifyRunnableJob("email");
@@ -369,12 +453,13 @@ describe("composed initialization", () => {
       ctx.mockCollection.watch.mockReturnValue(fromPartial<ChangeStream>(stream));
       const owner = yield* Scope.make();
       const context = yield* makeSchedulerLayer(ctx).pipe(Layer.buildWithScope(owner));
-      const { streams } = Context.get(context, ProcessingResources);
-      streams.setup();
+      const processing = Context.get(context, Processing);
+      ctx.admission.stop();
+      ctx.options.shutdownTimeout = 10;
+      processing.start();
       let returned = false;
 
-      const closing = yield* streams.close().pipe(
-        Effect.timeoutOption(10),
+      const closing = yield* processing.stop.pipe(
         Effect.tap(() =>
           Effect.sync(() => {
             returned = true;
@@ -430,14 +515,14 @@ describe("composed initialization", () => {
 
       const context = yield* Layer.buildWithScope(makeSchedulerLayer(ctx), owner);
 
-      const { notifications } = Context.get(context, ProcessingResources);
+      const processing = Context.get(context, Processing);
       yield* TestClock.adjust(10_000);
       expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
-      notifications.notifyRunnableJob("email");
-      notifications.notifyPendingJob("email", new Date(20_000));
+      processing.notifyRunnableJob("email");
       yield* Scope.close(owner, Exit.void);
-      notifications.start();
-      notifications.notifyRunnableJob("email");
+      ctx.admission.stop();
+      processing.start();
+      processing.notifyRunnableJob("email");
       yield* TestClock.adjust(30_000);
       expect(ctx.mockCollection.aggregate).not.toHaveBeenCalled();
       expect(ctx.mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
@@ -573,7 +658,17 @@ describe("composed initialization", () => {
       });
       const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build);
 
-      const { timers } = Context.get(context, ProcessingResources);
+      const timers = yield* makeSchedulerMaintenance({
+        ...ctx,
+        ownership: Context.get(context, JobOwnership),
+        activeClaimIds: () =>
+          ctx.admission
+            .activeJobs()
+            .flatMap((job) =>
+              job.claimId !== undefined && job.claimId !== "" ? [job.claimId] : [],
+            ),
+      });
+
       const admission = Context.get(context, WorkerAdmission);
       const earlier = yield* timers.start;
       admission.register("work", () => {});
@@ -643,8 +738,10 @@ describe("composed initialization", () => {
         try {
           const context = yield* makeSchedulerLayer(ctx).pipe(Layer.build, Scope.provide(scope));
 
-          const run = yield* Context.get(context, ProcessingResources).timers.start;
-          yield* run.stop;
+          const processing = Context.get(context, Processing);
+          ctx.admission.stop();
+          processing.start();
+          yield* processing.stop;
 
           const closing = yield* Scope.close(scope, Exit.void).pipe(
             Effect.tap(() =>
@@ -668,7 +765,9 @@ describe("composed initialization", () => {
 
           const otherContext = yield* makeSchedulerLayer(other).pipe(Layer.build);
 
-          const otherRun = yield* Context.get(otherContext, ProcessingResources).timers.start;
+          const otherProcessing = Context.get(otherContext, Processing);
+          other.admission.stop();
+          otherProcessing.start();
           yield* TestClock.adjust(1000);
           expect({
             first: ctx.mockCollection.deleteMany.mock.calls.length,
@@ -676,7 +775,7 @@ describe("composed initialization", () => {
           }).toStrictEqual({ first: 1, other: 2 });
           deletion.resolve({ acknowledged: true, deletedCount: 1 });
           yield* Fiber.join(closing);
-          yield* otherRun.stop;
+          yield* otherProcessing.stop;
           yield* TestClock.adjust(1000);
           expect({ closed, first: ctx.mockCollection.deleteMany.mock.calls.length }).toStrictEqual({
             closed: true,
@@ -704,10 +803,11 @@ describe("composed initialization", () => {
       yield* Effect.gen(function* startMaintenance() {
         const services = yield* makeSchedulerLayer(ctx).pipe(
           Layer.build,
-          Effect.map((built) => Context.get(built, ProcessingResources)),
+          Effect.map((built) => Context.get(built, Processing)),
         );
 
-        yield* services.timers.start;
+        ctx.admission.stop();
+        services.start();
         yield* TestClock.adjust(1000);
         expect(maintenanceWrites).toBe(2);
       }).pipe(Effect.scoped);

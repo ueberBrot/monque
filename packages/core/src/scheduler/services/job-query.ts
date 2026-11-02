@@ -1,5 +1,6 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import type { Scope } from "effect";
+import { ObjectId } from "mongodb";
 import type { Collection, Document } from "mongodb";
 
 import { documentToPersistedJob, isValidJobStatus, JobStatus } from "@/jobs";
@@ -13,34 +14,23 @@ import type {
   QueueStats,
   QueueViewSummary,
 } from "@/jobs";
-import {
-  AggregationTimeoutError,
-  ConnectionError,
-  DEFAULT_MAX_BACKOFF_DELAY,
-  InvalidJobQueryError,
-  toError,
-} from "@/shared";
-import type { WorkerRegistration } from "@/workers";
+import { AggregationTimeoutError, ConnectionError, InvalidJobQueryError, toError } from "@/shared";
 
 import { attempt } from "../effects.js";
 import { buildSelectorQuery, parseJobNameFilter, resolveQueryLimit } from "../helpers.js";
 import { CursorListing } from "./cursor-listing.js";
+import { JobPersistenceError } from "./job-persistence-error.js";
+import { JobPersistence } from "./job-persistence.js";
 import { QueryCache } from "./query-cache.js";
 import { readJobCursor } from "./read-job-cursor.js";
 import type { ResolvedMonqueOptions } from "./types.js";
+import type { WorkerObservation } from "./worker-admission-state.js";
 
 /** Borrowed read-only inputs; local Worker/admission state has a separate owner. */
 export interface JobQueryDependencies {
   readonly collection: Collection;
-  readonly options: Pick<
-    ResolvedMonqueOptions,
-    "statsCacheTtlMs" | "maxRetries" | "baseRetryInterval" | "maxBackoffDelay"
-  >;
-  readonly workers: ReadonlyMap<
-    string,
-    Pick<WorkerRegistration, "concurrency" | "activeJobs" | "schema" | "retryOptions">
-  >;
-  readonly isPaused: (name: string) => boolean;
+  readonly options: Pick<ResolvedMonqueOptions, "statsCacheTtlMs">;
+  readonly workerObservations: (name?: string) => readonly WorkerObservation[];
 }
 
 const isProcessingDuration = (value: number | null | undefined): value is number =>
@@ -96,6 +86,29 @@ const prepareJobQuery = (filter: GetJobsFilter) => {
   }
 
   return { query, limit, skip };
+};
+
+export const readJob = <T = unknown>(
+  id: ObjectId | string,
+): Effect.Effect<PersistedJob<T> | null, ConnectionError, JobPersistence> => {
+  if (!ObjectId.isValid(id)) {
+    return Effect.succeed(null);
+  }
+
+  return JobPersistence.use((persistence) => persistence.getJob<T>(new ObjectId(id))).pipe(
+    Effect.catchCause((cause) => {
+      const failure = Cause.squash(cause);
+      const error = failure instanceof JobPersistenceError ? failure.cause : failure;
+      const message = error instanceof Error ? error.message : "Unknown error during getJob";
+
+      return Effect.fail(
+        new ConnectionError(
+          `Failed to get job: ${message}`,
+          error instanceof Error ? { cause: error } : undefined,
+        ),
+      );
+    }),
+  );
 };
 
 /**
@@ -391,32 +404,26 @@ export class JobQueryService {
       () => this.loadQueueViewStats(nameFilter),
     );
 
-    let workerNames: Iterable<string> = this.ctx.workers.keys();
+    const workers = new Map(
+      this.ctx.workerObservations(nameFilter).map((worker) => [worker.name, worker]),
+    );
 
-    if (nameFilter !== undefined) {
-      workerNames = this.ctx.workers.has(nameFilter) ? [nameFilter] : [];
-    }
-
-    const names = new Set([...persistedStats.keys(), ...workerNames]);
+    const names = new Set([...persistedStats.keys(), ...workers.keys()]);
 
     const summaries = [...names]
       .toSorted((a, b) => a.localeCompare(b))
       .map((name): QueueViewSummary => {
-        const worker = this.ctx.workers.get(name);
+        const worker = workers.get(name);
 
         const workerSummary = worker
           ? {
               concurrency: worker.concurrency,
-              activeCount: worker.activeJobs.size,
-              paused: this.ctx.isPaused(name),
-              hasSchema: worker.schema !== undefined,
-              maxRetries: worker.retryOptions?.maxRetries ?? this.ctx.options.maxRetries,
-              baseRetryInterval:
-                worker.retryOptions?.baseRetryInterval ?? this.ctx.options.baseRetryInterval,
-              maxBackoffDelay:
-                worker.retryOptions?.maxBackoffDelay ??
-                this.ctx.options.maxBackoffDelay ??
-                DEFAULT_MAX_BACKOFF_DELAY,
+              activeCount: worker.activeCount,
+              paused: worker.paused,
+              hasSchema: worker.hasSchema,
+              maxRetries: worker.maxRetries,
+              baseRetryInterval: worker.baseRetryInterval,
+              maxBackoffDelay: worker.maxBackoffDelay,
             }
           : null;
 
