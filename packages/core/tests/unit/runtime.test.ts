@@ -2,8 +2,10 @@ import { EventEmitter } from "node:events";
 import { it as effectIt } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
 import {
+  Clock,
   Context,
   Deferred,
+  Duration,
   Effect,
   Exit,
   Fiber,
@@ -433,6 +435,147 @@ describe("composed initialization", () => {
           yield* run.stop;
         }
       }).pipe(Effect.scoped),
+  );
+
+  effectIt.effect.each([false, true])(
+    "fences late Claims while maintenance teardown waits (restart: %s)",
+    (restart) =>
+      Effect.gen(function* stopBeforeMaintenanceWaits() {
+        const ctx = createMockContext();
+        ctx.options.recoverStaleJobs = false;
+        ctx.options.jobRetention = { completed: 1000, interval: 37_000 };
+        ctx.admission.stop();
+        const clock = yield* Clock.Clock;
+        const sleeping = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const cancelling = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const releaseCancellation = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const claiming = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+        const handled = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
+
+        const claim = Promise.withResolvers<ReturnType<
+          typeof JobFactoryHelpers.processing
+        > | null>();
+
+        const workerCompletion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+
+        const handler = vi.fn<() => Promise<void>>(async () => {
+          Deferred.doneUnsafe(handled, Effect.void);
+          await workerCompletion.promise;
+        });
+
+        ctx.admission.register("email", handler);
+        ctx.mockCollection.findOneAndUpdate
+          .mockImplementationOnce(async () => {
+            Deferred.doneUnsafe(claiming, Effect.void);
+
+            return await claim.promise;
+          })
+          .mockResolvedValue(null);
+        ctx.mockCollection.updateOne.mockImplementation(async () => {
+          Deferred.doneUnsafe(handled, Effect.void);
+
+          return await Promise.resolve({
+            acknowledged: true,
+            matchedCount: 1,
+            modifiedCount: 1,
+            upsertedCount: 0,
+            upsertedId: null,
+          });
+        });
+        ctx.mockCollection.aggregate.mockReturnValue(
+          fromPartial({
+            toArray: async () => await Promise.resolve([{ _id: "email", nextRunAt: new Date(0) }]),
+            close: async () => {
+              await Promise.resolve();
+            },
+          }),
+        );
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB cursors deliver Node EventEmitter callbacks.
+        const stream = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        });
+
+        // oxlint-disable-next-line unicorn/prefer-event-target -- Native MongoDB cursors deliver Node EventEmitter callbacks.
+        const replacement = Object.assign(new EventEmitter(), {
+          close: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        });
+
+        ctx.mockCollection.watch
+          .mockReturnValueOnce(fromPartial<ChangeStream>(stream))
+          .mockReturnValue(fromPartial<ChangeStream>(replacement));
+
+        const blockingClock: Clock.Clock = {
+          currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+          currentTimeMillis: clock.currentTimeMillis,
+          currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+          currentTimeNanos: clock.currentTimeNanos,
+          monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+          monotonicTimeNanos: clock.monotonicTimeNanos,
+          sleep: (duration) =>
+            Duration.toMillis(duration) === 37_000
+              ? Deferred.succeed(sleeping, undefined).pipe(
+                  Effect.andThen(clock.sleep(duration)),
+                  Effect.onInterrupt(() =>
+                    Deferred.succeed(cancelling, undefined).pipe(
+                      Effect.andThen(Deferred.await(releaseCancellation)),
+                    ),
+                  ),
+                )
+              : clock.sleep(duration),
+        };
+
+        const context = yield* makeSchedulerLayer(ctx).pipe(
+          Layer.build,
+          Effect.provideService(Clock.Clock, blockingClock),
+        );
+
+        const processing = Context.get(context, Processing);
+        processing.start();
+        yield* Deferred.await(sleeping);
+        yield* Deferred.await(claiming);
+        const stopping = yield* processing.stop.pipe(Effect.forkChild);
+
+        try {
+          yield* Deferred.await(cancelling);
+
+          if (restart) {
+            processing.start();
+          }
+
+          const job = JobFactoryHelpers.processing({
+            name: "email",
+            claimedBy: ctx.options.schedulerInstanceId,
+            claimId: "late-claim",
+          });
+
+          claim.resolve(job);
+          yield* Deferred.await(handled);
+          expect(handler).not.toHaveBeenCalled();
+          expect(ctx.mockCollection.updateOne).toHaveBeenCalledWith(
+            objectContainingMatcher({ _id: job._id, claimId: job.claimId }),
+            objectContainingMatcher({
+              $set: objectContainingMatcher({ status: JobStatus.PENDING }),
+            }),
+          );
+          yield* Deferred.succeed(releaseCancellation, undefined);
+          yield* Fiber.join(stopping);
+
+          if (restart) {
+            expect({
+              running: ctx.admission.running,
+              listeners: replacement.listenerCount("change"),
+              closes: replacement.close.mock.calls.length,
+            }).toStrictEqual({ running: true, listeners: 1, closes: 0 });
+          }
+        } finally {
+          claim.resolve(null);
+          workerCompletion.resolve();
+          yield* Deferred.succeed(releaseCancellation, undefined);
+          yield* Fiber.join(stopping);
+          yield* processing.stop;
+        }
+      }),
   );
 
   effectIt.effect("retains native cleanup in the instance after its close waiter times out", () =>

@@ -157,17 +157,18 @@ const makeProcessingLayer = ({
           Math.max(0, Number(deadline - clock.monotonicTimeNanosUnsafe()) / 1_000_000);
 
         const capturedMaintenance = maintenanceRun;
+        const { generation } = admission;
+        admission.stop();
         const drain = processing.captureDrain();
+        notifications.close();
+        query.clearStatsCache();
 
         if (capturedMaintenance) {
           yield* capturedMaintenance.beginDrain(options.leaseDuration !== undefined);
         }
 
-        notifications.close();
-        admission.stop();
-        query.clearStatsCache();
         yield* Effect.raceFirst(
-          streams.close().pipe(Effect.ignoreCause),
+          streams.close(() => admission.generation === generation).pipe(Effect.ignoreCause),
           Effect.suspend(() => Effect.sleep(remaining())),
         );
         const budget = remaining();

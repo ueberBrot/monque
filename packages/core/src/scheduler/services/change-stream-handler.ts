@@ -306,7 +306,14 @@ export class ChangeStreamHandler {
   }
 
   /** Restartable stream shutdown changes availability, never closes the router. */
-  close = Effect.fnUntraced(function* closeChangeStream(this: ChangeStreamHandler) {
+  close = Effect.fnUntraced(function* closeChangeStream(
+    this: ChangeStreamHandler,
+    isCurrent: () => boolean = () => true,
+  ) {
+    if (!isCurrent()) {
+      return;
+    }
+
     const { lifetime } = this;
     this.lifetime = null;
     this.pendingNotifications.setChangeStreamActive(false);
