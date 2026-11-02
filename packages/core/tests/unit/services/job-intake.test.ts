@@ -1,26 +1,50 @@
+import { ok } from "node:assert/strict";
 import { it } from "@effect/vitest";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import { DateTime, Effect } from "effect";
-import { MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
-import type { BulkWriteResult } from "mongodb";
+import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
+import type { BulkWriteResult, ClientSession } from "mongodb";
 import { afterEach, beforeEach, describe, expect, vi } from "vite-plus/test";
 
 import { JobStatus } from "@/jobs";
-import { JobIntake } from "@/scheduler/services/job-intake";
-import { ConnectionError, InvalidCronError, InvalidJobIdentifierError } from "@/shared";
+import { makeNativeJobIntake } from "@/scheduler/services/job-intake";
+import { JobPersistenceError } from "@/scheduler/services/job-persistence-error.js";
+import {
+  ConnectionError,
+  InvalidCronError,
+  InvalidJobIdentifierError,
+  PayloadTooLargeError,
+} from "@/shared";
 import { createMockContext, JobFactory } from "@tests/factories";
 import { anyMatcher, stringMatchingMatcher } from "@tests/setup/matchers.js";
 
-describe(JobIntake, () => {
+describe("Native Job intake", () => {
   let ctx: ReturnType<typeof createMockContext>;
-  let intake: JobIntake;
+  let intake: ReturnType<typeof makeNativeJobIntake>;
   beforeEach(() => {
     ctx = createMockContext();
-    intake = new JobIntake(ctx);
+    intake = makeNativeJobIntake(ctx);
   });
   afterEach(() => {
     vi.clearAllMocks();
   });
+  it.effect("retains the original transaction failure in the typed native error channel", () =>
+    Effect.gen(function* transactionFailure() {
+      const native = new MongoServerError({
+        message: "Write conflict",
+        code: 112,
+        errorLabels: ["TransientTransactionError"],
+      });
+
+      const session = fromPartial<ClientSession>({ inTransaction: () => true });
+      vi.spyOn(ctx.mockCollection, "insertOne").mockRejectedValueOnce(native);
+      const failure = yield* Effect.flip(intake.enqueue("work", {}, { session }));
+      ok(failure instanceof JobPersistenceError);
+
+      expect(failure.cause).toBe(native);
+      expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
+    }),
+  );
   it.effect.each([
     { code: 11_000, count: 3 },
     { code: 91, count: 2 },
@@ -444,6 +468,155 @@ describe(JobIntake, () => {
         _tag: "Failure",
         failure: { message: "Failed to schedule job: Database write failed" },
       });
+    }),
+  );
+});
+
+// vi.mock hoisted to top of file - mock the mongodb module so we can control BSON.calculateObjectSize.
+// We wrap calculateObjectSize in a vi.fn so tests can temporarily override it with mockImplementationOnce.
+// The real function is captured inside importOriginal to avoid circular reference from the mock itself.
+vi.mock(import("mongodb"), async (importOriginal) => {
+  const actual = await importOriginal();
+  const realCalculateObjectSize = actual.BSON.calculateObjectSize;
+
+  return {
+    ...actual,
+    BSON: {
+      ...actual.BSON,
+      calculateObjectSize: vi.fn<typeof actual.BSON.calculateObjectSize>(
+        (...args: Parameters<typeof actual.BSON.calculateObjectSize>) =>
+          realCalculateObjectSize(...args),
+      ),
+    },
+  };
+});
+
+describe("payload size validation", () => {
+  afterEach(() => {
+    vi.mocked(BSON.calculateObjectSize).mockClear();
+  });
+
+  it.effect("rejects payload exceeding maxPayloadSize on enqueue", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      ctx.options.maxPayloadSize = 100;
+      const intake = makeNativeJobIntake(ctx);
+      // Large data that will exceed 100 bytes in BSON
+      const largeData = { content: "x".repeat(200) };
+      const error = yield* Effect.flip(intake.enqueue("test-job", largeData));
+      expect(error).toBeInstanceOf(PayloadTooLargeError);
+      expect(fromAny<PayloadTooLargeError, unknown>(error).actualSize).toBeGreaterThan(100);
+      expect(fromAny<PayloadTooLargeError, unknown>(error).maxSize).toBe(100);
+    }),
+  );
+
+  it.effect("allows payload within maxPayloadSize on enqueue", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      ctx.options.maxPayloadSize = 10_000;
+      const intake = makeNativeJobIntake(ctx);
+      const insertedId = new ObjectId();
+      vi.spyOn(ctx.mockCollection, "insertOne").mockResolvedValueOnce({
+        insertedId,
+        acknowledged: true,
+      });
+      const result = yield* intake.enqueue("test-job", { small: "data" });
+      expect(result._id).toStrictEqual(insertedId);
+    }),
+  );
+
+  it.effect("allows payload exactly equal to maxPayloadSize on enqueue", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      const intake = makeNativeJobIntake(ctx);
+      const testData = { key: "value" };
+      // Mirror what validatePayloadSize computes: BSON.calculateObjectSize({ data })
+      const exactSize = BSON.calculateObjectSize({ data: testData });
+      ctx.options.maxPayloadSize = exactSize;
+      const insertedId = new ObjectId();
+      vi.spyOn(ctx.mockCollection, "insertOne").mockResolvedValueOnce({
+        insertedId,
+        acknowledged: true,
+      });
+      const result = yield* intake.enqueue("test-job", testData);
+      expect(result._id).toStrictEqual(insertedId);
+    }),
+  );
+
+  it.effect("skips validation when maxPayloadSize is undefined", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      // maxPayloadSize is undefined by default
+      expect(ctx.options.maxPayloadSize).toBeUndefined();
+      const intake = makeNativeJobIntake(ctx);
+      const insertedId = new ObjectId();
+      vi.spyOn(ctx.mockCollection, "insertOne").mockResolvedValueOnce({
+        insertedId,
+        acknowledged: true,
+      });
+      // Even large data should be accepted when maxPayloadSize is undefined
+      const largeData = { content: "x".repeat(10_000) };
+      const result = yield* intake.enqueue("test-job", largeData);
+      expect(result._id).toStrictEqual(insertedId);
+    }),
+  );
+
+  it.effect("rejects payload exceeding maxPayloadSize on schedule", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      ctx.options.maxPayloadSize = 100;
+      const intake = makeNativeJobIntake(ctx);
+      const largeData = { content: "x".repeat(200) };
+      expect(
+        yield* Effect.flip(intake.schedule("0 * * * *", "test-job", largeData)),
+      ).toBeInstanceOf(PayloadTooLargeError);
+    }),
+  );
+
+  it.effect("wraps BSON calculation errors in PayloadTooLargeError", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      ctx.options.maxPayloadSize = 1000;
+      const intake = makeNativeJobIntake(ctx);
+      const bsonError = new Error("Cannot serialize circular structure");
+      vi.mocked(BSON.calculateObjectSize).mockImplementationOnce(() => {
+        throw bsonError;
+      });
+      const error = yield* Effect.flip(intake.enqueue("test-job", { x: 1 }));
+      expect(error).toBeInstanceOf(PayloadTooLargeError);
+      expect({
+        fromAnyPayloadTooLargeErrorUnknownErrorActualSize: fromAny<PayloadTooLargeError, unknown>(
+          error,
+        ).actualSize,
+        fromAnyPayloadTooLargeErrorUnknownErrorMaxSize: fromAny<PayloadTooLargeError, unknown>(
+          error,
+        ).maxSize,
+      }).toStrictEqual({
+        fromAnyPayloadTooLargeErrorUnknownErrorActualSize: -1,
+        fromAnyPayloadTooLargeErrorUnknownErrorMaxSize: 1000,
+      });
+      expect(fromAny<PayloadTooLargeError, unknown>(error).message).toMatch(
+        /Failed to calculate job payload size/u,
+      );
+      expect(fromAny<PayloadTooLargeError, unknown>(error).cause).toBe(bsonError);
+    }),
+  );
+
+  it.effect("wraps non-Error BSON throws in a normalized cause", () =>
+    Effect.gen(function* payloadSize() {
+      const ctx = createMockContext();
+      ctx.options.maxPayloadSize = 1000;
+      const intake = makeNativeJobIntake(ctx);
+      vi.mocked(BSON.calculateObjectSize).mockImplementationOnce(() => {
+        // oxlint-disable-next-line eslint/no-throw-literal, typescript/only-throw-error -- Exercise native JavaScript non-Error throws at the BSON boundary.
+        throw "unexpected string thrown";
+      });
+      const error = yield* Effect.flip(intake.enqueue("test-job", { x: 1 }));
+      expect(error).toBeInstanceOf(PayloadTooLargeError);
+      expect(fromAny<PayloadTooLargeError, unknown>(error).cause).toBeInstanceOf(Error);
+      expect(
+        fromAny<Error, unknown>(fromAny<PayloadTooLargeError, unknown>(error).cause).message,
+      ).toBe("unexpected string thrown");
     }),
   );
 });
