@@ -23,6 +23,8 @@ interface PollingState {
 
 type PollingInterval = (query: PollingQuery) => number | false;
 
+const MAX_TIMER_DELAY = 2_147_483_647;
+
 const subscribeToDocumentVisibility = (onStoreChange: () => void): (() => void) => {
   if (globalThis.document === undefined) {
     return () => {
@@ -98,7 +100,7 @@ const useDocumentVisiblePollingInterval = (
 
       const backoff = 2 ** Math.min(failure?.count ?? 0, 5);
 
-      return Math.round(pollingIntervalMs * cadence * jitter * backoff);
+      return Math.min(Math.round(pollingIntervalMs * cadence * jitter * backoff), MAX_TIMER_DELAY);
     },
     [pollingIntervalMs, documentVisible, cadence],
   );
