@@ -16,6 +16,7 @@ import { Monque } from "@/scheduler/monque.js";
 import type { MonqueOptions } from "@/scheduler/types.js";
 import {
   ConnectionError,
+  InvalidCronError,
   InvalidJobIdentifierError,
   MonqueError,
   ShutdownTimeoutError,
@@ -84,6 +85,23 @@ describe(Monque, () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
+
+  it.each(["", " ", "\t\n"])(
+    "rejects blank cron expressions through Promise adapters before any write: %j",
+    async (expression) => {
+      await monque.initialize();
+
+      await expect(monque.schedule(expression, "work", {})).rejects.toBeInstanceOf(
+        InvalidCronError,
+      );
+      await expect(
+        monque.schedule(expression, "work", {}, { uniqueKey: "shared" }),
+      ).rejects.toBeInstanceOf(InvalidCronError);
+
+      expect(mockCollection.insertOne).not.toHaveBeenCalled();
+      expect(mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it("retains native callback cause identity after a successful management write", async () => {
     await monque.initialize();
