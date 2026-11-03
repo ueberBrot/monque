@@ -16,6 +16,8 @@ const buildDashboardClient = async (): Promise<void> => {
     // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
     const child = spawn("vp", ["build"], {
       cwd: dashboardPackageDirectory,
+      // Pack can inherit a development environment; published assets must use production React.
+      env: { ...process.env, NODE_ENV: "production" },
       stdio: "inherit",
     });
 
