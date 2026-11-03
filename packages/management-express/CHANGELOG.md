@@ -1,5 +1,12 @@
 # @monque/management-express
 
+## 0.7.2
+
+### Patch Changes
+
+- Updated dependencies [[`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3)]:
+  - @monque/management@0.11.0
+
 ## 0.7.1
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @monque/management
 
+## 0.11.0
+
+### Minor Changes
+
+- [#639](https://github.com/ueberBrot/monque/pull/639) [`6079d77`](https://github.com/ueberBrot/monque/commit/6079d77eefee84e25f06d9a2de4e00a24720c4e3) - Update runtime dependencies.
+
 ## 0.10.0
 
 ### Minor Changes
