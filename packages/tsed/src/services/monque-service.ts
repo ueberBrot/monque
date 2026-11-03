@@ -29,6 +29,7 @@ import type {
   EnqueueOptions,
   GetJobsFilter,
   JobSelector,
+  JobSummaryPage,
   JobWriteOptions,
   Monque,
   NowOptions,
@@ -267,6 +268,11 @@ export class MonqueService {
    */
   async getJobsWithCursor<T>(options?: CursorOptions): Promise<CursorPage<T>> {
     return await this.monque.getJobsWithCursor(options);
+  }
+
+  /** Read a cursor page of Job metadata without loading payloads from MongoDB. */
+  async getJobSummariesWithCursor(options?: CursorOptions): Promise<JobSummaryPage> {
+    return await this.monque.getJobSummariesWithCursor(options);
   }
 
   /**

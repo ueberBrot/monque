@@ -24,6 +24,7 @@ interface MockMonque {
   getJob: Mock<Monque["getJob"]>;
   getJobs: Mock<Monque["getJobs"]>;
   getJobsWithCursor: Mock<Monque["getJobsWithCursor"]>;
+  getJobSummariesWithCursor: Mock<Monque["getJobSummariesWithCursor"]>;
   getQueueStats: Mock<Monque["getQueueStats"]>;
   isHealthy: Mock<Monque["isHealthy"]>;
 }
@@ -90,6 +91,12 @@ describe(MonqueService, () => {
           .mockResolvedValue(
             fromPartial({ jobs: [], cursor: null, hasNextPage: false, hasPreviousPage: false }),
           ),
+        getJobSummariesWithCursor: vi.fn<Monque["getJobSummariesWithCursor"]>().mockResolvedValue({
+          jobs: [],
+          cursor: null,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        }),
         getQueueStats: vi
           .fn<Monque["getQueueStats"]>()
           .mockResolvedValue(fromPartial({ pending: 5, completed: 10 })),
@@ -229,6 +236,33 @@ describe(MonqueService, () => {
         const result = await service.getQueueStats({ name: "email" });
         expect(mockMonque.getQueueStats).toHaveBeenCalledWith({ name: "email" });
         expect(result).toStrictEqual({ pending: 5, completed: 10 });
+      });
+
+      it.each([undefined, { limit: 20, filter: { name: "email" } }])(
+        "reads summary pages without invoking full-payload queries for %j",
+        async (options) => {
+          const page = {
+            jobs: [],
+            cursor: "next-page",
+            hasNextPage: true,
+            hasPreviousPage: false,
+          };
+
+          mockMonque.getJobSummariesWithCursor.mockResolvedValue(page);
+
+          await expect(service.getJobSummariesWithCursor(options)).resolves.toBe(page);
+          expect(mockMonque.getJobSummariesWithCursor).toHaveBeenCalledExactlyOnceWith(options);
+          expect(mockMonque.getJobSummariesWithCursor.mock.contexts[0]).toBe(mockMonque);
+          expect(mockMonque.getJobsWithCursor).not.toHaveBeenCalled();
+        },
+      );
+
+      it("preserves summary query failures", async () => {
+        const failure = new Error("Summary query failed");
+        mockMonque.getJobSummariesWithCursor.mockRejectedValue(failure);
+
+        await expect(service.getJobSummariesWithCursor()).rejects.toBe(failure);
+        expect(mockMonque.getJobsWithCursor).not.toHaveBeenCalled();
       });
     });
 
