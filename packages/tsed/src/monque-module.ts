@@ -184,9 +184,16 @@ export class MonqueModule implements OnInit, OnDestroy {
 
                 if (typeof jobMethod === "function") {
                   await jobMethod.call(targetInstance, job);
+
+                  return;
                 }
               }
               /* oxlint-enable anti-slop/no-runtime-typeof, anti-slop/no-reflect-get */
+
+              throw new MonqueError(
+                // oxlint-disable-next-line typescript/no-unnecessary-type-conversion -- Format handler keys safely when combined with symbol-key decorator metadata.
+                `Monque: Handler "${String(method)}" for job "${fullName}" is not callable`,
+              );
             } catch (error) {
               this.logger.error({
                 event: "MONQUE_JOB_ERROR",
