@@ -202,7 +202,7 @@ export class MonqueModule implements OnInit, OnDestroy {
           });
         };
 
-        if (isCron && cronPattern !== undefined && cronPattern !== "") {
+        if (isCron && cronPattern !== undefined) {
           this.logger.debug(`Monque: Registering cron job "${fullName}" (${cronPattern})`);
 
           // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Preserve the public mergeable metadata interface and forward its original options object.

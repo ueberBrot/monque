@@ -1,4 +1,4 @@
-import { WorkerRegistrationError } from "@monque/core";
+import { InvalidCronError, WorkerRegistrationError } from "@monque/core";
 /**
  * Unit tests for MonqueModule.registerJobs() edge cases (TEST-01)
  *
@@ -453,6 +453,40 @@ describe("MonqueModule.registerJobs()", () => {
 
       expect(mockMonque.register).toHaveBeenCalledWith("ns.broken-cron", expect.any(Function), {});
       expect(mockMonque.schedule).not.toHaveBeenCalled();
+    });
+
+    it("forwards an empty @Cron pattern and preserves the scheduling rejection", async () => {
+      const instance = new StubControllerA();
+
+      const providers = [
+        {
+          token: Symbol("CtrlA"),
+          name: "CtrlA",
+          useClass: StubControllerA,
+          scope: ProviderScope.SINGLETON,
+        },
+      ];
+
+      module.setInjector(createMockInjector(providers, () => instance));
+      collectJobMetadataMock.mockReturnValue([
+        {
+          fullName: "ns.blank-cron",
+          method: "handle",
+          opts: {},
+          isCron: true,
+          cronPattern: "",
+        },
+      ]);
+      const failure = new InvalidCronError("", "Cron expression must not be empty");
+      mockMonque.schedule.mockRejectedValueOnce(failure);
+
+      await expect(module.callRegisterJobs()).rejects.toBe(failure);
+      expect(mockMonque.register).toHaveBeenCalledExactlyOnceWith(
+        "ns.blank-cron",
+        expect.any(Function),
+        {},
+      );
+      expect(mockMonque.schedule).toHaveBeenCalledExactlyOnceWith("", "ns.blank-cron", {}, {});
     });
 
     it("should register and schedule when isCron is true with valid cronPattern", async () => {
