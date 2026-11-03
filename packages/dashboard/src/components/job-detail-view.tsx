@@ -83,9 +83,7 @@ const getLifecycleMetadataItems = (job: JobDto): readonly MetadataItem[] => [
       ]),
   [
     "Heartbeat interval",
-    job.heartbeatInterval !== null &&
-    job.heartbeatInterval !== 0 &&
-    !Number.isNaN(job.heartbeatInterval)
+    Number.isFinite(job.heartbeatInterval) && job.heartbeatInterval !== 0
       ? `${job.heartbeatInterval} ms`
       : "Not set",
   ],
