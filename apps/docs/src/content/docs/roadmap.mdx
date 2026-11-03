@@ -38,6 +38,15 @@ Inspect and manage Jobs through a Dashboard served from your application.
 
 See [Dashboard setup](/monque/dashboard/express/).
 
+### Standalone Dashboard deployment
+
+Serve the Dashboard independently with the Docker image.
+
+- Configure the Dashboard mount path and Management API URL at container startup.
+- Keep the scheduler, Management API, authentication, and permissions in your backend.
+
+See [Docker setup](/monque/dashboard/docker/).
+
 ## Planned
 
 ### Shared rate limits
@@ -61,6 +70,5 @@ Define how related Jobs run in sequence or depend on each other.
 Add controls for applications with larger Job backlogs or multiple tenants.
 
 - Group Jobs by namespace or tenant.
-- Support standalone Dashboard deployment and Docker packaging.
 
 Additional processing policies and Management Adapters will be considered when there is clear demand.
