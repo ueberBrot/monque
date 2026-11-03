@@ -36,7 +36,7 @@ export interface JobMetadata {
   /**
    * Method name on the controller class.
    */
-  method: string;
+  method: string | symbol;
 
   /**
    * Job options forwarded to Monque.register().
@@ -83,7 +83,7 @@ export interface CronMetadata {
   /**
    * Method name on the controller class.
    */
-  method: string;
+  method: string | symbol;
 
   /**
    * Schedule options forwarded to Monque.schedule().
