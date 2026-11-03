@@ -251,7 +251,7 @@ try {
         })
         .toArray(),
     );
-    await run(process.execPath, ["app.mts"], directory, {
+    await run("node", ["app.mts"], directory, {
       MONQUE_VERIFY_CASE: scenario.name,
       MONQUE_VERIFY_URI: mongoContainer.getConnectionString(),
       MONQUE_VERIFY_SCRATCH: scratch,
@@ -269,7 +269,7 @@ try {
 
   const report = {
     checkedAt: new Date().toISOString(),
-    runtime: { node: process.version, bun: process.versions.bun },
+    orchestrator: { bun: process.versions.bun },
     packages: versions,
     results,
   };
