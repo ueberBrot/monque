@@ -1,13 +1,13 @@
-import { InvalidCronError, WorkerRegistrationError } from "@monque/core";
+import { InvalidCronError, MonqueError, WorkerRegistrationError } from "@monque/core";
 /**
  * Unit tests for MonqueModule.registerJobs() edge cases (TEST-01)
  *
  * Tests scope resolution failure, duplicate job detection,
  * partial registration, and malformed metadata handling.
  */
-import type { Monque } from "@monque/core";
+import type { Job, Monque } from "@monque/core";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { ProviderScope } from "@tsed/di";
+import { DIContext, ProviderScope } from "@tsed/di";
 import type { LOGGER } from "@tsed/di";
 import type { Mock } from "vite-plus/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -104,6 +104,35 @@ const createMockInjector = function createMockInjector(
   };
 };
 
+interface HandlerController {
+  handle: unknown;
+}
+
+const registerHandler = async (
+  module: TestableMonqueModule,
+  mockMonque: MockMonque,
+  instance: HandlerController,
+) => {
+  const token = Symbol("CtrlA");
+  module.setInjector(
+    createMockInjector(
+      [{ token, name: "CtrlA", useClass: StubControllerA, scope: ProviderScope.SINGLETON }],
+      () => instance,
+    ),
+  );
+  collectJobMetadataMock.mockReturnValue([
+    { fullName: "ns.job", method: "handle", opts: {}, isCron: false },
+  ]);
+  await module.callRegisterJobs();
+  const handler = mockMonque.register.mock.calls[0]?.[1];
+
+  if (!handler) {
+    throw new Error("Expected a registered handler");
+  }
+
+  return handler;
+};
+
 describe("MonqueModule.registerJobs()", () => {
   let module: TestableMonqueModule;
   let mockLogger: MockLogger;
@@ -124,6 +153,46 @@ describe("MonqueModule.registerJobs()", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  describe("handler execution", () => {
+    it.each([undefined, "no longer a function"])(
+      "fails execution and cleans up the context when a handler becomes %j",
+      async (replacement) => {
+        const instance = { handle: vi.fn<(job: Job) => void>() };
+        const handler = await registerHandler(module, mockMonque, instance);
+        Object.defineProperty(instance, "handle", { value: replacement });
+        const destroy = vi.spyOn(DIContext.prototype, "destroy");
+
+        await expect(handler(fromPartial<Job>({}))).rejects.toThrow(
+          new MonqueError('Monque: Handler "handle" for job "ns.job" is not callable'),
+        );
+        expect(destroy).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("awaits a callable handler with its controller receiver and cleans up the context", async () => {
+      const received: Job[] = [];
+
+      const instance = {
+        jobs: received,
+
+        async handle(job: Job): Promise<void> {
+          await Promise.resolve();
+
+          this.jobs.push(job);
+        },
+      };
+
+      const handler = await registerHandler(module, mockMonque, instance);
+      const destroy = vi.spyOn(DIContext.prototype, "destroy");
+      const job = fromPartial<Job>({ data: { message: "hello" } });
+
+      await expect(handler(job)).resolves.toBeUndefined();
+      expect(received).toStrictEqual([job]);
+      expect(destroy).toHaveBeenCalledOnce();
+      expect(mockLogger.error).not.toHaveBeenCalled();
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
