@@ -14,6 +14,7 @@ import {
 } from "@/shared";
 import { definedProperty } from "@/shared/utils/defined-property.js";
 import { validateJobPriority } from "@/shared/utils/job-priority.js";
+import { validateJobRunAt } from "@/shared/utils/job-run-at.js";
 
 import { attempt } from "../effects.js";
 import { buildSelectorQuery } from "../helpers.js";
@@ -72,6 +73,12 @@ const editPendingJob = Effect.fnUntraced(function* editSinglePendingJob(
 ): Effect.fn.Return<PersistedJob | null, unknown> {
   if (!ObjectId.isValid(jobId)) {
     return null;
+  }
+
+  if (edit.action === "reschedule") {
+    yield* attempt(() => {
+      validateJobRunAt(edit.runAt);
+    });
   }
 
   const _id = new ObjectId(jobId);
