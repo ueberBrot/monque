@@ -1,5 +1,19 @@
 # @monque/tsed
 
+## 1.18.0
+
+### Minor Changes
+
+- [#660](https://github.com/ueberBrot/monque/pull/660) [`1dfa7a2`](https://github.com/ueberBrot/monque/commit/1dfa7a264b65c07b11fa9935e0b6103461567992) - Expose `MonqueService.getJobSummariesWithCursor()` to read cursor-paginated job metadata without loading payloads from MongoDB.
+
+### Patch Changes
+
+- [#657](https://github.com/ueberBrot/monque/pull/657) [`233d522`](https://github.com/ueberBrot/monque/commit/233d52228a2520559344fe87ee6bd3800af39c6b) - Forward empty `@Cron` expressions to the scheduler for validation and propagate scheduling errors during initialization, instead of silently registering an unscheduled Worker.
+
+- [#659](https://github.com/ueberBrot/monque/pull/659) [`1b48e8d`](https://github.com/ueberBrot/monque/commit/1b48e8dbbe8d8d648ba8abcb2fd49ddac0830cf7) - Fail job execution when the registered controller handler is missing or no longer callable, instead of reporting successful completion.
+
+- [#658](https://github.com/ueberBrot/monque/pull/658) [`e00cca4`](https://github.com/ueberBrot/monque/commit/e00cca42e8d20c94d50e1a8c2871ea16f1183105) - Fix symbol-named `@Job` and `@Cron` handlers so they execute with the original controller instance and job.
+
 ## 1.17.0
 
 ### Minor Changes

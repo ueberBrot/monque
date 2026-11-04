@@ -1,5 +1,15 @@
 # @monque/dashboard
 
+## 0.7.1
+
+### Patch Changes
+
+- [#662](https://github.com/ueberBrot/monque/pull/662) [`78417ac`](https://github.com/ueberBrot/monque/commit/78417ac41f8bb1e65fc6307d8049b8cd9d0043c6) - Cap Dashboard polling delays after jitter and backoff to prevent timer overflow from triggering rapid requests.
+
+- [#661](https://github.com/ueberBrot/monque/pull/661) [`a1f1e8d`](https://github.com/ueberBrot/monque/commit/a1f1e8d30589a0773734197d50783c8747398db7) - Build packaged Dashboard assets in production mode to exclude React development diagnostics and reduce initial JavaScript downloads.
+
+- [#663](https://github.com/ueberBrot/monque/pull/663) [`024989e`](https://github.com/ueberBrot/monque/commit/024989e2a3e3684c65b864235b7707f165ba0e0d) - Display "Not set" in Job details when a Job has no heartbeat interval.
+
 ## 0.7.0
 
 ### Minor Changes

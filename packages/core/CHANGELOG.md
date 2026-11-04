@@ -1,5 +1,13 @@
 # @monque/core
 
+## 1.20.1
+
+### Patch Changes
+
+- [#656](https://github.com/ueberBrot/monque/pull/656) [`5cfa222`](https://github.com/ueberBrot/monque/commit/5cfa2226c1cb7ace9903e42189e6c28676d7194b) - Reject empty or whitespace-only cron expressions consistently in validation helpers and scheduling, instead of allowing empty schedules to run once and stop recurring.
+
+- [#655](https://github.com/ueberBrot/monque/pull/655) [`cab64b0`](https://github.com/ueberBrot/monque/commit/cab64b01adfe00b153c6fab9ab7cc67cb75e2ce3) - Reject invalid `runAt` Dates before enqueueing or rescheduling Jobs. Batch enqueueing validates every scheduled time before writing, preventing malformed Dates from being stored as immediately due Jobs.
+
 ## 1.20.0
 
 ### Minor Changes
