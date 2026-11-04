@@ -397,7 +397,10 @@ try {
       versions[`@monque/${name}`] = manifest.version;
     }),
   );
-  await writeFile("result.json", `${JSON.stringify({ scenario, versions, checks }, null, 2)}\n`);
+  await writeFile(
+    "result.json",
+    `${JSON.stringify({ scenario, runtime: { node: process.version }, versions, checks }, null, 2)}\n`,
+  );
 } finally {
   const serverToClose = server;
 
