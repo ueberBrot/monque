@@ -21,6 +21,31 @@ const cronFailure = (operation: () => void): InvalidCronError => {
 };
 
 describe("cron", () => {
+  it.each(["", " ", "\t\n"])("rejects blank expressions consistently: %j", (expression) => {
+    const nextRunError = cronFailure(() => {
+      getNextCronDate(expression);
+    });
+
+    const validationError = cronFailure(() => {
+      validateCronExpression(expression);
+    });
+
+    expect(nextRunError.expression).toBe(expression);
+    expect(validationError.expression).toBe(expression);
+  });
+
+  it.each(["@daily", "* * * * *", "*/5 * * * * *"])(
+    "keeps supported cron formats valid: %s",
+    (expression) => {
+      expect(() => {
+        validateCronExpression(expression);
+      }).not.toThrow();
+      expect(getNextCronDate(expression, TEST_DATE_MID_MORNING).getTime()).toBeGreaterThan(
+        TEST_DATE_MID_MORNING.getTime(),
+      );
+    },
+  );
+
   describe(getNextCronDate, () => {
     it('should parse "* * * * *" (every minute)', () => {
       const now = new Date();
