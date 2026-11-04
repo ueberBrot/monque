@@ -29,13 +29,11 @@ export const Cron = function Cron(
     propertyKey: string | symbol,
     _descriptor: TypedPropertyDescriptor<T>,
   ): void => {
-    const methodName = String(propertyKey);
-
     const cronMetadata: CronMetadata = {
       pattern,
       // Default name to method name if not provided
-      name: options?.name === undefined || options.name === "" ? methodName : options.name,
-      method: methodName,
+      name: options?.name === undefined || options.name === "" ? String(propertyKey) : options.name,
+      method: propertyKey,
       opts: options ?? {},
     };
 

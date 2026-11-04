@@ -23,7 +23,7 @@ export interface CollectedJobMetadata {
   /**
    * Method name on the controller class
    */
-  method: string;
+  method: string | symbol;
 
   /**
    * Job options to pass to Monque.register()

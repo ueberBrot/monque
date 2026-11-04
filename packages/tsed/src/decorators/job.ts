@@ -34,11 +34,9 @@ export const Job = function Job(name: string, options?: JobDecoratorOptions): Me
     propertyKey: string | symbol,
     _descriptor: TypedPropertyDescriptor<T>,
   ): void => {
-    const methodName = String(propertyKey);
-
     const jobMetadata: JobMetadata = {
       name,
-      method: methodName,
+      method: propertyKey,
       opts: options ?? {},
     };
 
