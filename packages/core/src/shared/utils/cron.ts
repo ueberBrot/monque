@@ -14,6 +14,14 @@ const handleCronParseError = (expression: string, error: unknown): never => {
   );
 };
 
+const parseCronExpression = (expression: string, options?: CronExpressionOptions) => {
+  if (expression.trim().length === 0) {
+    throw new Error("Cron expression must not be empty");
+  }
+
+  return CronExpressionParser.parse(expression, options);
+};
+
 /**
  * Parse a cron expression and return the next scheduled run date.
  *
@@ -66,7 +74,7 @@ export const getNextCronDate = (
       options.tz = timezone;
     }
 
-    const interval = CronExpressionParser.parse(expression, options);
+    const interval = parseCronExpression(expression, options);
 
     return interval.next().toDate();
   } catch (error) {
@@ -87,7 +95,7 @@ export const getNextCronDate = (
  */
 export const validateCronExpression = (expression: string): void => {
   try {
-    CronExpressionParser.parse(expression);
+    parseCronExpression(expression);
   } catch (error) {
     return handleCronParseError(expression, error);
   }
