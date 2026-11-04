@@ -25,6 +25,22 @@ assert.ok(
   "Usage: bun scripts/verification/consumer.mts [--skip-build]",
 );
 
+const minimumManagementVersion = "0.11.0";
+
+const managementExpressManifest = z
+  .object({ peerDependencies: z.object({ "@monque/management": z.string() }) })
+  .parse(
+    JSON.parse(
+      await readFile(nodePath.join(root, "packages/management-express/package.json"), "utf-8"),
+    ),
+  );
+
+assert.equal(
+  managementExpressManifest.peerDependencies["@monque/management"].split(" ")[0],
+  `>=${minimumManagementVersion}`,
+  "Update the minimum-management case to match the adapter's supported peer range",
+);
+
 const cancellation = new AbortController();
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
@@ -169,7 +185,11 @@ try {
   const cases = [
     // 1.15.1 was never published; 1.16.0 is the first release satisfying ^1.15.1.
     { name: "minimum-core", core: "1.16.0", management: tarballs["@monque/management"] },
-    { name: "minimum-management", core: tarballs["@monque/core"], management: "0.8.0" },
+    {
+      name: "minimum-management",
+      core: tarballs["@monque/core"],
+      management: minimumManagementVersion,
+    },
     { name: "current", core: tarballs["@monque/core"], management: tarballs["@monque/management"] },
   ];
 

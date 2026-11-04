@@ -130,16 +130,12 @@ try {
       isRecord(parsed) && "jobs" in parsed && "indexes" in parsed,
       "Invalid legacy snapshot",
     );
-    assert.ok(
-      Array.isArray(parsed.jobs) && Array.isArray(parsed.indexes),
-      "Invalid legacy snapshot",
-    );
+    assert.ok(Array.isArray(parsed.jobs), "Invalid legacy Jobs");
+    assert.ok(Array.isArray(parsed.indexes), "Invalid legacy indexes");
     const snapshotJobs: unknown[] = parsed.jobs;
     const snapshotIndexes: unknown[] = parsed.indexes;
-    assert.ok(
-      snapshotJobs.every(isVerificationJob) && snapshotIndexes.every(isIndex),
-      "Invalid legacy jobs or indexes",
-    );
+    assert.ok(snapshotJobs.every(isVerificationJob), "Invalid legacy Jobs");
+    assert.ok(snapshotIndexes.every(isIndex), "Invalid legacy indexes");
     snapshot = { jobs: snapshotJobs, indexes: snapshotIndexes };
   }
 
@@ -252,14 +248,7 @@ try {
     );
   }
 
-  if (scenario === "minimum-management") {
-    assert.notEqual(
-      priorityAction in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
-      true,
-    );
-  }
-
-  if (current) {
+  if (!minimumCore) {
     assert.equal(listed.priority, 7);
     assert.equal(
       priorityAction in capabilities.actions ? capabilities.actions.setJobPriority : undefined,
