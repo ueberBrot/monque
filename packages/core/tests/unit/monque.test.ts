@@ -46,6 +46,7 @@ describe(Monque, () => {
   let monque: Monque;
   beforeEach(() => {
     mockCollection = fromPartial<NativeMock<Collection>>({
+      bulkWrite: vi.fn<MockFunction<Collection["bulkWrite"]>>(),
       createIndexes: vi
         .fn<MockFunction<Collection["createIndexes"]>>()
         .mockResolvedValue(["index_name"]),
@@ -102,6 +103,35 @@ describe(Monque, () => {
       expect(mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
     },
   );
+
+  it("rejects invalid runAt Dates through Promise adapters before any write", async () => {
+    await monque.initialize();
+    const runAt = new Date(Number.NaN);
+    const error = new MonqueError("runAt must be a valid Date");
+
+    await expect(monque.enqueue("work", {}, { runAt })).rejects.toThrow(error);
+    await expect(monque.enqueue("work", {}, { runAt, uniqueKey: "shared" })).rejects.toThrow(error);
+    await expect(
+      monque.enqueueMany([
+        { name: "work", data: {} },
+        { name: "work", data: {}, runAt },
+      ]),
+    ).rejects.toThrow(error);
+    await expect(monque.rescheduleJob(new ObjectId().toHexString(), runAt)).rejects.toThrow(error);
+
+    expect({
+      insert: mockCollection.insertOne.mock.calls.length,
+      upsert: mockCollection.findOneAndUpdate.mock.calls.length,
+      bulk: mockCollection.bulkWrite.mock.calls.length,
+    }).toStrictEqual({ insert: 0, upsert: 0, bulk: 0 });
+  });
+
+  it("returns null when rescheduling an invalid Job ID with an invalid Date", async () => {
+    await monque.initialize();
+
+    await expect(monque.rescheduleJob("invalid-id", new Date(Number.NaN))).resolves.toBeNull();
+    expect(mockCollection.findOneAndUpdate).not.toHaveBeenCalled();
+  });
 
   it("retains native callback cause identity after a successful management write", async () => {
     await monque.initialize();

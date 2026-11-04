@@ -23,10 +23,8 @@ import type {
 } from "@/jobs";
 import {
   ConnectionError,
-  InvalidCronError,
-  InvalidJobIdentifierError,
-  InvalidJobPriorityError,
   getNextCronDate,
+  MonqueError,
   PayloadTooLargeError,
   toError,
   validateJobName,
@@ -34,6 +32,7 @@ import {
 } from "@/shared";
 
 import { validateJobPriority } from "../../shared/utils/job-priority.js";
+import { validateJobRunAt } from "../../shared/utils/job-run-at.js";
 import { attempt, fromPromise } from "../effects.js";
 import type { MonqueOptions } from "../types.js";
 import { JobPersistenceError } from "./job-persistence-error.js";
@@ -71,21 +70,8 @@ interface JobIntakeDependencies {
   readonly notifyPendingJob: (name: string, nextRunAt: Date) => void;
 }
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Classify failures from native promises, BSON, validation and synchronous routing without changing their original causes.
 const intakeFailure = (cause: unknown) => {
-  if (
-    cause instanceof ConnectionError ||
-    cause instanceof InvalidCronError ||
-    cause instanceof InvalidJobIdentifierError
-  ) {
-    return cause;
-  }
-
-  if (
-    cause instanceof InvalidJobPriorityError ||
-    cause instanceof PayloadTooLargeError ||
-    cause instanceof JobPersistenceError
-  ) {
+  if (cause instanceof MonqueError || cause instanceof JobPersistenceError) {
     return cause;
   }
 
@@ -301,6 +287,10 @@ export const makeNativeJobIntake = (
       validateJobIdentifiers(name, options.uniqueKey);
       validatePayloadSize(data);
       validateJobPriority(options.priority);
+
+      if (options.runAt !== undefined) {
+        validateJobRunAt(options.runAt);
+      }
     });
 
     const now = yield* DateTime.nowAsDate;
