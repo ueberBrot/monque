@@ -1,5 +1,11 @@
 # @monque/core
 
+## 1.20.2
+
+### Patch Changes
+
+- [#668](https://github.com/ueberBrot/monque/pull/668) [`295f8a2`](https://github.com/ueberBrot/monque/commit/295f8a2061298a198a070b03137d472c2820c406) - Support MongoDB Node.js drivers `^6.22.0 || ^7.8.0`. These minimum versions include the connection-pool timeout security fix.
+
 ## 1.20.1
 
 ### Patch Changes

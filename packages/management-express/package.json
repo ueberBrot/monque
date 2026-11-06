@@ -1,6 +1,6 @@
 {
   "name": "@monque/management-express",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Express adapter for the Monque management surface",
   "keywords": [
     "express",
