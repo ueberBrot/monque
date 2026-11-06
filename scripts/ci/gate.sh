@@ -6,5 +6,6 @@ jq --exit-status '
   (if $runtime == "true" then "success" else "skipped" end) as $expected |
   .quality.result == "success" and .["build-apps"].result == "success" and
   ($runtime == "true" or $runtime == "false") and
-  .test.result == $expected and .["dashboard-e2e"].result == $expected
+  .test.result == $expected and .consumers.result == $expected and
+  .["dashboard-e2e"].result == $expected
 ' <<< "${CI_NEEDS:?CI_NEEDS is required}"

@@ -181,7 +181,7 @@ describe("enqueue()", () => {
     it("does not swallow an unrelated unique-index rejection", async () => {
       await db
         .collection(collectionName)
-        .createIndex({ "data.email": 1 }, { unique: true, sparse: true });
+        .createIndexes([{ key: { "data.email": 1 }, unique: true, sparse: true }]);
       await monque.enqueue("existing", { email: "same@example.test" });
       await expect(
         monque.enqueueMany([
@@ -193,7 +193,7 @@ describe("enqueue()", () => {
 
     it("preserves an unrelated index failure when a later input creates the same active key", async () => {
       const collection = db.collection(collectionName);
-      await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true });
+      await collection.createIndexes([{ key: { "data.email": 1 }, unique: true, sparse: true }]);
       await monque.enqueue("existing", { email: "taken@example.test" });
       // oxlint-disable-next-line typescript/unbound-method -- Invoke the native method with its original Collection receiver through apply.
       const original = Collection.prototype.bulkWrite;

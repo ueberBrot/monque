@@ -54,13 +54,13 @@ import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
 Install these peer dependencies alongside the integration:
 
-| Package          | Version   | Required                      |
-| ---------------- | --------- | ----------------------------- |
-| `@monque/core`   | `^1.18.0` | Yes                           |
-| `mongodb`        | `^7.7.0`  | Yes                           |
-| `@tsed/core`     | `^8.41.2` | Yes                           |
-| `@tsed/di`       | `^8.41.2` | Yes                           |
-| `@tsed/mongoose` | `^8.41.2` | Only for Mongoose integration |
+| Package          | Version               | Required                      |
+| ---------------- | --------------------- | ----------------------------- |
+| `@monque/core`   | `^1.18.0`             | Yes                           |
+| `mongodb`        | `^6.22.0 \|\| ^7.8.0` | Yes                           |
+| `@tsed/core`     | `^8.41.2`             | Yes                           |
+| `@tsed/di`       | `^8.41.2`             | Yes                           |
+| `@tsed/mongoose` | `^8.41.2`             | Only for Mongoose integration |
 
 ## Configuration
 
@@ -113,6 +113,9 @@ Close clients you create in `dbFactory` during application shutdown, after Monqu
 Reuse an application-managed connection when you already have one.
 
 ### Mongoose Strategy
+
+Use a Mongoose release whose MongoDB driver satisfies the peer range above.
+Deduplicate the driver when sharing Mongoose's connection with Monque.
 
 If your application uses `@tsed/mongoose`, set `mongooseConnectionId` to reuse its native
 MongoDB connection and pool. You do not need a separate connection string for Monque.

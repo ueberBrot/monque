@@ -62,8 +62,8 @@
     "@tsed/platform-http": "^8.44.3",
     "@types/node": "^22.20.5",
     "cookie": "^2.0.1",
-    "mongodb": "^7.7.0",
-    "mongoose": "9.11.4",
+    "mongodb": "^7.8.0",
+    "mongoose": "9.12.0",
     "vite": "catalog:",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
@@ -74,7 +74,7 @@
     "@tsed/core": "^8.41.2",
     "@tsed/di": "^8.41.2",
     "@tsed/mongoose": "^8.41.2",
-    "mongodb": "^7.7.0"
+    "mongodb": "^6.22.0 || ^7.8.0"
   },
   "peerDependenciesMeta": {
     "@tsed/mongoose": {

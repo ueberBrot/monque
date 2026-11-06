@@ -296,16 +296,16 @@ describe("job retention", () => {
   it("accepts zero cancelled retention and preserves existing retention indexes", async () => {
     collectionName = uniqueCollectionName("cancelled-upgrade");
     const collection = db.collection<Job>(collectionName);
-    await collection.createIndex(
-      { status: 1, updatedAt: 1 },
+    await collection.createIndexes([
       {
+        key: { status: 1, updatedAt: 1 },
         background: true,
         partialFilterExpression: {
           status: { $in: [JobStatus.COMPLETED, JobStatus.FAILED] },
           updatedAt: { $exists: true },
         },
       },
-    );
+    ]);
     const monque = new Monque(db, { collectionName, jobRetention: { cancelled: 0 } });
     monqueInstances.push(monque);
     await monque.initialize();

@@ -40,12 +40,16 @@ describe("priority query costs", () => {
       const collectionName = `backlog-${distinctPriorities}-${managedLegacyIndex}`;
 
       if (managedLegacyIndex) {
-        await db.collection(collectionName).createIndex({
-          name: 1,
-          status: 1,
-          nextRunAt: 1,
-          claimedBy: 1,
-        });
+        await db.collection(collectionName).createIndexes([
+          {
+            key: {
+              name: 1,
+              status: 1,
+              nextRunAt: 1,
+              claimedBy: 1,
+            },
+          },
+        ]);
       }
 
       const producer = new Monque(db, {
