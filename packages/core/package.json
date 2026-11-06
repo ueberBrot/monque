@@ -1,6 +1,6 @@
 {
   "name": "@monque/core",
-  "version": "1.20.1",
+  "version": "1.20.2",
   "description": "MongoDB-backed job scheduler with atomic locking, exponential backoff, and cron scheduling",
   "keywords": [
     "atomic",
