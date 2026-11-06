@@ -56,7 +56,7 @@
     "@types/node": "^22.20.5",
     "@types/supertest": "^7.2.1",
     "express": "^5.3.0",
-    "mongodb": "^7.7.0",
+    "mongodb": "^7.8.0",
     "supertest": "^7.3.1",
     "vite": "catalog:",
     "vite-plus": "catalog:"
@@ -65,7 +65,7 @@
     "@monque/core": "^1.15.1",
     "@monque/management": ">=0.11.0 <0.12.0",
     "express": "^5.2.1",
-    "mongodb": "^7.7.0"
+    "mongodb": "^6.22.0 || ^7.8.0"
   },
   "engines": {
     "node": ">=22.12.0"

@@ -96,6 +96,7 @@ See the guides for [scheduling and transactions](https://ueberBrot.github.io/mon
 ## Requirements
 
 - Node.js 22.12 or newer.
+- MongoDB Node.js driver `^6.22.0 || ^7.8.0`.
 - MongoDB 4.4 or newer. Change Streams and transactions require a replica set or sharded cluster.
   Workers can use polling with a standalone MongoDB server.
 

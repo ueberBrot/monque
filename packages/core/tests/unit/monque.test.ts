@@ -6,7 +6,14 @@
 import { EventEmitter } from "node:events";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Clock, Effect } from "effect";
-import type { ChangeStream, FindCursor, Collection, Db } from "mongodb";
+import type {
+  ChangeStream,
+  FindCursor,
+  Collection,
+  Db,
+  IndexDescription,
+  CreateIndexesOptions,
+} from "mongodb";
 import { MongoServerError, ObjectId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -32,6 +39,10 @@ import type { MockFunction, NativeMock } from "@tests/setup/mock-function.js";
 
 const readMonotonicNanos = (): bigint => BigInt(Math.round(performance.now() * 1_000_000));
 
+type MockCollection = Omit<Collection, "createIndexes"> & {
+  createIndexes: (indexes: IndexDescription[], options?: CreateIndexesOptions) => Promise<string[]>;
+};
+
 const createStream = (closing = Promise.resolve()) =>
   // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB cursors use Node EventEmitter delivery and error-listener semantics.
   Object.assign(new EventEmitter(), {
@@ -42,13 +53,13 @@ const createStream = (closing = Promise.resolve()) =>
 
 describe(Monque, () => {
   let mockDb: NativeMock<Db>;
-  let mockCollection: NativeMock<Collection>;
+  let mockCollection: NativeMock<MockCollection>;
   let monque: Monque;
   beforeEach(() => {
-    mockCollection = fromPartial<NativeMock<Collection>>({
+    mockCollection = fromPartial<NativeMock<MockCollection>>({
       bulkWrite: vi.fn<MockFunction<Collection["bulkWrite"]>>(),
       createIndexes: vi
-        .fn<MockFunction<Collection["createIndexes"]>>()
+        .fn<MockFunction<MockCollection["createIndexes"]>>()
         .mockResolvedValue(["index_name"]),
       updateMany: vi.fn<MockFunction<Collection["updateMany"]>>().mockResolvedValue({
         acknowledged: true,

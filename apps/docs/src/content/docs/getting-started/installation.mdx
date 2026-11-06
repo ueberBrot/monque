@@ -8,9 +8,9 @@ import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 ## Prerequisites
 
 - **Node.js 22.12 or newer**
-- **MongoDB 4.4 or newer**, compatible with the MongoDB Node.js driver 7.6
+- **MongoDB 4.4 or newer**, supported by your selected Node.js driver
   - Monque works with regular polling on standalone MongoDB
-  - Change Streams require a replica set or sharded cluster (MongoDB Atlas provides this by default)
+  - Change Streams and transactions require a replica set or sharded cluster (MongoDB Atlas provides this by default)
 
 <Aside type="tip">
   Start a local MongoDB replica set with Docker:
@@ -60,7 +60,7 @@ For a local deployment with Atlas features, MongoDB also provides the Atlas Loca
 
 ## Peer Dependencies
 
-Install the MongoDB Node.js driver (`mongodb` ^7.6.0) alongside Monque. Pass a database
+Install the MongoDB Node.js driver (`mongodb` `^6.22.0 || ^7.8.0`) alongside Monque. Pass a database
 from your existing client to share its connections. You choose the driver version within
 that supported range.
 
@@ -84,9 +84,8 @@ bun add @monque/dashboard-express @monque/management-express @monque/management 
 Follow [Dashboard setup](/monque/dashboard/express/) for the server configuration. You do not need to
 install React or build the frontend in your application.
 
-The MongoDB driver 7.6 no longer supports MongoDB 4.2 and earlier. See
-[MongoDB's driver upgrade notes](https://www.mongodb.com/docs/drivers/node/current/reference/upgrade/)
-when upgrading an existing deployment.
+Check [MongoDB's official compatibility tables](https://www.mongodb.com/docs/drivers/compatibility/)
+for your driver, server and Node.js versions. Driver updates can change server support.
 
 ## Start processing
 

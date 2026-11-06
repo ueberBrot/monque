@@ -19,13 +19,17 @@ const packageNames = [
 ];
 
 const args = process.argv.slice(2);
+const driver = args.find((arg) => arg.startsWith("--mongodb="))?.slice("--mongodb=".length);
 
 assert.ok(
-  args.every((arg) => arg === "--skip-build"),
-  "Usage: bun scripts/verification/consumer.mts [--skip-build]",
+  args.every((arg) => arg === "--skip-build" || arg.startsWith("--mongodb=")) &&
+    (driver === undefined || driver === "6.22.0" || driver === "7.8.0"),
+  "Usage: bun scripts/verification/consumer.mts [--skip-build] [--mongodb=6.22.0|7.8.0]",
 );
 
 const minimumManagementVersion = "0.11.0";
+const esmTypes = "consumer-types.mts";
+const cjsTypes = "consumer-types.cts";
 
 const managementExpressManifest = z
   .object({ peerDependencies: z.object({ "@monque/management": z.string() }) })
@@ -184,14 +188,31 @@ try {
 
   const cases = [
     // 1.15.1 was never published; 1.16.0 is the first release satisfying ^1.15.1.
-    { name: "minimum-core", core: "1.16.0", management: tarballs["@monque/management"] },
+    {
+      name: "minimum-core",
+      core: "1.16.0",
+      management: tarballs["@monque/management"],
+      mongodb: "7.8.0",
+    },
     {
       name: "minimum-management",
       core: tarballs["@monque/core"],
       management: minimumManagementVersion,
+      mongodb: "7.8.0",
     },
-    { name: "current", core: tarballs["@monque/core"], management: tarballs["@monque/management"] },
-  ];
+    {
+      name: "current",
+      core: tarballs["@monque/core"],
+      management: tarballs["@monque/management"],
+      mongodb: "7.8.0",
+    },
+    {
+      name: "mongodb-6",
+      core: tarballs["@monque/core"],
+      management: tarballs["@monque/management"],
+      mongodb: "6.22.0",
+    },
+  ].filter((scenario) => driver === undefined || scenario.mongodb === driver);
 
   const mongoContainer = await new MongoDBContainer("mongo:8").start();
   container = mongoContainer;
@@ -210,12 +231,21 @@ try {
     dependencies.set("@monque/core", scenario.core);
     dependencies.set("@monque/management", scenario.management);
     dependencies.set("express", "5.2.1");
-    dependencies.set("mongodb", "7.7.0");
+    dependencies.set("mongodb", scenario.mongodb);
+    dependencies.set("@types/node", "^22.20.5");
+    dependencies.set("@types/express", "^5.0.6");
+    dependencies.set("@opentelemetry/api", "^1.9.0");
+    dependencies.set("rxjs", "^7.8.2");
 
-    if (scenario.name === "current") {
+    if (scenario.name === "current" || scenario.name === "mongodb-6") {
       dependencies.set("@tsed/core", "8.41.2");
       dependencies.set("@tsed/di", "8.41.2");
       dependencies.set("@tsed/platform-http", "8.41.2");
+
+      if (scenario.name === "current") {
+        dependencies.set("@tsed/mongoose", "8.41.2");
+        dependencies.set("mongoose", "9.12.0");
+      }
     } else {
       dependencies.delete("@monque/tsed");
     }
@@ -231,6 +261,14 @@ try {
     await copyFile(
       nodePath.join(root, "scripts/verification/consumer-app.mts"),
       nodePath.join(directory, "app.mts"),
+    );
+    await Promise.all(
+      ["consumer-mongodb.mts", esmTypes, cjsTypes].map(async (filename) => {
+        await copyFile(
+          nodePath.join(root, "scripts/verification", filename === cjsTypes ? esmTypes : filename),
+          nodePath.join(directory, filename),
+        );
+      }),
     );
     await run("bun", ["install", "--ignore-scripts"], directory);
     // Every Monque package must come from this install, even when a workspace is nearby.
@@ -251,10 +289,32 @@ try {
         })
         .toArray(),
     );
+
+    if (scenario.name === "current" || scenario.name === "mongodb-6") {
+      await run(
+        "node",
+        [
+          nodePath.join(root, "node_modules/typescript/bin/tsc"),
+          "--noEmit",
+          "--strict",
+          "--module",
+          "nodenext",
+          "--target",
+          "es2023",
+          "--types",
+          "node",
+          esmTypes,
+          cjsTypes,
+        ],
+        directory,
+      );
+    }
+
     await run("node", ["app.mts"], directory, {
       MONQUE_VERIFY_CASE: scenario.name,
       MONQUE_VERIFY_URI: mongoContainer.getConnectionString(),
       MONQUE_VERIFY_SCRATCH: scratch,
+      MONQUE_VERIFY_MONGODB: scenario.mongodb,
     });
 
     const result: unknown = JSON.parse(

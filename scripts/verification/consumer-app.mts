@@ -10,8 +10,10 @@ import { Monque } from "@monque/core";
 import { createDashboardExpressRouter } from "@monque/dashboard-express";
 import { createManagementExpressRouter } from "@monque/management-express";
 import express from "express";
-import type { IndexDescriptionInfo, ObjectId } from "mongodb";
+import type { Db, IndexDescriptionInfo, ObjectId } from "mongodb";
 import { BSON, MongoClient } from "mongodb";
+
+import { verifyMongoDB } from "./consumer-mongodb.mts";
 
 interface VerificationJob {
   _id: ObjectId;
@@ -64,6 +66,30 @@ const isOpenApiDescription = (value: unknown): value is OpenApiDescription =>
 const isCoreEntry = (value: unknown): value is { Monque: typeof Monque } =>
   isRecord(value) && "Monque" in value && typeof value.Monque === "function";
 
+const isDriverEntry = (value: unknown): value is { MongoClient: typeof MongoClient } =>
+  isRecord(value) && "MongoClient" in value && typeof value.MongoClient === "function";
+
+interface MongooseRegistry {
+  get: (id: string) => { db?: Db; getClient: () => MongoClient } | undefined;
+}
+
+const isMongooseEntry = (
+  value: unknown,
+): value is {
+  MongooseModule: new (...args: never[]) => object;
+  MongooseService: new (...args: never[]) => MongooseRegistry;
+} => {
+  if (
+    !isRecord(value) ||
+    !("MongooseModule" in value) ||
+    typeof value.MongooseModule !== "function"
+  ) {
+    return false;
+  }
+
+  return "MongooseService" in value && typeof value.MongooseService === "function";
+};
+
 const isManagementEntry = (
   value: unknown,
 ): value is { createManagementExpressRouter: typeof createManagementExpressRouter } =>
@@ -82,7 +108,8 @@ const verificationUserHeader = "x-verification-user";
 const priorityAction = "setJobPriority";
 
 const scenario = process.env.MONQUE_VERIFY_CASE;
-const current = scenario === "current";
+const current = scenario === "current" || scenario === "mongodb-6";
+const upgrade = scenario === "current";
 const minimumCore = scenario === "minimum-core";
 
 assert.ok(
@@ -96,7 +123,8 @@ assert.ok(
 );
 
 const client = new MongoClient(process.env.MONQUE_VERIFY_URI, { directConnection: true });
-const db = client.db(scenario === "minimum-management" ? "management_compatibility" : "upgrade");
+const databaseName = scenario === "minimum-management" ? "management_compatibility" : "upgrade";
+const db = client.db(scenario === "mongodb-6" ? "driver_6" : databaseName);
 const jobs = db.collection<VerificationJob>("monque_jobs");
 const snapshotPath = nodePath.join(process.env.MONQUE_VERIFY_SCRATCH, "legacy.json");
 const checks = [];
@@ -124,7 +152,7 @@ try {
   await client.connect();
   let snapshot: { jobs: VerificationJob[]; indexes: IndexDescriptionInfo[] } | undefined;
 
-  if (current) {
+  if (upgrade) {
     const parsed: unknown = BSON.EJSON.parse(await readFile(snapshotPath, "utf-8"));
     assert.ok(
       isRecord(parsed) && "jobs" in parsed && "indexes" in parsed,
@@ -142,7 +170,7 @@ try {
   monque = new Monque(db, { recoverStaleJobs: false });
   await monque.initialize();
 
-  if (current) {
+  if (upgrade) {
     assert.ok(snapshot !== undefined);
     await Promise.all(
       snapshot.jobs.map(async (before) => {
@@ -191,7 +219,7 @@ try {
     await db.collection<VerificationJob>("managed_jobs").insertOne(snapshot.jobs[0]);
     await db
       .collection("managed_jobs")
-      .createIndex({ name: 1, status: 1, nextRunAt: 1, claimedBy: 1 });
+      .createIndexes([{ key: { name: 1, status: 1, nextRunAt: 1, claimedBy: 1 } }]);
     const managedIndexes = await db.collection("managed_jobs").indexes();
 
     try {
@@ -312,6 +340,23 @@ try {
   assert.ok(isDashboardEntry(dashboardEntry));
   checks.push("ESM and CommonJS package entrypoints load");
 
+  const driverManifest: unknown = require("mongodb/package.json");
+  assert.ok(isVersionedPackage(driverManifest));
+  assert.equal(driverManifest.version, process.env.MONQUE_VERIFY_MONGODB);
+
+  if (current) {
+    const coreDriver: unknown = require(
+      require.resolve("mongodb", { paths: [require.resolve("@monque/core")] }),
+    );
+
+    assert.ok(isDriverEntry(coreDriver));
+    assert.equal(coreDriver.MongoClient, MongoClient);
+    await verifyMongoDB(monque, db, client);
+    checks.push(
+      "BSON round trips, concurrent deduplication, partial bulk failures, transactions, pagination, claims and scoped Change Streams",
+    );
+  }
+
   if (minimumCore) {
     await monque.enqueue(
       "legacy-future",
@@ -377,6 +422,41 @@ try {
     checks.push(
       "Installed Ts.ED module bootstraps through DI and forwards priority intake and changes",
     );
+
+    if (upgrade) {
+      await PlatformTest.reset();
+      const mongooseModuleName = "@tsed/mongoose";
+      const mongooseEntry: unknown = await import(mongooseModuleName);
+      assert.ok(isMongooseEntry(mongooseEntry));
+      const { MongooseModule, MongooseService } = mongooseEntry;
+      const mongooseRequire = createRequire(require.resolve("mongoose"));
+      const mongooseDriver: unknown = mongooseRequire("mongodb");
+      assert.ok(isDriverEntry(mongooseDriver));
+      assert.equal(
+        mongooseDriver.MongoClient,
+        MongoClient,
+        "Mongoose must share the consumer driver",
+      );
+      Configuration({
+        mongoose: [
+          {
+            id: "default",
+            url: `${process.env.MONQUE_VERIFY_URI}/mongoose_consumer`,
+            connectionOptions: { directConnection: true },
+          },
+        ],
+        monque: { dbToken: MongooseService, disableJobProcessing: true },
+      })(ConsumerServer);
+      await PlatformTest.bootstrap(ConsumerServer, { imports: [MongooseModule, MonqueModule] })();
+
+      const mongooseService = PlatformTest.get<MongooseRegistry>(MongooseService);
+
+      const connection = mongooseService.get("default");
+      assert.ok(connection !== undefined && connection.db !== undefined);
+      const scheduler = PlatformTest.get<InstanceType<typeof MonqueService>>(MonqueService);
+      await verifyMongoDB(scheduler.monque, connection.db, connection.getClient(), false);
+      checks.push("Ts.ED/Mongoose 9.12 shares driver 7.8, BSON, sessions and native bulk errors");
+    }
   }
 
   const versions: Record<string, string> = {};
@@ -399,7 +479,7 @@ try {
   );
   await writeFile(
     "result.json",
-    `${JSON.stringify({ scenario, runtime: { node: process.version }, versions, checks }, null, 2)}\n`,
+    `${JSON.stringify({ scenario, mongodb: driverManifest.version, runtime: { node: process.version }, versions, checks }, null, 2)}\n`,
   );
 } finally {
   const serverToClose = server;

@@ -713,7 +713,9 @@ describe("native intake with controlled Effect time", () => {
         const { collection, notifications } = yield* IntakeFixture;
         yield* Effect.promise(
           async () =>
-            await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true }),
+            await collection.createIndexes([
+              { key: { "data.email": 1 }, unique: true, sparse: true },
+            ]),
         );
         yield* intake.enqueue("existing", { email: "taken" });
         notifications.length = 0;
@@ -755,7 +757,9 @@ describe("native intake with controlled Effect time", () => {
         const { collection, notifications } = yield* IntakeFixture;
         yield* Effect.promise(
           async () =>
-            await collection.createIndex({ "data.email": 1 }, { unique: true, sparse: true }),
+            await collection.createIndexes([
+              { key: { "data.email": 1 }, unique: true, sparse: true },
+            ]),
         );
         yield* intake.enqueue("existing", { email: "taken" });
         notifications.length = 0;

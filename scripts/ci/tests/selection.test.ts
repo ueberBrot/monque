@@ -123,6 +123,7 @@ describe("CI change selection", () => {
         quality: { result: "success", outputs: { runtime } },
         "build-apps": { result: "success" },
         test: { result: expected },
+        consumers: { result: expected },
         "dashboard-e2e": { result: expected },
       };
 
