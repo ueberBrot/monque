@@ -78,3 +78,5 @@ export {
 
 // Types - Workers
 export type { WorkerOptions } from "@/workers";
+
+export { MonqueEffect } from "./scheduler/effect-service.js";

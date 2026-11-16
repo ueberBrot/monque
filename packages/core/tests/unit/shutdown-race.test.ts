@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { fromPartial } from "@total-typescript/shoehorn";
+import { Clock, Effect } from "effect";
 import type { FindCursor, ChangeStream, Collection, Db, Document, WithId } from "mongodb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -9,12 +10,18 @@ import { JobFactoryHelpers } from "@tests/factories";
 import { anyMatcher, objectContainingMatcher } from "@tests/setup/matchers.js";
 import type { MockFunction, NativeMock } from "@tests/setup/mock-function.js";
 
+const readNativeMonotonicNanos = (): bigint => BigInt(Date.now()) * 1_000_000n;
+
 describe("Monque Shutdown Race Condition", () => {
   let db: NativeMock<Db>;
   let collection: NativeMock<Collection>;
   let monque: Monque;
   beforeEach(() => {
     vi.useFakeTimers();
+    // Drain deadlines and native timers must advance on the same test clock.
+    vi.spyOn(Effect.runSync(Clock.Clock), "monotonicTimeNanosUnsafe").mockImplementation(
+      readNativeMonotonicNanos,
+    );
     // Create a partial mock of the collection
     collection = fromPartial<NativeMock<Collection>>({
       options: vi.fn<MockFunction<Collection["options"]>>().mockResolvedValue({}),
@@ -48,6 +55,7 @@ describe("Monque Shutdown Race Condition", () => {
     });
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

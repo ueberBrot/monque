@@ -143,6 +143,7 @@ export default defineConfig({
           label: "Integrations",
           items: [
             { label: "Ts.ED", slug: "integrations/tsed" },
+            { label: "Effect", slug: "integrations/effect" },
             { label: "OpenTelemetry", slug: "integrations/opentelemetry" },
           ],
         },

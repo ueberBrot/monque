@@ -370,11 +370,14 @@ export class JobProcessor {
           handlerJob = { ...job, data: validated };
         }
 
+        const { effectHandler } = worker;
         yield* this.telemetry.observe(
           "worker",
-          fromPromise(async () => {
-            await worker.handler(handlerJob);
-          }),
+          effectHandler
+            ? Effect.suspend(() => effectHandler(handlerJob)).pipe(Effect.interruptible)
+            : fromPromise(async () => {
+                await worker.handler(handlerJob);
+              }),
         );
 
         return yield* Effect.void;

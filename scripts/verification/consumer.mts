@@ -22,12 +22,60 @@ const args = process.argv.slice(2);
 const driver = args.find((arg) => arg.startsWith("--mongodb="))?.slice("--mongodb=".length);
 
 assert.ok(
-  args.every((arg) => arg === "--skip-build" || arg.startsWith("--mongodb=")) &&
-    (driver === undefined || driver === "6.22.0" || driver === "7.8.0"),
-  "Usage: bun scripts/verification/consumer.mts [--skip-build] [--mongodb=6.22.0|7.8.0]",
+  args.every((arg) => arg === "--skip-build" || arg.startsWith("--mongodb=")),
+  "Unsupported consumer verification arguments",
+);
+
+assert.ok(
+  driver === undefined || driver === "6.22.0" || driver === "7.8.0",
+  "Unsupported MongoDB version",
 );
 
 const minimumManagementVersion = "0.11.0";
+
+const effectConsumerSource = `import assert from "node:assert/strict";
+import { MonqueEffect } from "@monque/core";
+
+import { Context, Deferred, Effect } from "effect";
+import { MongoClient } from "mongodb";
+
+class Greeting extends Context.Service<Greeting, { text: string }>()("consumer/Greeting") {}
+
+const client = new MongoClient(process.env.MONQUE_VERIFY_URI ?? "", { directConnection: true });
+
+await client.connect();
+
+const db = client.db("packed_effect");
+
+try {
+  await Effect.runPromise(
+    Effect.gen(function* packedConsumer() {
+      const scheduler = yield* MonqueEffect;
+      const completed = yield* Deferred.make<undefined>();
+      yield* scheduler
+        .register("greet", () =>
+          Effect.gen(function* greet() {
+            const greeting = yield* Greeting;
+            assert.equal(greeting.text, "hello");
+            yield* Deferred.succeed(completed, undefined);
+          }),
+        )
+        .pipe(Effect.provideService(Greeting, { text: "hello" }));
+      const job = yield* scheduler.now("greet", {});
+      assert.equal((yield* scheduler.getJob(job._id))?.name, "greet");
+      yield* scheduler.start;
+      yield* Deferred.await(completed);
+      yield* scheduler.stop;
+    }).pipe(Effect.provide(MonqueEffect.layer(db))),
+  );
+  const ping = await db.command({ ping: 1 });
+  assert.equal(ping.ok, 1);
+} finally {
+  await client.close();
+}
+`;
+
+const effectConsumer = "consumer-effect.mts";
 const esmTypes = "consumer-types.mts";
 const cjsTypes = "consumer-types.cts";
 
@@ -143,6 +191,28 @@ const run = async (
   await promise;
 };
 
+const verifyNativeConsumer = async (directory: string, uri: string): Promise<void> => {
+  await writeFile(nodePath.join(directory, effectConsumer), effectConsumerSource);
+  await run("node", [effectConsumer], directory, { MONQUE_VERIFY_URI: uri });
+  await run(
+    "node",
+    [
+      nodePath.join(root, "node_modules/typescript/bin/tsc"),
+      "--noEmit",
+      "--strict",
+      "--module",
+      "nodenext",
+      "--target",
+      "es2023",
+      "--types",
+      "node",
+      esmTypes,
+      cjsTypes,
+    ],
+    directory,
+  );
+};
+
 const scratch = await mkdtemp(nodePath.join(tmpdir(), "monque-consumer-"));
 const reportDirectory = nodePath.join(root, ".verification");
 
@@ -231,6 +301,7 @@ try {
     dependencies.set("@monque/core", scenario.core);
     dependencies.set("@monque/management", scenario.management);
     dependencies.set("express", "5.2.1");
+    dependencies.set("effect", "4.1.2");
     dependencies.set("mongodb", scenario.mongodb);
     dependencies.set("@types/node", "^22.20.5");
     dependencies.set("@types/express", "^5.0.6");
@@ -291,23 +362,7 @@ try {
     );
 
     if (scenario.name === "current" || scenario.name === "mongodb-6") {
-      await run(
-        "node",
-        [
-          nodePath.join(root, "node_modules/typescript/bin/tsc"),
-          "--noEmit",
-          "--strict",
-          "--module",
-          "nodenext",
-          "--target",
-          "es2023",
-          "--types",
-          "node",
-          esmTypes,
-          cjsTypes,
-        ],
-        directory,
-      );
+      await verifyNativeConsumer(directory, mongoContainer.getConnectionString());
     }
 
     await run("node", ["app.mts"], directory, {

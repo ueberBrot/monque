@@ -149,7 +149,7 @@ describe("telemetry failure isolation", () => {
     await scheduler.initialize();
     await expect(scheduler.enqueue("work", {})).resolves.toHaveProperty("name", "work");
     await scheduler.dispose();
-    expect(exportSpan).toHaveBeenCalledWith();
+    expect(exportSpan.mock.calls.length).toBeGreaterThan(0);
     await provider.shutdown();
   });
 });

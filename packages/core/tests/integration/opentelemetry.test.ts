@@ -5,11 +5,16 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { Context, Deferred, Effect, Tracer } from "effect";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
-import { Monque, NonRetryableError } from "@/index";
+import { Monque, MonqueEffect, NonRetryableError } from "@/index";
 import { openTelemetry } from "@/opentelemetry.js";
 import { cleanupTestDb, getTestDb, waitFor } from "@test-utils/test-utils";
+
+class NativeMailer extends Context.Service<NativeMailer, { delivered: string[] }>()(
+  "test/NativeMailer",
+) {}
 
 describe("OpenTelemetry", () => {
   const manager = new AsyncLocalStorageContextManager().enable();
@@ -78,6 +83,68 @@ describe("OpenTelemetry", () => {
     } finally {
       await first.dispose();
       await second.dispose();
+      await provider.shutdown();
+      await cleanupTestDb(db);
+    }
+  });
+
+  it("preserves native caller parents and exports downstream Effect Worker spans", async () => {
+    const db = await getTestDb("otel-native");
+    const exporter = new InMemorySpanExporter();
+
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+
+    const delivered: string[] = [];
+    let requestSpanId: string | undefined;
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* nativeTracing() {
+          const scheduler = yield* MonqueEffect;
+          const completed = yield* Deferred.make<undefined>();
+          const applicationTracer = yield* Tracer.Tracer;
+          yield* scheduler
+            .register("native", () =>
+              Effect.gen(function* nativeMail() {
+                const mailer = yield* NativeMailer;
+                yield* Effect.yieldNow;
+                mailer.delivered.push("hello");
+                yield* Deferred.succeed(completed, undefined);
+              }).pipe(Effect.withSpan("native-downstream")),
+            )
+            .pipe(
+              Effect.provideService(NativeMailer, { delivered }),
+              Effect.provideService(Tracer.Tracer, applicationTracer),
+              Effect.withSpan("registration"),
+            );
+          yield* Effect.gen(function* request() {
+            requestSpanId = (yield* Effect.currentSpan).spanId;
+            yield* scheduler.now("native", {});
+          }).pipe(Effect.withSpan("native-request"));
+          yield* scheduler.start;
+          yield* Deferred.await(completed);
+          yield* scheduler.stop;
+        }).pipe(
+          Effect.provide(
+            MonqueEffect.layer(db, { instrumentation: openTelemetry(provider), pollInterval: 10 }),
+          ),
+        ),
+      );
+      await provider.forceFlush();
+      const spans = exporter.getFinishedSpans();
+      const worker = spans.find((span) => span.name === "monque.worker");
+      expect(delivered).toStrictEqual(["hello"]);
+      expect(worker).toBeDefined();
+      expect(spans.find((span) => span.name === "native-downstream")).toBeDefined();
+      expect(
+        spans.find((span) => span.name === "native-downstream")?.parentSpanContext?.spanId,
+      ).toBe(worker?.spanContext().spanId);
+      expect(
+        spans.find((span) => span.name === "monque.intake.enqueue")?.parentSpanContext?.spanId,
+      ).toBe(requestSpanId);
+    } finally {
       await provider.shutdown();
       await cleanupTestDb(db);
     }

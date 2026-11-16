@@ -1,0 +1,86 @@
+---
+title: Effect
+description: Acquire a scoped scheduler and register native Effect Workers.
+---
+
+`MonqueEffect.layer(db, options)` initializes a scheduler and disposes it when the
+Layer's scope closes. Monque borrows `db`; close your MongoDB connection after the
+scheduler scope finishes. Core includes Effect 4 and needs no OpenTelemetry SDK.
+
+## Register a native Worker
+
+Supply application dependencies when evaluating `register`. Each execution gets
+its own resource scope. Keep the supplied services alive until Monque is disposed.
+
+```typescript
+import { MonqueEffect } from "@monque/core";
+import { Context, Effect } from "effect";
+import type { Db } from "mongodb";
+
+class Mailer extends Context.Service<
+  Mailer,
+  {
+    send: (to: string) => Effect.Effect<void>;
+  }
+>()("app/Mailer") {}
+
+export const runMail = (db: Db, send: (to: string) => Effect.Effect<void>) =>
+  Effect.gen(function* () {
+    const scheduler = yield* MonqueEffect;
+    yield* scheduler
+      .register<{ to: string }, never, Mailer>("mail", (job) =>
+        Effect.gen(function* () {
+          const mailer = yield* Mailer;
+          yield* mailer.send(job.data.to);
+        }),
+      )
+      .pipe(Effect.provideService(Mailer, { send }));
+    yield* scheduler.start;
+    yield* scheduler.now("mail", { to: "ada@example.com" });
+    yield* Effect.never;
+  }).pipe(Effect.provide(MonqueEffect.layer(db)));
+```
+
+Run the returned Effect in your application's root scope. Interrupting that root
+starts scoped cleanup. Registration captures the supplied application services;
+the active execution attempt supplies the Worker's tracer and parent span.
+
+## Operations and failures
+
+The service exposes `enqueue`, `enqueueMany`, `now`, `schedule`, all public Job
+management and read methods, `pause`, `resume`, `isPaused`, `getProcessingState`,
+`start`, `stop`, `isHealthy`, and `dispose`. Controls without arguments are Effects
+(`yield* scheduler.start`); methods with arguments return Effects. Acquisition
+initializes the scheduler. `stop` permits a later `start`; `dispose` is terminal.
+
+Expected operation failures use the `MonqueError` channel. Existing validation and
+state errors keep their classes, so recover with `instanceof InvalidCronError`,
+`JobStateError`, or another public error. Native database failures are wrapped in
+`ConnectionError` with the original error in `cause`. Defects and interruption
+remain Effect causes. The ordinary interface retains its existing rejection values.
+
+A native Worker's typed failure or defect enters the existing retry policy. Values
+that are not Errors become Errors before persistence. `NonRetryableError` skips
+retries. A self-interrupted Worker also records a fenced failure and follows retry
+policy. Resource finalizers run before completion or failure is persisted. A
+finalizer defect becomes part of the failed attempt.
+
+## Shutdown and ownership
+
+`stop` stops new admissions and drains its captured executions up to
+`shutdownTimeout`. A timeout emits the existing `job:error` event. Native Workers
+continue until terminal disposal interrupts remaining native executions and waits
+for their finalizers and fenced failure writes. Uninterruptible handler regions and finalizers can delay disposal beyond the timeout.
+Ordinary Promise Workers remain
+owned until their Promises settle, even after the drain timeout.
+
+An admitted native scheduler operation settles before interruption is observed.
+Disposal waits for admitted reads, writes and concurrent native stops. A started
+MongoDB write or external Worker side effect can finish after cancellation;
+interruption cannot roll it back. Claim fencing still prevents a late result from
+modifying a replacement Claim.
+
+Both interfaces use the same scheduler. Use `Monque.scoped(db, options)` when a host
+also needs the ordinary EventEmitter interface; its `effects` member exposes the
+same native operations. Existing `new Monque(...)` consumers can use `effects`
+after `initialize()` while retaining synchronous controls and callbacks.
