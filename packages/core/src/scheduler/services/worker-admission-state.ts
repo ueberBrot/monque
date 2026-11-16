@@ -1,4 +1,5 @@
 import { MutableRef } from "effect";
+import type { Effect } from "effect";
 
 import type { JobHandler, PersistedJob } from "@/jobs";
 import { DEFAULT_MAX_BACKOFF_DELAY, validateJobName, WorkerRegistrationError } from "@/shared";
@@ -98,6 +99,28 @@ export class WorkerAdmissionState {
     MutableRef.update(this.#state, (state) => ({ ...state, running: false }));
   }
   register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions<T> = {}): void {
+    this.registerHandler(name, handler, options);
+  }
+  registerEffect<T>(
+    name: string,
+    handler: (job: PersistedJob<T>) => Effect.Effect<void, unknown>,
+    options: WorkerOptions<T> = {},
+  ): void {
+    this.registerHandler(
+      name,
+      () => {
+        throw new Error("Native Workers require Effect execution");
+      },
+      options,
+      handler,
+    );
+  }
+  private registerHandler<T>(
+    name: string,
+    handler: JobHandler<T>,
+    options: WorkerOptions<T>,
+    effectHandler?: (job: PersistedJob<T>) => Effect.Effect<void, unknown>,
+  ): void {
     validateJobName(name);
     const concurrency = options.concurrency ?? this.options.workerConcurrency;
     validateIntegerOption("concurrency", concurrency);
@@ -121,15 +144,19 @@ export class WorkerAdmissionState {
     const schema = definedProperty(options, "schema");
     const state = this.#state.current;
     const workers = new Map(state.workers);
-    workers.set(name, {
-      // SAFETY: The heterogeneous registry retains each schema beside its handler.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Preserve the public generic handler API while storing registrations together.
-      handler: handler as JobHandler,
+
+    // SAFETY: Each heterogeneous registration retains its handler and schema together.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Preserve the public generic handler API while storing registrations together.
+    const registration = {
+      handler,
+      ...definedProperty({ effectHandler }, "effectHandler"),
       concurrency,
       retryOptions,
       ...schema,
       activeJobs: state.workers.get(name)?.activeJobs ?? new Map(),
-    });
+    } as WorkerRegistration;
+
+    workers.set(name, registration);
     MutableRef.set(this.#state, { ...state, workers });
   }
   pause(name?: string): void {

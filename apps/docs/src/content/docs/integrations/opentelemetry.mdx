@@ -1,0 +1,177 @@
+---
+title: OpenTelemetry
+description: Export Monque spans and operation metrics through application-owned OpenTelemetry providers.
+---
+
+Tracing is optional. Ordinary `@monque/core` imports and execution need no OpenTelemetry packages.
+Install the integration dependencies only when you enable tracing:
+
+```sh
+bun add @effect/opentelemetry@4.1.2 @opentelemetry/api@^1.9.0
+```
+
+Use the official Effect integration version shown above with Monque's Effect 4.1.2 runtime.
+Importing the integration alone does not enable tracing. Pass its configuration to each
+Scheduler Instance you want to trace.
+
+## Promise application setup
+
+This example uses an in-memory exporter. Your application can supply its usual provider,
+processors and exporters instead. Configure resource metadata, sampling, credentials and
+export destinations in that provider.
+
+```sh
+bun add @opentelemetry/sdk-trace-base@^2.12.0 @opentelemetry/context-async-hooks@^2.12.0
+```
+
+```ts
+import { Monque } from "@monque/core";
+import { openTelemetry } from "@monque/core/opentelemetry";
+import { context, trace } from "@opentelemetry/api";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import {
+  BasicTracerProvider,
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-base";
+import { MongoClient } from "mongodb";
+
+const manager = new AsyncLocalStorageContextManager().enable();
+context.setGlobalContextManager(manager);
+const exporter = new InMemorySpanExporter();
+const provider = new BasicTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(exporter)],
+});
+// Hosts using global auto-instrumentation should also register this provider
+// through their existing SDK setup. Monque never registers globals itself.
+trace.setGlobalTracerProvider(provider);
+const client = await MongoClient.connect("mongodb://localhost:27017");
+const monque = new Monque(client.db("app"), {
+  instrumentation: openTelemetry(provider),
+});
+await monque.initialize();
+monque.register("email", async (job) => {
+  // The current span is monque.worker, within this execution attempt.
+  // Downstream OpenTelemetry instrumentation inherits its context across awaits.
+  console.log(job.name, trace.getActiveSpan()?.spanContext().traceId);
+});
+monque.start();
+
+const request = provider.getTracer("app").startSpan("request");
+await context.with(trace.setSpan(context.active(), request), async () => {
+  await monque.enqueue("email", { to: "user@example.com" });
+});
+request.end();
+
+// At final application shutdown:
+await monque.dispose();
+await provider.forceFlush();
+console.log(exporter.getFinishedSpans());
+await client.close();
+await provider.shutdown();
+context.disable();
+manager.disable();
+```
+
+If the host already installs a context manager, keep that manager. The host owns the
+provider and its shutdown. Disposing Monque closes its runtime and waits for owned work;
+it leaves the provider and other Scheduler Instances usable. Monque adds no global
+registrations or provider shutdown hooks.
+
+## Span behavior
+
+Monque exports spans for intake, dispatch, Claims, execution attempts, validation,
+Workers, result writes and recovery. Span names use a fixed operation vocabulary.
+Each span records elapsed time and an `outcome` attribute: `success`, `failure` or
+`interrupted`. Worker failures remain failed attempts even when retry handling succeeds.
+The official integration records failure status and exception details, and marks
+interruption with `effect.fiber.interrupted`.
+
+An operation call inherits the active application span. Worker spans are nested within
+execution attempts, and their context is active inside ordinary Promise handlers.
+Tracing does **not** persist enqueue context in Jobs or restore producer context in another
+process. No trace fields are added to Job schemas.
+
+Default telemetry excludes Job payloads and Job Names. Exception messages and stacks can
+contain application data; choose appropriate host processors and exporter policies.
+Observer failures do not change Job results, Claim fencing, Promise failures or synchronous
+event callbacks. Synchronous controls keep their existing contracts and do not await export.
+
+The integration configuration also exposes an Effect tracer for applications composing
+Effect layers. Native scheduler composition remains the responsibility of Monque's Effect
+integration; applications should not import private scheduler services.
+
+## Operation metrics
+
+Install `@opentelemetry/sdk-metrics@^2.12.0` and `@opentelemetry/resources@^2.12.0`
+when enabling metrics. Add the integration's producer to one host reader:
+
+```ts
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from "@opentelemetry/sdk-metrics";
+
+const resource = resourceFromAttributes({ "service.name": "my-app" });
+const instrumentation = openTelemetry(provider, { metrics: { resource } });
+const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+const reader = new PeriodicExportingMetricReader({
+  exporter: metricExporter,
+  exportIntervalMillis: 10_000,
+  metricProducers: [instrumentation.metricProducer],
+});
+const meters = new MeterProvider({ resource, readers: [reader] });
+const scheduler = new Monque(client.db("app"), { instrumentation });
+await scheduler.initialize();
+await scheduler.enqueue("email", { to: "user@example.com" });
+
+// At final shutdown, stop processing and collect before unregistering.
+await scheduler.stop();
+await meters.forceFlush();
+await scheduler.dispose();
+await meters.shutdown(); // Host-owned; call only after all users finish.
+```
+
+Use your host exporter in production. Configure the same resource on the MeterProvider:
+SDK readers retain that provider's resource when collecting additional producers.
+The integration uses the official Effect 4.1.2 `OtelMetrics.makeProducer` conversion.
+It exports cumulative measurements regardless of the reader's temporality preference.
+Do not sum successive collections; calculate rates from counter differences.
+
+| Instrument                  | Unit           | Meaning                                                                           |
+| --------------------------- | -------------- | --------------------------------------------------------------------------------- |
+| `monque.operations`         | `1`            | Monotonic count of finished operations, grouped by operation and outcome          |
+| `monque.operation.duration` | `milliseconds` | Histogram of elapsed operation time, with count, sum and cumulative bucket counts |
+
+The finite `operation` values are `intake.enqueue`, `intake.batch`, `intake.schedule`,
+`dispatch`, `claim.acquire`, `claim.release`, `execution`, `validation`, `worker`,
+`result.complete`, `result.fail` and `recovery`. Outcomes are `success`, `failure` and
+`interrupted`. A failed Worker attempt remains a failure even when retry handling succeeds.
+Nested operations each measure their own work; adding counts or durations across operations
+does not produce a Job count or total elapsed time. Timers also carry the fixed
+`time_unit=milliseconds` attribute. Job IDs, Job Names, payloads and tenants are excluded.
+
+`worker` measures one handler invocation. `execution` covers one attempt's validation,
+handler and successful result handling. Failure recovery is measured separately by
+`result.fail`. Neither measures total Job lifetime across waiting and retries.
+The existing Management `avgProcessingDurationMs` field keeps its current meaning:
+for completed Jobs, the average of `updatedAt - createdAt`, rounded to milliseconds.
+It includes waiting and retries and is not a Worker execution timer.
+
+Each initialized Scheduler Instance owns one registry and one producer registration.
+Reuse the same instrumentation across instances; their streams are separated by the
+instrumentation-scope name `@monque/core/<schedulerInstanceId>`.
+Use distinct IDs for live instances. Preserve scope identity when exporting or aggregating;
+backends that discard scope names must use separate instrumentation/readers per instance.
+Register `metricProducer` once per reader and avoid exporting the same registry through
+another Effect metrics Layer to the same destination.
+
+Construction alone exports nothing. Restartable stop retains registration and measurements.
+Disposal removes only that instance's registration; later collections omit its cumulative
+history, while a collection already in flight may finish. Flush before disposal if you need
+the last snapshot. Host readers, providers, exporters and other instances remain usable.
+Collection failures are reported to the reader and do not run in scheduler operations.
+Ordinary core consumers still need no OpenTelemetry SDK.

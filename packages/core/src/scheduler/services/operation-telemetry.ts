@@ -1,5 +1,7 @@
 import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Metric, Tracer } from "effect";
 
+import type { MonqueInstrumentation } from "../types.js";
+
 /** Fixed semantic vocabulary. User input never becomes a measurement dimension. */
 type Operation =
   | "intake.enqueue"
@@ -31,18 +33,29 @@ const report = <A>(hook: () => A): A | undefined => {
 };
 
 /** Trust native span state, with guarded delegation to the finite internal observer. */
-const safeTracer = (observer: Tracer.Tracer): Tracer.Tracer =>
+const safeTracer = (observer: Tracer.Tracer, context: Tracer.Tracer["context"]): Tracer.Tracer =>
   Tracer.make({
     span(options) {
-      const span = new Tracer.NativeSpan(options);
       const observed = report(() => observer.span(options));
-      report(() => {
-        // Copy identity once; Effect evaluation never reads observer getters.
-        const spanId = observed?.spanId;
-        const traceId = observed?.traceId;
-        span._spanId = spanId;
-        span._traceId = traceId;
+
+      // Copy identity and the host sampling decision once. Effect evaluation
+      // must never read observer getters outside the reporting guard.
+      const identity = report(
+        () =>
+          observed && {
+            spanId: observed.spanId,
+            traceId: observed.traceId,
+            sampled: observed.sampled,
+          },
+      );
+
+      const span = new Tracer.NativeSpan({
+        ...options,
+        sampled: identity?.sampled ?? options.sampled,
       });
+
+      span._spanId = identity?.spanId;
+      span._traceId = identity?.traceId;
       const end = span.end.bind(span);
       const attribute = span.attribute.bind(span);
       const event = span.event.bind(span);
@@ -69,14 +82,17 @@ const safeTracer = (observer: Tracer.Tracer): Tracer.Tracer =>
 
       return span;
     },
-    // A supplied context evaluator wraps application evaluation, so is not reporting.
+    // The context evaluator runs application code; catching its throws could
+    // evaluate callbacks twice or replace their failures.
+    context,
   });
 
 export const makeOperationTelemetry = (
   observer: Tracer.Tracer = Tracer.nativeTracer,
   registry: Metric.MetricRegistry = new Map(),
+  context?: Tracer.Tracer["context"],
 ) => {
-  const tracer = safeTracer(observer);
+  const tracer = safeTracer(observer, context);
 
   const finish = (
     operation: Operation,
@@ -152,16 +168,40 @@ export class OperationTelemetry extends Context.Service<
   ReturnType<typeof makeOperationTelemetry>
 >()("@monque/core/scheduler/OperationTelemetry") {}
 
-export const makeOperationTelemetryLayer = Layer.effect(
-  OperationTelemetry,
-  Effect.gen(function* acquireOperationTelemetry() {
-    return makeOperationTelemetry(yield* Tracer.Tracer, yield* Metric.MetricRegistry);
-  }),
-).pipe(
-  Layer.provideMerge(
-    Layer.effect(
-      Metric.MetricRegistry,
-      Effect.sync(() => new Map()),
+const telemetryLayer = (
+  instrumentation?: Tracer.Tracer,
+  metrics?: MonqueInstrumentation["metrics"],
+  instanceId = "",
+) =>
+  Layer.effect(
+    OperationTelemetry,
+    Effect.gen(function* acquireOperationTelemetry() {
+      const registry = yield* Metric.MetricRegistry;
+
+      if (metrics) {
+        yield* Effect.suspend(() => metrics(registry, instanceId)).pipe(Effect.ignoreCause);
+      }
+
+      return makeOperationTelemetry(
+        instrumentation ?? (yield* Tracer.Tracer),
+        registry,
+        instrumentation?.context?.bind(instrumentation),
+      );
+    }),
+  ).pipe(
+    Layer.provideMerge(
+      Layer.effect(
+        Metric.MetricRegistry,
+        Effect.sync(() => new Map()),
+      ),
     ),
-  ),
-);
+  );
+
+export const makeOperationTelemetryLayer = telemetryLayer();
+
+/** Context evaluation is opt-in because it evaluates application code, not reporting hooks. */
+export const makeTracingTelemetryLayer = (
+  tracer: Tracer.Tracer,
+  metrics?: MonqueInstrumentation["metrics"],
+  instanceId?: string,
+) => telemetryLayer(tracer, metrics, instanceId);

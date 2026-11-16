@@ -20,6 +20,7 @@ export interface ResolvedMonqueOptions
         | "leaseDuration"
         | "defaultConcurrency"
         | "maxConcurrency"
+        | "instrumentation"
       >
     >,
     Pick<

@@ -258,10 +258,14 @@ describe("operation telemetry", () => {
         expect(outer?.status).toMatchObject({
           _tag: "Ended",
           exit: {
-            _tag: stage === "result.fail" ? "Failure" : "Success",
+            _tag: "Failure",
           },
         });
-        expect(selected?.parent).toMatchObject({ value: { spanId: outer?.spanId } });
+
+        const parent =
+          stage === "result.fail" ? f.spans.find((span) => span.name === "monque.dispatch") : outer;
+
+        expect(selected?.parent).toMatchObject({ value: { spanId: parent?.spanId } });
         const metrics = yield* snapshots(f.registry);
         expect(metrics).toContainEqual(
           objectContainingMatcher({

@@ -42,7 +42,7 @@ export {
 } from "@/jobs";
 
 // Types - Scheduler
-export type { MonqueOptions, ProcessingState } from "@/scheduler";
+export type { MonqueInstrumentation, MonqueOptions, ProcessingState } from "@/scheduler";
 
 // Main class
 export { Monque } from "@/scheduler";
@@ -78,3 +78,5 @@ export {
 
 // Types - Workers
 export type { WorkerOptions } from "@/workers";
+
+export { MonqueEffect } from "./scheduler/effect-service.js";

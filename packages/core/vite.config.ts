@@ -86,7 +86,7 @@ export default defineConfig({
     },
   },
   pack: {
-    entry: ["src/index.ts"],
+    entry: ["src/index.ts", "src/effect.ts", "src/opentelemetry.ts"],
     format: ["esm", "cjs"],
     dts: true,
     clean: true,

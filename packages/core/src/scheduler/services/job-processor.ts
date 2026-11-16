@@ -370,11 +370,14 @@ export class JobProcessor {
           handlerJob = { ...job, data: validated };
         }
 
+        const { effectHandler } = worker;
         yield* this.telemetry.observe(
           "worker",
-          fromPromise(async () => {
-            await worker.handler(handlerJob);
-          }),
+          effectHandler
+            ? Effect.suspend(() => effectHandler(handlerJob)).pipe(Effect.interruptible)
+            : fromPromise(async () => {
+                await worker.handler(handlerJob);
+              }),
         );
 
         return yield* Effect.void;
@@ -395,6 +398,7 @@ export class JobProcessor {
         );
       }
     }).pipe(
+      (body) => this.telemetry.observe("execution", body),
       Effect.catchCause((cause) =>
         Effect.gen({ self: this }, function* handleWorkerFailure() {
           const error = toError(Cause.squash(cause));
@@ -425,7 +429,6 @@ export class JobProcessor {
           }
         }),
       ),
-      (body) => this.telemetry.observe("execution", body),
     );
   }
 }

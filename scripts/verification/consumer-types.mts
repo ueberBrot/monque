@@ -1,6 +1,8 @@
 import { Monque } from "@monque/core";
+import { MonqueEffect } from "@monque/core/effect";
 import { createManagementExpressRouter } from "@monque/management-express";
 import type { MonqueTsedConfig } from "@monque/tsed";
+import { Effect } from "effect";
 import type { MongoClient, ObjectId } from "mongodb";
 
 export const checkConsumerTypes = async (client: MongoClient) => {
@@ -11,5 +13,9 @@ export const checkConsumerTypes = async (client: MongoClient) => {
   const id: ObjectId = job._id;
   await monque.getJob(id);
 
-  return { config, router: createManagementExpressRouter({ monque }) };
+  const native = MonqueEffect.use((scheduler) => scheduler.enqueue("typed", {})).pipe(
+    Effect.provide(MonqueEffect.layer(client.db())),
+  );
+
+  return { native, config, router: createManagementExpressRouter({ monque }) };
 };

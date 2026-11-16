@@ -33,7 +33,7 @@ monque.start();
 await monque.now("print-message", { message: "Hello from Monque" });
 
 async function shutdown() {
-  await monque.stop();
+  await monque.dispose();
   await client.close();
 }
 
@@ -101,8 +101,17 @@ code, or add the [dashboard](/monque/dashboard/express/) to your Express applica
 
 ## Handle Graceful Shutdown
 
-Call `stop()` before closing your MongoDB client. It waits for running handlers up to
-`shutdownTimeout`. If that limit is reached, jobs remain available for stale recovery.
+Call `dispose()` for final shutdown, then close your MongoDB client. Monque leaves the
+application's connection open. Repeated disposal calls share completion, including for
+instances that never started processing. A disposed instance cannot initialize or restart;
+its database operations fail with `ConnectionError`.
+
+Use `stop()` to drain processing and restart it later with `start()`. Both operations use
+`shutdownTimeout` and report incomplete jobs through `job:error`. Disposal also waits for
+admitted operations, started writes, and Promise Workers to settle before releasing owned
+resources. This can outlast the drain timeout. Cancellation cannot undo writes or external
+side effects; late results still require the original Claim. Jobs whose claims expire can
+be recovered by another scheduler.
 
 Set scheduler options in your application's code:
 

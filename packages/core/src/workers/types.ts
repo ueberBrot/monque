@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { Effect } from "effect";
 
 import type { JobHandler, PersistedJob } from "@/jobs";
 import type { MonqueOptions } from "@/scheduler/types";
@@ -42,6 +43,8 @@ export interface WorkerOptions<T = unknown> extends RetryOptions {
 export interface WorkerRegistration<T = unknown> {
   /** The job handler function */
   readonly handler: JobHandler<T>;
+  /** Native handler, when registered through the Effect interface. */
+  readonly effectHandler?: (job: PersistedJob<T>) => Effect.Effect<void, unknown>;
   /** Maximum concurrent jobs for this worker */
   readonly concurrency: number;
   /** Retry settings captured when this worker was registered */

@@ -6,5 +6,3 @@ export const isObject = (value: unknown): value is object =>
 
 export const isFunction = (value: unknown): value is (...args: never[]) => void =>
   typeof value === "function";
-
-export const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";

@@ -1,9 +1,10 @@
+import { EventEmitter } from "node:events";
 /**
  * Unit tests for Monque class.
  *
  * Tests initialization and public operations with the real internal modules.
  */
-import { EventEmitter } from "node:events";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Clock, Effect } from "effect";
 import type {
@@ -55,6 +56,7 @@ describe(Monque, () => {
   let mockDb: NativeMock<Db>;
   let mockCollection: NativeMock<MockCollection>;
   let monque: Monque;
+
   beforeEach(() => {
     mockCollection = fromPartial<NativeMock<MockCollection>>({
       bulkWrite: vi.fn<MockFunction<Collection["bulkWrite"]>>(),
@@ -182,6 +184,97 @@ describe(Monque, () => {
     );
   });
 
+  it("makes disposal before initialization terminal and shares its completion", async () => {
+    const disposing = monque.dispose();
+    expect(monque.dispose()).toBe(disposing);
+    await disposing;
+    expect(monque.isHealthy()).toBe(false);
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+    await expect(monque.getJobs()).rejects.toThrow("disposed");
+    await monque.stop();
+    expect(mockDb.collection).not.toHaveBeenCalled();
+  });
+
+  it.each(["start", "pause", "resume"] as const)(
+    "rejects %s synchronously after disposal",
+    async (control) => {
+      await monque.dispose();
+      expect(() => {
+        monque[control]();
+      }).toThrow("disposed");
+      expect(() => {
+        monque.register("work", () => {});
+      }).toThrow("disposed");
+    },
+  );
+
+  it("disposes producer-only instances without closing the borrowed database", async () => {
+    await monque.initialize();
+    await monque.enqueue("email", {});
+    await monque.dispose();
+    await expect(monque.enqueue("email", {})).rejects.toThrow("disposed");
+    expect(mockDb.collection("other")).toBe(mockCollection);
+    expect(monque.dispose()).toBe(monque.dispose());
+  });
+
+  it.each([false, true])("settles disposal during initialization (failure: %s)", async (fail) => {
+    const indexing = Promise.withResolvers<string[]>();
+    mockCollection.createIndexes.mockReturnValueOnce(indexing.promise);
+    const initializing = monque.initialize();
+    const result = Promise.allSettled([initializing]);
+    let disposed = false;
+
+    const disposing = monque.dispose().finally(() => {
+      disposed = true;
+    });
+
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+
+    if (fail) {
+      indexing.reject(new Error("index failure"));
+    } else {
+      indexing.resolve([]);
+    }
+
+    await expect(result).resolves.toMatchObject([{ status: "rejected" }]);
+    await disposing;
+    expect(monque.isHealthy()).toBe(false);
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+  });
+
+  it("can dispose after initialization fails", async () => {
+    mockCollection.createIndexes.mockRejectedValueOnce(new Error("index failure"));
+    await expect(monque.initialize()).rejects.toBeInstanceOf(ConnectionError);
+    await monque.dispose();
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+  });
+
+  it("waits for a started producer write and preserves its Promise result", async () => {
+    await monque.initialize();
+    const writing = Promise.withResolvers<undefined>();
+    const write = Promise.withResolvers<Awaited<ReturnType<Collection["insertOne"]>>>();
+    mockCollection.insertOne.mockImplementationOnce(async () => {
+      writing.resolve(undefined);
+
+      return await write.promise;
+    });
+    const enqueued = monque.enqueue("email", {});
+    await writing.promise;
+    let closed = false;
+
+    const disposing = monque.dispose().finally(() => {
+      closed = true;
+    });
+
+    await nextTurn();
+    expect(closed).toBe(false);
+    const id = new ObjectId();
+    write.resolve({ acknowledged: true, insertedId: id });
+    await expect(enqueued).resolves.toHaveProperty("_id", id);
+    await disposing;
+  });
+
   describe("constructor", () => {
     it("should set maxListeners to 20", () => {
       expect(monque.getMaxListeners()).toBe(20);
@@ -240,11 +333,19 @@ describe(Monque, () => {
       });
     });
 
-    it("should throw ConnectionError if initialization fails", async () => {
+    it("preserves the original cause when initialization fails", async () => {
+      const failure = new MongoServerError({ message: "DB Connection Failed", code: 13 });
       vi.spyOn(mockDb, "collection").mockImplementationOnce(() => {
-        throw new Error("DB Connection Failed");
+        throw failure;
       });
-      await expect(monque.initialize()).rejects.toThrow(ConnectionError);
+      const initialization = monque.initialize();
+      await expect(initialization).rejects.toBeInstanceOf(ConnectionError);
+      await expect(initialization).rejects.toMatchObject({
+        message: "Failed to initialize Monque: DB Connection Failed",
+      });
+      await expect(initialization).rejects.toSatisfy(
+        (error: ConnectionError) => error.cause === failure,
+      );
     });
 
     it("keeps public operations unavailable until initialization finishes", async () => {
@@ -272,18 +373,19 @@ describe(Monque, () => {
     });
 
     it("shares initialization failures and allows a later retry", async () => {
+      const failure = new Error("DB unavailable");
       const indexes = Promise.withResolvers<string[]>();
       vi.mocked(mockCollection.createIndexes).mockReturnValueOnce(indexes.promise);
 
       const failedInitializations = Promise.all(
         [monque.initialize(), monque.initialize()].map(async (initialization) => {
           await expect(initialization).rejects.toThrow(
-            new ConnectionError("Failed to initialize Monque: DB unavailable"),
+            new ConnectionError("Failed to initialize Monque: DB unavailable", { cause: failure }),
           );
         }),
       );
 
-      indexes.reject(new Error("DB unavailable"));
+      indexes.reject(failure);
       await failedInitializations;
       expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
       await expect(monque.getJob("invalid-id")).rejects.toThrow(ConnectionError);
@@ -296,6 +398,7 @@ describe(Monque, () => {
     });
 
     it("retries failed ownership recovery without publishing partially initialized modules", async () => {
+      const failure = new Error("Recovery unavailable");
       const recovery = Promise.withResolvers<Awaited<ReturnType<Collection["updateMany"]>>>();
       let recoveryAttempts = 0;
       vi.mocked(mockCollection.updateMany).mockImplementation(async (filter) => {
@@ -321,7 +424,7 @@ describe(Monque, () => {
         monque.start();
       }).toThrow(ConnectionError);
       await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
-      recovery.reject(new Error("Recovery unavailable"));
+      recovery.reject(failure);
       const [first, second] = await initializing;
 
       if (first?.status !== "rejected" || second?.status !== "rejected") {
@@ -337,7 +440,9 @@ describe(Monque, () => {
         recoveryAttempts: Object.is(recoveryAttempts, 1),
         mockCollectionFindOneMockCallsLength: mockCollection.findOne.mock.calls.length,
       }).toStrictEqual({
-        failures0: new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
+        failures0: new ConnectionError("Failed to initialize Monque: Recovery unavailable", {
+          cause: failure,
+        }),
         failures1: true,
         recoveryAttempts: true,
         mockCollectionFindOneMockCallsLength: 0,

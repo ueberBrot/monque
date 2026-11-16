@@ -141,7 +141,12 @@ export default defineConfig({
         },
         {
           label: "Integrations",
-          items: [{ label: "Ts.ED", slug: "integrations/tsed" }],
+          items: [
+            { label: "Ts.ED", slug: "integrations/tsed" },
+            { label: "Effect", slug: "integrations/effect" },
+            { label: "Effect host example", slug: "integrations/effect-host" },
+            { label: "OpenTelemetry", slug: "integrations/opentelemetry" },
+          ],
         },
         {
           label: "Roadmap",

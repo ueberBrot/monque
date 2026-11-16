@@ -45,7 +45,7 @@ await monque.schedule(
 );
 
 async function shutdown() {
-  await monque.stop();
+  await monque.dispose();
   await client.close();
 }
 
@@ -54,7 +54,16 @@ process.once("SIGTERM", shutdown);
 ```
 
 Register a worker for each job name you submit. `stop()` waits for running handlers up to
-`shutdownTimeout`; close your MongoDB client afterwards.
+`shutdownTimeout` and lets you call `start()` again. Use `dispose()` for final shutdown,
+including instances that only enqueue jobs. It closes admission immediately and releases
+Monque-owned resources. Repeated calls share one Promise; a disposed instance cannot
+initialize, restart, or perform database operations.
+
+Disposal uses the same drain timeout and `job:error` reporting as `stop()`. Final cleanup
+also waits for admitted reads, started writes, and Promise Workers to settle, so it may
+outlast `shutdownTimeout`. It cannot undo MongoDB writes or Worker side effects.
+Late results still require the original Claim. Monque borrows your database connection;
+close your MongoDB client after disposal finishes.
 
 ## Scheduling and execution
 
@@ -155,3 +164,16 @@ See the [repository README](../../README.md#development) for workspace commands.
 ## License
 
 [ISC](./LICENSE)
+
+### Effect applications
+
+Import `MonqueEffect` from `@monque/core/effect`. Pass a Worker setup callback to
+`MonqueEffect.layer(db, options, setup)` to initialize, register and start under one
+scoped Layer. Omit setup for a producer that stays stopped. The application scope
+disposes the scheduler. Provide application services through Layers, then compose
+intake, scheduling, reads and management as Effects. MongoDB
+remains application-owned. See the [Effect integration guide](https://ueberBrot.github.io/monque/integrations/effect/)
+for a complete example and failure, interruption and shutdown semantics.
+
+A complete [Effect host example](../../apps/effect-host/README.md) runs native Workers
+with authenticated Management and Dashboard mounts, optional tracing, and scoped cleanup.
