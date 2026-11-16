@@ -102,6 +102,31 @@
         "zod": "^4.6.7",
       },
     },
+    "apps/effect-host": {
+      "name": "@monque/effect-host",
+      "version": "0.0.0",
+      "dependencies": {
+        "@monque/core": "workspace:*",
+        "@monque/dashboard-express": "workspace:*",
+        "@monque/management-express": "workspace:*",
+        "effect": "4.1.2",
+        "express": "^5.3.0",
+        "mongodb": "^7.8.0",
+      },
+      "devDependencies": {
+        "@effect/opentelemetry": "4.1.2",
+        "@monque/management": "workspace:*",
+        "@opentelemetry/api": "1.10.0",
+        "@opentelemetry/resources": "2.12.0",
+        "@opentelemetry/sdk-metrics": "2.12.0",
+        "@opentelemetry/sdk-trace-base": "2.12.0",
+        "@testcontainers/mongodb": "^12.2.1",
+        "@types/express": "^5.0.6",
+        "@types/node": "^22.20.5",
+        "playwright": "^1.64.1",
+        "vite-plus": "catalog:",
+      },
+    },
     "packages/core": {
       "name": "@monque/core",
       "version": "1.20.2",
@@ -133,11 +158,15 @@
       "peerDependencies": {
         "@effect/opentelemetry": "4.1.2",
         "@opentelemetry/api": ">=1.9.0 <2",
+        "@opentelemetry/resources": ">=2.0.0 <3",
+        "@opentelemetry/sdk-metrics": ">=2.0.0 <3",
         "mongodb": "^6.22.0 || ^7.8.0",
       },
       "optionalPeers": [
         "@effect/opentelemetry",
         "@opentelemetry/api",
+        "@opentelemetry/resources",
+        "@opentelemetry/sdk-metrics",
       ],
     },
     "packages/dashboard": {
@@ -772,6 +801,8 @@
     "@monque/dashboard-express": ["@monque/dashboard-express@workspace:packages/dashboard-express"],
 
     "@monque/docs": ["@monque/docs@workspace:apps/docs"],
+
+    "@monque/effect-host": ["@monque/effect-host@workspace:apps/effect-host"],
 
     "@monque/management": ["@monque/management@workspace:packages/management"],
 

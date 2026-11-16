@@ -252,6 +252,7 @@ export default defineConfig({
     projects: [
       "packages/*/vite.config.ts",
       "apps/dashboard-dev/vite.config.ts",
+      "apps/effect-host/vite.config.ts",
       { test: { name: "ci", include: ["scripts/ci/tests/**/*.test.ts"] } },
     ],
   },

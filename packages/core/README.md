@@ -172,3 +172,6 @@ with your application's scope. Register native Effect Workers with application
 services, then compose intake, scheduling, reads and management as Effects. MongoDB
 remains application-owned. See the [Effect integration guide](https://ueberBrot.github.io/monque/integrations/effect/)
 for a complete example and failure, interruption and shutdown semantics.
+
+A complete [Effect host example](../../apps/effect-host/README.md) runs native Workers
+with authenticated Management and Dashboard mounts, optional tracing, and scoped cleanup.

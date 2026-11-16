@@ -1,0 +1,25 @@
+---
+title: Effect host example
+description: Run native Effect Workers with authenticated Management and Dashboard mounts.
+---
+
+The repository's [Effect host example](https://github.com/ueberBrot/monque/tree/main/apps/effect-host)
+is a runnable private application. Its README covers setup, configuration, tracing,
+shutdown, and real MongoDB integration checks.
+
+The application acquires `Monque.scoped` inside its database scope. Native
+`.effects` operations register a Worker with a captured application service and
+enqueue a Job. The same instance supplies the existing Management Promise interface.
+
+Management mounts the existing oRPC OpenAPI handler through the Express adapter.
+Dashboard uses its separate Express adapter and the existing asset-only build.
+Custom mount paths are injected at runtime, including on SPA deep links.
+
+Host authentication protects both mounts. The example demonstrates viewer and
+operator roles, action authorization, and read-only mode. The existing adapters
+retain request size limits, origin checks, validation, and error behavior.
+
+Ordinary startup needs no OpenTelemetry packages. Explicit tracing uses an
+application-owned provider. On shutdown, the application closes HTTP, disposes
+Monque, closes MongoDB, then shuts down its optional provider. See the example's
+README for incomplete-work and interruption semantics.
