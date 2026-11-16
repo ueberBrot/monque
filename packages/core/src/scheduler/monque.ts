@@ -497,9 +497,8 @@ export class Monque extends EventEmitter {
             completion.resolve();
           }),
         ),
-        Effect.uninterruptible,
       );
-    });
+    }).pipe(Effect.uninterruptible);
   }
   /** Acquire an initialized instance whose terminal cleanup belongs to the caller's scope. */
   static scoped(db: Db, options: MonqueOptions = {}) {

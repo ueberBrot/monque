@@ -1,6 +1,6 @@
 import { describe, it, expect } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { Context, Data, Deferred, Effect, Exit, Fiber } from "effect";
+import { Context, Data, Deferred, Effect, Exit, Fiber, Scheduler } from "effect";
 import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
 import type { Collection, Db, UpdateResult } from "mongodb";
@@ -128,6 +128,48 @@ describe("synchronous controls", () => {
 });
 
 describe("native admission ownership", () => {
+  it.each(Array.from({ length: 12 }, (_, index) => index + 1))(
+    "disposes after caller interruption at native read yield point %i",
+    async (target) => {
+      const collection = fromPartial<Collection>({
+        updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+        findOne: async () => await Promise.resolve(null),
+      });
+
+      const monque = new Monque(fromPartial<Db>({ collection: () => collection }), {
+        skipIndexCreation: true,
+        recoverStaleJobs: false,
+      });
+
+      await monque.initialize();
+
+      let steps = 0;
+      const scheduler = new Scheduler.MixedScheduler();
+
+      scheduler.shouldYield = (fiber) => {
+        steps += 1;
+
+        if (steps === target) {
+          queueMicrotask(() => {
+            fiber.interruptUnsafe();
+          });
+
+          return true;
+        }
+
+        return false;
+      };
+
+      const fiber = Effect.runFork(monque.effects.getJob("000000000000000000000001"), {
+        scheduler,
+      });
+
+      await Effect.runPromise(Fiber.await(fiber));
+      await expect(monque.dispose()).resolves.toBeUndefined();
+    },
+    1000,
+  );
+
   it("settles a started producer write before interruption and disposal finish", async () => {
     const started = Promise.withResolvers<undefined>();
     const release = Promise.withResolvers<undefined>();
