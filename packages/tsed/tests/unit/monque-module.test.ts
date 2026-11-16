@@ -64,6 +64,7 @@ interface MockLogger {
 }
 
 interface MockMonque {
+  dispose: Mock<Monque["dispose"]>;
   register: Mock<Monque["register"]>;
   schedule: Mock<Monque["schedule"]>;
 }
@@ -84,6 +85,7 @@ const createMockLogger = function createMockLogger(): MockLogger {
 
 const createMockMonque = function createMockMonque(): MockMonque {
   return {
+    dispose: vi.fn<Monque["dispose"]>().mockResolvedValue(undefined),
     register: vi.fn<Monque["register"]>(),
     schedule: vi.fn<Monque["schedule"]>().mockResolvedValue(fromPartial({})),
   };
@@ -153,6 +155,22 @@ describe("MonqueModule.registerJobs()", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("awaits terminal cleanup on application teardown", async () => {
+    const release = Promise.withResolvers<undefined>();
+    mockMonque.dispose.mockReturnValueOnce(release.promise);
+    let destroyed = false;
+
+    const destroying = module.$onDestroy().finally(() => {
+      destroyed = true;
+    });
+
+    await Promise.resolve();
+    expect(mockMonque.dispose).toHaveBeenCalledOnce();
+    expect(destroyed).toBe(false);
+    release.resolve(undefined);
+    await destroying;
   });
 
   describe("handler execution", () => {

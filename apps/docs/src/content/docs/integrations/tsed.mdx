@@ -109,7 +109,7 @@ import { MongoClient } from "mongodb";
 export class Server {}
 ```
 
-Close clients you create in `dbFactory` during application shutdown, after Monque stops.
+Close clients you create in `dbFactory` during application shutdown, after Monque disposal finishes. The module calls `dispose()` during application teardown, including when job processing is disabled.
 Reuse an application-managed connection when you already have one.
 
 ### Mongoose Strategy

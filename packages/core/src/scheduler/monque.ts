@@ -147,6 +147,10 @@ export class Monque extends EventEmitter {
     processing: Processing["Service"];
   } | null = null;
   #initialization: Promise<void> | null = null;
+  #disposed = false;
+  #disposal: Promise<void> | null = null;
+  readonly #stops = new Set<Promise<void>>();
+  readonly #operations = new Set<Promise<unknown>>();
   constructor(db: Db, options: MonqueOptions = {}) {
     super();
     this.setMaxListeners(20);
@@ -195,6 +199,8 @@ export class Monque extends EventEmitter {
    * @throws {ConnectionError} If collection or index creation fails
    */
   async initialize(): Promise<void> {
+    this.#assertLive();
+
     if (this.#initialized) {
       return;
     }
@@ -242,6 +248,7 @@ export class Monque extends EventEmitter {
 
       candidate = runtime;
       const context = yield* runtime.contextEffect;
+      this.#assertLive();
       this.#initialized = { runtime, processing: Context.get(context, Processing) };
     }).pipe(
       Effect.catchCause((cause) => {
@@ -263,13 +270,28 @@ export class Monque extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────────
   // Initialized runtime
   // ─────────────────────────────────────────────────────────────────────────────
-  /** @throws {ConnectionError} if not initialized */
-  get #runtime(): SchedulerRuntime {
+  #assertLive(): void {
+    if (this.#disposed) {
+      throw new ConnectionError("Monque is disposed. Create a new instance.");
+    }
+  }
+  async #runPromise<A, E>(
+    operation: Effect.Effect<A, E, Layer.Success<ReturnType<typeof makeSchedulerLayer>>>,
+  ): Promise<A> {
+    this.#assertLive();
+
     if (!this.#initialized) {
       throw new ConnectionError("Monque not initialized. Call initialize() first.");
     }
 
-    return this.#initialized.runtime;
+    const pending = this.#initialized.runtime.runPromise(operation);
+    this.#operations.add(pending);
+
+    try {
+      return await pending;
+    } finally {
+      this.#operations.delete(pending);
+    }
   }
   /**
    * Create required MongoDB indexes for efficient job processing.
@@ -416,7 +438,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.enqueue}
    */
   async enqueue<T>(name: string, data: T, options: EnqueueOptions = {}): Promise<PersistedJob<T>> {
-    return await this.#runtime.runPromise(
+    return await this.#runPromise(
       JobIntake.use((intake) => intake.enqueue(name, data, options)).pipe(
         Effect.mapError((failure) =>
           failure instanceof JobPersistenceError ? failure.cause : failure,
@@ -434,7 +456,7 @@ export class Monque extends EventEmitter {
     jobs: readonly EnqueueJob[],
     options: JobWriteOptions = {},
   ): Promise<EnqueueManyResult> {
-    return await this.#runtime.runPromise(
+    return await this.#runPromise(
       JobIntake.use((intake) => intake.enqueueMany(jobs, options)).pipe(
         Effect.mapError((failure) =>
           failure instanceof JobPersistenceError ? failure.cause : failure,
@@ -474,7 +496,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobIntake.now}
    */
   async now<T>(name: string, data: T, options: NowOptions = {}): Promise<PersistedJob<T>> {
-    return await this.#runtime.runPromise(
+    return await this.#runPromise(
       JobIntake.use((intake) => intake.now(name, data, options)).pipe(
         Effect.mapError((failure) =>
           failure instanceof JobPersistenceError ? failure.cause : failure,
@@ -538,7 +560,7 @@ export class Monque extends EventEmitter {
     data: T,
     options: ScheduleOptions = {},
   ): Promise<PersistedJob<T>> {
-    return await this.#runtime.runPromise(
+    return await this.#runPromise(
       JobIntake.use((intake) => intake.schedule(cron, name, data, options)).pipe(
         Effect.mapError((failure) =>
           failure instanceof JobPersistenceError ? failure.cause : failure,
@@ -746,9 +768,7 @@ export class Monque extends EventEmitter {
    *
    */
   async getJob<T = unknown>(id: ObjectId | string): Promise<PersistedJob<T> | null> {
-    const runtime = this.#runtime;
-
-    return await runtime.runPromise(readJob<T>(id));
+    return await this.#runPromise(readJob<T>(id));
   }
   /**
    * Query jobs from the queue with optional filters.
@@ -795,7 +815,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJobs}
    */
   async getJobs<T = unknown>(filter: GetJobsFilter = {}): Promise<PersistedJob<T>[]> {
-    return await this.#runtime.runPromise(JobQueries.use((query) => query.getJobs<T>(filter)));
+    return await this.#runPromise(JobQueries.use((query) => query.getJobs<T>(filter)));
   }
   /**
    * Get a paginated list of jobs using opaque cursors.
@@ -829,13 +849,11 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getJobsWithCursor}
    */
   async getJobsWithCursor<T = unknown>(options: CursorOptions = {}): Promise<CursorPage<T>> {
-    return await this.#runtime.runPromise(
-      JobQueries.use((query) => query.getJobsWithCursor<T>(options)),
-    );
+    return await this.#runPromise(JobQueries.use((query) => query.getJobsWithCursor<T>(options)));
   }
   /** List job metadata without reading payloads; shares the full listing cursor format. */
   async getJobSummariesWithCursor(options: CursorOptions = {}): Promise<JobSummaryPage> {
-    return await this.#runtime.runPromise(
+    return await this.#runPromise(
       JobQueries.use((query) => query.getJobSummariesWithCursor(options)),
     );
   }
@@ -868,7 +886,7 @@ export class Monque extends EventEmitter {
    * @see {@link JobQueryService.getQueueStats}
    */
   async getQueueStats(filter?: Pick<JobSelector, "name">): Promise<QueueStats> {
-    return await this.#runtime.runPromise(JobQueries.use((query) => query.getQueueStats(filter)));
+    return await this.#runPromise(JobQueries.use((query) => query.getQueueStats(filter)));
   }
   /**
    * Get operator-facing Queue View summaries grouped by Job Name.
@@ -894,9 +912,7 @@ export class Monque extends EventEmitter {
   async getQueueViewSummaries(
     filter?: Pick<JobSelector, "name">,
   ): Promise<readonly QueueViewSummary[]> {
-    return await this.#runtime.runPromise(
-      JobQueries.use((query) => query.getQueueViewSummaries(filter)),
-    );
+    return await this.#runPromise(JobQueries.use((query) => query.getQueueViewSummaries(filter)));
   }
   // ─────────────────────────────────────────────────────────────────────────────
   // Public API - Worker Registration
@@ -967,6 +983,7 @@ export class Monque extends EventEmitter {
    * ```
    */
   register<T>(name: string, handler: JobHandler<T>, options: WorkerOptions<T> = {}): void {
+    this.#assertLive();
     this.#admission.register(name, handler, options);
   }
   // ─────────────────────────────────────────────────────────────────────────────
@@ -974,10 +991,12 @@ export class Monque extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────────
   /** Pause new executions locally, optionally for one job name. Running jobs continue. */
   pause(name?: string): void {
+    this.#assertLive();
     this.#admission.pause(name);
   }
   /** Resume local executions. Resuming the instance preserves individually paused workers. */
   resume(name?: string): void {
+    this.#assertLive();
     this.#admission.resume(name);
     this.#initialized?.processing.notifyRunnableJob(name);
   }
@@ -1033,6 +1052,8 @@ export class Monque extends EventEmitter {
    * @throws {ConnectionError} If scheduler not initialized (call `initialize()` first)
    */
   start(): void {
+    this.#assertLive();
+
     if (this.#admission.running) {
       return;
     }
@@ -1082,7 +1103,75 @@ export class Monque extends EventEmitter {
       return;
     }
 
-    await this.#runtime.runPromise(Processing.use((processing) => processing.stop));
+    const initialized = this.#initialized;
+
+    if (!initialized) {
+      return;
+    }
+
+    const stopping = initialized.runtime.runPromise(
+      Processing.use((processing) => processing.stop),
+    );
+
+    this.#stops.add(stopping);
+
+    try {
+      await stopping;
+    } finally {
+      this.#stops.delete(stopping);
+    }
+  }
+  /**
+   * Permanently close this instance. Repeated calls return the same completion.
+   * Admission closes immediately; initialize(), start(), mutations and reads then fail.
+   * Processing drains with stop()'s timeout and job:error policy. Final scope cleanup
+   * also waits for owned Promise Workers and started native writes, which can outlast
+   * that timeout. Cancellation is not rollback: external side effects may still finish,
+   * and late results retain Claim fencing. The application's MongoDB connection stays open.
+   */
+  // oxlint-disable-next-line typescript/promise-function-async -- An async method would wrap the shared disposal Promise and lose identity.
+  dispose(): Promise<void> {
+    if (this.#disposal) {
+      return this.#disposal;
+    }
+
+    this.#disposed = true;
+    const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
+    this.#disposal = completion.promise;
+    // Publish completion before stop listeners can reenter disposal.
+    const drains = Promise.allSettled([...this.#stops, this.stop()]);
+    void this.#finishDisposal(drains).then(completion.resolve, completion.reject);
+
+    return this.#disposal;
+  }
+  async #finishDisposal(
+    drains: Promise<PromiseSettledResult<Effect.Success<typeof Effect.void>>[]>,
+  ): Promise<void> {
+    try {
+      await this.#initialization;
+    } catch {
+      // Initialization releases its candidate runtime on failure.
+    }
+
+    const initialized = this.#initialized;
+
+    try {
+      const results = await drains;
+      const failure = results.find((result) => result.status === "rejected");
+
+      if (failure) {
+        throw failure.reason;
+      }
+    } finally {
+      try {
+        // Keep admitted reads and writes alive until their native results settle.
+        await Promise.allSettled(this.#operations);
+        await initialized?.runtime.dispose();
+      } finally {
+        this.#initialized = null;
+        this.collection = null;
+      }
+    }
   }
   /**
    * Check if the scheduler is healthy (running and connected).
@@ -1139,7 +1228,7 @@ export class Monque extends EventEmitter {
   async #runJobMutation<T>(
     operation: (management: JobManagement["Service"]) => Effect.Effect<T, unknown>,
   ): Promise<T> {
-    return await this.#runtime.runPromise(JobManagement.use(operation));
+    return await this.#runPromise(JobManagement.use(operation));
   }
   /**
    * Type-safe event emitter methods

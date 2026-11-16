@@ -97,7 +97,7 @@ export class MonqueModule implements OnInit, OnDestroy {
     if (this.monque) {
       this.logger.info("Monque: Stopping...");
 
-      await this.monque.stop();
+      await this.monque.dispose();
 
       this.logger.info("Monque: Stopped");
     }

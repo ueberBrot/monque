@@ -1,9 +1,10 @@
+import { EventEmitter } from "node:events";
 /**
  * Unit tests for Monque class.
  *
  * Tests initialization and public operations with the real internal modules.
  */
-import { EventEmitter } from "node:events";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Clock, Effect } from "effect";
 import type {
@@ -55,6 +56,7 @@ describe(Monque, () => {
   let mockDb: NativeMock<Db>;
   let mockCollection: NativeMock<MockCollection>;
   let monque: Monque;
+
   beforeEach(() => {
     mockCollection = fromPartial<NativeMock<MockCollection>>({
       bulkWrite: vi.fn<MockFunction<Collection["bulkWrite"]>>(),
@@ -180,6 +182,97 @@ describe(Monque, () => {
     await expect(monque.cancelJob(new ObjectId().toHexString())).rejects.toStrictEqual(
       new ConnectionError("Failed to cancel job: Unknown error during cancelJob"),
     );
+  });
+
+  it("makes disposal before initialization terminal and shares its completion", async () => {
+    const disposing = monque.dispose();
+    expect(monque.dispose()).toBe(disposing);
+    await disposing;
+    expect(monque.isHealthy()).toBe(false);
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+    await expect(monque.getJobs()).rejects.toThrow("disposed");
+    await monque.stop();
+    expect(mockDb.collection).not.toHaveBeenCalled();
+  });
+
+  it.each(["start", "pause", "resume"] as const)(
+    "rejects %s synchronously after disposal",
+    async (control) => {
+      await monque.dispose();
+      expect(() => {
+        monque[control]();
+      }).toThrow("disposed");
+      expect(() => {
+        monque.register("work", () => {});
+      }).toThrow("disposed");
+    },
+  );
+
+  it("disposes producer-only instances without closing the borrowed database", async () => {
+    await monque.initialize();
+    await monque.enqueue("email", {});
+    await monque.dispose();
+    await expect(monque.enqueue("email", {})).rejects.toThrow("disposed");
+    expect(mockDb.collection("other")).toBe(mockCollection);
+    expect(monque.dispose()).toBe(monque.dispose());
+  });
+
+  it.each([false, true])("settles disposal during initialization (failure: %s)", async (fail) => {
+    const indexing = Promise.withResolvers<string[]>();
+    mockCollection.createIndexes.mockReturnValueOnce(indexing.promise);
+    const initializing = monque.initialize();
+    const result = Promise.allSettled([initializing]);
+    let disposed = false;
+
+    const disposing = monque.dispose().finally(() => {
+      disposed = true;
+    });
+
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+
+    if (fail) {
+      indexing.reject(new Error("index failure"));
+    } else {
+      indexing.resolve([]);
+    }
+
+    await expect(result).resolves.toMatchObject([{ status: "rejected" }]);
+    await disposing;
+    expect(monque.isHealthy()).toBe(false);
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+  });
+
+  it("can dispose after initialization fails", async () => {
+    mockCollection.createIndexes.mockRejectedValueOnce(new Error("index failure"));
+    await expect(monque.initialize()).rejects.toBeInstanceOf(ConnectionError);
+    await monque.dispose();
+    await expect(monque.initialize()).rejects.toThrow("disposed");
+  });
+
+  it("waits for a started producer write and preserves its Promise result", async () => {
+    await monque.initialize();
+    const writing = Promise.withResolvers<undefined>();
+    const write = Promise.withResolvers<Awaited<ReturnType<Collection["insertOne"]>>>();
+    mockCollection.insertOne.mockImplementationOnce(async () => {
+      writing.resolve(undefined);
+
+      return await write.promise;
+    });
+    const enqueued = monque.enqueue("email", {});
+    await writing.promise;
+    let closed = false;
+
+    const disposing = monque.dispose().finally(() => {
+      closed = true;
+    });
+
+    await nextTurn();
+    expect(closed).toBe(false);
+    const id = new ObjectId();
+    write.resolve({ acknowledged: true, insertedId: id });
+    await expect(enqueued).resolves.toHaveProperty("_id", id);
+    await disposing;
   });
 
   describe("constructor", () => {

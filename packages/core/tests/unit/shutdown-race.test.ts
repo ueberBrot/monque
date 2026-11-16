@@ -17,6 +17,7 @@ describe("Monque Shutdown Race Condition", () => {
     vi.useFakeTimers();
     // Create a partial mock of the collection
     collection = fromPartial<NativeMock<Collection>>({
+      options: vi.fn<MockFunction<Collection["options"]>>().mockResolvedValue({}),
       createIndexes: vi.fn<MockFunction<Collection["createIndexes"]>>(),
       findOneAndUpdate: vi.fn<MockFunction<Collection["findOneAndUpdate"]>>(),
       aggregate: vi.fn<MockFunction<Collection["aggregate"]>>().mockReturnValue(
@@ -49,6 +50,68 @@ describe("Monque Shutdown Race Condition", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it.each([
+    { timeout: false, concurrentStop: false },
+    { timeout: true, concurrentStop: false },
+    { timeout: false, concurrentStop: true },
+    { timeout: true, concurrentStop: true },
+  ])(
+    "disposes active work (timeout: $timeout, concurrent stop: $concurrentStop)",
+    async ({ timeout, concurrentStop }) => {
+      monque = new Monque(fromPartial<Db>(db), {
+        recoverStaleJobs: false,
+        workerConcurrency: 1,
+        shutdownTimeout: 10,
+      });
+      await monque.initialize();
+      const started = Promise.withResolvers<undefined>();
+      const release = Promise.withResolvers<undefined>();
+      collection.findOneAndUpdate
+        .mockResolvedValueOnce(JobFactoryHelpers.processing({ name: "work" }))
+        .mockResolvedValue(null);
+      monque.register("work", async () => {
+        started.resolve(undefined);
+        await release.promise;
+      });
+      collection.watch.mockReturnValue(
+        fromPartial<ChangeStream>(
+          // oxlint-disable-next-line unicorn/prefer-event-target -- MongoDB streams use synchronous Node listeners.
+          Object.assign(new EventEmitter(), {
+            close: async () => {
+              await Promise.resolve();
+            },
+          }),
+        ),
+      );
+
+      const errors: Error[] = [];
+      monque.on("job:error", ({ error }) => {
+        errors.push(error);
+      });
+      monque.start();
+      await started.promise;
+      const stopping = concurrentStop ? monque.stop() : Promise.resolve();
+      let disposed = false;
+
+      const disposing = monque.dispose().finally(() => {
+        disposed = true;
+      });
+
+      expect(monque.isHealthy()).toBe(false);
+      expect(() => {
+        monque.start();
+      }).toThrow("disposed");
+      await vi.advanceTimersByTimeAsync(timeout ? 10 : 0);
+      expect(disposed).toBe(false);
+      expect(errors.map((error) => error.name)).toStrictEqual(
+        timeout ? ["ShutdownTimeoutError"] : [],
+      );
+      release.resolve(undefined);
+      await Promise.all([stopping, disposing]);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it.each([false, true])(
     "clears the shutdown deadline when a handler drains (failure: %s)",

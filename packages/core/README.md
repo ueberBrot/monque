@@ -45,7 +45,7 @@ await monque.schedule(
 );
 
 async function shutdown() {
-  await monque.stop();
+  await monque.dispose();
   await client.close();
 }
 
@@ -54,7 +54,16 @@ process.once("SIGTERM", shutdown);
 ```
 
 Register a worker for each job name you submit. `stop()` waits for running handlers up to
-`shutdownTimeout`; close your MongoDB client afterwards.
+`shutdownTimeout` and lets you call `start()` again. Use `dispose()` for final shutdown,
+including instances that only enqueue jobs. It closes admission immediately and releases
+Monque-owned resources. Repeated calls share one Promise; a disposed instance cannot
+initialize, restart, or perform database operations.
+
+Disposal uses the same drain timeout and `job:error` reporting as `stop()`. Final cleanup
+also waits for admitted reads, started writes, and Promise Workers to settle, so it may
+outlast `shutdownTimeout`. It cannot undo MongoDB writes or Worker side effects.
+Late results still require the original Claim. Monque borrows your database connection;
+close your MongoDB client after disposal finishes.
 
 ## Scheduling and execution
 

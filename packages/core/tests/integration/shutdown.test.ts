@@ -52,6 +52,25 @@ describe("stop() - Graceful Shutdown", () => {
   afterAll(async () => {
     await cleanupTestDb(db);
   });
+
+  it("disposes a producer while leaving the application connection usable", async () => {
+    collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
+    monque = new Monque(db, { collectionName });
+    monqueInstances.push(monque);
+    await monque.initialize();
+    const job = await monque.enqueue("email", { subject: "hello" });
+    await monque.dispose();
+    await expect(db.command({ ping: 1 })).resolves.toMatchObject({ ok: 1 });
+    const replacement = new Monque(db, { collectionName });
+    monqueInstances.push(replacement);
+    await replacement.initialize();
+    await expect(replacement.getJob(job._id)).resolves.toMatchObject({
+      name: "email",
+      status: JobStatus.PENDING,
+    });
+    await replacement.dispose();
+  });
+
   describe("polling behavior", () => {
     it("should stop polling after stop() is called", async () => {
       collectionName = uniqueCollectionName(TEST_CONSTANTS.COLLECTION_NAME);
