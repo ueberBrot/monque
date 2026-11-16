@@ -391,8 +391,8 @@ describe("mock management fetch", () => {
     ]);
 
     expect({
-      invalid: getRejectedStatus(invalid),
       afterInvalid,
+      invalid: getRejectedStatus(invalid),
       stale: getRejectedStatus(stale),
       afterStalePriority: afterStale.priority,
       missing: getRejectedStatus(missing),

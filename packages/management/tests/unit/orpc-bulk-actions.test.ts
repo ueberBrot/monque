@@ -298,8 +298,8 @@ describe("oRPC Management bulk action routes", () => {
       surface,
       "/api/v1/jobs/actions/selected",
       {
-        action: "priority",
         ids,
+        action: "priority",
         priority: 42,
       },
       { managementContext: { user: "operator" } },
@@ -330,8 +330,8 @@ describe("oRPC Management bulk action routes", () => {
       ...selected.map((id) => ({
         action: "setJobPriority",
         context: { user: "operator" },
-        id,
         ids: undefined,
+        id,
       })),
     ]);
     const expectedPriorities = [42, 2, 3, 4, 5, 6, 6, 6, 6];
@@ -426,8 +426,8 @@ describe("oRPC Management bulk action routes", () => {
       [Number.MIN_SAFE_INTEGER, 0, Number.MAX_SAFE_INTEGER].map(async (priority) => {
         await expectJsonResponse(
           await handleManagementPost(surface, "/api/v1/jobs/actions/selected", {
-            action: "priority",
             priority,
+            action: "priority",
             ids: Array.from({ length: 100 }, () => target._id.toHexString()),
           }),
           200,
@@ -538,8 +538,8 @@ describe("oRPC Management bulk action routes", () => {
 
       const result = await surface.openApiHandler.handle(
         new Request("https://management.example/api/v1/jobs/actions/selected", {
-          method: "POST",
           headers,
+          method: "POST",
           body: JSON.stringify(requestBody),
         }),
         { context: { managementContext: {} } },

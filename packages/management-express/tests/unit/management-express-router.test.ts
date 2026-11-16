@@ -71,8 +71,8 @@ const createRequestMock = function createRequestMock({
   url?: string;
 }): Request {
   return fromPartial<Request>({
-    body,
     get: (name: string) => (name.toLowerCase() === "host" ? host : undefined),
+    body,
     headers,
     method,
     protocol,

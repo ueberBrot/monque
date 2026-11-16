@@ -17,13 +17,13 @@
   ],
   "type": "module",
   "scripts": {
-    "prepare": "vp config --no-agent && effect-tsgo patch --no-typescript --oxlint",
+    "prepare": "vp config --no-agent && effect-tsgo patch --no-typescript --tsrs --oxlint",
     "build": "vp run --filter './packages/*' --filter './apps/*' build",
-    "type-check": "vp run --filter './packages/*' build && vp lint --type-aware --type-check --deny-warnings && vp run --filter @monque/docs type-check",
+    "type-check": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --type-check --deny-warnings && vp run --filter @monque/docs type-check",
     "lint:effect": "vp run --filter @monque/core --filter @monque/management lint:effect",
-    "lint": "vp run --filter './packages/*' build && vp lint --type-aware --deny-warnings",
+    "lint": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --deny-warnings",
     "lint:fast": "vp lint --deny-warnings",
-    "lint:fix": "vp run --filter './packages/*' build && vp lint --type-aware --fix",
+    "lint:fix": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --fix",
     "skills": "intent",
     "test": "vp run --filter './packages/*' --filter './apps/*' test",
     "test:all": "vp test run --project ci && vp run test && vp run @monque/dashboard-dev#test:e2e",
@@ -39,28 +39,28 @@
     "test:benchmark": "vp test run --config scripts/benchmarks/vite.config.ts"
   },
   "devDependencies": {
-    "@ai-hero/sandcastle": "^0.12.0",
+    "@ai-hero/sandcastle": "^0.14.0",
     "@arethetypeswrong/cli": "^0.18.5",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@effect/language-service": "0.87.5",
-    "@effect/tsgo": "0.63.0",
+    "@effect/tsgo": "0.69.0",
     "@monque/core": "workspace:*",
     "@monque/management": "workspace:*",
-    "@shadcn/lint": "^0.2.3",
+    "@shadcn/lint": "^0.2.5",
     "@tanstack/intent": "0.5.6",
     "@testcontainers/mongodb": "^12.2.1",
     "@types/node": "^22.20.5",
-    "@typescript/native": "npm:typescript@7.0.2",
-    "effect": "4.1.2",
+    "effect": "4.1.4",
     "eslint-plugin-sonarjs": "4.2.2",
-    "fallow": "3.36.0",
-    "knip": "^6.43.0",
-    "mongodb": "^7.8.0",
+    "fallow": "3.43.2",
+    "knip": "^6.45.1",
+    "mongodb": "^7.9.0",
     "publint": "^0.3.25",
-    "rimraf": "^6.1.3",
-    "typescript": "^6.0.3",
-    "ultracite": "8.1.0",
+    "rimraf": "^6.1.4",
+    "tsrs": "0.25.0-ts7.1.0-beta",
+    "typescript": "^7.0.2",
+    "ultracite": "8.2.1",
     "unplugin-unused": "^0.6.0",
     "vite": "catalog:",
     "vite-plus": "catalog:",
@@ -71,13 +71,13 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+    "node": "^22.23.5 || ^24.22.3 || >=26.13.1"
   },
   "packageManager": "bun@1.4.4",
   "catalog": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
-    "vitest": "5.0.5",
-    "vite-plus": "1.4.0"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.6.0",
+    "vitest": "5.1.0",
+    "vite-plus": "1.6.0"
   },
   "intent": {
     "skills": [

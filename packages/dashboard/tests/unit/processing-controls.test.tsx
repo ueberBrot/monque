@@ -52,9 +52,9 @@ const renderControls = (
     }
 
     return Response.json({
+      paused,
       instanceId: "scheduler-1",
       name: "email",
-      paused,
       globallyPaused: options.globallyPaused ?? false,
     });
   };

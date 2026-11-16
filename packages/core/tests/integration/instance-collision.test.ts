@@ -165,10 +165,10 @@ describe("Instance Collision Detection", () => {
     // then collision check finds no active processing jobs → success
     const monque2 = new Monque(db, {
       collectionName,
+      lockTimeout,
       schedulerInstanceId: sharedId,
       pollInterval: 100,
       heartbeatInterval: 200,
-      lockTimeout,
       recoverStaleJobs: true,
     });
 

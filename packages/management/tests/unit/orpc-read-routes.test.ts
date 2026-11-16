@@ -361,8 +361,8 @@ describe("oRPC Management read routes", () => {
       let capturedOptions: CursorOptions | undefined;
 
       const job = createManagementJob({
-        _id: jobId,
         name,
+        _id: jobId,
         data: { token: "secret" },
         lockedAt: new Date("2026-01-01T00:00:01.000Z"),
         claimedBy: "scheduler-1",
@@ -412,8 +412,8 @@ describe("oRPC Management read routes", () => {
       await expectJsonResponse(response, 200, {
         jobs: [
           {
-            id: jobId.toHexString(),
             name,
+            id: jobId.toHexString(),
             status: "pending",
             payload: {
               source: "job",

@@ -47,8 +47,8 @@ describe("per-instance core composition", () => {
     const queued = await monque.enqueue("bson", data);
 
     const legacy = JobFactory.build({
-      name: "legacy",
       data,
+      name: "legacy",
       repeatInterval: "0 * * * *",
       timezone: "Europe/Berlin",
     });

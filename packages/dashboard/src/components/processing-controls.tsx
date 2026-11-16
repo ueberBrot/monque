@@ -32,7 +32,7 @@ const processingControlState = (
     reason = `${state.paused ? "Resuming" : "Pausing"} is not allowed.`;
   }
 
-  return { action, disabled: !allowed || globalPause, reason } as const;
+  return { action, reason, disabled: !allowed || globalPause } as const;
 };
 
 export const ProcessingControls = ({

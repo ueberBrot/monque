@@ -103,71 +103,71 @@ export const managementContract = {
     .output(BulkActionResultDtoSchema),
   health: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/health",
       operationId: "getSchedulerHealth",
       successStatus: 200,
-      successDescription,
     })
     .output(SchedulerHealthDtoSchema),
   capabilities: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/capabilities",
       operationId: "getCapabilities",
       successStatus: 200,
-      successDescription,
     })
     .input(ProcessingQueryDtoSchema.optional())
     .output(CapabilitiesDtoSchema),
   queueViews: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/queue-views",
       operationId: "listQueueViews",
       successStatus: 200,
-      successDescription,
     })
     .input(QueueViewQueryDtoSchema.optional())
     .output(QueueViewSummaryListDtoSchema),
   jobs: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/jobs",
       operationId: "listJobs",
       successStatus: 200,
-      successDescription,
     })
     .input(JobListQueryDtoSchema)
     .output(JobCursorPageDtoSchema),
   jobStats: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/jobs/stats",
       operationId: "getJobStats",
       successStatus: 200,
-      successDescription,
     })
     .input(JobStatsQueryDtoSchema)
     .output(QueueStatsDtoSchema),
   job: oc
     .route({
+      successDescription,
       method: "GET",
       path: "/api/v1/jobs/{id}",
       operationId: "getJob",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
     .output(JobDtoSchema),
   cancelJob: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/{id}/actions/cancel",
       operationId: "cancelJob",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -175,11 +175,11 @@ export const managementContract = {
     .output(JobDtoSchema),
   retryJob: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/{id}/actions/retry",
       operationId: "retryJob",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -187,11 +187,11 @@ export const managementContract = {
     .output(JobDtoSchema),
   rescheduleJob: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/{id}/actions/reschedule",
       operationId: "rescheduleJob",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(RescheduleJobInputDtoSchema)
@@ -199,11 +199,11 @@ export const managementContract = {
     .output(JobDtoSchema),
   setJobPriority: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/{id}/actions/priority",
       operationId: "setJobPriority",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(SetJobPriorityInputDtoSchema)
@@ -211,11 +211,11 @@ export const managementContract = {
     .output(JobDtoSchema),
   deleteJob: oc
     .route({
+      successDescription,
       method: "DELETE",
       path: "/api/v1/jobs/{id}",
       operationId: "deleteJob",
       successStatus: 200,
-      successDescription,
       inputStructure: "detailed",
     })
     .input(JobDetailInputDtoSchema)
@@ -223,33 +223,33 @@ export const managementContract = {
     .output(DeleteJobDtoSchema),
   cancelJobs: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/actions/cancel",
       operationId: "cancelJobs",
       successStatus: 200,
-      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),
   retryJobs: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/actions/retry",
       operationId: "retryJobs",
       successStatus: 200,
-      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),
   deleteJobs: oc
     .route({
+      successDescription,
       method: "POST",
       path: "/api/v1/jobs/actions/delete",
       operationId: "deleteJobs",
       successStatus: 200,
-      successDescription,
     })
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)

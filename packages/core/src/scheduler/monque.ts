@@ -1347,7 +1347,7 @@ export class Monque extends EventEmitter {
     this.#disposal = completion.promise;
     // Publish completion before stop listeners can reenter disposal.
     const drains = Promise.allSettled([...this.#stops, stop()]);
-    void this.#finishDisposal(drains).then(completion.resolve, completion.reject);
+    void this.#finishDisposal(drains).then(completion.resolve).catch(completion.reject);
 
     return this.#disposal;
   }

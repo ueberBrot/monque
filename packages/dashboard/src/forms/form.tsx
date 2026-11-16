@@ -17,6 +17,8 @@ const CommandSearchField = lazy(async () => {
 });
 
 export const { useAppForm, withForm } = createFormHook({
+  fieldContext,
+  formContext,
   fieldComponents: {
     CalendarField,
     CheckboxField,
@@ -26,7 +28,5 @@ export const { useAppForm, withForm } = createFormHook({
     TextareaField,
     TextField,
   },
-  fieldContext,
   formComponents: { SubmitButton },
-  formContext,
 });

@@ -716,8 +716,8 @@ describe("Job management", () => {
         const [query, update] = retryCall ?? [];
         expect({
           query,
-          arrayIsArrayUpdate: Array.isArray(update),
           result,
+          arrayIsArrayUpdate: Array.isArray(update),
         }).toStrictEqual({
           query: objectContainingMatcher({ status: { $in: ["failed", "cancelled"] } }),
           arrayIsArrayUpdate: true,

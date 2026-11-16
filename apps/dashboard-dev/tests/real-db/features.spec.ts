@@ -652,8 +652,8 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
   expect(new URL(copied).searchParams.has("cursor")).toBe(true);
 
   const recipient = await browser.newContext({
-    viewport: page.viewportSize(),
     isMobile,
+    viewport: page.viewportSize(),
     timezoneId: "Europe/Berlin",
   });
 

@@ -49,7 +49,8 @@ jobs:
       # Typed lint and TypeScript share one analysis of the built declarations.
       - name: Type check and typed lint
         run: |
-          vp lint --type-aware --type-check --deny-warnings
+          vp exec effect-tsgo --tsrs-lint vp lint \
+            --type-aware --type-check --deny-warnings
           vp run --filter @monque/docs type-check
 
       - name: Upload build outputs

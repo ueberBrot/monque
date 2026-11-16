@@ -164,8 +164,8 @@ export const makeNativeJobIntake = (
 
       if (uniqueKey !== undefined) {
         const filter = {
-          name: job.name,
           uniqueKey,
+          name: job.name,
           status: { $in: [JobStatus.PENDING, JobStatus.PROCESSING] },
         };
 
@@ -252,8 +252,8 @@ export const makeNativeJobIntake = (
         const pendingJob: Omit<Job<T>, "_id"> = {
           name,
           data,
-          status: JobStatus.PENDING,
           nextRunAt,
+          status: JobStatus.PENDING,
           priority: options.priority ?? 0,
           repeatInterval: cron,
           failCount: 0,

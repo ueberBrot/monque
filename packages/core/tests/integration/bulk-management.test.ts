@@ -58,9 +58,9 @@ describe("Management APIs: Bulk Operations", () => {
 
     const jobs = await monque.getJobs({ name: queueName });
     expect({
+      events,
       native: result.reason.cause instanceof MongoServerError,
       cause: result.reason.cause,
-      events,
       stats: await monque.getQueueStats(),
       views: await monque.getQueueViewSummaries(),
       statuses: jobs.map((job) => job.status).toSorted(),

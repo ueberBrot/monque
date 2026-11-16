@@ -193,11 +193,11 @@ describe("Instance-level Concurrency (instanceConcurrency)", () => {
 
     const monque = new Monque(db, {
       collectionName,
+      // Limit to 3 concurrent jobs total
+      instanceConcurrency,
       // Slower polling to avoid race conditions in test
       pollInterval: 500,
       safetyPollInterval: 500,
-      // Limit to 3 concurrent jobs total
-      instanceConcurrency,
       // Each worker could do 10, but global limit is 3
       workerConcurrency: 10,
     });

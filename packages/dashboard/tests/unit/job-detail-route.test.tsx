@@ -134,12 +134,12 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
   createJsonResponse(
     {
       code,
+      message,
+      status,
       data: {
         error: message,
       },
       defined: false,
-      message,
-      status,
     },
     status,
   );
@@ -264,9 +264,9 @@ describe("Job detail route", () => {
     };
 
     const job = createJobDetail({
+      payload,
       failCount: 2,
       failureReason: "SMTP rejected recipient domain.",
-      payload,
       repeatInterval: "*/15 * * * *",
       status: "failed",
     });
@@ -380,8 +380,8 @@ describe("Job detail route", () => {
     "allows manual retry after %i failed attempts, including a non-retryable failure",
     async (failCount) => {
       let job = createJobDetail({
-        status: "failed",
         failCount,
+        status: "failed",
         failureReason: "Account no longer exists",
       });
 
@@ -465,8 +465,8 @@ describe("Job detail route", () => {
       const queryClient = createDashboardQueryClient();
       let failReads = false;
       await renderJobDetailRoute({
-        jobId: job.id,
         queryClient,
+        jobId: job.id,
         fetch: async (input, init) => {
           const request = new Request(input, init);
 
@@ -504,8 +504,8 @@ describe("Job detail route", () => {
       const queryClient = createDashboardQueryClient();
       let failReads = false;
       await renderJobDetailRoute({
-        jobId: job.id,
         queryClient,
+        jobId: job.id,
         fetch: async (input, init) => {
           const request = new Request(input, init);
 

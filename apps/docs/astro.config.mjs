@@ -180,9 +180,9 @@ export default defineConfig({
           ? []
           : apiReferences.map(({ package: name, output, label }) =>
               starlightTypeDoc({
+                output,
                 entryPoints: [`../../packages/${name}/src/index.ts`],
                 tsconfig: `../../packages/${name}/tsconfig.json`,
-                output,
                 sidebar: { label, collapsed: true },
                 typeDoc: {
                   excludePrivate: true,

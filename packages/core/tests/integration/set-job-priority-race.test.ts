@@ -140,23 +140,25 @@ describe("priority edits racing with another Scheduler Instance", () => {
     const waitUntilBlocked = await blockNextWrite("priority-editor");
     let editSettled = false;
 
-    const edit = editor.setJobPriority(job._id.toHexString(), -9).then(
-      (value) => {
+    const edit = editor
+      .setJobPriority(job._id.toHexString(), -9)
+      .then((value) => {
         editSettled = true;
 
         return { value };
-      },
-      // oxlint-disable-next-line promise/prefer-await-to-callbacks, anti-slop/no-unknown-parameters -- Record settlement immediately and narrow the native Promise rejection while the server failpoint holds the edit.
-      (error: unknown) => {
-        if (!(error instanceof Error)) {
-          throw error;
-        }
+      })
+      .catch(
+        // oxlint-disable-next-line promise/prefer-await-to-callbacks, anti-slop/no-unknown-parameters -- Record settlement immediately and narrow the native Promise rejection while the server failpoint holds the edit.
+        (error: unknown) => {
+          if (!(error instanceof Error)) {
+            throw error;
+          }
 
-        editSettled = true;
+          editSettled = true;
 
-        return { error };
-      },
-    );
+          return { error };
+        },
+      );
 
     try {
       // This server barrier is after any preliminary read but before the write:

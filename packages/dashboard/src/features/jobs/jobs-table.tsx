@@ -324,14 +324,14 @@ const JobsTable = ({
   const narrow = useMediaQuery("(max-width: 639px)");
 
   const table = useTable({
-    key: "jobs",
     features,
+    onRowSelectionChange,
+    key: "jobs",
     data: jobs,
     columns: JOB_COLUMNS,
     getRowId: (row) => row.id,
     enableRowSelection: true,
     manualPagination: true,
-    onRowSelectionChange,
     state: {
       rowSelection,
       columnVisibility: {

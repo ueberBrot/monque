@@ -172,7 +172,7 @@ export const createManagementOperations = function createManagementOperations<TC
       options.serializePayload;
 
     dto.payload = await (serializePayload
-      ? serializePayload({ job, payload: job.data, context })
+      ? serializePayload({ job, context, payload: job.data })
       : job.data);
 
     return dto;
@@ -457,11 +457,11 @@ export const createManagementOperations = function createManagementOperations<TC
     queueViews,
     jobs,
     jobStats,
-    job: readJob,
     mutateJob,
     deleteJob,
     bulkJobMutation,
     selectedJobActions,
+    job: readJob,
     health: () => toSchedulerHealthDto(options.monque.isHealthy()),
   };
 };

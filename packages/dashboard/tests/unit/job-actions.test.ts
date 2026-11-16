@@ -97,8 +97,8 @@ describe(runJobActions, () => {
         const request = input instanceof Request ? input : new Request(input);
         expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
         await expect(request.json()).resolves.toStrictEqual({
-          action: "priority",
           ids,
+          action: "priority",
           priority: -8,
         });
 
