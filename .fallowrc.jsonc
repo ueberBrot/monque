@@ -23,12 +23,20 @@
     "apps/docs/src/components/SiteTitle.astro",
     "apps/docs/src/styles/custom.css",
     "scripts/renovate-generate-changeset.ts",
+    // Loaded by loadConfigFromFile or copied into isolated consumer installs.
+    "apps/dashboard-dev/vite.plugins.config.ts",
   ],
   // Fallow cannot traverse hidden source directories; this is agent tooling, not a package.
   "ignorePatterns": [".sandcastle/**"],
   // Starlight CSS strings, Vite external config, and Astro's image service.
   "ignoreDependencies": ["@fontsource/quicksand", "satteri", "sharp"],
   "framework": [
+    {
+      "name": "monque-packed-consumer-tests",
+      "detection": { "type": "fileExists", "pattern": "scripts/verification/consumer.mts" },
+      "entryPoints": ["scripts/verification/consumer-{app,mongodb,types}.mts"],
+      "entryPointRole": "test",
+    },
     {
       "name": "monque-build-tools",
       "enablers": ["unplugin-unused"],
@@ -48,6 +56,8 @@
         "@monque/tsed",
         "@monque/management",
         "@monque/management-express",
+        "@monque/dashboard",
+        "@monque/dashboard-express",
       ],
     },
     {
@@ -112,6 +122,7 @@
         "name": "management",
         "patterns": [
           "packages/management/src/index.ts",
+          "packages/management/src/effects.ts",
           "packages/management/src/mappers/**",
           "packages/management/src/surface/**",
           "packages/management/src/orpc/{index,router,openapi,operations}.ts",

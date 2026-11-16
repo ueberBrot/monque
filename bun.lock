@@ -15,6 +15,7 @@
         "@monque/management": "workspace:*",
         "@shadcn/lint": "^0.2.3",
         "@tanstack/intent": "0.5.6",
+        "@testcontainers/mongodb": "^12.2.1",
         "@types/node": "^22.20.5",
         "@typescript/native": "npm:typescript@7.0.2",
         "effect": "4.1.2",
@@ -287,7 +288,7 @@
         "zod": "^4.6.7",
       },
       "peerDependencies": {
-        "@monque/core": "^1.18.0",
+        "@monque/core": "^1.21.0",
         "@tsed/core": "^8.41.2",
         "@tsed/di": "^8.41.2",
         "@tsed/mongoose": "^8.41.2",

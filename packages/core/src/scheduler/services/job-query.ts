@@ -64,6 +64,14 @@ const isMongoMaxTimeMSExpiredError = (error: Error): boolean => {
   );
 };
 
+const aggregationError = (cause: unknown, operation: string) => {
+  const error = toError(cause);
+
+  return isMongoMaxTimeMSExpiredError(error)
+    ? new AggregationTimeoutError()
+    : new ConnectionError(`Failed to get ${operation}: ${error.message}`, { cause: error });
+};
+
 interface QueueViewStatsDocument {
   _id: string;
   pending?: number;
@@ -371,19 +379,7 @@ export class JobQueryService {
       }
 
       return stats;
-    }).pipe(
-      Effect.catch(({ cause: error }) => {
-        const err = toError(error);
-
-        if (isMongoMaxTimeMSExpiredError(err)) {
-          return Effect.fail(new AggregationTimeoutError());
-        }
-
-        return Effect.fail(
-          new ConnectionError(`Failed to get queue stats: ${err.message}`, { cause: err }),
-        );
-      }),
-    );
+    }).pipe(Effect.mapError(({ cause }) => aggregationError(cause, "queue stats")));
   });
   /**
    * Get operator-facing Queue View summaries grouped by Job Name.
@@ -512,20 +508,6 @@ export class JobQueryService {
       }
 
       return persistedStats;
-    }).pipe(
-      Effect.catch(({ cause: error }) => {
-        const err = toError(error);
-
-        if (isMongoMaxTimeMSExpiredError(err)) {
-          return Effect.fail(new AggregationTimeoutError());
-        }
-
-        return Effect.fail(
-          new ConnectionError(`Failed to get queue view summaries: ${err.message}`, {
-            cause: err,
-          }),
-        );
-      }),
-    );
+    }).pipe(Effect.mapError(({ cause }) => aggregationError(cause, "queue view summaries")));
   });
 }

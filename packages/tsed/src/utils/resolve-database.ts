@@ -10,12 +10,36 @@ import type { Db } from "mongodb";
 
 import type { MonqueTsedConfig } from "@/config";
 
+import type { MongooseService } from "./guards.js";
 import { isMongooseConnection, isMongooseService } from "./guards.js";
 
 /**
  * Type for the injector function used to resolve DI tokens.
  */
 export type InjectorFn = <T>(token: TokenProvider<T>) => T | undefined;
+
+/* oxlint-disable typescript/no-base-to-string -- Keep token diagnostics compatible with database resolution. */
+const resolveMongooseDatabase = (
+  service: MongooseService,
+  config: MonqueTsedConfig,
+): Db | undefined => {
+  const connectionId =
+    config.mongooseConnectionId === undefined || config.mongooseConnectionId === ""
+      ? "default"
+      : config.mongooseConnectionId;
+
+  const connection = service.get(connectionId);
+
+  if (!connection) {
+    throw new ConnectionError(
+      `MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
+        "Ensure the connection ID is correct and the connection is established.",
+    );
+  }
+
+  return connection.db ?? undefined;
+};
+/* oxlint-enable typescript/no-base-to-string */
 
 /**
  * Resolve the MongoDB database instance from the configuration.
@@ -55,17 +79,14 @@ export const resolveDatabase = async function resolveDatabase(
   config: MonqueTsedConfig,
   injectorFn?: InjectorFn,
 ): Promise<Db> {
-  // Strategy 1: Direct Db instance
   if (config.db) {
     return config.db;
   }
 
-  // Strategy 2: Factory function (sync or async)
   if (config.dbFactory) {
     return await config.dbFactory();
   }
 
-  // Strategy 3: DI token resolution
   if (config.dbToken === undefined || config.dbToken === "") {
     throw new ConnectionError(
       "MonqueTsedConfig requires 'db', 'dbFactory', or 'dbToken' to be set",
@@ -88,30 +109,14 @@ export const resolveDatabase = async function resolveDatabase(
   }
 
   if (isMongooseService(resolved)) {
-    // Check for Mongoose Service (duck typing)
-    // It has a get() method that returns a connection
-    const connectionId =
-      config.mongooseConnectionId === undefined || config.mongooseConnectionId === ""
-        ? "default"
-        : config.mongooseConnectionId;
+    const db = resolveMongooseDatabase(resolved, config);
 
-    const connection = resolved.get(connectionId);
-
-    if (!connection) {
-      throw new ConnectionError(
-        `MongooseService resolved from token "${String(config.dbToken)}" returned no connection for ID "${connectionId}". ` +
-          "Ensure the connection ID is correct and the connection is established.",
-      );
-    }
-
-    if ("db" in connection && connection.db !== null && connection.db !== undefined) {
-      return connection.db;
+    if (db !== undefined) {
+      return db;
     }
   }
 
   if (isMongooseConnection(resolved)) {
-    // Check for Mongoose Connection (duck typing)
-    // It has a db property that is the native Db instance
     return resolved.db;
   }
 
