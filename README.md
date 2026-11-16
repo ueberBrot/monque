@@ -37,6 +37,16 @@ For Express, mount both `@monque/management-express` and `@monque/dashboard-expr
 The first exposes your scheduler; the second serves the UI. Protect both with your
 application's authentication middleware. See the [complete setup](https://ueberBrot.github.io/monque/dashboard/express/).
 
+## Effect
+
+Native Effect support is included in core at `@monque/core/effect`.
+Use `MonqueEffect.layer(db, options, setup)` to initialize the scheduler, register
+native Effect Workers in setup, and start processing under one scope. Scope exit
+disposes the scheduler; your application keeps ownership of MongoDB.
+
+See the [Effect guide](https://ueberBrot.github.io/monque/integrations/effect/) for
+dependency injection and Worker examples, or run the [complete Effect host](./apps/effect-host).
+
 ## Working with jobs
 
 - **Schedule work:** enqueue immediately, choose a future date, or use a recurring cron
