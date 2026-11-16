@@ -381,6 +381,7 @@ export interface QueueStats {
   failed: number;
   cancelled: number;
   total: number;
+  /** Average completed Job lifetime (updatedAt - createdAt), including waiting and retries. */
   avgProcessingDurationMs?: number;
 }
 

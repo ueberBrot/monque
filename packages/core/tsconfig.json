@@ -35,7 +35,9 @@
               "allowedUnstableApis": [
                 "@effect/opentelemetry/OtelTracer#make",
                 "@effect/opentelemetry/OtelTracer#OtelTracer",
-                "@effect/opentelemetry/OtelTracer#makeExternalSpan"
+                "@effect/opentelemetry/OtelTracer#makeExternalSpan",
+                "@effect/opentelemetry/OtelMetrics#makeProducer",
+                "@effect/opentelemetry/Resource#Resource"
               ]
             }
           },

@@ -1,6 +1,6 @@
 ---
-title: OpenTelemetry tracing
-description: Export Monque spans through an application-owned OpenTelemetry provider.
+title: OpenTelemetry
+description: Export Monque spans and operation metrics through application-owned OpenTelemetry providers.
 ---
 
 Tracing is optional. Ordinary `@monque/core` imports and execution need no OpenTelemetry packages.
@@ -100,3 +100,78 @@ event callbacks. Synchronous controls keep their existing contracts and do not a
 The integration configuration also exposes an Effect tracer for applications composing
 Effect layers. Native scheduler composition remains the responsibility of Monque's Effect
 integration; applications should not import private scheduler services.
+
+## Operation metrics
+
+Install `@opentelemetry/sdk-metrics@^2.12.0` and `@opentelemetry/resources@^2.12.0`
+when enabling metrics. Add the integration's producer to one host reader:
+
+```ts
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from "@opentelemetry/sdk-metrics";
+
+const resource = resourceFromAttributes({ "service.name": "my-app" });
+const instrumentation = openTelemetry(provider, { metrics: { resource } });
+const metricExporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+const reader = new PeriodicExportingMetricReader({
+  exporter: metricExporter,
+  exportIntervalMillis: 10_000,
+  metricProducers: [instrumentation.metricProducer],
+});
+const meters = new MeterProvider({ resource, readers: [reader] });
+const scheduler = new Monque(client.db("app"), { instrumentation });
+await scheduler.initialize();
+await scheduler.enqueue("email", { to: "user@example.com" });
+
+// At final shutdown, stop processing and collect before unregistering.
+await scheduler.stop();
+await meters.forceFlush();
+await scheduler.dispose();
+await meters.shutdown(); // Host-owned; call only after all users finish.
+```
+
+Use your host exporter in production. Configure the same resource on the MeterProvider:
+SDK readers retain that provider's resource when collecting additional producers.
+The integration uses the official Effect 4.1.2 `OtelMetrics.makeProducer` conversion.
+It exports cumulative measurements regardless of the reader's temporality preference.
+Do not sum successive collections; calculate rates from counter differences.
+
+| Instrument                  | Unit           | Meaning                                                                           |
+| --------------------------- | -------------- | --------------------------------------------------------------------------------- |
+| `monque.operations`         | `1`            | Monotonic count of finished operations, grouped by operation and outcome          |
+| `monque.operation.duration` | `milliseconds` | Histogram of elapsed operation time, with count, sum and cumulative bucket counts |
+
+The finite `operation` values are `intake.enqueue`, `intake.batch`, `intake.schedule`,
+`dispatch`, `claim.acquire`, `claim.release`, `execution`, `validation`, `worker`,
+`result.complete`, `result.fail` and `recovery`. Outcomes are `success`, `failure` and
+`interrupted`. A failed Worker attempt remains a failure even when retry handling succeeds.
+Nested operations each measure their own work; adding counts or durations across operations
+does not produce a Job count or total elapsed time. Timers also carry the fixed
+`time_unit=milliseconds` attribute. Job IDs, Job Names, payloads and tenants are excluded.
+
+`worker` measures one handler invocation. `execution` covers one attempt's validation,
+handler and successful result handling. Failure recovery is measured separately by
+`result.fail`. Neither measures total Job lifetime across waiting and retries.
+The existing Management `avgProcessingDurationMs` field keeps its current meaning:
+for completed Jobs, the average of `updatedAt - createdAt`, rounded to milliseconds.
+It includes waiting and retries and is not a Worker execution timer.
+
+Each initialized Scheduler Instance owns one registry and one producer registration.
+Reuse the same instrumentation across instances; their streams are separated by the
+instrumentation-scope name `@monque/core/<schedulerInstanceId>`.
+Use distinct IDs for live instances. Preserve scope identity when exporting or aggregating;
+backends that discard scope names must use separate instrumentation/readers per instance.
+Register `metricProducer` once per reader and avoid exporting the same registry through
+another Effect metrics Layer to the same destination.
+
+Construction alone exports nothing. Restartable stop retains registration and measurements.
+Disposal removes only that instance's registration; later collections omit its cumulative
+history, while a collection already in flight may finish. Flush before disposal if you need
+the last snapshot. Host readers, providers, exporters and other instances remain usable.
+Collection failures are reported to the reader and do not run in scheduler operations.
+Ordinary core consumers still need no OpenTelemetry SDK.

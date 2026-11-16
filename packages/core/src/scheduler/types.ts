@@ -1,7 +1,11 @@
-import type { Tracer } from "effect";
+import type { Effect, Metric, Scope, Tracer } from "effect";
 
-/** Tracing configuration supplied by an explicitly enabled integration. */
+/** Telemetry configuration supplied by an explicitly enabled integration. */
 export interface MonqueInstrumentation {
+  readonly metrics?: (
+    registry: Metric.MetricRegistry,
+    instanceId: string,
+  ) => Effect.Effect<void, never, Scope.Scope>;
   readonly tracer: Tracer.Tracer;
   readonly parentSpan: () => Tracer.AnySpan | undefined;
 }
@@ -23,7 +27,7 @@ export interface MonqueInstrumentation {
  * ```
  */
 export interface MonqueOptions {
-  /** Optional tracing. Import openTelemetry from @monque/core/opentelemetry to enable it. */
+  /** Optional tracing and metrics. Import openTelemetry from @monque/core/opentelemetry to enable it. */
   instrumentation?: MonqueInstrumentation;
   /**
    * Name of the MongoDB collection for storing jobs.

@@ -282,7 +282,11 @@ export class Monque extends EventEmitter {
           },
           undefined,
           this.#instrumentation
-            ? makeTracingTelemetryLayer(this.#instrumentation.tracer)
+            ? makeTracingTelemetryLayer(
+                this.#instrumentation.tracer,
+                this.#instrumentation.metrics,
+                this.options.schedulerInstanceId,
+              )
             : undefined,
         ).pipe(Layer.provide(Layer.succeedContext(services)), Layer.orDie),
       );

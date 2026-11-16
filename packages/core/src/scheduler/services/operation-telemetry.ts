@@ -1,5 +1,7 @@
 import { Cause, Clock, Context, Duration, Effect, Exit, Layer, Metric, Tracer } from "effect";
 
+import type { MonqueInstrumentation } from "../types.js";
+
 /** Fixed semantic vocabulary. User input never becomes a measurement dimension. */
 type Operation =
   | "intake.enqueue"
@@ -166,13 +168,23 @@ export class OperationTelemetry extends Context.Service<
   ReturnType<typeof makeOperationTelemetry>
 >()("@monque/core/scheduler/OperationTelemetry") {}
 
-const telemetryLayer = (instrumentation?: Tracer.Tracer) =>
+const telemetryLayer = (
+  instrumentation?: Tracer.Tracer,
+  metrics?: MonqueInstrumentation["metrics"],
+  instanceId = "",
+) =>
   Layer.effect(
     OperationTelemetry,
     Effect.gen(function* acquireOperationTelemetry() {
+      const registry = yield* Metric.MetricRegistry;
+
+      if (metrics) {
+        yield* Effect.suspend(() => metrics(registry, instanceId)).pipe(Effect.ignoreCause);
+      }
+
       return makeOperationTelemetry(
         instrumentation ?? (yield* Tracer.Tracer),
-        yield* Metric.MetricRegistry,
+        registry,
         instrumentation?.context?.bind(instrumentation),
       );
     }),
@@ -188,4 +200,8 @@ const telemetryLayer = (instrumentation?: Tracer.Tracer) =>
 export const makeOperationTelemetryLayer = telemetryLayer();
 
 /** Context evaluation is opt-in because it evaluates application code, not reporting hooks. */
-export const makeTracingTelemetryLayer = (tracer: Tracer.Tracer) => telemetryLayer(tracer);
+export const makeTracingTelemetryLayer = (
+  tracer: Tracer.Tracer,
+  metrics?: MonqueInstrumentation["metrics"],
+  instanceId?: string,
+) => telemetryLayer(tracer, metrics, instanceId);
