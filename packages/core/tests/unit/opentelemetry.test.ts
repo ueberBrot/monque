@@ -10,13 +10,14 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Effect, Exit } from "effect";
-import { ObjectId } from "mongodb";
-import type { Db } from "mongodb";
+import { MongoServerError, ObjectId } from "mongodb";
+import type { ClientSession, Db } from "mongodb";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { openTelemetry } from "@/opentelemetry.js";
 import { Monque } from "@/scheduler/monque.js";
 import { makeOperationTelemetry } from "@/scheduler/services/operation-telemetry.js";
+import { failureInstrumentation, telemetryFaults } from "@test-utils/telemetry-faults";
 import { createMockContext } from "@tests/factories";
 
 describe("OpenTelemetry", () => {
@@ -91,6 +92,51 @@ describe("OpenTelemetry", () => {
 });
 
 describe("telemetry failure isolation", () => {
+  it.each(telemetryFaults)(
+    "preserves native transaction rejection identity without replaying the write (%s)",
+    async (fault) => {
+      const { provider, options, reportingCalls } = failureInstrumentation(fault);
+      const ctx = createMockContext();
+
+      const failure = new MongoServerError({
+        message: "database unavailable",
+        code: 91,
+        errorLabels: ["TransientTransactionError"],
+      });
+
+      ctx.mockCollection.insertOne.mockRejectedValue(failure);
+
+      const scheduler = new Monque(fromPartial<Db>({ collection: () => ctx.collection }), {
+        skipIndexCreation: true,
+        recoverStaleJobs: false,
+        ...options,
+      });
+
+      try {
+        await scheduler.initialize();
+
+        const operation = scheduler.enqueue(
+          "work",
+          {},
+          {
+            session: fromPartial<ClientSession>({ inTransaction: () => true }),
+          },
+        );
+
+        await expect(operation).rejects.toBe(failure);
+        await expect(operation).rejects.toHaveProperty("errorLabels", [
+          "TransientTransactionError",
+        ]);
+        expect(ctx.mockCollection.insertOne).toHaveBeenCalledOnce();
+
+        expect(reportingCalls() > 0).toBe(fault !== "absent");
+      } finally {
+        await scheduler.dispose();
+        await provider.shutdown();
+      }
+    },
+  );
+
   it("preserves synchronous callback throws and Promise results when span observation fails", async () => {
     const provider = fromPartial<TracerProvider>({
       getTracer: () =>

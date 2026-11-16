@@ -14,10 +14,11 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { Context, Data, Deferred, Effect, Tracer } from "effect";
-import { afterAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, describe, expect, it, vi } from "vite-plus/test";
 
-import { Monque, MonqueEffect, NonRetryableError } from "@/index";
+import { Monque, MonqueEffect, MonqueError, NonRetryableError } from "@/index";
 import { openTelemetry } from "@/opentelemetry.js";
+import { failureInstrumentation, telemetryFaults } from "@test-utils/telemetry-faults";
 import { cleanupTestDb, getTestDb, waitFor } from "@test-utils/test-utils";
 
 class NativeMailer extends Context.Service<NativeMailer, { delivered: string[] }>()(
@@ -34,6 +35,67 @@ describe("OpenTelemetry", () => {
     context.disable();
     manager.disable();
   });
+
+  it.each(telemetryFaults)(
+    "keeps observed Worker callbacks synchronous, reentrant and unreplayed (%s)",
+    async (fault) => {
+      const db = await getTestDb(`callback-telemetry-${fault}`);
+      const { provider, options, reportingCalls } = failureInstrumentation(fault);
+
+      const scheduler = new Monque(db, {
+        pollInterval: 10,
+        maxRetries: 0,
+        ...options,
+      });
+
+      const order: string[] = [];
+      const failure = new MonqueError("start callback failed");
+      let reported: unknown;
+
+      const handler = vi.fn<() => Promise<void>>(async () => {
+        await Promise.resolve();
+      });
+
+      scheduler.on("job:start", () => {
+        order.push("start");
+        scheduler.pause();
+        expect(scheduler.isPaused()).toBe(true);
+        scheduler.resume();
+        expect(scheduler.isPaused()).toBe(false);
+
+        expect(trace.getActiveSpan() !== undefined).toBe(fault !== "absent");
+
+        order.push("reentered");
+
+        throw failure;
+      });
+      scheduler.on("job:fail", ({ error }) => {
+        order.push("failure");
+        reported = error;
+      });
+
+      try {
+        await scheduler.initialize();
+        scheduler.register("work", handler);
+        const job = await scheduler.enqueue("work", {});
+        scheduler.start();
+        await waitFor(() => reported !== undefined);
+        expect(reported).toBe(failure);
+        expect(order).toStrictEqual(["start", "reentered", "failure"]);
+        expect(handler).not.toHaveBeenCalled();
+        await expect(scheduler.getJob(job._id)).resolves.toMatchObject({
+          status: "failed",
+          failCount: 1,
+        });
+
+        expect(reportingCalls() > 0).toBe(fault !== "absent");
+      } finally {
+        await scheduler.dispose();
+        await provider.shutdown();
+        await cleanupTestDb(db);
+      }
+    },
+  );
 
   it("activates Worker context across awaits, records failed attempts and leaves the host and other instances alive", async () => {
     const db = await getTestDb("otel");
