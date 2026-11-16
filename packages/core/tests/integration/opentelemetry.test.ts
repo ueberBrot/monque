@@ -2,6 +2,7 @@ import { context, trace, SpanStatusCode } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
+  DataPointType,
   AggregationTemporality,
   InMemoryMetricExporter,
   PeriodicExportingMetricReader,
@@ -12,7 +13,7 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import { Context, Deferred, Effect, Tracer } from "effect";
+import { Context, Data, Deferred, Effect, Tracer } from "effect";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
 import { Monque, MonqueEffect, NonRetryableError } from "@/index";
@@ -22,6 +23,8 @@ import { cleanupTestDb, getTestDb, waitFor } from "@test-utils/test-utils";
 class NativeMailer extends Context.Service<NativeMailer, { delivered: string[] }>()(
   "test/NativeMailer",
 ) {}
+
+const NativeWorkerFailure = Data.TaggedError("NativeWorkerFailure");
 
 describe("OpenTelemetry", () => {
   const manager = new AsyncLocalStorageContextManager().enable();
@@ -195,93 +198,117 @@ describe("OpenTelemetry", () => {
     }
   });
 
-  it("exports native Worker interruption through the shared metrics configuration", async () => {
-    const db = await getTestDb("native-metrics");
-    const provider = new BasicTracerProvider();
-    const resource = resourceFromAttributes({ "service.name": "native-host" });
-    const instrumentation = openTelemetry(provider, { metrics: { resource } });
-    const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
+  it.each(["failure", "interrupted"])(
+    "exports native Worker %s through the shared metrics configuration",
+    async (outcome) => {
+      const db = await getTestDb(`native-metrics-${outcome}`);
+      const provider = new BasicTracerProvider();
+      const resource = resourceFromAttributes({ "service.name": "native-host" });
+      const instrumentation = openTelemetry(provider, { metrics: { resource } });
+      const exporter = new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE);
 
-    const reader = new PeriodicExportingMetricReader({
-      exporter,
-      exportIntervalMillis: 60_000,
-      metricProducers: [instrumentation.metricProducer],
-    });
+      const reader = new PeriodicExportingMetricReader({
+        exporter,
+        exportIntervalMillis: 60_000,
+        metricProducers: [instrumentation.metricProducer],
+      });
 
-    const host = new MeterProvider({ resource, readers: [reader] });
+      const host = new MeterProvider({ resource, readers: [reader] });
 
-    try {
-      await Effect.runPromise(
-        Effect.gen(function* nativeMetricConsumer() {
-          const scheduler = yield* MonqueEffect;
-          yield* scheduler.register("native-work", () => Effect.interrupt);
-          const job = yield* scheduler.enqueue("native-work", {});
-          yield* scheduler.start;
-          const run = Effect.runPromiseWith(yield* Effect.context());
-          yield* Effect.promise(async () => {
-            await waitFor(async () => {
-              const current = await run(scheduler.getJob(job._id));
+      try {
+        await Effect.runPromise(
+          Effect.gen(function* nativeMetricConsumer() {
+            const scheduler = yield* MonqueEffect;
+            yield* scheduler.register("native-work", () =>
+              Effect.yieldNow.pipe(
+                Effect.andThen(
+                  outcome === "failure"
+                    ? Effect.fail(new NativeWorkerFailure(undefined))
+                    : Effect.interrupt,
+                ),
+              ),
+            );
+            const job = yield* scheduler.enqueue("native-work", {});
+            yield* scheduler.start;
+            const run = Effect.runPromiseWith(yield* Effect.context());
+            yield* Effect.promise(async () => {
+              await waitFor(async () => {
+                const current = await run(scheduler.getJob(job._id));
 
-              return current?.failCount === 1;
+                return current?.failCount === 1;
+              });
             });
-          });
-          yield* scheduler.stop;
-          yield* Effect.promise(async () => {
-            await host.forceFlush();
-          });
+            yield* scheduler.stop;
+            yield* Effect.promise(async () => {
+              await host.forceFlush();
+            });
 
-          const metrics = exporter
-            .getMetrics()
-            .flatMap((item) => item.scopeMetrics)
-            .flatMap((scope) => scope.metrics);
+            const metrics = exporter
+              .getMetrics()
+              .flatMap((item) => item.scopeMetrics)
+              .flatMap((scope) => scope.metrics);
 
-          expect(
-            metrics.find((metric) => metric.descriptor.name === "monque.operations")?.dataPoints,
-          ).toStrictEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                attributes: { operation: "worker", outcome: "interrupted" },
-                value: 1,
+            expect(
+              metrics.find((metric) => metric.descriptor.name === "monque.operations")?.dataPoints,
+            ).toStrictEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  attributes: { operation: "worker", outcome },
+                  value: 1,
+                }),
+                expect.objectContaining({
+                  attributes: { operation: "execution", outcome },
+                  value: 1,
+                }),
+                expect.objectContaining({
+                  attributes: { operation: "intake.enqueue", outcome: "success" },
+                  value: 1,
+                }),
+              ]),
+            );
+
+            const duration = metrics.find(
+              (metric) => metric.descriptor.name === "monque.operation.duration",
+            );
+
+            const workerDuration =
+              duration?.dataPointType === DataPointType.HISTOGRAM
+                ? duration.dataPoints.find(
+                    (point) =>
+                      point.attributes["operation"] === "worker" &&
+                      point.attributes["outcome"] === outcome,
+                  )?.value
+                : undefined;
+
+            expect(duration?.descriptor.unit).toBe("milliseconds");
+            expect(workerDuration?.count).toBe(1);
+            expect(workerDuration?.sum).toBeGreaterThan(0);
+          }).pipe(
+            Effect.provide(
+              MonqueEffect.layer(db, {
+                instrumentation,
+                pollInterval: 10,
+                baseRetryInterval: 60_000,
               }),
-              expect.objectContaining({
-                attributes: { operation: "execution", outcome: "interrupted" },
-                value: 1,
-              }),
-              expect.objectContaining({
-                attributes: { operation: "intake.enqueue", outcome: "success" },
-                value: 1,
-              }),
-            ]),
-          );
-          expect(
-            metrics.find((metric) => metric.descriptor.name === "monque.operation.duration")
-              ?.descriptor.unit,
-          ).toBe("milliseconds");
-        }).pipe(
-          Effect.provide(
-            MonqueEffect.layer(db, {
-              instrumentation,
-              pollInterval: 10,
-              baseRetryInterval: 60_000,
-            }),
+            ),
           ),
-        ),
-      );
-      exporter.reset();
-      const hostCount = host.getMeter("app").createCounter("native-host.alive");
-      hostCount.add(1);
-      await host.forceFlush();
-      const scopes = exporter.getMetrics().flatMap((item) => item.scopeMetrics);
-      expect(scopes.some((scope) => scope.scope.name.startsWith("@monque/core/"))).toBe(false);
-      expect(
-        scopes
-          .flatMap((scope) => scope.metrics)
-          .find((metric) => metric.descriptor.name === "native-host.alive")?.dataPoints[0]?.value,
-      ).toBe(1);
-    } finally {
-      await host.shutdown();
-      await provider.shutdown();
-      await cleanupTestDb(db);
-    }
-  });
+        );
+        exporter.reset();
+        const hostCount = host.getMeter("app").createCounter("native-host.alive");
+        hostCount.add(1);
+        await host.forceFlush();
+        const scopes = exporter.getMetrics().flatMap((item) => item.scopeMetrics);
+        expect(scopes.some((scope) => scope.scope.name.startsWith("@monque/core/"))).toBe(false);
+        expect(
+          scopes
+            .flatMap((scope) => scope.metrics)
+            .find((metric) => metric.descriptor.name === "native-host.alive")?.dataPoints[0]?.value,
+        ).toBe(1);
+      } finally {
+        await host.shutdown();
+        await provider.shutdown();
+        await cleanupTestDb(db);
+      }
+    },
+  );
 });
