@@ -1,3 +1,11 @@
+import type { Tracer } from "effect";
+
+/** Tracing configuration supplied by an explicitly enabled integration. */
+export interface MonqueInstrumentation {
+  readonly tracer: Tracer.Tracer;
+  readonly parentSpan: () => Tracer.AnySpan | undefined;
+}
+
 /**
  * Configuration options for the Monque scheduler.
  *
@@ -15,6 +23,8 @@
  * ```
  */
 export interface MonqueOptions {
+  /** Optional tracing. Import openTelemetry from @monque/core/opentelemetry to enable it. */
+  instrumentation?: MonqueInstrumentation;
   /**
    * Name of the MongoDB collection for storing jobs.
    * @default 'monque_jobs'

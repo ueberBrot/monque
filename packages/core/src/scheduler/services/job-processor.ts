@@ -395,6 +395,7 @@ export class JobProcessor {
         );
       }
     }).pipe(
+      (body) => this.telemetry.observe("execution", body),
       Effect.catchCause((cause) =>
         Effect.gen({ self: this }, function* handleWorkerFailure() {
           const error = toError(Cause.squash(cause));
@@ -425,7 +426,6 @@ export class JobProcessor {
           }
         }),
       ),
-      (body) => this.telemetry.observe("execution", body),
     );
   }
 }

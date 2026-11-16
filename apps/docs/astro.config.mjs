@@ -141,7 +141,10 @@ export default defineConfig({
         },
         {
           label: "Integrations",
-          items: [{ label: "Ts.ED", slug: "integrations/tsed" }],
+          items: [
+            { label: "Ts.ED", slug: "integrations/tsed" },
+            { label: "OpenTelemetry", slug: "integrations/opentelemetry" },
+          ],
         },
         {
           label: "Roadmap",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import type { Tracer } from "effect";
 import { Cause, Context, Effect, Layer, ManagedRuntime } from "effect";
 import type { ObjectId, Collection, Db } from "mongodb";
 
@@ -35,9 +36,10 @@ import { JobPersistenceError } from "./services/job-persistence-error.js";
 import { JobQueries } from "./services/job-queries.js";
 import { readJob } from "./services/job-query.js";
 import { CLEANUP_STATUSES } from "./services/lifecycle-manager.js";
+import { makeTracingTelemetryLayer } from "./services/operation-telemetry.js";
 import type { ResolvedMonqueOptions } from "./services/types.js";
 import { WorkerAdmissionState } from "./services/worker-admission.js";
-import type { MonqueOptions, ProcessingState } from "./types.js";
+import type { MonqueInstrumentation, MonqueOptions, ProcessingState } from "./types.js";
 import { validateOptions } from "./validate-options.js";
 
 /**
@@ -141,6 +143,7 @@ export class Monque extends EventEmitter {
   private readonly options: ResolvedMonqueOptions;
   private collection: Collection | null = null;
   readonly #admission: WorkerAdmissionState;
+  readonly #instrumentation: MonqueInstrumentation | undefined;
   /** Published together after initialization succeeds. */
   #initialized: {
     runtime: SchedulerRuntime;
@@ -155,6 +158,7 @@ export class Monque extends EventEmitter {
     super();
     this.setMaxListeners(20);
     this.db = db;
+    this.#instrumentation = options.instrumentation;
     const legacyOptions: LegacyConcurrencyOptions = options;
     this.options = {
       collectionName: options.collectionName ?? DEFAULTS.collectionName,
@@ -238,12 +242,18 @@ export class Monque extends EventEmitter {
       );
 
       const runtime: SchedulerRuntime = ManagedRuntime.make(
-        makeSchedulerLayer({
-          collection,
-          options: this.options,
-          admission: this.#admission,
-          emit: (event, payload) => this.emit(event, payload),
-        }).pipe(Layer.orDie),
+        makeSchedulerLayer(
+          {
+            collection,
+            options: this.options,
+            admission: this.#admission,
+            emit: (event, payload) => this.emit(event, payload),
+          },
+          undefined,
+          this.#instrumentation
+            ? makeTracingTelemetryLayer(this.#instrumentation.tracer)
+            : undefined,
+        ).pipe(Layer.orDie),
       );
 
       candidate = runtime;
@@ -284,7 +294,19 @@ export class Monque extends EventEmitter {
       throw new ConnectionError("Monque not initialized. Call initialize() first.");
     }
 
-    const pending = this.#initialized.runtime.runPromise(operation);
+    // Capture before runtime acquisition can cross an asynchronous boundary.
+    let parent: Tracer.AnySpan | undefined;
+
+    try {
+      parent = this.#instrumentation?.parentSpan();
+    } catch {
+      // A telemetry observer cannot reject an admitted operation.
+    }
+
+    const pending = this.#initialized.runtime.runPromise(
+      parent ? Effect.withParentSpan(operation, parent) : operation,
+    );
+
     this.#operations.add(pending);
 
     try {
