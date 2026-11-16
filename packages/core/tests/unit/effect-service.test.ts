@@ -7,7 +7,7 @@ import type { Collection, Db, UpdateResult } from "mongodb";
 import { vi } from "vite-plus/test";
 
 import { MonqueEffect } from "@/effect.js";
-import { Monque, JobStatus } from "@/index.js";
+import { ConnectionError, Monque, JobStatus } from "@/index.js";
 import { JobFactoryHelpers } from "@tests/factories";
 
 it.effect("acquires a producer, composes reads and closes admission with its scope", () =>
@@ -396,8 +396,9 @@ describe("native admission ownership", () => {
 
       const db = fromPartial<Db>({ collection: () => collection });
       const layer = MonqueEffect.layer(db, { skipIndexCreation: true, recoverStaleJobs: false });
-      const failed = yield* Effect.exit(MonqueEffect.pipe(Effect.provide(layer)));
-      expect(Exit.isFailure(failed)).toBe(true);
+      const failure = yield* MonqueEffect.pipe(Effect.provide(layer), Effect.flip);
+      expect(failure).toBeInstanceOf(ConnectionError);
+      expect(failure.cause).toBe(problem);
 
       const result = yield* MonqueEffect.use((scheduler) =>
         scheduler.getJob("000000000000000000000001"),

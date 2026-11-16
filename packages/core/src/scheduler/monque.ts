@@ -306,7 +306,11 @@ export class Monque extends EventEmitter {
 
         return release.pipe(
           Effect.andThen(
-            Effect.fail(new ConnectionError(`Failed to initialize Monque: ${message}`)),
+            Effect.fail(
+              new ConnectionError(`Failed to initialize Monque: ${message}`, {
+                cause: toError(error),
+              }),
+            ),
           ),
         );
       }),

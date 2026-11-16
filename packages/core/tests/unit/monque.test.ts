@@ -333,11 +333,19 @@ describe(Monque, () => {
       });
     });
 
-    it("should throw ConnectionError if initialization fails", async () => {
+    it("preserves the original cause when initialization fails", async () => {
+      const failure = new MongoServerError({ message: "DB Connection Failed", code: 13 });
       vi.spyOn(mockDb, "collection").mockImplementationOnce(() => {
-        throw new Error("DB Connection Failed");
+        throw failure;
       });
-      await expect(monque.initialize()).rejects.toThrow(ConnectionError);
+      const initialization = monque.initialize();
+      await expect(initialization).rejects.toBeInstanceOf(ConnectionError);
+      await expect(initialization).rejects.toMatchObject({
+        message: "Failed to initialize Monque: DB Connection Failed",
+      });
+      await expect(initialization).rejects.toSatisfy(
+        (error: ConnectionError) => error.cause === failure,
+      );
     });
 
     it("keeps public operations unavailable until initialization finishes", async () => {
@@ -365,18 +373,19 @@ describe(Monque, () => {
     });
 
     it("shares initialization failures and allows a later retry", async () => {
+      const failure = new Error("DB unavailable");
       const indexes = Promise.withResolvers<string[]>();
       vi.mocked(mockCollection.createIndexes).mockReturnValueOnce(indexes.promise);
 
       const failedInitializations = Promise.all(
         [monque.initialize(), monque.initialize()].map(async (initialization) => {
           await expect(initialization).rejects.toThrow(
-            new ConnectionError("Failed to initialize Monque: DB unavailable"),
+            new ConnectionError("Failed to initialize Monque: DB unavailable", { cause: failure }),
           );
         }),
       );
 
-      indexes.reject(new Error("DB unavailable"));
+      indexes.reject(failure);
       await failedInitializations;
       expect(mockCollection.createIndexes).toHaveBeenCalledOnce();
       await expect(monque.getJob("invalid-id")).rejects.toThrow(ConnectionError);
@@ -389,6 +398,7 @@ describe(Monque, () => {
     });
 
     it("retries failed ownership recovery without publishing partially initialized modules", async () => {
+      const failure = new Error("Recovery unavailable");
       const recovery = Promise.withResolvers<Awaited<ReturnType<Collection["updateMany"]>>>();
       let recoveryAttempts = 0;
       vi.mocked(mockCollection.updateMany).mockImplementation(async (filter) => {
@@ -414,7 +424,7 @@ describe(Monque, () => {
         monque.start();
       }).toThrow(ConnectionError);
       await expect(monque.getJob(new ObjectId())).rejects.toThrow(ConnectionError);
-      recovery.reject(new Error("Recovery unavailable"));
+      recovery.reject(failure);
       const [first, second] = await initializing;
 
       if (first?.status !== "rejected" || second?.status !== "rejected") {
@@ -430,7 +440,9 @@ describe(Monque, () => {
         recoveryAttempts: Object.is(recoveryAttempts, 1),
         mockCollectionFindOneMockCallsLength: mockCollection.findOne.mock.calls.length,
       }).toStrictEqual({
-        failures0: new ConnectionError("Failed to initialize Monque: Recovery unavailable"),
+        failures0: new ConnectionError("Failed to initialize Monque: Recovery unavailable", {
+          cause: failure,
+        }),
         failures1: true,
         recoveryAttempts: true,
         mockCollectionFindOneMockCallsLength: 0,
