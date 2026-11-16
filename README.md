@@ -45,7 +45,7 @@ native Effect Workers in setup, and start processing under one scope. Scope exit
 disposes the scheduler; your application keeps ownership of MongoDB.
 
 See the [Effect guide](https://ueberBrot.github.io/monque/integrations/effect/) for
-dependency injection and Worker examples, or run the [complete Effect host](./apps/effect-host).
+dependency injection and Worker examples, or run the [complete Effect host](./examples/effect-host).
 
 ## Working with jobs
 

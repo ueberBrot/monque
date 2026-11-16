@@ -103,7 +103,7 @@
         "zod": "^4.6.7",
       },
     },
-    "apps/effect-host": {
+    "examples/effect-host": {
       "name": "@monque/effect-host",
       "version": "0.0.0",
       "dependencies": {
@@ -794,7 +794,7 @@
 
     "@monque/docs": ["@monque/docs@workspace:apps/docs"],
 
-    "@monque/effect-host": ["@monque/effect-host@workspace:apps/effect-host"],
+    "@monque/effect-host": ["@monque/effect-host@workspace:examples/effect-host"],
 
     "@monque/management": ["@monque/management@workspace:packages/management"],
 

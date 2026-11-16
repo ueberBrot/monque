@@ -89,7 +89,7 @@ jobs:
           RUNTIME_CHECKS: ${{ needs.quality.outputs.runtime }}
         run: |
           if [[ "$RUNTIME_CHECKS" == "true" ]]; then
-            vp run --filter './apps/*' --ignore-depends-on build
+            vp run --filter './apps/*' --filter './examples/*' --ignore-depends-on build
           else
             vp run --filter @monque/docs --ignore-depends-on build
           fi

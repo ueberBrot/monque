@@ -11,12 +11,14 @@
       "packages/dashboard-express/tsconfig.json",
       "apps/dashboard-dev/tsconfig.json",
       "apps/docs/tsconfig.json",
+      "examples/effect-host/tsconfig.json",
     ],
     "require": "complete",
   },
   // Public source entry points, Starlight config strings, and Renovate's CI entry.
   "entry": [
     "packages/*/src/index.ts",
+    "examples/*/src/main.ts",
     "packages/management/src/contract.ts",
     // Shared form composition API, kept available to dashboard forms.
     "packages/dashboard/src/forms/index.ts",
@@ -146,7 +148,14 @@
     ],
     "coverage": {
       "requireAllFiles": true,
-      "allowUnmatched": ["apps/**", "**/tests/**", "**/*.config.*", "scripts/**", ".sandcastle/**"],
+      "allowUnmatched": [
+        "apps/**",
+        "examples/**",
+        "**/tests/**",
+        "**/*.config.*",
+        "scripts/**",
+        ".sandcastle/**",
+      ],
     },
   },
 }

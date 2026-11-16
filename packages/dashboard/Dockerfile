@@ -14,6 +14,7 @@ COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/dashboard-express/package.json ./packages/dashboard-express/
 COPY apps/docs/package.json ./apps/docs/
 COPY apps/dashboard-dev/package.json ./apps/dashboard-dev/
+COPY examples/effect-host/package.json ./examples/effect-host/
 RUN bun install --frozen-lockfile
 COPY . .
 RUN vp run @monque/dashboard#build

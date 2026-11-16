@@ -86,7 +86,7 @@ remain subject to the scheduler's fenced retry and Stale Job recovery rules;
 shutdown does not guarantee completion or exactly-once external execution.
 
 With Docker available and Playwright Chromium installed (`bunx playwright install chromium`
-from `apps/effect-host`), run the real MongoDB and HTTP integration checks:
+from `examples/effect-host`), run the real MongoDB and HTTP integration checks:
 
 ```sh
 vp run @monque/effect-host#test
