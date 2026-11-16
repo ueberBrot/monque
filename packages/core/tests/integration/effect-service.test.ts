@@ -119,7 +119,7 @@ describe("native scope shutdown", () => {
     await cleanupTestDb(db);
   });
 
-  it("interrupts a native Worker after drain timeout and runs its finalizer", async () => {
+  it("finalizes a native Worker and persists its fenced failure on scope closure", async () => {
     const started = Promise.withResolvers<undefined>();
     let finalized = false;
     const collectionName = uniqueCollectionName("shutdown");
@@ -148,7 +148,7 @@ describe("native scope shutdown", () => {
         return pending;
       }).pipe(
         Effect.provide(
-          MonqueEffect.layer(db, { collectionName, shutdownTimeout: 10, pollInterval: 10 }),
+          MonqueEffect.layer(db, { collectionName, shutdownTimeout: 0, pollInterval: 10 }),
         ),
       ),
     );

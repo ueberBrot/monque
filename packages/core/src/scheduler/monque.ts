@@ -440,9 +440,13 @@ export class Monque extends EventEmitter {
     stop: Effect.suspend(() =>
       this.#trackEffect(this.#initialized?.processing.stop ?? Effect.void),
     ),
-    dispose: fromPromise(async () => {
-      await this.dispose();
-    }).pipe(
+    dispose: Effect.contextWith((context: Context.Context<never>) =>
+      fromPromise(async () => {
+        await this.#beginDisposal(async () => {
+          await Effect.runPromiseWith(context)(this.#initialized?.processing.stop ?? Effect.void);
+        });
+      }),
+    ).pipe(
       Effect.mapError((failure) => nativeFailure(toError(failure))),
       Effect.uninterruptible,
     ),
@@ -1328,6 +1332,12 @@ export class Monque extends EventEmitter {
    */
   // oxlint-disable-next-line typescript/promise-function-async -- An async method would wrap the shared disposal Promise and lose identity.
   dispose(): Promise<void> {
+    return this.#beginDisposal(async () => {
+      await this.stop();
+    });
+  }
+  // oxlint-disable-next-line typescript/promise-function-async -- Both adapters must receive the same published disposal Promise.
+  #beginDisposal(stop: () => Promise<void>): Promise<void> {
     if (this.#disposal) {
       return this.#disposal;
     }
@@ -1336,7 +1346,7 @@ export class Monque extends EventEmitter {
     const completion = Promise.withResolvers<Effect.Success<typeof Effect.void>>();
     this.#disposal = completion.promise;
     // Publish completion before stop listeners can reenter disposal.
-    const drains = Promise.allSettled([...this.#stops, this.stop()]);
+    const drains = Promise.allSettled([...this.#stops, stop()]);
     void this.#finishDisposal(drains).then(completion.resolve, completion.reject);
 
     return this.#disposal;

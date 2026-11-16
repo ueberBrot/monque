@@ -7,7 +7,7 @@ import type { Collection, Db, UpdateResult } from "mongodb";
 import { vi } from "vite-plus/test";
 
 import { MonqueEffect } from "@/effect.js";
-import { ConnectionError, Monque, JobStatus } from "@/index.js";
+import { ConnectionError, Monque, JobStatus, ShutdownTimeoutError } from "@/index.js";
 import { JobFactoryHelpers } from "@tests/factories";
 
 it.effect("acquires a producer, composes reads and closes admission with its scope", () =>
@@ -230,6 +230,68 @@ const makeMailWorker = (
   });
 
 describe("native Workers", () => {
+  it.effect("honors the caller's shutdown deadline before interrupting an active Worker", () =>
+    Effect.gen(function* nativeDisposalDeadline() {
+      const started = yield* Deferred.make<undefined>();
+      const timeouts: ShutdownTimeoutError[] = [];
+      let finalized = false;
+      const job = JobFactoryHelpers.processing({ name: "mail" });
+
+      const collection = fromPartial<Collection>({
+        updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+        findOne: async () => await Promise.resolve(null),
+        options: async () => await Promise.resolve({ collation: { locale: "en" } }),
+        findOneAndUpdate: vi
+          .fn<Collection["findOneAndUpdate"]>()
+          .mockResolvedValueOnce(job)
+          .mockResolvedValue(null),
+      });
+
+      const db = fromPartial<Db>({ collection: () => collection });
+      yield* Effect.gen(function* disposeWorker() {
+        const scheduler = yield* MonqueEffect;
+        yield* Deferred.await(started);
+        const disposal = yield* scheduler.dispose.pipe(Effect.forkChild);
+        yield* TestClock.adjust(999);
+        expect(timeouts).toHaveLength(0);
+        expect(finalized).toBe(false);
+        yield* TestClock.adjust(1);
+        expect(timeouts).toHaveLength(1);
+        yield* Fiber.join(disposal);
+        expect(finalized).toBe(true);
+      }).pipe(
+        Effect.provide(
+          MonqueEffect.layer(
+            db,
+            {
+              skipIndexCreation: true,
+              recoverStaleJobs: false,
+              workerConcurrency: 1,
+              shutdownTimeout: 1000,
+            },
+            Effect.fnUntraced(function* setup(monque) {
+              monque.on("job:error", ({ error }) => {
+                if (error instanceof ShutdownTimeoutError) {
+                  timeouts.push(error);
+                }
+              });
+              yield* monque.effects.register("mail", () =>
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.ensuring(
+                    Effect.sync(() => {
+                      finalized = true;
+                    }),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      );
+    }),
+  );
+
   it.effect("uses application services, virtual time and per-attempt finalizers", () =>
     Effect.gen(function* nativeWorkerResources() {
       const started = yield* Deferred.make<Effect.Success<typeof Effect.void>>();
