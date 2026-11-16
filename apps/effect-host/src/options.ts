@@ -47,10 +47,13 @@ export const validateOptions = (options: HostOptions) =>
       ),
     );
 
+    const managementPath = options.managementPath.toLowerCase();
+    const dashboardPath = options.dashboardPath.toLowerCase();
+
     if (
-      options.managementPath === options.dashboardPath ||
-      options.managementPath.startsWith(`${options.dashboardPath}/`) ||
-      options.dashboardPath.startsWith(`${options.managementPath}/`)
+      managementPath === dashboardPath ||
+      managementPath.startsWith(`${dashboardPath}/`) ||
+      dashboardPath.startsWith(`${managementPath}/`)
     ) {
       return yield* new HostError({ message: "Management and Dashboard mounts must not overlap" });
     }

@@ -18,6 +18,9 @@ describe("host configuration", () => {
   it.each([
     { operatorPassword: "", message: /operatorPassword/u },
     { dashboardPath: "/custom/control/ui", message: /overlap/u },
+    { dashboardPath: "/CUSTOM/CONTROL", message: /overlap/u },
+    { dashboardPath: "/CUSTOM/CONTROL/api/v1/jobs", message: /overlap/u },
+    { managementPath: "/CUSTOM/UI/api/v1/jobs", message: /overlap/u },
     { dashboardPath: "/custom/ui/", message: /dashboardPath/u },
     { managementPath: "relative", message: /managementPath/u },
     { port: Number.NaN, message: /port/u },
