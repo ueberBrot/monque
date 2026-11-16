@@ -127,9 +127,9 @@ const extractApiLinks = (content: string, filePath: string): ApiLink[] => {
 
       if (fullPath !== undefined) {
         links.push({
+          anchor,
           fullLink: line.slice(labelStart, position),
           path: fullPath,
-          anchor,
           line: lineNum + 1,
           column: labelStart + 1,
           file: filePath,

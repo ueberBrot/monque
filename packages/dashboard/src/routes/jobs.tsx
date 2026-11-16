@@ -92,9 +92,9 @@ const useJobsPagination = (search: JobsRouteSearch, nextPageCursor: string | nul
   const previousCursor = currentIndex > 0 ? history.cursors[currentIndex - 1] : undefined;
 
   return {
+    rememberNextPage,
     hasPreviousPage: Boolean(cursor),
     previousPageLabel: cursor && currentIndex <= 0 ? "First page" : "Previous page",
-    rememberNextPage,
     previousCursor: previousCursor === "" ? undefined : previousCursor,
   };
 };

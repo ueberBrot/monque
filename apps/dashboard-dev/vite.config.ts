@@ -50,7 +50,7 @@ const config = defineConfig(({ mode }) => {
           cache: false,
         },
         "type-check": {
-          command: "vp lint --type-aware --type-check --deny-warnings",
+          command: "effect-tsgo --tsrs-lint vp lint --type-aware --type-check --deny-warnings",
           dependsOn: [
             {
               task: "build",

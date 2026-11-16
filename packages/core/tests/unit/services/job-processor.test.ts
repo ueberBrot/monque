@@ -1061,9 +1061,7 @@ describe(JobProcessor, () => {
         const worker = createWorker({
           handler: async () => {
             Deferred.doneUnsafe(handling, Effect.void);
-            {
-              await handler.promise;
-            }
+            await handler.promise;
           },
           schema: {
             "~standard": {
@@ -1137,9 +1135,7 @@ describe(JobProcessor, () => {
             const worker = createWorker({
               handler: async () => {
                 Deferred.doneUnsafe(started, Effect.void);
-                {
-                  await handler.promise;
-                }
+                await handler.promise;
               },
             });
 

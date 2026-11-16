@@ -49,9 +49,9 @@ describe(documentToPersistedJob, () => {
     const now = new Date();
 
     const doc: WithId<Document> = {
+      data,
       _id: new ObjectId(),
       name: "test-job",
-      data,
       status: JobStatus.PROCESSING,
       priority: 0,
       nextRunAt: now,

@@ -115,8 +115,8 @@ describe("OpenTelemetry metrics", () => {
             : undefined;
 
         expect({
-          unit: duration?.descriptor.unit,
           point,
+          unit: duration?.descriptor.unit,
           positive: (point?.value.sum ?? 0) > 0,
         }).toMatchObject({
           unit: "milliseconds",

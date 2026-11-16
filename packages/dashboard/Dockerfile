@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM oven/bun:1.4.4 AS bun
-FROM node:22.23.4-bookworm-slim AS build
+FROM node:22.23.5-bookworm-slim AS build
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
 ENV VP_GIT_HOOKS=0

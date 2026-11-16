@@ -817,8 +817,8 @@ describe(Monque, () => {
           monque.start();
           await vi.advanceTimersByTimeAsync(0);
           expect({
-            renewals: mockCollection.updateMany.mock.calls.length,
             postStopRead,
+            renewals: mockCollection.updateMany.mock.calls.length,
             executions: handler.mock.calls.length,
           }).toStrictEqual({ renewals, postStopRead: null, executions: 1 });
           closing.resolve();
@@ -1622,7 +1622,7 @@ describe(Monque, () => {
           .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
 
         mockCollection.aggregate.mockReturnValue(
-          fromPartial<ReturnType<typeof mockCollection.aggregate>>({ toArray }),
+          fromPartial<ReturnType<(typeof mockCollection)["aggregate"]>>({ toArray }),
         );
         const before = await monque.getQueueStats();
         expect(before.total).toBe(1);
@@ -1665,7 +1665,7 @@ describe(Monque, () => {
           .mockResolvedValueOnce([{ statusCounts: [], avgDuration: [], total: [{ count: 2 }] }]);
 
         vi.mocked(mockCollection.aggregate).mockReturnValue(
-          fromPartial<ReturnType<typeof mockCollection.aggregate>>({ toArray }),
+          fromPartial<ReturnType<(typeof mockCollection)["aggregate"]>>({ toArray }),
         );
         const awaitedResult1 = await monque.getQueueStats();
         expect(awaitedResult1.total).toBe(1);

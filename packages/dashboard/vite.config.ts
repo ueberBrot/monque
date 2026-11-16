@@ -75,7 +75,7 @@ const config = defineConfig({
         cache: false,
       },
       "type-check": {
-        command: "vp lint --type-aware --type-check --deny-warnings",
+        command: "effect-tsgo --tsrs-lint vp lint --type-aware --type-check --deny-warnings",
         dependsOn: [
           {
             task: "build",
@@ -108,7 +108,10 @@ const config = defineConfig({
   pack: {
     entry: ["src/index.ts"],
     format: ["esm", "cjs"],
-    dts: true,
+    dts: {
+      generator: "tsgo",
+      tsgo: { path: fileURLToPath(new URL("../../node_modules/.bin/tsrs", import.meta.url)) },
+    },
     clean: false,
     sourcemap: true,
     target: "node22",

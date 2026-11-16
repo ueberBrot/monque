@@ -76,12 +76,12 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
   createJsonResponse(
     {
       code,
+      message,
+      status,
       data: {
         error: message,
       },
       defined: false,
-      message,
-      status,
     },
     status,
   );

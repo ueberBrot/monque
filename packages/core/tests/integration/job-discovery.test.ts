@@ -182,7 +182,7 @@ describe("job discovery", () => {
     }
 
     await producer.enqueueMany(
-      names.flatMap((name) => Array.from({ length: 100 }, () => ({ name, data: {}, runAt }))),
+      names.flatMap((name) => Array.from({ length: 100 }, () => ({ name, runAt, data: {} }))),
     );
     let pipeline: Document[] | undefined;
     client.on("commandStarted", (event: CommandStartedEvent) => {

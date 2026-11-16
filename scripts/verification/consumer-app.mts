@@ -479,7 +479,7 @@ try {
   );
   await writeFile(
     "result.json",
-    `${JSON.stringify({ scenario, mongodb: driverManifest.version, runtime: { node: process.version }, versions, checks }, null, 2)}\n`,
+    `${JSON.stringify({ scenario, versions, checks, mongodb: driverManifest.version, runtime: { node: process.version } }, null, 2)}\n`,
   );
 } finally {
   const serverToClose = server;

@@ -89,9 +89,9 @@ describe("oRPC Management single Job action routes", () => {
       const jobId = new ObjectId();
 
       const target = createManagementJob({
+        failCount,
         _id: jobId,
         status: "failed",
-        failCount,
         failReason: "Account no longer exists",
         updatedAt: new Date("2026-01-01T00:02:00.000Z"),
       });

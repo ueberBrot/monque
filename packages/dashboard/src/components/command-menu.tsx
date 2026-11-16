@@ -1,4 +1,4 @@
-import { formatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
+import { useFormatForDisplay, useHotkey } from "@tanstack/react-hotkeys";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -26,6 +26,7 @@ const REFRESH_HOTKEY = "Mod+Shift+R";
 
 const CommandMenu = () => {
   const [open, setOpen] = useState(false);
+  const formatForDisplay = useFormatForDisplay();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 

@@ -153,9 +153,9 @@ const runJobActions = async (
     const jobs = await runJobAction(managementApi, { ...input, jobId });
 
     return {
+      jobs,
       action: input.action,
       count: 1,
-      jobs,
       failed: [],
       firstError: undefined,
       authorizationChanged: false,
@@ -185,10 +185,10 @@ const runJobActions = async (
       : errors.get(failed[0]);
 
   return {
+    failed,
     action: input.action,
     count: result.count,
     jobs: [],
-    failed,
     firstError: first ? { status: first.status, message: first.error } : undefined,
     authorizationChanged: result.errors.some((error) => error.status === 403),
   };
@@ -431,6 +431,7 @@ export {
   type JobActionFeedbackTone,
   type JobActionKey,
   type JobActionRequest,
+  type JobActionsResult,
   prepareSingleJobAction,
   type RunJobActionsInput,
   runJobActions,

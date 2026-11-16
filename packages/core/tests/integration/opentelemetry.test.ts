@@ -116,7 +116,7 @@ describe("OpenTelemetry", () => {
     });
 
     const meterProvider = new MeterProvider({ resource, readers: [reader] });
-    const first = new Monque(db, { collectionName: "first", instrumentation, pollInterval: 10 });
+    const first = new Monque(db, { instrumentation, collectionName: "first", pollInterval: 10 });
     const second = new Monque(db, { collectionName: "second", instrumentation });
 
     try {

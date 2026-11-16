@@ -24,9 +24,9 @@ const LargeStatsJobBuilder = {
 
     return Array.from({ length: count }, (_, index) => {
       const document: Document = {
+        status,
         name: jobName,
         data: { task: startIndex + index },
-        status,
         failCount: status === JobStatus.FAILED ? 10 : 0,
         createdAt: now,
         updatedAt: now,

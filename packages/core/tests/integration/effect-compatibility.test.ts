@@ -153,10 +153,10 @@ describe("Promise worker compatibility", () => {
       const stoppedJob = await monque.getJob(first._id);
       const stoppedQueues = await monque.getQueueViewSummaries({ name: "delivery" });
       expect({
-        shutdownErrors: shutdownErrors.length,
-        incompleteJobIds: shutdownErrors[0]?.incompleteJobs.map((job) => job._id?.toString()),
         firstFinished,
         completed,
+        shutdownErrors: shutdownErrors.length,
+        incompleteJobIds: shutdownErrors[0]?.incompleteJobs.map((job) => job._id?.toString()),
         job: stoppedJob,
         queueViews: stoppedQueues,
       }).toMatchObject({
@@ -260,8 +260,8 @@ describe("ownership with controlled Effect services", () => {
 
         const jobs = [-7, 0, 19].map((priority) =>
           JobFactoryHelpers.failed({
-            name: "retry",
             priority,
+            name: "retry",
             createdAt: past,
             updatedAt: past,
             claimId: "old-claim",
@@ -618,12 +618,12 @@ describe("native intake with controlled Effect time", () => {
       });
 
       const batch = yield* intake.enqueueMany([
-        { name: "batch", data, uniqueKey: "one", priority: 2 },
+        { data, name: "batch", uniqueKey: "one", priority: 2 },
         { name: "batch", data: {}, uniqueKey: "one", priority: 99 },
       ]);
 
       expect({ immediate, delayed, recurring, batch }).toMatchObject({
-        immediate: { nextRunAt: createdAt, createdAt, updatedAt: createdAt, priority: 8 },
+        immediate: { createdAt, nextRunAt: createdAt, updatedAt: createdAt, priority: 8 },
         delayed: {
           nextRunAt: new Date("2026-03-29T10:00:00.000Z"),
           createdAt: new Date("2026-03-28T12:00:01.000Z"),
@@ -681,10 +681,10 @@ describe("native intake with controlled Effect time", () => {
 
         expect({
           inSession,
+          notifications,
           visible: yield* reads.getJob(first._id),
           active: session.inTransaction(),
           ended: session.hasEnded,
-          notifications,
         }).toStrictEqual({
           inSession: 4,
           visible: null,

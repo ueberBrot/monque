@@ -21,8 +21,8 @@ const PollingProbe = ({
 }) => {
   const refetchInterval = useDocumentVisiblePollingInterval(pollingIntervalMs, cadence);
   useQuery({
-    queryKey: ["polling"],
     refetchInterval,
+    queryKey: ["polling"],
     queryFn: async () => {
       requests.push(Date.now() - started);
 

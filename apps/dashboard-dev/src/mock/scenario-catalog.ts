@@ -109,9 +109,9 @@ const buildQueueViews = (
 
       return {
         name,
-        hasPersistedJobs: queueJobs.length > 0,
         hasRegisteredWorker,
         stats,
+        hasPersistedJobs: queueJobs.length > 0,
         worker: hasRegisteredWorker
           ? {
               concurrency: (index % 3) + 1,
@@ -182,9 +182,10 @@ const createGeneratedJobs = (options: {
     const nextRunAt = new Date(baseTime + index * 90_000 + Math.floor(random() * 45_000));
     const failCount = status === "failed" ? 1 + (index % 4) : 0;
     jobs.push({
-      id: `scenario-${options.seed}-${String(index + 1).padStart(4, "0")}`,
       name,
       status,
+      failCount,
+      id: `scenario-${options.seed}-${String(index + 1).padStart(4, "0")}`,
       priority: 0,
       payload: {
         attempt: failCount + 1,
@@ -198,7 +199,6 @@ const createGeneratedJobs = (options: {
       lastHeartbeat:
         status === "processing" ? new Date(updatedAt.getTime() + 15_000).toISOString() : null,
       heartbeatInterval: status === "processing" ? 15_000 : undefined,
-      failCount,
       failureReason: status === "failed" ? `Scenario failure ${index + 1}` : null,
       repeatInterval: index % 5 === 0 ? "*/15 * * * *" : undefined,
       timezone: index % 10 === 0 ? "Europe/Berlin" : undefined,

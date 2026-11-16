@@ -17,8 +17,8 @@ describe("job action dialog", () => {
         const onConfirm = vi.fn<(input: RunJobActionsInput) => void>();
 
         const state: JobActionDialogState = {
-          action: "reschedule",
           scope,
+          action: "reschedule",
           jobIds: scope === "single" ? ["job-a"] : ["job-a", "job-b"],
           nextRunAt: "2026-12-03T14:30",
         };

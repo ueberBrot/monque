@@ -14,8 +14,8 @@ const streamedRequest = function streamedRequest(
   const init: RequestInit & { duplex: "half" } = {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
-    body,
     duplex: "half",
+    body,
   };
 
   return new Request(`https://management.example${path}`, init);
@@ -138,19 +138,17 @@ describe("Management request body limits", () => {
   it.each([undefined, "100000"])(
     "leaves unmatched request bodies available with declared length %s",
     async (contentLength) => {
-      const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>(
-        (controller: ReadableStreamDefaultController<Uint8Array>) => {
-          controller.enqueue(new TextEncoder().encode("body for the next handler"));
-          controller.close();
-        },
-      );
+      const pull = vi.fn<NonNullable<UnderlyingSource<Uint8Array>["pull"]>>((controller) => {
+        controller.enqueue(new TextEncoder().encode("body for the next handler"));
+        controller.close();
+      });
 
       const body = new ReadableStream<Uint8Array>({ pull }, { highWaterMark: 0 });
 
       const init: RequestInit & { duplex: "half" } = {
         method: "POST",
-        body,
         duplex: "half",
+        body,
       };
 
       if (contentLength !== undefined) {

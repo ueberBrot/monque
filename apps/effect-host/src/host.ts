@@ -134,10 +134,10 @@ export const host = (options: HostOptions) =>
     }
 
     return {
-      url: `http://127.0.0.1:${address.port}`,
       monque,
       db,
       client,
+      url: `http://127.0.0.1:${address.port}`,
       jobId: job._id.toHexString(),
     };
   });

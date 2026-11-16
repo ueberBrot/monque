@@ -99,14 +99,14 @@ const makeProcessingLayer = ({
         options,
         collection,
         ownership,
+        emit,
+        notifyPendingJob,
         activeClaimIds: () =>
           admission
             .activeJobs()
             .flatMap((job) =>
               job.claimId !== undefined && job.claimId !== "" ? [job.claimId] : [],
             ),
-        emit,
-        notifyPendingJob,
       });
 
       const query = yield* JobQueries;

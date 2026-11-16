@@ -43,9 +43,9 @@ export const JobFactory = Factory.define<PersistedJob, JobTransientParams>(
     };
 
     return {
+      data,
       _id: new ObjectId(faker.database.mongodbObjectId()),
       name: TEST_CONSTANTS.JOB_NAME,
-      data,
       status: JobStatus.PENDING,
       priority: 0,
       failCount: 0,

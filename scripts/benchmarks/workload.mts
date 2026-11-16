@@ -110,8 +110,8 @@ const measureProcessing = async (db: Db, instances: Monque[], options: Options, 
       processing.push({
         completed,
         intakeMs,
-        intakeJobsPerSecond: (options.jobs * 1000) / intakeMs,
         elapsedMs,
+        intakeJobsPerSecond: (options.jobs * 1000) / intakeMs,
         jobsPerSecond: (completed * 1000) / elapsedMs,
         enqueueToStartMs: distribution(activeLatencies),
         commands: operations,
@@ -295,14 +295,14 @@ export const runBenchmark = async (
       options,
       setupMs,
       preparationMs,
+      processing,
+      polling,
       dataset: {
         completed: stats.completed,
         jobNames: 10,
         payloadStringBytes: options.payloadBytes,
         timestamps: timestamp.toISOString(),
       },
-      processing,
-      polling,
     };
   } finally {
     try {

@@ -43,6 +43,7 @@ try {
         revision: git("rev-parse", "HEAD"),
         dirty: git("status", "--porcelain") !== "",
         environment: {
+          topology,
           node: process.version,
           runtime: process.versions,
           platform: platform(),
@@ -51,7 +52,6 @@ try {
           logicalCpus: cpus().length,
           memoryBytes: totalmem(),
           mongodb: build,
-          topology,
           driver: "7.8.0",
           connection: "caller-supplied; URI omitted",
           commandMonitoring: true,

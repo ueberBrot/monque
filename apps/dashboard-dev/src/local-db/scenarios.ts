@@ -50,8 +50,8 @@ const createScenario = (name: ScenarioName): WithId<Job>[] => {
     statuses.flatMap((status) =>
       [0, 1, 2].map((index) => {
         const overrides: Partial<Job> = {
-          name: queue,
           status,
+          name: queue,
           failCount: status === "failed" ? index + 1 : 0,
           data: {},
         };

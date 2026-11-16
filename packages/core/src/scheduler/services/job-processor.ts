@@ -411,8 +411,8 @@ export class JobProcessor {
             yield* this.notifyTransition(updatedJob);
             yield* attempt(() =>
               this.ctx.emit("job:fail", {
-                job: updatedJob,
                 error,
+                job: updatedJob,
                 willRetry: updatedJob.status === JobStatus.PENDING,
               }),
             );

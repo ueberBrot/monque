@@ -85,8 +85,8 @@ describe("heartbeat mechanism", () => {
 
       const monque = new Monque(db, {
         collectionName,
-        pollInterval: 50,
         heartbeatInterval,
+        pollInterval: 50,
       });
 
       monqueInstances.push(monque);
@@ -256,8 +256,8 @@ describe("heartbeat mechanism", () => {
 
       const monque = new Monque(db, {
         collectionName,
-        pollInterval: 100,
         lockTimeout,
+        pollInterval: 100,
         recoverStaleJobs: true,
       });
 
@@ -305,8 +305,8 @@ describe("heartbeat mechanism", () => {
 
       const monque = new Monque(db, {
         collectionName,
-        pollInterval: 100,
         lockTimeout,
+        pollInterval: 100,
         recoverStaleJobs: true,
       });
 

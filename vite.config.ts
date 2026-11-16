@@ -94,7 +94,13 @@ export default defineConfig({
       sonarJs,
     ],
     jsPlugins: [...(ultraciteAntiSlop.jsPlugins ?? []), ...(sonarJs.jsPlugins ?? [])],
-    ignorePatterns: [...(ultraciteCore.ignorePatterns ?? []), ...ignoredFiles, "specs/**"],
+    ignorePatterns: [
+      ...(ultraciteCore.ignorePatterns ?? []),
+      ...ignoredFiles,
+      "specs/**",
+      // Registry-managed shadcn components are formatted but retain upstream code.
+      "**/components/ui/**",
+    ],
     // CI runs native rules before builds, then typed lint and TypeScript together.
     options: { typeAware: false },
     rules: {

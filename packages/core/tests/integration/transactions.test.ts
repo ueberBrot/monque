@@ -71,10 +71,10 @@ describe("transactional intake", () => {
           { session, timezone: "UTC", uniqueKey: "annual", priority: 12 },
         );
         expect({
+          processed,
           transactionJobCount: await db.collection("monque_jobs").countDocuments({}, { session }),
           visibleJobCount: await db.collection("monque_jobs").countDocuments(),
           visibleOrderCount: await db.collection("orders").countDocuments(),
-          processed,
           sessionEnded: session.hasEnded,
         }).toStrictEqual({
           transactionJobCount: 3,
