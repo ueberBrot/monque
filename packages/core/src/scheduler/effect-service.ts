@@ -1,5 +1,4 @@
-import { Context, Effect, Layer } from "effect";
-import type { Scope } from "effect";
+import { Context, Effect, Layer, Scope } from "effect";
 import type { Db } from "mongodb";
 
 import type { MonqueError } from "../shared/errors/monque-error.js";
@@ -19,10 +18,11 @@ export class MonqueEffect extends Context.Service<MonqueEffect, Monque["effects"
     return Layer.effect(
       MonqueEffect,
       Effect.gen(function* acquireConfiguredScheduler() {
+        const setupScope = yield* Scope.fork(yield* Scope.Scope);
         const monque = yield* Monque.scoped(db, options);
 
         if (setup) {
-          yield* setup(monque);
+          yield* setup(monque).pipe(Scope.provide(setupScope));
           yield* monque.effects.start;
         }
 

@@ -13,7 +13,8 @@ Pass a setup callback as the third argument to `MonqueEffect.layer`. The Layer
 initializes Monque, runs setup, then starts processing before publishing the
 service. Setup may return any success value; the Layer publishes native scheduler
 operations. Setup errors and required application services remain in the Layer's
-types. Setup failure or interruption releases acquired resources and Monque.
+types. Setup resources remain available until Monque finishes disposal and Worker
+finalizers complete. Setup failure or interruption also releases those resources.
 
 ```typescript
 import { MonqueEffect } from "@monque/core/effect";

@@ -124,6 +124,65 @@ it.effect("releases setup resources and the scheduler when setup fails", () =>
   }),
 );
 
+it.effect("keeps setup resources alive until active Worker finalizers finish", () =>
+  Effect.gen(function* setupResourceLifetime() {
+    const started = yield* Deferred.make<undefined>();
+    const actions: string[] = [];
+    let resourceOpen = false;
+    const job = JobFactoryHelpers.processing({ name: "mail" });
+
+    const collection = fromPartial<Collection>({
+      updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+      findOne: async () => await Promise.resolve(null),
+      options: async () => await Promise.resolve({ collation: { locale: "en" } }),
+      findOneAndUpdate: vi
+        .fn<Collection["findOneAndUpdate"]>()
+        .mockResolvedValueOnce(job)
+        .mockResolvedValue(null),
+    });
+
+    const db = fromPartial<Db>({ collection: () => collection });
+    yield* MonqueEffect.pipe(
+      Effect.andThen(Deferred.await(started)),
+      Effect.provide(
+        MonqueEffect.layer(
+          db,
+          {
+            skipIndexCreation: true,
+            recoverStaleJobs: false,
+            workerConcurrency: 1,
+            shutdownTimeout: 0,
+          },
+          Effect.fnUntraced(function* setup(monque) {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => {
+                resourceOpen = true;
+              }),
+              () =>
+                Effect.sync(() => {
+                  resourceOpen = false;
+                  actions.push("setup released");
+                }),
+            );
+            yield* monque.effects.register("mail", () =>
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    actions.push(resourceOpen ? "Worker released" : "Worker resource closed");
+                  }),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+
+    expect(actions).toStrictEqual(["Worker released", "setup released"]);
+  }),
+);
+
 it.effect("disposes a partially configured scheduler when setup is interrupted", () =>
   Effect.gen(function* interruptedSetup() {
     const acquired = yield* Deferred.make<Monque>();
