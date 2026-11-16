@@ -167,9 +167,11 @@ See the [repository README](../../README.md#development) for workspace commands.
 
 ### Effect applications
 
-Acquire `MonqueEffect.layer(db, options)` to initialize the scheduler and dispose it
-with your application's scope. Register native Effect Workers with application
-services, then compose intake, scheduling, reads and management as Effects. MongoDB
+Import `MonqueEffect` from `@monque/core/effect`. Pass a Worker setup callback to
+`MonqueEffect.layer(db, options, setup)` to initialize, register and start under one
+scoped Layer. Omit setup for a producer that stays stopped. The application scope
+disposes the scheduler. Provide application services through Layers, then compose
+intake, scheduling, reads and management as Effects. MongoDB
 remains application-owned. See the [Effect integration guide](https://ueberBrot.github.io/monque/integrations/effect/)
 for a complete example and failure, interruption and shutdown semantics.
 

@@ -40,6 +40,9 @@
     "*": {
       "opentelemetry": [
         "dist/opentelemetry.d.mts"
+      ],
+      "effect": [
+        "dist/effect.d.mts"
       ]
     }
   },
@@ -62,6 +65,16 @@
       "require": {
         "types": "./dist/opentelemetry.d.cts",
         "default": "./dist/opentelemetry.cjs"
+      }
+    },
+    "./effect": {
+      "import": {
+        "types": "./dist/effect.d.mts",
+        "default": "./dist/effect.mjs"
+      },
+      "require": {
+        "types": "./dist/effect.d.cts",
+        "default": "./dist/effect.cjs"
       }
     }
   },

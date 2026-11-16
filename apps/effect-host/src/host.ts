@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
-import { Monque } from "@monque/core";
 import type { MonqueOptions } from "@monque/core";
+import { Monque } from "@monque/core/effect";
 import { createDashboardExpressRouter } from "@monque/dashboard-express";
 import { createManagementExpressRouter } from "@monque/management-express";
 import { Context, Effect, Predicate } from "effect";

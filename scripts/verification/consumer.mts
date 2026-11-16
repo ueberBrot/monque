@@ -34,42 +34,44 @@ assert.ok(
 const minimumManagementVersion = "0.11.0";
 
 const effectConsumerSource = `import assert from "node:assert/strict";
-import { MonqueEffect } from "@monque/core";
-
-import { Context, Deferred, Effect } from "effect";
+import { createRequire } from "node:module";
+import { Monque as RootMonque, MonqueEffect as RootEffect } from "@monque/core";
+import { Monque, MonqueEffect } from "@monque/core/effect";
+import { Context, Deferred, Effect, Layer } from "effect";
 import { MongoClient } from "mongodb";
 
+assert.equal(Monque, RootMonque);
+assert.equal(MonqueEffect, RootEffect);
+const require = createRequire(import.meta.url);
+assert.equal(require("@monque/core/effect").MonqueEffect, require("@monque/core").MonqueEffect);
+assert.equal(require("@monque/core/effect").Monque, require("@monque/core").Monque);
+
 class Greeting extends Context.Service<Greeting, { text: string }>()("consumer/Greeting") {}
-
 const client = new MongoClient(process.env.MONQUE_VERIFY_URI ?? "", { directConnection: true });
-
 await client.connect();
-
 const db = client.db("packed_effect");
 
 try {
-  await Effect.runPromise(
-    Effect.gen(function* packedConsumer() {
+  await Effect.runPromise(Effect.gen(function* packedConsumer() {
+    const completed = yield* Deferred.make<undefined>();
+    const workers = MonqueEffect.layer(db, {}, (monque) =>
+      monque.effects.register("greet", () => Effect.gen(function* greet() {
+        const greeting = yield* Greeting;
+        assert.equal(greeting.text, "hello");
+        yield* Deferred.succeed(completed, undefined);
+      })),
+    ).pipe(Layer.provide(Layer.succeed(Greeting, { text: "hello" })));
+
+    yield* Effect.gen(function* application() {
       const scheduler = yield* MonqueEffect;
-      const completed = yield* Deferred.make<undefined>();
-      yield* scheduler
-        .register("greet", () =>
-          Effect.gen(function* greet() {
-            const greeting = yield* Greeting;
-            assert.equal(greeting.text, "hello");
-            yield* Deferred.succeed(completed, undefined);
-          }),
-        )
-        .pipe(Effect.provideService(Greeting, { text: "hello" }));
+      assert.equal(yield* scheduler.isHealthy, true);
       const job = yield* scheduler.now("greet", {});
       assert.equal((yield* scheduler.getJob(job._id))?.name, "greet");
-      yield* scheduler.start;
       yield* Deferred.await(completed);
       yield* scheduler.stop;
-    }).pipe(Effect.provide(MonqueEffect.layer(db))),
-  );
-  const ping = await db.command({ ping: 1 });
-  assert.equal(ping.ok, 1);
+    }).pipe(Effect.provide(workers));
+  }));
+  assert.equal((await db.command({ ping: 1 })).ok, 1);
 } finally {
   await client.close();
 }

@@ -1,6 +1,8 @@
 import { Context, Effect, Layer } from "effect";
+import type { Scope } from "effect";
 import type { Db } from "mongodb";
 
+import type { MonqueError } from "../shared/errors/monque-error.js";
 import { Monque } from "./monque.js";
 import type { MonqueOptions } from "./types.js";
 
@@ -8,10 +10,24 @@ import type { MonqueOptions } from "./types.js";
 export class MonqueEffect extends Context.Service<MonqueEffect, Monque["effects"]>()(
   "@monque/core/MonqueEffect",
 ) {
-  static layer(db: Db, options: MonqueOptions = {}) {
+  /** Setup runs after initialization and before start. Without setup, processing stays stopped. */
+  static layer<A = void, E = never, R = never>(
+    db: Db,
+    options: MonqueOptions = {},
+    setup?: (monque: Monque) => Effect.Effect<A, E, R>,
+  ): Layer.Layer<MonqueEffect, MonqueError | E, Exclude<R, Scope.Scope>> {
     return Layer.effect(
       MonqueEffect,
-      Effect.map(Monque.scoped(db, options), (monque) => monque.effects),
+      Effect.gen(function* acquireConfiguredScheduler() {
+        const monque = yield* Monque.scoped(db, options);
+
+        if (setup) {
+          yield* setup(monque);
+          yield* monque.effects.start;
+        }
+
+        return monque.effects;
+      }),
     );
   }
 }

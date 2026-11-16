@@ -1,4 +1,5 @@
-import { Monque, MonqueEffect } from "@monque/core";
+import { Monque } from "@monque/core";
+import { MonqueEffect } from "@monque/core/effect";
 import { createManagementExpressRouter } from "@monque/management-express";
 import type { MonqueTsedConfig } from "@monque/tsed";
 import { Effect } from "effect";

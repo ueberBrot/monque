@@ -1,12 +1,13 @@
 import { describe, it, expect } from "@effect/vitest";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { Context, Data, Deferred, Effect, Exit, Fiber, Scheduler } from "effect";
+import { Context, Data, Deferred, Effect, Exit, Fiber, Layer, Scheduler } from "effect";
 import { TestClock } from "effect/testing";
 import { ObjectId } from "mongodb";
 import type { Collection, Db, UpdateResult } from "mongodb";
 import { vi } from "vite-plus/test";
 
-import { Monque, JobStatus, MonqueEffect } from "@/index.js";
+import { MonqueEffect } from "@/effect.js";
+import { Monque, JobStatus } from "@/index.js";
 import { JobFactoryHelpers } from "@tests/factories";
 
 it.effect("acquires a producer, composes reads and closes admission with its scope", () =>
@@ -39,6 +40,113 @@ it.effect("acquires a producer, composes reads and closes admission with its sco
     );
 
     expect(Exit.isFailure(yield* Effect.exit(service.now("mail", {})))).toBe(true);
+  }),
+);
+
+it.effect("runs setup before starting and publishes the same instance", () =>
+  Effect.gen(function* orderedSetup() {
+    const collection = fromPartial<Collection>({
+      updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+      findOne: async () => await Promise.resolve(null),
+    });
+
+    const db = fromPartial<Db>({ collection: () => collection });
+    const instances: Monque[] = [];
+
+    const layer = MonqueEffect.layer(
+      db,
+      { skipIndexCreation: true, recoverStaleJobs: false },
+      Effect.fnUntraced(function* setup(monque) {
+        instances.push(monque);
+        expect(monque.isHealthy()).toBe(false);
+        yield* monque.effects.register("mail", () => Effect.void);
+
+        return "registered";
+      }),
+    );
+
+    const scheduler = yield* MonqueEffect.pipe(
+      Effect.tap((service) =>
+        Effect.gen(function* inspectStartedService() {
+          expect(service).toBe(instances[0]?.effects);
+          expect(yield* service.isHealthy).toBe(true);
+        }),
+      ),
+      Effect.provide(layer),
+    );
+
+    expect(Exit.isFailure(yield* Effect.exit(scheduler.start))).toBe(true);
+  }),
+);
+
+it.effect("releases setup resources and the scheduler when setup fails", () =>
+  Effect.gen(function* failedSetup() {
+    const SetupFailure = Data.TaggedError("SetupFailure");
+    const failure = new SetupFailure(undefined);
+    const actions: string[] = [];
+    const instances: Monque[] = [];
+
+    const collection = fromPartial<Collection>({
+      updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+      findOne: async () => await Promise.resolve(null),
+    });
+
+    const db = fromPartial<Db>({ collection: () => collection });
+
+    const layer = MonqueEffect.layer(
+      db,
+      { skipIndexCreation: true, recoverStaleJobs: false },
+      Effect.fnUntraced(function* setup(monque) {
+        instances.push(monque);
+        yield* Effect.acquireRelease(
+          Effect.sync(() => actions.push("acquire")),
+          () =>
+            Effect.sync(() => {
+              actions.push("release");
+            }),
+        );
+        yield* monque.effects.register("mail", () => Effect.void);
+
+        return yield* failure;
+      }),
+    );
+
+    const recovered = yield* MonqueEffect.pipe(
+      Effect.provide(layer),
+      Effect.catch((error) => Effect.succeed(error)),
+    );
+
+    expect(recovered).toBe(failure);
+    expect(actions).toStrictEqual(["acquire", "release"]);
+    const [instance] = instances;
+    expect(instance).toBeDefined();
+    expect(() => instance?.start()).toThrow("disposed");
+  }),
+);
+
+it.effect("disposes a partially configured scheduler when setup is interrupted", () =>
+  Effect.gen(function* interruptedSetup() {
+    const acquired = yield* Deferred.make<Monque>();
+
+    const collection = fromPartial<Collection>({
+      updateMany: async () => await Promise.resolve(fromPartial<UpdateResult>({})),
+      findOne: async () => await Promise.resolve(null),
+    });
+
+    const db = fromPartial<Db>({ collection: () => collection });
+
+    const layer = MonqueEffect.layer(
+      db,
+      { skipIndexCreation: true, recoverStaleJobs: false },
+      (monque) => Deferred.succeed(acquired, monque).pipe(Effect.andThen(Effect.never)),
+    );
+
+    const fiber = yield* MonqueEffect.pipe(Effect.provide(layer), Effect.forkChild);
+    const monque = yield* Deferred.await(acquired);
+    yield* Fiber.interrupt(fiber);
+    expect(() => {
+      monque.start();
+    }).toThrow("disposed");
   }),
 );
 
@@ -86,32 +194,35 @@ describe("native Workers", () => {
       const db = fromPartial<Db>({ collection: () => collection });
       yield* Effect.scoped(
         Effect.gen(function* scopedWorker() {
-          const monque = yield* Monque.scoped(db, {
-            skipIndexCreation: true,
-            recoverStaleJobs: false,
-            workerConcurrency: 1,
-          });
-
-          monque.on("job:complete", () => {
-            Deferred.doneUnsafe(completed, Effect.void);
-          });
-          yield* monque.effects
-            .register("mail", () => makeMailWorker(actions, started))
-            .pipe(
-              Effect.provideService(Mailer, {
-                send: Effect.sync(() => {
-                  actions.push("send");
-                }),
-              }),
-            );
-          yield* monque.effects.start;
+          const scheduler = yield* MonqueEffect;
           yield* Deferred.await(started);
           expect(actions).toStrictEqual(["acquire"]);
           yield* TestClock.adjust(1000);
           yield* Deferred.await(completed);
           expect(actions).toStrictEqual(["acquire", "send", "release"]);
-          yield* monque.effects.stop;
-        }),
+          yield* scheduler.stop;
+        }).pipe(
+          Effect.provide(
+            MonqueEffect.layer(
+              db,
+              { skipIndexCreation: true, recoverStaleJobs: false, workerConcurrency: 1 },
+              Effect.fnUntraced(function* setup(monque) {
+                monque.on("job:complete", () => {
+                  Deferred.doneUnsafe(completed, Effect.void);
+                });
+                yield* monque.effects.register("mail", () => makeMailWorker(actions, started));
+              }),
+            ).pipe(
+              Layer.provide(
+                Layer.succeed(Mailer, {
+                  send: Effect.sync(() => {
+                    actions.push("send");
+                  }),
+                }),
+              ),
+            ),
+          ),
+        ),
       );
     }),
   );
