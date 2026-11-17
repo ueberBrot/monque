@@ -34,8 +34,8 @@ test("a delayed deletion does not pull the operator away from another job", asyn
   const second = await app.seed({ name: "second-job" });
   const received: PromiseWithResolvers<void> = Promise.withResolvers();
   const release: PromiseWithResolvers<void> = Promise.withResolvers();
-  await page.route(`**/api/v1/jobs/${String(first._id)}`, async (route) => {
-    if (route.request().method() === "DELETE") {
+  await page.route("**/rpc/deleteJob", async (route) => {
+    if (route.request().method() === "POST") {
       received.resolve();
       await release.promise;
     }
@@ -70,8 +70,8 @@ for (const outcome of ["success", "failure"] as const) {
     const second = await app.seed({ name: "second-job" });
     const received: PromiseWithResolvers<void> = Promise.withResolvers();
     const release: PromiseWithResolvers<void> = Promise.withResolvers();
-    await page.route(`**/api/v1/jobs/${String(first._id)}`, async (route) => {
-      if (route.request().method() !== "DELETE") {
+    await page.route("**/rpc/deleteJob", async (route) => {
+      if (route.request().method() !== "POST") {
         await route.continue();
 
         return;
@@ -138,11 +138,11 @@ for (const view of ["detail", "list"] as const) {
     };
 
     await openDelete();
-    const readPath = `/api/v1/jobs${viewPath}`;
-    const jobPath = `/api/v1/jobs/${String(job._id)}`;
+    const readPath = view === "detail" ? "/rpc/job" : "/rpc/jobs";
+    const jobPath = "/rpc/deleteJob";
     let deleteRequests = 0;
     page.on("request", (request) => {
-      if (request.method() === "DELETE" && new URL(request.url()).pathname.endsWith(jobPath)) {
+      if (request.method() === "POST" && new URL(request.url()).pathname.endsWith(jobPath)) {
         deleteRequests += 1;
       }
     });
@@ -151,7 +151,7 @@ for (const view of ["detail", "list"] as const) {
     await page.route(
       (url) => url.pathname.endsWith(readPath),
       async (route) => {
-        if (route.request().method() === "GET") {
+        if (route.request().method() === "POST") {
           receivedRead.resolve();
           await releaseRead.promise;
         }
@@ -166,7 +166,7 @@ for (const view of ["detail", "list"] as const) {
       const failedRead = page.waitForEvent(
         "requestfailed",
         (request) =>
-          request.method() === "GET" && new URL(request.url()).pathname.endsWith(readPath),
+          request.method() === "POST" && new URL(request.url()).pathname.endsWith(readPath),
       );
 
       await context.setOffline(true);
@@ -179,7 +179,7 @@ for (const view of ["detail", "list"] as const) {
       const failedAction = page.waitForEvent(
         "requestfailed",
         (request) =>
-          request.method() === "DELETE" && new URL(request.url()).pathname.endsWith(jobPath),
+          request.method() === "POST" && new URL(request.url()).pathname.endsWith(jobPath),
       );
 
       await page.getByRole("button", { name: "Confirm delete job", exact: true }).click();
@@ -193,7 +193,7 @@ for (const view of ["detail", "list"] as const) {
 
     const refreshed = await page.waitForResponse(
       (response) =>
-        response.request().method() === "GET" &&
+        response.request().method() === "POST" &&
         new URL(response.url()).pathname.endsWith(readPath) &&
         response.ok(),
     );
@@ -236,8 +236,8 @@ test("expiry during confirmation is rejected by the host without deleting the jo
   await page.goto(`${app.origin}/private/dashboard/jobs/${String(job._id)}`);
   await page.getByRole("button", { name: "Delete job", exact: true }).click();
   const resumeReads: PromiseWithResolvers<void> = Promise.withResolvers();
-  await page.route(`**/private/api/v1/jobs/${String(job._id)}`, async (route) => {
-    if (route.request().method() === "GET") {
+  await page.route("**/private/rpc/job", async (route) => {
+    if (route.request().method() === "POST") {
       await resumeReads.promise;
     }
 
@@ -256,7 +256,7 @@ test("expiry during confirmation is rejected by the host without deleting the jo
     session.expiresAt = Date.now() - 1;
 
     const rejected = page.waitForResponse(
-      (response) => response.request().method() === "DELETE" && response.status() === 401,
+      (response) => response.request().method() === "POST" && response.status() === 401,
     );
 
     await page.getByRole("button", { name: "Confirm delete job", exact: true }).click();
@@ -277,8 +277,8 @@ test("repeated cancel and retry actions remain usable while the list keeps polli
   let reads = 0;
   page.on("response", (response) => {
     if (
-      response.request().method() === "GET" &&
-      new URL(response.url()).pathname.endsWith("/api/v1/jobs")
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith("/rpc/jobs")
     ) {
       reads += 1;
     }

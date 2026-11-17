@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 /** Local scheduler identity and effective pause state for a requested scope. */
-export const ProcessingStateDtoSchema = z.strictObject({
-  instanceId: z.string(),
-  name: z.string().optional(),
-  paused: z.boolean(),
-  globallyPaused: z.boolean(),
-});
+export const ProcessingStateDtoSchema = z
+  .strictObject({
+    instanceId: z.string(),
+    name: z.string().optional(),
+    paused: z.boolean(),
+    globallyPaused: z.boolean(),
+  })
+  .meta({ id: "ProcessingState" });
 
 export type ProcessingStateDto = z.infer<typeof ProcessingStateDtoSchema>;
 

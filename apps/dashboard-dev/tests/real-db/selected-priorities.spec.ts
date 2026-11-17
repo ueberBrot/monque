@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { forEachSequential } from "../setup/sequential.js";
 import { expect, test } from "./fixture.js";
 
@@ -43,12 +45,12 @@ test("selected priority confirmation changes only the selected pending Jobs", as
   const response = page.waitForResponse(
     (currentResponse1) =>
       currentResponse1.request().method() === "POST" &&
-      currentResponse1.url().endsWith("/jobs/actions/selected"),
+      currentResponse1.url().endsWith("/rpc/selectedJobActions"),
   );
 
   await confirm.click();
   const awaitedResult3 = await response;
-  expect(await awaitedResult3.json()).toEqual({ count: 2, errors: [] });
+  expect(await awaitedResult3.json()).toEqual({ json: { count: 2, errors: [] } });
   await expect(page.getByText("Job priorities changed", { exact: true })).toBeVisible();
   await forEachSequential([first, second], async (job) => {
     const row = page
@@ -94,11 +96,11 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
   const resumeReads: PromiseWithResolvers<void> = Promise.withResolvers();
   const received: PromiseWithResolvers<void> = Promise.withResolvers();
   const release: PromiseWithResolvers<void> = Promise.withResolvers();
-  await page.route("**/private/api/v1/jobs?*", async (route) => {
+  await page.route("**/private/rpc/jobs", async (route) => {
     await resumeReads.promise;
     await route.continue();
   });
-  await page.route("**/private/api/v1/jobs/actions/selected", async (route) => {
+  await page.route("**/private/rpc/selectedJobActions", async (route) => {
     received.resolve();
     await release.promise;
     await route.continue();
@@ -110,7 +112,7 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
     app.deniedPriorityJobIds.add(denied._id.toHexString());
 
     const response = page.waitForResponse((currentResponse2) =>
-      currentResponse2.url().endsWith("/jobs/actions/selected"),
+      currentResponse2.url().endsWith("/rpc/selectedJobActions"),
     );
 
     await page.getByRole("button", { name: "Confirm priority changes", exact: true }).click();
@@ -120,7 +122,7 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
       .check();
     release.resolve();
     const awaitedResult5 = await response;
-    expect(await awaitedResult5.json()).toEqual({
+    expect(z.object({ json: z.unknown() }).parse(await awaitedResult5.json()).json).toEqual({
       count: 1,
       errors: expect.arrayContaining([
         expect.objectContaining({ jobId: stale._id.toHexString(), status: 409 }),
@@ -168,7 +170,7 @@ test("selected priority reports stale and denied Jobs and preserves failed and n
   ).toBeEnabled();
   await page.waitForResponse(
     (response) =>
-      response.request().method() === "GET" && new URL(response.url()).pathname.endsWith("/jobs"),
+      response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/jobs"),
   );
   await forEachSequential([denied, untouched], async (job) => {
     await expect(

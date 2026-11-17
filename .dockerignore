@@ -9,6 +9,9 @@
 !apps/
 !apps/*/
 !apps/*/package.json
+!examples/
+!examples/*/
+!examples/*/package.json
 **/node_modules
 **/dist
 **/.env*

@@ -18,8 +18,8 @@ export default defineConfig(async ({ mode }) => {
   const { createManagementMiddleware, MANAGEMENT_MOUNT_PATH } =
     await import("./src/management-middleware.js");
 
-  const { createMockManagementOpenApiHandler } = await import("./src/mock/management-server.js");
-  const mockHandler = createMockManagementOpenApiHandler();
+  const { createMockManagementHandler } = await import("./src/mock/management-server.js");
+  const mockHandler = createMockManagementHandler();
   let localDbServer: ReturnType<typeof createLocalDbManagementServer> | undefined;
 
   const startLocalDbServer = async (

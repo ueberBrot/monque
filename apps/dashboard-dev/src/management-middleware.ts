@@ -46,7 +46,10 @@ const createFetchRequest = async (request: Connect.IncomingMessage): Promise<Req
   const path = request.url?.startsWith("/") === true ? request.url : `/${request.url ?? ""}`;
 
   return await Promise.resolve(
-    new Request(`http://dashboard-dev.local${MANAGEMENT_MOUNT_PATH}${path}`, requestInit),
+    new Request(
+      `http://${request.headers.host ?? "dashboard-dev.local"}${MANAGEMENT_MOUNT_PATH}${path}`,
+      requestInit,
+    ),
   );
 };
 

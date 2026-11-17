@@ -1,4 +1,4 @@
-export { createManagementSurface } from "./surface.js";
+export { createManagementSurface, createNativeManagementSurface } from "./surface.js";
 
 export type {
   ManagementAction,

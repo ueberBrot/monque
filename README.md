@@ -32,6 +32,7 @@ or a browser dashboard around the same scheduler.
 | [@monque/management-express](./packages/management-express) | Mount the Management API in an Express application.                                           |
 | [@monque/dashboard](./packages/dashboard)                   | Use the prebuilt browser dashboard assets in a server integration.                            |
 | [@monque/dashboard-express](./packages/dashboard-express)   | Serve the Dashboard from Express without a frontend build.                                    |
+| [@monque/dashboard-effect](./packages/dashboard-effect)     | Serve the Dashboard through Effect HTTP routes.                                               |
 
 For Express, mount both `@monque/management-express` and `@monque/dashboard-express`.
 The first exposes your scheduler; the second serves the UI. Protect both with your
@@ -45,7 +46,7 @@ native Effect Workers in setup, and start processing under one scope. Scope exit
 disposes the scheduler; your application keeps ownership of MongoDB.
 
 See the [Effect guide](https://ueberBrot.github.io/monque/integrations/effect/) for
-dependency injection and Worker examples, or run the [complete Effect host](./apps/effect-host).
+dependency injection and Worker examples, or run the [complete Effect host](./examples/effect-host).
 
 ## Working with jobs
 

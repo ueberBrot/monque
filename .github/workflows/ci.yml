@@ -89,7 +89,7 @@ jobs:
           RUNTIME_CHECKS: ${{ needs.quality.outputs.runtime }}
         run: |
           if [[ "$RUNTIME_CHECKS" == "true" ]]; then
-            vp run --filter './apps/*' --ignore-depends-on build
+            vp run --filter './apps/*' --filter './examples/*' --ignore-depends-on build
           else
             vp run --filter @monque/docs --ignore-depends-on build
           fi
@@ -123,9 +123,16 @@ jobs:
         if: matrix.group == 'frontend'
         run: vp run --filter @monque/dashboard --filter @monque/dashboard-dev --ignore-depends-on --concurrency-limit 1 test
 
+      - name: Install backend browser prerequisites
+        if: matrix.group == 'backend'
+        working-directory: apps/dashboard-dev
+        run: vp exec playwright install --with-deps chromium
+
       - name: Backend tests
         if: matrix.group == 'backend'
-        run: vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
+        run: |
+          vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
+          vp run --filter @monque/effect-host --ignore-depends-on test
 
   consumers:
     name: MongoDB Driver Compatibility
@@ -136,6 +143,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prepare Changesets comparison ref
+        run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
       - name: Download build outputs
@@ -144,7 +155,7 @@ jobs:
           name: build-artifacts
           path: .
       - name: Verify packed packages with MongoDB drivers 6 and 7
-        run: bun scripts/verification/consumer.mts --skip-build
+        run: vp run verify:consumer
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})
@@ -155,7 +166,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        project: [mongo-desktop, mongo-mobile, mongo-desktop-auth, mongo-mobile-auth]
+        project:
+          [
+            mongo-desktop,
+            mongo-mobile,
+            mongo-desktop-auth,
+            mongo-mobile-auth,
+            host-express,
+            host-effect,
+          ]
     services:
       mongodb:
         image: mongodb/mongodb-atlas-local:8.3.2-20260529T125201Z
@@ -180,7 +199,7 @@ jobs:
       - name: Install Chromium
         working-directory: apps/dashboard-dev
         run: vp exec playwright install --with-deps --no-shell chromium
-      - name: Test built dashboard with MongoDB and Express
+      - name: Test built Dashboard with MongoDB and selected host
         working-directory: apps/dashboard-dev
         run: vp exec playwright test --project=${{ matrix.project }}
       - name: Upload browser reports and failure traces

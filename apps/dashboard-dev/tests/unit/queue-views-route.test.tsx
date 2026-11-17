@@ -4,6 +4,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { isString } from "../../../../packages/dashboard/src/lib/type-guards.js";
+import { rpcInput } from "../../../../packages/dashboard/tests/setup/rpc";
 import { createDashboardHarness } from "../setup/dashboard-harness.js";
 
 const renderDashboardAt = (
@@ -73,10 +74,12 @@ describe("queue views route", () => {
 
     it("loads queue detail with summary jobs and a single statistics source", async () => {
       const calls: string[] = [];
+      const inputs: unknown[] = [];
       const mockFetch = createMockManagementFetch({ scenarioId: "pending-jobs" });
       renderDashboardAt("/queue-views/send-email", {
         fetch: async (input, init) => {
           calls.push(input instanceof Request ? input.url : String(input));
+          inputs.push(await rpcInput(input instanceof Request ? input : new Request(input, init)));
 
           return await mockFetch(input, init);
         },
@@ -84,10 +87,10 @@ describe("queue views route", () => {
       await expect(screen.findByRole("heading", { name: "Filtered jobs" })).resolves.toBeInstanceOf(
         HTMLElement,
       );
-      expect(calls.some((url) => url.includes("/jobs/stats"))).toBe(false);
-      expect(calls.some((url) => new URL(url).searchParams.get("view") === "summary")).toBe(true);
-      expect(calls.filter((url) => new URL(url).pathname === "/api/v1/queue-views")).toStrictEqual([
-        "https://dashboard.test/api/v1/queue-views?name=send-email",
+      expect(calls.some((url) => url.includes("/jobStats"))).toBe(false);
+      expect(inputs).toContainEqual(expect.objectContaining({ view: "summary" }));
+      expect(calls.filter((url) => new URL(url).pathname === "/api/rpc/queueViews")).toStrictEqual([
+        "https://dashboard.test/api/rpc/queueViews",
       ]);
     });
 

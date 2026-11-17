@@ -7,7 +7,7 @@ import { createMockManagementFetch } from "../../src/mock/management-server.js";
 
 const createApi = () =>
   createDashboardManagementApi({
-    apiBaseUrl: "/",
+    apiBaseUrl: "/api",
     origin: "https://dashboard.test",
     fetch: createMockManagementFetch(),
   }).client;
@@ -105,7 +105,6 @@ describe("mock pagination", () => {
   ])("rejects malformed cursors instead of returning the first page: %s", async (cursor) => {
     await expect(createApi().jobs({ cursor })).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      status: 400,
     });
   });
 
@@ -121,7 +120,6 @@ describe("mock pagination", () => {
 
       await expect(api.jobs({ ...sort, cursor: first.cursor })).rejects.toMatchObject({
         code: "BAD_REQUEST",
-        status: 400,
       });
     },
   );
@@ -174,7 +172,6 @@ describe("mock pagination", () => {
 
     await expect(createApi().jobs({ cursor })).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      status: 400,
     });
   });
 });

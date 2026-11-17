@@ -20,7 +20,7 @@ const ignoredFiles = [
   "apps/docs/src/content/docs/api*/**",
 ];
 
-const effectTestBlocks = ["it.effect", "it.live", "it.scoped", "it.scopedLive"];
+const effectTestBlocks = ["it.effect", "it.live"];
 const sonarJs = selectJsPlugins(["sonarjs"]);
 
 const vitestPreset: OxlintConfig = {
@@ -37,7 +37,7 @@ const vitestPreset: OxlintConfig = {
         "error",
         {
           additionalTestBlockFunctions: effectTestBlocks,
-          assertFunctionNames: ["expect", "expectJsonResponse"],
+          assertFunctionNames: ["expect", "expectJsonResponse", "assert.*"],
         },
       ],
       "vitest/no-standalone-expect": [
@@ -110,6 +110,15 @@ export default defineConfig({
       "effecttsgo/any-unknown-in-error-context": "off",
     },
     overrides: [
+      {
+        files: [
+          "packages/management-effect/tests/**/*.test.*",
+          "packages/management/tests/unit/native-*.test.ts",
+          "packages/verification/effect-consumer.test.mts",
+        ],
+        // Sonar does not recognize @effect/vitest registrations; Vitest rejects empty suites.
+        rules: { "sonarjs/no-empty-test-file": "off" },
+      },
       {
         files: ["**/tests/**"],
         env: { vitest: true },
@@ -224,6 +233,18 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      "verify:consumer": {
+        command:
+          "vp run --filter @monque/verification --filter @monque/management-effect --filter @monque/dashboard-effect verify:consumer",
+        cache: false,
+      },
+      "lint:effect": {
+        command:
+          "vp run --filter @monque/core --filter @monque/management --filter @monque/management-effect --filter @monque/dashboard-effect lint:effect",
+        cache: false,
+      },
+      benchmark: { command: "vp run @monque/verification#benchmark", cache: false },
+      "test:benchmark": { command: "vp run @monque/verification#test:benchmark", cache: false },
       "release:publish": {
         // Build publishable packages only when Changesets takes its publish path.
         command: "vp run --filter './packages/*' build && vp exec changeset publish",
@@ -258,7 +279,7 @@ export default defineConfig({
     projects: [
       "packages/*/vite.config.ts",
       "apps/dashboard-dev/vite.config.ts",
-      "apps/effect-host/vite.config.ts",
+      "examples/effect-host/vite.config.ts",
       { test: { name: "ci", include: ["scripts/ci/tests/**/*.test.ts"] } },
     ],
   },

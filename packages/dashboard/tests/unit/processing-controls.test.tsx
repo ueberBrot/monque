@@ -7,6 +7,8 @@ import { ProcessingControls } from "@/components/processing-controls";
 import { createDashboardManagementApi } from "@/management-client";
 import { createDashboardQueryClient } from "@/query-client";
 
+import { rpcResponse, rpcInput } from "../setup/rpc";
+
 const renderControls = (
   options: {
     readOnly?: boolean;
@@ -23,12 +25,13 @@ const renderControls = (
 
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
+    const data = await rpcInput(request);
     const url = new URL(request.url);
 
     if (url.pathname.endsWith("/capabilities")) {
-      expect(url.searchParams.get("name")).toBe("email");
+      expect(data?.name).toBe("email");
 
-      return Response.json({
+      return rpcResponse({
         readOnly: options.readOnly ?? false,
         actions: {
           read: true,
@@ -38,20 +41,20 @@ const renderControls = (
       });
     }
 
-    if (request.method === "POST") {
-      requests.push({ pathname: url.pathname, body: await request.json() });
+    if (url.pathname.endsWith("Processing")) {
+      requests.push({ pathname: url.pathname, body: await rpcInput(request) });
 
       if (options.conflict === true) {
-        return Response.json(
+        return rpcResponse(
           { error: "Scheduler instance changed; refresh before retrying" },
           { status: 409 },
         );
       }
 
-      paused = url.pathname.endsWith("/pause");
+      paused = url.pathname.endsWith("/pauseProcessing");
     }
 
-    return Response.json({
+    return rpcResponse({
       paused,
       instanceId: "scheduler-1",
       name: "email",
@@ -81,11 +84,11 @@ describe("processing controls", () => {
     await screen.findByRole("button", { name: "Pause worker" });
     expect(requests).toStrictEqual([
       {
-        pathname: "/api/v1/processing/actions/pause",
+        pathname: "/rpc/pauseProcessing",
         body: { instanceId: "scheduler-1", name: "email" },
       },
       {
-        pathname: "/api/v1/processing/actions/resume",
+        pathname: "/rpc/resumeProcessing",
         body: { instanceId: "scheduler-1", name: "email" },
       },
     ]);

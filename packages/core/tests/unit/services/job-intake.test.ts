@@ -1,6 +1,5 @@
-import { ok } from "node:assert/strict";
 import { createRequire } from "node:module";
-import { it } from "@effect/vitest";
+import { assert, it } from "@effect/vitest";
 import { fromAny, fromPartial } from "@total-typescript/shoehorn";
 import { DateTime, Effect } from "effect";
 import { BSON, MongoBulkWriteError, MongoServerError, ObjectId } from "mongodb";
@@ -68,7 +67,7 @@ describe("Native Job intake", () => {
       const session = fromPartial<ClientSession>({ inTransaction: () => true });
       vi.spyOn(ctx.mockCollection, "insertOne").mockRejectedValueOnce(native);
       const failure = yield* Effect.flip(intake.enqueue("work", {}, { session }));
-      ok(failure instanceof JobPersistenceError);
+      assert.ok(failure instanceof JobPersistenceError);
 
       expect(failure.cause).toBe(native);
       expect(ctx.notifyPendingJob).not.toHaveBeenCalled();
@@ -177,7 +176,7 @@ describe("Native Job intake", () => {
           ]),
         );
 
-        ok(failure instanceof ConnectionError);
+        assert.ok(failure instanceof ConnectionError);
         expect(failure.cause).toBe(native);
         expect({
           result: native.result,

@@ -1,4 +1,5 @@
 import { JobCursorPageDtoSchema } from "@monque/management/contract";
+import { z } from "zod";
 
 import { forEachSequential } from "../setup/sequential.js";
 import { expect, test } from "./fixture.js";
@@ -45,12 +46,19 @@ test("Management and Dashboard retain priorities for retried batches and recurri
   const summaryResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
 
-    return url.pathname.endsWith("/api/v1/jobs") && url.searchParams.get("view") === "summary";
+    return (
+      url.pathname.endsWith("/rpc/jobs") &&
+      response.request().postData()?.includes('"view":"summary"') === true
+    );
   });
 
   await page.goto(`${app.base}/dashboard/jobs`);
   const awaitedResult1 = await summaryResponse;
-  const awaitedResult2 = JobCursorPageDtoSchema.parse(await awaitedResult1.json());
+
+  const awaitedResult2 = z
+    .object({ json: JobCursorPageDtoSchema })
+    .parse(await awaitedResult1.json()).json;
+
   expect(awaitedResult2.jobs).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -89,12 +97,14 @@ test("Management and Dashboard retain priorities for retried batches and recurri
     ] as const,
     async ([job, priority]) => {
       const detailResponse = page.waitForResponse((response) =>
-        new URL(response.url()).pathname.endsWith(`/api/v1/jobs/${String(job._id)}`),
+        new URL(response.url()).pathname.endsWith("/rpc/job"),
       );
 
       await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
       const currentAwaitedResult11 = await detailResponse;
-      expect(await currentAwaitedResult11.json()).toMatchObject({ priority, status: "pending" });
+      expect(await currentAwaitedResult11.json()).toMatchObject({
+        json: { priority, status: "pending" },
+      });
       await expect(
         page
           .getByRole("term")

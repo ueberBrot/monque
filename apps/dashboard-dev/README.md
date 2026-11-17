@@ -73,7 +73,12 @@ MONQUE_DASHBOARD_DEV_LIVE_API_BASE_URL=http://localhost:3000/ops
 ```
 
 Then run `vp run @monque/dashboard-dev#dev` from the root. The development server proxies API requests
-to that URL; do not append `/api/v1`. Actions affect that API's data.
+to that URL; do not append `/api/v1` or `/rpc`. Actions affect that API's data.
+
+The Dashboard sends RPC requests to `/api/rpc`. Live mode forwards them to the
+Management mount's `/rpc` endpoint, including browser Origin headers. Configure
+Management to trust the development origin, such as `http://localhost:3400`,
+including for POST reads.
 
 Automatic refresh is one second in MongoDB mode and ten seconds in mock/live mode.
 Applications using the Express package set their own `pollingIntervalMs`.
@@ -85,6 +90,19 @@ This deletes all data in its MongoDB volumes:
 docker compose -f apps/dashboard-dev/compose.yml down -v
 docker compose -f apps/dashboard-dev/compose.yml up -d --wait
 ```
+
+## Effect host
+
+Run the built Dashboard with the Bun Effect host:
+
+```sh
+MONGO_URI='mongodb://127.0.0.1:27018/?directConnection=true' \
+OPERATOR_PASSWORD=operator-secret VIEWER_PASSWORD=viewer-secret \
+vp run @monque/dashboard-dev#start:effect
+```
+
+Open `http://127.0.0.1:3000/ops/dashboard` and sign in as `operator` or `viewer`.
+See the [Effect host example](../../examples/effect-host/README.md) for configuration.
 
 ## Tests
 
@@ -108,6 +126,5 @@ vp run test:e2e --workers=4
 vp exec playwright show-report
 ```
 
-Projects: `mongo-desktop`, `mongo-mobile`, `mongo-desktop-auth`, and `mongo-mobile-auth`.
-The default is two workers. Reports are in `playwright-report`; failure screenshots and traces
+The default is four workers. Reports are in `playwright-report`; failure screenshots and traces
 are in `test-results`. Both directories are ignored by Git.

@@ -65,6 +65,8 @@ export {
 
 export {
   createManagementRouter,
+  createNativeManagementOperations,
+  createNativeManagementRouter,
   generateManagementOpenApiDocument,
   type ManagementRouter,
 } from "./orpc/index.js";
@@ -81,4 +83,6 @@ export type {
   ManagementSurface,
 } from "./surface/index.js";
 
-export { createManagementSurface } from "./surface/index.js";
+export { createManagementSurface, createNativeManagementSurface } from "./surface/index.js";
+
+export type { ManagementEffects, NativeManagementOptions } from "./native.js";

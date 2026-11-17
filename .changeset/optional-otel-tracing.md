@@ -2,4 +2,4 @@
 "@monque/core": minor
 ---
 
-Add optional OpenTelemetry tracing through `@monque/core/opentelemetry`, using the application's provider. Operation spans inherit the active application parent, and ordinary Workers expose active tracing context for downstream instrumentation. See the OpenTelemetry integration guide for setup and ownership.
+Add optional OpenTelemetry tracing through `@monque/core/opentelemetry` with the application's provider. Spans inherit the active parent. Ordinary Workers expose tracing context. Telemetry marks failed attempts as failures, including when retry scheduling succeeds. See the OpenTelemetry guide for ownership and setup.

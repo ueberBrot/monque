@@ -13,13 +13,12 @@ bun add @monque/management-express @monque/management @monque/core express mongo
 ```
 
 These four dependencies are peers. Requires core 1.15.1 or newer within version 1,
-Management 0.8.x or 0.9.x, and the Express and MongoDB versions listed in
-[package.json](./package.json). To change Job priorities, use core 1.18.0 or newer
-and Management 0.9.x.
+Management 0.12.x, and the Express and MongoDB versions listed in
+[package.json](./package.json). Job priority changes require core 1.18.0 or newer.
 
 ## Mount the API
 
-Use your existing Express app and initialized `Monque` instance:
+Use your Express app and initialized `Monque` instance:
 
 ```typescript
 import { createManagementExpressRouter } from "@monque/management-express";
@@ -27,8 +26,8 @@ import { createManagementExpressRouter } from "@monque/management-express";
 app.use("/ops", createManagementExpressRouter({ monque, readOnly: true }));
 ```
 
-This exposes reads under `/ops/api/v1`, such as `/ops/api/v1/jobs` and
-`/ops/api/v1/queue-views`. `readOnly: true` rejects mutations, including pause and resume.
+The router serves RPC at `/ops/rpc`, HTTP endpoints under `/ops/api/v1`, and
+OpenAPI at `/ops/openapi.json`. `readOnly: true` rejects mutations, including pause and resume.
 Omit it to enable supported actions.
 
 ## Authentication and authorization

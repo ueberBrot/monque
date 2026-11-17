@@ -1,12 +1,12 @@
 # @monque/management
 
 Inspect jobs, read queue counts, and run job actions over HTTP. This package provides
-an HTTP handler, an OpenAPI document, and Zod schemas with TypeScript types.
+RPC and HTTP handlers, an OpenAPI document, and Zod schemas with TypeScript types.
 The route contract is also available to oRPC clients.
 
 Use it with your own HTTP server. Express applications can mount the API with
 `@monque/management-express` and add the browser interface with `@monque/dashboard-express`.
-The package runs on the server; it does not include an oRPC client runtime.
+Effect applications can use [@monque/management-effect](../management-effect).
 
 ## Installation
 
@@ -17,9 +17,8 @@ bun add @monque/management @monque/core mongodb
 `@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
 the scheduler you want to expose.
 
-Requires `@monque/core` 1.15.1 or newer within version 1. Use core 1.18.0 or newer
-to change Job priorities. Older supported core versions expose effective worker policies
-and renewable lease deadlines; the priority action is unavailable.
+Requires `@monque/core` 1.15.1 or newer within version 1.
+Job priority actions require core 1.18.0 or newer.
 
 ## Usage
 
@@ -153,3 +152,28 @@ API errors use this response body:
 ```json
 { "error": "Message" }
 ```
+
+## RPC and HTTP
+
+`createManagementSurface()` creates one router for `rpcHandler` and `openApiHandler`.
+Mount RPC under a distinct `/rpc` path, passing that path as `prefix`:
+
+```ts
+await management.rpcHandler.handle(request, {
+  prefix: "/ops/rpc",
+  context: { managementContext: authenticatedSession },
+});
+```
+
+Both handlers share request protections and policy. Authenticate both mounts.
+RPC errors use the oRPC error format; HTTP errors use `{ error: string }`.
+DTO dates are ISO strings. RPC reads and writes use POST, including browser origin checks.
+Express mounts `/rpc` beneath its Management mount.
+
+## Compatibility
+
+Use Management 0.12.x, Management Express 0.8.x, Dashboard 0.8.x and Dashboard
+Express 0.5.x together. Management Effect requires Management 0.12.x; Dashboard
+adapters include the 0.8.x renderer. Effect HTTP adapters require Effect 4.1.4.
+
+Supported MongoDB drivers: ^6.22.0 || ^7.8.0.

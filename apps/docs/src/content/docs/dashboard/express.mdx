@@ -46,12 +46,13 @@ exposing it to other users.
 | URL                 | Purpose                     |
 | ------------------- | --------------------------- |
 | `/ops/dashboard`    | Dashboard                   |
-| `/ops/api/v1/jobs`  | Job list endpoint           |
+| `/ops/rpc`          | Dashboard RPC endpoint      |
+| `/ops/api/v1/jobs`  | HTTP Job list endpoint      |
 | `/ops/openapi.json` | Management OpenAPI document |
 
-`apiBaseUrl` is the Management router's mount URL, without `/api/v1`. The dashboard's own
-base path comes from its Express mount. Configure these through router options in your
-server code. No dashboard-specific environment variables or browser scripts are required.
+`apiBaseUrl` is the Management mount URL. With `/ops`, the Dashboard sends RPC
+requests to `/ops/rpc`. Its base path comes from the Express mount. Configure both
+through router options in your server code.
 
 ## Start a complete instance
 

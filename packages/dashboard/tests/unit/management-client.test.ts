@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { createDashboardManagementApi } from "@/management-client";
 
+import { rpcResponse } from "../setup/rpc";
+
 describe(createDashboardManagementApi, () => {
   it("rejects an invalid URL before obtaining the fetch implementation", () => {
     expect(() =>
@@ -22,7 +24,7 @@ describe(createDashboardManagementApi, () => {
       origin: "https://dashboard.example",
       fetch: async () =>
         await Promise.resolve(
-          Response.json(
+          rpcResponse(
             { error: "Job state changed." },
             {
               status: 409,
@@ -35,10 +37,43 @@ describe(createDashboardManagementApi, () => {
     await expect(managementApi.client.cancelJob({ params: { id: "job-1" } })).rejects.toMatchObject(
       {
         code: "CONFLICT",
-        status: 409,
         message: "Job state changed.",
       },
     );
+  });
+
+  it("appends RPC beneath a custom mount and preserves URL search parameters", async () => {
+    let url: URL | undefined;
+
+    const api = createDashboardManagementApi({
+      apiBaseUrl: "/custom/management/?tenant=one",
+      origin: "https://dashboard.example",
+      fetch: async (request) => {
+        url = new URL(request instanceof Request ? request.url : String(request));
+
+        return await Promise.resolve(rpcResponse({ status: "ok", scheduler: { healthy: true } }));
+      },
+    });
+
+    await api.client.health();
+    expect(url?.pathname).toBe("/custom/management/rpc/health");
+    expect(url?.searchParams.get("tenant")).toBe("one");
+  });
+
+  it("retains host authentication status when its JSON response is malformed", async () => {
+    const api = createDashboardManagementApi({
+      apiBaseUrl: "/custom/management",
+      origin: "https://dashboard.example",
+      fetch: async () =>
+        await Promise.resolve(
+          new Response("{", {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+    });
+
+    await expect(api.client.health()).rejects.toMatchObject({ response: { status: 401 } });
   });
 
   it("includes browser credentials by default on Management API requests", async () => {
@@ -50,7 +85,7 @@ describe(createDashboardManagementApi, () => {
         capturedCredentials = init?.credentials;
 
         return await Promise.resolve(
-          Response.json(
+          rpcResponse(
             { status: "ok", scheduler: { healthy: true } },
             {
               status: 200,

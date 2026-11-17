@@ -4,6 +4,7 @@
   "typeAware": {
     "projects": [
       "packages/core/tsconfig.json",
+      "packages/verification/tsconfig.json",
       "packages/tsed/tsconfig.json",
       "packages/management/tsconfig.json",
       "packages/management-express/tsconfig.json",
@@ -11,12 +12,14 @@
       "packages/dashboard-express/tsconfig.json",
       "apps/dashboard-dev/tsconfig.json",
       "apps/docs/tsconfig.json",
+      "examples/effect-host/tsconfig.json",
     ],
     "require": "complete",
   },
   // Public source entry points, Starlight config strings, and Renovate's CI entry.
   "entry": [
     "packages/*/src/index.ts",
+    "examples/*/src/main.ts",
     "packages/management/src/contract.ts",
     // Shared form composition API, kept available to dashboard forms.
     "packages/dashboard/src/forms/index.ts",
@@ -33,14 +36,12 @@
   "framework": [
     {
       "name": "monque-packed-consumer-tests",
-      "detection": { "type": "fileExists", "pattern": "scripts/verification/consumer.mts" },
-      "entryPoints": ["scripts/verification/consumer-{app,mongodb,types}.mts"],
+      "detection": { "type": "fileExists", "pattern": "packages/verification/consumer.test.mts" },
+      "entryPoints": [
+        "packages/verification/consumer*.mts",
+        "packages/verification/effect-consumer.test.mts",
+      ],
       "entryPointRole": "test",
-    },
-    {
-      "name": "monque-build-tools",
-      "enablers": ["unplugin-unused"],
-      "toolingDependencies": ["@ai-hero/sandcastle", "unplugin-unused"],
     },
     {
       // Ts.ED FakeResponse imports this compatible cookie version in integration tests.
@@ -123,17 +124,21 @@
         "patterns": [
           "packages/management/src/index.ts",
           "packages/management/src/effects.ts",
+          "packages/management/src/native.ts",
+          "packages/management/src/compatibility.ts",
           "packages/management/src/mappers/**",
           "packages/management/src/surface/**",
           "packages/management/src/orpc/{index,router,openapi,operations}.ts",
         ],
       },
       { "name": "management-express", "patterns": ["packages/management-express/src/**"] },
+      { "name": "management-effect", "patterns": ["packages/management-effect/src/**"] },
       {
         "name": "dashboard",
         "patterns": ["packages/dashboard/src/**", "packages/dashboard/index.html"],
       },
       { "name": "dashboard-express", "patterns": ["packages/dashboard-express/src/**"] },
+      { "name": "dashboard-effect", "patterns": ["packages/dashboard-effect/src/**"] },
     ],
     "rules": [
       { "from": "core", "allow": [] },
@@ -141,12 +146,22 @@
       { "from": "contract", "allow": [] },
       { "from": "management", "allow": ["core", "contract"] },
       { "from": "management-express", "allow": ["core", "management", "contract"] },
+      { "from": "management-effect", "allow": ["management"] },
       { "from": "dashboard", "allow": ["contract"] },
       { "from": "dashboard-express", "allow": ["dashboard"] },
+      { "from": "dashboard-effect", "allow": ["dashboard"] },
     ],
     "coverage": {
       "requireAllFiles": true,
-      "allowUnmatched": ["apps/**", "**/tests/**", "**/*.config.*", "scripts/**", ".sandcastle/**"],
+      "allowUnmatched": [
+        "apps/**",
+        "examples/**",
+        "**/tests/**",
+        "**/*.config.*",
+        "scripts/**",
+        "packages/verification/**",
+        ".sandcastle/**",
+      ],
     },
   },
 }

@@ -1,4 +1,4 @@
-import type { OpenAPI } from "@orpc/openapi";
+import type { OpenAPIV3_1 as OpenAPI } from "@orpc/openapi";
 import { afterEach, describe, expect, vi, it } from "vite-plus/test";
 
 describe("management OpenAPI generation", () => {
@@ -10,13 +10,13 @@ describe("management OpenAPI generation", () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
 
-    const generated: OpenAPI.Document = {
+    const generated: OpenAPI.OpenAPIObject = {
       openapi: "3.1.1",
       info: { title: "Monque Management API", version: "0.0.0" },
       paths: {},
     };
 
-    const gate = Promise.withResolvers<OpenAPI.Document>();
+    const gate = Promise.withResolvers<OpenAPI.OpenAPIObject>();
     const generate = vi.spyOn(OpenAPIGenerator.prototype, "generate").mockReturnValue(gate.promise);
     const { generateManagementOpenApiDocument } = await import("@/index");
 
@@ -40,14 +40,14 @@ describe("management OpenAPI generation", () => {
     vi.resetModules();
     const { OpenAPIGenerator } = await import("@orpc/openapi");
 
-    const generated: OpenAPI.Document = {
+    const generated: OpenAPI.OpenAPIObject = {
       openapi: "3.1.1",
       info: { title: "Monque Management API", version: "0.0.0" },
       paths: {},
     };
 
     const failure = new Error("OpenAPI generation failed");
-    const gate = Promise.withResolvers<OpenAPI.Document>();
+    const gate = Promise.withResolvers<OpenAPI.OpenAPIObject>();
 
     const generate = vi
       .spyOn(OpenAPIGenerator.prototype, "generate")
@@ -85,7 +85,7 @@ describe("management OpenAPI generation", () => {
       vi.resetModules();
       const { OpenAPIGenerator } = await import("@orpc/openapi");
 
-      const generated: OpenAPI.Document = {
+      const generated: OpenAPI.OpenAPIObject = {
         openapi: "3.1.1",
         info: { title: "Monque Management API", version: "0.0.0" },
         paths: {},

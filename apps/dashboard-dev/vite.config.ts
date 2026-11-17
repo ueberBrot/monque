@@ -4,6 +4,10 @@ import { defineConfig, lazyPlugins, loadConfigFromFile, loadEnv } from "vite-plu
 
 import { readDashboardDevServerEnvironment } from "./src/environment.js";
 
+const expressBuilds = ["@monque/dashboard-express#build", "@monque/management-express#build"];
+const effectBuilds = ["@monque/dashboard-effect#build", "@monque/management-effect#build"];
+const hostBuilds = [...expressBuilds, ...effectBuilds];
+
 const config = defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "MONQUE_DASHBOARD_");
   const { environment, liveApiBaseUrl } = readDashboardDevServerEnvironment(env);
@@ -74,7 +78,23 @@ const config = defineConfig(({ mode }) => {
         },
         "test:e2e": {
           command: "playwright test",
-          dependsOn: ["@monque/dashboard-express#build", "@monque/management-express#build"],
+          dependsOn: hostBuilds,
+          cache: false,
+        },
+        "start:effect": {
+          command: "bun ../../examples/effect-host/src/main.ts",
+          dependsOn: effectBuilds,
+          cache: false,
+        },
+        "test:hosts": {
+          command: "playwright test --project=host-express --project=host-effect",
+          dependsOn: hostBuilds,
+          cache: false,
+        },
+        "test:db": {
+          command:
+            "playwright test --project=mongo-desktop --project=mongo-mobile --project=mongo-desktop-auth --project=mongo-mobile-auth",
+          dependsOn: expressBuilds,
           cache: false,
         },
         clean: {
@@ -114,6 +134,7 @@ const config = defineConfig(({ mode }) => {
               "/api": {
                 changeOrigin: true,
                 target: liveApiBaseUrl,
+                rewrite: (path) => path.replace(/^\/api(?=\/rpc(?:\/|$))/u, ""),
               },
             },
           }

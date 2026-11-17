@@ -8,7 +8,7 @@ const createDashboardRuntimeConfig = (
   environment: DashboardDevEnvironment,
 ): DashboardRuntimeConfig =>
   parseDashboardRuntimeConfig({
-    apiBaseUrl: "/",
+    apiBaseUrl: "/api",
     basePath: "/",
     pollingIntervalMs: environment.mode === "db" ? 1000 : 10_000,
   });

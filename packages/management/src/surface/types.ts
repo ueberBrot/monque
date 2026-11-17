@@ -8,6 +8,7 @@ import type {
   QueueStats,
 } from "@monque/core";
 import type { OpenAPIHandler } from "@orpc/openapi/fetch";
+import type { RPCHandler } from "@orpc/server/fetch";
 
 export type { CapabilitiesDto, CapabilityActionsDto } from "../schemas/index.js";
 
@@ -146,15 +147,31 @@ export interface ManagementOptions<TContext = unknown> {
  * is passed to authorization and payload serialization hooks.
  */
 // oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- The public oRPC context permits arbitrary framework-owned properties.
-export type ManagementOpenApiContext<TContext = unknown> = Record<PropertyKey, unknown> & {
+export type ManagementOpenApiContext<TContext = unknown> = Record<string, unknown> & {
   managementContext?: TContext;
 };
 
 /**
  * Framework-neutral management surface.
  *
- * Call `openApiHandler.handle(request, options)` from your HTTP framework adapter.
+ * Call `openApiHandler.handle(request, options)` for public HTTP or
+ * `rpcHandler.handle(request, { prefix, ...options })` for RPC.
  */
 export interface ManagementSurface<TContext = unknown> {
-  readonly openApiHandler: OpenAPIHandler<ManagementOpenApiContext<TContext>>;
+  readonly rpcHandler: Omit<RPCHandler<ManagementOpenApiContext<TContext>>, "handle"> & {
+    // oxlint-disable-next-line typescript/method-signature-style -- Preserve public handler method bivariance.
+    handle(
+      request: Request,
+      options?: Partial<Parameters<RPCHandler<ManagementOpenApiContext<TContext>>["handle"]>[1]>,
+    ): ReturnType<RPCHandler<ManagementOpenApiContext<TContext>>["handle"]>;
+  };
+  readonly openApiHandler: Omit<OpenAPIHandler<ManagementOpenApiContext<TContext>>, "handle"> & {
+    // oxlint-disable-next-line typescript/method-signature-style -- Preserve the public handler method bivariance for existing custom adapters.
+    handle(
+      request: Request,
+      options?: Partial<
+        Parameters<OpenAPIHandler<ManagementOpenApiContext<TContext>>["handle"]>[1]
+      >,
+    ): ReturnType<OpenAPIHandler<ManagementOpenApiContext<TContext>>["handle"]>;
+  };
 }

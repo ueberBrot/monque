@@ -1,4 +1,4 @@
-import { Effect, Fiber } from "effect";
+import { Effect } from "effect";
 
 export const attempt = function attempt<A>(operation: () => A): Effect.Effect<A, unknown> {
   return Effect.try({
@@ -16,13 +16,6 @@ export const fromPromise = function fromPromise<A>(
   });
 };
 
-export const concurrently = Effect.fnUntraced(function* concurrently<A, E>(
-  operations: Iterable<Effect.Effect<A, E>>,
-) {
-  // oxlint-disable-next-line unicorn/no-array-for-each, unicorn/no-array-method-this-argument -- Effect.forEach traverses Effects, not an Array callback.
-  const fibers = yield* Effect.forEach(operations, (operation) =>
-    Effect.forkDetach(operation, { startImmediately: true }),
-  );
-
-  return yield* Fiber.joinAll(fibers);
-});
+/** Parallel request work remains owned by the calling fiber. */
+export const concurrently = <A, E, R>(operations: Iterable<Effect.Effect<A, E, R>>) =>
+  Effect.all(operations, { concurrency: "unbounded" });

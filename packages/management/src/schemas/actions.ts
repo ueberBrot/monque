@@ -14,7 +14,8 @@ export const JobSelectorDtoSchema = z
     olderThan: z.iso.datetime().optional(),
     newerThan: z.iso.datetime().optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "JobSelector" });
 
 /** Bulk job selector accepted by management mutation endpoints. */
 export type JobSelectorDto = z.infer<typeof JobSelectorDtoSchema>;
@@ -37,7 +38,8 @@ export const BulkActionResultDtoSchema = z
     count: z.number().int().nonnegative(),
     errors: z.array(BulkActionErrorDtoSchema),
   })
-  .strict();
+  .strict()
+  .meta({ id: "BulkActionResult" });
 
 /** Result returned from bulk cancel, retry, and delete actions. */
 export type BulkActionResultDto = z.infer<typeof BulkActionResultDtoSchema>;
@@ -47,7 +49,8 @@ export const DeleteJobDtoSchema = z
   .object({
     deleted: z.literal(true),
   })
-  .strict();
+  .strict()
+  .meta({ id: "DeleteJob" });
 
 /** Response body returned after a successful single-job delete. */
 export type DeleteJobDto = z.infer<typeof DeleteJobDtoSchema>;
@@ -57,7 +60,8 @@ export const RescheduleJobRequestDtoSchema = z
   .object({
     nextRunAt: z.iso.datetime(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "RescheduleJobRequest" });
 
 /** Request body for rescheduling a job. */
 export type RescheduleJobRequestDto = z.infer<typeof RescheduleJobRequestDtoSchema>;
@@ -76,9 +80,11 @@ export const RescheduleJobInputDtoSchema = z
 export type RescheduleJobInputDto = z.infer<typeof RescheduleJobInputDtoSchema>;
 
 /** Request body for changing a pending Job's priority. */
-export const SetJobPriorityRequestDtoSchema = z.strictObject({
-  priority: JobDtoSchema.shape.priority,
-});
+export const SetJobPriorityRequestDtoSchema = z
+  .strictObject({
+    priority: JobDtoSchema.shape.priority,
+  })
+  .meta({ id: "SetJobPriorityRequest" });
 
 export type SetJobPriorityRequestDto = z.infer<typeof SetJobPriorityRequestDtoSchema>;
 
@@ -97,7 +103,8 @@ export const ManagementErrorDtoSchema = z
   .object({
     error: z.string(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "ManagementError" });
 
 /** Standard management error response body. */
 export type ManagementErrorDto = z.infer<typeof ManagementErrorDtoSchema>;

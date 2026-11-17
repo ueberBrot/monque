@@ -88,6 +88,73 @@ const mountErrorJson = function mountErrorJson(app: Express): void {
 };
 
 describe("Express Management Adapter", () => {
+  it.each(["HTTP", "RPC"] as const)(
+    "applies host authentication and request context to %s",
+    async (transport) => {
+      const app = express();
+      app.use(
+        "/custom",
+        (req, res, next) => {
+          if (req.get("x-session") !== "operator") {
+            res.status(401).json({ error: "Sign in required" });
+
+            return;
+          }
+
+          next();
+        },
+        createManagementExpressRouter({
+          monque: createManagementMonque(),
+          context: ({ req }) => req.get("x-session"),
+          authorize: ({ context }) => context === "operator",
+        }),
+      );
+
+      const send = () =>
+        transport === "RPC"
+          ? request(app).post("/custom/rpc/jobs").send({ json: {} })
+          : request(app).get("/custom/api/v1/jobs");
+
+      await send().expect(401, { error: "Sign in required" });
+      const response = await send().set("x-session", "operator").expect(200);
+      expect(response.body).toMatchObject(
+        transport === "RPC" ? { json: { jobs: [] } } : { jobs: [] },
+      );
+    },
+  );
+
+  it.each(["deny", "throw", "reject"] as const)(
+    "preserves separate HTTP/RPC envelopes for %s authorization",
+    async (mode) => {
+      const app = createManagementApp({
+        monque: createManagementMonque(),
+        context: () => "operator",
+        authorize: (): boolean | Promise<boolean> => {
+          if (mode === "throw") {
+            throw new Error("Private diagnostic");
+          }
+
+          if (mode === "reject") {
+            return Promise.reject(new Error("Private diagnostic"));
+          }
+
+          return false;
+        },
+      });
+
+      const status = mode === "deny" ? 403 : 500;
+      const http = await request(app).get("/monque/api/v1/jobs").expect(status);
+      expect(http.body).toStrictEqual({
+        error: mode === "deny" ? "Read access denied" : "Internal server error",
+      });
+      const rpc = await request(app).post("/monque/rpc/jobs").send({ json: {} }).expect(status);
+      expect(rpc.body).toMatchObject({
+        json: { code: mode === "deny" ? "FORBIDDEN" : "INTERNAL_SERVER_ERROR" },
+      });
+      expect(JSON.stringify(rpc.body)).not.toContain("Private diagnostic");
+    },
+  );
+
   it("rejects sibling-origin forms carrying an authenticated operator cookie", async () => {
     const deleteJobs = vi
       .fn<NonNullable<ManagementMonque["deleteJobs"]>>()

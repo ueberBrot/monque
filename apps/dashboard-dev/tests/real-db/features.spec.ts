@@ -585,8 +585,8 @@ test("copied filter and cursor URL opens the same results in a fresh browser ses
   isMobile,
 }) => {
   // Keep the previous page visible long enough to exercise placeholder-data handling.
-  await page.route("**/api/v1/jobs?*", async (route) => {
-    if (new URL(route.request().url()).searchParams.has("cursor")) {
+  await page.route("**/rpc/jobs", async (route) => {
+    if (route.request().postData()?.includes('"cursor"') === true) {
       await setTimeout(800);
     }
 

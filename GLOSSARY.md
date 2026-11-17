@@ -24,11 +24,13 @@ requesting public Monque management operations.
 _Avoid_: dashboard API, agnostic API
 
 **Management Adapter** — framework-specific package that exposes the Management Surface
-through a server integration.
+within a host application. It exposes the Surface's operations and policy; the host
+owns authentication and the Scheduler Instance.
 _Avoid_: dashboard plugin
 
-**Management Route Map** — versioned HTTP contract implemented as an oRPC router and used
-by Management Adapters, OpenAPI generation, and Dashboard clients.
+**Management Route Map** — shared oRPC contract and router exposed through versioned
+HTTP endpoints and RPC procedures. Adapters mount both transports. The Dashboard uses
+RPC; external HTTP clients use OpenAPI.
 _Avoid_: dashboard routes, adapter routes
 
 **Dashboard** — bundled operator UI for inspecting Queue Views and operating Jobs through

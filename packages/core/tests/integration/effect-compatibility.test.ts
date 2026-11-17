@@ -1,5 +1,4 @@
-import { ok } from "node:assert/strict";
-import { it as effectIt } from "@effect/vitest";
+import { assert, it as effectIt } from "@effect/vitest";
 import { Context, DateTime, Effect, Layer, Random } from "effect";
 import { TestClock } from "effect/testing";
 import { Binary, Decimal128, MongoBulkWriteError, ObjectId } from "mongodb";
@@ -233,6 +232,12 @@ describe("Promise worker compatibility", () => {
   });
 });
 
+const readServerTime = (database: Db) =>
+  Effect.promise(
+    async () =>
+      z.object({ localTime: z.date() }).parse(await database.command({ hello: 1 })).localTime,
+  );
+
 const ownershipOptions = {
   heartbeatInterval: 1000,
   lockTimeout: 30_000,
@@ -402,8 +407,12 @@ describe("ownership with controlled Effect services", () => {
         const store = yield* JobOwnership;
         const reads = yield* JobPersistence;
         yield* TestClock.setTime(Date.UTC(2099, 0, 1));
-        const before = Date.now();
+
+        // Docker’s MongoDB clock may differ from the host wall clock. Bound server
+        // timestamps with the server itself, independently of the supplied Effect clock.
+        const before = yield* readServerTime(db);
         const claimed = yield* store.claimNext("work");
+        const after = yield* readServerTime(db);
 
         if (claimed?.claimId === undefined || !claimed.lockedAt || !claimed.leaseExpiresAt) {
           throw new Error("Expected a renewable Claim");
@@ -413,7 +422,8 @@ describe("ownership with controlled Effect services", () => {
           status: claimed.status,
           instance: claimed.claimedBy,
           usesServerTime:
-            claimed.lockedAt.getTime() >= before && claimed.lockedAt.getTime() <= Date.now(),
+            claimed.lockedAt.getTime() >= before.getTime() &&
+            claimed.lockedAt.getTime() <= after.getTime(),
           duration: claimed.leaseExpiresAt.getTime() - claimed.lockedAt.getTime(),
         }).toStrictEqual({
           status: JobStatus.PROCESSING,
@@ -425,7 +435,7 @@ describe("ownership with controlled Effect services", () => {
         yield* store.updateOwnedHeartbeats([claimed.claimId]);
         const renewed = yield* reads.getJob(pending._id);
         expect({
-          heartbeatUsesServerTime: (renewed?.lastHeartbeat?.getTime() ?? 0) >= before,
+          heartbeatUsesServerTime: (renewed?.lastHeartbeat?.getTime() ?? 0) >= before.getTime(),
           renewedDeadline:
             (renewed?.leaseExpiresAt?.getTime() ?? 0) >= claimed.leaseExpiresAt.getTime(),
         }).toStrictEqual({ heartbeatUsesServerTime: true, renewedDeadline: true });
@@ -728,8 +738,8 @@ describe("native intake with controlled Effect time", () => {
           ]),
         );
 
-        ok(failure instanceof ConnectionError);
-        ok(failure.cause instanceof MongoBulkWriteError);
+        assert.ok(failure instanceof ConnectionError);
+        assert.ok(failure.cause instanceof MongoBulkWriteError);
 
         expect({
           indices: failure.cause.result.getWriteErrors().map((error) => error.index),
@@ -771,8 +781,8 @@ describe("native intake with controlled Effect time", () => {
           ]),
         );
 
-        ok(failure instanceof ConnectionError);
-        ok(failure.cause instanceof MongoBulkWriteError);
+        assert.ok(failure instanceof ConnectionError);
+        assert.ok(failure.cause instanceof MongoBulkWriteError);
         expect({
           indices: failure.cause.result.getWriteErrors().map((error) => error.index),
           inserted: failure.cause.result.upsertedCount,

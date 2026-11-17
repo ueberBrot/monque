@@ -7,7 +7,7 @@ for (const view of ["queue-views", "queue-views/email", "jobs", "job-detail", "h
     const { promise: pending, resolve: release }: PromiseWithResolvers<void> =
       Promise.withResolvers();
 
-    await page.route("**/api/v1/**", async (request) => {
+    await page.route("**/rpc/**", async (request) => {
       await pending;
       await request.continue();
     });

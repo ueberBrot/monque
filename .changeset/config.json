@@ -2,7 +2,10 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
   "changelog": [
     "@changesets/changelog-github",
-    { "repo": "ueberbrot/monque", "disableThanks": true }
+    {
+      "repo": "ueberbrot/monque",
+      "disableThanks": true
+    }
   ],
   "commit": false,
   "fixed": [],
@@ -12,7 +15,7 @@
   "updateInternalDependencies": "patch",
   "ignore": ["@monque/dashboard-dev"],
   "privatePackages": {
-    "version": true,
+    "version": false,
     "tag": false
   },
   "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {

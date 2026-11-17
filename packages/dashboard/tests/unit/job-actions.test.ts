@@ -6,6 +6,8 @@ import { runJobActions } from "@/features/jobs/job-actions";
 import { createDashboardManagementApi } from "@/management-client";
 import { createDashboardQueryClient } from "@/query-client";
 
+import { rpcResponse, rpcInput } from "../setup/rpc";
+
 describe(runJobActions, () => {
   it("stores the returned job after a single selected job is retried", async () => {
     const job: JobDto = {
@@ -27,7 +29,7 @@ describe(runJobActions, () => {
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
-      fetch: async () => await Promise.resolve(Response.json(job)),
+      fetch: async () => await Promise.resolve(rpcResponse(job)),
     });
 
     const client = createDashboardQueryClient();
@@ -49,12 +51,12 @@ describe(runJobActions, () => {
       "000000000000000000000003",
     ];
 
-    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
-      expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
-      await expect(request.json()).resolves.toStrictEqual({ action: "retry", ids });
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      expect(new URL(request.url).pathname).toBe("/rpc/selectedJobActions");
+      await expect(rpcInput(request)).resolves.toStrictEqual({ action: "retry", ids });
 
-      return Response.json({
+      return rpcResponse({
         count: 1,
         errors: [
           { jobId: ids[2], error: "Denied", status: 403 },
@@ -78,7 +80,7 @@ describe(runJobActions, () => {
     await expect(mutation.execute({ action: "retry", jobIds: ids })).resolves.toMatchObject({
       count: 1,
       failed: [ids[1], ids[2]],
-      firstError: { status: 409 },
+      firstError: { code: "CONFLICT" },
       authorizationChanged: true,
     });
     expect(fetch).toHaveBeenCalledOnce();
@@ -93,16 +95,16 @@ describe(runJobActions, () => {
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
-      fetch: async (input) => {
-        const request = input instanceof Request ? input : new Request(input);
-        expect(new URL(request.url).pathname).toBe("/api/v1/jobs/actions/selected");
-        await expect(request.json()).resolves.toStrictEqual({
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        expect(new URL(request.url).pathname).toBe("/rpc/selectedJobActions");
+        await expect(rpcInput(request)).resolves.toStrictEqual({
           ids,
           action: "priority",
           priority: -8,
         });
 
-        return Response.json({
+        return rpcResponse({
           count: 1,
           errors: [{ jobId: ids[1], error: "Job is processing", status: 409 }],
         });
@@ -114,7 +116,7 @@ describe(runJobActions, () => {
     ).resolves.toMatchObject({
       count: 1,
       failed: [ids[1]],
-      firstError: { status: 409, message: "Job is processing" },
+      firstError: { code: "CONFLICT", message: "Job is processing" },
     });
   });
 

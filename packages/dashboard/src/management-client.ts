@@ -1,16 +1,13 @@
-import { managementContract } from "@monque/management/contract";
 import type { ManagementContract } from "@monque/management/contract";
-import { createORPCClient, ORPCError } from "@orpc/client";
-import { getMalformedResponseErrorCode } from "@orpc/client/standard";
-import type { ContractRouterClient } from "@orpc/contract";
-import type { JsonifiedClient } from "@orpc/openapi-client";
-import { OpenAPILink } from "@orpc/openapi-client/fetch";
+import { createORPCClient, ResponseError } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { RouterContractClient } from "@orpc/contract";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { z } from "zod";
 
 import type { DashboardRuntimeConfig } from "./runtime-config.js";
 
-type DashboardManagementClient = JsonifiedClient<ContractRouterClient<ManagementContract>>;
+type DashboardManagementClient = RouterContractClient<ManagementContract>;
 
 type DashboardManagementORPC = ReturnType<
   typeof createTanstackQueryUtils<DashboardManagementClient>
@@ -33,20 +30,45 @@ const createDashboardManagementApi = (
   const url = new URL(apiBaseUrl, origin ?? window.location.origin).toString();
   const fetchImplementation = options.fetch ?? globalThis.fetch.bind(globalThis);
 
-  const link = new OpenAPILink(managementContract, {
-    url,
-    fetch: async (request, init) =>
-      await Promise.resolve(fetchImplementation(request, { ...init, credentials: "include" })),
-    customErrorResponseBodyDecoder: (body, response) => {
-      const parsed = z.object({ error: z.string() }).safeParse(body);
+  const base = new URL(url);
+  base.pathname = `${base.pathname.replace(/\/$/u, "")}/rpc`;
 
-      return parsed.success
-        ? new ORPCError(getMalformedResponseErrorCode(response.status), {
-            status: response.status,
-            message: parsed.data.error,
-            data: body,
-          })
-        : undefined;
+  const link = new RPCLink({
+    origin: base.origin,
+    url: `/${base.pathname.replace(/^\//u, "")}${base.search}${base.hash}`,
+    fetch: async (requestUrl, init) => {
+      const response = await fetchImplementation(requestUrl, {
+        ...init,
+        credentials: "include",
+      });
+
+      // Host authentication middleware may reject before the RPC handler is reached.
+      if (
+        !response.ok &&
+        response.headers.get("content-type")?.includes("application/json") === true
+      ) {
+        const body: unknown = await response
+          .clone()
+          .json()
+          .catch(() => null);
+
+        const resolved = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers),
+          body,
+        };
+
+        const parsed = z.object({ error: z.string() }).safeParse(resolved.body);
+
+        if (parsed.success || body === null) {
+          throw new ResponseError({
+            message: parsed.success ? parsed.data.error : undefined,
+            response: resolved,
+          });
+        }
+      }
+
+      return response;
     },
   });
 

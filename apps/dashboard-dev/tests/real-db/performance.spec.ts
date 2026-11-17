@@ -13,16 +13,20 @@ test("listings omit payloads and queue detail avoids a second statistics request
   page.on("request", (request) => requests.push(request.url()));
 
   const listing = page.waitForResponse((response) =>
-    new URL(response.url()).pathname.endsWith("/api/v1/jobs"),
+    new URL(response.url()).pathname.endsWith("/rpc/jobs"),
   );
 
   await page.goto(`${app.base}/dashboard/queue-views/${job.name}`);
   const response = await listing;
-  expect(new URL(response.url()).searchParams.get("view")).toBe("summary");
-  const awaitedResult1 = JobCursorPageDtoSchema.parse(await response.json());
+  expect(response.request().postData()).toContain('"view":"summary"');
+
+  const awaitedResult1 = z
+    .object({ json: JobCursorPageDtoSchema })
+    .parse(await response.json()).json;
+
   expect(awaitedResult1.jobs[0]?.payload).toBeNull();
   await expect(page.locator("tbody tr")).toHaveCount(1);
-  expect(requests.some((url) => url.includes("/jobs/stats"))).toBe(false);
+  expect(requests.some((url) => url.includes("/rpc/jobStats"))).toBe(false);
   const detail = await page.request.get(`${app.base}/api/v1/jobs/${String(job._id)}`);
   const awaitedResult2 = JobDtoSchema.parse(await detail.json());
   expect(z.object({ content: z.string() }).parse(awaitedResult2.payload).content).toHaveLength(

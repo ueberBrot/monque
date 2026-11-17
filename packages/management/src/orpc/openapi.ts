@@ -1,10 +1,9 @@
 import { OpenAPIGenerator } from "@orpc/openapi";
-import type { OpenAPI } from "@orpc/openapi";
-import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
+import type { OpenAPIV3_1 as OpenAPI } from "@orpc/openapi";
+import { ZodToJsonSchemaConverter } from "@orpc/zod";
 import { Duration, Effect, Exit } from "effect";
 
 import { attempt, fromPromise } from "../effects.js";
-import { ManagementOpenApiComponentSchemas } from "../schemas/registry.js";
 import { managementContract } from "./contract.js";
 
 declare const __MONQUE_MANAGEMENT_PACKAGE_VERSION__: string;
@@ -17,21 +16,20 @@ const MANAGEMENT_OPENAPI_VERSION =
 
 const generateManagementOpenApi = Effect.fnUntraced(function* generateManagementOpenApi() {
   const generator = yield* attempt(
-    () =>
-      new OpenAPIGenerator({
-        schemaConverters: [new ZodToJsonSchemaConverter()],
-      }),
+    () => new OpenAPIGenerator({ converters: [new ZodToJsonSchemaConverter()] }),
   );
 
   return yield* fromPromise(
     async () =>
       await generator.generate(managementContract, {
-        info: {
-          title: "Monque Management API",
-          version: MANAGEMENT_OPENAPI_VERSION,
+        version: "3.1.1",
+        base: {
+          info: {
+            title: "Monque Management API",
+            version: MANAGEMENT_OPENAPI_VERSION,
+          },
         },
-        customErrorResponseBodySchema: () => ({ $ref: "#/components/schemas/ManagementError" }),
-        commonSchemas: ManagementOpenApiComponentSchemas,
+        errorResponseBodySchema: () => ({ $ref: "#/components/schemas/ManagementError" }),
       }),
   );
 });
@@ -49,6 +47,6 @@ const cachedManagementOpenApi = Effect.runSync(
  * at runtime when the configured scheduler facade does not support them.
  */
 export const generateManagementOpenApiDocument =
-  async function generateManagementOpenApiDocument(): Promise<OpenAPI.Document> {
+  async function generateManagementOpenApiDocument(): Promise<OpenAPI.OpenAPIObject> {
     return await Effect.runPromise(cachedManagementOpenApi);
   };

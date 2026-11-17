@@ -55,3 +55,6 @@ playwright-report*/
 test-results*/
 blob-report/
 playwright/.cache/
+
+# Declaration sidecar emitted when package declaration checks traverse the shared verifier
+/scripts/verification/pack-release.d.mts
