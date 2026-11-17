@@ -2,17 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { z } from "zod";
 
 import { createDashboardManagementApi } from "@/management-client";
+import { readManagementError } from "@/management-errors";
 
 import { createMockManagementFetch } from "../../src/mock/management-server.js";
 import * as scenarioCatalog from "../../src/mock/scenario-catalog.js";
 
 const RejectedRequestSchema = z.object({
   status: z.literal("rejected"),
-  reason: z.object({ status: z.number() }),
+  reason: z.unknown(),
 });
 
 const getRejectedStatus = (outcome: Parameters<typeof RejectedRequestSchema.parse>[0]): number =>
-  RejectedRequestSchema.parse(outcome).reason.status;
+  z.number().parse(readManagementError(RejectedRequestSchema.parse(outcome).reason).status);
 
 describe("mock management fetch", () => {
   afterEach(() => {

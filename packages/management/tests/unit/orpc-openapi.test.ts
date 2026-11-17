@@ -95,7 +95,8 @@ describe("oRPC Management OpenAPI contract", () => {
     const job = document.components?.schemas?.["Job"];
     expect(job).toMatchObject({ properties: { timezone: { type: "string" } } });
 
-    if (!job || !("required" in job)) {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- OpenAPI 3.1 schemas may be booleans; narrow to an object before inspecting required fields.
+    if (job === undefined || typeof job !== "object" || !("required" in job)) {
       throw new Error("Expected the Job object schema");
     }
 
@@ -397,7 +398,7 @@ describe("oRPC Management OpenAPI contract", () => {
         },
       });
 
-      for (const status of ["400", "403", "409", "500"]) {
+      for (const status of ["400", "403", "409", "500"] as const) {
         expect(operation?.responses?.[status]).toMatchObject({
           content: {
             "application/json": {
@@ -479,7 +480,7 @@ describe("oRPC Management OpenAPI contract", () => {
         },
       });
 
-      for (const status of ["400", "403", "404", "409", "500"]) {
+      for (const status of ["400", "403", "404", "409", "500"] as const) {
         expect(operation?.responses?.[status]).toMatchObject({
           content: {
             "application/json": {
@@ -522,7 +523,7 @@ describe("oRPC Management OpenAPI contract", () => {
       },
     });
 
-    for (const status of ["400", "403", "404", "409", "500"]) {
+    for (const status of ["400", "403", "404", "409", "500"] as const) {
       expect(deleteResponses?.[status]).toMatchObject({
         content: {
           "application/json": {

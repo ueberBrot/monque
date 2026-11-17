@@ -1,4 +1,5 @@
 import { oc } from "@orpc/contract";
+import { openapi } from "@orpc/openapi";
 
 import {
   BulkActionResultDtoSchema,
@@ -61,196 +62,232 @@ const SingleJobActionErrors = {
  */
 export const managementContract = {
   processingState: oc
-    .route({
-      method: "GET",
-      path: "/api/v1/processing",
-      operationId: "getProcessingState",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        method: "GET",
+        path: "/api/v1/processing",
+        operationId: "getProcessingState",
+        successStatus: 200,
+      }),
+    )
     .input(ProcessingQueryDtoSchema.optional())
     .errors(ManagementMutationErrors)
     .output(ProcessingStateDtoSchema),
   pauseProcessing: oc
-    .route({
-      method: "POST",
-      path: "/api/v1/processing/actions/pause",
-      operationId: "pauseProcessing",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        method: "POST",
+        path: "/api/v1/processing/actions/pause",
+        operationId: "pauseProcessing",
+        successStatus: 200,
+      }),
+    )
     .input(ProcessingActionDtoSchema)
     .errors(ManagementMutationErrors)
     .output(ProcessingStateDtoSchema),
   resumeProcessing: oc
-    .route({
-      method: "POST",
-      path: "/api/v1/processing/actions/resume",
-      operationId: "resumeProcessing",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        method: "POST",
+        path: "/api/v1/processing/actions/resume",
+        operationId: "resumeProcessing",
+        successStatus: 200,
+      }),
+    )
     .input(ProcessingActionDtoSchema)
     .errors(ManagementMutationErrors)
     .output(ProcessingStateDtoSchema),
   selectedJobActions: oc
-    .route({
-      method: "POST",
-      path: "/api/v1/jobs/actions/selected",
-      operationId: "selectedJobActions",
-      successStatus: 200,
-      successDescription: "Per-job action outcomes",
-    })
+    .meta(
+      openapi({
+        method: "POST",
+        path: "/api/v1/jobs/actions/selected",
+        operationId: "selectedJobActions",
+        successStatus: 200,
+        successDescription: "Per-job action outcomes",
+      }),
+    )
     .input(SelectedJobActionsDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),
   health: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/health",
-      operationId: "getSchedulerHealth",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/health",
+        operationId: "getSchedulerHealth",
+        successStatus: 200,
+      }),
+    )
     .output(SchedulerHealthDtoSchema),
   capabilities: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/capabilities",
-      operationId: "getCapabilities",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/capabilities",
+        operationId: "getCapabilities",
+        successStatus: 200,
+      }),
+    )
     .input(ProcessingQueryDtoSchema.optional())
     .output(CapabilitiesDtoSchema),
   queueViews: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/queue-views",
-      operationId: "listQueueViews",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/queue-views",
+        operationId: "listQueueViews",
+        successStatus: 200,
+      }),
+    )
     .input(QueueViewQueryDtoSchema.optional())
     .output(QueueViewSummaryListDtoSchema),
   jobs: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/jobs",
-      operationId: "listJobs",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/jobs",
+        operationId: "listJobs",
+        successStatus: 200,
+      }),
+    )
     .input(JobListQueryDtoSchema)
     .output(JobCursorPageDtoSchema),
   jobStats: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/jobs/stats",
-      operationId: "getJobStats",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/jobs/stats",
+        operationId: "getJobStats",
+        successStatus: 200,
+      }),
+    )
     .input(JobStatsQueryDtoSchema)
     .output(QueueStatsDtoSchema),
   job: oc
-    .route({
-      successDescription,
-      method: "GET",
-      path: "/api/v1/jobs/{id}",
-      operationId: "getJob",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "GET",
+        path: "/api/v1/jobs/{id}",
+        operationId: "getJob",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(JobDetailInputDtoSchema)
     .output(JobDtoSchema),
   cancelJob: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/{id}/actions/cancel",
-      operationId: "cancelJob",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/{id}/actions/cancel",
+        operationId: "cancelJob",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(JobDetailInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(JobDtoSchema),
   retryJob: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/{id}/actions/retry",
-      operationId: "retryJob",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/{id}/actions/retry",
+        operationId: "retryJob",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(JobDetailInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(JobDtoSchema),
   rescheduleJob: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/{id}/actions/reschedule",
-      operationId: "rescheduleJob",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/{id}/actions/reschedule",
+        operationId: "rescheduleJob",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(RescheduleJobInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(JobDtoSchema),
   setJobPriority: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/{id}/actions/priority",
-      operationId: "setJobPriority",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/{id}/actions/priority",
+        operationId: "setJobPriority",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(SetJobPriorityInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(JobDtoSchema),
   deleteJob: oc
-    .route({
-      successDescription,
-      method: "DELETE",
-      path: "/api/v1/jobs/{id}",
-      operationId: "deleteJob",
-      successStatus: 200,
-      inputStructure: "detailed",
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "DELETE",
+        path: "/api/v1/jobs/{id}",
+        operationId: "deleteJob",
+        successStatus: 200,
+        inputStructure: "detailed",
+      }),
+    )
     .input(JobDetailInputDtoSchema)
     .errors(SingleJobActionErrors)
     .output(DeleteJobDtoSchema),
   cancelJobs: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/actions/cancel",
-      operationId: "cancelJobs",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/actions/cancel",
+        operationId: "cancelJobs",
+        successStatus: 200,
+      }),
+    )
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),
   retryJobs: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/actions/retry",
-      operationId: "retryJobs",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/actions/retry",
+        operationId: "retryJobs",
+        successStatus: 200,
+      }),
+    )
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),
   deleteJobs: oc
-    .route({
-      successDescription,
-      method: "POST",
-      path: "/api/v1/jobs/actions/delete",
-      operationId: "deleteJobs",
-      successStatus: 200,
-    })
+    .meta(
+      openapi({
+        successDescription,
+        method: "POST",
+        path: "/api/v1/jobs/actions/delete",
+        operationId: "deleteJobs",
+        successStatus: 200,
+      }),
+    )
     .input(JobSelectorDtoSchema)
     .errors(ManagementMutationErrors)
     .output(BulkActionResultDtoSchema),

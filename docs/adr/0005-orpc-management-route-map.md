@@ -57,3 +57,18 @@ clients from OpenAPI.
 The migration is allowed to break unreleased `@monque/management` exports, but should keep
 domain-level names such as `createManagementSurface`, `getManagementOpenApiDocument`,
 `ManagementOptions`, `ManagementMonque`, and exported DTO names where they still fit.
+
+## Coordinated oRPC v2 adoption (#689)
+
+The compatibility gate in #686 passed with oRPC `2.0.0-beta.45` and Effect `4.1.4`.
+All participating workspace packages now pin that oRPC release together. One
+procedure implementation uses official Effect handlers over shared native
+Management operations; the existing Promise facade adapts at that same seam.
+The native router requires host-supplied Effect context, request scope and
+cancellation ownership. See the Management README and proof for execution limits.
+
+This milestone retains OpenAPI mounting and the Dashboard OpenAPI connection.
+Dual transport and the Dashboard RPC switch are subsequent work in #690; this
+adoption alone does not change ADR-0006's client decision. Direct oRPC consumers
+must migrate v2 imports/types/error handling, while public HTTP clients retain
+their versioned contract.

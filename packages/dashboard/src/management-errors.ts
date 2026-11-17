@@ -1,9 +1,12 @@
+import { COMMON_ERROR_STATUS_MAP } from "@orpc/client";
 import { z } from "zod";
 
 // oxlint-disable promise/prefer-await-to-then -- Zod.catch defines a synchronous parse fallback, not a Promise handler.
 const ErrorMessageSchema = z.string().min(1).optional().catch(undefined);
 
 const ManagementErrorSchema = z.object({
+  code: z.string().optional().catch(undefined),
+  response: z.object({ status: z.number() }).optional().catch(undefined),
   status: z.number().int().optional().catch(undefined),
   message: ErrorMessageSchema,
   data: z
@@ -15,10 +18,17 @@ const ManagementErrorSchema = z.object({
     .catch(undefined),
 });
 
-const ReadManagementErrorSchema = ManagementErrorSchema.transform(({ status, message, data }) => ({
-  status,
-  message: data?.error ?? data?.body?.error ?? message,
-})).catch(() => ({ status: undefined, message: undefined }));
+const ReadManagementErrorSchema = ManagementErrorSchema.transform(
+  ({ status, message, data, code, response }) => ({
+    status:
+      status ??
+      response?.status ??
+      (code === undefined
+        ? undefined
+        : Object.entries(COMMON_ERROR_STATUS_MAP).find(([key]) => key === code)?.[1]),
+    message: data?.error ?? data?.body?.error ?? message,
+  }),
+).catch(() => ({ status: undefined, message: undefined }));
 
 const readManagementError = ReadManagementErrorSchema.parse.bind(ReadManagementErrorSchema);
 

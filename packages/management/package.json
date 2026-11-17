@@ -59,10 +59,11 @@
     "access": "public"
   },
   "dependencies": {
-    "@orpc/contract": "^1.16.1",
-    "@orpc/openapi": "^1.16.1",
-    "@orpc/server": "^1.16.1",
-    "@orpc/zod": "^1.16.1",
+    "@orpc/contract": "2.0.0-beta.45",
+    "@orpc/effect": "2.0.0-beta.45",
+    "@orpc/openapi": "2.0.0-beta.45",
+    "@orpc/server": "2.0.0-beta.45",
+    "@orpc/zod": "2.0.0-beta.45",
     "effect": "^4.1.2",
     "zod": "^4.6.7"
   },

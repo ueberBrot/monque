@@ -12,6 +12,7 @@ import type {
   ProcessingActionDto,
   ProcessingStateDto,
 } from "@monque/management/contract";
+import { COMMON_ERROR_STATUS_MAP } from "@orpc/openapi";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { implement, ORPCError } from "@orpc/server";
 import { z } from "zod";
@@ -491,7 +492,12 @@ const createMockManagementOpenApiHandler = (): OpenAPIHandler<MockManagementCont
           result.errors.push({
             jobId: id,
             error: error instanceof Error ? error.message : "Job action failed",
-            status: error instanceof ORPCError ? error.status : 500,
+            status:
+              error instanceof ORPCError
+                ? (Object.entries(COMMON_ERROR_STATUS_MAP).find(
+                    ([code]) => code === error.code,
+                  )?.[1] ?? 400)
+                : 500,
           });
         }
       }

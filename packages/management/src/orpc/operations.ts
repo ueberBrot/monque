@@ -1,5 +1,6 @@
 import { InvalidCursorError, InvalidJobIdentifierError, JobStateError } from "@monque/core";
 import type { BulkOperationResult, CursorOptions, JobSelector, PersistedJob } from "@monque/core";
+import { COMMON_ERROR_STATUS_MAP } from "@orpc/openapi";
 import { ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 
@@ -441,7 +442,12 @@ export const createNativeManagementOperations = function createNativeManagementO
               Effect.sync(() => {
                 result.errors.push({
                   jobId: id,
-                  status: error instanceof ORPCError ? error.status : 500,
+                  status:
+                    error instanceof ORPCError
+                      ? (Object.entries(COMMON_ERROR_STATUS_MAP).find(
+                          ([code]) => code === error.code,
+                        )?.[1] ?? 400)
+                      : 500,
                   error: error instanceof ORPCError ? error.message : "Job action failed",
                 });
               }),

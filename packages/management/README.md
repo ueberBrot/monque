@@ -21,6 +21,41 @@ Requires `@monque/core` 1.15.1 or newer within version 1. Use core 1.18.0 or new
 to change Job priorities. Older supported core versions expose effective worker policies
 and renewable lease deadlines; the priority action is unavailable.
 
+## oRPC compatibility
+
+Management and the bundled Dashboard use the coordinated `2.0.0-beta.45` oRPC
+contract, server, OpenAPI, Zod, client, and TanStack Query packages. Upgrade them
+together. The Dashboard still connects through OpenAPI at this stage; public
+`/api/v1` paths, DTOs, status codes, coercion and `{ error: string }` bodies remain
+compatible. This does not promise cross-major oRPC interoperability.
+
+Direct oRPC consumers must adopt v2 names (`RouterContractClient`,
+`ContractedRouter`, `OpenAPIV3_1.OpenAPIObject`). `OpenAPILink` and `JsonifiedClient`
+now come from `@orpc/openapi` and `@orpc/openapi/fetch`; Zod conversion comes from
+`@orpc/zod`. v2 `ORPCError` carries a code rather than an HTTP `status`; use
+`COMMON_ERROR_STATUS_MAP` at an HTTP presentation seam. These changes do not
+change the public HTTP error body.
+
+`createNativeManagementRouter(options)` accepts `NativeManagementOptions`,
+including the supplied Scheduler Instance's `monque.effects` and Effect-returning
+authorization and default/per-Job-Name serialization hooks. It implements the same
+contract through official `.effect` handlers, without calling Promise scheduler
+methods internally. Existing `createManagementRouter` / `createManagementSurface`
+remain synchronous and adapt existing boolean/Promise hooks and optional facades.
+
+Native router hosts must supply `effect/context` with required application
+services and the host-owned request Scope, plus `managementContext` when hooks
+consume it. Pass the request abort signal through the transport. The official
+bridge starts a separate root fiber: context provision does not automatically
+inherit the HTTP fiber, arbitrary FiberRefs, or its lifetime. Effect HTTP adapters
+must combine source and host interruption signals and join the transport Promise
+in an uninterruptible finalizer before closing the request Scope. Supply tracing
+context explicitly and release shared resources only after active requests finish.
+The verified implementation and lifecycle constraints are recorded in
+[`proofs/orpc-effect`](../../proofs/orpc-effect/README.md). No application Layer or
+second Effect runtime is created by the router. Cancellation cannot undo writes
+already admitted to MongoDB.
+
 ## Usage
 
 ```typescript
