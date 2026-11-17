@@ -10,8 +10,10 @@ COPY packages/core/package.json ./packages/core/
 COPY packages/tsed/package.json ./packages/tsed/
 COPY packages/management/package.json ./packages/management/
 COPY packages/management-express/package.json ./packages/management-express/
+COPY packages/management-effect/package.json ./packages/management-effect/
 COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/dashboard-express/package.json ./packages/dashboard-express/
+COPY packages/dashboard-effect/package.json ./packages/dashboard-effect/
 COPY apps/docs/package.json ./apps/docs/
 COPY apps/dashboard-dev/package.json ./apps/dashboard-dev/
 COPY examples/effect-host/package.json ./examples/effect-host/

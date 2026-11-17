@@ -132,6 +132,7 @@ jobs:
 
       - name: Install backend browser prerequisites
         if: matrix.group == 'backend'
+        working-directory: apps/dashboard-dev
         run: vp exec playwright install --with-deps chromium
 
       - name: Backend tests
@@ -149,6 +150,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prepare Changesets comparison ref
+        run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
       - name: Download build outputs

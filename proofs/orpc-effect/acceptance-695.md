@@ -7,7 +7,7 @@ of requirements is GitHub #685 and #686–695 (the supplied `/tmp/monque-spec-68
 JSON snapshots); criterion IDs below follow each ticket's checkbox order.
 “Implemented” means present in final code with the cited executable regression,
 not a claim that all historical intermediate migration states still exist.
-The independent parent code review remains required before acceptance/merge.
+The independent parent code review and its corrective verification are recorded below.
 TDD used the already authorized public request/browser/process seams; dependency
 skills were inventoried, the Router/Query composition skill loaded, and installed
 Effect AGENTS, TestClock/resources examples and module sources consulted.
@@ -291,3 +291,32 @@ A corrected run overlapped declaration builds and exposed missing dist files
 (431/434 passed); those failures are not accepted as successful verification.
 The complete matrix rerun with build outputs settled passed all 434 cases.
 No push, publication, PR mutation, issue closure or watch was performed.
+
+## Independent final review and correction
+
+Two fresh reviewers inspected `1057e7a...b4fc3b9` independently. The Spec axis
+reported no missing, partial or incorrect requirement. The Standards axis found
+one actionable packaging issue: the Dashboard Docker install stage omitted both
+new adapter manifests even though the example depends on those workspaces.
+The unchanged build failed locally and in CI with both workspaces “listed in
+bun.lock but not on disk.” Added their manifest COPY instructions before the
+frozen install; the complete image build then passed.
+
+The repository's unchanged `dashboard-image.sh` container acceptance script also
+passed: invalid configuration, all assets and deep links at three mounts, GET/HEAD,
+cache/compression, method and missing-asset responses, non-root/read-only runtime,
+custom port, health, shutdown and safe runtime configuration. On macOS it requires
+GNU timeout and sed; Homebrew coreutils/gnu-sed supplied those Linux prerequisites.
+Hadolint reports only the previously recorded DL3018/DL3025/DL3066 baseline.
+No further review finding remains. All ten completed implementation worktrees were
+confirmed clean and fully integrated before removal; their commits remain in Git.
+
+The subsequent CI run also exposed two runner-only setup issues. Backend browser
+installation now runs in `apps/dashboard-dev`, where the pinned Playwright command
+is available. Packed consumer verification checks out full history and prepares
+the Changesets `main` comparison ref. An isolated shallow clone reproduced the
+missing-ref failure; fetching history and creating the comparison ref passed and
+preserved the full projected release plan (including core 1.21.0 and Management
+0.12.0). Actionlint, configured YAML validation and formatting pass. All six CI
+browser projects passed on the audited head; the frontend matrix job was stopped
+by fail-fast after backend prerequisite failure, rather than a frontend assertion.
