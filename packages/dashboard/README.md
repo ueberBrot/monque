@@ -102,3 +102,8 @@ the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
 Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
 without `/api/v1` or `/rpc`. Host authentication must protect both transports.
 Upgrade the Dashboard and Management packages together for the pinned oRPC beta.
+
+Effect HTTP hosts can use `@monque/dashboard-effect` to serve these same assets.
+Both adapters share `renderDashboardHtml(template, runtimeConfig)` and
+`shouldServeDashboardHtml(pathname)`; HTTP, authentication and listeners stay in
+the adapter and host.

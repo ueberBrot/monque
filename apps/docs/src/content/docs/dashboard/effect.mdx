@@ -1,0 +1,44 @@
+---
+title: Effect HTTP
+description: Serve the bundled Dashboard through portable Effect routes.
+---
+
+`@monque/dashboard-effect` serves the same Dashboard build as the
+[Express adapter](/monque/dashboard/express/). The application owns authentication, platform
+services and the HTTP listener. Install the adapter alongside Effect 4.1.4 and
+your selected Effect platform package.
+
+```ts
+import { NodeFileSystem } from "@effect/platform-node";
+import { dashboardEffectLayer } from "@monque/dashboard-effect";
+import { Layer, Path } from "effect";
+import { Etag, HttpPlatform, HttpRouter } from "effect/http";
+
+const Platform = Layer.mergeAll(
+  NodeFileSystem.layer,
+  Path.layer,
+  HttpPlatform.layer.pipe(Layer.provide([NodeFileSystem.layer, Etag.layerWeak])),
+);
+
+const Dashboard = dashboardEffectLayer({
+  basePath: "/ops/ui",
+  apiBaseUrl: "/control",
+  pollingIntervalMs: 5000,
+}).pipe(HttpRouter.provideRequest(Platform));
+```
+
+Compose `Dashboard` with your host router. Mount Management independently at
+`/control`; the browser uses `/control/rpc`. Add host `HttpRouter.middleware`
+authentication with `Layer.provide(Authentication.layer)` on the Dashboard layer
+before serving it, and use the same host identity policy for Management. Protect
+the whole Dashboard mount, including assets and deep links.
+
+`apiBaseUrl` can instead be an `Effect<string, E, R>` that reads host-provided
+services and the current `HttpServerRequest`. The host handles its failures.
+Choose Bun platform services in a Bun host; the adapter itself imports neither
+Express nor Bun. It does not mount Management or start a server.
+
+HTML uses `Cache-Control: no-store`; built assets use immutable one-year caching.
+GET and HEAD, custom mount paths and Job/Queue View reloads use the same shared
+HTML rendering and runtime configuration as Express. Missing assets return 404;
+asset traversal and symlinks outside the built asset root are rejected.

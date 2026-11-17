@@ -78,3 +78,21 @@ strict workspace checks. These are resolved validation issues, not blockers.
 
 No push, PR creation, issue closure or PR watch was performed. The parent owns
 integration PR #696 and final coordinated release validation (#695).
+
+## Integration merge before handoff
+
+Merged the integration tip `f53623a53c7e48fbc052c5f69a54965ed0198622`, which
+includes parallel Dashboard #692 and CI installation/execution of the isolated
+compatibility proof. Conflicts were limited to root `lint:effect` and adjacent
+platform lock entries; both adapters and both private platform entries were
+retained. No Dashboard module implementation was changed during resolution.
+
+Post-merge validation passed: all 11 workspace builds, all 17 strict workspace
+check tasks, 388 tests across the relevant Management/Express/Effect and Dashboard
+adapter request suites, the 18 actual Management host tests, the 14-case isolated
+compatibility proof, all four packages' Effect diagnostics, and the isolated
+packed portable Management consumer. CI actionlint passed. Zizmor reported only
+inherited low-confidence findings at its default threshold and none at medium
+confidence/severity; YAML validation passed with the existing workflow style
+conventions (long pinned action lines, `on`, comments and no document marker).
+The default yamllint style profile flags those inherited conventions.

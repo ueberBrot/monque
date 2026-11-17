@@ -34,6 +34,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bash scripts/ci/scope.sh
 
+      # The compatibility proof deliberately owns a separate dependency graph.
+      - name: Install Effect compatibility proof
+        run: bun install --cwd proofs/orpc-effect --frozen-lockfile
+
       - name: Format
         run: vp fmt --check
 
@@ -45,6 +49,9 @@ jobs:
 
       - name: Build packages
         run: vp run --filter './packages/*' build
+
+      - name: Test Effect compatibility proof
+        run: bun test proofs/orpc-effect/proof.test.ts
 
       # Typed lint and TypeScript share one analysis of the built declarations.
       - name: Type check and typed lint
