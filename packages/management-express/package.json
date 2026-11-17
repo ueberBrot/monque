@@ -58,6 +58,7 @@
     "express": "^5.3.0",
     "mongodb": "^7.9.0",
     "supertest": "^7.3.2",
+    "unplugin-unused": "^0.6.0",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },
