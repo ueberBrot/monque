@@ -226,7 +226,7 @@
     },
     "packages/dashboard-effect": {
       "name": "@monque/dashboard-effect",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "dependencies": {
         "@monque/dashboard": "workspace:^",
       },
@@ -299,7 +299,7 @@
     },
     "packages/management-effect": {
       "name": "@monque/management-effect",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "dependencies": {
         "@orpc/effect": "2.0.0-beta.50",
         "effect": "4.1.4",
