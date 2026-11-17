@@ -61,5 +61,5 @@ Run from the repository root with Docker available:
 vp run --filter @monque/management-effect test
 vp run --filter @monque/management-effect check:exports
 vp run lint:effect
-bun packages/management-effect/tests/consumer/verify.mts
+vp run --filter @monque/management-effect verify:consumer
 ```

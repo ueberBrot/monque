@@ -58,7 +58,8 @@
     "mongodb": "^7.9.0",
     "playwright": "^1.65.1",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {
     "effect": "4.1.4"

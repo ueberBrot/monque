@@ -20,7 +20,7 @@ const ignoredFiles = [
   "apps/docs/src/content/docs/api*/**",
 ];
 
-const effectTestBlocks = ["it.effect", "it.live", "it.scoped", "it.scopedLive"];
+const effectTestBlocks = ["it.effect", "it.live"];
 const sonarJs = selectJsPlugins(["sonarjs"]);
 
 const vitestPreset: OxlintConfig = {
@@ -37,7 +37,7 @@ const vitestPreset: OxlintConfig = {
         "error",
         {
           additionalTestBlockFunctions: effectTestBlocks,
-          assertFunctionNames: ["expect", "expectJsonResponse"],
+          assertFunctionNames: ["expect", "expectJsonResponse", "assert.*"],
         },
       ],
       "vitest/no-standalone-expect": [
@@ -110,6 +110,15 @@ export default defineConfig({
       "effecttsgo/any-unknown-in-error-context": "off",
     },
     overrides: [
+      {
+        files: [
+          "packages/management-effect/tests/**/*.test.*",
+          "packages/management/tests/unit/native-*.test.ts",
+          "packages/verification/effect-consumer.test.mts",
+        ],
+        // Sonar does not recognize @effect/vitest registrations; Vitest rejects empty suites.
+        rules: { "sonarjs/no-empty-test-file": "off" },
+      },
       {
         files: ["**/tests/**"],
         env: { vitest: true },

@@ -38,7 +38,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["bun-types", "node", "vite-plus/test/globals"],
+    "types": ["node", "vite-plus/test/globals"],
     "paths": {
       "@/*": ["./src/*"],
       "@tests/*": ["./tests/*"]

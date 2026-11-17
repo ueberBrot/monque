@@ -1,5 +1,4 @@
-import { ok } from "node:assert/strict";
-import { it as effectIt } from "@effect/vitest";
+import { assert, it as effectIt } from "@effect/vitest";
 import { Context, DateTime, Effect, Layer, Random } from "effect";
 import { TestClock } from "effect/testing";
 import { Binary, Decimal128, MongoBulkWriteError, ObjectId } from "mongodb";
@@ -739,8 +738,8 @@ describe("native intake with controlled Effect time", () => {
           ]),
         );
 
-        ok(failure instanceof ConnectionError);
-        ok(failure.cause instanceof MongoBulkWriteError);
+        assert.ok(failure instanceof ConnectionError);
+        assert.ok(failure.cause instanceof MongoBulkWriteError);
 
         expect({
           indices: failure.cause.result.getWriteErrors().map((error) => error.index),
@@ -782,8 +781,8 @@ describe("native intake with controlled Effect time", () => {
           ]),
         );
 
-        ok(failure instanceof ConnectionError);
-        ok(failure.cause instanceof MongoBulkWriteError);
+        assert.ok(failure instanceof ConnectionError);
+        assert.ok(failure.cause instanceof MongoBulkWriteError);
         expect({
           indices: failure.cause.result.getWriteErrors().map((error) => error.index),
           inserted: failure.cause.result.upsertedCount,

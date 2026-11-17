@@ -26,7 +26,11 @@ export default defineConfig({
           output: [],
         },
       },
-      "verify:consumer": { command: "bun tests/consumer.mts", dependsOn: ["build"], cache: false },
+      "verify:consumer": {
+        command: "vp test run --config tests/consumer/vite.config.ts",
+        dependsOn: ["build"],
+        cache: false,
+      },
       "lint:effect": { command: "effect-tsgo diagnostics --project tsconfig.json", cache: false },
       clean: {
         command: "rimraf dist",

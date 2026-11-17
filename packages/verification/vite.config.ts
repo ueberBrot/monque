@@ -4,7 +4,7 @@ export default defineConfig({
   run: {
     tasks: {
       "verify:consumer": {
-        command: "bun consumer.mts --skip-build",
+        command: "vp test run --config vite.consumer.config.ts",
         dependsOn: [{ task: "build", from: ["dependencies", "devDependencies"] }],
         cache: false,
       },

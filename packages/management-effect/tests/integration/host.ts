@@ -1,13 +1,11 @@
-/* oxlint-disable eslint/max-classes-per-file -- Private host fixture keeps request services together. */
-import { BunHttpServer } from "@effect/platform-bun";
+/* oxlint-disable eslint/max-classes-per-file, sonarjs/no-nested-functions, sonarjs/max-union-size -- The host fixture owns its request services and lifecycle hooks. */
+// @effect-diagnostics unstableApiUsage:off
+import { createServer } from "node:http";
+import { NodeHttpServer } from "@effect/platform-node";
 import { Monque } from "@monque/core/effect";
 import type { ManagementContract, NativeManagementOptions } from "@monque/management";
-/* oxlint-disable eslint/max-classes-per-file, sonarjs/no-nested-functions, sonarjs/max-union-size -- Keep the disposable proof and its host service requirements in one module. */
-import "@orpc/effect/extensions/effect";
 import { ORPCError, createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-// @effect-diagnostics unstableApiUsage:off
-/* oxlint-disable eslint/max-classes-per-file -- Host fixtures declare request-only identity and native operation dependencies. */
 import type { RouterContractClient } from "@orpc/contract";
 import { Context, Effect, Exit, Scope } from "effect";
 import { HttpServerRequest } from "effect/http";
@@ -15,16 +13,20 @@ import { MongoClient } from "mongodb";
 
 import { createManagementEffectHandler } from "../../src/index";
 
-export class Identity extends Context.Service<Identity, string>()("proof/Identity") {}
+export class Identity extends Context.Service<Identity, string>()(
+  "tests/management-effect/Identity",
+) {}
 
 class Authorization extends Context.Service<
   Authorization,
   {
     check: Effect.Effect<void, ORPCError<"FORBIDDEN", undefined>, Identity | Scope.Scope>;
   }
->()("proof/Authorization") {}
+>()("tests/management-effect/Authorization") {}
 
-class Scheduler extends Context.Service<Scheduler, Monque["effects"]>()("proof/Scheduler") {}
+class Scheduler extends Context.Service<Scheduler, Monque["effects"]>()(
+  "tests/management-effect/Scheduler",
+) {}
 
 export interface HostOptions {
   port?: number;
@@ -34,9 +36,10 @@ export interface HostOptions {
   beforeAuthorize?: (identity: string) => Effect.Effect<void>;
   onRunnerFinalize?: () => Effect.Effect<void>;
   onFinalize?: (identity: string) => Effect.Effect<void>;
+  onFinalized?: (identity: string) => Effect.Effect<void>;
 }
 
-export const startHost = async function startHost(options: HostOptions = {}) {
+export const startHost = Effect.fnUntraced(function* startHost(options: HostOptions = {}) {
   const events: string[] = [];
   const resumedIdentities: string[] = [];
 
@@ -54,11 +57,7 @@ export const startHost = async function startHost(options: HostOptions = {}) {
     schedulerInstanceId: "proof-686",
   });
 
-  if (options.uri !== undefined) {
-    await monque.initialize();
-  }
-
-  const scope = Scope.makeUnsafe();
+  const scope = yield* Scope.fork(yield* Effect.scope, "sequential");
 
   const app = Effect.gen(function* app() {
     const request = yield* HttpServerRequest.HttpServerRequest;
@@ -75,6 +74,10 @@ export const startHost = async function startHost(options: HostOptions = {}) {
             }
 
             events.push(`finalized:${who}`);
+
+            if (options.onFinalized) {
+              yield* options.onFinalized(who);
+            }
           }),
         );
         events.push(`entered:${who}`);
@@ -129,36 +132,43 @@ export const startHost = async function startHost(options: HostOptions = {}) {
     return yield* handler.pipe(Effect.provideContext(context));
   }).pipe(Effect.withSpan("host.request"), Effect.interruptible);
 
-  const url = await Effect.runPromise(
-    Effect.gen(function* url() {
-      yield* Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          await monque.dispose();
-          await dbClient.close();
-          events.push("shared-released");
-          options.onRelease?.();
-        }),
-      );
+  const url = yield* Effect.gen(function* url() {
+    yield* Effect.addFinalizer(() =>
+      monque.effects.dispose.pipe(
+        Effect.orDie,
+        Effect.andThen(
+          Effect.promise(async () => {
+            await dbClient.close();
+            events.push("shared-released");
+            options.onRelease?.();
+          }),
+        ),
+      ),
+    );
 
-      const server = yield* BunHttpServer.make({
-        hostname: "127.0.0.1",
-        port: options.port ?? 0,
-        gracefulShutdownTimeout: 100,
+    if (options.uri !== undefined) {
+      yield* Effect.tryPromise(async () => {
+        await monque.initialize();
       });
+    }
 
-      yield* server.serve(app);
+    const server = yield* NodeHttpServer.make(() => createServer(), {
+      host: "127.0.0.1",
+      port: options.port ?? 0,
+      gracefulShutdownTimeout: 100,
+    });
 
-      if (server.address._tag === "UnixPathAddress") {
-        throw new Error("Expected TCP");
-      }
+    yield* server.serve(app);
 
-      return `http://127.0.0.1:${server.address.port}`;
-    }).pipe(Scope.provide(scope)),
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Preserve arbitrary startup rejection while releasing the host scope.
-  ).catch(async (error: unknown) => {
-    await Effect.runPromise(Scope.close(scope, Exit.fail(error)));
-    throw error;
-  });
+    if (server.address._tag === "UnixPathAddress") {
+      throw new Error("Expected TCP");
+    }
+
+    return `http://127.0.0.1:${server.address.port}`;
+  }).pipe(
+    Scope.provide(scope),
+    Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
+  );
 
   return {
     url,
@@ -170,8 +180,8 @@ export const startHost = async function startHost(options: HostOptions = {}) {
       createORPCClient(
         new RPCLink({ origin: url, url: "/rpc", headers: { "x-identity": identity } }),
       ),
-    close: async () => {
-      await Effect.runPromise(Scope.close(scope, Exit.void));
-    },
+    close: Scope.close(scope, Exit.void),
   };
-};
+});
+
+export type ManagementTestHost = Effect.Success<ReturnType<typeof startHost>>;

@@ -36,8 +36,11 @@
   "framework": [
     {
       "name": "monque-packed-consumer-tests",
-      "detection": { "type": "fileExists", "pattern": "packages/verification/consumer.mts" },
-      "entryPoints": ["packages/verification/consumer*.mts"],
+      "detection": { "type": "fileExists", "pattern": "packages/verification/consumer.test.mts" },
+      "entryPoints": [
+        "packages/verification/consumer*.mts",
+        "packages/verification/effect-consumer.test.mts",
+      ],
       "entryPointRole": "test",
     },
     {

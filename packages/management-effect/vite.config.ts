@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 
+const typeCheckTask = "type-check";
+
 export default defineConfig({
   run: {
     tasks: {
@@ -25,7 +27,7 @@ export default defineConfig({
         },
       },
       "verify:consumer": {
-        command: "bun tests/consumer/verify.mts",
+        command: "vp test run --config tests/consumer/vite.config.ts",
         dependsOn: ["build"],
         cache: false,
       },
@@ -45,13 +47,13 @@ export default defineConfig({
         cache: { output: [] },
       },
       test: {
-        command: "vp test run && bun test tests/bun",
-        dependsOn: ["type-check"],
+        command: "vp test run",
+        dependsOn: [typeCheckTask],
         cache: false,
       },
       "test:unit": {
-        command: "vp test run",
-        dependsOn: ["type-check"],
+        command: "vp test run tests/unit",
+        dependsOn: [typeCheckTask],
         cache: {
           env: ["CI", "TZ"],
           output: [],
@@ -62,7 +64,12 @@ export default defineConfig({
         cache: false,
       },
       "test:watch:unit": {
-        command: "vp test",
+        command: "vp test tests/unit",
+        cache: false,
+      },
+      "test:integration": {
+        command: "vp test run tests/integration",
+        dependsOn: [typeCheckTask],
         cache: false,
       },
     },
@@ -102,8 +109,8 @@ export default defineConfig({
   test: {
     name: "@monque/management-effect",
     environment: "node",
-    include: ["tests/routes.test.ts"],
-    testTimeout: 5000,
-    hookTimeout: 10_000,
+    include: ["tests/{unit,integration}/**/*.test.ts"],
+    testTimeout: 10_000,
+    hookTimeout: 120_000,
   },
 });
