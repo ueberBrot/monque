@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+
+import { packRelease } from "../../../scripts/verification/pack-release.mts";
 
 // oxlint-disable-next-line typescript/strict-void-return -- Node promisify accepts the value-returning execFile callback API.
 const exec = promisify(execFile);
@@ -11,29 +13,18 @@ const directory = await mkdtemp(path.join(tmpdir(), "dashboard-effect-consumer-"
 const root = path.resolve(import.meta.dirname, "../../..");
 
 try {
-  await Promise.all(
-    ["dashboard", "dashboard-effect"].map(async (name) => {
-      await exec("bun", ["pm", "pack", "--destination", directory], {
-        cwd: path.join(root, "packages", name),
-      });
-    }),
-  );
-  const files = await readdir(directory);
-
-  const dashboard = files.find(
-    (name) => name.startsWith("monque-dashboard-") && !name.startsWith("monque-dashboard-effect-"),
-  );
-
-  const adapter = files.find((name) => name.startsWith("monque-dashboard-effect-"));
+  const archives = await packRelease(root, ["dashboard", "dashboard-effect"], directory);
+  const dashboard = archives["@monque/dashboard"];
+  const adapter = archives["@monque/dashboard-effect"];
   assert.ok(dashboard !== undefined && adapter !== undefined);
   await writeFile(
     path.join(directory, "package.json"),
     JSON.stringify({
       type: "module",
-      overrides: { "@monque/dashboard": `file:./${dashboard}` },
+      overrides: { "@monque/dashboard": `file:${dashboard}` },
       dependencies: {
-        "@monque/dashboard": `file:./${dashboard}`,
-        "@monque/dashboard-effect": `file:./${adapter}`,
+        "@monque/dashboard": `file:${dashboard}`,
+        "@monque/dashboard-effect": `file:${adapter}`,
         effect: "4.1.4",
         "@effect/platform-node": "4.1.4",
       },

@@ -41,3 +41,5 @@ Run `vp run @monque/dashboard-effect#test` for public request and real MongoDB /
 Chromium integration coverage against Express Management. Docker Desktop and the
 workspace browser installation are required. The test fixture's cookie login is
 only for disposable local tests, not a production authentication implementation.
+
+See the [coordinated release compatibility](../management/README.md#coordinated-release-compatibility) table before combining server, assets and adapters.

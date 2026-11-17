@@ -1,8 +1,10 @@
 /* oxlint-disable anti-slop/no-known-value-widening -- Package names are collected dynamically from packed workspace archives. */
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+
+import { packRelease } from "../../../../scripts/verification/pack-release.mts";
 
 const root = path.resolve(import.meta.dirname, "../../../..");
 const temporary = mkdtempSync(path.join(tmpdir(), "management-effect-consumer-"));
@@ -13,19 +15,13 @@ const run = (command: string, args: string[], cwd = temporary) =>
 try {
   const dependencies: Record<string, string> = { effect: "4.1.4", mongodb: "7.9.0" };
 
-  for (const name of ["core", "management", "management-effect"]) {
-    run("bun", ["pm", "pack", "--destination", temporary], path.join(root, "packages", name));
-
-    const archive = readdirSync(temporary).find(
-      (file) => file.startsWith(`monque-${name}-`) && file.endsWith(".tgz"),
-    );
-
-    if (archive === undefined) {
-      throw new Error(`Missing archive for ${name}`);
-    }
-
-    dependencies[`@monque/${name}`] = `file:${path.join(temporary, archive)}`;
-  }
+  const archives = await packRelease(root, ["core", "management", "management-effect"], temporary);
+  Object.assign(
+    dependencies,
+    Object.fromEntries(
+      Object.entries(archives).map(([name, archive]) => [name, `file:${archive}`]),
+    ),
+  );
 
   writeFileSync(
     path.join(temporary, "package.json"),

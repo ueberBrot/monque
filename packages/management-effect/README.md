@@ -79,3 +79,5 @@ with Docker Testcontainers (`mongo:8`, `directConnection=true`). The isolated
 consumer packs core, Management and this adapter, installs them outside the
 workspace, checks declarations, and mounts routes under Node without Express or
 any Effect platform implementation.
+
+See the [coordinated release compatibility](../management/README.md#coordinated-release-compatibility) table before combining server, assets and adapters.

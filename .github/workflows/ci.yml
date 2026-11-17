@@ -136,7 +136,9 @@ jobs:
 
       - name: Backend tests
         if: matrix.group == 'backend'
-        run: vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
+        run: |
+          vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
+          vp run --filter @monque/effect-host --ignore-depends-on test
 
   consumers:
     name: MongoDB Driver Compatibility
@@ -155,7 +157,10 @@ jobs:
           name: build-artifacts
           path: .
       - name: Verify packed packages with MongoDB drivers 6 and 7
-        run: bun scripts/verification/consumer.mts --skip-build
+        run: |
+          bun scripts/verification/consumer.mts --skip-build
+          bun packages/management-effect/tests/consumer/verify.mts
+          bun packages/dashboard-effect/tests/consumer.mts
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})

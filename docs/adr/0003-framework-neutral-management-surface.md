@@ -13,8 +13,8 @@ and other server frameworks without making one framework the implicit default.
 ## Decision
 
 Create `@monque/management` as the framework-neutral Management Surface. It owns route
-metadata, request and response contracts, and delegation to the public `Monque` management
-methods. It does not export Express, Connect, Ts.ED, NestJS, Fastify, or Fetch middleware.
+metadata, request and response contracts, and shared native Effect operations. Existing
+synchronous and Promise scheduler facades adapt at the compatibility seam. It does not export Express, Connect, Ts.ED, NestJS, Fastify, or Fetch middleware.
 
 Framework-specific packages are Management Adapters, for example
 `@monque/management-express`, `@monque/management-tsed`, and

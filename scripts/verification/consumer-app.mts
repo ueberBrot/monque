@@ -8,7 +8,10 @@ import nodePath from "node:path";
 import { promisify } from "node:util";
 import { Monque } from "@monque/core";
 import { createDashboardExpressRouter } from "@monque/dashboard-express";
+import type { CapabilitiesDto } from "@monque/management";
 import { createManagementExpressRouter } from "@monque/management-express";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import express from "express";
 import type { Db, IndexDescriptionInfo, ObjectId } from "mongodb";
 import { BSON, MongoClient } from "mongodb";
@@ -304,7 +307,23 @@ try {
     assert.equal(denied.status, 403);
   }
 
-  checks.push("Authenticated Express reads, OpenAPI, and supported priority capabilities");
+  const address = server.address();
+  assert.ok(isRecord(address) && "port" in address);
+
+  const rpc = createORPCClient<{ capabilities: () => Promise<CapabilitiesDto> }>(
+    new RPCLink({
+      origin: `http://127.0.0.1:${address.port}`,
+      url: "/ops/rpc",
+      headers: { [verificationUserHeader]: "operator" },
+    }),
+  );
+
+  const rpcCapabilities = await rpc.capabilities();
+  assert.deepEqual(rpcCapabilities, capabilities);
+  checks.push(
+    "Actual RPC capabilities match public HTTP",
+    "Authenticated Express reads, OpenAPI, and supported priority capabilities",
+  );
   const openapi = await request("/openapi.json");
   assert.equal(openapi.status, 200);
   const openApiPayload: unknown = await openapi.json();

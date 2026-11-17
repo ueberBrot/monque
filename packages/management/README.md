@@ -223,9 +223,8 @@ Domain failures use the same oRPC error classification as the compatibility faca
 Other hook and scheduler failures remain in the Effect error channel; defects and
 interruption remain distinct. Parallel authorization and serialization belong to the
 calling fiber. No runtime, listener, authentication, or application layer is created.
-Interruption does not roll back admitted database writes (ADR-0007). Mounting native
-operations through the new Effect HTTP adapter is a later stage;
-this entry point does not change the existing HTTP contract.
+Interruption does not roll back admitted database writes (ADR-0007). Mount native operations through `@monque/management-effect` for portable Effect HTTP
+routes; the existing HTTP contract remains supported.
 
 ## RPC alongside public HTTP
 
@@ -245,3 +244,20 @@ both mounts. RPC failures use the official native envelope, while public HTTP
 retains `{ error: string }`. DTO dates remain ISO strings. RPC requests use POST
 for reads as well as writes, so browser calls must satisfy the origin policy.
 The Express adapter mounts `/rpc` automatically beneath its configured mount.
+
+## Coordinated release compatibility
+
+Use Management **0.12.x**, Management Express **0.8.x**, Dashboard **0.8.x**,
+and Dashboard Express **0.5.x** together. The new Effect adapters release as
+**0.2.0** under `@monque/management-effect` and `@monque/dashboard-effect`.
+Management Effect requires Management 0.12.x; Dashboard adapters require the
+0.8.x shared renderer. Changesets updates their `workspace:^` Dashboard range
+when versioning. Effect HTTP adapters require **Effect 4.1.4** and all oRPC
+participants use **2.0.0-beta.45**. Old Management 0.11.x has no RPC handler or
+native surface export; it cannot serve the new bundled Dashboard.
+
+Core's existing Management compatibility facade still supports core 1.16.0
+(the first published version satisfying ^1.15.1), with unsupported operations
+reported through capabilities. Native examples and Ts.ED terminal teardown use
+core **1.21.0+**. MongoDB drivers **^6.22.0 || ^7.8.0** remain supported.
+These are projected unreleased versions until the coordinated release publishes.

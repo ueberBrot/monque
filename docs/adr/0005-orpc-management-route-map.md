@@ -36,7 +36,7 @@ The Management OpenAPI contract includes all v1 routes and does not vary by moun
 scheduler capabilities. Unsupported Management actions keep their route in the v1 contract
 and return `403`; `/api/v1/capabilities` reports per-surface availability.
 
-`@monque/management` uses oRPC server/OpenAPI packages only. oRPC client runtime belongs to
+`@monque/management` uses oRPC server/OpenAPI packages and the official Effect integration. oRPC client runtime belongs to
 Dashboard or other client-side packages. `@monque/core` and `mongodb` remain peer
 dependencies.
 

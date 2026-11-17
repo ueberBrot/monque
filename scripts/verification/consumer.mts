@@ -7,6 +7,8 @@ import type { StartedMongoDBContainer } from "@testcontainers/mongodb";
 import { MongoDBContainer } from "@testcontainers/mongodb";
 import { z } from "zod";
 
+import { packRelease } from "./pack-release.mts";
+
 const root = nodePath.resolve(import.meta.dirname, "../..");
 
 const packageNames = [
@@ -31,7 +33,9 @@ assert.ok(
   "Unsupported MongoDB version",
 );
 
-const minimumManagementVersion = "0.11.0";
+// The coordinated candidate has not been published yet. Test its packed artifact,
+// never the old 0.11 release, which has no RPC surface.
+const minimumManagementVersion = "0.12.0";
 
 const effectConsumerSource = `import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -229,34 +233,27 @@ try {
     await run("vp", ["run", "--filter", "./packages/*", "build"], root);
   }
 
-  const tarballs: Record<string, string> = {};
-  const versions: Record<string, string> = {};
+  const tarballs = await packRelease(root, packageNames, scratch);
 
-  const packPackage = async (index: number): Promise<void> => {
-    const name = packageNames[index];
+  const versions = Object.fromEntries(
+    await Promise.all(
+      packageNames.map(async (name) => {
+        const manifest = packageManifestSchema.parse(
+          JSON.parse(
+            await readFile(nodePath.join(scratch, "release", name, "package.json"), "utf-8"),
+          ),
+        );
 
-    if (name === undefined) {
-      return;
-    }
+        return [manifest.name, manifest.version] as const;
+      }),
+    ),
+  );
 
-    const directory = nodePath.join(root, "packages", name);
-
-    const manifest = packageManifestSchema.parse(
-      JSON.parse(await readFile(nodePath.join(directory, "package.json"), "utf-8")),
-    );
-
-    versions[manifest.name] = manifest.version;
-    const tarball = nodePath.join(scratch, `${name}.tgz`);
-    await run(
-      "bun",
-      ["pm", "pack", "--filename", tarball, "--ignore-scripts", "--quiet"],
-      directory,
-    );
-    tarballs[manifest.name] = tarball;
-    await packPackage(index + 1);
-  };
-
-  await packPackage(0);
+  assert.equal(
+    versions["@monque/management"],
+    minimumManagementVersion,
+    "The packed candidate must exercise the advertised minimum Management release",
+  );
 
   const cases = [
     // 1.15.1 was never published; 1.16.0 is the first release satisfying ^1.15.1.
@@ -269,7 +266,7 @@ try {
     {
       name: "minimum-management",
       core: tarballs["@monque/core"],
-      management: minimumManagementVersion,
+      management: tarballs["@monque/management"],
       mongodb: "7.8.0",
     },
     {
@@ -302,6 +299,7 @@ try {
     const dependencies = new Map(Object.entries(tarballs));
     dependencies.set("@monque/core", scenario.core);
     dependencies.set("@monque/management", scenario.management);
+    dependencies.set("@orpc/client", "2.0.0-beta.45");
     dependencies.set("express", "5.2.1");
     dependencies.set("effect", "4.1.2");
     dependencies.set("mongodb", scenario.mongodb);

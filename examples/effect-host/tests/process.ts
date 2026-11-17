@@ -30,6 +30,7 @@ export const launchHost = (env: Record<string, string>, entry = "src/main.ts") =
     output += chunk.toString();
   });
   const exited = once(child, "exit");
+  const closed = once(child, "close");
 
   return {
     child,
@@ -40,7 +41,15 @@ export const launchHost = (env: Record<string, string>, entry = "src/main.ts") =
         child.kill(signal);
       }
 
-      await exited;
+      const escalation = setTimeout(() => {
+        child.kill("SIGKILL");
+      }, 5000);
+
+      try {
+        await closed;
+      } finally {
+        clearTimeout(escalation);
+      }
     },
   };
 };
