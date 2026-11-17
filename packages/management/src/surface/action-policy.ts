@@ -2,14 +2,13 @@ import type { JobSelector, PersistedJob } from "@monque/core";
 import { ORPCError } from "@orpc/server";
 import { Effect } from "effect";
 
-import { concurrently, fromPromise } from "../effects.js";
+import { concurrently } from "../effects.js";
+import type { ManagementEffects, NativeManagementOptions } from "../native.js";
 import type {
   CapabilitiesDto,
   CapabilityActionsDto,
   ManagementAction,
   ManagementAuthorizationInput,
-  ManagementMonque,
-  ManagementOptions,
 } from "./types.js";
 
 const unsupportedActionReason = "Unsupported action";
@@ -58,8 +57,8 @@ const requireAllowed = function requireAllowed(denial: string | undefined) {
   return denial === undefined ? Effect.void : forbidden(denial);
 };
 
-const isManagementActionSupported = function isManagementActionSupported(
-  monque: ManagementMonque,
+const isManagementActionSupported = function isManagementActionSupported<R>(
+  monque: ManagementEffects<R>,
   action: ManagementAction,
 ): boolean {
   switch (action) {
@@ -111,8 +110,8 @@ const isManagementActionSupported = function isManagementActionSupported(
 };
 
 /** Shares capability decisions and enforcement for one mounted Management Surface. */
-export const createManagementActionPolicy = function createManagementActionPolicy<TContext>(
-  options: ManagementOptions<TContext>,
+export const createManagementActionPolicy = function createManagementActionPolicy<TContext, R>(
+  options: NativeManagementOptions<TContext, R>,
 ) {
   const getSupportDenial = function getSupportDenial(
     action: ManagementAction,
@@ -140,7 +139,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
 
     if (
       options.authorize &&
-      !(yield* fromPromise(async () => {
+      !(yield* Effect.suspend(() => {
         const input: ManagementAuthorizationInput<TContext> = {
           action,
           context,
@@ -158,7 +157,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
         }
 
         // oxlint-disable-next-line typescript/no-non-null-assertion -- Authorization is checked before this callback runs; keep the original receiver.
-        return await options.authorize!(input);
+        return options.authorize!(input);
       }))
     ) {
       return action === "read" ? "Read access denied" : "Action denied";
@@ -200,7 +199,7 @@ export const createManagementActionPolicy = function createManagementActionPolic
   const getCapabilities = Effect.fnUntraced(function* getCapabilities(
     context: TContext,
     processingTarget: ManagementActionTarget = {},
-  ): Effect.fn.Return<CapabilitiesDto, unknown> {
+  ): Effect.fn.Return<CapabilitiesDto, unknown, R> {
     const readOnly = options.readOnly ?? false;
     const actions: CapabilityActionsDto = { ...DEFAULT_CAPABILITY_ACTIONS };
 

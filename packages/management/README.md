@@ -153,3 +153,41 @@ API errors use this response body:
 ```json
 { "error": "Message" }
 ```
+
+### Native Effect operations
+
+`createNativeManagementOperations` exposes the same Management policy and DTO mapping
+without a transport or Effect runner. Supply the existing Scheduler Instance's
+`monque.effects`, or a `ManagementEffects` facade with optional methods omitted for
+unsupported capabilities. Existing `createManagementSurface`, router imports, boolean/
+Promise authorization, and Promise serializers remain supported with oRPC v1 HTTP.
+
+```ts
+import { createNativeManagementOperations } from "@monque/management";
+import { Effect } from "effect";
+
+const operations = createNativeManagementOperations<{ role: string }>({
+  monque: monque.effects,
+  authorize: ({ context, action }) =>
+    Effect.succeed(context.role === "operator" || action === "read"),
+  serializePayload: ({ payload }) => Effect.succeed(payload),
+});
+
+const request = operations.jobs({ view: "summary" }, { role: "viewer" });
+```
+
+Authorization and default/per-Job-Name serializers may require application Effect
+services. Their requirements propagate through the returned Effects; the host supplies
+those services, request identity, scope, and interruption. Redaction is skipped for
+summary projections, which omit payloads. Per-Job-Name hooks override the default.
+Read-only policy and supported-method capabilities apply to all native mutations,
+including selected and selector-based bulk actions. Bulk operations resolve their
+scheduler method internally from the action.
+
+Domain failures use the same oRPC error classification as the compatibility facade.
+Other hook and scheduler failures remain in the Effect error channel; defects and
+interruption remain distinct. Parallel authorization and serialization belong to the
+calling fiber. No runtime, listener, authentication, or application layer is created.
+Interruption does not roll back admitted database writes (ADR-0007). Mounting native
+operations through the new Effect HTTP adapter and adopting oRPC v2 are later stages;
+this entry point does not change the existing HTTP contract.

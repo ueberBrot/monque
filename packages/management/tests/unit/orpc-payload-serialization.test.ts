@@ -230,3 +230,53 @@ describe("oRPC Management payload serialization", () => {
     );
   });
 });
+
+describe("lazy per-Job-Name redaction compatibility", () => {
+  it("uses non-enumerable redactors without evaluating unrelated serializer getters", async () => {
+    const job = createManagementJob();
+    const serializers = {};
+    Object.defineProperty(serializers, job.name, {
+      value: async () => await Promise.resolve({ redacted: true }),
+    });
+    Object.defineProperty(serializers, "unrelated", {
+      enumerable: true,
+      get: () => {
+        throw new Error("Unrelated serializer accessed");
+      },
+    });
+
+    const surface = createManagementSurface({
+      monque: createManagementMonque({ getJob: async () => await Promise.resolve(job) }),
+      serializePayloadByJobName: serializers,
+    });
+
+    await expectJsonResponse(
+      await handleManagementGet(surface, `/api/v1/jobs/${job._id.toHexString()}`),
+      200,
+      expect.objectContaining({ payload: { redacted: true } }),
+    );
+  });
+});
+
+describe("live policy compatibility", () => {
+  it("reflects read-only changes in capabilities and mutation enforcement", async () => {
+    const options = { monque: createManagementMonque({}, { mutations: true }), readOnly: false };
+    const surface = createManagementSurface(options);
+    options.readOnly = true;
+    await expectJsonResponse(
+      await handleManagementGet(surface, "/api/v1/capabilities"),
+      200,
+      expect.objectContaining({
+        readOnly: true,
+      }),
+    );
+    await expectJsonResponse(
+      await handleManagementPost(
+        surface,
+        `/api/v1/jobs/${createManagementJob()._id.toHexString()}/actions/cancel`,
+      ),
+      403,
+      { error: "Management surface is read-only" },
+    );
+  });
+});

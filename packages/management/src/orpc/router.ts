@@ -2,10 +2,10 @@ import { implement, ORPCError } from "@orpc/server";
 import type { Router } from "@orpc/server";
 import { Effect } from "effect";
 
+import { createManagementOperations } from "../compatibility.js";
 import type { ManagementOpenApiContext, ManagementOptions } from "../surface/index.js";
 import { managementContract } from "./contract.js";
 import type { ManagementContract } from "./contract.js";
-import { createManagementOperations } from "./operations.js";
 
 /** oRPC router type returned by `createManagementRouter()`. */
 export type ManagementRouter<TContext = unknown> = Router<
@@ -78,7 +78,9 @@ export const createManagementRouter = function createManagementRouter<TContext =
           operations.selectedJobActions(input, getOpenApiManagementContext(context)),
         ),
     ),
-    health: managementImplementer.health.handler(operations.health),
+    health: managementImplementer.health.handler(
+      async () => await Effect.runPromise(operations.health()),
+    ),
     capabilities: managementImplementer.capabilities.handler(
       async ({ input, context }) =>
         await Effect.runPromise(
@@ -152,34 +154,19 @@ export const createManagementRouter = function createManagementRouter<TContext =
     cancelJobs: managementImplementer.cancelJobs.handler(
       async ({ input, context }) =>
         await Effect.runPromise(
-          operations.bulkJobMutation(
-            "cancelBulk",
-            input,
-            getOpenApiManagementContext(context),
-            options.monque.cancelJobs?.bind(options.monque),
-          ),
+          operations.bulkJobMutation("cancelBulk", input, getOpenApiManagementContext(context)),
         ),
     ),
     retryJobs: managementImplementer.retryJobs.handler(
       async ({ input, context }) =>
         await Effect.runPromise(
-          operations.bulkJobMutation(
-            "retryBulk",
-            input,
-            getOpenApiManagementContext(context),
-            options.monque.retryJobs?.bind(options.monque),
-          ),
+          operations.bulkJobMutation("retryBulk", input, getOpenApiManagementContext(context)),
         ),
     ),
     deleteJobs: managementImplementer.deleteJobs.handler(
       async ({ input, context }) =>
         await Effect.runPromise(
-          operations.bulkJobMutation(
-            "deleteBulk",
-            input,
-            getOpenApiManagementContext(context),
-            options.monque.deleteJobs?.bind(options.monque),
-          ),
+          operations.bulkJobMutation("deleteBulk", input, getOpenApiManagementContext(context)),
         ),
     ),
   });
