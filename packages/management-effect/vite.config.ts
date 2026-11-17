@@ -51,6 +51,11 @@ export default defineConfig({
         dependsOn: [typeCheckTask],
         cache: false,
       },
+      "test:unit:incremental": {
+        command: "vp test run tests/unit --since-last-run",
+        dependsOn: [typeCheckTask],
+        cache: false,
+      },
       "test:unit": {
         command: "vp test run tests/unit",
         dependsOn: [typeCheckTask],

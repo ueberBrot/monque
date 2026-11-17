@@ -50,15 +50,3 @@ it describes the work without a separate ticket or spec file.
 ## Testing
 
 Test runtime behavior. Don't write tests for guarantees already enforced by the type system.
-
-During local edit loops, run the relevant Vitest project or package configuration
-with `vp test run --since-last-run`. Use `vp test` directly so the task runner
-cannot reuse a cached test result. The first run records dependencies; later runs
-select changed dependencies and previously failing files, including across commits.
-For core unit tests, run `vp test run --config vite.unit.config.ts --since-last-run`
-from `packages/core` to avoid starting MongoDB.
-
-Before completing the work, run the full relevant suites without selection flags,
-including integration, packed-consumer, and browser tests when affected. Incremental
-records can miss newly introduced inputs and files with backdated modification
-times; after switching branches or restoring files, use a full run.

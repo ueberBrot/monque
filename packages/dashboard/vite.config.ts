@@ -7,6 +7,8 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig, lazyPlugins } from "vite-plus";
 
+const typeCheckTask = "type-check";
+
 const dashboardPackageDirectory = import.meta.dirname;
 
 let dashboardClientBuild: Promise<void> | undefined;
@@ -86,12 +88,17 @@ const config = defineConfig({
       },
       test: {
         command: "vp test run",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
+        cache: false,
+      },
+      "test:unit:incremental": {
+        command: "vp test run --since-last-run",
+        dependsOn: [typeCheckTask],
         cache: false,
       },
       "test:unit": {
         command: "vp test run",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
         cache: {
           env: ["CI", "TZ"],
           output: [],

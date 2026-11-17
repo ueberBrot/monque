@@ -54,6 +54,11 @@ export default defineConfig({
         dependsOn: ["type-check"],
         cache: false,
       },
+      "test:unit:incremental": {
+        command: "vp test run --config vite.unit.config.ts --since-last-run",
+        dependsOn: ["type-check"],
+        cache: false,
+      },
       "test:unit": {
         command: "vp test run --config vite.unit.config.ts",
         dependsOn: ["type-check"],
