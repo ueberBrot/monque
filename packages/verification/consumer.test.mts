@@ -28,7 +28,6 @@ describe("isolated package consumption", () => {
       "Unsupported MongoDB version",
     );
 
-    // Pack the unreleased candidate: 0.11 has no RPC surface.
     const minimumManagementVersion = "0.12.0";
 
     const effectConsumer = "effect-consumer.test.mts";
@@ -205,11 +204,11 @@ describe("isolated package consumption", () => {
         ),
       );
 
-      assert.strictEqual(
-        versions["@monque/management"],
-        minimumManagementVersion,
-        "The packed candidate must exercise the advertised minimum Management release",
-      );
+      // Before the minimum is published, the matching candidate supplies that case.
+      const minimumManagement =
+        versions["@monque/management"] === minimumManagementVersion
+          ? tarballs["@monque/management"]
+          : minimumManagementVersion;
 
       const cases = [
         // 1.15.1 was never published; 1.16.0 is the first release satisfying ^1.15.1.
@@ -222,7 +221,7 @@ describe("isolated package consumption", () => {
         {
           name: "minimum-management",
           core: tarballs["@monque/core"],
-          management: tarballs["@monque/management"],
+          management: minimumManagement,
           mongodb: "7.8.0",
         },
         {
