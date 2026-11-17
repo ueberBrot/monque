@@ -64,7 +64,7 @@
     "@orpc/openapi": "2.0.0-beta.50",
     "@orpc/server": "2.0.0-beta.50",
     "@orpc/zod": "2.0.0-beta.50",
-    "effect": "^4.1.2",
+    "effect": "^4.1.4",
     "zod": "^4.6.7"
   },
   "devDependencies": {
