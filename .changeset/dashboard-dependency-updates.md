@@ -2,4 +2,4 @@
 "@monque/dashboard": minor
 ---
 
-Use oRPC 2.0.0-beta.50 and RPCLink for the bundled Dashboard client and TanStack Query integration. Requires Management 0.12.x.
+The Dashboard requires `@monque/management` 0.12.x and sends requests to `<Management mount>/rpc`. Upgrade the Management server before deploying this Dashboard.
