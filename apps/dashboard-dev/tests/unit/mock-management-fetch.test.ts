@@ -23,7 +23,7 @@ describe("mock management fetch", () => {
   describe(createMockManagementFetch, () => {
     it("returns seeded pending-job scenario data through the dashboard oRPC client path", async () => {
       const managementApi = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         fetch: createMockManagementFetch({ scenarioId: "pending-jobs" }),
         origin: "https://dashboard-dev.example",
       });
@@ -37,14 +37,13 @@ describe("mock management fetch", () => {
 
     it("returns typed unauthorized errors for the unauthorized scenario", async () => {
       const managementApi = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         fetch: createMockManagementFetch({ scenarioId: "unauthorized" }),
         origin: "https://dashboard-dev.example",
       });
 
       await expect(managementApi.client.queueViews()).rejects.toMatchObject({
         code: "UNAUTHORIZED",
-        status: 401,
         message: "Sign in to inspect the dashboard scenario.",
         data: { error: "Sign in to inspect the dashboard scenario." },
       });
@@ -53,13 +52,13 @@ describe("mock management fetch", () => {
 
   it("persists mutations and statistics while keeping separate handlers isolated", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     });
 
     const other = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     });
@@ -86,12 +85,14 @@ describe("mock management fetch", () => {
     await api.client.retryJob({ params: { id: job.id } });
     await api.client.rescheduleJob({ params: { id: job.id }, body: { nextRunAt: job.nextRunAt } });
     await api.client.deleteJob({ params: { id: job.id } });
-    await expect(api.client.job({ params: { id: job.id } })).rejects.toMatchObject({ status: 404 });
+    await expect(api.client.job({ params: { id: job.id } })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 
   it("rejects writes to a read-only mock API", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch({ scenarioId: "read-only" }),
     });
@@ -104,7 +105,7 @@ describe("mock management fetch", () => {
     }
 
     await expect(api.client.deleteJob({ params: { id: job.id } })).rejects.toMatchObject({
-      status: 403,
+      code: "FORBIDDEN",
     });
   });
 
@@ -115,7 +116,7 @@ describe("mock management fetch", () => {
       vi.setSystemTime(new Date("2035-10-01T12:00:00.000Z"));
 
       const api = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         origin: "https://dashboard.test",
         fetch: createMockManagementFetch({ scenarioId: "failed-jobs" }),
       });
@@ -155,7 +156,7 @@ describe("mock management fetch", () => {
 
   it("removes historical-only views after their final job is deleted and preserves registered workers", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     });
@@ -203,7 +204,7 @@ describe("mock management fetch", () => {
       });
 
       const api = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         origin: "https://dashboard.test",
         fetch: createMockManagementFetch(),
       }).client;
@@ -231,7 +232,7 @@ describe("mock management fetch", () => {
         return await api.deleteJobs({});
       })();
 
-      await expect(request).rejects.toMatchObject({ status: 403 });
+      await expect(request).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(api.jobs({ limit: "100" })).resolves.toStrictEqual(before);
     },
   );
@@ -256,7 +257,7 @@ describe("mock management fetch", () => {
       });
 
       const api = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         origin: "https://dashboard.test",
         fetch: createMockManagementFetch(),
       }).client;
@@ -287,7 +288,7 @@ describe("mock management fetch", () => {
 
   it("reports selected failures individually and mutates each existing Job only once", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     }).client;
@@ -308,7 +309,7 @@ describe("mock management fetch", () => {
     expect(result.errors).toStrictEqual([
       expect.objectContaining({ jobId: "missing-job", status: 404 }),
     ]);
-    await expect(api.job({ params: { id: job.id } })).rejects.toMatchObject({ status: 404 });
+    await expect(api.job({ params: { id: job.id } })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it.each(["delete", "deleteBulk"] as const)(
@@ -329,7 +330,7 @@ describe("mock management fetch", () => {
       });
 
       const api = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         origin: "https://dashboard.test",
         fetch: createMockManagementFetch(),
       }).client;
@@ -345,7 +346,7 @@ describe("mock management fetch", () => {
       const [outcome] = await Promise.allSettled([request]);
       expect(outcome).toMatchObject(
         deniedAction === "deleteBulk"
-          ? { status: "rejected", reason: { status: 403 } }
+          ? { status: "rejected", reason: { code: "FORBIDDEN" } }
           : { status: "fulfilled", value: { count: 0, errors: [{ jobId: job.id, status: 403 }] } },
       );
       await expect(api.job({ params: { id: job.id } })).resolves.toStrictEqual(job);
@@ -354,7 +355,7 @@ describe("mock management fetch", () => {
 
   it("changes mock Job priority without modifying other fields and rejects stale or invalid requests", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     }).client;
@@ -408,7 +409,7 @@ describe("mock management fetch", () => {
 
   it("sets one priority on selected mock Jobs and reports stale Jobs without widening scope", async () => {
     const api = createDashboardManagementApi({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       origin: "https://dashboard.test",
       fetch: createMockManagementFetch(),
     }).client;

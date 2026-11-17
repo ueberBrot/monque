@@ -15,6 +15,7 @@ import type {
 import { COMMON_ERROR_STATUS_MAP } from "@orpc/openapi";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { implement, ORPCError } from "@orpc/server";
+import { RPCHandler } from "@orpc/server/fetch";
 import { z } from "zod";
 
 import { isObject } from "../../../../packages/dashboard/src/lib/type-guards.js";
@@ -379,7 +380,7 @@ const mutateBulkJobs = (
   };
 };
 
-const createMockManagementOpenApiHandler = (): OpenAPIHandler<MockManagementContext> => {
+const createMockManagementHandler = () => {
   const scenarios = new Map<DashboardDevScenarioId, MutableScenario>();
 
   const getReadableScenario = (context: MockManagementContext): MutableScenario => {
@@ -573,20 +574,33 @@ const createMockManagementOpenApiHandler = (): OpenAPIHandler<MockManagementCont
     ),
   });
 
-  return new OpenAPIHandler(mockManagementRouter, {
+  const openApiHandler = new OpenAPIHandler(mockManagementRouter, {
     customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) =>
       isObject(error.data) && error.data !== null ? error.data : { error: error.message },
   });
+
+  const rpcHandler = new RPCHandler(mockManagementRouter);
+
+  return {
+    handle: async (request: Request, options: { context: MockManagementContext }) => {
+      const rpc = new URL(request.url).pathname.startsWith("/api/rpc/");
+
+      return await (rpc ? rpcHandler : openApiHandler).handle(request, {
+        ...options,
+        prefix: rpc ? "/api/rpc" : undefined,
+      });
+    },
+  };
 };
 
 const createMockManagementFetch = (options?: {
   readonly scenarioId?: DashboardDevScenarioId;
 }): typeof fetch => {
-  const handler = createMockManagementOpenApiHandler();
+  const handler = createMockManagementHandler();
   const scenarioId = options?.scenarioId ?? DEFAULT_SCENARIO_ID;
 
   return async (input, init) => {
-    const request = new Request(input, init);
+    const request = new Request(input instanceof Request ? input.clone() : input, init);
 
     const result = await handler.handle(request, {
       context: { scenarioId },
@@ -606,4 +620,4 @@ const createMockManagementFetch = (options?: {
   };
 };
 
-export { createMockManagementFetch, createMockManagementOpenApiHandler };
+export { createMockManagementFetch, createMockManagementHandler };

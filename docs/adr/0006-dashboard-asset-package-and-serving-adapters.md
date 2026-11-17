@@ -25,7 +25,9 @@ with Management Adapters, authentication middleware, and authorization hooks.
 Serving adapters inject mount-aware runtime configuration, including the Dashboard base path
 and Management API base URL, into the Dashboard HTML template. The Dashboard imports the
 browser-safe `@monque/management/contract` subpath for oRPC end-to-end typing and calls the
-mounted Management Route Map through the oRPC OpenAPI client.
+mounted Management Route Map through `RPCLink` at `<apiBaseUrl>/rpc`. The client
+retains TanStack Query keys, pagination, polling, mutations and invalidation. Contract
+imports are type-only; server runtime dependencies stay outside the browser build.
 
 ## Consequences
 

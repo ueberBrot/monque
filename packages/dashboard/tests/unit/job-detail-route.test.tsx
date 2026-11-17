@@ -10,6 +10,8 @@ import { createDashboardQueryClient } from "@/query-client";
 import { getRouter } from "@/router";
 import { parseDashboardRuntimeConfig } from "@/runtime-config";
 
+import { rpcResponse, rpcInput } from "../setup/rpc";
+
 const createJobDetail = (overrides: Partial<JobDto> = {}): JobDto => ({
   id: "job-123",
   name: "send-email",
@@ -64,7 +66,7 @@ const renderJobDetailRoute = async (options: {
 };
 
 const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 200): Response =>
-  Response.json(body, {
+  rpcResponse(body, {
     status,
     headers: {
       "content-type": "application/json",
@@ -76,8 +78,9 @@ const createJobDetailFetch =
   async (input) => {
     const request = input instanceof Request ? input : new Request(input);
     const url = new URL(request.url);
+    const data = await rpcInput(request);
 
-    if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
+    if (url.pathname === "/rpc/capabilities") {
       return await Promise.resolve(
         createJsonResponse({
           readOnly: false,
@@ -95,7 +98,7 @@ const createJobDetailFetch =
       );
     }
 
-    if (request.method === "GET" && url.pathname === `/api/v1/jobs/${job.id}`) {
+    if (url.pathname === "/rpc/job" && data?.params?.id === job.id) {
       return await Promise.resolve(createJsonResponse(job));
     }
 
@@ -108,7 +111,6 @@ const createJobDetailFetch =
           },
           defined: false,
           message: "Route not found",
-          status: 404,
         },
         404,
       ),
@@ -135,7 +137,6 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
     {
       code,
       message,
-      status,
       data: {
         error: message,
       },
@@ -170,8 +171,9 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
     fetch: async (input) => {
       const request = input instanceof Request ? input : new Request(input);
       const url = new URL(request.url);
+      const data = await rpcInput(request);
 
-      if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
+      if (url.pathname === "/rpc/capabilities") {
         return await Promise.resolve(
           createJsonResponse({
             readOnly: false,
@@ -189,7 +191,7 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
         );
       }
 
-      if (request.method === "GET" && url.pathname === `/api/v1/jobs/${job.id}`) {
+      if (url.pathname === "/rpc/job" && data?.params?.id === job.id) {
         detailRequestCount += 1;
 
         if (deleted) {
@@ -199,7 +201,7 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
         return await Promise.resolve(createJsonResponse(job));
       }
 
-      if (request.method === "GET" && url.pathname === "/api/v1/jobs") {
+      if (url.pathname === "/rpc/jobs") {
         return await Promise.resolve(
           createJsonResponse({
             jobs: [],
@@ -210,7 +212,7 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
         );
       }
 
-      if (request.method === "DELETE" && url.pathname === `/api/v1/jobs/${job.id}`) {
+      if (url.pathname === "/rpc/deleteJob") {
         deleteCount += 1;
         deleted = true;
 
@@ -390,10 +392,7 @@ describe("Job detail route", () => {
         fetch: async (input, init) => {
           const request = new Request(input, init);
 
-          if (
-            request.method === "POST" &&
-            new URL(request.url).pathname.endsWith("/actions/retry")
-          ) {
+          if (request.method === "POST" && new URL(request.url).pathname.endsWith("/retryJob")) {
             job = { ...job, status: "pending", failCount: 0 };
 
             return createJsonResponse(job);
@@ -424,7 +423,8 @@ describe("Job detail route", () => {
         jobId: first.id,
         fetch: async (input, init) => {
           const request = new Request(input, init);
-          const job = new URL(request.url).pathname.endsWith(second.id) ? second : first;
+          const data = await rpcInput(request);
+          const job = data?.params?.id === second.id ? second : first;
 
           return await createJobDetailFetch(job)(request);
         },
@@ -470,7 +470,7 @@ describe("Job detail route", () => {
         fetch: async (input, init) => {
           const request = new Request(input, init);
 
-          if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
+          if (failReads && new URL(request.url).pathname === "/rpc/job") {
             throw new TypeError("Failed to fetch");
           }
 
@@ -509,7 +509,7 @@ describe("Job detail route", () => {
         fetch: async (input, init) => {
           const request = new Request(input, init);
 
-          if (failReads && new URL(request.url).pathname === `/api/v1/jobs/${job.id}`) {
+          if (failReads && new URL(request.url).pathname === "/rpc/job") {
             return createOrpcErrorResponse(code, status, "Host rejected the request.");
           }
 

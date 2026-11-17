@@ -27,8 +27,8 @@ test("development MongoDB mode starts its scheduler and processes live demo jobs
 
   const openHealth = async () => {
     const responses = Promise.all([
-      page.waitForResponse(`${app.origin}/development/api/v1/health`),
-      page.waitForResponse(`${app.origin}/development/api/v1/capabilities`),
+      page.waitForResponse(`${app.origin}/development/api/rpc/health`),
+      page.waitForResponse(`${app.origin}/development/api/rpc/capabilities`),
     ]);
 
     await page.goto(`${base}/health`);

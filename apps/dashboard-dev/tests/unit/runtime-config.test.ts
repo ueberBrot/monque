@@ -16,7 +16,7 @@ describe("dashboard dev configuration", () => {
       liveApiBaseUrl: undefined,
     });
     expect(createDashboardRuntimeConfig(config.environment)).toStrictEqual({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       basePath: "/",
       pollingIntervalMs: 10_000,
     });
@@ -34,7 +34,7 @@ describe("dashboard dev configuration", () => {
     expect(config.databaseName).toBe("custom_dashboard");
     expect(config.environment).toStrictEqual({ mode: "db", scenarioId: "failed-jobs" });
     expect(createDashboardRuntimeConfig(config.environment)).toStrictEqual({
-      apiBaseUrl: "/",
+      apiBaseUrl: "/api",
       basePath: "/",
       pollingIntervalMs: 1000,
     });
@@ -53,7 +53,7 @@ describe("dashboard dev configuration", () => {
       expect(DashboardDevEnvironmentSchema.parse(config.environment)).toStrictEqual(
         config.environment,
       );
-      expect(createDashboardRuntimeConfig(config.environment).apiBaseUrl).toBe("/");
+      expect(createDashboardRuntimeConfig(config.environment).apiBaseUrl).toBe("/api");
     },
   );
 

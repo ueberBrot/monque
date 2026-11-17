@@ -171,7 +171,11 @@ const createLocalDbManagementServer = (options?: {
       try {
         const runtime = await getRuntime();
 
-        const result = await runtime.management.openApiHandler.handle(request, {
+        const rpc = new URL(request.url).pathname.startsWith("/api/rpc/");
+        const handler = rpc ? runtime.management.rpcHandler : runtime.management.openApiHandler;
+
+        const result = await handler.handle(request, {
+          prefix: rpc ? "/api/rpc" : undefined,
           context: { managementContext: { source: "dashboard-dev-db" } },
         });
 

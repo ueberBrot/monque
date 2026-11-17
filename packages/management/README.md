@@ -1,7 +1,7 @@
 # @monque/management
 
 Inspect jobs, read queue counts, and run job actions over HTTP. This package provides
-an HTTP handler, an OpenAPI document, and Zod schemas with TypeScript types.
+RPC and HTTP handlers, an OpenAPI document, and Zod schemas with TypeScript types.
 The route contract is also available to oRPC clients.
 
 Use it with your own HTTP server. Express applications can mount the API with
@@ -25,7 +25,7 @@ and renewable lease deadlines; the priority action is unavailable.
 
 Management and the bundled Dashboard use the coordinated `2.0.0-beta.45` oRPC
 contract, server, OpenAPI, Zod, client, and TanStack Query packages. Upgrade them
-together. The Dashboard still connects through OpenAPI at this stage; public
+together. The Dashboard connects through RPC at `<Management mount>/rpc`; public
 `/api/v1` paths, DTOs, status codes, coercion and `{ error: string }` bodies remain
 compatible. This does not promise cross-major oRPC interoperability.
 
@@ -195,7 +195,7 @@ API errors use this response body:
 without a transport or Effect runner. Supply the existing Scheduler Instance's
 `monque.effects`, or a `ManagementEffects` facade with optional methods omitted for
 unsupported capabilities. Existing `createManagementSurface`, router imports, boolean/
-Promise authorization, and Promise serializers remain supported with oRPC v1 HTTP.
+Promise authorization, and Promise serializers remain supported with the versioned public HTTP interface.
 
 ```ts
 import { createNativeManagementOperations } from "@monque/management";
@@ -224,5 +224,24 @@ Other hook and scheduler failures remain in the Effect error channel; defects an
 interruption remain distinct. Parallel authorization and serialization belong to the
 calling fiber. No runtime, listener, authentication, or application layer is created.
 Interruption does not roll back admitted database writes (ADR-0007). Mounting native
-operations through the new Effect HTTP adapter and adopting oRPC v2 are later stages;
+operations through the new Effect HTTP adapter is a later stage;
 this entry point does not change the existing HTTP contract.
+
+## RPC alongside public HTTP
+
+`createManagementSurface()` creates one router for `rpcHandler` and `openApiHandler`.
+Mount RPC under a distinct `/rpc` path, passing that path as `prefix`:
+
+```ts
+await management.rpcHandler.handle(request, {
+  prefix: "/ops/rpc",
+  context: { managementContext: authenticatedSession },
+});
+```
+
+Both handlers enforce body limits, trusted origins and the same authorization,
+capabilities, read-only and payload policies. Keep host authentication ahead of
+both mounts. RPC failures use the official native envelope, while public HTTP
+retains `{ error: string }`. DTO dates remain ISO strings. RPC requests use POST
+for reads as well as writes, so browser calls must satisfy the origin policy.
+The Express adapter mounts `/rpc` automatically beneath its configured mount.

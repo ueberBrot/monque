@@ -74,14 +74,14 @@ test("job detail polls its record without polling the hidden jobs list", async (
   const job = await app.seed();
   const requests: string[] = [];
   page.on("request", (request) => {
-    if (request.method() === "GET") {
+    if (request.method() === "POST") {
       requests.push(new URL(request.url()).pathname);
     }
   });
   await page.goto(`${app.base}/dashboard/jobs/${String(job._id)}`);
   await expect(page.getByRole("heading", { name: job.name, exact: true })).toBeVisible();
   await expect
-    .poll(() => requests.filter((path) => path.endsWith(`/jobs/${String(job._id)}`)).length)
+    .poll(() => requests.filter((path) => path.endsWith("/rpc/job")).length)
     .toBeGreaterThanOrEqual(3);
-  expect(requests.filter((path) => path.endsWith("/api/v1/jobs"))).toEqual([]);
+  expect(requests.filter((path) => path.endsWith("/rpc/jobs"))).toEqual([]);
 });

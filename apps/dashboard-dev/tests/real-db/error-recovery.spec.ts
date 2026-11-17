@@ -16,7 +16,7 @@ for (const route of [
       const { promise: recovery, resolve: release }: PromiseWithResolvers<void> =
         Promise.withResolvers();
 
-      await page.route("**/api/v1/**", async (request) => {
+      await page.route("**/rpc/**", async (request) => {
         if (failed) {
           await request.fulfill({ status, json: { error: "Host rejected the request." } });
         } else {

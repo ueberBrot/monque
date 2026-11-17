@@ -114,6 +114,7 @@ const config = defineConfig(({ mode }) => {
               "/api": {
                 changeOrigin: true,
                 target: liveApiBaseUrl,
+                rewrite: (path) => path.replace(/^\/api(?=\/rpc(?:\/|$))/u, ""),
               },
             },
           }

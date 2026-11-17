@@ -1,4 +1,5 @@
 import { JobCursorPageDtoSchema } from "@monque/management/contract";
+import { z } from "zod";
 
 import { forEachSequential } from "../setup/sequential.js";
 import { expect, test } from "./fixture.js";
@@ -13,7 +14,7 @@ test("Job tables and details display signed and legacy priorities without list p
   const legacy = await app.seed({ name: "legacy" });
   const detailRequests: string[] = [];
   page.on("request", (request) => {
-    if (/\/api\/v1\/jobs\/[a-f0-9]{24}(?:\?|$)/u.test(request.url())) {
+    if (/\/rpc\/job(?:\?|$)/u.test(request.url())) {
       detailRequests.push(request.url());
     }
   });
@@ -21,12 +22,15 @@ test("Job tables and details display signed and legacy priorities without list p
   const listResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
 
-    return url.pathname.endsWith("/api/v1/jobs") && url.searchParams.get("view") === "summary";
+    return (
+      url.pathname.endsWith("/rpc/jobs") &&
+      response.request().postData()?.includes('"view":"summary"') === true
+    );
   });
 
   await page.goto(`${app.base}/dashboard/jobs`);
   const awaitedResult1 = await listResponse;
-  const list = JobCursorPageDtoSchema.parse(await awaitedResult1.json());
+  const list = z.object({ json: JobCursorPageDtoSchema }).parse(await awaitedResult1.json()).json;
   expect(list.jobs).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ id: urgent._id.toHexString(), priority: 12, payload: null }),
@@ -148,8 +152,8 @@ for (const change of ["cancelled", "missing", "denied"] as const) {
     // Allow the initial detail read, then hold polls before any can race the confirmation.
     const resumeReads: PromiseWithResolvers<void> = Promise.withResolvers();
     let initialRead = true;
-    await page.route(`**/private/api/v1/jobs/${String(job._id)}`, async (route) => {
-      if (route.request().method() === "GET") {
+    await page.route("**/private/rpc/job", async (route) => {
+      if (route.request().method() === "POST") {
         if (initialRead) {
           initialRead = false;
         } else {
@@ -184,7 +188,7 @@ for (const change of ["cancelled", "missing", "denied"] as const) {
       const response = page.waitForResponse(
         (currentResponse2) =>
           currentResponse2.request().method() === "POST" &&
-          currentResponse2.url().endsWith(`/jobs/${String(job._id)}/actions/priority`),
+          currentResponse2.url().endsWith("/rpc/setJobPriority"),
       );
 
       await page.getByRole("button", { name: "Confirm priority change", exact: true }).click();

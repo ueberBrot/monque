@@ -111,3 +111,11 @@ vp exec playwright show-report
 Projects: `mongo-desktop`, `mongo-mobile`, `mongo-desktop-auth`, and `mongo-mobile-auth`.
 The default is two workers. Reports are in `playwright-report`; failure screenshots and traces
 are in `test-results`. Both directories are ignored by Git.
+
+The development Dashboard uses RPC at `/api/rpc`. Mock and database modes also
+retain public HTTP fixtures. Live mode proxies `/api/rpc` to `<configured Management
+mount>/rpc`, stripping the local `/api` prefix for RPC only. Public `/api/v1`
+requests retain their path beneath the upstream mount. Configure the upstream Management
+Surface to trust the development browser origin (for example `http://localhost:3400`)
+when using the live proxy; POST reads are subject to origin checks too. The proxy
+preserves browser Origin headers.

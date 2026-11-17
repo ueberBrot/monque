@@ -96,3 +96,9 @@ assets. The package does not export an embeddable React component. Use the Expre
 if you want a ready-made router.
 
 To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).
+
+The Management Express adapter serves RPC at `<Management mount>/rpc` alongside
+the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
+Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
+without `/api/v1` or `/rpc`. Host authentication must protect both transports.
+Upgrade the Dashboard and Management packages together for the pinned oRPC beta.

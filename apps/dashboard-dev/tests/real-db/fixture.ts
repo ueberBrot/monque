@@ -82,7 +82,7 @@ const createApp = async () => {
   app.use(
     "/development/dashboard",
     createDashboardExpressRouter({
-      apiBaseUrl: "/development",
+      apiBaseUrl: "/development/api",
       pollingIntervalMs: 1000,
     }),
   );

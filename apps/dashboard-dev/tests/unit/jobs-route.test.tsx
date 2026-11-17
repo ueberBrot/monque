@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { parseJobsRouteSearch } from "@/features/jobs/job-list-search";
 import { isString, isFunction } from "@/lib/type-guards";
 
+import { rpcResponse, rpcInput } from "../../../../packages/dashboard/tests/setup/rpc";
 import { createDashboardHarness } from "../setup/dashboard-harness.js";
 import { forEachSequential } from "../setup/sequential.js";
 
@@ -65,7 +66,7 @@ const createCapabilities = (overrides: Partial<CapabilitiesDto> = {}): Capabilit
 });
 
 const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 200): Response =>
-  Response.json(body, {
+  rpcResponse(body, {
     status,
     headers: {
       "content-type": "application/json",
@@ -77,7 +78,6 @@ const createOrpcErrorResponse = (code: string, status: number, message: string):
     {
       code,
       message,
-      status,
       data: {
         error: message,
       },
@@ -108,13 +108,14 @@ const createJobsActionFetch = (options: {
     },
     fetch: async (input) => {
       const request = input instanceof Request ? input : new Request(input);
+      const data = await rpcInput(request);
       const url = new URL(request.url, "https://dashboard.test");
 
-      if (request.method === "GET" && url.pathname === "/api/v1/capabilities") {
+      if (url.pathname === "/api/rpc/capabilities") {
         return await Promise.resolve(createJsonResponse(capabilities));
       }
 
-      if (request.method === "GET" && url.pathname === "/api/v1/jobs") {
+      if (url.pathname === "/api/rpc/jobs") {
         listRequestCount += 1;
 
         return await Promise.resolve(
@@ -127,8 +128,8 @@ const createJobsActionFetch = (options: {
         );
       }
 
-      if (request.method === "DELETE" && url.pathname.startsWith("/api/v1/jobs/")) {
-        const jobId = url.pathname.split("/").at(-1);
+      if (url.pathname === "/api/rpc/deleteJob") {
+        const jobId = data?.params?.id;
 
         if (jobId === undefined || jobId === null || jobId === "") {
           return await Promise.resolve(createJsonResponse({ error: "Job not found" }, 404));
@@ -175,7 +176,7 @@ const createListJob = (overrides: Partial<JobDto> = {}): JobDto => ({
 
 const createForbiddenFetch = (): typeof fetch => async () =>
   await Promise.resolve(
-    Response.json(
+    rpcResponse(
       { error: "Forbidden by test fixture." },
       {
         status: 403,
@@ -257,21 +258,23 @@ describe("Jobs route", () => {
       const directionOption = await screen.findByRole("option", { name: "Ascending" });
       fireEvent.pointerDown(directionOption, { pointerType: "mouse" });
       fireEvent.click(directionOption);
-      await waitFor(() => {
+      await waitFor(async () => {
+        const requests = await Promise.all(
+          fetchSpy.mock.calls.map(async ([input]) => {
+            const request = input instanceof Request ? input : new Request(input);
+            const data = await rpcInput(request);
+
+            return data?.sortBy === "updatedAt" && data?.sortDirection === "asc";
+          }),
+        );
+
         expect({
           sortBy: router.state.location.search.sortBy,
           sortDirection: router.state.location.search.sortDirection,
           label: screen
             .getByRole("combobox", { name: "Sort direction" })
             .textContent?.includes("Ascending"),
-          requested: fetchSpy.mock.calls.some(([input]) => {
-            const url = new URL(input instanceof Request ? input.url : String(input));
-
-            return (
-              url.searchParams.get("sortBy") === "updatedAt" &&
-              url.searchParams.get("sortDirection") === "asc"
-            );
-          }),
+          requested: requests.some(Boolean),
         }).toStrictEqual({
           sortBy: "updatedAt",
           sortDirection: "asc",
@@ -328,28 +331,31 @@ describe("Jobs route", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Job name").value).toBe("dispatch-webhook");
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
     expect(screen.getByText("Updated time")).toBeInstanceOf(HTMLElement);
-    expect(
-      fetchSpy.mock.calls.some(([request]) => {
+
+    const requests = await Promise.all(
+      fetchSpy.mock.calls.map(async ([input]) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const data = await rpcInput(request);
+
         const url = new URL(
           request instanceof Request ? request.url : String(request),
           "https://dashboard.test",
         );
 
-        if (
-          url.pathname !== "/api/v1/jobs" ||
-          url.searchParams.get("name") !== "dispatch-webhook"
-        ) {
+        if (url.pathname !== "/api/rpc/jobs" || data?.name !== "dispatch-webhook") {
           return false;
         }
 
         return (
-          url.searchParams.get("status") === "failed" &&
-          url.searchParams.get("sortBy") === "updatedAt" &&
-          url.searchParams.get("sortDirection") === "asc" &&
-          url.searchParams.get("limit") === "25"
+          data?.status === "failed" &&
+          data?.sortBy === "updatedAt" &&
+          data?.sortDirection === "asc" &&
+          data?.limit === "25"
         );
       }),
-    ).toBe(true);
+    );
+
+    expect(requests.some(Boolean)).toBe(true);
   });
 
   it.each(["/jobs", "/jobs/job-123"])(
@@ -363,18 +369,18 @@ describe("Jobs route", () => {
         const request = new Request(input, init);
         const path = new URL(request.url).pathname;
 
-        if (path === "/api/v1/capabilities") {
+        if (path === "/api/rpc/capabilities") {
           capabilitiesRequests += 1;
           const capabilities = createCapabilities();
 
-          return Response.json({
+          return rpcResponse({
             ...capabilities,
             actions: { ...capabilities.actions, cancel: capabilitiesRequests > 1 },
           });
         }
 
-        if (path === `/api/v1/jobs/${job.id}`) {
-          return Response.json(job);
+        if (path === "/api/rpc/job") {
+          return rpcResponse(job);
         }
 
         return await state.fetch(request);
@@ -413,17 +419,17 @@ describe("Jobs route", () => {
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const request = new Request(input, init);
 
-      if (new URL(request.url).pathname === "/api/v1/capabilities") {
+      if (new URL(request.url).pathname === "/api/rpc/capabilities") {
         capabilitiesRequests += 1;
 
         return await Promise.resolve(
           capabilitiesRequests === 1
-            ? Response.json(createCapabilities())
-            : Response.json({ error: "Access revoked" }, { status: 403 }),
+            ? rpcResponse(createCapabilities())
+            : rpcResponse({ error: "Access revoked" }, { status: 403 }),
         );
       }
 
-      return await Promise.resolve(Response.json(job));
+      return await Promise.resolve(rpcResponse(job));
     };
 
     await renderJobsRoute({ fetch, initialEntry: `/jobs/${job.id}`, pollingIntervalMs: 100 });
@@ -466,15 +472,15 @@ describe("Jobs route", () => {
     );
 
     await renderJobsRoute({ fetch: fetchSpy, initialEntry: "/jobs?limit=10" });
-    const input = await screen.findByLabelText<HTMLInputElement>("Job name");
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Job name");
     fetchSpy.mockClear();
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await forEachSequential(["s", "send", "send-email"], async (value) => {
       await act(async () => {
         await Promise.resolve();
-        fireEvent.change(input, { target: { value } });
+        fireEvent.change(nameInput, { target: { value } });
       });
-      expect(input.value).toBe(value);
+      expect(nameInput.value).toBe(value);
       await act(async () => {
         await vi.advanceTimersByTimeAsync(40);
       });
@@ -484,8 +490,13 @@ describe("Jobs route", () => {
       await vi.advanceTimersByTimeAsync(300);
     });
 
-    const names = fetchSpy.mock.calls.map(([request]) =>
-      new URL(request instanceof Request ? request.url : String(request)).searchParams.get("name"),
+    const names = await Promise.all(
+      fetchSpy.mock.calls.map(async ([input]) => {
+        const request = input instanceof Request ? input : new Request(input);
+        const data = await rpcInput(request);
+
+        return data?.name;
+      }),
     );
 
     expect(names).toStrictEqual(["send-email"]);
@@ -497,11 +508,11 @@ describe("Jobs route", () => {
       initialEntry: "/jobs?limit=10",
     });
 
-    const input = await screen.findByLabelText<HTMLInputElement>("Job name");
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
       await Promise.resolve();
-      fireEvent.change(input, { target: { value: "send-email" } });
+      fireEvent.change(nameInput, { target: { value: "send-email" } });
       fireEvent.click(screen.getByRole("checkbox", { name: "Pending" }));
     });
     expect(router.state.location.search.name).toBe("send-email");
@@ -514,21 +525,21 @@ describe("Jobs route", () => {
       initialEntry: "/jobs?limit=10",
     });
 
-    const input = await screen.findByLabelText<HTMLInputElement>("Job name");
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await forEachSequential(["send", " ", "email"], async (suffix) => {
-      const value = input.value + suffix;
+      const value = nameInput.value + suffix;
       await act(async () => {
         await Promise.resolve();
-        fireEvent.change(input, { target: { value } });
+        fireEvent.change(nameInput, { target: { value } });
       });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(300);
       });
       expect(router.state.location.search.name).toBe(value);
-      expect(input.value).toBe(value);
+      expect(nameInput.value).toBe(value);
     });
-    expect(input.value).toBe("send email");
+    expect(nameInput.value).toBe("send email");
   });
 
   it.each(["toolbar", "navigation"])("clears a pending name through %s", async (source) => {
@@ -537,11 +548,11 @@ describe("Jobs route", () => {
       initialEntry: "/jobs?limit=10",
     });
 
-    const input = await screen.findByLabelText<HTMLInputElement>("Job name");
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
       await Promise.resolve();
-      fireEvent.change(input, { target: { value: "send-email" } });
+      fireEvent.change(nameInput, { target: { value: "send-email" } });
     });
     expect(router.state.location.search.name).toBe("send-email");
     await act(async () => {
@@ -568,11 +579,11 @@ describe("Jobs route", () => {
       initialEntry: "/jobs?limit=10",
     });
 
-    const input = await screen.findByLabelText<HTMLInputElement>("Job name");
+    const nameInput = await screen.findByLabelText<HTMLInputElement>("Job name");
     vi.useFakeTimers({ shouldClearNativeTimers: true });
     await act(async () => {
       await Promise.resolve();
-      fireEvent.change(input, { target: { value: "unfinished" } });
+      fireEvent.change(nameInput, { target: { value: "unfinished" } });
     });
     await act(async () => {
       await Promise.resolve(
@@ -773,11 +784,11 @@ describe("Jobs route", () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const request = new Request(input, init);
 
-      if (request.method === "POST") {
+      if (new URL(request.url).pathname.endsWith("/deleteJob")) {
         return await response.promise;
       }
 
-      if (new URL(request.url).pathname === "/api/v1/jobs" && (listRequests += 1) > 1) {
+      if (new URL(request.url).pathname === "/api/rpc/jobs" && (listRequests += 1) > 1) {
         return await refresh.promise;
       }
 

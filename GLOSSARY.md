@@ -27,8 +27,9 @@ _Avoid_: dashboard API, agnostic API
 through a server integration.
 _Avoid_: dashboard plugin
 
-**Management Route Map** — versioned HTTP contract implemented as an oRPC router and used
-by Management Adapters, OpenAPI generation, and Dashboard clients.
+**Management Route Map** — shared oRPC contract and router exposed through versioned
+OpenAPI HTTP endpoints and RPC procedures. Management Adapters mount both transports;
+the Dashboard uses RPC, and external HTTP clients use the OpenAPI contract.
 _Avoid_: dashboard routes, adapter routes
 
 **Dashboard** — bundled operator UI for inspecting Queue Views and operating Jobs through

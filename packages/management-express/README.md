@@ -73,3 +73,9 @@ such as Scalar, installed separately.
 
 See [@monque/management](../management) for routes, response formats, processing-control
 semantics, and authorization options.
+
+The Management Express adapter serves RPC at `<Management mount>/rpc` alongside
+the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
+Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
+without `/api/v1` or `/rpc`. Host authentication must protect both transports.
+Upgrade the Dashboard and Management packages together for the pinned oRPC beta.

@@ -19,7 +19,7 @@ describe("scenario header fetch", () => {
       });
 
       const api = createDashboardManagementApi({
-        apiBaseUrl: "/",
+        apiBaseUrl: "/api",
         origin: "https://dashboard-dev.example",
         fetch: createScenarioHeaderFetch("pending-jobs"),
       });
@@ -35,11 +35,17 @@ describe("scenario header fetch", () => {
       await api.client.rescheduleJob({ params: { id: job.id }, body: { nextRunAt } });
       const awaitedResult2 = await api.client.job({ params: { id: job.id } });
       expect(awaitedResult2.nextRunAt).toBe(nextRunAt);
-      const mutation = received.find((request) => request.method === "POST");
+
+      const mutation = received.find((request) =>
+        new URL(request.url).pathname.endsWith("/rescheduleJob"),
+      );
+
       expect(mutation?.headers.get("content-type")).toContain("application/json");
       expect(mutation?.headers.get("x-monque-dev-scenario")).toBe("pending-jobs");
       expect(mutation?.credentials).toBe("include");
-      await expect(mutation?.json()).resolves.toStrictEqual({ nextRunAt });
+      await expect(mutation?.json()).resolves.toStrictEqual({
+        json: { params: { id: job.id }, body: { nextRunAt } },
+      });
     });
 
     it("preserves request options and applies init overrides without changing input headers", async () => {

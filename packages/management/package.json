@@ -69,6 +69,7 @@
   },
   "devDependencies": {
     "@monque/core": "workspace:*",
+    "@orpc/client": "2.0.0-beta.45",
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/node": "^22.20.5",
     "mongodb": "^7.9.0",

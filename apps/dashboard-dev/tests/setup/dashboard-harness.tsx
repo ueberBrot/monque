@@ -23,7 +23,7 @@ const createDashboardHarness = (
   }
 
   const runtimeConfig: Parameters<typeof getRouter>[0]["runtimeConfig"] = {
-    apiBaseUrl: "/",
+    apiBaseUrl: "/api",
     basePath: "/",
   };
 

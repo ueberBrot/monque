@@ -79,7 +79,11 @@ export const createManagementExpressRouter = function createManagementExpressRou
   // oxlint-disable-next-line oxc/no-async-endpoint-handlers -- Express 5 supports Promise-returning handlers.
   router.use(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await surface.openApiHandler.handle(createRequest(req), {
+      const rpc = req.path === "/rpc" || req.path.startsWith("/rpc/");
+      const handler = rpc ? surface.rpcHandler : surface.openApiHandler;
+
+      const result = await handler.handle(createRequest(req), {
+        prefix: rpc ? "/rpc" : undefined,
         context: context === undefined ? {} : { managementContext: await context({ req, res }) },
       });
 
