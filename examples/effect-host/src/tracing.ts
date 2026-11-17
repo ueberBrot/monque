@@ -20,7 +20,7 @@ export const tracing = Effect.gen(function* acquireTracing() {
     (value) =>
       Effect.promise(async () => {
         await value.shutdown();
-      }),
+      }).pipe(Effect.tap(() => Effect.log("Released telemetry"))),
   );
 
   return openTelemetry(provider);

@@ -1,9 +1,11 @@
 # Effect host example
 
 This private workspace runs a native Effect Worker and hosts Management and Dashboard
-with the existing Express adapters. It uses one scoped Monque instance: `.effects`
-handles Worker registration and intake; the same instance supplies Management's
-Promise interface. No published package changes or release bump are needed.
+with BunRuntime, BunHttpServer, `@monque/management-effect` and
+`@monque/dashboard-effect`. One scoped Monque instance supplies native `.effects`
+to both Workers and Management. Bun platform dependencies stay in this private
+application; the published adapters remain portable. Effect and platform versions
+are pinned to 4.1.4, with the coordinated oRPC 2.0.0-beta.45 transport.
 
 ## Run
 
@@ -47,7 +49,9 @@ slashes. Dashboard injects its base path and the separate Management mount at
 request time. Deep links such as `/ops/dashboard/jobs/<id>` reuse the same assets.
 No Dashboard rebuild is needed when changing either mount.
 
-Both mounts, static assets, and OpenAPI discovery require authentication. Viewers
+Both mounts, every static asset, HTML deep links, RPC, HTTP, and OpenAPI discovery
+require authentication. One host middleware provides a request-local Identity;
+native Management context and authorization hooks read that identity. Viewers
 can read. Operators can mutate except for deletion. Read-only mode also denies
 operator mutations; capabilities report these effective permissions. The adapters
 retain the versioned Route Map, validation, error responses, body limits, and
@@ -73,10 +77,15 @@ This example does not configure metrics or persist producer trace context.
 
 ## Shutdown and verification
 
-SIGINT and SIGTERM interrupt the application Effect. Its sequential scope closes
+BunRuntime handles SIGINT and SIGTERM and interrupts the application Effect. Its sequential scope closes
 the HTTP listener, disposes Monque, closes the application MongoDB client, then
 shuts down the optional provider. Failed startup releases already acquired resources.
 Monque borrows the database; the host owns and closes the client.
+
+HTTP stops accepting work, allows one second for active requests, then interrupts
+and joins remaining request fibers and their finalizers before releasing Monque.
+The listener has a 30-second idle timeout. Lifecycle logs report request completion
+and HTTP → Monque → MongoDB → optional telemetry release.
 
 Monque waits up to five seconds for active work during shutdown. Native Workers
 that remain are interrupted at terminal scope release; finalizers and
@@ -93,6 +102,18 @@ vp run @monque/effect-host#test
 vp run @monque/effect-host#lint:effect
 ```
 
-The checks cover authentication, capabilities, action denial, read-only mode,
-request protections, custom mounts, Dashboard assets and deep links, native Job
-processing, optional tracing, and resource release order.
+Tests launch `bun src/main.ts` as an actual subprocess with Testcontainers
+`mongo:8` and `directConnection=true`. They cover HTTP/RPC authentication and
+permissions, read-only mode, request protections, custom mounts, real assets,
+native Job processing, connection/listener startup failures, SIGINT/SIGTERM,
+active-request shutdown, and optional telemetry release order. Browser coverage
+loads and reloads a Job deep link, verifies viewer denial, and performs an
+operator mutation through the RPC Dashboard.
+
+For embedding, `host(options)` acquires an internal sequential child Scope of the caller and
+returns `{ url, jobId, monque, db, client }`. Stable options are `mongoUri`,
+`databaseName`, `operatorPassword`, `viewerPassword`, `managementPath`,
+`dashboardPath`, `port` (zero chooses a free port), optional `readOnly`, and optional
+`instrumentation`. The CLI uses the environment variables above; its readiness log
+is `Dashboard: <url><dashboardPath>; Job: <id>`. The dual-host matrix can launch
+this command and use independent mount paths without a separate testing host.

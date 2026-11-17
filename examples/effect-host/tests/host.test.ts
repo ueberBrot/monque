@@ -1,28 +1,20 @@
+/* oxlint-disable unicorn/no-await-expression-member -- Keep public HTTP response assertions beside their requests. */
 import { randomUUID } from "node:crypto";
-import type { MonqueInstrumentation } from "@monque/core";
-import { openTelemetry } from "@monque/core/opentelemetry";
+import { once } from "node:events";
+import { connect, createServer } from "node:net";
 import { CapabilitiesDtoSchema, JobDtoSchema, ProcessingStateDtoSchema } from "@monque/management";
-import {
-  BasicTracerProvider,
-  InMemorySpanExporter,
-  SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-base";
+import type { ManagementContract } from "@monque/management";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { ContractRouterClient } from "@orpc/contract";
 import { MongoDBContainer } from "@testcontainers/mongodb";
 import type { StartedMongoDBContainer } from "@testcontainers/mongodb";
-import { Effect, Exit, Scope } from "effect";
+import { Predicate } from "effect";
+import { MongoClient } from "mongodb";
 import { chromium } from "playwright";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vite-plus/test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { host } from "../src/host.js";
+import { launchHost } from "./process.js";
 
 const viewer = { authorization: `Basic ${Buffer.from("viewer:viewer-secret").toString("base64")}` };
 
@@ -30,80 +22,106 @@ const operator = {
   authorization: `Basic ${Buffer.from("operator:operator-secret").toString("base64")}`,
 };
 
-describe("Effect host", () => {
+describe("actual Bun Effect host", () => {
   let container: StartedMongoDBContainer;
-  let scope: Scope.Closeable;
-  let app: Effect.Success<ReturnType<typeof host>>;
+  let processHost: ReturnType<typeof launchHost>;
+  let url: string;
+  let jobId: string;
+  let databaseName: string;
 
-  const acquire = async (readOnly = false, instrumentation?: MonqueInstrumentation) => {
-    const options = {
-      mongoUri: `${container.getConnectionString()}?directConnection=true`,
-      databaseName: `host_${randomUUID().replaceAll("-", "")}`,
-      operatorPassword: "operator-secret",
-      viewerPassword: "viewer-secret",
-      managementPath: "/custom/control",
-      dashboardPath: "/custom/ui",
-      port: 0,
-      readOnly,
-    };
+  const start = async (env: Record<string, string> = {}) => {
+    databaseName = `host_${randomUUID().replaceAll("-", "")}`;
+    processHost = launchHost({
+      MONGO_URI: `${container.getConnectionString()}?directConnection=true`,
+      MONGO_DATABASE: databaseName,
+      ...env,
+    });
+    await expect
+      .poll(() => processHost.output(), { timeout: 15_000 })
+      .toMatch(/Dashboard: http:\/\/127.0.0.1:\d+\/custom\/ui; Job: [a-f\d]{24}/u);
 
-    return await Effect.runPromise(
-      host(instrumentation ? { ...options, instrumentation } : options).pipe(
-        Effect.provideService(Scope.Scope, scope),
-      ),
-    );
+    const match =
+      /Dashboard: (?<url>http:\/\/127.0.0.1:\d+)\/custom\/ui; Job: (?<job>[a-f\d]{24})/u.exec(
+        processHost.output(),
+      );
+
+    url = match?.groups?.["url"] ?? "";
+    jobId = match?.groups?.["job"] ?? "";
   };
 
   const request = async (path: string, init: RequestInit = {}) =>
-    await fetch(`${app.url}/custom/control/api/v1${path}`, { headers: operator, ...init });
+    await fetch(`${url}/custom/control/api/v1${path}`, { headers: operator, ...init });
+
+  const rpc = (headers = operator): ContractRouterClient<ManagementContract> =>
+    createORPCClient(new RPCLink({ origin: url, url: "/custom/control/rpc", headers }));
 
   beforeAll(async () => {
     container = await new MongoDBContainer("mongo:8").start();
   });
   beforeEach(async () => {
-    scope = Scope.makeUnsafe();
-    app = await acquire();
+    await start();
   });
   afterEach(async () => {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    vi.restoreAllMocks();
+    await processHost?.stop();
   });
 
   afterAll(async () => {
     await container?.stop();
   });
 
-  it("requires host authentication on Management, Dashboard, assets and OpenAPI", async () => {
-    const statuses = await Promise.all(
+  it("authenticates HTML, assets, HTTP, RPC and OpenAPI", async () => {
+    await Promise.all(
       [
-        "/custom/control/api/v1/jobs",
-        "/custom/control/openapi.json",
-        `/custom/ui/jobs/${app.jobId}`,
+        "/custom/ui",
+        `/custom/ui/jobs/${jobId}`,
         "/custom/ui/assets/missing.js",
+        "/custom/control/api/v1/jobs",
+        "/custom/control/rpc/jobs/list",
+        "/custom/control/openapi.json",
       ].map(async (path) => {
-        const response = await fetch(`${app.url}${path}`);
-
-        return response.status;
+        const response = await fetch(`${url}${path}`);
+        expect(response.status).toBe(401);
+        expect(response.headers.get("www-authenticate")).toContain('Basic realm="Monque"');
       }),
     );
-
-    expect(statuses).toStrictEqual([401, 401, 401, 401]);
   });
 
-  it("serves the existing Dashboard build at custom deep links", async () => {
-    const response = await fetch(`${app.url}/custom/ui/jobs/${app.jobId}`, { headers: viewer });
+  it("processes a native Job and serves custom deep links and real assets", async () => {
+    await expect
+      .poll(async () => JobDtoSchema.parse(await (await request(`/jobs/${jobId}`)).json()).status)
+      .toBe("completed");
+    const response = await fetch(`${url}/custom/ui/jobs/${jobId}`, { headers: viewer });
     const html = await response.text();
     expect(html).toContain('"apiBaseUrl":"/custom/control"');
     expect(html).toContain('"basePath":"/custom/ui"');
-    const assetPath = /src="(?<asset>[^" ]+\.js)"/u.exec(html)?.groups?.["asset"];
-    expect(assetPath).toMatch(/^\/custom\/ui\/assets\//u);
-    const asset = await fetch(`${app.url}${assetPath}`, { headers: viewer });
-    expect(asset.status).toBe(200);
-    const missing = await fetch(`${app.url}/custom/ui/assets/missing.js`, { headers: viewer });
-    expect(missing.status).toBe(404);
+    const asset = /src="(?<asset>[^" ]+\.js)"/u.exec(html)?.groups?.["asset"];
+    expect(asset).toMatch(/^\/custom\/ui\/assets\//u);
+    expect((await fetch(`${url}${asset}`, { headers: viewer })).status).toBe(200);
+    expect((await fetch(`${url}/custom/ui/assets/missing.js`, { headers: viewer })).status).toBe(
+      404,
+    );
   });
 
-  it("renders the authenticated Dashboard from a Job deep link in Chromium", async () => {
+  it("persists the receipt produced by the captured native Worker application service", async () => {
+    const client = new MongoClient(`${container.getConnectionString()}?directConnection=true`);
+
+    try {
+      await client.connect();
+      await expect
+        .poll(
+          async () =>
+            await client
+              .db(databaseName)
+              .collection<{ _id: string; processed: boolean }>("receipts")
+              .countDocuments({ _id: jobId, processed: true }),
+        )
+        .toBe(1);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("renders and reloads a viewer deep link and permits operator RPC controls in Chromium", async () => {
     const browser = await chromium.launch();
 
     try {
@@ -112,138 +130,202 @@ describe("Effect host", () => {
       });
 
       const page = await context.newPage();
-      await page.goto(`${app.url}/custom/ui/jobs/${app.jobId}`);
-      const heading = page.getByRole("heading", { name: "receipt", exact: true });
-      await heading.waitFor({ state: "visible" });
-      await expect(heading.textContent()).resolves.toBe("receipt");
-      await expect(page.getByText(app.jobId, { exact: true }).isVisible()).resolves.toBe(true);
+      await page.goto(`${url}/custom/ui/jobs/${jobId}`);
+      await page.getByRole("heading", { name: "receipt", exact: true }).waitFor();
       await page.reload();
-      await heading.waitFor({ state: "visible" });
-      await expect(page.getByText(app.jobId, { exact: true }).isVisible()).resolves.toBe(true);
+      await page.getByRole("heading", { name: "receipt", exact: true }).waitFor();
+      await expect(
+        page.getByRole("button", { name: "Retry", exact: true }).isDisabled(),
+      ).resolves.toBe(true);
+      await context.close();
+
+      const operatorContext = await browser.newContext({
+        httpCredentials: { username: "operator", password: "operator-secret" },
+      });
+
+      const operatorPage = await operatorContext.newPage();
+      await operatorPage.goto(`${url}/custom/ui/health`);
+
+      await Promise.all([
+        operatorPage.waitForResponse(
+          (response) =>
+            response.url().endsWith("/rpc/pauseProcessing") && response.status() === 200,
+        ),
+        operatorPage.getByRole("button", { name: "Pause instance", exact: true }).click(),
+      ]);
+      await operatorPage.getByRole("button", { name: "Resume instance", exact: true }).waitFor();
+      const state = await rpc().processingState();
+      expect(state.paused).toBe(true);
     } finally {
       await browser.close();
     }
   });
 
-  it("reports role capabilities and denies viewer mutations and operator deletion", async () => {
-    const capabilities = await request("/capabilities", { headers: viewer });
-    expect(CapabilitiesDtoSchema.parse(await capabilities.json()).actions.cancel).toBe(false);
-
-    const denied = await request(`/jobs/${app.jobId}/actions/cancel`, {
-      method: "POST",
-      headers: viewer,
-    });
-
-    expect(denied.status).toBe(403);
-    const deletion = await request(`/jobs/${app.jobId}`, { method: "DELETE" });
-    expect(deletion.status).toBe(403);
-    const allowedCapabilities = await request("/capabilities");
-    expect(CapabilitiesDtoSchema.parse(await allowedCapabilities.json()).actions.cancel).toBe(true);
+  it("uses the host identity for HTTP and RPC capabilities and mutation policy", async () => {
+    expect(
+      CapabilitiesDtoSchema.parse(
+        await (await request("/capabilities", { headers: viewer })).json(),
+      ).actions.cancel,
+    ).toBe(false);
+    expect((await rpc(viewer).capabilities()).actions.cancel).toBe(false);
+    expect((await rpc().capabilities()).actions.cancel).toBe(true);
+    expect(
+      (await request(`/jobs/${jobId}/actions/cancel`, { method: "POST", headers: viewer })).status,
+    ).toBe(403);
+    expect((await request(`/jobs/${jobId}`, { method: "DELETE" })).status).toBe(403);
   });
 
-  it("allows an operator to pause and resume through the existing Route Map", async () => {
-    const body = JSON.stringify({ instanceId: app.monque.getProcessingState().instanceId });
+  it("denies forbidden native RPC operations with protocol errors", async () => {
+    await expect(rpc(viewer).cancelJob({ params: { id: jobId } })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(rpc().deleteJob({ params: { id: jobId } })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("allows operator pause/resume through public HTTP", async () => {
+    const state = await rpc().processingState();
+    const body = JSON.stringify({ instanceId: state.instanceId });
     const headers = { ...operator, "content-type": "application/json" };
-    const paused = await request("/processing/actions/pause", { method: "POST", headers, body });
-    expect(ProcessingStateDtoSchema.parse(await paused.json()).paused).toBe(true);
-    const resumed = await request("/processing/actions/resume", { method: "POST", headers, body });
-    expect(ProcessingStateDtoSchema.parse(await resumed.json()).paused).toBe(false);
+    expect(
+      ProcessingStateDtoSchema.parse(
+        await (
+          await request("/processing/actions/pause", { method: "POST", headers, body })
+        ).json(),
+      ).paused,
+    ).toBe(true);
+    expect(
+      ProcessingStateDtoSchema.parse(
+        await (
+          await request("/processing/actions/resume", { method: "POST", headers, body })
+        ).json(),
+      ).paused,
+    ).toBe(false);
   });
 
-  it("retains origin, request size, validation and not-found protections", async () => {
-    const crossOrigin = await request(`/jobs/${app.jobId}/actions/cancel`, {
-      method: "POST",
-      headers: { ...operator, origin: "https://untrusted.example" },
-    });
-
-    expect(crossOrigin.status).toBe(403);
-
-    const oversized = await request(`/jobs/${app.jobId}/actions/priority`, {
-      method: "POST",
-      headers: { ...operator, "content-type": "application/json" },
-      body: JSON.stringify({ priority: "a".repeat(70_000) }),
-    });
-
-    expect(oversized.status).toBe(413);
-    const invalid = await request("/jobs/invalid-id");
-    expect(invalid.status).toBe(400);
-    const missing = await request("/jobs/000000000000000000000000");
-    expect(missing.status).toBe(404);
+  it("preserves request protections", async () => {
+    const headers = { ...operator, "content-type": "application/json" };
+    expect(
+      (
+        await request(`/jobs/${jobId}/actions/cancel`, {
+          method: "POST",
+          headers: { ...operator, origin: "https://untrusted.example" },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(`/jobs/${jobId}/actions/priority`, {
+          headers,
+          method: "POST",
+          body: JSON.stringify({ priority: "a".repeat(70_000) }),
+        })
+      ).status,
+    ).toBe(413);
+    expect((await request("/jobs/invalid-id")).status).toBe(400);
+    expect((await request("/jobs/000000000000000000000000")).status).toBe(404);
   });
 
-  it("processes native Jobs using captured application services", async () => {
-    await expect
-      .poll(async () => {
-        const response = await request(`/jobs/${app.jobId}`, { headers: viewer });
-
-        return JobDtoSchema.parse(await response.json()).status;
-      })
-      .toBe("completed");
-    await expect(
-      app.db.collection<{ _id: string }>("receipts").countDocuments({ _id: app.jobId }),
-    ).resolves.toBe(1);
-  });
-
-  it("disposes Monque before closing the application database and listener", async () => {
-    const closeClient = app.client.close.bind(app.client);
-    vi.spyOn(app.client, "close").mockImplementation(async () => {
-      await expect(app.monque.getJob(app.jobId)).rejects.toThrow(/disposed/iu);
-      await expect(app.db.command({ ping: 1 })).resolves.toMatchObject({ ok: 1 });
-      await closeClient();
-    });
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    await expect(fetch(`${app.url}/custom/control/api/v1/health`)).rejects.toThrow(
-      /fetch failed/iu,
-    );
-    await expect(app.db.command({ ping: 1 })).rejects.toThrow(/connected/iu);
-  });
-
-  it("blocks operator mutations in read-only mode", async () => {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    scope = Scope.makeUnsafe();
-    app = await acquire(true);
-    const capabilities = await request("/capabilities");
-    expect(CapabilitiesDtoSchema.parse(await capabilities.json())).toMatchObject({
+  it("denies operator mutations in read-only mode on both transports", async () => {
+    await processHost.stop();
+    await start({ READ_ONLY: "true" });
+    await expect(rpc().capabilities()).resolves.toMatchObject({
       readOnly: true,
       actions: { cancel: false },
     });
-    const denied = await request(`/jobs/${app.jobId}/actions/cancel`, { method: "POST" });
-    expect(denied.status).toBe(403);
+    expect((await request(`/jobs/${jobId}/actions/cancel`, { method: "POST" })).status).toBe(403);
   });
 
-  it("exports native Worker spans through a provider owned outside the host", async () => {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    scope = Scope.makeUnsafe();
-    const exporter = new InMemorySpanExporter();
-
-    const provider = new BasicTracerProvider({
-      spanProcessors: [new SimpleSpanProcessor(exporter)],
+  it("joins an unfinished authenticated request before releasing shared resources", async () => {
+    const socket = connect(Number(new URL(url).port), "127.0.0.1");
+    const closed = once(socket, "close");
+    socket.on("error", () => {
+      /* Shutdown may reset the unfinished upload. */
     });
-
-    const providerShutdown = vi.spyOn(provider, "shutdown");
-    await Effect.runPromise(
-      Effect.addFinalizer(() =>
-        Effect.promise(async () => {
-          await expect(app.db.command({ ping: 1 })).rejects.toThrow(/connected/iu);
-          await provider.shutdown();
-        }),
-      ).pipe(Effect.provideService(Scope.Scope, scope)),
+    await once(socket, "connect");
+    socket.write(
+      `POST /custom/control/api/v1/jobs/${jobId}/actions/priority HTTP/1.1\r\nHost: ${new URL(url).host}\r\nAuthorization: ${operator.authorization}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{`,
     );
-    app = await acquire(false, openTelemetry(provider));
-    await expect
-      .poll(async () => {
-        const job = await app.monque.getJob(app.jobId);
-
-        return job?.status;
-      })
-      .toBe("completed");
-    await app.monque.dispose();
-    provider.getTracer("host").startSpan("host-still-active").end();
-    await provider.forceFlush();
-    expect(exporter.getFinishedSpans().map((span) => span.name)).toStrictEqual(
-      expect.arrayContaining(["monque.worker", "host-still-active"]),
+    socket.resume();
+    await expect.poll(() => processHost.output()).toContain("Request started");
+    await processHost.stop();
+    await closed;
+    expect(processHost.output()).toMatch(
+      /Request finished[\s\S]*Released HTTP[\s\S]*Released Monque[\s\S]*Released MongoDB/u,
     );
-    expect(providerShutdown).not.toHaveBeenCalled();
-    await Effect.runPromise(Scope.close(scope, Exit.void));
   });
+
+  it("cleans up Monque and MongoDB when listener startup fails", async () => {
+    await processHost.stop();
+    const occupied = createServer();
+    occupied.listen(0, "127.0.0.1");
+    await once(occupied, "listening");
+    const address = occupied.address();
+
+    if (address === null || Predicate.isString(address)) {
+      throw new Error("Expected TCP");
+    }
+
+    try {
+      processHost = launchHost({
+        MONGO_URI: `${container.getConnectionString()}?directConnection=true`,
+        MONGO_DATABASE: `failure_${randomUUID()}`,
+        PORT: String(address.port),
+      });
+      await processHost.exited;
+      expect(processHost.child.exitCode).not.toBe(0);
+      expect(processHost.output()).not.toContain("Dashboard:");
+      expect(processHost.output()).toMatch(/Released Monque[\s\S]*Released MongoDB/u);
+    } finally {
+      occupied.close();
+    }
+  });
+
+  it("closes the acquired MongoDB client after connection failure", async () => {
+    await processHost.stop();
+    processHost = launchHost({ MONGO_URI: "mongodb://127.0.0.1:1/?directConnection=true" });
+    await processHost.exited;
+    expect(processHost.child.exitCode).not.toBe(0);
+    expect(processHost.output()).toContain("Released MongoDB");
+    expect(processHost.output()).not.toContain("Dashboard:");
+  });
+
+  it("releases application-owned telemetry after HTTP, Monque and MongoDB", async () => {
+    await processHost.stop();
+    await start({ MONQUE_TRACING: "true" });
+    await expect
+      .poll(async () => JobDtoSchema.parse(await (await request(`/jobs/${jobId}`)).json()).status)
+      .toBe("completed");
+    await processHost.stop();
+    expect(processHost.output()).toContain("monque.worker");
+    expect(processHost.output()).toMatch(
+      /Released HTTP[\s\S]*Released Monque[\s\S]*Released MongoDB[\s\S]*Released telemetry/u,
+    );
+  });
+
+  it("keeps a borrowed telemetry provider usable after host release", async () => {
+    await processHost.stop();
+    processHost = launchHost(
+      {
+        MONGO_URI: `${container.getConnectionString()}?directConnection=true`,
+        MONGO_DATABASE: `borrowed_${randomUUID()}`,
+      },
+      "tests/borrowed-telemetry.ts",
+    );
+    await processHost.exited;
+    expect(processHost.child.exitCode).toBe(0);
+    expect(processHost.output()).toMatch(/Released MongoDB[\s\S]*host-still-active/u);
+  });
+
+  it.each(["SIGINT", "SIGTERM"] as const)(
+    "releases listener and owned resources on %s",
+    async (signal) => {
+      await processHost.stop(signal);
+      expect(processHost.output()).toMatch(
+        /Released HTTP[\s\S]*Released Monque[\s\S]*Released MongoDB/u,
+      );
+      await expect(fetch(`${url}/custom/control/api/v1/health`)).rejects.toThrow(/fetch failed/iu);
+    },
+  );
 });

@@ -1,16 +1,21 @@
-import { createServer } from "node:http";
+// @effect-diagnostics unstableApiUsage:off
+/* oxlint-disable eslint/max-classes-per-file, sonarjs/no-nested-functions -- Application identity and Worker dependencies are local to this composition. */
+import { BunHttpServer } from "@effect/platform-bun";
 import type { MonqueOptions } from "@monque/core";
 import { Monque } from "@monque/core/effect";
-import { createDashboardExpressRouter } from "@monque/dashboard-express";
-import { createManagementExpressRouter } from "@monque/management-express";
-import { Context, Effect, Predicate } from "effect";
-import express from "express";
-import type { RequestHandler } from "express";
+import { dashboardEffectLayer } from "@monque/dashboard-effect";
+import { createManagementEffectRoutes } from "@monque/management-effect";
+import { Context, Effect, Layer, Scope } from "effect";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { MongoClient } from "mongodb";
 
 import { HostError } from "./host-error.js";
 import { validateOptions } from "./options.js";
 import type { HostOptions } from "./options.js";
+
+class Identity extends Context.Service<Identity, { readonly role: "operator" | "viewer" }>()(
+  "effect-host/Identity",
+) {}
 
 class Receipts extends Context.Service<
   Receipts,
@@ -19,29 +24,11 @@ class Receipts extends Context.Service<
   }
 >()("effect-host/Receipts") {}
 
-const listen = (app: express.Express, port: number) =>
-  Effect.gen(function* listenHttp() {
-    const server = yield* Effect.acquireDisposable(
-      Effect.sync(() =>
-        createServer((req, res) => {
-          app(req, res);
-        }),
-      ),
-    );
-
-    return yield* Effect.callback<ReturnType<typeof createServer>, HostError>((resume) => {
-      server.once("error", (error) => {
-        resume(Effect.fail(new HostError({ message: error.message })));
-      });
-      server.listen(port, "127.0.0.1", () => {
-        resume(Effect.succeed(server));
-      });
-    });
-  });
-
-export const host = (options: HostOptions) =>
-  Effect.gen(function* acquireHost() {
+const acquireHost = (options: HostOptions) =>
+  Effect.gen(function* acquireResources() {
     yield* validateOptions(options);
+
+    yield* Effect.addFinalizer(() => Effect.log("Released MongoDB"));
 
     // Register release before connect so a failed acquisition also closes its client.
     const client = yield* Effect.acquireRelease(
@@ -60,6 +47,7 @@ export const host = (options: HostOptions) =>
       schedulerOptions.instrumentation = options.instrumentation;
     }
 
+    yield* Effect.addFinalizer(() => Effect.log("Released Monque"));
     const monque = yield* Monque.scoped(db, schedulerOptions);
     yield* monque.effects
       .register("receipt", (job) =>
@@ -82,9 +70,6 @@ export const host = (options: HostOptions) =>
     const job = yield* monque.effects.enqueue("receipt", { message: "Hello from Effect" });
     yield* monque.effects.start;
 
-    const app = express();
-    app.disable("x-powered-by");
-
     const operatorCredential = Buffer.from(`operator:${options.operatorPassword}`).toString(
       "base64",
     );
@@ -93,43 +78,69 @@ export const host = (options: HostOptions) =>
     const operator = `Basic ${operatorCredential}`;
     const viewer = `Basic ${viewerCredential}`;
 
-    const authenticate: RequestHandler = (req, res, next) => {
-      const authorization = req.get("authorization");
+    const authentication = HttpRouter.middleware<{ provides: Identity }>()((next) =>
+      Effect.gen(function* authenticate() {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const { authorization } = request.headers;
 
-      if (authorization !== operator && authorization !== viewer) {
-        res.setHeader("WWW-Authenticate", 'Basic realm="Monque", charset="UTF-8"');
-        res.status(401).json({ error: "Authentication required" });
+        if (authorization !== operator && authorization !== viewer) {
+          return HttpServerResponse.jsonUnsafe(
+            { error: "Authentication required" },
+            {
+              status: 401,
+              headers: { "www-authenticate": 'Basic realm="Monque", charset="UTF-8"' },
+            },
+          );
+        }
 
-        return;
-      }
+        yield* Effect.log("Request started", request.method, request.url);
+        yield* Effect.addFinalizer(() =>
+          Effect.log("Request finished", request.method, request.url),
+        );
 
-      res.locals["role"] = authorization === operator ? "operator" : "viewer";
-      next();
-    };
+        return yield* next.pipe(
+          Effect.provideService(Identity, {
+            role: authorization === operator ? "operator" : "viewer",
+          }),
+        );
+      }),
+    );
 
-    app.use(
-      options.managementPath,
-      authenticate,
-      createManagementExpressRouter<{ role: string }>({
-        monque,
+    const routes = Layer.mergeAll(
+      createManagementEffectRoutes({
+        monque: monque.effects,
+        // SAFETY: validateOptions checks the absolute mount; retain the portable adapter's template type.
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Validated by validateOptions before acquisition.
+        prefix: options.managementPath as `/${string}`,
         readOnly: options.readOnly ?? false,
-        context: ({ res }) => ({ role: String(res.locals["role"]) }),
+        context: () => Identity,
         authorize: ({ action, context }) =>
-          action === "read" ||
-          (context.role === "operator" && action !== "delete" && action !== "deleteBulk"),
+          Effect.succeed(
+            action === "read" ||
+              (context.role === "operator" && action !== "delete" && action !== "deleteBulk"),
+          ),
       }),
+      dashboardEffectLayer({ basePath: options.dashboardPath, apiBaseUrl: options.managementPath }),
+    ).pipe(
+      Layer.provide(authentication.layer),
+      HttpRouter.provideRequest(BunHttpServer.layerHttpServices),
     );
-    app.use(
-      options.dashboardPath,
-      authenticate,
-      createDashboardExpressRouter({
-        apiBaseUrl: options.managementPath,
-      }),
-    );
-    const server = yield* listen(app, options.port);
-    const address = server.address();
 
-    if (address === null || Predicate.isString(address)) {
+    const handler = yield* HttpRouter.toHttpEffect(routes);
+    // Sequential acquisition makes HTTP fibers finish before shared resources close.
+    yield* Effect.addFinalizer(() => Effect.log("Released HTTP"));
+
+    const server = yield* BunHttpServer.make({
+      hostname: "127.0.0.1",
+      port: options.port,
+      gracefulShutdownTimeout: 1000,
+      idleTimeout: 30,
+    });
+
+    yield* server.serve(handler);
+    const { address } = server;
+
+    if (address._tag === "UnixPathAddress") {
       return yield* new HostError({ message: "Expected a TCP listener" });
     }
 
@@ -140,4 +151,13 @@ export const host = (options: HostOptions) =>
       url: `http://127.0.0.1:${address.port}`,
       jobId: job._id.toHexString(),
     };
+  });
+
+/** Own ordering even when an embedding application uses parallel finalization. */
+export const host = (options: HostOptions) =>
+  Effect.gen(function* scopedHost() {
+    const parent = yield* Effect.scope;
+    const scope = yield* Scope.fork(parent, "sequential");
+
+    return yield* acquireHost(options).pipe(Scope.provide(scope));
   });

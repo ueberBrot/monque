@@ -1,3 +1,5 @@
+// @effect-diagnostics unstableApiUsage:off
+import { BunRuntime } from "@effect/platform-bun";
 import { Effect } from "effect";
 
 import { host } from "./host.js";
@@ -21,24 +23,4 @@ const program = Effect.scoped(
   }),
 );
 
-const controller = new AbortController();
-
-const shutdown = () => {
-  controller.abort();
-};
-
-process.once("SIGINT", shutdown);
-
-process.once("SIGTERM", shutdown);
-
-try {
-  await Effect.runPromise(program, { signal: controller.signal });
-} catch (error) {
-  if (!controller.signal.aborted) {
-    console.error(error);
-    process.exitCode = 1;
-  }
-} finally {
-  process.removeListener("SIGINT", shutdown);
-  process.removeListener("SIGTERM", shutdown);
-}
+BunRuntime.runMain(program);
