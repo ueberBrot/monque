@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 
+const typeCheckTask = "type-check";
+
 export default defineConfig({
   run: {
     tasks: {
@@ -40,12 +42,17 @@ export default defineConfig({
       },
       test: {
         command: "vp test run --config vite.config.ts",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
+        cache: false,
+      },
+      "test:unit:incremental": {
+        command: "vp test run --since-last-run",
+        dependsOn: [typeCheckTask],
         cache: false,
       },
       "test:unit": {
         command: "vp test run",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
         cache: {
           env: ["CI", "TZ"],
           output: [],

@@ -4,6 +4,8 @@ import { defineConfig, lazyPlugins, loadConfigFromFile, loadEnv } from "vite-plu
 
 import { readDashboardDevServerEnvironment } from "./src/environment.js";
 
+const typeCheckTask = "type-check";
+
 const expressBuilds = ["@monque/dashboard-express#build", "@monque/management-express#build"];
 const effectBuilds = ["@monque/dashboard-effect#build", "@monque/management-effect#build"];
 const hostBuilds = [...expressBuilds, ...effectBuilds];
@@ -65,12 +67,17 @@ const config = defineConfig(({ mode }) => {
         },
         test: {
           command: "vp test run",
-          dependsOn: ["type-check"],
+          dependsOn: [typeCheckTask],
+          cache: false,
+        },
+        "test:unit:incremental": {
+          command: "vp test run --since-last-run",
+          dependsOn: [typeCheckTask],
           cache: false,
         },
         "test:unit": {
           command: "vp test run",
-          dependsOn: ["type-check"],
+          dependsOn: [typeCheckTask],
           cache: {
             env: ["CI", "TZ"],
             output: [],

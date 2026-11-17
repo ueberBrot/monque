@@ -245,6 +245,11 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      "test:unit:incremental": {
+        command:
+          "vp run --filter './packages/*' --filter './apps/*' --filter './examples/*' test:unit:incremental",
+        cache: false,
+      },
       "verify:consumer": {
         command:
           "vp run --filter @monque/verification --filter @monque/management-effect --filter @monque/dashboard-effect verify:consumer",

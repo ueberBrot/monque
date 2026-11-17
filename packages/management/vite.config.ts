@@ -7,6 +7,8 @@ const packageJson = z
   .object({ version: z.string() })
   .parse(JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf-8")));
 
+const typeCheckTask = "type-check";
+
 export default defineConfig({
   run: {
     tasks: {
@@ -56,12 +58,17 @@ export default defineConfig({
       },
       test: {
         command: "vp test run",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
+        cache: false,
+      },
+      "test:unit:incremental": {
+        command: "vp test run --since-last-run",
+        dependsOn: [typeCheckTask],
         cache: false,
       },
       "test:unit": {
         command: "vp test run",
-        dependsOn: ["type-check"],
+        dependsOn: [typeCheckTask],
         cache: {
           env: ["CI", "TZ"],
           output: [],
