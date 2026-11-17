@@ -104,6 +104,18 @@ export default defineConfig({
     // CI runs native rules before builds, then typed lint and TypeScript together.
     options: { typeAware: false },
     rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["bun:test", "bun:test/**", "node:test", "node:test/**"],
+              message:
+                "Use Vitest for unit and integration tests, or @effect/vitest for native Effect tests.",
+            },
+          ],
+        },
+      ],
       // Public Promise<void> and Effect fiber APIs use void generic arguments.
       "typescript/no-invalid-void-type": ["error", { allowInGenericTypeArguments: true }],
       // Promise adapters preserve arbitrary third-party rejection values in the error channel.
