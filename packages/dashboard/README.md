@@ -102,6 +102,4 @@ The Dashboard appends `/rpc` to `apiBaseUrl`, so omit `/api/v1` and `/rpc` from 
 option. Authenticate both transports. Upgrade Dashboard and Management together
 for the pinned oRPC beta.
 
-For Effect HTTP, use `@monque/dashboard-effect`. Both adapters use
-`renderDashboardHtml(template, runtimeConfig)` and `shouldServeDashboardHtml(pathname)`.
-Adapters and hosts handle HTTP, authentication and listeners.
+For Effect HTTP, use [@monque/dashboard-effect](../dashboard-effect).

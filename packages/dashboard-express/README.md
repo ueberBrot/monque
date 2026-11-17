@@ -63,11 +63,11 @@ the browser configuration automatically.
 | Setting             | Example                        | Meaning                                                                                                              |
 | ------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | Dashboard mount     | `app.use('/ops/dashboard', …)` | URL where the dashboard is served; its base path is inferred automatically.                                          |
-| `apiBaseUrl`        | `'/ops'`                       | Required Management router mount URL. The dashboard appends `/api/v1/...`.                                           |
+| `apiBaseUrl`        | `'/ops'`                       | Required Management router mount URL. The dashboard appends `/rpc`.                                                  |
 | `pollingIntervalMs` | `15_000`                       | Base job refresh interval while visible. Statistics and health refresh less often. Omit to disable periodic polling. |
 
-**Do not include `/api/v1` in `apiBaseUrl`.** In the example, the jobs endpoint is
-`/ops/api/v1/jobs`. The API and dashboard may use different mount paths.
+**Do not include `/api/v1` or `/rpc` in `apiBaseUrl`.** In the example, Dashboard
+requests use `/ops/rpc`. The API and dashboard may use different mount paths.
 
 `apiBaseUrl` also accepts a sync or async `({ req, res }) => string` resolver for
 request-dependent URLs. Router options can come from your application's environment configuration;

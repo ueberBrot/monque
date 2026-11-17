@@ -183,20 +183,16 @@ Read-only policy and capabilities apply to all mutations, including bulk actions
 
 Domain failures keep the compatibility facade's oRPC classification. Other failures
 stay in the Effect error channel; defects and interruption remain distinct.
-The calling fiber owns parallel hook work. Operations create no runtime, listener,
-authentication or application layer. Interruption cannot undo admitted writes (ADR-0007).
+The host owns execution and authentication. Interruption cannot undo writes
+already sent to MongoDB.
 
 `createNativeManagementRouter(options)` accepts `NativeManagementOptions`,
-`monque.effects` and native hooks. It uses official `.effect` handlers without Promise scheduler calls.
+`monque.effects` and native hooks through `@orpc/effect`.
 
-Native router hosts supply `effect/context` with services and a request Scope,
+For custom hosts, supply `effect/context` with services and a request Scope,
 `managementContext` if hooks need it, tracing context and the abort signal.
-The bridge starts a separate root fiber, without guaranteed inheritance of HTTP
-fiber lifetime or arbitrary FiberRefs. Adapters must combine client and host
-interruption, then join the transport Promise in an uninterruptible finalizer
-before closing the Scope. Release shared resources after requests finish. See
-[ADR-0009](../../docs/adr/0009-portable-management-effect.md) for lifecycle constraints.
-Use `@monque/management-effect` for Effect HTTP routes.
+For Effect HTTP servers, use [@monque/management-effect](../management-effect),
+which handles request scopes and cancellation.
 
 ## RPC alongside public HTTP
 
@@ -215,15 +211,13 @@ RPC uses its native error envelope; HTTP retains `{ error: string }`. DTO dates
 remain ISO strings. RPC reads and writes use POST, including browser origin checks.
 Express mounts `/rpc` beneath its Management mount.
 
-## Coordinated release compatibility
+## Compatibility
 
 Use Management 0.12.x, Management Express 0.8.x, Dashboard 0.8.x and Dashboard
-Express 0.5.x together. `@monque/management-effect` and `@monque/dashboard-effect`
-release as 0.2.0. Management Effect requires Management 0.12.x; Dashboard adapters
-require the 0.8.x renderer. Changesets updates their `workspace:^` Dashboard range
-when versioning. Effect HTTP adapters require Effect 4.1.4. These versions are
-projected until the coordinated release publishes. Management 0.11.x has no RPC
-handler or native surface export and cannot serve the new Dashboard.
+Express 0.5.x together. Management Effect requires Management 0.12.x; Dashboard
+adapters include the 0.8.x renderer. Effect HTTP adapters require Effect 4.1.4.
+Management 0.11.x has no RPC handler or native surface export and cannot serve
+the new Dashboard.
 
 All oRPC contract, server, OpenAPI, Zod, client and TanStack Query packages use
 `2.0.0-beta.50`. Upgrade them together. Cross-major oRPC interoperability is not

@@ -3,8 +3,6 @@
 Run a native Effect Worker, Management and Dashboard with BunRuntime,
 BunHttpServer, `@monque/management-effect` and `@monque/dashboard-effect`.
 One scoped Monque instance supplies native `.effects` to Workers and Management.
-Bun dependencies stay in this private application. Effect and platform packages
-are pinned to 4.1.4, and oRPC to 2.0.0-beta.50.
 
 ## Run
 
@@ -57,11 +55,6 @@ use the same credentials.
 
 ## Optional tracing
 
-Ordinary startup imports neither `src/tracing.ts` nor core's optional telemetry
-entry. The example's telemetry packages are development dependencies; production
-installations only need them for tracing. The integration requires the SDK metrics
-peer even though this example exports no metrics.
-
 Set `MONQUE_TRACING=true` to create a `BasicTracerProvider` with a console exporter.
 `openTelemetry(provider)` passes it to Monque without global registration.
 Configure your sampler, resource and exporters in `src/tracing.ts`.
@@ -69,43 +62,12 @@ To reuse a provider, pass `instrumentation` to `host()` and keep the provider's
 scope outside the host scope. Monque never shuts it down. The example does not
 configure metrics or persist producer trace context.
 
-## Shutdown and verification
+## Shutdown
 
-BunRuntime handles SIGINT and SIGTERM by interrupting the application Effect.
-Its sequential scope closes HTTP, disposes Monque, closes the MongoDB
-client, then shuts down the optional provider. Failed startup releases acquired
-resources even if an embedder catches the failure and keeps its parent scope open.
-The host owns the MongoDB client.
+BunRuntime handles SIGINT and SIGTERM. Shutdown stops HTTP requests, disposes
+Monque, closes MongoDB, then releases the optional tracing provider.
 
-HTTP stops accepting requests, waits one second, then interrupts and joins
-remaining request fibers and finalizers before releasing Monque. The listener's
-idle timeout is 30 seconds. Logs report request completion and resource release
-in this order.
-
-Monque waits up to five seconds for active work during shutdown. Native Workers
-that remain are interrupted at terminal scope release; finalizers and
-uninterruptible work can delay disposal. Started MongoDB writes settle before
-release. Interruption cannot undo writes or external effects. Incomplete Jobs
-remain subject to the scheduler's fenced retry and Stale Job recovery rules;
-shutdown does not guarantee completion or exactly-once external execution.
-
-With Docker available and Playwright Chromium installed (`bunx playwright install chromium`
-from `examples/effect-host`), run the MongoDB and HTTP integration tests:
-
-```sh
-vp run @monque/effect-host#test
-vp run @monque/effect-host#lint:effect
-```
-
-Tests run `bun src/main.ts` with Testcontainers `mongo:8` and
-`directConnection=true`, plus Chromium for Dashboard workflows.
-
-For embedding, `host(options)` acquires a sequential child Scope and returns
-`{ url, jobId, monque, db, client }`. Options are `mongoUri`, `databaseName`,
-`operatorPassword`, `viewerPassword`, `managementPath`, `dashboardPath`, `port`
-(zero selects a free port), optional `readOnly` and optional `instrumentation`.
-The CLI logs `Dashboard: <url><dashboardPath>; Job: <id>` when ready.
-
-The Dashboard polls every second. An optional native `authorize` hook replaces
-the entire action policy and runs in the request Effect context. See [dashboard-dev](../../apps/dashboard-dev/README.md#actual-express--bun-effect-host-matrix)
-for the Express/Bun browser matrix and interactive startup.
+Monque waits up to five seconds for active work before interrupting native
+Workers. Finalizers and uninterruptible work can delay shutdown. Cancellation
+cannot undo MongoDB writes or external effects; incomplete Jobs remain subject
+to retry and Stale Job recovery.
