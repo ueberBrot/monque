@@ -1,5 +1,7 @@
 # Monque
 
+When writing or reviewing documentation, follow the [coding standards](./CODING_STANDARDS.md).
+
 ## Agent skills
 
 ### Dependency skills
