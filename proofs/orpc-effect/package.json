@@ -1,0 +1,25 @@
+{
+  "name": "monque-orpc-effect-proof",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test --timeout 15000",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.1.4",
+    "@orpc/client": "2.0.0-beta.45",
+    "@orpc/contract": "2.0.0-beta.45",
+    "@orpc/effect": "2.0.0-beta.45",
+    "@orpc/openapi": "2.0.0-beta.45",
+    "@orpc/server": "2.0.0-beta.45",
+    "@orpc/tanstack-query": "2.0.0-beta.45",
+    "@orpc/zod": "2.0.0-beta.45",
+    "effect": "4.1.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.11",
+    "typescript": "7.0.2"
+  }
+}

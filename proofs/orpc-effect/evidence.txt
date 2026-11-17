@@ -1,0 +1,49 @@
+bun test v1.4.4 (38afee6c8)
+
+proofs/orpc-effect/proof.test.ts:
+(pass) RPC reaches native processing state with the existing HTTP DTO [18.58ms]
+(pass) rpc > rpc: native result, denial envelope, request finalizers and tracing [5.21ms]
+(pass) rpc > rpc: defects remain failures and release request resources [3.46ms]
+(pass) rpc > rpc: overlapping requests retain distinct host identities [3.87ms]
+(pass) rpc > rpc: client abort interrupts pending work and awaits request finalization [3.57ms]
+(pass) rpc > rpc: abort joins the oRPC runner before closing its request scope [3.19ms]
+(pass) rpc > rpc: shutdown joins active request cleanup before shared release [105.32ms]
+(pass) http > http: native result, denial envelope, request finalizers and tracing [6.02ms]
+(pass) http > http: defects remain failures and release request resources [3.57ms]
+(pass) http > http: overlapping requests retain distinct host identities [3.78ms]
+(pass) http > http: client abort interrupts pending work and awaits request finalization [3.33ms]
+(pass) http > http: abort joins the oRPC runner before closing its request scope [3.08ms]
+(pass) http > http: shutdown joins active request cleanup before shared release [103.74ms]
+(pass) startup failure releases already acquired shared resources [4.75ms]
+
+ 14 pass
+ 0 fail
+ 43 expect() calls
+Ran 14 tests across 1 file. [494.00ms]
+
+Other scoped checks (all exit 0):
+  (cd proofs/orpc-effect && bun run type-check)
+  node_modules/.bin/effect-tsgo diagnostics --project proofs/orpc-effect/tsconfig.json
+    Checked 2 files; 0 errors, 0 warnings, 0 messages.
+  vp lint proofs/orpc-effect/host.ts proofs/orpc-effect/proof.test.ts --type-aware --type-check --deny-warnings
+  vp fmt --check proofs/orpc-effect
+  vp run lint:effect
+    Core: 154 files, Management: 44 files; 0 errors or warnings.
+    Includes core build, attw and publint: passed.
+
+Checkout started clean at 1057e7a3451852ace768ec1fc40ceb61bb2e6ee0.
+Merged integration tip 5d7573f43387e973204a4734630ba07d25c69958 before final run.
+No shipped package dependency change made by this proof.
+
+Selected published metadata:
+  npm view @orpc/effect version peerDependencies --json
+  { "version": "2.0.0-beta.45", "peerDependencies": { "effect": ">=4.0.0" } }
+  npm view @effect/platform-bun@4.1.4 peerDependencies --json
+  { "effect": "^4.1.4" }
+
+Official runtime source SHA-256:
+  @orpc/effect/dist/shared/effect.C3k3V95E.mjs
+  7f1fb780230d9c4890fd67d1e4b832950fb13e32b16a4bd2f36b90cd1abeba85
+
+Required compatibility-gate verdict: PASS.
+No unresolved failed required gate. Scope and external-write limits: README.md.

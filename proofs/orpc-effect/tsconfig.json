@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["bun"],
+    "paths": {
+      "@/*": ["../../packages/core/src/*"]
+    },
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnostics": true,
+        "allowedUnstableApis": [
+          "effect/http/HttpServerRequest#HttpServerRequest",
+          "effect/http/HttpServerRequest#toWeb",
+          "effect/http/HttpServerResponse#fromWeb",
+          "effect/http/HttpServerResponse#empty",
+          "@effect/platform-bun/BunHttpServer#make"
+        ]
+      }
+    ]
+  },
+  "include": ["*.ts"]
+}
