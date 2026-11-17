@@ -120,7 +120,8 @@ describe("CI change selection", () => {
       const expected = runtime === "true" ? "success" : "skipped";
 
       const needs = {
-        quality: { result: "success", outputs: { runtime } },
+        "build-packages": { result: "success", outputs: { runtime } },
+        quality: { result: "success" },
         "build-apps": { result: "success" },
         test: { result: expected },
         consumers: { result: expected },
@@ -131,7 +132,10 @@ describe("CI change selection", () => {
 
       for (const job of Object.keys(needs)) {
         for (const result of ["failure", "cancelled", "skipped", "success"]) {
-          if (result === (job === "quality" || job === "build-apps" ? "success" : expected)) {
+          if (
+            result ===
+            (["build-packages", "quality", "build-apps"].includes(job) ? "success" : expected)
+          ) {
             continue;
           }
 
@@ -139,7 +143,7 @@ describe("CI change selection", () => {
         }
       }
 
-      expect(status({ ...needs, quality: { result: "success" } })).not.toBe(0);
+      expect(status({ ...needs, "build-packages": { result: "success" } })).not.toBe(0);
     }
 
     expect(status({})).not.toBe(0);
