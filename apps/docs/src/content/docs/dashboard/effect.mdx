@@ -3,8 +3,7 @@ title: Effect HTTP
 description: Serve the bundled Dashboard through portable Effect routes.
 ---
 
-`@monque/dashboard-effect` serves the same build as the
-[Express adapter](/monque/dashboard/express/). Install it with Effect 4.1.4 and
+`@monque/dashboard-effect` serves the bundled Dashboard. Install it with Effect 4.1.4 and
 your host's Effect platform package. The host supplies authentication, platform
 services and the HTTP listener.
 
@@ -34,10 +33,9 @@ links too, and use the same identity policy for Management.
 
 `apiBaseUrl` also accepts an `Effect<string, E, R>` that reads host services and
 the current `HttpServerRequest`. The host handles its failures. For Bun, supply
-Bun platform services. The adapter imports neither Express nor Bun, mounts no
-Management routes and starts no server.
+Bun platform services.
 
 HTML uses `Cache-Control: no-store`; assets use one-year immutable caching.
-GET, HEAD, custom mounts and Job/Queue View reloads share Express's HTML rendering
-and runtime configuration. Missing assets return 404. Paths and symlinks cannot
+The adapter supports GET, HEAD, custom mounts and Job/Queue View deep links.
+Missing assets return 404. Paths and symlinks cannot
 escape the built asset root.

@@ -5,16 +5,13 @@ description: Acquire a scoped scheduler and register native Effect Workers.
 
 Use `MonqueEffect` from `@monque/core/effect`. Its scoped Layer borrows `db`;
 close your MongoDB connection after the scheduler scope finishes. Core includes
-Effect 4 and needs no OpenTelemetry SDK. Existing root imports remain supported.
+Effect 4 and needs no OpenTelemetry SDK.
 
 ## Register and start Workers
 
-Pass a setup callback as the third argument to `MonqueEffect.layer`. The Layer
-initializes Monque, runs setup, then starts processing before publishing the
-service. Setup may return any success value; the Layer publishes native scheduler
-operations. Setup errors and required application services remain in the Layer's
-types. Setup resources remain available until Monque finishes disposal and Worker
-finalizers complete. Setup failure or interruption also releases those resources.
+Pass a setup callback as the third argument to `MonqueEffect.layer` to register
+Workers and start processing. Setup resources are available until scheduler
+disposal and Worker cleanup finish.
 
 ```typescript
 import { MonqueEffect } from "@monque/core/effect";
@@ -46,16 +43,13 @@ export const runMail = (db: Db, send: (to: string) => Effect.Effect<void>) =>
 Run the returned Effect once at your application entry point. Interrupting it
 starts scoped cleanup. Registration captures the supplied application services;
 keep them alive until Monque is disposed. Provide resource Layers to the scheduler
-Layer, as above, rather than around registration alone. Each Worker attempt gets
-its own scope, tracer and parent span. Acquire per-attempt resources in the handler.
+Layer, as above. Acquire per-attempt resources in the Worker handler.
 
 For producers, `MonqueEffect.layer(db, options)` initializes without starting
 processing. You can register and start explicitly later. For a host needing
-Management or EventEmitter access, setup receives the full `Monque` instance;
-use its ordinary methods alongside `monque.effects`. For custom composition,
-`Monque.scoped(db, options)` remains the borrowed-database acquisition primitive.
-The [complete host example](/monque/integrations/effect-host/) uses that primitive to
-return the same instance to its HTTP adapters.
+Management or EventEmitter access, use `Monque.scoped(db, options)` and call native
+operations through `monque.effects`. See the
+[complete host example](/monque/integrations/effect-host/).
 
 ## Operations and failures
 
@@ -65,34 +59,16 @@ management and read methods, `pause`, `resume`, `isPaused`, `getProcessingState`
 (`yield* scheduler.start`); methods with arguments return Effects. Acquisition
 initializes the scheduler. `stop` permits a later `start`; `dispose` is terminal.
 
-Expected operation failures use the `MonqueError` channel. Existing validation and
-state errors keep their classes, so recover with `instanceof InvalidCronError`,
-`JobStateError`, or another public error. Native database failures are wrapped in
-`ConnectionError` with the original error in `cause`. Defects and interruption
-remain Effect causes. The ordinary interface retains its existing rejection values.
+Expected operation failures use the `MonqueError` channel. Recover from validation
+and state errors with `instanceof InvalidCronError`, `JobStateError`, or another
+public error. Database failures use `ConnectionError` with the underlying error
+in `cause`.
 
-A native Worker's typed failure or defect enters the existing retry policy. Values
-that are not Errors become Errors before persistence. `NonRetryableError` skips
-retries. A self-interrupted Worker also records a fenced failure and follows retry
-policy. Resource finalizers run before completion or failure is persisted. A
-finalizer defect becomes part of the failed attempt.
+Worker failures follow the configured retry policy. `NonRetryableError` skips retries.
 
-## Shutdown and ownership
+## Shutdown
 
-`stop` stops new admissions and drains its captured executions up to
-`shutdownTimeout`. A timeout emits the existing `job:error` event. Native Workers
-continue until terminal disposal interrupts remaining native executions and waits
-for their finalizers and fenced failure writes. Uninterruptible handler regions and finalizers can delay disposal beyond the timeout.
-Ordinary Promise Workers remain
-owned until their Promises settle, even after the drain timeout.
-
-An admitted native scheduler operation settles before interruption is observed.
-Disposal waits for admitted reads, writes and concurrent native stops. A started
-MongoDB write or external Worker side effect can finish after cancellation;
-interruption cannot roll it back. Claim fencing still prevents a late result from
-modifying a replacement Claim.
-
-Both interfaces use the same scheduler. Use `Monque.scoped(db, options)` when a host
-also needs the ordinary EventEmitter interface; its `effects` member exposes the
-same native operations. Existing `new Monque(...)` consumers can use `effects`
-after `initialize()` while retaining synchronous controls and callbacks.
+`stop` waits up to `shutdownTimeout` for active work. A timeout emits `job:error`.
+`dispose` interrupts native Workers and waits for their finalizers. Promise Workers
+must settle before disposal completes. Uninterruptible work can delay shutdown.
+Cancellation cannot undo MongoDB writes or external effects.

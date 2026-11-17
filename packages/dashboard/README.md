@@ -51,8 +51,9 @@ app.use(
 );
 ```
 
-Open `/ops/dashboard` on your application's origin. `apiBaseUrl` is the Management router's
-mount path, **without `/api/v1`**. The dashboard's base path comes from its Express mount.
+Open `/ops/dashboard` on your application's origin. Set `apiBaseUrl` to the Management
+mount path. With `/ops`, the Dashboard sends RPC requests to `/ops/rpc`.
+The Dashboard's base path comes from its Express mount.
 Omit `pollingIntervalMs` to disable automatic polling. Job lists use this base interval; queue
 statistics, health, processing state, and processing-control permissions refresh every three
 intervals. Other permissions refresh every six. Polling adds up to 10% jitter, backs off
@@ -91,15 +92,10 @@ assets with Nginx Alpine.
 
 ## Other integrations
 
+For Effect HTTP, use [@monque/dashboard-effect](../dashboard-effect).
+
 For a custom server adapter, use `getDashboardAssetMetadata()` to locate the built browser
 assets. The package does not export an embeddable React component. Use the Express adapter
 if you want a ready-made router.
 
 To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).
-
-Management Express serves `<Management mount>/rpc` alongside `/api/v1` and OpenAPI.
-The Dashboard appends `/rpc` to `apiBaseUrl`, so omit `/api/v1` and `/rpc` from that
-option. Authenticate both transports. Upgrade Dashboard and Management together
-for the pinned oRPC beta.
-
-For Effect HTTP, use [@monque/dashboard-effect](../dashboard-effect).

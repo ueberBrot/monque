@@ -2,8 +2,6 @@
 
 Superseded by [ADR-0005](./0005-orpc-management-route-map.md).
 
-Choose a versioned resource-action HTTP contract, using TypeBox schemas and
-`openapi3-ts` to establish shared routes and validation before building the
-Dashboard. Adapters and clients consume that contract rather than define their
-own. Reuse Core's cursor pagination and bulk selectors to keep operator actions
-consistent with the scheduler.
+Use a versioned resource-action HTTP contract. Use TypeBox for shared validation
+schemas and `openapi3-ts` for OpenAPI documentation. Adapters and clients consume
+the contract. Use Core's cursor pagination and bulk selectors for operator actions.

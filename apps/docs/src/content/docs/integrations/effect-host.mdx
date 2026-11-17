@@ -5,7 +5,7 @@ description: Run native Effect Workers with authenticated Management and Dashboa
 
 The repository's [Effect host example](https://github.com/ueberBrot/monque/tree/main/examples/effect-host)
 is a runnable private application. Its README covers setup, configuration, tracing,
-shutdown, and real MongoDB integration checks.
+and shutdown.
 
 The application acquires `Monque.scoped` inside its database scope. Native
 `.effects` operations register a Worker with a captured application service and
@@ -18,14 +18,12 @@ at runtime, including on deep links.
 
 Authentication protects both mounts, including HTML, assets, RPC, HTTP and
 OpenAPI. Request-local identity determines native authorization and capabilities
-for viewer, operator and read-only access. The adapters retain request size limits,
-origin checks, validation and error behavior.
+for viewer, operator and read-only access. Management enforces body limits,
+origin checks and input validation.
 
 Ordinary startup needs no OpenTelemetry packages. Explicit tracing uses an
 application-owned provider. On shutdown, the application closes HTTP, disposes
 Monque, closes MongoDB, then shuts down its optional provider. See the example's
 README for incomplete-work and interruption semantics.
 
-Tests run the Bun application with Testcontainers MongoDB and Chromium. They
-cover deep-link reloads, allowed and denied operations, startup failures, signals
-and active-request shutdown. Cancellation cannot undo started writes.
+Cancellation cannot undo MongoDB writes or external effects.

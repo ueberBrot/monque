@@ -25,7 +25,7 @@ this example for remote access. Do not put credentials in URLs.
 Each startup enqueues a `receipt` Job. The native Worker captures an application
 `Receipts` service, which upserts a receipt keyed by Job ID in the application's
 `receipts` collection. MongoDB's unique `_id` makes that write safe to repeat.
-Other external effects still need their own idempotency policy.
+Other external effects need their own idempotency policy.
 
 Configuration:
 

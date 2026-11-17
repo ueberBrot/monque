@@ -66,8 +66,8 @@ the browser configuration automatically.
 | `apiBaseUrl`        | `'/ops'`                       | Required Management router mount URL. The dashboard appends `/rpc`.                                                  |
 | `pollingIntervalMs` | `15_000`                       | Base job refresh interval while visible. Statistics and health refresh less often. Omit to disable periodic polling. |
 
-**Do not include `/api/v1` or `/rpc` in `apiBaseUrl`.** In the example, Dashboard
-requests use `/ops/rpc`. The API and dashboard may use different mount paths.
+With `apiBaseUrl: "/ops"`, Dashboard requests use `/ops/rpc`.
+The API and Dashboard can use different mount paths.
 
 `apiBaseUrl` also accepts a sync or async `({ req, res }) => string` resolver for
 request-dependent URLs. Router options can come from your application's environment configuration;

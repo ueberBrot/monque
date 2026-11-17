@@ -1,7 +1,6 @@
 # @monque/management-effect
 
-Mount Management in your Effect HTTP server with `createManagementEffectRoutes`
-(an HttpRouter layer) or `createManagementEffectHandler` (a request Effect).
+Mount Management in your Effect HTTP server with `createManagementEffectRoutes`.
 RPC and HTTP share the same authorization and serialization hooks.
 
 ## Installation
@@ -21,7 +20,7 @@ import { Effect } from "effect";
 import { HttpRouter } from "effect/http";
 
 const routes = createManagementEffectRoutes({
-  monque: scheduler.effects, // the host's existing Scheduler Instance
+  monque: scheduler.effects, // host-owned Scheduler Instance
   prefix: "/internal/management",
   context: () => CurrentIdentity, // host Context.Service
   authorize: ({ context, action }) =>
@@ -39,19 +38,11 @@ const routes = createManagementEffectRoutes({
 changes its path and advertised server.
 
 Supply `scheduler.effects` or a `ManagementEffects` facade, services, identity, authentication,
-request scopes and runtime. Authenticate the entire mount, including discovery.
-Hook service requirements propagate through Effect/layer types. Per-Job-Name
-serializers override the default. Omitted methods remain unsupported capabilities.
+and your HTTP server. Authenticate the entire mount, including discovery.
+Per-Job-Name serializers override the default. Omitted methods report unsupported capabilities.
 Both transports share Management policy, including origin checks and the 64 KiB
 body limit.
 
 HTTP errors use `{ error: string }`; RPC uses the oRPC error format.
-Context failures stay in the host Effect error channel. Host middleware handles
-transport failures reported as `ManagementTransportError`. Direct handlers need
-a fresh Scope per request.
-
-Acquire resources before serving. On shutdown, stop HTTP and interrupt or drain
-requests before disposing the scheduler, closing MongoDB and releasing telemetry.
-Cancellation cannot undo writes already sent to MongoDB.
 
 See the [Effect host example](../../examples/effect-host) for a complete application.

@@ -24,7 +24,7 @@ requesting public Monque management operations.
 _Avoid_: dashboard API, agnostic API
 
 **Management Adapter** — framework-specific package that exposes the Management Surface
-within a host application. It preserves the Surface's operations and policy; the host
+within a host application. It exposes the Surface's operations and policy; the host
 owns authentication and the Scheduler Instance.
 _Avoid_: dashboard plugin
 

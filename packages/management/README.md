@@ -6,7 +6,7 @@ The route contract is also available to oRPC clients.
 
 Use it with your own HTTP server. Express applications can mount the API with
 `@monque/management-express` and add the browser interface with `@monque/dashboard-express`.
-The package runs on the server; it does not include an oRPC client runtime.
+Effect applications can use [@monque/management-effect](../management-effect).
 
 ## Installation
 
@@ -17,9 +17,8 @@ bun add @monque/management @monque/core mongodb
 `@monque/core` and `mongodb` are peer dependencies. Use the same `Monque` instance that owns
 the scheduler you want to expose.
 
-Requires `@monque/core` 1.15.1 or newer within version 1. Use core 1.18.0 or newer
-to change Job priorities. Older supported core versions expose effective worker policies
-and renewable lease deadlines; the priority action is unavailable.
+Requires `@monque/core` 1.15.1 or newer within version 1.
+Job priority actions require core 1.18.0 or newer.
 
 ## Usage
 
@@ -154,47 +153,7 @@ API errors use this response body:
 { "error": "Message" }
 ```
 
-## Native Effect operations
-
-`createNativeManagementOperations` applies Management policy and DTO mapping
-without a transport or runner. Supply `monque.effects` from your Scheduler Instance,
-or a `ManagementEffects` facade. Omit optional methods for unsupported capabilities.
-`createManagementRouter` and `createManagementSurface` remain synchronous and
-support boolean/Promise authorization, Promise serializers, optional facades and public HTTP.
-
-```ts
-import { createNativeManagementOperations } from "@monque/management";
-import { Effect } from "effect";
-
-const operations = createNativeManagementOperations<{ role: string }>({
-  monque: monque.effects,
-  authorize: ({ context, action }) =>
-    Effect.succeed(context.role === "operator" || action === "read"),
-  serializePayload: ({ payload }) => Effect.succeed(payload),
-});
-
-const request = operations.jobs({ view: "summary" }, { role: "viewer" });
-```
-
-Authorization and serializers can require host services, propagated through the
-returned Effects. The host supplies services, identity, scope and interruption.
-Per-Job-Name serializers override the default. Summary projections skip redaction.
-Read-only policy and capabilities apply to all mutations, including bulk actions.
-
-Domain failures keep the compatibility facade's oRPC classification. Other failures
-stay in the Effect error channel; defects and interruption remain distinct.
-The host owns execution and authentication. Interruption cannot undo writes
-already sent to MongoDB.
-
-`createNativeManagementRouter(options)` accepts `NativeManagementOptions`,
-`monque.effects` and native hooks through `@orpc/effect`.
-
-For custom hosts, supply `effect/context` with services and a request Scope,
-`managementContext` if hooks need it, tracing context and the abort signal.
-For Effect HTTP servers, use [@monque/management-effect](../management-effect),
-which handles request scopes and cancellation.
-
-## RPC alongside public HTTP
+## RPC and HTTP
 
 `createManagementSurface()` creates one router for `rpcHandler` and `openApiHandler`.
 Mount RPC under a distinct `/rpc` path, passing that path as `prefix`:
@@ -207,8 +166,8 @@ await management.rpcHandler.handle(request, {
 ```
 
 Both handlers share request protections and policy. Authenticate both mounts.
-RPC uses its native error envelope; HTTP retains `{ error: string }`. DTO dates
-remain ISO strings. RPC reads and writes use POST, including browser origin checks.
+RPC errors use the oRPC error format; HTTP errors use `{ error: string }`.
+DTO dates are ISO strings. RPC reads and writes use POST, including browser origin checks.
 Express mounts `/rpc` beneath its Management mount.
 
 ## Compatibility
@@ -216,22 +175,5 @@ Express mounts `/rpc` beneath its Management mount.
 Use Management 0.12.x, Management Express 0.8.x, Dashboard 0.8.x and Dashboard
 Express 0.5.x together. Management Effect requires Management 0.12.x; Dashboard
 adapters include the 0.8.x renderer. Effect HTTP adapters require Effect 4.1.4.
-Management 0.11.x has no RPC handler or native surface export and cannot serve
-the new Dashboard.
 
-All oRPC contract, server, OpenAPI, Zod, client and TanStack Query packages use
-`2.0.0-beta.50`. Upgrade them together. Cross-major oRPC interoperability is not
-guaranteed. Public `/api/v1` paths, DTOs, statuses, coercion and
-`{ error: string }` bodies remain compatible.
-
-Direct oRPC consumers must use v2 names (`RouterContractClient`, `ContractedRouter`,
-`OpenAPIV3_1.OpenAPIObject`). Import `JsonifiedClient` from `@orpc/openapi`,
-`OpenAPILink` from `@orpc/openapi/fetch`, and Zod conversion from `@orpc/zod`.
-v2 `ORPCError` carries a code instead of HTTP `status`. Configure HTTP statuses with
-the handler's `errorStatusMap`. Clients read transport details from `ResponseError`,
-including `ORPCError.cause`. The public HTTP error body is unchanged.
-
-The Management compatibility facade supports core 1.16.0, the first published
-version satisfying ^1.15.1. Capabilities report unsupported operations. Native
-examples and Ts.ED terminal teardown use core 1.21.0+. MongoDB driver support
-remains ^6.22.0 || ^7.8.0.
+Supported MongoDB drivers: ^6.22.0 || ^7.8.0.
