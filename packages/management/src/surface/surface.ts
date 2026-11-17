@@ -1,8 +1,16 @@
+import type { WithEffectContext } from "@orpc/effect";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
+import type { Router } from "@orpc/server";
 import { ORPCError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
+import type {
+  FriendlyStandardHandlerHandleOptions,
+  StandardHandlerInterceptorOptions,
+} from "@orpc/server/standard";
 
+import type { NativeManagementOptions } from "../native.js";
 import { createManagementRouter } from "../orpc/index.js";
+import { createNativeManagementRouter } from "../orpc/router.js";
 import { createLimitedRequest } from "./body-limit.js";
 import { isTrustedMutationRequest, parseTrustedOrigins } from "./csrf.js";
 import type { ManagementOpenApiContext, ManagementOptions, ManagementSurface } from "./types.js";
@@ -30,6 +38,24 @@ import type { ManagementOpenApiContext, ManagementOptions, ManagementSurface } f
 export const createManagementSurface = function createManagementSurface<TContext = unknown>(
   options: ManagementOptions<TContext>,
 ): ManagementSurface<TContext> {
+  return createProtectedSurface(createManagementRouter(options), options);
+};
+
+/** Shared native router with the same request protections and protocol encoders. */
+export const createNativeManagementSurface = function createNativeManagementSurface<
+  TContext = unknown,
+  R = never,
+>(options: NativeManagementOptions<TContext, R>) {
+  return createProtectedSurface<ManagementOpenApiContext<TContext> & WithEffectContext<R>>(
+    createNativeManagementRouter(options),
+    options,
+  );
+};
+
+const createProtectedSurface = function createProtectedSurface<C extends Record<string, unknown>>(
+  router: Router<C>,
+  options: { maxBodySize?: number; trustedOrigins?: readonly string[] },
+) {
   const maxBodySize = options.maxBodySize ?? 64 * 1024;
 
   if (!Number.isSafeInteger(maxBodySize) || maxBodySize < 0) {
@@ -40,9 +66,9 @@ export const createManagementSurface = function createManagementSurface<TContext
 
   const trustedRequests = new WeakMap<object, boolean>();
 
-  type Handler = RPCHandler<ManagementOpenApiContext<TContext>>;
+  type Handler = RPCHandler<C>;
 
-  type HandleOptions = Partial<Parameters<Handler["handle"]>[1]>;
+  type HandleOptions = Partial<FriendlyStandardHandlerHandleOptions<C>>;
 
   const prepare = (request: Request, handleOptions: HandleOptions) => {
     const trusted = isTrustedMutationRequest(
@@ -54,17 +80,21 @@ export const createManagementSurface = function createManagementSurface<TContext
       trustedOrigins,
     );
 
-    const preparedOptions: Parameters<Handler["handle"]>[1] = {
+    // SAFETY: The context factory below is always present, satisfying the official required/optional context union.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Normalize a conditional generic options type.
+    const preparedOptions = {
       ...handleOptions,
-      context: async (standardRequest) => {
+      context: async (standardRequest: StandardHandlerInterceptorOptions<C>["request"]) => {
         trustedRequests.set(standardRequest, trusted);
 
-        // oxlint-disable-next-line anti-slop/no-runtime-typeof -- oRPC accepts a context value or factory.
+        // SAFETY: An absent context is supported by the compatibility factory; native callers must supply effect/context.
+        /* oxlint-disable typescript/no-unsafe-type-assertion, anti-slop/no-runtime-typeof -- Official context value-or-factory and compatible empty context. */
         return await (typeof handleOptions.context === "function"
           ? handleOptions.context(standardRequest)
-          : (handleOptions.context ?? {}));
+          : (handleOptions.context ?? ({} as C)));
+        /* oxlint-enable typescript/no-unsafe-type-assertion, anti-slop/no-runtime-typeof */
       },
-    };
+    } as FriendlyStandardHandlerHandleOptions<C>;
 
     return { request: createLimitedRequest(request, maxBodySize), options: preparedOptions };
   };
@@ -82,8 +112,6 @@ export const createManagementSurface = function createManagementSurface<TContext
 
     return handler;
   };
-
-  const router = createManagementRouter(options);
 
   return {
     rpcHandler: protect(

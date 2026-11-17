@@ -275,6 +275,30 @@
         "mongodb": "^6.22.0 || ^7.8.0",
       },
     },
+    "packages/management-effect": {
+      "name": "@monque/management-effect",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orpc/effect": "2.0.0-beta.45",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@effect/platform-bun": "4.1.4",
+        "@monque/core": "workspace:*",
+        "@monque/management": "workspace:*",
+        "@orpc/client": "2.0.0-beta.45",
+        "@orpc/contract": "2.0.0-beta.45",
+        "bun-types": "1.4.4",
+        "mongodb": "^7.9.0",
+        "vite": "catalog:",
+        "vite-plus": "catalog:",
+      },
+      "peerDependencies": {
+        "@monque/core": "^1.15.1",
+        "@monque/management": "^0.11.1",
+        "mongodb": "^6.22.0 || ^7.8.0",
+      },
+    },
     "packages/management-express": {
       "name": "@monque/management-express",
       "version": "0.7.3",
@@ -570,6 +594,10 @@
 
     "@effect/opentelemetry": ["@effect/opentelemetry@4.1.4", "", { "peerDependencies": { "@opentelemetry/api": ">=1.9.0 <2.0.0", "@opentelemetry/api-logs": ">=0.203.0 <0.300.0", "@opentelemetry/resources": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0", "@opentelemetry/sdk-metrics": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-node": ">=2.0.0 <3.0.0", "@opentelemetry/sdk-trace-web": ">=2.0.0 <3.0.0", "@opentelemetry/semantic-conventions": ">=1.33.0 <2.0.0", "effect": "^4.1.4" }, "optionalPeers": ["@opentelemetry/api", "@opentelemetry/api-logs", "@opentelemetry/resources", "@opentelemetry/sdk-logs", "@opentelemetry/sdk-metrics", "@opentelemetry/sdk-trace-base", "@opentelemetry/sdk-trace-node", "@opentelemetry/sdk-trace-web"] }, "sha512-VJnookNrIWk0ZHl51DYMTRHXZrogR13kSSOJzcDxGhyUNDHvgWg217OY4R6bOrtdgM3mrPQiLRGNZ0a7bGyAJg=="],
 
+    "@effect/platform-bun": ["@effect/platform-bun@4.1.4", "", { "dependencies": { "@effect/platform-node-shared": "4.1.4" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-Vdq82GOrD5HVF43aXVwHeX+4uIOrgAnjju9MEyizzFZ3yt3A6x9prtmHej1q/zAOaeNddtkpPr2ExHEvZ13S6Q=="],
+
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.4", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-DWdfphHGOFJNj/mYadgpT3jIm8aRXDcPrQiGXFBH4p2H4XmA7iYMrPsI8NxVgZ7kNX0q1+FGJZJama0tINHRAg=="],
+
     "@effect/tsgo": ["@effect/tsgo@0.69.0", "", { "optionalDependencies": { "@effect/tsgo-darwin-arm64": "0.69.0", "@effect/tsgo-darwin-x64": "0.69.0", "@effect/tsgo-linux-arm": "0.69.0", "@effect/tsgo-linux-arm64": "0.69.0", "@effect/tsgo-linux-x64": "0.69.0", "@effect/tsgo-win32-arm64": "0.69.0", "@effect/tsgo-win32-x64": "0.69.0" }, "bin": { "effect-tsgo": "dist/effect-tsgo.cjs" } }, "sha512-ypgO19woAyrfAG0LzU2QwQnprMpV2G30nEo9ffd4Bc0ow0vXupcx0mcSLG1EfvmRGl0jhiQ3yAbsCuJhqwnRhg=="],
 
     "@effect/tsgo-darwin-arm64": ["@effect/tsgo-darwin-arm64@0.69.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-XSkC5Ot7906NmN3tW0uQb+58DV7oVgyX7A20w3Zu7Y26kTve/YibhiDn8ZxhNRH/SiBouyA6IKR6THWjRs1cow=="],
@@ -799,6 +827,8 @@
     "@monque/effect-host": ["@monque/effect-host@workspace:examples/effect-host"],
 
     "@monque/management": ["@monque/management@workspace:packages/management"],
+
+    "@monque/management-effect": ["@monque/management-effect@workspace:packages/management-effect"],
 
     "@monque/management-express": ["@monque/management-express@workspace:packages/management-express"],
 
@@ -1592,6 +1622,8 @@
 
     "@types/whatwg-url": ["@types/whatwg-url@13.0.0", "", { "dependencies": { "@types/webidl-conversions": "*" } }, "sha512-N8WXpbE6Wgri7KUSvrmQcqrMllKZ9uxkYWMt+mCSGwNc0Hsw9VQTW7ApqI4XNrx6/SaM2QQJCzMPDEXE058s+Q=="],
 
+    "@types/ws": ["@types/ws@8.18.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w=="],
+
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 
     "@typescript/typescript-darwin-arm64": ["@typescript/typescript-darwin-arm64@7.0.2", "", { "os": "darwin", "cpu": "arm64" }, "sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA=="],
@@ -1853,6 +1885,8 @@
     "buildcheck": ["buildcheck@0.0.7", "", {}, "sha512-lHblz4ahamxpTmnsk+MNTRWsjYKv965MwOrSJyeD588rR3Jcu7swE+0wN5F+PbL5cjgu/9ObkhfzEPuofEMwLA=="],
 
     "builtin-modules": ["builtin-modules@3.3.0", "", {}, "sha512-zhaCDicdLuWN5UbN5IMnFqNMhNfo919sH85y2/ea+5Yg9TsTkeZxpL+JLbp6cgYFS4sRLp3YV4S6yDuqVWHYOw=="],
+
+    "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
     "bundle-name": ["bundle-name@4.1.1", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-DdH81/zPLVS11EUgWq3tEu/xn+EzljlMYooDNdzWEnFha3R3NBMpMV1UqYIpjYHV/SgpFKMIX1Oh7o06SjM/oA=="],
 

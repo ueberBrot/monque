@@ -88,3 +88,5 @@ export { createNativeManagementOperations } from "./orpc/operations.js";
 export type { ManagementEffects, NativeManagementOptions } from "./native.js";
 
 export { createNativeManagementRouter } from "./orpc/router.js";
+
+export { createNativeManagementSurface } from "./surface/surface.js";

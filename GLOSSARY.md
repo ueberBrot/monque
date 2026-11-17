@@ -24,7 +24,8 @@ requesting public Monque management operations.
 _Avoid_: dashboard API, agnostic API
 
 **Management Adapter** — framework-specific package that exposes the Management Surface
-through a server integration.
+through a server integration. The Effect adapter mounts routes using the host’s
+Scheduler Instance, request scopes and application services.
 _Avoid_: dashboard plugin
 
 **Management Route Map** — shared oRPC contract and router exposed through versioned
