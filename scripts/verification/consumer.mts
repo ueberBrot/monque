@@ -326,7 +326,15 @@ try {
     await writeFile(
       nodePath.join(directory, "package.json"),
       JSON.stringify(
-        { private: true, type: "module", dependencies: Object.fromEntries(dependencies) },
+        {
+          private: true,
+          type: "module",
+          dependencies: Object.fromEntries(dependencies),
+          // Resolve transitive Monque imports to the same packages as the scenario.
+          overrides: Object.fromEntries(
+            dependencies.entries().filter(([name]) => name.startsWith("@monque/")),
+          ),
+        },
         null,
         2,
       ),

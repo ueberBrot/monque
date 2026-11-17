@@ -130,6 +130,10 @@ jobs:
         if: matrix.group == 'frontend'
         run: vp run --filter @monque/dashboard --filter @monque/dashboard-dev --ignore-depends-on --concurrency-limit 1 test
 
+      - name: Install backend browser prerequisites
+        if: matrix.group == 'backend'
+        run: vp exec playwright install --with-deps chromium
+
       - name: Backend tests
         if: matrix.group == 'backend'
         run: vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
