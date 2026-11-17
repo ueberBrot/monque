@@ -1,9 +1,9 @@
 # @monque/management-effect
 
-Mount the complete Management Surface in a host-owned Effect HTTP server. The
-package exports `createManagementEffectRoutes` (an HttpRouter layer),
-`createManagementEffectHandler` (a request Effect), and `ManagementTransportError`.
-Both RPC and public HTTP use the shared Management router and native operations.
+Mount Management in your Effect HTTP server with `createManagementEffectRoutes`
+(an HttpRouter layer) or `createManagementEffectHandler` (a request Effect).
+`ManagementTransportError` reports transport failures. RPC and HTTP share the
+native Management router.
 
 ```ts
 import { createManagementEffectRoutes } from "@monque/management-effect";
@@ -22,50 +22,40 @@ const routes = createManagementEffectRoutes({
 // HttpRouter.serve(routes) is a Layer; provide the host HTTP server and services.
 ```
 
-Effect `4.1.4` and coordinated oRPC `2.0.0-beta.45` are the verified versions.
-Effect HTTP interfaces are intentionally exposed despite their unstable status;
-upgrade host and adapter together. The runtime graph contains no Express, Bun or
-Node platform implementation. Private TCP tests use Bun only as a listener.
-Do not infer cross-major oRPC RPC interoperability.
+Requires Effect `4.1.4` and oRPC `2.0.0-beta.45`. Effect HTTP is unstable;
+upgrade host and adapter together. See
+[coordinated release compatibility](../management/README.md#coordinated-release-compatibility).
+The adapter has no Express, Bun or Node platform runtime dependency.
 
-`prefix` defaults to root; trailing slashes are normalized. RPC lives at
-`<prefix>/rpc`, public routes at `<prefix>/api/v1`, and discovery at
-`<prefix>/openapi.json`. `openApi: false` disables discovery;
+`prefix` defaults to root and drops trailing slashes. Routes are `<prefix>/rpc`,
+`<prefix>/api/v1` and `<prefix>/openapi.json` (GET/HEAD).
+`openApi: false` disables discovery;
 `openApi: { path: "/docs/openapi.json", serverUrl: "https://ops.example/management" }`
-changes its location and advertised server. The host must authenticate the entire
-mount, including discovery. HTTP discovery accepts GET/HEAD.
+changes its path and advertised server.
 
-The host supplies its scheduler or native `ManagementEffects` facade, services,
-identity, authentication, request scopes and runtime. Hook service requirements
-remain in the returned Effect/layer type. Authorization, context and default or
-per-Job-Name serializers can require host services. Per-name serializers take
-precedence. Missing optional operations remain unsupported capabilities.
-Read-only policy, action inputs, redaction, validation, origin checks and the
-64 KiB default body limit are shared with Express on both transports.
+Supply a scheduler or `ManagementEffects` facade, services, identity, authentication,
+request scopes and runtime. Authenticate the entire mount, including discovery.
+Hook service requirements propagate through Effect/layer types. Per-Job-Name
+serializers override the default. Omitted methods remain unsupported capabilities.
+Both transports share Management policy, including origin checks and the 64 KiB
+body limit.
 
-Domain and hook failures stay in native Effect error channels until oRPC encodes
-them. HTTP preserves `{ error }` and existing statuses; RPC uses its own serializer
-and error envelope. Defects remain failures, never authorization grants. Context
-factory failures remain in the host Effect error channel; request conversion and
-transport dispatch failures use `ManagementTransportError`. Host middleware owns
-how those failures become responses. Interruption remains interruption.
+HTTP retains `{ error }` and existing statuses; RPC uses its native envelope.
+Context failures stay in the host Effect error channel. Request conversion and
+dispatch failures use `ManagementTransportError`; host middleware handles them.
+Defects cannot grant access. Interruption remains interruption.
 
-Each request captures the host Context, including Scope and tracing parent, for
-the official oRPC Effect runner. That runner starts a separate fiber: context
-provision does not promise arbitrary FiberRef inheritance. The adapter combines
-client and host interruption signals, makes request work interruptible, and joins
-the transport runner before the request Scope closes. Host middleware URL/header
-changes are respected even when the platform preserves an original Web Request.
-Use a fresh Scope for each request when mounting the handler directly.
+The oRPC runner receives request Context, Scope and tracing parent. Its separate
+fiber does not guarantee arbitrary FiberRef inheritance. The adapter combines
+client and host interruption, respects host URL/header changes, and joins the
+runner before closing the Scope. Direct handlers need a fresh Scope per request.
 
-Acquire shared resources before serving. On shutdown stop accepting requests and
-interrupt/drain active work before disposing the scheduler, then close borrowed
-MongoDB clients and application-owned telemetry. This adapter acquires none of
-those resources and creates no scheduler, runtime, listener or process handlers.
-Cancellation cannot roll back completed writes or guarantee cancellation of
-admitted MongoDB I/O; scheduler disposal waits for owned operations (ADR-0007).
+Acquire resources before serving. On shutdown, stop HTTP and interrupt or drain
+requests before disposing the scheduler, closing MongoDB and releasing telemetry.
+Cancellation cannot undo writes or guarantee cancellation of admitted MongoDB I/O.
+Disposal waits for owned operations (ADR-0007).
 
-Verification from the repository root:
+Run from the repository root with Docker available:
 
 ```sh
 vp run --filter @monque/management-effect test
@@ -73,11 +63,3 @@ vp run --filter @monque/management-effect check:exports
 vp run lint:effect
 bun packages/management-effect/tests/consumer/verify.mts
 ```
-
-The test task includes actual TCP RPC/HTTP lifecycle and complete-operation tests
-with Docker Testcontainers (`mongo:8`, `directConnection=true`). The isolated
-consumer packs core, Management and this adapter, installs them outside the
-workspace, checks declarations, and mounts routes under Node without Express or
-any Effect platform implementation.
-
-See the [coordinated release compatibility](../management/README.md#coordinated-release-compatibility) table before combining server, assets and adapters.

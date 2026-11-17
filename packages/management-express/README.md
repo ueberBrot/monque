@@ -13,9 +13,8 @@ bun add @monque/management-express @monque/management @monque/core express mongo
 ```
 
 These four dependencies are peers. Requires core 1.15.1 or newer within version 1,
-Management 0.8.x or 0.9.x, and the Express and MongoDB versions listed in
-[package.json](./package.json). To change Job priorities, use core 1.18.0 or newer
-and Management 0.9.x.
+Management 0.12.x, and the Express and MongoDB versions listed in
+[package.json](./package.json). Job priority changes require core 1.18.0 or newer.
 
 ## Mount the API
 
@@ -74,8 +73,7 @@ such as Scalar, installed separately.
 See [@monque/management](../management) for routes, response formats, processing-control
 semantics, and authorization options.
 
-The Management Express adapter serves RPC at `<Management mount>/rpc` alongside
-the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
-Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
-without `/api/v1` or `/rpc`. Host authentication must protect both transports.
-Upgrade the Dashboard and Management packages together for the pinned oRPC beta.
+Management Express serves `<Management mount>/rpc` alongside `/api/v1` and OpenAPI.
+The Dashboard appends `/rpc` to `apiBaseUrl`, so omit `/api/v1` and `/rpc` from that
+option. Authenticate both transports. Upgrade Dashboard and Management together
+for the pinned oRPC beta.

@@ -1,9 +1,8 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 
-/** Launch the actual documented application, including BunRuntime signal handling. */
+/** Run the application with BunRuntime signal handling. */
 export const launchHost = (env: Record<string, string>, entry = "src/main.ts") => {
-  // The test runs the workspace-pinned Bun selected by the developer toolchain.
   // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Exercise the documented Bun executable.
   const child = spawn("bun", [entry], {
     cwd: new URL("..", import.meta.url),

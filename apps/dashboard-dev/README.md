@@ -112,21 +112,17 @@ Projects: `mongo-desktop`, `mongo-mobile`, `mongo-desktop-auth`, and `mongo-mobi
 The default is four workers. Reports are in `playwright-report`; failure screenshots and traces
 are in `test-results`. Both directories are ignored by Git.
 
-The development Dashboard uses RPC at `/api/rpc`. Mock and database modes also
-retain public HTTP fixtures. Live mode proxies `/api/rpc` to `<configured Management
-mount>/rpc`, stripping the local `/api` prefix for RPC only. Public `/api/v1`
-requests retain their path beneath the upstream mount. Configure the upstream Management
-Surface to trust the development browser origin (for example `http://localhost:3400`)
-when using the live proxy; POST reads are subject to origin checks too. The proxy
-preserves browser Origin headers.
+The Dashboard uses `/api/rpc`. Mock and database modes also serve public HTTP
+fixtures. Live mode maps `/api/rpc` to `<configured Management
+mount>/rpc` and preserves `/api/v1` beneath the upstream mount. It forwards browser
+Origin headers. Configure Management to trust the development origin, such as
+`http://localhost:3400`, including for POST reads.
 
 ## Actual Express / Bun Effect host matrix
 
-The separate `host-express` and `host-effect` projects start their own host subprocesses.
-No manual server startup or Dashboard adapter selector is needed. Both serve the
-same `packages/dashboard/dist` build through the actual serving adapters and use
-actual Management RPC. `host-effect` runs the documented Effect example with BunRuntime;
-the Express fixture runs with the repository's pinned Bun executable too.
+`host-express` and `host-effect` start hosts with the pinned Bun executable.
+They serve `packages/dashboard/dist` through the adapters and Management RPC.
+`host-effect` runs the Effect example CLI with BunRuntime.
 
 From the repository root:
 
@@ -141,22 +137,16 @@ vp run @monque/dashboard-dev#test:db
 vp run @monque/dashboard-dev#test:e2e
 ```
 
-Set `MONQUE_DASHBOARD_TEST_MONGO_URI` to override the MongoDB connection; include
-`directConnection=true` for a standalone `mongo:8` fixture. The host fixture waits
-for the application's readiness log and an authenticated capabilities response,
-reports early exits, bounds graceful shutdown with a kill/reap fallback, and drops
-only its randomly named database after the process exits. Browser contexts isolate
-operator, viewer and invalid credentials. Read-only and failed-policy variants
-start separate processes. The failure variant embeds the same Effect host with a
-failing native authorization hook; the ordinary project launches its unchanged CLI.
+Override MongoDB with `MONQUE_DASHBOARD_TEST_MONGO_URI`. Standalone `mongo:8`
+requires `directConnection=true`. Tests use random databases and ephemeral ports,
+then stop hosts and drop those databases.
 
-Shared workflows cover Job and Queue View deep-link reloads, real RPC reads and
-mutations, pagination, polling, authentication, action denial, capabilities,
-read-only enforcement and hook failure. Direct requests retain bypass checks.
-Protocol conformance remains in Management request suites; signals and resource
-lifetime remain in `examples/effect-host`'s actual Bun suite.
+The matrix covers deep-link reloads, RPC reads and mutations, pagination, polling,
+authentication, denied actions, capabilities, read-only mode and failing native
+authorization. Management suites cover protocol conformance;
+`examples/effect-host` covers signals and resource lifetimes.
 
-For an interactive second startup running the built Dashboard on Effect:
+To run the built Dashboard on Effect interactively:
 
 ```sh
 MONGO_URI='mongodb://127.0.0.1:27018/?directConnection=true' \
@@ -165,6 +155,5 @@ vp run @monque/dashboard-dev#start:effect
 ```
 
 Open `http://127.0.0.1:3000/ops/dashboard` and sign in as `operator` or `viewer`.
-The example README documents mount, port, database and read-only options. Mock
-`dev`, MongoDB `dev:db`, live proxy and unit workflows remain available separately.
-CI selects each of the six projects explicitly and installs Chromium before tests.
+See the example README for configuration. Mock `dev`, MongoDB `dev:db`, live proxy
+and unit tests remain available. CI installs Chromium and runs all six projects.

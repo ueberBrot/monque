@@ -32,7 +32,7 @@ or a browser dashboard around the same scheduler.
 | [@monque/management-express](./packages/management-express) | Mount the Management API in an Express application.                                           |
 | [@monque/dashboard](./packages/dashboard)                   | Use the prebuilt browser dashboard assets in a server integration.                            |
 | [@monque/dashboard-express](./packages/dashboard-express)   | Serve the Dashboard from Express without a frontend build.                                    |
-| [@monque/dashboard-effect](./packages/dashboard-effect)     | Serve the same Dashboard through host-owned portable Effect HTTP routes.                      |
+| [@monque/dashboard-effect](./packages/dashboard-effect)     | Serve the Dashboard through Effect HTTP routes.                                               |
 
 For Express, mount both `@monque/management-express` and `@monque/dashboard-express`.
 The first exposes your scheduler; the second serves the UI. Protect both with your

@@ -2,4 +2,4 @@
 "@monque/management": minor
 ---
 
-Expose native Effect Management operations and router composition with service-backed authorization and payload serialization, sharing policy with existing synchronous/Promise facades. Hosts supply request services, scope and cancellation. Native hook defects produce opaque internal failures while typed errors retain their declared codes; see the Management README.
+Expose native Effect operations and router composition with authorization and serialization hooks. Policy matches synchronous/Promise facades; hosts supply services, scope and cancellation. Defects stay opaque; typed errors retain their codes. See the Management README.

@@ -29,7 +29,6 @@ const start = async (adapter: "express" | "effect", readOnly: boolean, hookFailu
 
   const db = client.db(databaseName);
 
-  // Run the actual example CLI; its stable environment and readiness log are documented.
   const effectEntry = hookFailure
     ? "../../examples/effect-host/tests/authorization-failure.ts"
     : "../../examples/effect-host/src/main.ts";

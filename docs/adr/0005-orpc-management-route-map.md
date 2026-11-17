@@ -24,20 +24,20 @@ rather than handwritten beside them.
 
 `@monque/management` exports an OpenAPI document generated from the oRPC router. OpenAPI is
 the stable interoperability contract for third-party clients. The Dashboard and other
-TypeScript clients use oRPC RPC against the same contract and operations at `/rpc`
-beneath the Management mount; external HTTP clients retain REST-shaped `/api/v1` routes.
+TypeScript clients use RPC at `/rpc` beneath the Management mount. External HTTP
+clients retain REST-shaped `/api/v1` routes under the same contract.
 
-Management Adapters mount the official oRPC RPC and OpenAPI HTTP handlers from one router. They do not translate requests into
-a custom `ManagementRequest`/`ManagementResponse` abstraction, and they treat Management
-routers as opaque mountable handlers. Capability discovery remains a Management Route Map
-endpoint.
+Management Adapters mount official oRPC RPC and OpenAPI HTTP handlers from one router.
+They treat handlers as opaque and do not translate requests through custom
+`ManagementRequest`/`ManagementResponse` types. Capability discovery remains a
+Management Route Map endpoint.
 
 The Management OpenAPI contract includes all v1 routes and does not vary by mounted
 scheduler capabilities. Unsupported Management actions keep their route in the v1 contract
 and return `403`; `/api/v1/capabilities` reports per-surface availability.
 
-`@monque/management` uses oRPC server/OpenAPI packages and the official Effect integration. oRPC client runtime belongs to
-Dashboard or other client-side packages. `@monque/core` and `mongodb` remain peer
+`@monque/management` uses oRPC server/OpenAPI packages and the official Effect integration.
+The oRPC client runtime belongs to Dashboard or other client-side packages. `@monque/core` and `mongodb` remain peer
 dependencies.
 
 ## Consequences
@@ -50,33 +50,20 @@ Adapters stay framework-specific mounting packages. They own mount-specific meta
 as server URLs and documentation UI paths, but not route definitions, schemas, operation
 IDs, or Management behavior.
 
-Dashboard code can use oRPC for first-party TypeScript developer experience without
-duplicating the Management contract or operations. Third-party clients can continue to generate
-clients from OpenAPI.
+Dashboard code uses oRPC types without duplicating the Management contract or operations.
+Third-party clients can generate clients from OpenAPI.
 
 The migration is allowed to break unreleased `@monque/management` exports, but should keep
 domain-level names such as `createManagementSurface`, `getManagementOpenApiDocument`,
 `ManagementOptions`, `ManagementMonque`, and exported DTO names where they still fit.
 
-## Coordinated oRPC v2 adoption (#689)
+#686 verified oRPC `2.0.0-beta.45` with Effect `4.1.4`. Participating packages pin
+that oRPC version together. Procedures use official Effect handlers over shared
+native operations; the Promise facade adapts to them. Hosts supply context,
+request scope and cancellation. See the Management README and ADR-0009 for limits.
 
-The compatibility gate in #686 passed with oRPC `2.0.0-beta.45` and Effect `4.1.4`.
-All participating workspace packages now pin that oRPC release together. One
-procedure implementation uses official Effect handlers over shared native
-Management operations; the existing Promise facade adapts at that same seam.
-The native router requires host-supplied Effect context, request scope and
-cancellation ownership. See the Management README and ADR-0009 for execution limits.
-
-## Dual transport (#690)
-
-The Dashboard now connects through `RPCLink` at `<management mount>/rpc`.
-`createManagementSurface` creates one router and protects both official handlers
-with shared body limiting, origin classification and request context. Authorization,
-capabilities, read-only mode, redaction, validation and operations stay in the shared
-router. RPC retains native envelopes; the public HTTP `{ error }` encoder applies
-only to OpenAPI. RPC uses POST, including reads, and does not admit GET mutations.
-Host authentication middleware runs before either transport.
-
-Direct oRPC consumers use the coordinated beta release. Public HTTP clients retain
-paths, methods, DTOs and error bodies. The browser imports only contract types;
-DTO dates remain ISO strings, independent of transport serialization.
+`createManagementSurface` shares request protections and policy across both
+handlers. RPC uses native envelopes and POST for reads and writes, rejecting GET
+mutations. OpenAPI preserves HTTP paths, methods, DTOs and `{ error }` bodies.
+Authenticate requests before both transports. The Dashboard uses `RPCLink` at
+`<management mount>/rpc`, imports only contract types and keeps ISO date strings.

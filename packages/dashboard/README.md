@@ -97,13 +97,11 @@ if you want a ready-made router.
 
 To work on the dashboard in this repository, see [dashboard-dev](../../apps/dashboard-dev/README.md).
 
-The Management Express adapter serves RPC at `<Management mount>/rpc` alongside
-the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
-Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
-without `/api/v1` or `/rpc`. Host authentication must protect both transports.
-Upgrade the Dashboard and Management packages together for the pinned oRPC beta.
+Management Express serves `<Management mount>/rpc` alongside `/api/v1` and OpenAPI.
+The Dashboard appends `/rpc` to `apiBaseUrl`, so omit `/api/v1` and `/rpc` from that
+option. Authenticate both transports. Upgrade Dashboard and Management together
+for the pinned oRPC beta.
 
-Effect HTTP hosts can use `@monque/dashboard-effect` to serve these same assets.
-Both adapters share `renderDashboardHtml(template, runtimeConfig)` and
-`shouldServeDashboardHtml(pathname)`; HTTP, authentication and listeners stay in
-the adapter and host.
+For Effect HTTP, use `@monque/dashboard-effect`. Both adapters use
+`renderDashboardHtml(template, runtimeConfig)` and `shouldServeDashboardHtml(pathname)`.
+Adapters and hosts handle HTTP, authentication and listeners.

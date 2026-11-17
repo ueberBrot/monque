@@ -2,4 +2,4 @@
 "@monque/dashboard": minor
 ---
 
-Export shared Dashboard HTML rendering and SPA fallback policy for serving adapters, retaining one asset-only Dashboard build.
+Export shared Dashboard HTML rendering and SPA fallback helpers from the asset-only build.

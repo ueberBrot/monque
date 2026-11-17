@@ -144,8 +144,7 @@ in dashboard actions. Filtering a dashboard view does not restrict API access to
 See [Dashboard configuration](/monque/dashboard/configuration/) for refresh intervals,
 reverse proxies, scheduler health, and asset caching.
 
-The Management Express adapter serves RPC at `<Management mount>/rpc` alongside
-the unchanged `/api/v1` public HTTP endpoints and OpenAPI document. The bundled
-Dashboard appends `/rpc` to `apiBaseUrl`; configure the Management mount URL,
-without `/api/v1` or `/rpc`. Host authentication must protect both transports.
-Upgrade the Dashboard and Management packages together for the pinned oRPC beta.
+Management Express serves `<Management mount>/rpc` alongside `/api/v1` and OpenAPI.
+The Dashboard appends `/rpc` to `apiBaseUrl`, so omit `/api/v1` and `/rpc` from that
+option. Authenticate both transports. Upgrade Dashboard and Management together
+for the pinned oRPC beta.

@@ -36,11 +36,9 @@ framework adapters, standalone servers, and Docker images wrap the same asset pa
 of changing the Dashboard runtime boundary. Management API routing remains owned by
 Management Adapters, and Dashboard serving remains a separate composition concern.
 
-## Effect HTTP serving (#692)
-
-`@monque/dashboard-effect` adds portable Effect HTTP routes for the same build.
-It accepts explicit independent Dashboard and Management mounts, and an optional
-Effect-valued Management URL evaluated in the host request context. Hosts supply
-request platform services, authentication and listeners. Shared asset-package
-helpers own HTML rendering and fallback classification; adapters own HTTP and
-filesystem behavior. The Effect adapter has no Express or Bun runtime dependency.
+`@monque/dashboard-effect` serves the same build through Effect HTTP. It accepts
+independent Dashboard and Management mounts and an optional Effect-valued
+Management URL evaluated per request. Hosts supply platform services,
+authentication and listeners. Shared asset helpers render HTML and classify SPA
+fallbacks; adapters handle HTTP and files. The Effect adapter has no Express or
+Bun runtime dependency.

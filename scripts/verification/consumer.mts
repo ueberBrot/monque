@@ -33,8 +33,7 @@ assert.ok(
   "Unsupported MongoDB version",
 );
 
-// The coordinated candidate has not been published yet. Test its packed artifact,
-// never the old 0.11 release, which has no RPC surface.
+// Pack the unreleased candidate: 0.11 has no RPC surface.
 const minimumManagementVersion = "0.12.0";
 
 const effectConsumerSource = `import assert from "node:assert/strict";

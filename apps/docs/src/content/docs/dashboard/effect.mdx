@@ -3,10 +3,10 @@ title: Effect HTTP
 description: Serve the bundled Dashboard through portable Effect routes.
 ---
 
-`@monque/dashboard-effect` serves the same Dashboard build as the
-[Express adapter](/monque/dashboard/express/). The application owns authentication, platform
-services and the HTTP listener. Install the adapter alongside Effect 4.1.4 and
-your selected Effect platform package.
+`@monque/dashboard-effect` serves the same build as the
+[Express adapter](/monque/dashboard/express/). Install it with Effect 4.1.4 and
+your host's Effect platform package. The host supplies authentication, platform
+services and the HTTP listener.
 
 ```ts
 import { NodeFileSystem } from "@effect/platform-node";
@@ -27,18 +27,17 @@ const Dashboard = dashboardEffectLayer({
 }).pipe(HttpRouter.provideRequest(Platform));
 ```
 
-Compose `Dashboard` with your host router. Mount Management independently at
-`/control`; the browser uses `/control/rpc`. Add host `HttpRouter.middleware`
-authentication with `Layer.provide(Authentication.layer)` on the Dashboard layer
-before serving it, and use the same host identity policy for Management. Protect
-the whole Dashboard mount, including assets and deep links.
+Compose `Dashboard` with your router. Mount Management at `/control`; the
+browser uses `/control/rpc`. Before serving, add `HttpRouter.middleware`
+authentication with `Layer.provide(Authentication.layer)`. Protect assets and deep
+links too, and use the same identity policy for Management.
 
-`apiBaseUrl` can instead be an `Effect<string, E, R>` that reads host-provided
-services and the current `HttpServerRequest`. The host handles its failures.
-Choose Bun platform services in a Bun host; the adapter itself imports neither
-Express nor Bun. It does not mount Management or start a server.
+`apiBaseUrl` also accepts an `Effect<string, E, R>` that reads host services and
+the current `HttpServerRequest`. The host handles its failures. For Bun, supply
+Bun platform services. The adapter imports neither Express nor Bun, mounts no
+Management routes and starts no server.
 
-HTML uses `Cache-Control: no-store`; built assets use immutable one-year caching.
-GET and HEAD, custom mount paths and Job/Queue View reloads use the same shared
-HTML rendering and runtime configuration as Express. Missing assets return 404;
-asset traversal and symlinks outside the built asset root are rejected.
+HTML uses `Cache-Control: no-store`; assets use one-year immutable caching.
+GET, HEAD, custom mounts and Job/Queue View reloads share Express's HTML rendering
+and runtime configuration. Missing assets return 404. Paths and symlinks cannot
+escape the built asset root.

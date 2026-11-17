@@ -11,24 +11,21 @@ The application acquires `Monque.scoped` inside its database scope. Native
 `.effects` operations register a Worker with a captured application service and
 enqueue a Job. The same instance supplies native `.effects` to Management.
 
-BunRuntime owns process signals and BunHttpServer owns the loopback listener.
-Portable `@monque/management-effect` mounts RPC, versioned HTTP, and OpenAPI;
-`@monque/dashboard-effect` serves the shared asset-only build.
-Custom mount paths are injected at runtime, including on SPA deep links.
+BunRuntime handles process signals; BunHttpServer runs the loopback listener.
+`@monque/management-effect` mounts RPC, versioned HTTP and OpenAPI.
+`@monque/dashboard-effect` serves the shared assets with custom mounts injected
+at runtime, including on deep links.
 
-Host authentication protects both mounts, including HTML, assets, RPC, HTTP, and
-OpenAPI discovery. Request-local host identity drives native authorization and
-capabilities. The example demonstrates viewer and
-operator roles, action authorization, and read-only mode. The existing adapters
-retain request size limits, origin checks, validation, and error behavior.
+Authentication protects both mounts, including HTML, assets, RPC, HTTP and
+OpenAPI. Request-local identity determines native authorization and capabilities
+for viewer, operator and read-only access. The adapters retain request size limits,
+origin checks, validation and error behavior.
 
 Ordinary startup needs no OpenTelemetry packages. Explicit tracing uses an
 application-owned provider. On shutdown, the application closes HTTP, disposes
 Monque, closes MongoDB, then shuts down its optional provider. See the example's
 README for incomplete-work and interruption semantics.
 
-Tests start the actual Bun application against Testcontainers MongoDB, exercise
-Chromium deep-link reloads and allowed/denied operations, and verify startup
-failures, process signals, and active-request shutdown. HTTP work finishes before
-Monque, then MongoDB, then application-owned telemetry. Cancellation does not
-roll back started writes.
+Tests run the Bun application with Testcontainers MongoDB and Chromium. They
+cover deep-link reloads, allowed and denied operations, startup failures, signals
+and active-request shutdown. Cancellation cannot undo started writes.
