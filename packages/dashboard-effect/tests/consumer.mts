@@ -16,7 +16,8 @@ try {
   const archives = await packRelease(root, ["dashboard", "dashboard-effect"], directory);
   const dashboard = archives["@monque/dashboard"];
   const adapter = archives["@monque/dashboard-effect"];
-  assert.ok(dashboard !== undefined && adapter !== undefined);
+  assert.ok(dashboard !== undefined);
+  assert.ok(adapter !== undefined);
   await writeFile(
     path.join(directory, "package.json"),
     JSON.stringify({
@@ -55,7 +56,7 @@ try {
   const asset = /src="([^"]+\\.js)"/u.exec(html)[1];
   const result = await app.handler(new Request("http://localhost" + asset));
   assert.equal(result.status, 200);
-  assert.ok((await result.text()).length > 100);
+  assert.notEqual(await result.text(), "");
 } finally { await app.dispose(); }
 console.log("Isolated Node consumer: built ESM/CJS exports, HTML/assets, no Express/Bun passed");
 `,

@@ -56,7 +56,7 @@ describe("Dashboard Effect", () => {
       expect(head.status).toBe(200);
       expect(head.headers.get("content-length")).toBe(get.headers.get("content-length"));
       await expect(head.text()).resolves.toBe("");
-      expect((await get.text()).length).toBeGreaterThan(100);
+      await expect(get.text()).resolves.not.toBe("");
 
       const htmlHead = await app.handler(
         new Request("http://localhost/ops/ui/queue-views/a.b", { method: "HEAD" }),

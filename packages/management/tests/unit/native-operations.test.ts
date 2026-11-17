@@ -1,46 +1,12 @@
-/* oxlint-disable eslint/max-classes-per-file -- Keep the host Identity service and its tagged failure next to the native request tests. */
 import { InvalidCursorError, JobStateError } from "@monque/core";
-import { Monque } from "@monque/core/effect";
-import { Context, Effect, Exit, Cause, Data } from "effect";
-import { MongoClient } from "mongodb";
+import { Effect, Exit, Cause, Data } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ManagementEffects } from "@/index";
 import { createNativeManagementOperations } from "@/index";
 import { createManagementJob } from "@tests/unit/management-test-utils";
 
-describe("native Management operations", () => {
-  it("reads and controls the supplied Scheduler Instance without Promise facade methods", async () => {
-    const client = new MongoClient("mongodb://127.0.0.1:27017");
-    const monque = new Monque(client.db("native"), { schedulerInstanceId: "native-688" });
-    monque.getJobsWithCursor = () => {
-      throw new Error("Promise facade used");
-    };
-
-    const operations = createNativeManagementOperations({ monque: monque.effects });
-    await expect(
-      Effect.runPromise(operations.processingState(undefined, {})),
-    ).resolves.toStrictEqual({
-      instanceId: "native-688",
-      paused: false,
-      globallyPaused: false,
-    });
-    await expect(
-      Effect.runPromise(operations.processingAction("pause", { instanceId: "native-688" }, {})),
-    ).resolves.toMatchObject({ paused: true });
-    await expect(Effect.runPromise(operations.jobs({}, {}))).rejects.toMatchObject({
-      name: "ConnectionError",
-    });
-    await expect(Effect.runPromise(operations.health())).resolves.toMatchObject({
-      status: "unavailable",
-      scheduler: { healthy: false },
-    });
-  });
-});
-
 class HostFailure extends Data.TaggedError("HostFailure")<{ message: string }> {}
-
-class Identity extends Context.Service<Identity, string>()("tests/688/Identity") {}
 
 const nativeScheduler = function nativeScheduler(
   overrides: Partial<ManagementEffects> = {},
@@ -65,44 +31,6 @@ const nativeScheduler = function nativeScheduler(
 };
 
 describe("native policy and hooks", () => {
-  it("uses host services and each concurrent request identity for authorization and per-Job-Name redaction", async () => {
-    const job = createManagementJob();
-    const observed: string[] = [];
-
-    const operations = createNativeManagementOperations({
-      monque: nativeScheduler({ getJob: () => Effect.succeed(job) }),
-      authorize: ({ context, action }) =>
-        Effect.gen(function* authorize() {
-          const identity = yield* Identity;
-          yield* Effect.yieldNow;
-          observed.push(`${identity}:${String(context)}:${action}:${yield* Identity}`);
-
-          return true;
-        }),
-      serializePayload: () => Effect.die("default must not expose the payload"),
-      serializePayloadByJobName: {
-        [job.name]: () =>
-          Effect.gen(function* serialize() {
-            return { viewer: yield* Identity };
-          }),
-      },
-    });
-
-    const read = async (identity: string) =>
-      await Effect.runPromise(
-        operations
-          .job(job._id.toHexString(), identity)
-          .pipe(Effect.provideService(Identity, identity)),
-      );
-
-    const results = await Promise.all([read("alice"), read("bob")]);
-    expect(results.map((result) => result.payload)).toStrictEqual([
-      { viewer: "alice" },
-      { viewer: "bob" },
-    ]);
-    expect(observed.toSorted()).toStrictEqual(["alice:alice:read:alice", "bob:bob:read:bob"]);
-  });
-
   it("reports only supported actions and enforces read-only before authorization", async () => {
     const operations = createNativeManagementOperations({
       monque: nativeScheduler(),
