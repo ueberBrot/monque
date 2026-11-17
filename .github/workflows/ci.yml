@@ -166,7 +166,15 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        project: [mongo-desktop, mongo-mobile, mongo-desktop-auth, mongo-mobile-auth]
+        project:
+          [
+            mongo-desktop,
+            mongo-mobile,
+            mongo-desktop-auth,
+            mongo-mobile-auth,
+            host-express,
+            host-effect,
+          ]
     services:
       mongodb:
         image: mongodb/mongodb-atlas-local:8.3.2-20260529T125201Z
@@ -191,7 +199,7 @@ jobs:
       - name: Install Chromium
         working-directory: apps/dashboard-dev
         run: vp exec playwright install --with-deps --no-shell chromium
-      - name: Test built dashboard with MongoDB and Express
+      - name: Test built Dashboard with MongoDB and selected host
         working-directory: apps/dashboard-dev
         run: vp exec playwright test --project=${{ matrix.project }}
       - name: Upload browser reports and failure traces

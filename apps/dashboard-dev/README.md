@@ -109,7 +109,7 @@ vp exec playwright show-report
 ```
 
 Projects: `mongo-desktop`, `mongo-mobile`, `mongo-desktop-auth`, and `mongo-mobile-auth`.
-The default is two workers. Reports are in `playwright-report`; failure screenshots and traces
+The default is four workers. Reports are in `playwright-report`; failure screenshots and traces
 are in `test-results`. Both directories are ignored by Git.
 
 The development Dashboard uses RPC at `/api/rpc`. Mock and database modes also
@@ -119,3 +119,52 @@ requests retain their path beneath the upstream mount. Configure the upstream Ma
 Surface to trust the development browser origin (for example `http://localhost:3400`)
 when using the live proxy; POST reads are subject to origin checks too. The proxy
 preserves browser Origin headers.
+
+## Actual Express / Bun Effect host matrix
+
+The separate `host-express` and `host-effect` projects start their own host subprocesses.
+No manual server startup or Dashboard adapter selector is needed. Both serve the
+same `packages/dashboard/dist` build through the actual serving adapters and use
+actual Management RPC. `host-effect` runs the documented Effect example with BunRuntime;
+the Express fixture runs with the repository's pinned Bun executable too.
+
+From the repository root:
+
+```sh
+vp install --frozen-lockfile
+# Start MongoDB once; each test owns a random database and ephemeral listener.
+docker compose -f apps/dashboard-dev/compose.yml up -d --wait
+(cd apps/dashboard-dev && vp exec playwright install chromium)
+vp run @monque/dashboard-dev#test:hosts
+vp run @monque/dashboard-dev#test:db
+# All six projects:
+vp run @monque/dashboard-dev#test:e2e
+```
+
+Set `MONQUE_DASHBOARD_TEST_MONGO_URI` to override the MongoDB connection; include
+`directConnection=true` for a standalone `mongo:8` fixture. The host fixture waits
+for the application's readiness log and an authenticated capabilities response,
+reports early exits, bounds graceful shutdown with a kill/reap fallback, and drops
+only its randomly named database after the process exits. Browser contexts isolate
+operator, viewer and invalid credentials. Read-only and failed-policy variants
+start separate processes. The failure variant embeds the same Effect host with a
+failing native authorization hook; the ordinary project launches its unchanged CLI.
+
+Shared workflows cover Job and Queue View deep-link reloads, real RPC reads and
+mutations, pagination, polling, authentication, action denial, capabilities,
+read-only enforcement and hook failure. Direct requests retain bypass checks.
+Protocol conformance remains in Management request suites; signals and resource
+lifetime remain in `examples/effect-host`'s actual Bun suite.
+
+For an interactive second startup running the built Dashboard on Effect:
+
+```sh
+MONGO_URI='mongodb://127.0.0.1:27018/?directConnection=true' \
+OPERATOR_PASSWORD=operator-secret VIEWER_PASSWORD=viewer-secret \
+vp run @monque/dashboard-dev#start:effect
+```
+
+Open `http://127.0.0.1:3000/ops/dashboard` and sign in as `operator` or `viewer`.
+The example README documents mount, port, database and read-only options. Mock
+`dev`, MongoDB `dev:db`, live proxy and unit workflows remain available separately.
+CI selects each of the six projects explicitly and installs Chromium before tests.

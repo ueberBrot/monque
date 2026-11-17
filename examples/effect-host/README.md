@@ -117,3 +117,10 @@ returns `{ url, jobId, monque, db, client }`. Stable options are `mongoUri`,
 `instrumentation`. The CLI uses the environment variables above; its readiness log
 is `Dashboard: <url><dashboardPath>; Job: <id>`. The dual-host matrix can launch
 this command and use independent mount paths without a separate testing host.
+
+The built Dashboard polls every second. Embedders may pass `authorize` as a native
+Management authorization hook to replace the example's default role policy; that
+hook owns the complete action policy and runs in the request Effect context.
+The browser matrix uses a failing hook variant to verify failure-closed behavior.
+For the shared actual Express/Bun browser matrix and a second interactive startup,
+see [dashboard-dev](../../apps/dashboard-dev/README.md#actual-express--bun-effect-host-matrix).

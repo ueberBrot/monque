@@ -114,13 +114,19 @@ const acquireHost = (options: HostOptions) =>
         prefix: options.managementPath as `/${string}`,
         readOnly: options.readOnly ?? false,
         context: () => Identity,
-        authorize: ({ action, context }) =>
-          Effect.succeed(
-            action === "read" ||
-              (context.role === "operator" && action !== "delete" && action !== "deleteBulk"),
-          ),
+        authorize:
+          options.authorize ??
+          (({ action, context }) =>
+            Effect.succeed(
+              action === "read" ||
+                (context.role === "operator" && action !== "delete" && action !== "deleteBulk"),
+            )),
       }),
-      dashboardEffectLayer({ basePath: options.dashboardPath, apiBaseUrl: options.managementPath }),
+      dashboardEffectLayer({
+        basePath: options.dashboardPath,
+        apiBaseUrl: options.managementPath,
+        pollingIntervalMs: 1000,
+      }),
     ).pipe(
       Layer.provide(authentication.layer),
       HttpRouter.provideRequest(BunHttpServer.layerHttpServices),

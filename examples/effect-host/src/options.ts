@@ -1,4 +1,5 @@
 import type { MonqueInstrumentation } from "@monque/core";
+import type { NativeManagementOptions } from "@monque/management";
 import { Config, Effect, Schema } from "effect";
 
 import { HostError } from "./host-error.js";
@@ -12,6 +13,9 @@ export interface HostOptions {
   readonly dashboardPath: string;
   readonly port: number;
   readonly readOnly?: boolean;
+  readonly authorize?: NativeManagementOptions<{
+    readonly role: "operator" | "viewer";
+  }>["authorize"];
   readonly instrumentation?: MonqueInstrumentation;
 }
 
