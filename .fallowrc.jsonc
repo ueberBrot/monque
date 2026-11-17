@@ -121,17 +121,21 @@
         "patterns": [
           "packages/management/src/index.ts",
           "packages/management/src/effects.ts",
+          "packages/management/src/native.ts",
+          "packages/management/src/compatibility.ts",
           "packages/management/src/mappers/**",
           "packages/management/src/surface/**",
           "packages/management/src/orpc/{index,router,openapi,operations}.ts",
         ],
       },
       { "name": "management-express", "patterns": ["packages/management-express/src/**"] },
+      { "name": "management-effect", "patterns": ["packages/management-effect/src/**"] },
       {
         "name": "dashboard",
         "patterns": ["packages/dashboard/src/**", "packages/dashboard/index.html"],
       },
       { "name": "dashboard-express", "patterns": ["packages/dashboard-express/src/**"] },
+      { "name": "dashboard-effect", "patterns": ["packages/dashboard-effect/src/**"] },
     ],
     "rules": [
       { "from": "core", "allow": [] },
@@ -139,8 +143,10 @@
       { "from": "contract", "allow": [] },
       { "from": "management", "allow": ["core", "contract"] },
       { "from": "management-express", "allow": ["core", "management", "contract"] },
+      { "from": "management-effect", "allow": ["management"] },
       { "from": "dashboard", "allow": ["contract"] },
       { "from": "dashboard-express", "allow": ["dashboard"] },
+      { "from": "dashboard-effect", "allow": ["dashboard"] },
     ],
     "coverage": {
       "requireAllFiles": true,
