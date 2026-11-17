@@ -5,7 +5,11 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
-/** Pack the projected Changesets release, without changing workspace versions or history. */
+/**
+ * Pack projected Changesets manifests and dependency ranges without changing the workspace.
+ * Copied dist files are not rebuilt: these archives verify compatibility, not final embedded
+ * version metadata or byte-equivalence. Production release builds run after versioning.
+ */
 export const packRelease = async (root: string, names: string[], directory: string) => {
   const planPath = path.join(directory, "release-plan.json");
   execFileSync("vp", ["exec", "changeset", "status", `--output=${planPath}`], {

@@ -20,3 +20,10 @@ The public Effect HTTP interfaces are unstable; Effect 4.1.4 and oRPC
 test dependencies only. A packed isolated Node consumer verifies portability.
 The shared surface module owns body limits, trust state and protocol-specific
 error encoding for both Express and Effect, keeping policy fixes local.
+
+The initial compatibility experiment is covered by the shipped adapter's
+`packages/management-effect/tests/bun/lifecycle.test.ts` regressions. They exercise
+both real transports, concurrent identity isolation, request finalizers, tracing
+parentage, client interruption, runner termination joining, active-request
+shutdown and startup failure. Maintain those tests against the shipped adapter
+rather than a separate experimental host and dependency graph.

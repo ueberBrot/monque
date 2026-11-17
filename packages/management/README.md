@@ -52,7 +52,7 @@ must combine source and host interruption signals and join the transport Promise
 in an uninterruptible finalizer before closing the request Scope. Supply tracing
 context explicitly and release shared resources only after active requests finish.
 The verified implementation and lifecycle constraints are recorded in
-[`proofs/orpc-effect`](../../proofs/orpc-effect/README.md). No application Layer or
+[ADR-0009](../../docs/adr/0009-portable-management-effect.md). No application Layer or
 second Effect runtime is created by the router. Cancellation cannot undo writes
 already admitted to MongoDB.
 

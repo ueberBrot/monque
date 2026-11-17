@@ -65,7 +65,7 @@ All participating workspace packages now pin that oRPC release together. One
 procedure implementation uses official Effect handlers over shared native
 Management operations; the existing Promise facade adapts at that same seam.
 The native router requires host-supplied Effect context, request scope and
-cancellation ownership. See the Management README and proof for execution limits.
+cancellation ownership. See the Management README and ADR-0009 for execution limits.
 
 ## Dual transport (#690)
 
