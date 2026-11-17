@@ -13,3 +13,5 @@ export {
   DashboardRuntimeConfigSchema,
   parseDashboardRuntimeConfig,
 } from "./runtime-config.js";
+
+export { renderDashboardHtml, shouldServeDashboardHtml } from "./serving.js";

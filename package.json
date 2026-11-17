@@ -21,7 +21,7 @@
     "prepare": "vp config --no-agent && effect-tsgo patch --no-typescript --tsrs --oxlint",
     "build": "vp run --filter './packages/*' --filter './apps/*' --filter './examples/*' build",
     "type-check": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --type-check --deny-warnings && vp run --filter @monque/docs type-check",
-    "lint:effect": "vp run --filter @monque/core --filter @monque/management lint:effect",
+    "lint:effect": "vp run --filter @monque/core --filter @monque/management --filter @monque/dashboard-effect lint:effect",
     "lint": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --deny-warnings",
     "lint:fast": "vp lint --deny-warnings",
     "lint:fix": "vp run --filter './packages/*' build && effect-tsgo --tsrs-lint vp lint --type-aware --fix",
