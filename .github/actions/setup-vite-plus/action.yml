@@ -22,6 +22,8 @@ runs:
         node-version-file: .node-version
         registry-url: ${{ inputs.registry-url }}
         cache: true
+        # Release overrides may float; cache the exact .node-version default only.
+        cache-toolchain: ${{ inputs.node-version == '' }}
         run-install: |
           args: ['--frozen-lockfile']
       env:
