@@ -5,7 +5,7 @@ import type { MonqueOptions } from "@monque/core";
 import { Monque } from "@monque/core/effect";
 import { dashboardEffectLayer } from "@monque/dashboard-effect";
 import { createManagementEffectRoutes } from "@monque/management-effect";
-import { Context, Effect, Layer, Scope } from "effect";
+import { Context, Effect, Exit, Layer, Scope } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { MongoClient } from "mongodb";
 
@@ -161,9 +161,13 @@ const acquireHost = (options: HostOptions) =>
 
 /** Own ordering even when an embedding application uses parallel finalization. */
 export const host = (options: HostOptions) =>
-  Effect.gen(function* scopedHost() {
-    const parent = yield* Effect.scope;
-    const scope = yield* Scope.fork(parent, "sequential");
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* scopedHost() {
+      const parent = yield* Effect.scope;
+      const scope = yield* Scope.fork(parent, "sequential");
 
-    return yield* acquireHost(options).pipe(Scope.provide(scope));
-  });
+      return yield* restore(acquireHost(options).pipe(Scope.provide(scope))).pipe(
+        Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause))),
+      );
+    }),
+  );

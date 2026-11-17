@@ -15,6 +15,11 @@ assuming a preserved Web source reflects host middleware changes. Host shutdown
 must terminate HTTP work before releasing the scheduler and borrowed resources.
 Admitted MongoDB writes retain ADR-0007's interruption semantics.
 
+The shared router normalizes defects before the official oRPC runner squashes
+Effect causes. A defect containing an oRPC error must not become a declared domain
+failure or expose its details. Typed failures and interruption remain unchanged,
+and host-supplied Effect wrappers still run.
+
 The public Effect HTTP interfaces are unstable; Effect 4.1.4 and oRPC
 2.0.0-beta.45 form the verified composition. Platform implementations are private
 test dependencies only. A packed isolated Node consumer verifies portability.

@@ -12,7 +12,16 @@ import type { StartedMongoDBContainer } from "@testcontainers/mongodb";
 import { Predicate } from "effect";
 import { MongoClient } from "mongodb";
 import { chromium } from "playwright";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import { launchHost } from "./process.js";
 
@@ -256,31 +265,45 @@ describe("actual Bun Effect host", () => {
     );
   });
 
-  it("cleans up Monque and MongoDB when listener startup fails", async () => {
-    await processHost.stop();
-    const occupied = createServer();
-    occupied.listen(0, "127.0.0.1");
-    await once(occupied, "listening");
-    const address = occupied.address();
+  it.each(["terminal", "recovered"] as const)(
+    "cleans up Monque and MongoDB after %s listener startup failure",
+    async (mode) => {
+      await processHost.stop();
+      const occupied = createServer();
+      occupied.listen(0, "127.0.0.1");
+      await once(occupied, "listening");
+      const address = occupied.address();
 
-    if (address === null || Predicate.isString(address)) {
-      throw new Error("Expected TCP");
-    }
+      if (address === null || Predicate.isString(address)) {
+        throw new Error("Expected TCP");
+      }
 
-    try {
-      processHost = launchHost({
-        MONGO_URI: `${container.getConnectionString()}?directConnection=true`,
-        MONGO_DATABASE: `failure_${randomUUID()}`,
-        PORT: String(address.port),
-      });
-      await processHost.exited;
-      expect(processHost.child.exitCode).not.toBe(0);
-      expect(processHost.output()).not.toContain("Dashboard:");
-      expect(processHost.output()).toMatch(/Released Monque[\s\S]*Released MongoDB/u);
-    } finally {
-      occupied.close();
-    }
-  });
+      try {
+        processHost = launchHost(
+          {
+            MONGO_URI: `${container.getConnectionString()}?directConnection=true`,
+            MONGO_DATABASE: `failure_${randomUUID()}`,
+            PORT: String(address.port),
+          },
+          mode === "terminal" ? "src/main.ts" : "tests/recovered-startup.ts",
+        );
+
+        await (mode === "terminal"
+          ? processHost.exited
+          : vi.waitUntil(() => processHost.output().includes("Startup recovered")));
+
+        expect(processHost.child.exitCode).toBe(mode === "terminal" ? 1 : null);
+        expect(processHost.output()).toMatch(
+          mode === "terminal"
+            ? /Released Monque[\s\S]*Released MongoDB/u
+            : /Released Monque[\s\S]*Released MongoDB[\s\S]*Startup recovered/u,
+        );
+        expect(processHost.output()).not.toContain("Dashboard:");
+      } finally {
+        occupied.close();
+      }
+    },
+  );
 
   it("closes the acquired MongoDB client after connection failure", async () => {
     await processHost.stop();

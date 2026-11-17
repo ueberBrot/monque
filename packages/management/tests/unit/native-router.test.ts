@@ -41,6 +41,14 @@ describe("native oRPC execution", () => {
         context: {
           managementContext: "request",
           "effect/context": Context.make(Viewer, "operator").pipe(Context.add(Scope.Scope, scope)),
+          "effect/wrap": (effect) =>
+            effect.pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  calls.push("runner-finished");
+                }),
+              ),
+            ),
         },
       });
 
@@ -50,13 +58,13 @@ describe("native oRPC execution", () => {
         paused: false,
         globallyPaused: false,
       });
-      expect(calls).toStrictEqual(["operator:request"]);
+      expect(calls).toStrictEqual(["operator:request", "runner-finished"]);
     } finally {
       await Effect.runPromise(Scope.close(scope, Exit.void));
       await scheduler.dispose();
       await client.close();
     }
 
-    expect(calls).toStrictEqual(["operator:request", "released"]);
+    expect(calls).toStrictEqual(["operator:request", "runner-finished", "released"]);
   });
 });

@@ -1,9 +1,9 @@
-import type { WithEffectContext } from "@orpc/effect";
+import type { EffectWrapOptions, WithEffectContext } from "@orpc/effect";
 /* oxlint-disable sonarjs/no-redundant-optional -- Native hook option getters can explicitly return undefined with exactOptionalPropertyTypes. */
 import "@orpc/effect/extensions/effect";
 import { implement, ORPCError, os } from "@orpc/server";
 import type { ContractedRouter } from "@orpc/server";
-import { Context } from "effect";
+import { Context, Effect } from "effect";
 
 import { createManagementOperations } from "../compatibility.js";
 import type { NativeManagementOptions } from "../native.js";
@@ -64,24 +64,38 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
   },
   operations: ReturnType<typeof createNativeManagementOperations<TContext, R>>,
 ) {
-  const managementImplementer = implement(managementContract).$context<
-    ManagementOpenApiContext<TContext> & WithEffectContext<R>
-  >();
+  const managementImplementer = implement(managementContract)
+    .$context<ManagementOpenApiContext<TContext> & WithEffectContext<R>>()
+    .use(({ context, next }) =>
+      next({
+        context: {
+          // The official runner squashes Fail and Die alike; keep defects opaque at this seam.
+          "effect/wrap": <A>(effect: Effect.Effect<A, unknown>, wrapOptions: EffectWrapOptions) =>
+            Effect.suspend(() => context["effect/wrap"]?.(effect, wrapOptions) ?? effect).pipe(
+              Effect.catchDefect((cause) =>
+                Effect.die(new Error("Management handler defect", { cause })),
+              ),
+            ),
+        },
+      }),
+    );
 
   const requireContext = requiresOpenApiManagementContext(options);
 
   const getOpenApiManagementContext = function getOpenApiManagementContext(
     context: ManagementOpenApiContext<TContext>,
-  ): TContext {
+  ) {
     if (requireContext && context.managementContext === undefined) {
-      throw new ORPCError("INTERNAL_SERVER_ERROR", {
-        message:
-          "Missing managementContext in openApiHandler.handle() context; managementContext is required for authorize/serializePayload hooks.",
-      });
+      return Effect.fail(
+        new ORPCError("INTERNAL_SERVER_ERROR", {
+          message:
+            "Missing managementContext in openApiHandler.handle() context; managementContext is required for authorize/serializePayload hooks.",
+        }),
+      );
     }
 
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Missing context is permitted only when no hooks consume TContext; preserve the public generic adapter contract.
-    return context.managementContext as TContext;
+    return Effect.succeed(context.managementContext as TContext);
   };
 
   return managementImplementer.router({
@@ -89,7 +103,10 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       input,
       context,
     }) {
-      return yield* operations.processingState(input?.name, getOpenApiManagementContext(context));
+      return yield* operations.processingState(
+        input?.name,
+        yield* getOpenApiManagementContext(context),
+      );
     }),
     pauseProcessing: managementImplementer.pauseProcessing.effect(function* pauseProcessing({
       input,
@@ -98,7 +115,7 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       return yield* operations.processingAction(
         "pause",
         input,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     resumeProcessing: managementImplementer.resumeProcessing.effect(function* resumeProcessing({
@@ -108,12 +125,15 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       return yield* operations.processingAction(
         "resume",
         input,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     selectedJobActions: managementImplementer.selectedJobActions.effect(
       function* selectedJobActions({ input, context }) {
-        return yield* operations.selectedJobActions(input, getOpenApiManagementContext(context));
+        return yield* operations.selectedJobActions(
+          input,
+          yield* getOpenApiManagementContext(context),
+        );
       },
     ),
     health: managementImplementer.health.effect(function* health() {
@@ -123,32 +143,35 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       input,
       context,
     }) {
-      return yield* operations.capabilities(input?.name, getOpenApiManagementContext(context));
+      return yield* operations.capabilities(
+        input?.name,
+        yield* getOpenApiManagementContext(context),
+      );
     }),
     queueViews: managementImplementer.queueViews.effect(function* queueViews({ input, context }) {
-      return yield* operations.queueViews(input, getOpenApiManagementContext(context));
+      return yield* operations.queueViews(input, yield* getOpenApiManagementContext(context));
     }),
     jobs: managementImplementer.jobs.effect(function* jobs({ input, context }) {
-      return yield* operations.jobs(input, getOpenApiManagementContext(context));
+      return yield* operations.jobs(input, yield* getOpenApiManagementContext(context));
     }),
     jobStats: managementImplementer.jobStats.effect(function* jobStats({ input, context }) {
-      return yield* operations.jobStats(input, getOpenApiManagementContext(context));
+      return yield* operations.jobStats(input, yield* getOpenApiManagementContext(context));
     }),
     job: managementImplementer.job.effect(function* job({ input, context }) {
-      return yield* operations.job(input.params.id, getOpenApiManagementContext(context));
+      return yield* operations.job(input.params.id, yield* getOpenApiManagementContext(context));
     }),
     cancelJob: managementImplementer.cancelJob.effect(function* cancelJob({ input, context }) {
       return yield* operations.mutateJob(
         { action: "cancel" },
         input.params.id,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     retryJob: managementImplementer.retryJob.effect(function* retryJob({ input, context }) {
       return yield* operations.mutateJob(
         { action: "retry" },
         input.params.id,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     rescheduleJob: managementImplementer.rescheduleJob.effect(function* rescheduleJob({
@@ -158,7 +181,7 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       return yield* operations.mutateJob(
         { action: "reschedule", nextRunAt: input.body.nextRunAt },
         input.params.id,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     setJobPriority: managementImplementer.setJobPriority.effect(function* setJobPriority({
@@ -168,31 +191,34 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
       return yield* operations.mutateJob(
         { action: "setJobPriority", priority: input.body.priority },
         input.params.id,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     deleteJob: managementImplementer.deleteJob.effect(function* deleteJob({ input, context }) {
-      return yield* operations.deleteJob(input.params.id, getOpenApiManagementContext(context));
+      return yield* operations.deleteJob(
+        input.params.id,
+        yield* getOpenApiManagementContext(context),
+      );
     }),
     cancelJobs: managementImplementer.cancelJobs.effect(function* cancelJobs({ input, context }) {
       return yield* operations.bulkJobMutation(
         "cancelBulk",
         input,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     retryJobs: managementImplementer.retryJobs.effect(function* retryJobs({ input, context }) {
       return yield* operations.bulkJobMutation(
         "retryBulk",
         input,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
     deleteJobs: managementImplementer.deleteJobs.effect(function* deleteJobs({ input, context }) {
       return yield* operations.bulkJobMutation(
         "deleteBulk",
         input,
-        getOpenApiManagementContext(context),
+        yield* getOpenApiManagementContext(context),
       );
     }),
   });

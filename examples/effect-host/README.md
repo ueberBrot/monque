@@ -79,7 +79,8 @@ This example does not configure metrics or persist producer trace context.
 
 BunRuntime handles SIGINT and SIGTERM and interrupts the application Effect. Its sequential scope closes
 the HTTP listener, disposes Monque, closes the application MongoDB client, then
-shuts down the optional provider. Failed startup releases already acquired resources.
+shuts down the optional provider. Failed startup releases already acquired resources,
+including when an embedding application catches the failure and keeps its parent scope open.
 Monque borrows the database; the host owns and closes the client.
 
 HTTP stops accepting work, allows one second for active requests, then interrupts

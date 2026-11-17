@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { ORPCError } from "@orpc/client";
 /* oxlint-disable typescript/no-invalid-void-type -- Native Promise.withResolvers<void> gates model lifecycle completion without values. */
 import { Effect } from "effect";
 
@@ -103,29 +104,35 @@ describe.each(["rpc", "http"] as const)("%s", (transport) => {
     }
   });
 
-  test(`${transport}: defects remain failures and release request resources`, async () => {
-    const host = await startHost({
-      beforeAuthorize: () => Effect.die(new Error("private defect")),
-    });
+  test.each([
+    new Error("private defect"),
+    new ORPCError("FORBIDDEN", { message: "private defect" }),
+  ])(
+    `${transport}: defects remain internal failures and release request resources (%s)`,
+    async (defect) => {
+      const host = await startHost({
+        beforeAuthorize: () => Effect.die(defect),
+      });
 
-    try {
-      if (transport === "rpc") {
-        expect(await rejection(call(host, "alice"))).toMatchObject({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Internal Server Error",
-        });
-      } else {
-        expect(await call(host, "alice")).toEqual({
-          status: 500,
-          body: { error: "Internal server error" },
-        });
+      try {
+        if (transport === "rpc") {
+          expect(await rejection(call(host, "alice"))).toMatchObject({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Internal Server Error",
+          });
+        } else {
+          expect(await call(host, "alice")).toEqual({
+            status: 500,
+            body: { error: "Internal server error" },
+          });
+        }
+
+        expect(host.events).toEqual(["entered:alice", "finalized:alice"]);
+      } finally {
+        await host.close();
       }
-
-      expect(host.events).toEqual(["entered:alice", "finalized:alice"]);
-    } finally {
-      await host.close();
-    }
-  });
+    },
+  );
 
   test(`${transport}: overlapping requests retain distinct host identities`, async () => {
     const both = Promise.withResolvers<void>();
