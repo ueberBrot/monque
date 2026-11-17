@@ -226,15 +226,16 @@ projected until the coordinated release publishes. Management 0.11.x has no RPC
 handler or native surface export and cannot serve the new Dashboard.
 
 All oRPC contract, server, OpenAPI, Zod, client and TanStack Query packages use
-`2.0.0-beta.45`. Upgrade them together. Cross-major oRPC interoperability is not
+`2.0.0-beta.50`. Upgrade them together. Cross-major oRPC interoperability is not
 guaranteed. Public `/api/v1` paths, DTOs, statuses, coercion and
 `{ error: string }` bodies remain compatible.
 
 Direct oRPC consumers must use v2 names (`RouterContractClient`, `ContractedRouter`,
-`OpenAPIV3_1.OpenAPIObject`). Import `OpenAPILink` and `JsonifiedClient` from
-`@orpc/openapi` and `@orpc/openapi/fetch`, and Zod conversion from `@orpc/zod`.
-v2 `ORPCError` carries a code instead of HTTP `status`. Use `COMMON_ERROR_STATUS_MAP`
-to map codes to HTTP statuses. The public HTTP error body is unchanged.
+`OpenAPIV3_1.OpenAPIObject`). Import `JsonifiedClient` from `@orpc/openapi`,
+`OpenAPILink` from `@orpc/openapi/fetch`, and Zod conversion from `@orpc/zod`.
+v2 `ORPCError` carries a code instead of HTTP `status`. Configure HTTP statuses with
+the handler's `errorStatusMap`. Clients read transport details from `ResponseError`,
+including `ORPCError.cause`. The public HTTP error body is unchanged.
 
 The Management compatibility facade supports core 1.16.0, the first published
 version satisfying ^1.15.1. Capabilities report unsupported operations. Native

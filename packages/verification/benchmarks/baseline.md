@@ -22,10 +22,10 @@ The workstation and database server also hosted other applications.
 ```sh
 vp run --filter @monque/core --filter @monque/management build
 MONQUE_BENCH_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
-  bun scripts/benchmarks/run.mts > /tmp/monque-baseline.json
+  vp run @monque/verification#benchmark > /tmp/monque-baseline.json
 printf '{"instances":2}\n' > /tmp/monque-two-instances.json
 MONQUE_BENCH_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
-  bun scripts/benchmarks/run.mts /tmp/monque-two-instances.json > /tmp/monque-baseline-two.json
+  vp run @monque/verification#benchmark /tmp/monque-two-instances.json > /tmp/monque-baseline-two.json
 ```
 
 All Scheduler Instances ran in one process. Both cases used 1,000 Jobs per processing

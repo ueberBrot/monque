@@ -1,36 +1,34 @@
-import { COMMON_ERROR_STATUS_MAP } from "@orpc/client";
+import { COMMON_ERROR_STATUS_MAP, ORPCError, ResponseError } from "@orpc/client";
 import { z } from "zod";
 
 // oxlint-disable promise/prefer-await-to-then -- Zod.catch defines a synchronous parse fallback, not a Promise handler.
 const ErrorMessageSchema = z.string().min(1).optional().catch(undefined);
 
-const ManagementErrorSchema = z.object({
-  code: z.string().optional().catch(undefined),
-  response: z.object({ status: z.number() }).optional().catch(undefined),
-  status: z.number().int().optional().catch(undefined),
-  message: ErrorMessageSchema,
-  data: z
-    .object({
-      error: ErrorMessageSchema,
-      body: z.object({ error: ErrorMessageSchema }).optional().catch(undefined),
-    })
-    .optional()
-    .catch(undefined),
-});
+const MessageSchema = z.object({ message: ErrorMessageSchema });
+const ErrorDataSchema = z.object({ error: ErrorMessageSchema });
 
-const ReadManagementErrorSchema = ManagementErrorSchema.transform(
-  ({ status, message, data, code, response }) => ({
-    status:
-      status ??
-      response?.status ??
-      (code === undefined
-        ? undefined
-        : Object.entries(COMMON_ERROR_STATUS_MAP).find(([key]) => key === code)?.[1]),
-    message: data?.error ?? data?.body?.error ?? message,
-  }),
-).catch(() => ({ status: undefined, message: undefined }));
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Query and mutation failures can include transport errors, typed errors or arbitrary rejections.
+const readManagementError = (error: unknown) => {
+  let status: number | undefined;
 
-const readManagementError = ReadManagementErrorSchema.parse.bind(ReadManagementErrorSchema);
+  if (error instanceof ResponseError) {
+    ({ status } = error.response);
+  } else if (error instanceof ORPCError) {
+    status =
+      error.cause instanceof ResponseError
+        ? error.cause.response.status
+        : Object.entries(COMMON_ERROR_STATUS_MAP).find(([code]) => code === error.code)?.[1];
+  }
+
+  const data = error instanceof ORPCError ? ErrorDataSchema.safeParse(error.data) : undefined;
+
+  return {
+    status,
+    message:
+      (data?.success === true ? data.data.error : undefined) ??
+      MessageSchema.safeParse(error).data?.message,
+  };
+};
 
 // oxlint-enable promise/prefer-await-to-then
 type DashboardErrorCode = "unauthorized" | "forbidden" | "not-found" | "error";

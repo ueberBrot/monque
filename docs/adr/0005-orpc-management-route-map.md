@@ -57,8 +57,8 @@ The migration is allowed to break unreleased `@monque/management` exports, but s
 domain-level names such as `createManagementSurface`, `getManagementOpenApiDocument`,
 `ManagementOptions`, `ManagementMonque`, and exported DTO names where they still fit.
 
-#686 verified oRPC `2.0.0-beta.45` with Effect `4.1.4`. Participating packages pin
-that oRPC version together. Procedures use official Effect handlers over shared
+#686 verified oRPC `2.0.0-beta.45` with Effect `4.1.4`. Participating packages now pin
+oRPC `2.0.0-beta.50` together. Procedures use official Effect handlers over shared
 native operations; the Promise facade adapts to them. Hosts supply context,
 request scope and cancellation. See the Management README and ADR-0009 for limits.
 

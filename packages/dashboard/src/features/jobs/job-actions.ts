@@ -1,4 +1,5 @@
 import type { CapabilitiesDto, JobDto } from "@monque/management/contract";
+import { COMMON_ERROR_STATUS_MAP, ORPCError } from "@orpc/client";
 
 import { toDateTimeLocalValue } from "@/lib/dates";
 import type { DashboardManagementApi } from "@/management-client";
@@ -189,7 +190,14 @@ const runJobActions = async (
     action: input.action,
     count: result.count,
     jobs: [],
-    firstError: first ? { status: first.status, message: first.error } : undefined,
+    firstError: first
+      ? new ORPCError(
+          Object.entries(COMMON_ERROR_STATUS_MAP).find(
+            ([, status]) => status === first.status,
+          )?.[0] ?? "INTERNAL_SERVER_ERROR",
+          { message: first.error },
+        )
+      : undefined,
     authorizationChanged: result.errors.some((error) => error.status === 403),
   };
 };

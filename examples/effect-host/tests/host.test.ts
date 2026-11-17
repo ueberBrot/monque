@@ -6,7 +6,7 @@ import { CapabilitiesDtoSchema, JobDtoSchema, ProcessingStateDtoSchema } from "@
 import type { ManagementContract } from "@monque/management";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { ContractRouterClient } from "@orpc/contract";
+import type { RouterContractClient } from "@orpc/contract";
 import { MongoDBContainer } from "@testcontainers/mongodb";
 import type { StartedMongoDBContainer } from "@testcontainers/mongodb";
 import { Predicate } from "effect";
@@ -61,7 +61,7 @@ describe("actual Bun Effect host", () => {
   const request = async (path: string, init: RequestInit = {}) =>
     await fetch(`${url}/custom/control/api/v1${path}`, { headers: operator, ...init });
 
-  const rpc = (headers = operator): ContractRouterClient<ManagementContract> =>
+  const rpc = (headers = operator): RouterContractClient<ManagementContract> =>
     createORPCClient(new RPCLink({ origin: url, url: "/custom/control/rpc", headers }));
 
   beforeAll(async () => {

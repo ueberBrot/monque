@@ -129,7 +129,7 @@ const createProtectedSurface = function createProtectedSurface<C extends Record<
     ),
     openApiHandler: protect(
       new OpenAPIHandler(router, {
-        customErrorResponseBodyEncoder: (error) => ({
+        errorResponseBodyEncoder: (error) => ({
           error:
             error.code === "INTERNAL_SERVER_ERROR" && error.message === "Internal Server Error"
               ? "Internal server error"

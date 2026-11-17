@@ -51,8 +51,8 @@ describe(runJobActions, () => {
       "000000000000000000000003",
     ];
 
-    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const request = new Request(input, init);
       expect(new URL(request.url).pathname).toBe("/rpc/selectedJobActions");
       await expect(rpcInput(request)).resolves.toStrictEqual({ action: "retry", ids });
 
@@ -80,7 +80,7 @@ describe(runJobActions, () => {
     await expect(mutation.execute({ action: "retry", jobIds: ids })).resolves.toMatchObject({
       count: 1,
       failed: [ids[1], ids[2]],
-      firstError: { status: 409 },
+      firstError: { code: "CONFLICT" },
       authorizationChanged: true,
     });
     expect(fetch).toHaveBeenCalledOnce();
@@ -95,8 +95,8 @@ describe(runJobActions, () => {
     const api = createDashboardManagementApi({
       apiBaseUrl: "/",
       origin: "https://dashboard.test",
-      fetch: async (input) => {
-        const request = input instanceof Request ? input : new Request(input);
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
         expect(new URL(request.url).pathname).toBe("/rpc/selectedJobActions");
         await expect(rpcInput(request)).resolves.toStrictEqual({
           ids,
@@ -116,7 +116,7 @@ describe(runJobActions, () => {
     ).resolves.toMatchObject({
       count: 1,
       failed: [ids[1]],
-      firstError: { status: 409, message: "Job is processing" },
+      firstError: { code: "CONFLICT", message: "Job is processing" },
     });
   });
 

@@ -28,19 +28,15 @@ const successDescription = "Successful response";
 
 const ManagementMutationErrors = {
   BAD_REQUEST: {
-    status: 400,
     data: ManagementErrorDtoSchema,
   },
   FORBIDDEN: {
-    status: 403,
     data: ManagementErrorDtoSchema,
   },
   CONFLICT: {
-    status: 409,
     data: ManagementErrorDtoSchema,
   },
   INTERNAL_SERVER_ERROR: {
-    status: 500,
     data: ManagementErrorDtoSchema,
   },
 } as const;
@@ -48,7 +44,6 @@ const ManagementMutationErrors = {
 const SingleJobActionErrors = {
   ...ManagementMutationErrors,
   NOT_FOUND: {
-    status: 404,
     data: ManagementErrorDtoSchema,
   },
 } as const;

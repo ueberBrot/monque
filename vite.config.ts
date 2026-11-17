@@ -224,6 +224,18 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      "verify:consumer": {
+        command:
+          "vp run --filter @monque/verification --filter @monque/management-effect --filter @monque/dashboard-effect verify:consumer",
+        cache: false,
+      },
+      "lint:effect": {
+        command:
+          "vp run --filter @monque/core --filter @monque/management --filter @monque/management-effect --filter @monque/dashboard-effect lint:effect",
+        cache: false,
+      },
+      benchmark: { command: "vp run @monque/verification#benchmark", cache: false },
+      "test:benchmark": { command: "vp run @monque/verification#test:benchmark", cache: false },
       "release:publish": {
         // Build publishable packages only when Changesets takes its publish path.
         command: "vp run --filter './packages/*' build && vp exec changeset publish",

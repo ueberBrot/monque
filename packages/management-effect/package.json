@@ -51,15 +51,16 @@
     "test:integration": "bun test tests/bun"
   },
   "dependencies": {
-    "@orpc/effect": "2.0.0-beta.45",
+    "@orpc/effect": "2.0.0-beta.50",
     "effect": "4.1.4"
   },
   "devDependencies": {
     "@effect/platform-bun": "4.1.4",
     "@monque/core": "workspace:*",
     "@monque/management": "workspace:*",
-    "@orpc/client": "2.0.0-beta.45",
-    "@orpc/contract": "2.0.0-beta.45",
+    "@orpc/client": "2.0.0-beta.50",
+    "@orpc/contract": "2.0.0-beta.50",
+    "@testcontainers/mongodb": "^12.2.1",
     "bun-types": "1.4.4",
     "mongodb": "^7.9.0",
     "vite": "catalog:",

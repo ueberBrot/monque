@@ -155,10 +155,7 @@ jobs:
           name: build-artifacts
           path: .
       - name: Verify packed packages with MongoDB drivers 6 and 7
-        run: |
-          bun scripts/verification/consumer.mts --skip-build
-          bun packages/management-effect/tests/consumer/verify.mts
-          bun packages/dashboard-effect/tests/consumer.mts
+        run: vp run verify:consumer
 
   dashboard-e2e:
     name: Dashboard MongoDB E2E (${{ matrix.project }})

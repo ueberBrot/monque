@@ -7,7 +7,7 @@ import type { StartedMongoDBContainer } from "@testcontainers/mongodb";
 import { MongoDBContainer } from "@testcontainers/mongodb";
 import { z } from "zod";
 
-import { packRelease } from "./pack-release.mts";
+import { packRelease } from "../../scripts/verification/pack-release.mts";
 
 const root = nodePath.resolve(import.meta.dirname, "../..");
 
@@ -298,7 +298,7 @@ try {
     const dependencies = new Map(Object.entries(tarballs));
     dependencies.set("@monque/core", scenario.core);
     dependencies.set("@monque/management", scenario.management);
-    dependencies.set("@orpc/client", "2.0.0-beta.45");
+    dependencies.set("@orpc/client", "2.0.0-beta.50");
     dependencies.set("express", "5.2.1");
     dependencies.set("effect", "4.1.2");
     dependencies.set("mongodb", scenario.mongodb);
@@ -337,13 +337,13 @@ try {
       ),
     );
     await copyFile(
-      nodePath.join(root, "scripts/verification/consumer-app.mts"),
+      nodePath.join(import.meta.dirname, "consumer-app.mts"),
       nodePath.join(directory, "app.mts"),
     );
     await Promise.all(
       ["consumer-mongodb.mts", esmTypes, cjsTypes].map(async (filename) => {
         await copyFile(
-          nodePath.join(root, "scripts/verification", filename === cjsTypes ? esmTypes : filename),
+          nodePath.join(import.meta.dirname, filename === cjsTypes ? esmTypes : filename),
           nodePath.join(directory, filename),
         );
       }),

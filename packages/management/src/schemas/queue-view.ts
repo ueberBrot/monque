@@ -11,7 +11,8 @@ export const QueueStatsDtoSchema = z
     total: z.number().int().nonnegative(),
     avgProcessingDurationMs: z.number().nonnegative().optional(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "QueueStats" });
 
 /** Aggregated job counts and timing statistics for a queue or the whole scheduler. */
 export type QueueStatsDto = z.infer<typeof QueueStatsDtoSchema>;
@@ -66,7 +67,8 @@ export const QueueViewSummaryListDtoSchema = z
   .object({
     queueViews: z.array(QueueViewSummaryDtoSchema),
   })
-  .strict();
+  .strict()
+  .meta({ id: "QueueViewSummaryList" });
 
 /** List response returned by the queue-views endpoint. */
 export type QueueViewSummaryListDto = z.infer<typeof QueueViewSummaryListDtoSchema>;

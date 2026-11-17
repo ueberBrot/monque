@@ -22,7 +22,7 @@ const routes = createManagementEffectRoutes({
 // HttpRouter.serve(routes) is a Layer; provide the host HTTP server and services.
 ```
 
-Requires Effect `4.1.4` and oRPC `2.0.0-beta.45`. Effect HTTP is unstable;
+Requires Effect `4.1.4` and oRPC `2.0.0-beta.50`. Effect HTTP is unstable;
 upgrade host and adapter together. See
 [coordinated release compatibility](../management/README.md#coordinated-release-compatibility).
 The adapter has no Express, Bun or Node platform runtime dependency.

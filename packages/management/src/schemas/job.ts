@@ -51,7 +51,8 @@ export const JobDtoSchema = z
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "Job" });
 
 /** Public job representation returned by management read and mutation endpoints. */
 export type JobDto = z.infer<typeof JobDtoSchema>;
@@ -64,7 +65,8 @@ export const JobCursorPageDtoSchema = z
     hasNextPage: z.boolean(),
     hasPreviousPage: z.boolean(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "JobCursorPage" });
 
 /** Cursor-paginated job list response. */
 export type JobCursorPageDto = z.infer<typeof JobCursorPageDtoSchema>;

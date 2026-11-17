@@ -20,7 +20,7 @@ its details. Typed failures and interruption remain unchanged. Host Effect
 wrappers still run.
 
 Effect HTTP is unstable. Verified versions are Effect 4.1.4 and oRPC
-2.0.0-beta.45. Platform implementations are test dependencies only. An isolated
+2.0.0-beta.50. Platform implementations are test dependencies only. An isolated
 packed Node consumer checks portability. Express and Effect share body limits,
 trust state and protocol-specific error encoding in the surface module.
 

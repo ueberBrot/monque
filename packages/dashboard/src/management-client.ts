@@ -1,5 +1,5 @@
 import type { ManagementContract } from "@monque/management/contract";
-import { createORPCClient, ORPCError, COMMON_ERROR_STATUS_MAP } from "@orpc/client";
+import { createORPCClient, ResponseError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterContractClient } from "@orpc/contract";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
@@ -36,8 +36,9 @@ const createDashboardManagementApi = (
   const link = new RPCLink({
     origin: base.origin,
     url: `/${base.pathname.replace(/^\//u, "")}${base.search}${base.hash}`,
-    fetch: async (request, init) => {
-      const response = await fetchImplementation(new Request(request, init), {
+    fetch: async (requestUrl, init) => {
+      const response = await fetchImplementation(requestUrl, {
+        ...init,
         credentials: "include",
       });
 
@@ -46,23 +47,23 @@ const createDashboardManagementApi = (
         !response.ok &&
         response.headers.get("content-type")?.includes("application/json") === true
       ) {
-        const code =
-          Object.entries(COMMON_ERROR_STATUS_MAP).find(
-            ([, status]) => status === response.status,
-          )?.[0] ?? "INTERNAL_SERVER_ERROR";
+        const body: unknown = await response
+          .clone()
+          .json()
+          .catch(() => null);
 
-        const parsed = z.object({ error: z.string() }).safeParse(
-          await response
-            .clone()
-            .json()
-            .catch(() => {
-              throw Object.assign(new ORPCError(code), { status: response.status });
-            }),
-        );
+        const resolved = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers),
+          body,
+        };
 
-        if (parsed.success) {
-          throw Object.assign(new ORPCError(code, { message: parsed.data.error }), {
-            status: response.status,
+        const parsed = z.object({ error: z.string() }).safeParse(resolved.body);
+
+        if (parsed.success || body === null) {
+          throw new ResponseError({
+            message: parsed.success ? parsed.data.error : undefined,
+            response: resolved,
           });
         }
       }

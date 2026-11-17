@@ -106,8 +106,8 @@ const createJobsActionFetch = (options: {
     get listRequestCount() {
       return listRequestCount;
     },
-    fetch: async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
       const data = await rpcInput(request);
       const url = new URL(request.url, "https://dashboard.test");
 
@@ -260,8 +260,8 @@ describe("Jobs route", () => {
       fireEvent.click(directionOption);
       await waitFor(async () => {
         const requests = await Promise.all(
-          fetchSpy.mock.calls.map(async ([input]) => {
-            const request = input instanceof Request ? input : new Request(input);
+          fetchSpy.mock.calls.map(async ([input, init]) => {
+            const request = new Request(input, init);
             const data = await rpcInput(request);
 
             return data?.sortBy === "updatedAt" && data?.sortDirection === "asc";
@@ -333,8 +333,8 @@ describe("Jobs route", () => {
     expect(screen.getByText("Updated time")).toBeInstanceOf(HTMLElement);
 
     const requests = await Promise.all(
-      fetchSpy.mock.calls.map(async ([input]) => {
-        const request = input instanceof Request ? input : new Request(input);
+      fetchSpy.mock.calls.map(async ([input, init]) => {
+        const request = new Request(input, init);
         const data = await rpcInput(request);
 
         const url = new URL(
@@ -491,8 +491,8 @@ describe("Jobs route", () => {
     });
 
     const names = await Promise.all(
-      fetchSpy.mock.calls.map(async ([input]) => {
-        const request = input instanceof Request ? input : new Request(input);
+      fetchSpy.mock.calls.map(async ([input, init]) => {
+        const request = new Request(input, init);
         const data = await rpcInput(request);
 
         return data?.name;
@@ -804,7 +804,11 @@ describe("Jobs route", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Cancel job" }));
     await waitFor(() => {
       expect(
-        fetch.mock.calls.some(([input]) => input instanceof Request && input.method === "POST"),
+        fetch.mock.calls.some(
+          ([input, init]) =>
+            new URL(new Request(input, init).url).pathname.endsWith("/cancelJob") &&
+            init?.method === "POST",
+        ),
       ).toBe(true);
     });
 

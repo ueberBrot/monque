@@ -75,8 +75,8 @@ const createJsonResponse = (body: Parameters<typeof Response.json>[0], status = 
 
 const createJobDetailFetch =
   (job: JobDto): typeof fetch =>
-  async (input) => {
-    const request = input instanceof Request ? input : new Request(input);
+  async (input, init) => {
+    const request = new Request(input, init);
     const url = new URL(request.url);
     const data = await rpcInput(request);
 
@@ -168,8 +168,8 @@ const createJobDetailActionFetch = (job: JobDto): CreateJobDetailActionFetchResu
     get detailRequestCount() {
       return detailRequestCount;
     },
-    fetch: async (input) => {
-      const request = input instanceof Request ? input : new Request(input);
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
       const url = new URL(request.url);
       const data = await rpcInput(request);
 

@@ -4,7 +4,7 @@ Run a native Effect Worker, Management and Dashboard with BunRuntime,
 BunHttpServer, `@monque/management-effect` and `@monque/dashboard-effect`.
 One scoped Monque instance supplies native `.effects` to Workers and Management.
 Bun dependencies stay in this private application. Effect and platform packages
-are pinned to 4.1.4, and oRPC to 2.0.0-beta.45.
+are pinned to 4.1.4, and oRPC to 2.0.0-beta.50.
 
 ## Run
 

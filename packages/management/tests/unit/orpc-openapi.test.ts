@@ -55,10 +55,10 @@ describe("oRPC Management OpenAPI contract", () => {
       maximum: 9_007_199_254_740_991,
     });
 
-    const anyOf: unknown = expect.arrayContaining([
+    const oneOf: unknown = expect.arrayContaining([
       expect.objectContaining({
         properties: {
-          action: { const: "priority" },
+          action: { type: "string", const: "priority" },
           ids: { type: "array", minItems: 1, maxItems: 100, items: { type: "string" } },
           priority,
         },
@@ -74,7 +74,7 @@ describe("oRPC Management OpenAPI contract", () => {
         content: {
           "application/json": {
             schema: {
-              anyOf,
+              oneOf,
             },
           },
         },
@@ -221,6 +221,11 @@ describe("oRPC Management OpenAPI contract", () => {
   });
 
   it("derives Job list and detail paths from the oRPC contract - 1", () => {
+    const dateTimeSchema: unknown = expect.objectContaining({
+      type: "string",
+      format: "date-time",
+    });
+
     expect(document.paths?.["/api/v1/jobs"]?.get?.operationId).toBe("listJobs");
     expect(document.paths?.["/api/v1/jobs"]?.get?.parameters).toStrictEqual(
       expect.arrayContaining([
@@ -242,37 +247,36 @@ describe("oRPC Management OpenAPI contract", () => {
         expect.objectContaining({
           name: "status",
           in: "query",
-          explode: true,
         }),
         expect.objectContaining({
           name: "createdAtFrom",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "createdAtTo",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "updatedAtFrom",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "updatedAtTo",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "nextRunAtFrom",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "nextRunAtTo",
           in: "query",
-          schema: { type: "string", format: "date-time" },
+          schema: dateTimeSchema,
         }),
         expect.objectContaining({
           name: "sortBy",
@@ -334,14 +338,14 @@ describe("oRPC Management OpenAPI contract", () => {
           anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],
         },
         claimedBy: {
-          anyOf: [{ type: "string" }, { type: "null" }],
+          type: ["string", "null"],
         },
         lastHeartbeat: {
           anyOf: [{ type: "string", format: "date-time" }, { type: "null" }],
         },
         failCount: { type: "integer" },
         failureReason: {
-          anyOf: [{ type: "string" }, { type: "null" }],
+          type: ["string", "null"],
         },
         createdAt: { type: "string", format: "date-time" },
         updatedAt: { type: "string", format: "date-time" },

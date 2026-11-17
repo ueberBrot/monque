@@ -59,17 +59,17 @@
     "access": "public"
   },
   "dependencies": {
-    "@orpc/contract": "2.0.0-beta.45",
-    "@orpc/effect": "2.0.0-beta.45",
-    "@orpc/openapi": "2.0.0-beta.45",
-    "@orpc/server": "2.0.0-beta.45",
-    "@orpc/zod": "2.0.0-beta.45",
+    "@orpc/contract": "2.0.0-beta.50",
+    "@orpc/effect": "2.0.0-beta.50",
+    "@orpc/openapi": "2.0.0-beta.50",
+    "@orpc/server": "2.0.0-beta.50",
+    "@orpc/zod": "2.0.0-beta.50",
     "effect": "^4.1.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@monque/core": "workspace:*",
-    "@orpc/client": "2.0.0-beta.45",
+    "@orpc/client": "2.0.0-beta.50",
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/node": "^22.20.5",
     "mongodb": "^7.9.0",

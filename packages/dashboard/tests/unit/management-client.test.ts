@@ -73,7 +73,7 @@ describe(createDashboardManagementApi, () => {
         ),
     });
 
-    await expect(api.client.health()).rejects.toMatchObject({ code: "UNAUTHORIZED", status: 401 });
+    await expect(api.client.health()).rejects.toMatchObject({ response: { status: 401 } });
   });
 
   it("includes browser credentials by default on Management API requests", async () => {

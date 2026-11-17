@@ -575,7 +575,7 @@ const createMockManagementHandler = () => {
   });
 
   const openApiHandler = new OpenAPIHandler(mockManagementRouter, {
-    customErrorResponseBodyEncoder: (error: ORPCError<string, unknown>) =>
+    errorResponseBodyEncoder: (error: ORPCError<string, unknown>) =>
       isObject(error.data) && error.data !== null ? error.data : { error: error.message },
   });
 

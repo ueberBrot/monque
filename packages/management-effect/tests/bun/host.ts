@@ -8,7 +8,7 @@ import { ORPCError, createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 // @effect-diagnostics unstableApiUsage:off
 /* oxlint-disable eslint/max-classes-per-file -- Host fixtures declare request-only identity and native operation dependencies. */
-import type { ContractRouterClient } from "@orpc/contract";
+import type { RouterContractClient } from "@orpc/contract";
 import { Context, Effect, Exit, Scope } from "effect";
 import { HttpServerRequest } from "effect/http";
 import { MongoClient } from "mongodb";
@@ -166,7 +166,7 @@ export const startHost = async function startHost(options: HostOptions = {}) {
     events,
     traces,
     resumedIdentities,
-    client: (identity: string): ContractRouterClient<ManagementContract> =>
+    client: (identity: string): RouterContractClient<ManagementContract> =>
       createORPCClient(
         new RPCLink({ origin: url, url: "/rpc", headers: { "x-identity": identity } }),
       ),

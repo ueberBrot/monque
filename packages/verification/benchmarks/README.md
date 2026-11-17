@@ -10,7 +10,7 @@ in MongoDB command logs. Do not point the harness at a production server.
 ```sh
 vp run --filter @monque/core --filter @monque/management build
 MONQUE_BENCH_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
-  bun scripts/benchmarks/run.mts > /tmp/monque-baseline.json
+  vp run @monque/verification#benchmark > /tmp/monque-baseline.json
 MONQUE_BENCH_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
   vp run test:benchmark
 ```
@@ -19,7 +19,7 @@ An optional JSON file overrides workload defaults:
 
 ```sh
 MONQUE_BENCH_URI='mongodb://127.0.0.1:27017/?directConnection=true' \
-  bun scripts/benchmarks/run.mts /tmp/workload.json > /tmp/monque-baseline.json
+  vp run @monque/verification#benchmark /tmp/workload.json > /tmp/monque-baseline.json
 ```
 
 ```json

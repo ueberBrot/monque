@@ -10,6 +10,7 @@ export const SchedulerHealthDtoSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .meta({ id: "SchedulerHealth" });
 
 export type SchedulerHealthDto = z.infer<typeof SchedulerHealthDtoSchema>;

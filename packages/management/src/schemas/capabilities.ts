@@ -31,7 +31,8 @@ export const CapabilitiesDtoSchema = z
     readOnly: z.boolean(),
     actions: CapabilityActionsDtoSchema,
   })
-  .strict();
+  .strict()
+  .meta({ id: "Capabilities" });
 
 /** Runtime capabilities for a management surface. */
 export type CapabilitiesDto = z.infer<typeof CapabilitiesDtoSchema>;

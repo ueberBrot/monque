@@ -4,6 +4,7 @@
   "typeAware": {
     "projects": [
       "packages/core/tsconfig.json",
+      "packages/verification/tsconfig.json",
       "packages/tsed/tsconfig.json",
       "packages/management/tsconfig.json",
       "packages/management-express/tsconfig.json",
@@ -35,14 +36,9 @@
   "framework": [
     {
       "name": "monque-packed-consumer-tests",
-      "detection": { "type": "fileExists", "pattern": "scripts/verification/consumer.mts" },
-      "entryPoints": ["scripts/verification/consumer-{app,mongodb,types}.mts"],
+      "detection": { "type": "fileExists", "pattern": "packages/verification/consumer.mts" },
+      "entryPoints": ["packages/verification/consumer*.mts"],
       "entryPointRole": "test",
-    },
-    {
-      "name": "monque-build-tools",
-      "enablers": ["unplugin-unused"],
-      "toolingDependencies": ["@ai-hero/sandcastle", "unplugin-unused"],
     },
     {
       // Ts.ED FakeResponse imports this compatible cookie version in integration tests.
@@ -154,6 +150,7 @@
         "**/tests/**",
         "**/*.config.*",
         "scripts/**",
+        "packages/verification/**",
         ".sandcastle/**",
       ],
     },

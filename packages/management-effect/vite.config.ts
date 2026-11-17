@@ -24,6 +24,11 @@ export default defineConfig({
           output: [],
         },
       },
+      "verify:consumer": {
+        command: "bun tests/consumer/verify.mts",
+        dependsOn: ["build"],
+        cache: false,
+      },
       clean: {
         command: "rimraf dist",
         cache: false,
