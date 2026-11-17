@@ -775,6 +775,7 @@ describe("Jobs route", () => {
 
   it("disables row actions until an outstanding mutation and its refresh finish", async () => {
     const job = createListJob();
+    const cancelledJob: JobDto = { ...job, status: "cancelled" };
     const otherJob = createListJob({ id: "other-job", name: "other-job" });
     const state = createJobsActionFetch({ jobs: [job, otherJob] });
     const response = Promise.withResolvers<Response>();
@@ -784,7 +785,7 @@ describe("Jobs route", () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const request = new Request(input, init);
 
-      if (new URL(request.url).pathname.endsWith("/deleteJob")) {
+      if (new URL(request.url).pathname.endsWith("/cancelJob")) {
         return await response.promise;
       }
 
@@ -814,9 +815,10 @@ describe("Jobs route", () => {
 
     try {
       expect(actionButton().hasAttribute("disabled")).toBe(true);
+      expect(listRequests).toBe(1);
       await act(async () => {
         await Promise.resolve();
-        response.resolve(createJsonResponse({ cancelled: true }));
+        response.resolve(createJsonResponse(cancelledJob));
       });
       await waitFor(() => {
         expect(listRequests).toBe(2);
@@ -825,10 +827,10 @@ describe("Jobs route", () => {
     } finally {
       await act(async () => {
         await Promise.resolve();
-        response.resolve(createJsonResponse({ cancelled: true }));
+        response.resolve(createJsonResponse(cancelledJob));
         refresh.resolve(
           createJsonResponse({
-            jobs: [{ ...job, status: "cancelled" }, otherJob],
+            jobs: [cancelledJob, otherJob],
             cursor: null,
             hasNextPage: false,
             hasPreviousPage: false,
@@ -840,6 +842,7 @@ describe("Jobs route", () => {
     await waitFor(() => {
       expect(actionButton().hasAttribute("disabled")).toBe(false);
     });
+    await expect(screen.findByText("Job cancelled")).resolves.toBeInstanceOf(HTMLElement);
     expect(
       screen
         .getByRole("checkbox", { name: "Select job row other-job other-job" })
