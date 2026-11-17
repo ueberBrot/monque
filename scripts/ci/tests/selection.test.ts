@@ -17,10 +17,10 @@ interface GateNeeds {
 const scope = fileURLToPath(new URL("../scope.sh", import.meta.url));
 const gate = fileURLToPath(new URL("../gate.sh", import.meta.url));
 
-const status = (needs: GateNeeds) =>
+const status = (needs: GateNeeds, event = "pull_request") =>
   // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
   spawnSync("bash", [gate], {
-    env: { ...process.env, CI_NEEDS: JSON.stringify(needs) },
+    env: { ...process.env, CI_NEEDS: JSON.stringify(needs), CI_EVENT: event },
     encoding: "utf-8",
   }).status;
 
@@ -43,13 +43,13 @@ describe("CI change selection", () => {
       writeFileSync(nodePath.join(cwd, path), "fixture\n");
     };
 
-    const select = (base: string) => {
+    const select = (base: string, event = "pull_request") => {
       writeFileSync(output, "");
 
       // oxlint-disable-next-line sonarjs/no-os-command-from-path -- Developer tooling resolves installed Git and shell executables through the invoking environment.
       const result = spawnSync("bash", [scope], {
         cwd,
-        env: { ...process.env, BASE_SHA: base, GITHUB_OUTPUT: output },
+        env: { ...process.env, BASE_SHA: base, GITHUB_OUTPUT: output, CI_EVENT: event },
         encoding: "utf-8",
       });
 
@@ -79,6 +79,7 @@ describe("CI change selection", () => {
 
       commit();
       expect(select(base)).toBe("runtime=false");
+      expect(select(base, "merge_group")).toBe("runtime=true");
 
       for (const path of [
         "bun.lock",
@@ -129,6 +130,8 @@ describe("CI change selection", () => {
       };
 
       expect(status(needs)).toBe(0);
+      expect(status(needs, "push")).toBe(0);
+      expect(status(needs, "merge_group")).toBe(runtime === "true" ? 0 : 1);
 
       for (const job of Object.keys(needs)) {
         for (const result of ["failure", "cancelled", "skipped", "success"]) {
