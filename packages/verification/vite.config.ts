@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   run: {
     tasks: {
+      test: { command: "vp test run", cache: false },
       "verify:consumer": {
         command: "vp test run --config vite.consumer.config.ts",
         dependsOn: [{ task: "build", from: ["dependencies", "devDependencies"] }],
@@ -20,5 +21,5 @@ export default defineConfig({
       },
     },
   },
-  test: { name: "@monque/verification", include: [] },
+  test: { name: "@monque/verification", include: ["tests/**/*.test.ts"] },
 });
