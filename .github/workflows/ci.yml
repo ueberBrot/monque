@@ -180,6 +180,11 @@ jobs:
         with:
           name: build-artifacts
           path: packages
+      - name: Use the primary Ubuntu package archive
+        run: |
+          sources=/etc/apt/sources.list.d/ubuntu.sources
+          sudo sed -E -i 's#^(URIs:[[:space:]]+https?://)[[:alnum:]-]+\.ec2\.archive\.ubuntu\.com(/ubuntu/?[[:space:]]*)$#\1archive.ubuntu.com\2#' "$sources"
+          sed -n '/^URIs:/p' "$sources"
       - name: Prepare MongoDB and Chromium
         run: bash scripts/ci/prepare-dashboard-e2e.sh
       - name: Test built Dashboard with MongoDB and selected host
