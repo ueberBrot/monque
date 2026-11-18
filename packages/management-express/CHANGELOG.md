@@ -1,5 +1,11 @@
 # @monque/management-express
 
+## 0.8.0
+
+### Minor Changes
+
+- [#696](https://github.com/ueberBrot/monque/pull/696) [`7e83d7c`](https://github.com/ueberBrot/monque/commit/7e83d7c089bf06950a2256b03fcd90794d909639) - Serve protected RPC at `/rpc` beneath the Management mount. The Express adapter requires `@monque/management` >=0.12.0 <0.13.0.
+
 ## 0.7.3
 
 ### Patch Changes

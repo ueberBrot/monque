@@ -1,5 +1,11 @@
 # @monque/tsed
 
+## 1.19.0
+
+### Minor Changes
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Release Monque-owned resources during application teardown by calling `dispose()`, including when job processing is disabled. Requires `@monque/core` 1.21.0 or later for terminal disposal. The application still owns its MongoDB connection.
+
 ## 1.18.1
 
 ### Patch Changes

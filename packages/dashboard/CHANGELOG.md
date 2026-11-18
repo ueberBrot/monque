@@ -1,5 +1,13 @@
 # @monque/dashboard
 
+## 0.8.0
+
+### Minor Changes
+
+- [#684](https://github.com/ueberBrot/monque/pull/684) [`1057e7a`](https://github.com/ueberBrot/monque/commit/1057e7a3451852ace768ec1fc40ceb61bb2e6ee0) - The Dashboard requires `@monque/management` 0.12.x and sends requests to `<Management mount>/rpc`. Upgrade the Management server before deploying this Dashboard.
+
+- [#696](https://github.com/ueberBrot/monque/pull/696) [`7e83d7c`](https://github.com/ueberBrot/monque/commit/7e83d7c089bf06950a2256b03fcd90794d909639) - Export shared Dashboard HTML rendering and SPA fallback helpers from the asset-only build.
+
 ## 0.7.1
 
 ### Patch Changes
