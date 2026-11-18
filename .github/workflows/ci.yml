@@ -26,6 +26,7 @@ jobs:
       - name: Setup Vite+
         uses: ./.github/actions/setup-vite-plus
         with:
+          dependency-cache: "false"
           task-cache: "true"
 
       - name: Select checks

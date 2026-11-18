@@ -8,6 +8,9 @@ inputs:
   registry-url:
     description: "Optional npm registry URL for release authentication"
     default: ""
+  dependency-cache:
+    description: "Cache downloaded dependencies"
+    default: "true"
   task-cache:
     description: "Persist Vite Task outputs for jobs that run cacheable tasks"
     default: "false"
@@ -21,7 +24,7 @@ runs:
         node-version: ${{ inputs.node-version }}
         node-version-file: .node-version
         registry-url: ${{ inputs.registry-url }}
-        cache: true
+        cache: ${{ inputs.dependency-cache }}
         run-install: |
           args: ['--frozen-lockfile']
       env:
