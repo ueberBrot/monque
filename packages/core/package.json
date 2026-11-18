@@ -83,8 +83,8 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "cron-parser": "^5.10.6",
-    "effect": "^4.1.4"
+    "cron-parser": "^5.10.2",
+    "effect": "^4.1.2"
   },
   "devDependencies": {
     "@effect/opentelemetry": "4.1.4",

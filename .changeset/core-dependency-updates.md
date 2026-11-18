@@ -2,4 +2,4 @@
 "@monque/core": minor
 ---
 
-Raise the runtime dependency minimums to `cron-parser` 5.10.6 and Effect 4.1.4.
+Update runtime dependencies while preserving existing minimum supported versions. Allow compatible Effect 4 releases instead of requiring an exact patch version.

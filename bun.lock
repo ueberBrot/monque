@@ -129,8 +129,8 @@
       "version": "1.20.2",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
-        "cron-parser": "^5.10.6",
-        "effect": "^4.1.4",
+        "cron-parser": "^5.10.2",
+        "effect": "^4.1.2",
       },
       "devDependencies": {
         "@effect/opentelemetry": "4.1.4",
@@ -278,7 +278,7 @@
         "@orpc/openapi": "2.0.0-beta.51",
         "@orpc/server": "2.0.0-beta.51",
         "@orpc/zod": "2.0.0-beta.51",
-        "effect": "^4.1.4",
+        "effect": "^4.1.2",
         "zod": "^4.6.7",
       },
       "devDependencies": {
