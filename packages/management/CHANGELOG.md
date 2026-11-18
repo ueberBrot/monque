@@ -1,5 +1,15 @@
 # @monque/management
 
+## 0.12.0
+
+### Minor Changes
+
+- [#713](https://github.com/ueberBrot/monque/pull/713) [`fddbfdf`](https://github.com/ueberBrot/monque/commit/fddbfdfcd67615a69f0c3403d240f1e386616e51) - Management now uses oRPC 2.0.0-beta.51. If you use oRPC directly, install the matching beta and update any affected imports and types for oRPC v2.
+
+- [#696](https://github.com/ueberBrot/monque/pull/696) [`7e83d7c`](https://github.com/ueberBrot/monque/commit/7e83d7c089bf06950a2256b03fcd90794d909639) - Serve protected RPC at `/rpc` beneath the Management mount. The Express adapter requires `@monque/management` >=0.12.0 <0.13.0.
+
+- [#696](https://github.com/ueberBrot/monque/pull/696) [`7e83d7c`](https://github.com/ueberBrot/monque/commit/7e83d7c089bf06950a2256b03fcd90794d909639) - Expose native Effect operations and router composition with authorization and serialization hooks. Hosts supply services and request scopes.
+
 ## 0.11.1
 
 ### Patch Changes

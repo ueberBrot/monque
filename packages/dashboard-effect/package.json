@@ -1,6 +1,6 @@
 {
   "name": "@monque/dashboard-effect",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Portable Effect HTTP routes for the Monque Dashboard",
   "keywords": [
     "dashboard",

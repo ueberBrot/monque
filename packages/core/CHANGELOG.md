@@ -1,5 +1,29 @@
 # @monque/core
 
+## 1.21.0
+
+### Minor Changes
+
+- [#684](https://github.com/ueberBrot/monque/pull/684) [`1057e7a`](https://github.com/ueberBrot/monque/commit/1057e7a3451852ace768ec1fc40ceb61bb2e6ee0) - Update runtime dependencies while preserving existing minimum supported versions. Allow compatible Effect 4 releases instead of requiring an exact patch version.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Add typed Worker setup to `MonqueEffect.layer(db, options, setup)`. Setup services and resources survive through scheduler disposal and Worker finalizers. Failed setup disposes the scheduler.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Expose native Effect integration through `@monque/core/effect` for ESM, CommonJS and TypeScript consumers. Existing root imports remain supported.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Support native Effect Workers with captured application services, per-attempt resource scopes, and the existing retry and Claim fencing rules. Terminal disposal interrupts native Workers that outlive the drain timeout and waits for their finalizers.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Export cumulative operation counts and duration histograms through the optional OpenTelemetry integration. Host readers retain ownership, and each Scheduler Instance registers and disposes its own measurements.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Add optional OpenTelemetry tracing through `@monque/core/opentelemetry` with the application's provider. Spans inherit the active parent. Ordinary Workers expose tracing context. Telemetry marks failed attempts as failures, including when retry scheduling succeeds. See the OpenTelemetry guide for ownership and setup.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Add `MonqueEffect.layer` and `Monque.scoped` for scoped initialization, native operations and terminal cleanup with a borrowed MongoDB connection. Disposal uses the caller's Effect clock and completes after interrupted admission. See the Effect guide for lifecycle and interruption behavior.
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Add `Monque.dispose()` for final cleanup, including producer-only instances and concurrent shutdown calls. Disposal keeps the application's MongoDB connection open and waits for owned work; use `stop()` when processing needs to restart.
+
+### Patch Changes
+
+- [#681](https://github.com/ueberBrot/monque/pull/681) [`1af454f`](https://github.com/ueberBrot/monque/commit/1af454f8682b10717d45e2e66dca2894f76719e0) - Preserve the original database error in ConnectionError.cause when Scheduler Instance initialization fails, including native Effect Layer acquisition.
+
 ## 1.20.2
 
 ### Patch Changes
