@@ -256,9 +256,9 @@ describe("isolated package consumption", () => {
         dependencies.set("@monque/management", scenario.management);
         dependencies.set("@orpc/client", "2.0.0-beta.51");
         dependencies.set("vitest", "5.1.0");
-        dependencies.set("@effect/vitest", "4.1.2");
+        dependencies.set("@effect/vitest", "4.1.4");
         dependencies.set("express", "5.2.1");
-        dependencies.set("effect", "4.1.2");
+        dependencies.set("effect", "4.1.4");
         dependencies.set("mongodb", scenario.mongodb);
         dependencies.set("@types/node", "^22.20.5");
         dependencies.set("@types/express", "^5.0.6");

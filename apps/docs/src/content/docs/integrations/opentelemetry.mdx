@@ -7,10 +7,10 @@ Tracing is optional. Ordinary `@monque/core` imports and execution need no OpenT
 Install the integration dependencies only when you enable tracing:
 
 ```sh
-bun add @effect/opentelemetry@4.1.2 @opentelemetry/api@^1.9.0
+bun add @effect/opentelemetry@4.1.4 @opentelemetry/api@^1.9.0
 ```
 
-Use the official Effect integration version shown above with Monque's Effect 4.1.2 runtime.
+Use the official integration with Effect 4.1.4 or a compatible Effect 4 release.
 Importing the integration alone does not enable tracing. Pass its configuration to each
 Scheduler Instance you want to trace.
 
@@ -137,7 +137,7 @@ await meters.shutdown(); // Host-owned; call only after all users finish.
 
 Use your host exporter in production. Configure the same resource on the MeterProvider:
 SDK readers retain that provider's resource when collecting additional producers.
-The integration uses the official Effect 4.1.2 `OtelMetrics.makeProducer` conversion.
+The integration uses `OtelMetrics.makeProducer` from the Effect OpenTelemetry integration.
 It exports cumulative measurements regardless of the reader's temporality preference.
 Do not sum successive collections; calculate rates from counter differences.
 
