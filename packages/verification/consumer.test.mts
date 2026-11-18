@@ -254,7 +254,7 @@ describe("isolated package consumption", () => {
         const dependencies = new Map(Object.entries(tarballs));
         dependencies.set("@monque/core", scenario.core);
         dependencies.set("@monque/management", scenario.management);
-        dependencies.set("@orpc/client", "2.0.0-beta.50");
+        dependencies.set("@orpc/client", "2.0.0-beta.51");
         dependencies.set("vitest", "5.1.0");
         dependencies.set("@effect/vitest", "4.1.2");
         dependencies.set("express", "5.2.1");

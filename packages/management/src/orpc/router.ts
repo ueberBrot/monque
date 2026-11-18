@@ -42,7 +42,7 @@ export const createManagementRouter = function createManagementRouter<TContext =
 ): ManagementRouter<TContext> {
   return os
     .$context<ManagementOpenApiContext<TContext>>()
-    .use(({ next }) => next({ context: { "effect/context": Context.empty() } }))
+    .use(async ({ next }) => await next({ context: { "effect/context": Context.empty() } }))
     .router(createOperationsRouter(options, createManagementOperations(options)));
 };
 
@@ -66,18 +66,19 @@ const createOperationsRouter = function createOperationsRouter<TContext, R>(
 ) {
   const managementImplementer = implement(managementContract)
     .$context<ManagementOpenApiContext<TContext> & WithEffectContext<R>>()
-    .use(({ context, next }) =>
-      next({
-        context: {
-          // The official runner squashes Fail and Die alike; keep defects opaque at this seam.
-          "effect/wrap": <A>(effect: Effect.Effect<A, unknown>, wrapOptions: EffectWrapOptions) =>
-            Effect.suspend(() => context["effect/wrap"]?.(effect, wrapOptions) ?? effect).pipe(
-              Effect.catchDefect((cause) =>
-                Effect.die(new Error("Management handler defect", { cause })),
+    .use(
+      async ({ context, next }) =>
+        await next({
+          context: {
+            // The official runner squashes Fail and Die alike; keep defects opaque at this seam.
+            "effect/wrap": <A>(effect: Effect.Effect<A, unknown>, wrapOptions: EffectWrapOptions) =>
+              Effect.suspend(() => context["effect/wrap"]?.(effect, wrapOptions) ?? effect).pipe(
+                Effect.catchDefect((cause) =>
+                  Effect.die(new Error("Management handler defect", { cause })),
+                ),
               ),
-            ),
-        },
-      }),
+          },
+        }),
     );
 
   const requireContext = requiresOpenApiManagementContext(options);

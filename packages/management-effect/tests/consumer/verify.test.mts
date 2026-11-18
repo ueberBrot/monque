@@ -40,7 +40,18 @@ describe("isolated package consumption", () => {
           devDependencies: { "@types/node": "^22.20.5", vitest: "5.1.0" },
         }),
       );
-      run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"]);
+      // npm 10.9.9 crashes resolving Vitest's optional Vite peers (npm/cli#9787).
+      run("npm", [
+        "exec",
+        "--yes",
+        "--package=npm@11.16.0",
+        "--",
+        "npm",
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+      ]);
       copyFileSync(
         path.join(import.meta.dirname, "consumer.test.mts"),
         path.join(temporary, "consumer.test.mts"),
