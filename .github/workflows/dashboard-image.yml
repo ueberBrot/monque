@@ -38,7 +38,7 @@ permissions:
 jobs:
   build:
     name: Build and verify dashboard image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -90,7 +90,7 @@ jobs:
     name: Publish dashboard image to GHCR
     needs: build
     if: inputs.version != '' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     name: Build Docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     outputs:
       should_deploy: ${{ steps.decide.outputs.should_deploy }}
@@ -70,7 +70,7 @@ jobs:
   deploy:
     needs: build
     if: needs.build.outputs.should_deploy == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment:
       name: github-pages
