@@ -158,7 +158,7 @@ jobs:
     name: Dashboard MongoDB E2E (${{ matrix.project }})
     if: needs.quality.outputs.runtime == 'true'
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: true
