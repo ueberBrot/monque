@@ -10,7 +10,7 @@
     "@monque/management": "workspace:*",
     "@monque/management-express": "workspace:*",
     "@monque/tsed": "workspace:*",
-    "@orpc/client": "2.0.0-beta.50",
+    "@orpc/client": "2.0.0-beta.51",
     "@testcontainers/mongodb": "^12.2.1",
     "@tsed/di": "^8.47.1",
     "@tsed/platform-http": "^8.47.1",

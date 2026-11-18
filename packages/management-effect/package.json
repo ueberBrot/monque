@@ -48,7 +48,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@orpc/effect": "2.0.0-beta.50",
+    "@orpc/effect": "2.0.0-beta.51",
     "effect": "4.1.4"
   },
   "devDependencies": {
@@ -56,8 +56,8 @@
     "@effect/vitest": "4.1.4",
     "@monque/core": "workspace:*",
     "@monque/management": "workspace:*",
-    "@orpc/client": "2.0.0-beta.50",
-    "@orpc/contract": "2.0.0-beta.50",
+    "@orpc/client": "2.0.0-beta.51",
+    "@orpc/contract": "2.0.0-beta.51",
     "@testcontainers/mongodb": "^12.2.1",
     "@types/node": "^22.20.5",
     "mongodb": "^7.9.0",
