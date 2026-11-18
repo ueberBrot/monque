@@ -127,16 +127,9 @@ jobs:
         if: matrix.group == 'frontend'
         run: vp run --filter @monque/dashboard --filter @monque/dashboard-dev --ignore-depends-on --concurrency-limit 1 test
 
-      - name: Install backend browser prerequisites
-        if: matrix.group == 'backend'
-        working-directory: apps/dashboard-dev
-        run: vp exec playwright install --with-deps chromium
-
       - name: Backend tests
         if: matrix.group == 'backend'
-        run: |
-          vp run --filter './packages/*' --filter '!@monque/dashboard' --ignore-depends-on --concurrency-limit 2 test
-          vp run --filter @monque/effect-host --ignore-depends-on test
+        run: bash scripts/ci/test-backend.sh
 
   consumers:
     name: MongoDB Driver Compatibility
